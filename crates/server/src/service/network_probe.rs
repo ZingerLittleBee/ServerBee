@@ -503,6 +503,50 @@ impl NetworkProbeService {
         Self::set_server_targets(db, server_id, setting.default_target_ids).await
     }
 
+    /// Apply the supplied default target ids to a server inside an existing
+    /// transaction. Caller is responsible for fetching the current setting via
+    /// `get_setting` (which only takes `&DatabaseConnection`) BEFORE opening
+    /// the tx, then passing `setting.default_target_ids` here.
+    ///
+    /// Validation is intentionally lighter than `set_server_targets`: the
+    /// global `default_target_ids` is already validated when it is written
+    /// through `update_setting`, and we want this helper to compose cleanly
+    /// inside the Add-Server / Recover / Regenerate transactions.
+    pub async fn apply_defaults_tx<C: ConnectionTrait>(
+        conn: &C,
+        server_id: &str,
+        target_ids: &[String],
+    ) -> Result<(), AppError> {
+        if target_ids.is_empty() {
+            return Ok(());
+        }
+        if target_ids.len() > 20 {
+            return Err(AppError::Validation(
+                "Cannot assign more than 20 targets to a server".to_string(),
+            ));
+        }
+
+        // Clear any existing assignments (idempotent — Add Server inserts a
+        // brand-new row so this should be a no-op, but Recover may run on a
+        // server that already has targets).
+        network_probe_config::Entity::delete_many()
+            .filter(network_probe_config::Column::ServerId.eq(server_id))
+            .exec(conn)
+            .await?;
+
+        let now = Utc::now();
+        for target_id in target_ids {
+            let config = network_probe_config::ActiveModel {
+                id: Set(Uuid::new_v4().to_string()),
+                server_id: Set(server_id.to_string()),
+                target_id: Set(target_id.clone()),
+                created_at: Set(now),
+            };
+            config.insert(conn).await?;
+        }
+        Ok(())
+    }
+
     // -----------------------------------------------------------------------
     // Records
     // -----------------------------------------------------------------------

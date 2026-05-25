@@ -9,11 +9,13 @@ use axum::{Json, Router};
 use crate::router::utils::extract_client_ip;
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use crate::entity::server;
+use crate::entity::{agent_enrollment, server, server_tag};
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::api::network_probe::{
@@ -22,11 +24,13 @@ use crate::router::api::network_probe::{
 };
 use crate::service::agent_manager::AgentManager;
 use crate::service::audit::AuditService;
+use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
 use crate::service::ip_quality::IpQualityService;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::ping::PingService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
+use crate::service::server_tag as server_tag_service;
 use crate::service::upgrade_tracker::{StartUpgradeJobError, UpgradeLookup};
 use crate::state::AppState;
 use serverbee_common::constants::effective_capabilities;
@@ -104,8 +108,79 @@ pub struct ServerResponse {
     pub effective_capabilities: Option<i32>,
     pub protocol_version: i32,
     features: Vec<String>,
+    /// `true` iff the server row has a non-NULL `token_hash`. Pending servers
+    /// (created via `POST /api/servers` but not yet enrolled by an agent) have
+    /// `has_token = false`; the UI uses this to render a "pending" badge.
+    pub has_token: bool,
+    /// The single outstanding (not consumed, not revoked) bound enrollment for
+    /// this server, if any. Plaintext code is intentionally NOT included — it
+    /// is only returned at mint time. The UI uses this to surface a "show
+    /// install command" button on pending or recovering servers.
+    pub outstanding_enrollment: Option<OutstandingEnrollmentSummary>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+}
+
+/// Outstanding-enrollment summary returned alongside a `ServerResponse` so the
+/// UI can render pending state and offer the install command without a second
+/// fetch. The plaintext code is only ever returned by the mint endpoints —
+/// never here.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct OutstandingEnrollmentSummary {
+    pub id: String,
+    pub code_prefix: String,
+    pub expires_at: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct CreateServerRequest {
+    pub name: String,
+    #[serde(default)]
+    pub group_id: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub remark: Option<String>,
+    #[serde(default)]
+    pub public_remark: Option<String>,
+    #[serde(default)]
+    pub price: Option<f64>,
+    #[serde(default)]
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub billing_cycle: Option<String>,
+    #[serde(default)]
+    pub billing_start_day: Option<i32>,
+    #[serde(default)]
+    pub expired_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub traffic_limit: Option<i64>,
+    #[serde(default)]
+    pub traffic_limit_type: Option<String>,
+    /// Capabilities to encode into the install.sh `--caps` arg only; not
+    /// persisted on the server row (which always uses `CAP_DEFAULT`).
+    #[serde(default)]
+    pub caps: Option<Vec<String>>,
+    /// Defaults to 600 (10 min) per spec.
+    #[serde(default)]
+    pub ttl_secs: Option<i64>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct EnrollmentIssueResponse {
+    pub id: String,
+    /// Plaintext enrollment code — shown exactly once at mint time. The UI
+    /// must surface this to the operator and warn that it cannot be recovered.
+    pub code: String,
+    pub code_prefix: String,
+    pub expires_at: String,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CreateServerResponse {
+    pub server_id: String,
+    pub enrollment: EnrollmentIssueResponse,
 }
 
 fn runtime_capability_fields(
@@ -122,9 +197,15 @@ fn runtime_capability_fields(
     )
 }
 
-fn build_server_response(s: server::Model, agent_manager: &AgentManager) -> ServerResponse {
+fn build_server_response(
+    s: server::Model,
+    agent_manager: &AgentManager,
+    outstanding_enrollment: Option<OutstandingEnrollmentSummary>,
+) -> ServerResponse {
     let (agent_local_capabilities, effective_capabilities) =
         runtime_capability_fields(agent_manager, &s.id);
+
+    let has_token = s.token_hash.is_some();
 
     ServerResponse {
         id: s.id,
@@ -160,9 +241,66 @@ fn build_server_response(s: server::Model, agent_manager: &AgentManager) -> Serv
         effective_capabilities,
         protocol_version: s.protocol_version,
         features: serde_json::from_str(&s.features).unwrap_or_default(),
+        has_token,
+        outstanding_enrollment,
         created_at: s.created_at,
         updated_at: s.updated_at,
     }
+}
+
+/// Fetch the single outstanding (not consumed, not revoked) enrollment for a
+/// server, mapped to the response DTO. Returns `Ok(None)` when there is no
+/// outstanding enrollment.
+async fn fetch_outstanding_enrollment(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+) -> Result<Option<OutstandingEnrollmentSummary>, AppError> {
+    let row = agent_enrollment::Entity::find()
+        .filter(agent_enrollment::Column::TargetServerId.eq(server_id))
+        .filter(agent_enrollment::Column::ConsumedAt.is_null())
+        .filter(agent_enrollment::Column::RevokedAt.is_null())
+        .one(db)
+        .await?;
+    Ok(row.map(|m| OutstandingEnrollmentSummary {
+        id: m.id,
+        code_prefix: m.code_prefix,
+        expires_at: m.expires_at.to_rfc3339(),
+        created_at: m.created_at.to_rfc3339(),
+    }))
+}
+
+/// Batch fetch of outstanding enrollments for a set of server ids. Avoids
+/// the N+1 pattern when serializing the `GET /api/servers` list. Returns a
+/// map keyed by `target_server_id`.
+async fn fetch_outstanding_enrollments_batch(
+    db: &sea_orm::DatabaseConnection,
+    server_ids: &[String],
+) -> Result<std::collections::HashMap<String, OutstandingEnrollmentSummary>, AppError> {
+    let mut out = std::collections::HashMap::new();
+    if server_ids.is_empty() {
+        return Ok(out);
+    }
+    let rows = agent_enrollment::Entity::find()
+        .filter(agent_enrollment::Column::TargetServerId.is_in(server_ids.iter().cloned()))
+        .filter(agent_enrollment::Column::ConsumedAt.is_null())
+        .filter(agent_enrollment::Column::RevokedAt.is_null())
+        .all(db)
+        .await?;
+    for m in rows {
+        // The partial unique index `idx_enrollments_active_per_server`
+        // guarantees at most one outstanding row per server, so the last-write
+        // wins behavior here is fine (and unreachable in practice).
+        out.insert(
+            m.target_server_id.clone(),
+            OutstandingEnrollmentSummary {
+                id: m.id,
+                code_prefix: m.code_prefix,
+                expires_at: m.expires_at.to_rfc3339(),
+                created_at: m.created_at.to_rfc3339(),
+            },
+        );
+    }
+    Ok(out)
 }
 
 fn capability_change_message(
@@ -245,6 +383,7 @@ pub fn read_router() -> Router<Arc<AppState>> {
 /// Write endpoints (PUT/DELETE/POST) restricted to admin users only.
 pub fn write_router() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/servers", post(create_server))
         .route("/servers/{id}", put(update_server))
         .route("/servers/{id}", delete(delete_server))
         .route("/servers/batch-delete", post(batch_delete))
@@ -273,10 +412,205 @@ async fn list_servers(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<ServerResponse>>>, AppError> {
     let servers = ServerService::list_servers(&state.db).await?;
+    let ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
+    let mut outstanding = fetch_outstanding_enrollments_batch(&state.db, &ids).await?;
     ok(servers
         .into_iter()
-        .map(|server| build_server_response(server, &state.agent_manager))
+        .map(|server| {
+            let pending = outstanding.remove(&server.id);
+            build_server_response(server, &state.agent_manager, pending)
+        })
         .collect())
+}
+
+/// Create a pending server row and a server-bound enrollment in a single
+/// transaction. The server row is inserted with `token_hash = NULL` (pending),
+/// `capabilities = CAP_DEFAULT`, and `protocol_version = 1`. The operator-
+/// supplied `tags` are persisted in `server_tags`, and the global default
+/// network probe targets are applied to the new server. The returned plaintext
+/// enrollment `code` is shown exactly once — the install command on the agent
+/// will consume it via `POST /api/agent/register`.
+///
+/// `caps` is accepted in the request for the install.sh `--caps` arg but is
+/// NOT persisted on the server row. The server row always starts at
+/// `CAP_DEFAULT`; the operator can edit capabilities afterwards.
+#[utoipa::path(
+    post,
+    path = "/api/servers",
+    tag = "servers",
+    request_body = CreateServerRequest,
+    responses(
+        (status = 200, description = "Server created (pending) and bound enrollment minted", body = CreateServerResponse),
+        (status = 400, description = "Validation error or max_servers cap reached"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn create_server(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
+    Json(body): Json<CreateServerRequest>,
+) -> Result<Json<ApiResponse<CreateServerResponse>>, AppError> {
+    use serverbee_common::constants::CAP_DEFAULT;
+
+    let name = body.name.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::BadRequest("name is required".into()));
+    }
+
+    // Validate tags up-front so we fail before opening the tx. Reuses the
+    // shared validator so the rules stay identical to PUT /api/servers/{id}/tags.
+    let normalized_tags = server_tag_service::validate_tags(&body.tags)?;
+
+    // Soft max_servers cap. `max_servers == 0` means "no cap" per AuthConfig
+    // default; only fire the pre-check when an actual limit is configured.
+    let max_servers = state.config.auth.max_servers;
+    if max_servers > 0 {
+        let count = server::Entity::find().count(&state.db).await?;
+        if count >= max_servers as u64 {
+            return Err(AppError::BadRequest(format!(
+                "Server limit reached ({max_servers}). Delete unused servers or increase max_servers in config."
+            )));
+        }
+    }
+
+    // Fetch default probe targets BEFORE the tx — ConfigService::get_typed
+    // takes &DatabaseConnection, not a generic conn. The targets array is
+    // small and stable, so reading it outside the tx is fine.
+    let probe_setting = NetworkProbeService::get_setting(&state.db).await?;
+    let default_target_ids = probe_setting.default_target_ids.clone();
+
+    let ttl = body.ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
+    let server_id = Uuid::new_v4().to_string();
+    let now = Utc::now();
+    let user_id = current_user.user_id.clone();
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+
+    let tx_server_id = server_id.clone();
+    let tx_user_id = user_id.clone();
+    let tx_name = name.clone();
+    let tx_tags = normalized_tags.clone();
+    let tx_body = body.clone();
+
+    let (enrollment_model, plaintext_code) = state
+        .db
+        .transaction::<_, (agent_enrollment::Model, String), AppError>(move |tx| {
+            Box::pin(async move {
+                // 1. Insert the pending server row. token_hash = None marks
+                //    the row as "pending" until the agent enrolls.
+                server::ActiveModel {
+                    id: Set(tx_server_id.clone()),
+                    token_hash: Set(None),
+                    token_prefix: Set(None),
+                    name: Set(tx_name),
+                    cpu_name: Set(None),
+                    cpu_cores: Set(None),
+                    cpu_arch: Set(None),
+                    os: Set(None),
+                    kernel_version: Set(None),
+                    mem_total: Set(None),
+                    swap_total: Set(None),
+                    disk_total: Set(None),
+                    ipv4: Set(None),
+                    ipv6: Set(None),
+                    region: Set(None),
+                    country_code: Set(None),
+                    virtualization: Set(None),
+                    agent_version: Set(None),
+                    group_id: Set(tx_body.group_id.clone()),
+                    weight: Set(0),
+                    hidden: Set(false),
+                    remark: Set(tx_body.remark.clone()),
+                    public_remark: Set(tx_body.public_remark.clone()),
+                    price: Set(tx_body.price),
+                    billing_cycle: Set(tx_body.billing_cycle.clone()),
+                    currency: Set(tx_body.currency.clone()),
+                    expired_at: Set(tx_body.expired_at),
+                    traffic_limit: Set(tx_body.traffic_limit),
+                    traffic_limit_type: Set(tx_body.traffic_limit_type.clone()),
+                    billing_start_day: Set(tx_body.billing_start_day),
+                    capabilities: Set(CAP_DEFAULT as i32),
+                    protocol_version: Set(1),
+                    features: Set("[]".to_string()),
+                    last_remote_addr: Set(None),
+                    fingerprint: Set(None),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                }
+                .insert(tx)
+                .await?;
+
+                // 2. Persist operator-supplied tags.
+                for tag in &tx_tags {
+                    server_tag::ActiveModel {
+                        server_id: Set(tx_server_id.clone()),
+                        tag: Set(tag.clone()),
+                    }
+                    .insert(tx)
+                    .await?;
+                }
+
+                // 3. Apply default network probe targets inside the same tx
+                //    so a failure rolls back the server row too.
+                NetworkProbeService::apply_defaults_tx(
+                    tx,
+                    &tx_server_id,
+                    &default_target_ids,
+                )
+                .await?;
+
+                // 4. Mint the bound enrollment. The partial unique index
+                //    `idx_enrollments_active_per_server` makes this atomic
+                //    with the server insert: if two `POST /api/servers`
+                //    requests raced on the same id (impossible — UUID), the
+                //    second would also fail. With unique UUIDs the only way
+                //    this errors is downstream of bad input, in which case
+                //    we want the whole tx to roll back.
+                let (model, plaintext) = EnrollmentService::mint_for_server(
+                    tx,
+                    &tx_server_id,
+                    &tx_user_id,
+                    ttl,
+                )
+                .await?;
+
+                Ok((model, plaintext))
+            })
+        })
+        .await
+        .map_err(|e| match e {
+            sea_orm::TransactionError::Connection(db_err) => AppError::from(db_err),
+            sea_orm::TransactionError::Transaction(app_err) => app_err,
+        })?;
+
+    // Audit log AFTER commit so we don't log fictitious creations on rollback.
+    let _ = AuditService::log(
+        &state.db,
+        &user_id,
+        "server_created",
+        Some(&format!(
+            "server_id={server_id} enrollment={} prefix={}",
+            enrollment_model.id, enrollment_model.code_prefix
+        )),
+        &ip,
+    )
+    .await;
+
+    ok(CreateServerResponse {
+        server_id,
+        enrollment: EnrollmentIssueResponse {
+            id: enrollment_model.id,
+            code: plaintext_code,
+            code_prefix: enrollment_model.code_prefix,
+            expires_at: enrollment_model.expires_at.to_rfc3339(),
+        },
+    })
 }
 
 #[utoipa::path(
@@ -295,7 +629,8 @@ async fn get_server(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
     let server = ServerService::get_server(&state.db, &id).await?;
-    ok(build_server_response(server, &state.agent_manager))
+    let outstanding = fetch_outstanding_enrollment(&state.db, &id).await?;
+    ok(build_server_response(server, &state.agent_manager, outstanding))
 }
 
 #[utoipa::path(
@@ -455,7 +790,8 @@ async fn update_server(
         .await;
     }
 
-    ok(build_server_response(server, &state.agent_manager))
+    let outstanding = fetch_outstanding_enrollment(&state.db, &id).await?;
+    ok(build_server_response(server, &state.agent_manager, outstanding))
 }
 
 #[utoipa::path(
