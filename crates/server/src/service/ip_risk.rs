@@ -451,31 +451,6 @@ fn build_provider_client() -> reqwest::Client {
 
 pub fn provider_for_config(config: &IpQualityConfig) -> Option<Box<dyn IpRiskProvider>> {
     match config.risk_provider.as_str() {
-        "scamalytics" => config.scamalytics.as_ref().map(|k| {
-            Box::new(ScamalyticsProvider {
-                api_key: k.api_key.clone(),
-                endpoint: k.endpoint.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
-        "ipqs" => config.ipqs.as_ref().map(|k| {
-            Box::new(IpQualityScoreProvider {
-                api_key: k.api_key.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
-        "proxycheck" => config.proxycheck.as_ref().map(|k| {
-            Box::new(ProxyCheckProvider {
-                api_key: k.api_key.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
-        "abuseipdb" => config.abuseipdb.as_ref().map(|k| {
-            Box::new(AbuseIpdbProvider {
-                api_key: k.api_key.clone(),
-                client: build_provider_client(),
-            }) as Box<dyn IpRiskProvider>
-        }),
         "ip-api" => Some(Box::new(IpApiProvider {
             client: build_provider_client(),
         }) as Box<dyn IpRiskProvider>),
@@ -976,33 +951,30 @@ mod tests {
         let _: Option<Box<dyn IpRiskProvider>> = None;
     }
 
-    // provider_for_config returns None when risk_provider = "none"
+    // provider_for_config returns None when risk_provider is not "ip-api"
     #[test]
     fn provider_for_config_none() {
-        let cfg = IpQualityConfig::default();
+        let mut cfg = IpQualityConfig::default();
+        cfg.risk_provider = "none".to_string();
         assert!(provider_for_config(&cfg).is_none());
     }
 
-    // provider_for_config returns Some when a provider + key is configured
+    // provider_for_config returns Some(IpApiProvider) for "ip-api"
     #[test]
-    fn provider_for_config_scamalytics() {
+    fn provider_for_config_ip_api() {
         let cfg = IpQualityConfig {
-            risk_provider: "scamalytics".to_string(),
-            scamalytics: Some(crate::config::RiskProviderKey {
-                api_key: "test_key".to_string(),
-                endpoint: String::new(),
-            }),
+            risk_provider: "ip-api".to_string(),
             ..Default::default()
         };
         let provider = provider_for_config(&cfg);
         assert!(provider.is_some());
-        assert_eq!(provider.unwrap().name(), "scamalytics");
+        assert_eq!(provider.unwrap().name(), "ip-api");
     }
 
     #[tokio::test]
     async fn score_ip_no_provider_returns_geoip_baseline() {
         let (db, _tmp) = setup_test_db().await;
-        let cfg = IpQualityConfig::default(); // risk_provider = "none"
+        let cfg = IpQualityConfig::default(); // no live provider in tests
         let service = IpRiskService::new(cfg);
         let geoip: Arc<RwLock<Option<GeoIpService>>> = Arc::new(RwLock::new(None));
 
