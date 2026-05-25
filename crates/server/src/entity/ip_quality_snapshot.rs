@@ -20,6 +20,11 @@ pub struct Model {
     pub is_hosting: bool,
     pub risk_score: Option<i32>,
     pub risk_level: String,
+    pub is_tor: bool,
+    pub is_abuser: bool,
+    pub is_mobile: bool,
+    pub asn_abuser_score: Option<i32>,
+    pub abuse_email: Option<String>,
     #[schema(value_type = String, format = DateTime)]
     pub checked_at: DateTimeUtc,
 }
