@@ -52,6 +52,7 @@
   "users.title": "User Management",
   "users.count": "Users",
   "users.add": "Add User",
+  "users.add_description": "Create a new account with username, password, and role.",
   "users.username": "Username",
   "users.password_hint": "Password (min 6 chars)",
   "users.role_member": "Member",

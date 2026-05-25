@@ -52,6 +52,7 @@
   "users.title": "用户管理",
   "users.count": "用户",
   "users.add": "添加用户",
+  "users.add_description": "创建新账户，填写用户名、密码和角色。",
   "users.username": "用户名",
   "users.password_hint": "密码（最少 6 位）",
   "users.role_member": "普通成员",
