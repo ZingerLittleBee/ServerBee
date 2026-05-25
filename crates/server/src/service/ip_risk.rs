@@ -313,11 +313,11 @@ impl IpRiskService {
             is_hosting: row.is_hosting,
             risk_score: row.risk_score,
             risk_level: row.risk_level,
-            is_tor: false,
-            is_abuser: false,
-            is_mobile: false,
-            asn_abuser_score: None,
-            abuse_email: None,
+            is_tor: row.is_tor,
+            is_abuser: row.is_abuser,
+            is_mobile: row.is_mobile,
+            asn_abuser_score: row.asn_abuser_score,
+            abuse_email: row.abuse_email,
             checked_at: row.checked_at,
         })
     }
@@ -333,8 +333,9 @@ impl IpRiskService {
 
         let sql = "INSERT OR REPLACE INTO ip_risk_cache \
             (ip, asn, as_org, country, region, city, ip_type, is_proxy, is_vpn, is_hosting, \
-             risk_score, risk_level, providers, checked_at) \
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+             risk_score, risk_level, is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email, \
+             providers, checked_at) \
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         let opt_str = |s: &Option<String>| -> sea_orm::Value {
             match s {
@@ -366,6 +367,11 @@ impl IpRiskService {
                     sea_orm::Value::Int(Some(snapshot.is_hosting as i32)),
                     opt_int(snapshot.risk_score),
                     sea_orm::Value::String(Some(Box::new(snapshot.risk_level.clone()))),
+                    sea_orm::Value::Int(Some(snapshot.is_tor as i32)),
+                    sea_orm::Value::Int(Some(snapshot.is_abuser as i32)),
+                    sea_orm::Value::Int(Some(snapshot.is_mobile as i32)),
+                    opt_int(snapshot.asn_abuser_score),
+                    opt_str(&snapshot.abuse_email),
                     sea_orm::Value::String(Some(Box::new(providers_str))),
                     sea_orm::Value::String(Some(Box::new(snapshot.checked_at.to_rfc3339()))),
                 ],
@@ -934,8 +940,9 @@ mod tests {
     async fn insert_cache_row(db: &DatabaseConnection, ip: &str, checked_at: chrono::DateTime<Utc>) {
         let sql = "INSERT OR REPLACE INTO ip_risk_cache \
             (ip, asn, as_org, country, region, city, ip_type, is_proxy, is_vpn, is_hosting, \
-             risk_score, risk_level, providers, checked_at) \
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+             risk_score, risk_level, is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email, \
+             providers, checked_at) \
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         db.execute(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             sql,
@@ -952,6 +959,11 @@ mod tests {
                 0i32.into(),
                 sea_orm::Value::Int(None),
                 "unknown".into(),
+                0i32.into(),
+                0i32.into(),
+                0i32.into(),
+                sea_orm::Value::Int(None),
+                sea_orm::Value::String(None),
                 "{}".into(),
                 checked_at.to_rfc3339().into(),
             ],

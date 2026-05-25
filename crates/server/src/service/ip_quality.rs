@@ -1306,6 +1306,11 @@ mod tests {
             is_hosting: Set(false),
             risk_score: Set(None),
             risk_level: Set("unknown".to_string()),
+            is_tor: Set(false),
+            is_abuser: Set(false),
+            is_mobile: Set(false),
+            asn_abuser_score: Set(None),
+            abuse_email: Set(None),
             checked_at: Set(now),
         };
         snap.insert(&db).await.unwrap();
