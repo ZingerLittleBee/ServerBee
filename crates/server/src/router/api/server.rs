@@ -183,6 +183,21 @@ pub struct CreateServerResponse {
     pub enrollment: EnrollmentIssueResponse,
 }
 
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct RecoverRequest {
+    /// If `true`, clear the server's `token_hash`/`token_prefix` and kick the
+    /// currently connected agent WebSocket as part of the same transaction.
+    /// Use this when the operator suspects the existing agent token has been
+    /// compromised. If `false`, the existing token remains valid and only a
+    /// new bound enrollment is minted alongside it.
+    pub revoke_immediately: bool,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct RecoverResponse {
+    pub enrollment: EnrollmentIssueResponse,
+}
+
 fn runtime_capability_fields(
     agent_manager: &AgentManager,
     server_id: &str,
@@ -393,6 +408,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
             put(batch_update_capabilities),
         )
         .route("/servers/{id}/upgrade", post(trigger_upgrade))
+        .route("/servers/{id}/recover", post(recover_server))
         .route(
             "/servers/{id}/network-probes/targets",
             put(set_server_network_targets),
@@ -604,6 +620,147 @@ async fn create_server(
 
     ok(CreateServerResponse {
         server_id,
+        enrollment: EnrollmentIssueResponse {
+            id: enrollment_model.id,
+            code: plaintext_code,
+            code_prefix: enrollment_model.code_prefix,
+            expires_at: enrollment_model.expires_at.to_rfc3339(),
+        },
+    })
+}
+
+/// Mint a fresh bound enrollment for an already-enrolled server so the operator
+/// can reinstall the agent. The target server MUST already have a token
+/// (`token_hash IS NOT NULL`) — recover on a pending server is rejected with
+/// `400`, use `regenerate-code` for that path.
+///
+/// Recover NEVER auto-supersedes an outstanding enrollment: if one is still
+/// active, this returns `409` and the operator is expected to either wait for
+/// it to expire or revoke it first. Only `regenerate-code` auto-supersedes.
+///
+/// `revoke_immediately`:
+/// - `true` — clear `token_hash`/`token_prefix` inside the same transaction
+///   and kick the currently connected agent WS after commit. The server
+///   returns to pending until the new code is consumed.
+/// - `false` — the existing token stays valid; the new code only becomes
+///   active once the agent registers with it (`verify_and_consume_tx` then
+///   rotates the token via `mint_token_for_server`).
+#[utoipa::path(
+    post,
+    path = "/api/servers/{id}/recover",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    request_body = RecoverRequest,
+    responses(
+        (status = 200, description = "Recover enrollment minted", body = RecoverResponse),
+        (status = 400, description = "Server is pending (use regenerate-code instead)"),
+        (status = 404, description = "Server not found"),
+        (status = 409, description = "Outstanding enrollment exists; revoke it first"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn recover_server(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(body): Json<RecoverRequest>,
+) -> Result<Json<ApiResponse<RecoverResponse>>, AppError> {
+    let user_id = current_user.user_id.clone();
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+
+    let tx_id = id.clone();
+    let tx_user_id = user_id.clone();
+    let revoke = body.revoke_immediately;
+
+    let (enrollment_model, plaintext_code, kicked) = state
+        .db
+        .transaction::<_, (agent_enrollment::Model, String, bool), AppError>(move |tx| {
+            Box::pin(async move {
+                // 1. Load the server row; 404 if it doesn't exist.
+                let row = server::Entity::find_by_id(&tx_id)
+                    .one(tx)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("server not found".into()))?;
+
+                // 2. Recover is only for already-enrolled servers. A pending
+                //    server (token_hash IS NULL) should use regenerate-code.
+                if row.token_hash.is_none() {
+                    return Err(AppError::BadRequest(
+                        "server is pending; use regenerate-code instead".into(),
+                    ));
+                }
+
+                // 3. Recover NEVER auto-supersedes an outstanding enrollment.
+                //    The partial unique index `idx_enrollments_active_per_server`
+                //    would also reject the mint below, but checking first lets
+                //    us return a precise 409 instead of a generic constraint
+                //    error.
+                let outstanding = agent_enrollment::Entity::find()
+                    .filter(agent_enrollment::Column::TargetServerId.eq(&tx_id))
+                    .filter(agent_enrollment::Column::ConsumedAt.is_null())
+                    .filter(agent_enrollment::Column::RevokedAt.is_null())
+                    .one(tx)
+                    .await?;
+                if outstanding.is_some() {
+                    return Err(AppError::Conflict(
+                        "an outstanding enrollment exists; revoke it before recovering".into(),
+                    ));
+                }
+
+                // 4. Optionally clear the server token inside the same tx.
+                let kicked = if revoke {
+                    let mut active: server::ActiveModel = row.into();
+                    active.token_hash = Set(None);
+                    active.token_prefix = Set(None);
+                    active.updated_at = Set(Utc::now());
+                    active.update(tx).await?;
+                    true
+                } else {
+                    false
+                };
+
+                // 5. Mint the new bound enrollment.
+                let (model, plaintext) =
+                    EnrollmentService::mint_for_server(tx, &tx_id, &tx_user_id, DEFAULT_TTL_SECS)
+                        .await?;
+
+                Ok((model, plaintext, kicked))
+            })
+        })
+        .await
+        .map_err(|e| match e {
+            sea_orm::TransactionError::Connection(db_err) => AppError::from(db_err),
+            sea_orm::TransactionError::Transaction(app_err) => app_err,
+        })?;
+
+    // Post-commit side effects.
+    if kicked {
+        // Drop the agent WS connection; the agent will reconnect, see its
+        // token has been cleared, and exit/back off. Operator then runs the
+        // install command with the new code.
+        state.agent_manager.remove_connection(&id);
+    }
+
+    let _ = AuditService::log(
+        &state.db,
+        &user_id,
+        "server_recover",
+        Some(&format!(
+            "server_id={id} enrollment={} prefix={} revoke_immediately={}",
+            enrollment_model.id, enrollment_model.code_prefix, kicked
+        )),
+        &ip,
+    )
+    .await;
+
+    ok(RecoverResponse {
         enrollment: EnrollmentIssueResponse {
             id: enrollment_model.id,
             code: plaintext_code,

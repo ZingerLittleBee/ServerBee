@@ -654,3 +654,219 @@ async fn agent_register_with_invalid_fingerprint_format_returns_400() {
         "outstanding enrollment should still be the original one",
     );
 }
+
+/// Helper: enroll a pending server so it becomes online (has_token=true,
+/// no outstanding enrollment). Returns the agent token returned by register.
+async fn enroll_pending_server(base_url: &str, code: &str) -> String {
+    let anon = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("anon client");
+    let resp = anon
+        .post(format!("{}/api/agent/register", base_url))
+        .bearer_auth(code)
+        .json(&json!({"fingerprint": ""}))
+        .send()
+        .await
+        .expect("register request failed");
+    assert_eq!(resp.status(), 200, "register should succeed");
+    let body: Value = resp.json().await.expect("parse register response");
+    body["data"]["token"]
+        .as_str()
+        .expect("register response missing token")
+        .to_string()
+}
+
+#[tokio::test]
+async fn recover_with_revoke_immediately_clears_token() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-recover-revoke").await;
+    let _token = enroll_pending_server(&base_url, &code).await;
+
+    // Sanity: server has token now.
+    let pre: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("pre get failed")
+        .json()
+        .await
+        .expect("parse pre get");
+    assert_eq!(
+        pre["data"]["has_token"], true,
+        "server should have token after registration"
+    );
+    assert!(
+        pre["data"]["outstanding_enrollment"].is_null(),
+        "no outstanding enrollment after consume"
+    );
+
+    // POST recover with revoke_immediately=true.
+    let resp = client
+        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
+        .json(&json!({"revoke_immediately": true}))
+        .send()
+        .await
+        .expect("recover request failed");
+    assert_eq!(resp.status(), 200, "recover should succeed");
+    let body: Value = resp.json().await.expect("parse recover response");
+    let enrollment = &body["data"]["enrollment"];
+    let new_id = enrollment["id"]
+        .as_str()
+        .expect("enrollment.id must be string");
+    let new_code = enrollment["code"]
+        .as_str()
+        .expect("enrollment.code must be string");
+    let new_prefix = enrollment["code_prefix"]
+        .as_str()
+        .expect("enrollment.code_prefix must be string");
+    assert!(new_code.len() >= 16);
+    assert_eq!(&new_code[..8], new_prefix);
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(
+            enrollment["expires_at"]
+                .as_str()
+                .expect("expires_at string")
+        )
+        .is_ok()
+    );
+
+    // Server is now pending again (has_token=false), and the new enrollment is outstanding.
+    let post: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("post get failed")
+        .json()
+        .await
+        .expect("parse post get");
+    assert_eq!(
+        post["data"]["has_token"], false,
+        "revoke_immediately=true must clear token"
+    );
+    let outstanding = &post["data"]["outstanding_enrollment"];
+    assert!(
+        outstanding.is_object(),
+        "outstanding_enrollment must be set after recover"
+    );
+    assert_eq!(outstanding["id"].as_str().unwrap(), new_id);
+    assert_eq!(outstanding["code_prefix"].as_str().unwrap(), new_prefix);
+}
+
+#[tokio::test]
+async fn recover_on_pending_server_returns_400() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, _code) =
+        create_pending_server(&client, &base_url, "vps-recover-pending").await;
+
+    let resp = client
+        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
+        .json(&json!({"revoke_immediately": false}))
+        .send()
+        .await
+        .expect("recover request failed");
+    assert_eq!(
+        resp.status(),
+        400,
+        "recover on pending server must return 400"
+    );
+}
+
+#[tokio::test]
+async fn recover_with_outstanding_enrollment_returns_409() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-recover-409").await;
+    let _token = enroll_pending_server(&base_url, &code).await;
+
+    // First recover: succeeds, mints a new enrollment without revoking the token.
+    let resp1 = client
+        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
+        .json(&json!({"revoke_immediately": false}))
+        .send()
+        .await
+        .expect("recover #1 request failed");
+    assert_eq!(resp1.status(), 200, "first recover should succeed");
+
+    // Second recover: must return 409 (recover never auto-supersedes).
+    let resp2 = client
+        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
+        .json(&json!({"revoke_immediately": false}))
+        .send()
+        .await
+        .expect("recover #2 request failed");
+    assert_eq!(
+        resp2.status(),
+        409,
+        "second recover must return 409 when an outstanding enrollment exists"
+    );
+}
+
+#[tokio::test]
+async fn recover_without_revoke_immediately_keeps_token() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-recover-keep").await;
+    let _token = enroll_pending_server(&base_url, &code).await;
+
+    let resp = client
+        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
+        .json(&json!({"revoke_immediately": false}))
+        .send()
+        .await
+        .expect("recover request failed");
+    assert_eq!(resp.status(), 200, "recover should succeed");
+
+    // Token stays (has_token=true), outstanding enrollment is set.
+    let get_resp: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("get server failed")
+        .json()
+        .await
+        .expect("parse get server");
+    assert_eq!(
+        get_resp["data"]["has_token"], true,
+        "revoke_immediately=false must NOT clear token"
+    );
+    assert!(
+        get_resp["data"]["outstanding_enrollment"].is_object(),
+        "outstanding_enrollment must be set after recover"
+    );
+}
+
+#[tokio::test]
+async fn recover_on_unknown_server_returns_404() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let resp = client
+        .post(format!(
+            "{}/api/servers/{}/recover",
+            base_url, "non-existent-id"
+        ))
+        .json(&json!({"revoke_immediately": false}))
+        .send()
+        .await
+        .expect("recover request failed");
+    assert_eq!(
+        resp.status(),
+        404,
+        "recover on unknown server must return 404"
+    );
+}
