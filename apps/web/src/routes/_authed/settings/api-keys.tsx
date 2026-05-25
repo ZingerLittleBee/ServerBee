@@ -88,11 +88,11 @@ function ApiKeysPage() {
   return (
     <div>
       <div className="max-w-2xl space-y-6">
-        <div className="rounded-lg border bg-card p-6">
-          <h2 className="mb-4 font-semibold text-lg">{t('api_keys.create_new')}</h2>
+        <div className="space-y-3">
+          <h2 className="font-semibold text-lg">{t('api_keys.create_new')}</h2>
 
           {createdKey && (
-            <div className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
               <p className="mb-1 font-medium text-sm">{t('api_keys.new_key_warning')}</p>
               <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-sm">{createdKey}</code>
             </div>
@@ -117,26 +117,24 @@ function ApiKeysPage() {
           </form>
         </div>
 
-        <div className="rounded-lg border bg-card">
-          <div className="border-b px-6 py-4">
-            <h2 className="font-semibold text-lg">{t('api_keys.active_keys')}</h2>
-          </div>
+        <div className="space-y-3">
+          <h2 className="font-semibold text-lg">{t('api_keys.active_keys')}</h2>
 
           {isLoading && (
-            <div className="space-y-3 p-6">
+            <div className="space-y-2">
               {Array.from({ length: 3 }, (_, i) => (
                 <Skeleton className="h-12" key={`skeleton-${i.toString()}`} />
               ))}
             </div>
           )}
           {!isLoading && (!keys || keys.length === 0) && (
-            <div className="p-6 text-center text-muted-foreground text-sm">{t('api_keys.no_keys')}</div>
+            <p className="text-center text-muted-foreground text-sm">{t('api_keys.no_keys')}</p>
           )}
           {!isLoading && keys && keys.length > 0 && (
-            <div className="divide-y">
+            <div className="divide-y rounded-md border">
               {keys.map((apiKey) => (
                 <div
-                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"
+                  className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                   key={apiKey.id}
                 >
                   <div className="min-w-0">
