@@ -53,6 +53,21 @@ fn map_rejection(rej: MultipartRejection) -> AppError {
     SpaThemeError::InvalidMultipart(rej.to_string()).into()
 }
 
+/// Map an error returned by `field.bytes()` / `mp.next_field()` in the upload
+/// handler. When the body limit is exceeded during lazy field reads (the common
+/// path for oversize uploads), `axum::extract::multipart::MultipartError` has
+/// status 413 — propagate that as `UploadTooLarge` so the client gets our JSON
+/// error contract instead of a generic 400.
+fn map_field_error(e: axum::extract::multipart::MultipartError) -> AppError {
+    if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        return SpaThemeError::UploadTooLarge {
+            limit_bytes: UPLOAD_LIMIT_BYTES,
+        }
+        .into();
+    }
+    SpaThemeError::InvalidMultipart(e.to_string()).into()
+}
+
 // ---------------------------------------------------------------------------
 // Router + handlers
 // ---------------------------------------------------------------------------
@@ -307,19 +322,9 @@ pub async fn upload(
     SpaThemeUpload(mut mp): SpaThemeUpload,
 ) -> Result<Json<ApiResponse<UploadResult>>, AppError> {
     let mut package_bytes: Option<Vec<u8>> = None;
-    while let Some(field) = mp
-        .next_field()
-        .await
-        .map_err(|e| AppError::from(SpaThemeError::InvalidMultipart(e.to_string())))?
-    {
+    while let Some(field) = mp.next_field().await.map_err(map_field_error)? {
         if field.name() == Some("package") {
-            package_bytes = Some(
-                field
-                    .bytes()
-                    .await
-                    .map_err(|e| AppError::from(SpaThemeError::InvalidMultipart(e.to_string())))?
-                    .to_vec(),
-            );
+            package_bytes = Some(field.bytes().await.map_err(map_field_error)?.to_vec());
             break;
         }
     }
