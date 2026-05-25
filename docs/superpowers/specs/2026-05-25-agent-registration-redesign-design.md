@@ -1,6 +1,6 @@
 # Agent Registration Redesign
 
-**Status:** Draft (rev 2)
+**Status:** Draft (rev 4)
 **Author:** ZingerLittleBee
 **Date:** 2026-05-25
 
@@ -63,7 +63,7 @@ usable      = outstanding AND expires_at > now()
               (an agent could currently redeem it)
 ```
 
-The partial unique index covers `outstanding` (predicate must be deterministic, so no time clause). An expired-but-not-revoked row is still *outstanding* and still occupies the slot until something revokes it (delete endpoint, or regenerate / recover atomically supersedes it).
+The partial unique index covers `outstanding` (predicate must be deterministic, so no time clause). An expired-but-not-revoked row is still *outstanding* and still occupies the slot until something revokes it (the delete endpoint, or *regenerate-code* atomically superseding it). *Recover* never supersedes; it returns `409` when an outstanding row is present.
 
 ```sql
 CREATE UNIQUE INDEX idx_enrollments_active_per_server
@@ -100,7 +100,7 @@ This makes the partial unique index hold for both regenerate-after-expiry and re
 The Recover dialog has a `Revoke existing token immediately` checkbox (default checked).
 
 - **Checked**: Within the same transaction that mints the enrollment, `servers.token_hash` and `token_prefix` are set to `NULL`. After commit, `agent_manager.remove_connection(server_id)` is called. The old agent is kicked and cannot reconnect (any attempt fails `Unauthorized`). Server enters `pending` until the new agent's register call sets a fresh token.
-- **Unchecked**: Only the enrollment is created. The old token stays valid and the old agent stays online. When a new agent calls `/api/agent/register` with the new code, the register handler (transactionally) overwrites `token_hash`/`token_prefix`; the WebSocket layer's existing `server_lifecycle_locks` displaces the old connection on its next message attempt.
+- **Unchecked**: Only the enrollment is created. The old token stays valid and the old agent stays online. When a new agent calls `POST /api/agent/register` with the new code, the register handler (transactionally) overwrites `token_hash`/`token_prefix` — but does **not** close the old WS. The displacement happens later, when the new agent opens its WebSocket to `/agent/ws` and `AgentManager::add_connection` (`crates/server/src/service/agent_manager.rs:142`, see also `crates/server/src/router/ws/agent.rs:356`) overwrites the current connection slot for that `server_id` via `server_lifecycle_locks`. There is therefore a brief window — from "register call returns 200" until "new WS connects" — during which the old socket is still authoritative and can keep writing metrics. The window closes deterministically: the new agent's reporter opens its WS within seconds of `register` returning. Recording this explicitly so future maintenance does not mistake it for a leak or assume the register handler force-closes the old socket.
 
 ## Components
 
@@ -184,12 +184,12 @@ Code that previously consumed `token_hash: String` must be updated:
 
 | Endpoint | Change |
 |---|---|
-| `POST /api/agent/register` | No longer creates `servers` rows. Validates enrollment → reads `target_server_id` → sets that row's `token_hash` / `token_prefix` / `last_remote_addr` / `fingerprint` → returns. All steps run inside a single sea-orm `TransactionTrait::transaction` so a failure to update the server rolls back the enrollment consume. Fingerprint is recorded for informational use only. |
-| `POST /api/servers` *(new)* | Admin-only. In one transaction: insert pending server (token_hash NULL), insert server_tag rows for chosen tags, insert default network probe targets (existing `NetworkProbeService::apply_defaults` logic moves here), insert bound enrollment. `max_servers` cap check is the first thing in the handler, before opening the transaction. Response: `{ server_id, enrollment: { code, code_prefix, expires_at } }`. |
+| `POST /api/agent/register` | No longer creates `servers` rows. Calls `EnrollmentService::verify_and_consume_tx(tx, bearer)` whose contract is **explicitly** `consumed_at IS NULL AND revoked_at IS NULL AND expires_at > now()` (i.e. usable). A revoked-but-not-consumed code returns 401 here just like an expired one. Reads `target_server_id` from the returned row → sets that server's `token_hash` / `token_prefix` / `last_remote_addr` / `fingerprint`. All steps run inside a single sea-orm `TransactionTrait::transaction` so a failure to update the server rolls back the enrollment consume. Fingerprint is recorded for informational use only. |
+| `POST /api/servers` *(new)* | Admin-only. `max_servers` cap is **soft**: a non-locking `COUNT(*) ≥ cap` check runs before the transaction; two concurrent requests can both pass the count and exceed the cap by 1–2 rows. This matches today's behavior in the existing register handler and is acceptable for the operator-driven path. In one transaction: insert pending server (token_hash NULL), insert server_tag rows for chosen tags, insert default network probe targets (existing `NetworkProbeService::apply_defaults` logic moves here), insert bound enrollment. Response: `{ server_id, enrollment: { id, code, code_prefix, expires_at } }`. The enrollment `id` is included so the frontend can pass it as `expected_enrollment_id` to later regenerate calls and as the resource id for DELETE. |
 | `POST /api/servers/{id}/recover` *(new)* | Admin-only. Body: `{ revoke_immediately: bool }`. Rejects with `400` if the server is `pending`; rejects with `409` if an outstanding enrollment already exists for this server (operator must explicitly revoke it first — recover never silently supersedes). In one transaction: if `revoke_immediately`, NULL out token columns; insert new bound enrollment. After commit: if `revoke_immediately`, call `agent_manager.remove_connection(id)`. Response: `{ enrollment: { id, code, code_prefix, expires_at } }`. |
-| `POST /api/servers/{id}/regenerate-code` *(new)* | Admin-only. Used on a `pending` server. Optional body: `{ expected_enrollment_id?: string }`. If provided and does not match the current outstanding enrollment's id, returns `409`. In one transaction: revoke any outstanding enrollment (sets `revoked_at`), insert new bound enrollment. Server stays pending. Response: `{ enrollment: { id, code, code_prefix, expires_at } }`. This is the only path that auto-supersedes; *recover* does not, by design. |
+| `POST /api/servers/{id}/regenerate-code` *(new)* | Admin-only. Used on a `pending` server. Optional body: `{ expected_enrollment_id?: string }`. If provided and does not match the current outstanding enrollment's id (including the case where the operator's stale view expected a row but none exists now), returns `409`. In one transaction: revoke any outstanding enrollment (sets `revoked_at`), insert new bound enrollment. Server stays pending. Response: `{ enrollment: { id, code, code_prefix, expires_at } }`. This is the only path that auto-supersedes; *recover* does not, by design. |
 | `POST /api/agent/enrollments` | **Removed.** |
-| `GET /api/agent/enrollments` | Kept; returns `target_server_id`, `code_prefix`, `expires_at`, `consumed_at`, `revoked_at`. Used by the UI to render per-server enrollment state. Plaintext code is never returned. |
+| `GET /api/agent/enrollments` | Kept; returns `{ id, target_server_id, code_prefix, expires_at, consumed_at, revoked_at, created_at }`. `id` is required by the UI for `DELETE /api/agent/enrollments/{id}` and for `expected_enrollment_id` on regenerate calls. Plaintext code is never returned. |
 | `DELETE /api/agent/enrollments/{id}` | Kept. Marks the enrollment `revoked_at = now()`. **Does not delete the server**, even if the server is pending. |
 | `DELETE /api/servers/{id}` | Behavior extended (bundled with this redesign): after the cascading row delete, call `agent_manager.remove_connection(id)` to drop any live WS connection. Today's handler at `crates/server/src/router/api/server.rs:472` / `crates/server/src/service/server.rs:256` does not do this, which leaves the agent looping on reconnect. The cascade through `agent_enrollments` (via FK) is automatic. This is the only path that removes a server row. |
 | `POST /api/agent/{id}/rotate-token` | Kept, but adds a guard: returns `400 BadRequest` if `token_hash IS NULL` (the server is pending; rotation is meaningless without a current token). For non-pending servers, behavior is unchanged. |
@@ -230,7 +230,12 @@ async fn register(state, addr, headers, body) -> RegisterResponse {
     if let Some(ref fp) = body_fp { validate_fingerprint_format(fp)?; }
 
     let (server_id, plaintext_token) = state.db.transaction(|tx| async move {
-        // verify_and_consume sets enrollment.consumed_at INSIDE this tx
+        // verify_and_consume_tx contract:
+        //   - Argon2-verifies bearer against rows where code_prefix = bearer[..8]
+        //   - Only accepts rows where consumed_at IS NULL AND revoked_at IS NULL
+        //                            AND expires_at > now()
+        //   - On match: sets consumed_at = now() in the same tx; returns the row
+        //   - On no match (wrong/expired/revoked/already-consumed code): returns None
         let enrollment = EnrollmentService::verify_and_consume_tx(tx, &bearer).await?
             .ok_or(AppError::Unauthorized)?;
 
@@ -396,7 +401,7 @@ Operator           Server                                   DB
 | Race: two operators click Regenerate simultaneously without `expected_enrollment_id` | Last-writer-wins. Both transactions serialize on the row's locks: A revokes the outstanding row + inserts its new code; B then revokes A's just-inserted code + inserts its own. Operator A's plaintext is silently invalidated. To avoid this, the UI always submits `expected_enrollment_id` set to whatever outstanding row id it observed when the dialog opened (or `null` for "no outstanding"); a mismatch returns `409` so the operator can reload and re-decide. |
 | Race: Recover called twice on the same server | The first call inserts the outstanding row; the second sees it and returns `409` (per the recover-never-supersedes rule). No retry. |
 | Operator deletes a pending server | `DELETE /api/servers/{id}` cascade-removes enrollments. No live connection to clean up. |
-| Operator deletes an online/offline server | `DELETE /api/servers/{id}` is extended in this redesign (see API table) to call `agent_manager.remove_connection(id)` after the cascading row delete. Today's handler does **not** close the WS — this is a deliberate fix bundled with the redesign so the deleted server's agent stops auto-reconnecting and triggering register-failure noise. |
+| Operator deletes an online/offline server | `DELETE /api/servers/{id}` is extended in this redesign (see API table) to call `agent_manager.remove_connection(id)` after the cascading row delete. Today's handler does **not** close the WS — this is a deliberate fix bundled with the redesign so the stale server-side connection is dropped immediately. The agent process itself keeps running its reconnect loop with the cached token (`crates/agent/src/reporter.rs:75`, `:1414`); subsequent reconnect attempts will fail with `Unauthorized` (the `servers` row is gone), and the agent's existing re-enrollment retry path is no help (the original enrollment code is consumed or also gone). Operator must stop the agent process on the VPS separately if they want the noise to cease. |
 | Agent reaches register with valid code but bound server was deleted | Cascade prevents this in practice. If it does occur (race), respond `500 Internal`. |
 | `max_servers` cap reached | `POST /api/servers` returns `400 BadRequest` before opening the transaction. |
 | Two operators race on Add Server | Each transaction inserts its own server row; no conflict. |
@@ -418,7 +423,9 @@ Operator           Server                                   DB
 ### Unit / integration tests added
 
 - `POST /api/servers` creates server + tags + probe targets + enrollment in a single transaction; rolls back fully if any step fails.
-- `POST /api/servers` respects `max_servers`.
+- `POST /api/servers` respects `max_servers` as a soft cap: a single request beyond the cap is rejected; the test does not attempt to prove the cap is race-proof under concurrent inserts (it isn't, by design).
+- `EnrollmentService::verify_and_consume_tx` rejects a revoked-but-not-consumed code with `None` (caller returns 401). Test must assert the server's token columns are NOT mutated when a revoked code is replayed.
+- `EnrollmentService::verify_and_consume_tx` rejects an expired code with `None`.
 - `POST /api/agent/register` with a bound enrollment updates the bound server's token columns and does **not** create a new server row.
 - `POST /api/agent/register` ignores the `fingerprint` field for lookup (records but does not dedup).
 - `POST /api/agent/register` rolls back enrollment consume if the server update fails (simulate by deleting the server row mid-transaction via a test hook, or by injecting a DB error).
