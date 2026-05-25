@@ -1,6 +1,7 @@
 {
   "page": {
-    "title": "Service Monitors"
+    "title": "Service Monitors",
+    "description": "Track SSL certificates, DNS, HTTP, TCP, and WHOIS status; alert on expiry or failure."
   },
   "empty": {
     "noMonitors": "No service monitors configured yet.",

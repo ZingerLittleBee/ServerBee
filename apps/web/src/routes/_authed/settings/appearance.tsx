@@ -481,11 +481,8 @@ function BrandSettingsSection() {
 }
 
 function AppearancePage() {
-  const { t } = useTranslation('settings')
-
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('appearance.title')}</h1>
       <LegacyMigrationPrompt />
       <div className="max-w-3xl space-y-6">
         <ThemeGrid />

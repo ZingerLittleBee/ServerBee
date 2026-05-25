@@ -1,6 +1,7 @@
 {
   "page": {
-    "title": "服务监控"
+    "title": "服务监控",
+    "description": "监控 SSL 证书、DNS、HTTP、TCP 与域名注册状态，到期或异常时触发告警。"
   },
   "empty": {
     "noMonitors": "暂无服务监控配置。",

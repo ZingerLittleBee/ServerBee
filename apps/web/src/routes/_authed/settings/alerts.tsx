@@ -266,474 +266,464 @@ function AlertsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('alerts.title')}</h1>
-
       <div className="max-w-4xl space-y-6">
-        <div className="rounded-lg border bg-card p-6">
-          <SecurityAlertPresets />
+        <SecurityAlertPresets />
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="font-semibold text-lg">{t('alerts.rules')}</h2>
+          <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
+            <Plus className="size-4" />
+            {t('common:add')}
+          </Button>
         </div>
 
-        <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="font-semibold text-lg">{t('alerts.rules')}</h2>
-            <Button onClick={() => setShowForm(!showForm)} size="sm" variant="outline">
-              <Plus className="size-4" />
-              {t('common:add')}
-            </Button>
-          </div>
+        {showForm && (
+          <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
+            <Input
+              aria-label={t('alerts.rule_name')}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('alerts.rule_name')}
+              required
+              type="text"
+              value={name}
+            />
 
-          {showForm && (
-            <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
-              <Input
-                aria-label={t('alerts.rule_name')}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('alerts.rule_name')}
-                required
-                type="text"
-                value={name}
-              />
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Select
+                items={{ always: t('alerts.trigger_always'), once: t('alerts.trigger_once') }}
+                onValueChange={(v) => v !== null && setTriggerMode(v)}
+                value={triggerMode}
+              >
+                <SelectTrigger aria-label={t('alerts.trigger_always')} className="h-9 w-full flex-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="always">{t('alerts.trigger_always')}</SelectItem>
+                  <SelectItem value="once">{t('alerts.trigger_once')}</SelectItem>
+                </SelectContent>
+              </Select>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <Select
+                items={[
+                  { value: '', label: t('alerts.no_notification') },
+                  ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
+                ]}
+                onValueChange={(v) => setGroupId(v ?? '')}
+                value={groupId}
+              >
+                <SelectTrigger aria-label={t('alerts.no_notification')} className="h-9 w-full flex-1">
+                  <SelectValue placeholder={t('alerts.no_notification')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">{t('alerts.no_notification')}</SelectItem>
+                  {groups?.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <span className="font-medium text-sm">{t('alerts.coverage')}</span>
+              <div className="flex gap-3">
                 <Select
-                  items={{ always: t('alerts.trigger_always'), once: t('alerts.trigger_once') }}
-                  onValueChange={(v) => v !== null && setTriggerMode(v)}
-                  value={triggerMode}
+                  items={{
+                    all: t('alerts.all_servers'),
+                    include: t('alerts.include_servers'),
+                    exclude: t('alerts.exclude_servers')
+                  }}
+                  onValueChange={(val) => {
+                    if (val === null) {
+                      return
+                    }
+                    const v = val as 'all' | 'exclude' | 'include'
+                    setCoverType(v)
+                    if (v === 'all') {
+                      setServerIds([])
+                    }
+                  }}
+                  value={coverType}
                 >
-                  <SelectTrigger aria-label={t('alerts.trigger_always')} className="h-9 w-full flex-1">
+                  <SelectTrigger aria-label={t('alerts.coverage')} className="h-9 w-full flex-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="always">{t('alerts.trigger_always')}</SelectItem>
-                    <SelectItem value="once">{t('alerts.trigger_once')}</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  items={[
-                    { value: '', label: t('alerts.no_notification') },
-                    ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
-                  ]}
-                  onValueChange={(v) => setGroupId(v ?? '')}
-                  value={groupId}
-                >
-                  <SelectTrigger aria-label={t('alerts.no_notification')} className="h-9 w-full flex-1">
-                    <SelectValue placeholder={t('alerts.no_notification')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">{t('alerts.no_notification')}</SelectItem>
-                    {groups?.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="all">{t('alerts.all_servers')}</SelectItem>
+                    <SelectItem value="include">{t('alerts.include_servers')}</SelectItem>
+                    <SelectItem value="exclude">{t('alerts.exclude_servers')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {(coverType === 'include' || coverType === 'exclude') && (
+                <div className="flex flex-wrap gap-2 rounded-md border p-2">
+                  {servers && servers.length > 0 ? (
+                    servers.map((s) => (
+                      // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                      <label className="flex items-center gap-1.5 text-sm" key={s.id}>
+                        <Checkbox
+                          checked={serverIds.includes(s.id)}
+                          onCheckedChange={(checked) => {
+                            setServerIds((prev) => (checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))
+                          }}
+                        />
+                        {s.name}
+                      </label>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground text-xs">{t('alerts.no_servers')}</span>
+                  )}
+                </div>
+              )}
+            </div>
 
-              <div className="space-y-2">
-                <span className="font-medium text-sm">{t('alerts.coverage')}</span>
-                <div className="flex gap-3">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-sm">{t('alerts.conditions')}</span>
+                <Button onClick={addRuleItem} size="sm" type="button" variant="ghost">
+                  <Plus className="size-3" />
+                  {t('alerts.add_condition')}
+                </Button>
+              </div>
+              {ruleItems.map((item, index) => (
+                <div className="flex gap-2" key={`rule-${index.toString()}`}>
                   <Select
-                    items={{
-                      all: t('alerts.all_servers'),
-                      include: t('alerts.include_servers'),
-                      exclude: t('alerts.exclude_servers')
-                    }}
-                    onValueChange={(val) => {
-                      if (val === null) {
-                        return
-                      }
-                      const v = val as 'all' | 'exclude' | 'include'
-                      setCoverType(v)
-                      if (v === 'all') {
-                        setServerIds([])
-                      }
-                    }}
-                    value={coverType}
+                    items={ruleTypes}
+                    onValueChange={(val) => val !== null && updateRuleItem(index, 'rule_type', val)}
+                    value={item.rule_type}
                   >
-                    <SelectTrigger aria-label={t('alerts.coverage')} className="h-9 w-full flex-1">
+                    <SelectTrigger aria-label={t('alerts.conditions')} className="h-9 w-full flex-1">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">{t('alerts.all_servers')}</SelectItem>
-                      <SelectItem value="include">{t('alerts.include_servers')}</SelectItem>
-                      <SelectItem value="exclude">{t('alerts.exclude_servers')}</SelectItem>
+                      {ruleTypes.map((rt) => (
+                        <SelectItem key={rt.value} value={rt.value}>
+                          {rt.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                </div>
-                {(coverType === 'include' || coverType === 'exclude') && (
-                  <div className="flex flex-wrap gap-2 rounded-md border p-2">
-                    {servers && servers.length > 0 ? (
-                      servers.map((s) => (
-                        // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                        <label className="flex items-center gap-1.5 text-sm" key={s.id}>
-                          <Checkbox
-                            checked={serverIds.includes(s.id)}
-                            onCheckedChange={(checked) => {
-                              setServerIds((prev) => (checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))
-                            }}
-                          />
-                          {s.name}
-                        </label>
-                      ))
-                    ) : (
-                      <span className="text-muted-foreground text-xs">{t('alerts.no_servers')}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-sm">{t('alerts.conditions')}</span>
-                  <Button onClick={addRuleItem} size="sm" type="button" variant="ghost">
-                    <Plus className="size-3" />
-                    {t('alerts.add_condition')}
-                  </Button>
-                </div>
-                {ruleItems.map((item, index) => (
-                  <div className="flex gap-2" key={`rule-${index.toString()}`}>
-                    <Select
-                      items={ruleTypes}
-                      onValueChange={(val) => val !== null && updateRuleItem(index, 'rule_type', val)}
-                      value={item.rule_type}
-                    >
-                      <SelectTrigger aria-label={t('alerts.conditions')} className="h-9 w-full flex-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ruleTypes.map((rt) => (
-                          <SelectItem key={rt.value} value={rt.value}>
-                            {rt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {THRESHOLD_TYPES.has(item.rule_type) && (
-                      <>
-                        <Input
-                          aria-label={t('alerts.threshold_gte')}
-                          className="w-28"
-                          onChange={(e) => updateRuleItem(index, 'min', Number.parseFloat(e.target.value) || 0)}
-                          placeholder={t('alerts.threshold_gte')}
-                          type="number"
-                          value={item.min ?? ''}
-                        />
-                        <Input
-                          aria-label={t('alerts.threshold_lte')}
-                          className="w-28"
-                          onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
-                          placeholder={t('alerts.threshold_lte')}
-                          type="number"
-                          value={item.max ?? ''}
-                        />
-                      </>
-                    )}
-                    {item.rule_type === 'offline' && (
+                  {THRESHOLD_TYPES.has(item.rule_type) && (
+                    <>
                       <Input
-                        aria-label={t('alerts.duration')}
+                        aria-label={t('alerts.threshold_gte')}
                         className="w-28"
-                        onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 60)}
-                        placeholder={t('alerts.duration')}
+                        onChange={(e) => updateRuleItem(index, 'min', Number.parseFloat(e.target.value) || 0)}
+                        placeholder={t('alerts.threshold_gte')}
                         type="number"
-                        value={item.duration ?? 60}
+                        value={item.min ?? ''}
                       />
-                    )}
-                    {item.rule_type === 'expiration' && (
                       <Input
-                        aria-label={t('alerts.days_before')}
+                        aria-label={t('alerts.threshold_lte')}
                         className="w-28"
-                        onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 7)}
-                        placeholder={t('alerts.days_before')}
+                        onChange={(e) => updateRuleItem(index, 'max', Number.parseFloat(e.target.value) || 0)}
+                        placeholder={t('alerts.threshold_lte')}
                         type="number"
-                        value={item.duration ?? 7}
+                        value={item.max ?? ''}
                       />
-                    )}
-                    {CYCLE_TYPES.has(item.rule_type) && (
-                      <>
-                        <Select
-                          items={{
-                            hour: t('alerts.period_hour'),
-                            day: t('alerts.period_day'),
-                            week: t('alerts.period_week'),
-                            month: t('alerts.period_month'),
-                            year: t('alerts.period_year')
-                          }}
-                          onValueChange={(val) => val !== null && updateRuleItem(index, 'cycle_interval', val)}
-                          value={item.cycle_interval ?? 'month'}
-                        >
-                          <SelectTrigger aria-label={t('alerts.period_month')} className="h-9 w-28">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="hour">{t('alerts.period_hour')}</SelectItem>
-                            <SelectItem value="day">{t('alerts.period_day')}</SelectItem>
-                            <SelectItem value="week">{t('alerts.period_week')}</SelectItem>
-                            <SelectItem value="month">{t('alerts.period_month')}</SelectItem>
-                            <SelectItem value="year">{t('alerts.period_year')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          aria-label={t('alerts.limit_bytes')}
-                          className="w-28"
-                          onChange={(e) =>
-                            updateRuleItem(index, 'cycle_limit', Number.parseInt(e.target.value, 10) || 0)
-                          }
-                          placeholder={t('alerts.limit_bytes')}
-                          type="number"
-                          value={item.cycle_limit ?? ''}
-                        />
-                      </>
-                    )}
-                    {ruleItems.length > 1 && (
-                      <Button
-                        aria-label={t('common:delete')}
-                        onClick={() => removeRuleItem(index)}
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        <Trash2 aria-hidden="true" className="size-3" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {autoBlockEligible && (
-                <Collapsible className="rounded-md border bg-background p-3" open={autoBlockEnabled}>
-                  <CollapsibleTrigger
-                    render={
-                      <button
-                        className="flex w-full items-center justify-between text-left"
-                        onClick={() => setAutoBlockEnabled((v) => !v)}
-                        type="button"
-                      />
-                    }
-                  >
-                    <span className="flex items-center gap-2">
-                      <Checkbox
-                        checked={autoBlockEnabled}
-                        onCheckedChange={(checked) => setAutoBlockEnabled(checked === true)}
-                      />
-                      <span className="font-medium text-sm">
-                        {t('alerts.auto_block_title', { defaultValue: 'Auto-block source IP' })}
-                      </span>
-                    </span>
-                    <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground" />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="mt-3 space-y-3">
-                    <p className="text-muted-foreground text-xs">
-                      {t('alerts.auto_block_hint', {
-                        defaultValue:
-                          'When the rule fires, push a block_source_ip action that drops the offending IP via the firewall.'
-                      })}
-                    </p>
-                    <div className="space-y-2">
+                    </>
+                  )}
+                  {item.rule_type === 'offline' && (
+                    <Input
+                      aria-label={t('alerts.duration')}
+                      className="w-28"
+                      onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 60)}
+                      placeholder={t('alerts.duration')}
+                      type="number"
+                      value={item.duration ?? 60}
+                    />
+                  )}
+                  {item.rule_type === 'expiration' && (
+                    <Input
+                      aria-label={t('alerts.days_before')}
+                      className="w-28"
+                      onChange={(e) => updateRuleItem(index, 'duration', Number.parseInt(e.target.value, 10) || 7)}
+                      placeholder={t('alerts.days_before')}
+                      type="number"
+                      value={item.duration ?? 7}
+                    />
+                  )}
+                  {CYCLE_TYPES.has(item.rule_type) && (
+                    <>
                       <Select
                         items={{
-                          all: t('alerts.all_servers'),
-                          include: t('alerts.include_servers'),
-                          exclude: t('alerts.exclude_servers')
+                          hour: t('alerts.period_hour'),
+                          day: t('alerts.period_day'),
+                          week: t('alerts.period_week'),
+                          month: t('alerts.period_month'),
+                          year: t('alerts.period_year')
                         }}
-                        onValueChange={(val) => {
-                          if (val === null) {
-                            return
-                          }
-                          const v = val as 'all' | 'exclude' | 'include'
-                          setAutoBlockCoverType(v)
-                          if (v === 'all') {
-                            setAutoBlockServerIds([])
-                          }
-                        }}
-                        value={autoBlockCoverType}
+                        onValueChange={(val) => val !== null && updateRuleItem(index, 'cycle_interval', val)}
+                        value={item.cycle_interval ?? 'month'}
                       >
-                        <SelectTrigger
-                          aria-label={t('alerts.auto_block_scope', { defaultValue: 'Auto-block scope' })}
-                          className="h-9 w-full"
-                        >
+                        <SelectTrigger aria-label={t('alerts.period_month')} className="h-9 w-28">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">{t('alerts.all_servers')}</SelectItem>
-                          <SelectItem value="include">{t('alerts.include_servers')}</SelectItem>
-                          <SelectItem value="exclude">{t('alerts.exclude_servers')}</SelectItem>
+                          <SelectItem value="hour">{t('alerts.period_hour')}</SelectItem>
+                          <SelectItem value="day">{t('alerts.period_day')}</SelectItem>
+                          <SelectItem value="week">{t('alerts.period_week')}</SelectItem>
+                          <SelectItem value="month">{t('alerts.period_month')}</SelectItem>
+                          <SelectItem value="year">{t('alerts.period_year')}</SelectItem>
                         </SelectContent>
                       </Select>
-                      {(autoBlockCoverType === 'include' || autoBlockCoverType === 'exclude') && (
-                        <div className="flex flex-wrap gap-2 rounded-md border p-2">
-                          {servers && servers.length > 0 ? (
-                            servers.map((s) => (
-                              // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                              <label className="flex items-center gap-1.5 text-sm" key={s.id}>
-                                <Checkbox
-                                  checked={autoBlockServerIds.includes(s.id)}
-                                  onCheckedChange={(checked) => {
-                                    setAutoBlockServerIds((prev) =>
-                                      checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
-                                    )
-                                  }}
-                                />
-                                {s.name}
-                              </label>
-                            ))
-                          ) : (
-                            <span className="text-muted-foreground text-xs">{t('alerts.no_servers')}</span>
-                          )}
-                        </div>
-                      )}
-                      <Textarea
-                        aria-label={t('alerts.auto_block_comment', { defaultValue: 'Auto-block comment' })}
-                        onChange={(e) => setAutoBlockComment(e.target.value)}
-                        placeholder={t('alerts.auto_block_comment_placeholder', {
-                          defaultValue: 'Reason added to every auto-created block (optional)'
-                        })}
-                        rows={2}
-                        value={autoBlockComment}
+                      <Input
+                        aria-label={t('alerts.limit_bytes')}
+                        className="w-28"
+                        onChange={(e) => updateRuleItem(index, 'cycle_limit', Number.parseInt(e.target.value, 10) || 0)}
+                        placeholder={t('alerts.limit_bytes')}
+                        type="number"
+                        value={item.cycle_limit ?? ''}
                       />
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              )}
-
-              <div className="flex gap-2">
-                <Button disabled={createMutation.isPending} size="sm" type="submit">
-                  {t('alerts.create_rule')}
-                </Button>
-                <Button onClick={resetForm} size="sm" type="button" variant="ghost">
-                  {t('common:cancel')}
-                </Button>
-              </div>
-            </form>
-          )}
-
-          {isLoading && (
-            <div className="space-y-2">
-              {Array.from({ length: 2 }, (_, i) => (
-                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
+                    </>
+                  )}
+                  {ruleItems.length > 1 && (
+                    <Button
+                      aria-label={t('common:delete')}
+                      onClick={() => removeRuleItem(index)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 aria-hidden="true" className="size-3" />
+                    </Button>
+                  )}
+                </div>
               ))}
             </div>
-          )}
-          {!isLoading && (!rules || rules.length === 0) && (
-            <p className="text-center text-muted-foreground text-sm">{t('alerts.no_rules')}</p>
-          )}
-          {rules && rules.length > 0 && (
-            <div className="divide-y rounded-md border">
-              {rules.map((rule) => {
-                const items: AlertRuleItem[] = JSON.parse(rule.rules_json || '[]')
-                return (
-                  <>
-                    <div
-                      className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                      key={rule.id}
+
+            {autoBlockEligible && (
+              <Collapsible className="rounded-md border bg-background p-3" open={autoBlockEnabled}>
+                <CollapsibleTrigger
+                  render={
+                    <button
+                      className="flex w-full items-center justify-between text-left"
+                      onClick={() => setAutoBlockEnabled((v) => !v)}
+                      type="button"
+                    />
+                  }
+                >
+                  <span className="flex items-center gap-2">
+                    <Checkbox
+                      checked={autoBlockEnabled}
+                      onCheckedChange={(checked) => setAutoBlockEnabled(checked === true)}
+                    />
+                    <span className="font-medium text-sm">
+                      {t('alerts.auto_block_title', { defaultValue: 'Auto-block source IP' })}
+                    </span>
+                  </span>
+                  <ChevronDown aria-hidden="true" className="size-4 text-muted-foreground" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3 space-y-3">
+                  <p className="text-muted-foreground text-xs">
+                    {t('alerts.auto_block_hint', {
+                      defaultValue:
+                        'When the rule fires, push a block_source_ip action that drops the offending IP via the firewall.'
+                    })}
+                  </p>
+                  <div className="space-y-2">
+                    <Select
+                      items={{
+                        all: t('alerts.all_servers'),
+                        include: t('alerts.include_servers'),
+                        exclude: t('alerts.exclude_servers')
+                      }}
+                      onValueChange={(val) => {
+                        if (val === null) {
+                          return
+                        }
+                        const v = val as 'all' | 'exclude' | 'include'
+                        setAutoBlockCoverType(v)
+                        if (v === 'all') {
+                          setAutoBlockServerIds([])
+                        }
+                      }}
+                      value={autoBlockCoverType}
                     >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <AlertTriangle
-                          className={`size-4 ${rule.enabled ? 'text-amber-500' : 'text-muted-foreground'}`}
-                        />
-                        <div>
-                          <p className="font-medium text-sm">
-                            {rule.name}
-                            {!rule.enabled && (
-                              <span className="ml-2 text-muted-foreground text-xs">{t('notifications.disabled')}</span>
-                            )}
-                            <button
-                              className="ml-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs hover:bg-muted/80"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setExpandedRuleId(expandedRuleId === rule.id ? null : rule.id)
-                              }}
-                              type="button"
-                            >
-                              {t('alerts.states')}
-                            </button>
-                          </p>
-                          <p className="text-muted-foreground text-xs">
-                            {items.map((item) => formatRuleItem(item, t)).join(' AND ')} | {rule.trigger_mode}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button
-                          onClick={() => toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled })}
-                          size="sm"
-                          variant="outline"
-                        >
-                          {rule.enabled ? t('common:disable') : t('common:enable')}
-                        </Button>
-                        <AlertDialog
-                          onOpenChange={(open) => {
-                            if (!open) {
-                              setDeleteRuleId(null)
-                            }
-                          }}
-                          open={deleteRuleId === rule.id}
-                        >
-                          <AlertDialogTrigger
-                            onClick={() => setDeleteRuleId(rule.id)}
-                            render={
-                              <Button
-                                aria-label={`${t('common:delete')} ${rule.name}`}
-                                disabled={deleteMutation.isPending}
-                                size="sm"
-                                variant="destructive"
-                              />
-                            }
-                          >
-                            <Trash2 aria-hidden="true" className="size-3.5" />
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
-                              <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => {
-                                  deleteMutation.mutate(rule.id)
-                                  setDeleteRuleId(null)
+                      <SelectTrigger
+                        aria-label={t('alerts.auto_block_scope', { defaultValue: 'Auto-block scope' })}
+                        className="h-9 w-full"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">{t('alerts.all_servers')}</SelectItem>
+                        <SelectItem value="include">{t('alerts.include_servers')}</SelectItem>
+                        <SelectItem value="exclude">{t('alerts.exclude_servers')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {(autoBlockCoverType === 'include' || autoBlockCoverType === 'exclude') && (
+                      <div className="flex flex-wrap gap-2 rounded-md border p-2">
+                        {servers && servers.length > 0 ? (
+                          servers.map((s) => (
+                            // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                            <label className="flex items-center gap-1.5 text-sm" key={s.id}>
+                              <Checkbox
+                                checked={autoBlockServerIds.includes(s.id)}
+                                onCheckedChange={(checked) => {
+                                  setAutoBlockServerIds((prev) =>
+                                    checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
+                                  )
                                 }}
-                                variant="destructive"
-                              >
-                                {t('common:delete')}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </div>
-                    {expandedRuleId === rule.id && (
-                      <div className="border-t bg-muted/20 px-4 py-2">
-                        {states && states.length > 0 ? (
-                          <div className="space-y-1">
-                            {states.map((s) => (
-                              <div className="flex items-center justify-between text-xs" key={s.server_id}>
-                                <span className="flex items-center gap-2">
-                                  <span
-                                    className={`size-2 rounded-full ${s.resolved ? 'bg-green-500' : 'bg-red-500'}`}
-                                  />
-                                  {s.server_name}
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {s.resolved ? t('alerts.resolved') : `${t('alerts.triggered')} (${s.count}x)`}
-                                  {' · '}
-                                  {new Date(s.first_triggered_at).toLocaleString()}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
+                              />
+                              {s.name}
+                            </label>
+                          ))
                         ) : (
-                          <p className="text-muted-foreground text-xs">{t('alerts.no_triggered')}</p>
+                          <span className="text-muted-foreground text-xs">{t('alerts.no_servers')}</span>
                         )}
                       </div>
                     )}
-                  </>
-                )
-              })}
+                    <Textarea
+                      aria-label={t('alerts.auto_block_comment', { defaultValue: 'Auto-block comment' })}
+                      onChange={(e) => setAutoBlockComment(e.target.value)}
+                      placeholder={t('alerts.auto_block_comment_placeholder', {
+                        defaultValue: 'Reason added to every auto-created block (optional)'
+                      })}
+                      rows={2}
+                      value={autoBlockComment}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+
+            <div className="flex gap-2">
+              <Button disabled={createMutation.isPending} size="sm" type="submit">
+                {t('alerts.create_rule')}
+              </Button>
+              <Button onClick={resetForm} size="sm" type="button" variant="ghost">
+                {t('common:cancel')}
+              </Button>
             </div>
-          )}
-        </div>
+          </form>
+        )}
+
+        {isLoading && (
+          <div className="space-y-2">
+            {Array.from({ length: 2 }, (_, i) => (
+              <Skeleton className="h-12" key={`skel-${i.toString()}`} />
+            ))}
+          </div>
+        )}
+        {!isLoading && (!rules || rules.length === 0) && (
+          <p className="text-center text-muted-foreground text-sm">{t('alerts.no_rules')}</p>
+        )}
+        {rules && rules.length > 0 && (
+          <div className="divide-y rounded-md border">
+            {rules.map((rule) => {
+              const items: AlertRuleItem[] = JSON.parse(rule.rules_json || '[]')
+              return (
+                <>
+                  <div
+                    className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    key={rule.id}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <AlertTriangle
+                        className={`size-4 ${rule.enabled ? 'text-amber-500' : 'text-muted-foreground'}`}
+                      />
+                      <div>
+                        <p className="font-medium text-sm">
+                          {rule.name}
+                          {!rule.enabled && (
+                            <span className="ml-2 text-muted-foreground text-xs">{t('notifications.disabled')}</span>
+                          )}
+                          <button
+                            className="ml-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs hover:bg-muted/80"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setExpandedRuleId(expandedRuleId === rule.id ? null : rule.id)
+                            }}
+                            type="button"
+                          >
+                            {t('alerts.states')}
+                          </button>
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          {items.map((item) => formatRuleItem(item, t)).join(' AND ')} | {rule.trigger_mode}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        onClick={() => toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled })}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {rule.enabled ? t('common:disable') : t('common:enable')}
+                      </Button>
+                      <AlertDialog
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setDeleteRuleId(null)
+                          }
+                        }}
+                        open={deleteRuleId === rule.id}
+                      >
+                        <AlertDialogTrigger
+                          onClick={() => setDeleteRuleId(rule.id)}
+                          render={
+                            <Button
+                              aria-label={`${t('common:delete')} ${rule.name}`}
+                              disabled={deleteMutation.isPending}
+                              size="sm"
+                              variant="destructive"
+                            />
+                          }
+                        >
+                          <Trash2 aria-hidden="true" className="size-3.5" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteMutation.mutate(rule.id)
+                                setDeleteRuleId(null)
+                              }}
+                              variant="destructive"
+                            >
+                              {t('common:delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                  {expandedRuleId === rule.id && (
+                    <div className="border-t bg-muted/20 px-4 py-2">
+                      {states && states.length > 0 ? (
+                        <div className="space-y-1">
+                          {states.map((s) => (
+                            <div className="flex items-center justify-between text-xs" key={s.server_id}>
+                              <span className="flex items-center gap-2">
+                                <span className={`size-2 rounded-full ${s.resolved ? 'bg-green-500' : 'bg-red-500'}`} />
+                                {s.server_name}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {s.resolved ? t('alerts.resolved') : `${t('alerts.triggered')} (${s.count}x)`}
+                                {' · '}
+                                {new Date(s.first_triggered_at).toLocaleString()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-xs">{t('alerts.no_triggered')}</p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

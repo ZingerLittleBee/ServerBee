@@ -201,7 +201,6 @@ export function IpQualitySettingsPage() {
 
   return (
     <div className="flex min-h-0 w-full min-w-0 max-w-[calc(100vw-1.5rem)] flex-1 flex-col overflow-hidden sm:max-w-full">
-      <h1 className="mb-6 min-w-0 font-bold text-2xl">{t('settings_title')}</h1>
       <Tabs
         className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col"
         onValueChange={(value) => navigate({ search: { tab: value } })}
