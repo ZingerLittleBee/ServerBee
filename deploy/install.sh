@@ -1544,6 +1544,8 @@ TOML
 [Unit]
 Description=ServerBee Agent
 After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -1551,6 +1553,9 @@ ExecStart=${exec_start}
 WorkingDirectory=${CONFIG_DIR}
 Restart=always
 RestartSec=5
+# Exit code 78 = permanent enrollment-code failure; don't restart, the operator
+# must rotate the code (otherwise we burn the registration rate limit).
+RestartPreventExitStatus=78
 AmbientCapabilities=CAP_NET_RAW
 
 [Install]
