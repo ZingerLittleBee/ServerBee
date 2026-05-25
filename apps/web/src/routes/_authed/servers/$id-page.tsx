@@ -595,7 +595,7 @@ export function ServerDetailPage() {
             <div className="flex items-center gap-3">
               {flag && <span className="text-xl">{flag}</span>}
               <h1 className="font-bold text-2xl">{server.name}</h1>
-              <StatusBadge online={isOnline} />
+              <StatusBadge status={isOnline ? 'online' : 'offline'} />
               <UpgradeJobBadge job={upgradeJob} />
             </div>
             <ServerInfoMeta server={server} />

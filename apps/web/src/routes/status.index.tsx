@@ -41,7 +41,7 @@ function ServerStatusCard({ server }: { server: StatusServer }) {
           <h3 className="truncate font-semibold text-sm">{server.name}</h3>
           {server.region && <span className="shrink-0 text-muted-foreground text-xs">{server.region}</span>}
         </div>
-        <StatusBadge className="shrink-0" online={server.online} />
+        <StatusBadge className="shrink-0" status={server.online ? 'online' : 'offline'} />
       </div>
 
       {server.public_remark && <p className="mb-3 text-muted-foreground text-xs">{server.public_remark}</p>}
