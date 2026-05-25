@@ -733,15 +733,15 @@ export function ServiceMonitorsPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="min-w-0 text-muted-foreground text-sm">{t('page.description')}</p>
-        <Button className="w-full sm:w-auto" onClick={openCreate} size="sm">
-          <Plus className="size-4" />
-          {tCommon('actions.addMonitor')}
-        </Button>
-      </div>
-
       <div className="w-full min-w-0 max-w-full lg:max-w-5xl">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="min-w-0 text-muted-foreground text-sm">{t('page.description')}</p>
+          <Button className="w-full shrink-0 sm:w-auto" onClick={openCreate} size="sm">
+            <Plus className="size-4" />
+            {tCommon('actions.addMonitor')}
+          </Button>
+        </div>
+
         {isLoading && (
           <div className="space-y-2">
             {Array.from({ length: 3 }, (_, i) => (
