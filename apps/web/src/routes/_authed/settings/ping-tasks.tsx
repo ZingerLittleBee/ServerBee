@@ -85,14 +85,16 @@ function PingResultsChart({ taskId }: { taskId: string }) {
           <XAxis
             axisLine={false}
             dataKey="timestamp"
-            tickFormatter={(v: string) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            tickFormatter={(v: string) =>
+              new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+            }
             tickLine={false}
           />
           <YAxis axisLine={false} tickLine={false} width={40} />
           <ChartTooltip
             content={
               <ChartTooltipContent
-                labelFormatter={(label) => new Date(String(label)).toLocaleString()}
+                labelFormatter={(label) => new Date(String(label)).toLocaleString([], { hour12: false })}
                 valueFormatter={(v) => `${v.toFixed(1)}ms`}
               />
             }
