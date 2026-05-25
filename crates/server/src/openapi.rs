@@ -258,6 +258,15 @@ impl Modify for SecurityAddon {
         crate::router::api::ip_quality::get_server_summary,
         crate::router::api::ip_quality::list_events,
         crate::router::api::ip_quality::check_server,
+        // spa-themes
+        crate::router::api::spa_theme::list,
+        crate::router::api::spa_theme::get_one,
+        crate::router::api::spa_theme::get_preview,
+        crate::router::api::spa_theme::get_package,
+        crate::router::api::spa_theme::delete_one,
+        crate::router::api::spa_theme::upload,
+        crate::router::api::spa_theme::get_active,
+        crate::router::api::spa_theme::put_active,
     ),
     components(
         schemas(
@@ -484,6 +493,12 @@ impl Modify for SecurityAddon {
             crate::service::ip_quality::ServerIpQualityData,
             crate::service::ip_quality::UnlockResultDto,
             crate::service::ip_quality::UnlockEventDto,
+            // spa-themes
+            crate::service::spa_theme::service::SpaThemeSummary,
+            crate::service::spa_theme::service::UploadResult,
+            crate::service::spa_theme::service::UpgradeOf,
+            crate::router::api::spa_theme::PutActiveBody,
+            crate::router::api::spa_theme::ActiveResp,
         ),
     ),
     tags(
