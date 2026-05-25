@@ -552,270 +552,161 @@ function NotificationsPage() {
   return (
     <div>
       <div className="max-w-2xl space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="font-semibold text-lg">{t('notifications.channels')}</h2>
-          <Dialog
-            onOpenChange={(open) => {
-              setShowForm(open)
-              if (!open) {
-                resetForm()
-              }
-            }}
-            open={showForm}
-          >
-            <DialogTrigger onClick={prepareCreateChannel} render={<Button size="sm" variant="outline" />}>
-              <Plus className="size-4" />
-              {t('common:add')}
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingId ? t('notifications.edit_channel_title') : t('notifications.add_channel_title')}
-                </DialogTitle>
-                <DialogDescription>{t('notifications.channel_dialog_description')}</DialogDescription>
-              </DialogHeader>
-              <DialogBody>
-                <form className="space-y-3" id="notification-channel-form" onSubmit={handleCreate}>
-                  <Input
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder={t('notifications.channel_name')}
-                    required
-                    type="text"
-                    value={name}
-                  />
-                  <Select
-                    disabled={editingId !== null}
-                    items={typeLabels}
-                    onValueChange={(val) => handleTypeChange(val as NotifyType)}
-                    value={notifyType}
-                  >
-                    <SelectTrigger className="h-9 w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(typeLabels).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {editingId !== null && (
-                    <p className="text-muted-foreground text-xs">{t('notifications.type_locked_in_edit')}</p>
-                  )}
-                  {notifyType === 'apns' && (
-                    <ApnsFormFields
-                      apnsFileInputRef={apnsFileInputRef}
-                      configFields={configFields}
-                      onFieldChange={(patch) => setConfigFields((prev) => ({ ...prev, ...patch }))}
-                      onFileUpload={handleApnsFileUpload}
-                    />
-                  )}
-                  {notifyType === 'email' && (
-                    <EmailFormFields
-                      from={configFields.from ?? ''}
-                      onAddRecipient={handleAddRecipient}
-                      onFromChange={(value) => setConfigFields((prev) => ({ ...prev, from: value }))}
-                      onRemoveRecipient={handleRemoveRecipient}
-                      onToInputChange={setToInput}
-                      toAddresses={toAddresses}
-                      toInput={toInput}
-                    />
-                  )}
-                  {notifyType !== 'apns' &&
-                    notifyType !== 'email' &&
-                    Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
-                      <Input
-                        key={key}
-                        onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={label}
-                        required
-                        type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
-                        value={configFields[key] ?? ''}
-                      />
-                    ))}
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <Label className="text-sm">{t('notifications.enabled_label')}</Label>
-                    <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
-                  </div>
-                </form>
-              </DialogBody>
-              <DialogFooter>
-                <Button onClick={resetForm} size="sm" type="button" variant="ghost">
-                  {t('common:cancel')}
-                </Button>
-                <Button
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  form="notification-channel-form"
-                  size="sm"
-                  type="submit"
-                >
-                  {editingId ? t('notifications.update_channel') : t('common:create')}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-
-        {isLoading && (
-          <div className="space-y-2">
-            {Array.from({ length: 2 }, (_, i) => (
-              <Skeleton className="h-12" key={`skel-${i.toString()}`} />
-            ))}
-          </div>
-        )}
-        {!isLoading && (!notifications || notifications.length === 0) && (
-          <p className="text-center text-muted-foreground text-sm">{t('notifications.no_channels')}</p>
-        )}
-        {notifications && notifications.length > 0 && (
-          <div className="divide-y rounded-md border">
-            {notifications.map((n) => (
-              <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" key={n.id}>
-                <div className="flex items-center gap-3">
-                  <Bell className="size-4 text-muted-foreground" />
-                  <div>
-                    <p className="font-medium text-sm">{n.name}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {typeLabels[n.notify_type as NotifyType] ?? n.notify_type}
-                      {n.enabled ? '' : ` ${t('notifications.disabled')}`}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <Button
-                    aria-label={t('common:a11y.test_notification', { name: n.name })}
-                    disabled={testMutation.isPending}
-                    onClick={() => testMutation.mutate(n.id)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Send className="size-3.5" />
-                  </Button>
-                  <Button
-                    aria-label={t('common:a11y.edit_notification', { name: n.name })}
-                    onClick={() => startEditChannel(n)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    aria-label={t('common:a11y.delete_notification', { name: n.name })}
-                    disabled={deleteMutation.isPending}
-                    onClick={() => deleteMutation.mutate(n.id)}
-                    size="sm"
-                    variant="destructive"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Notification Groups */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="font-semibold text-lg">{t('notifications.groups')}</h2>
-          <Dialog
-            onOpenChange={(open) => {
-              setShowGroupForm(open)
-              if (!open) {
-                resetGroupForm()
-              }
-            }}
-            open={showGroupForm}
-          >
-            <DialogTrigger
-              disabled={!notifications || notifications.length === 0}
-              onClick={prepareCreateGroup}
-              render={<Button size="sm" variant="outline" />}
+        <div className="space-y-4 rounded-lg border bg-card p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-semibold text-lg">{t('notifications.channels')}</h2>
+            <Dialog
+              onOpenChange={(open) => {
+                setShowForm(open)
+                if (!open) {
+                  resetForm()
+                }
+              }}
+              open={showForm}
             >
-              <Plus className="size-4" />
-              {t('common:add')}
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingGroupId ? t('notifications.edit_group_title') : t('notifications.add_group_title')}
-                </DialogTitle>
-                <DialogDescription>{t('notifications.group_dialog_description')}</DialogDescription>
-              </DialogHeader>
-              <DialogBody>
-                <form className="space-y-3" id="notification-group-form" onSubmit={handleCreateGroup}>
-                  <Input
-                    onChange={(e) => setGroupName(e.target.value)}
-                    placeholder={t('notifications.group_name')}
-                    required
-                    type="text"
-                    value={groupName}
-                  />
-                  <fieldset className="space-y-2">
-                    <legend className="text-sm">{t('notifications.select_channels')}</legend>
-                    <div className="space-y-1 rounded-md border p-2">
-                      {notifications?.map((n) => (
-                        // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                        <label className="flex items-center gap-2 text-sm" key={n.id}>
-                          <Checkbox
-                            checked={selectedIds.includes(n.id)}
-                            onCheckedChange={(checked) => {
-                              setSelectedIds((prev) => (checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)))
-                            }}
-                          />
-                          {n.name} ({typeLabels[n.notify_type as NotifyType] ?? n.notify_type})
-                        </label>
+              <DialogTrigger onClick={prepareCreateChannel} render={<Button size="sm" variant="outline" />}>
+                <Plus className="size-4" />
+                {t('common:add')}
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingId ? t('notifications.edit_channel_title') : t('notifications.add_channel_title')}
+                  </DialogTitle>
+                  <DialogDescription>{t('notifications.channel_dialog_description')}</DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <form className="space-y-3" id="notification-channel-form" onSubmit={handleCreate}>
+                    <Input
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder={t('notifications.channel_name')}
+                      required
+                      type="text"
+                      value={name}
+                    />
+                    <Select
+                      disabled={editingId !== null}
+                      items={typeLabels}
+                      onValueChange={(val) => handleTypeChange(val as NotifyType)}
+                      value={notifyType}
+                    >
+                      <SelectTrigger className="h-9 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(typeLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {editingId !== null && (
+                      <p className="text-muted-foreground text-xs">{t('notifications.type_locked_in_edit')}</p>
+                    )}
+                    {notifyType === 'apns' && (
+                      <ApnsFormFields
+                        apnsFileInputRef={apnsFileInputRef}
+                        configFields={configFields}
+                        onFieldChange={(patch) => setConfigFields((prev) => ({ ...prev, ...patch }))}
+                        onFileUpload={handleApnsFileUpload}
+                      />
+                    )}
+                    {notifyType === 'email' && (
+                      <EmailFormFields
+                        from={configFields.from ?? ''}
+                        onAddRecipient={handleAddRecipient}
+                        onFromChange={(value) => setConfigFields((prev) => ({ ...prev, from: value }))}
+                        onRemoveRecipient={handleRemoveRecipient}
+                        onToInputChange={setToInput}
+                        toAddresses={toAddresses}
+                        toInput={toInput}
+                      />
+                    )}
+                    {notifyType !== 'apns' &&
+                      notifyType !== 'email' &&
+                      Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
+                        <Input
+                          key={key}
+                          onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={label}
+                          required
+                          type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
+                          value={configFields[key] ?? ''}
+                        />
                       ))}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <Label className="text-sm">{t('notifications.enabled_label')}</Label>
+                      <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
                     </div>
-                  </fieldset>
-                </form>
-              </DialogBody>
-              <DialogFooter>
-                <Button onClick={resetGroupForm} size="sm" type="button" variant="ghost">
-                  {t('common:cancel')}
-                </Button>
-                <Button
-                  disabled={createGroupMutation.isPending || updateGroupMutation.isPending || selectedIds.length === 0}
-                  form="notification-group-form"
-                  size="sm"
-                  type="submit"
-                >
-                  {editingGroupId ? t('notifications.update_group') : t('notifications.create_group')}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+                  </form>
+                </DialogBody>
+                <DialogFooter>
+                  <Button onClick={resetForm} size="sm" type="button" variant="ghost">
+                    {t('common:cancel')}
+                  </Button>
+                  <Button
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                    form="notification-channel-form"
+                    size="sm"
+                    type="submit"
+                  >
+                    {editingId ? t('notifications.update_channel') : t('common:create')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
 
-        {!groups || groups.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm">{t('notifications.no_groups')}</p>
-        ) : (
-          <div className="divide-y rounded-md border">
-            {groups.map((g) => {
-              const ids = parseGroupIds(g.notification_ids_json)
-              return (
+          {isLoading && (
+            <div className="space-y-2">
+              {Array.from({ length: 2 }, (_, i) => (
+                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
+              ))}
+            </div>
+          )}
+          {!isLoading && (!notifications || notifications.length === 0) && (
+            <p className="text-center text-muted-foreground text-sm">{t('notifications.no_channels')}</p>
+          )}
+          {notifications && notifications.length > 0 && (
+            <div className="divide-y rounded-md border">
+              {notifications.map((n) => (
                 <div
                   className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  key={g.id}
+                  key={n.id}
                 >
-                  <div>
-                    <p className="font-medium text-sm">{g.name}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {t('notifications.channel_count', { count: ids.length })}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <Bell className="size-4 text-muted-foreground" />
+                    <div>
+                      <p className="font-medium text-sm">{n.name}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {typeLabels[n.notify_type as NotifyType] ?? n.notify_type}
+                        {n.enabled ? '' : ` ${t('notifications.disabled')}`}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex gap-1">
                     <Button
-                      aria-label={t('common:a11y.edit_group', { name: g.name })}
-                      onClick={() => startEditGroup(g)}
+                      aria-label={t('common:a11y.test_notification', { name: n.name })}
+                      disabled={testMutation.isPending}
+                      onClick={() => testMutation.mutate(n.id)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <Send className="size-3.5" />
+                    </Button>
+                    <Button
+                      aria-label={t('common:a11y.edit_notification', { name: n.name })}
+                      onClick={() => startEditChannel(n)}
                       size="sm"
                       variant="outline"
                     >
                       <Pencil className="size-3.5" />
                     </Button>
                     <Button
-                      aria-label={t('common:a11y.delete_group', { name: g.name })}
-                      disabled={deleteGroupMutation.isPending}
-                      onClick={() => deleteGroupMutation.mutate(g.id)}
+                      aria-label={t('common:a11y.delete_notification', { name: n.name })}
+                      disabled={deleteMutation.isPending}
+                      onClick={() => deleteMutation.mutate(n.id)}
                       size="sm"
                       variant="destructive"
                     >
@@ -823,10 +714,128 @@ function NotificationsPage() {
                     </Button>
                   </div>
                 </div>
-              )
-            })}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Notification Groups */}
+        <div className="space-y-4 rounded-lg border bg-card p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-semibold text-lg">{t('notifications.groups')}</h2>
+            <Dialog
+              onOpenChange={(open) => {
+                setShowGroupForm(open)
+                if (!open) {
+                  resetGroupForm()
+                }
+              }}
+              open={showGroupForm}
+            >
+              <DialogTrigger
+                disabled={!notifications || notifications.length === 0}
+                onClick={prepareCreateGroup}
+                render={<Button size="sm" variant="outline" />}
+              >
+                <Plus className="size-4" />
+                {t('common:add')}
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingGroupId ? t('notifications.edit_group_title') : t('notifications.add_group_title')}
+                  </DialogTitle>
+                  <DialogDescription>{t('notifications.group_dialog_description')}</DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <form className="space-y-3" id="notification-group-form" onSubmit={handleCreateGroup}>
+                    <Input
+                      onChange={(e) => setGroupName(e.target.value)}
+                      placeholder={t('notifications.group_name')}
+                      required
+                      type="text"
+                      value={groupName}
+                    />
+                    <fieldset className="space-y-2">
+                      <legend className="text-sm">{t('notifications.select_channels')}</legend>
+                      <div className="space-y-1 rounded-md border p-2">
+                        {notifications?.map((n) => (
+                          // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                          <label className="flex items-center gap-2 text-sm" key={n.id}>
+                            <Checkbox
+                              checked={selectedIds.includes(n.id)}
+                              onCheckedChange={(checked) => {
+                                setSelectedIds((prev) => (checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)))
+                              }}
+                            />
+                            {n.name} ({typeLabels[n.notify_type as NotifyType] ?? n.notify_type})
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  </form>
+                </DialogBody>
+                <DialogFooter>
+                  <Button onClick={resetGroupForm} size="sm" type="button" variant="ghost">
+                    {t('common:cancel')}
+                  </Button>
+                  <Button
+                    disabled={
+                      createGroupMutation.isPending || updateGroupMutation.isPending || selectedIds.length === 0
+                    }
+                    form="notification-group-form"
+                    size="sm"
+                    type="submit"
+                  >
+                    {editingGroupId ? t('notifications.update_group') : t('notifications.create_group')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
-        )}
+
+          {!groups || groups.length === 0 ? (
+            <p className="text-center text-muted-foreground text-sm">{t('notifications.no_groups')}</p>
+          ) : (
+            <div className="divide-y rounded-md border">
+              {groups.map((g) => {
+                const ids = parseGroupIds(g.notification_ids_json)
+                return (
+                  <div
+                    className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    key={g.id}
+                  >
+                    <div>
+                      <p className="font-medium text-sm">{g.name}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {t('notifications.channel_count', { count: ids.length })}
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        aria-label={t('common:a11y.edit_group', { name: g.name })}
+                        onClick={() => startEditGroup(g)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Pencil className="size-3.5" />
+                      </Button>
+                      <Button
+                        aria-label={t('common:a11y.delete_group', { name: g.name })}
+                        disabled={deleteGroupMutation.isPending}
+                        onClick={() => deleteGroupMutation.mutate(g.id)}
+                        size="sm"
+                        variant="destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
