@@ -29,9 +29,6 @@ export type ServerMetricRecord = S['ServerRecord']
 export type UpdateServerInput = S['UpdateServerInput']
 export type BatchDeleteRequest = S['BatchDeleteRequest']
 export type BatchDeleteResponse = S['BatchDeleteResponse']
-export type RecoveryJobStage = S['RecoveryJobStage']
-export type RecoveryJobStatus = S['RecoveryJobStatus']
-export type StartRecoveryRequest = S['StartRecoveryRequest']
 
 // Cost
 export type CostOverviewResponse = S['CostOverviewResponse']
