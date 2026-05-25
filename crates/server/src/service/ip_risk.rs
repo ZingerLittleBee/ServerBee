@@ -25,6 +25,12 @@ pub struct ProviderResult {
     pub ip_type: Option<String>,
     /// Raw provider JSON response (for the `providers` column).
     pub raw: JsonValue,
+    // ipapi.is-derived fields. ip-api fallback leaves these as defaults.
+    pub is_tor: bool,
+    pub is_abuser: bool,
+    pub is_mobile: bool,
+    pub asn_abuser_score: Option<i32>,
+    pub abuse_email: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -491,6 +497,7 @@ impl ScamalyticsProvider {
             is_hosting,
             ip_type: None,
             raw: v,
+            ..Default::default()
         }
     }
 }
@@ -562,6 +569,7 @@ impl IpQualityScoreProvider {
             is_hosting,
             ip_type,
             raw: v,
+            ..Default::default()
         }
     }
 }
@@ -638,6 +646,7 @@ impl ProxyCheckProvider {
             is_hosting: None,
             ip_type,
             raw: v,
+            ..Default::default()
         }
     }
 }
@@ -705,6 +714,7 @@ impl AbuseIpdbProvider {
             is_hosting,
             ip_type,
             raw: v,
+            ..Default::default()
         }
     }
 }
@@ -773,6 +783,7 @@ impl IpApiProvider {
             is_hosting,
             ip_type,
             raw: v,
+            ..Default::default()
         }
     }
 }
