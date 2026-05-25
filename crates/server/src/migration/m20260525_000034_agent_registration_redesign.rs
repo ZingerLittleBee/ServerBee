@@ -60,7 +60,30 @@ impl MigrationTrait for Migration {
                 created_at TIMESTAMP NOT NULL,
                 updated_at TIMESTAMP NOT NULL
             );
-            INSERT INTO servers_new SELECT * FROM servers;
+            INSERT INTO servers_new (
+                id, token_hash, token_prefix, name,
+                cpu_name, cpu_cores, cpu_arch, os, kernel_version,
+                mem_total, swap_total, disk_total,
+                ipv4, ipv6, region, country_code, virtualization, agent_version,
+                group_id, weight, hidden, remark, public_remark,
+                price, billing_cycle, currency, expired_at,
+                traffic_limit, traffic_limit_type,
+                created_at, updated_at,
+                capabilities, protocol_version, billing_start_day,
+                features, last_remote_addr, fingerprint
+            )
+            SELECT
+                id, token_hash, token_prefix, name,
+                cpu_name, cpu_cores, cpu_arch, os, kernel_version,
+                mem_total, swap_total, disk_total,
+                ipv4, ipv6, region, country_code, virtualization, agent_version,
+                group_id, weight, hidden, remark, public_remark,
+                price, billing_cycle, currency, expired_at,
+                traffic_limit, traffic_limit_type,
+                created_at, updated_at,
+                capabilities, protocol_version, billing_start_day,
+                features, last_remote_addr, fingerprint
+            FROM servers;
             DROP TABLE servers;
             ALTER TABLE servers_new RENAME TO servers;
             CREATE INDEX idx_servers_group_id ON servers(group_id);
