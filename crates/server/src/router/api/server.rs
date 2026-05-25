@@ -1103,6 +1103,8 @@ async fn delete_server(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     ServerService::delete_server(&state.db, &id).await?;
+    // Close any live agent connection so it doesn't linger after the row is gone.
+    state.agent_manager.remove_connection(&id);
     ok("ok")
 }
 
@@ -1121,6 +1123,12 @@ async fn batch_delete(
     Json(body): Json<BatchDeleteRequest>,
 ) -> Result<Json<ApiResponse<BatchDeleteResponse>>, AppError> {
     let deleted = ServerService::batch_delete(&state.db, &body.ids).await?;
+    // Kick any live connections for the requested ids. `remove_connection` is
+    // a no-op when nothing is connected, so it's safe to call for ids that
+    // weren't actually deleted (e.g. unknown ids in the request).
+    for id in &body.ids {
+        state.agent_manager.remove_connection(id);
+    }
     ok(BatchDeleteResponse { deleted })
 }
 

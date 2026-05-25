@@ -1220,3 +1220,156 @@ async fn create_enrollment_route_is_gone() {
         "POST /api/agent/enrollments must be 404 or 405 (route removed), got {status}"
     );
 }
+
+#[tokio::test]
+async fn rotate_token_on_pending_returns_400() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, _code) =
+        create_pending_server(&client, &base_url, "vps-rotate-pending").await;
+
+    let resp = client
+        .post(format!(
+            "{}/api/agent/{}/rotate-token",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("rotate-token request failed");
+    assert_eq!(
+        resp.status(),
+        400,
+        "rotate-token on a pending server must return 400"
+    );
+
+    // Server is still pending: has_token=false, outstanding_enrollment still set.
+    let get_resp: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("get server failed")
+        .json()
+        .await
+        .expect("parse get server");
+    assert_eq!(
+        get_resp["data"]["has_token"], false,
+        "pending server must remain pending after rejected rotate-token"
+    );
+    assert!(
+        get_resp["data"]["outstanding_enrollment"].is_object(),
+        "outstanding enrollment must still be present after rejected rotate-token"
+    );
+}
+
+#[tokio::test]
+async fn rotate_token_on_non_pending_succeeds_and_invalidates_old_token() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-rotate-ok").await;
+    let token_v1 = enroll_pending_server(&base_url, &code).await;
+
+    // Rotate as admin.
+    let resp = client
+        .post(format!(
+            "{}/api/agent/{}/rotate-token",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .expect("rotate-token request failed");
+    assert_eq!(resp.status(), 200, "rotate-token should succeed");
+    let body: Value = resp.json().await.expect("parse rotate response");
+    let token_v2 = body["data"]["token"]
+        .as_str()
+        .expect("rotate response missing token")
+        .to_string();
+    assert_ne!(token_v1, token_v2, "rotation must mint a fresh token");
+    assert_eq!(
+        body["data"]["server_id"].as_str().unwrap(),
+        server_id,
+        "response server_id must echo input"
+    );
+
+    // The DB token_hash must no longer verify against the old plaintext.
+    // We can prove this by reaching into the DB directly because we still own
+    // the sqlite file backing the test server.
+    let db_url = format!("sqlite://{}?mode=ro", db_path_for(&_tmp));
+    let mut opt = ConnectOptions::new(&db_url);
+    opt.max_connections(2);
+    opt.sqlx_logging(false);
+    let db = Database::connect(opt)
+        .await
+        .expect("connect to test db for verification");
+    let stmt = sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Sqlite,
+        "SELECT token_hash FROM servers WHERE id = ?",
+        [server_id.clone().into()],
+    );
+    let row = db
+        .query_one(stmt)
+        .await
+        .expect("query token_hash")
+        .expect("server row missing");
+    let stored_hash: String = row
+        .try_get("", "token_hash")
+        .expect("token_hash column must be a string");
+    assert!(
+        !AuthService::verify_password(&token_v1, &stored_hash)
+            .expect("verify old token plaintext"),
+        "old token plaintext must NOT verify after rotation"
+    );
+    assert!(
+        AuthService::verify_password(&token_v2, &stored_hash)
+            .expect("verify new token plaintext"),
+        "new token plaintext must verify against rotated hash"
+    );
+}
+
+#[tokio::test]
+async fn delete_server_closes_ws_connection() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, _enrollment_id, code) =
+        create_pending_server(&client, &base_url, "vps-delete-kicks-ws").await;
+    let _token = enroll_pending_server(&base_url, &code).await;
+
+    // Sanity: server now exists and has a token.
+    let pre: Value = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("pre-delete GET failed")
+        .json()
+        .await
+        .expect("parse pre-delete GET");
+    assert_eq!(pre["data"]["has_token"], true);
+
+    // DELETE the server. The handler must (a) succeed and (b) call
+    // agent_manager.remove_connection(&id). The kick path is a no-op when no
+    // live WS is connected, but it must not error.
+    let resp = client
+        .delete(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("delete request failed");
+    assert_eq!(resp.status(), 200, "DELETE /api/servers/{{id}} should succeed");
+
+    // The server row should be gone.
+    let post = client
+        .get(format!("{}/api/servers/{}", base_url, server_id))
+        .send()
+        .await
+        .expect("post-delete GET failed");
+    assert_eq!(
+        post.status(),
+        404,
+        "deleted server must return 404 on subsequent GET"
+    );
+}

@@ -281,6 +281,7 @@ async fn delete_enrollment(
     params(("id" = String, Path, description = "Server id")),
     responses(
         (status = 200, description = "Token rotated; old token revoked", body = RotateTokenResponse),
+        (status = 400, description = "Server is pending (no token to rotate); use recover instead"),
         (status = 404, description = "Server not found"),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
@@ -297,12 +298,17 @@ async fn rotate_token(
         .await?
         .ok_or_else(|| AppError::NotFound("Server not found".to_string()))?;
 
+    if existing.token_hash.is_none() {
+        return Err(AppError::BadRequest(
+            "cannot rotate token of a pending server; use recover instead".into(),
+        ));
+    }
+
     let plaintext = AuthService::generate_session_token();
     let token_hash = AuthService::hash_password(&plaintext)?;
     let token_prefix = plaintext[..8.min(plaintext.len())].to_string();
 
     let mut active: server::ActiveModel = existing.into();
-    // TODO: T12 will add guards (e.g. pending-server / bound enrollment) around rotate-token.
     active.token_hash = Set(Some(token_hash));
     active.token_prefix = Set(Some(token_prefix));
     active.updated_at = Set(Utc::now());
