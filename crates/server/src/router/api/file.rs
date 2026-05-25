@@ -159,6 +159,7 @@ fn audit_error_reason(error: &AppError) -> Option<&str> {
         | AppError::TooManyRequests(message)
         | AppError::Internal(message) => Some(message.as_str()),
         AppError::Unauthorized => None,
+        AppError::Domain { message, .. } => Some(message.as_str()),
     }
 }
 
