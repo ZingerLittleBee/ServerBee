@@ -28,7 +28,9 @@
       "!**/.source",
       "!**/convex/_generated",
       "!**/target",
-      "!apps/ios"
+      "!apps/ios",
+      "!apps/web/openapi.json",
+      "!apps/web/src/lib/api-types.ts"
     ]
   },
   "formatter": {
