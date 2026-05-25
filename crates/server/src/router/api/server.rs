@@ -923,10 +923,8 @@ async fn cleanup_orphaned_servers(
         return ok(CleanupResponse { deleted_count: 0 });
     }
 
-    // Block cleanup of a candidate that is part of a running recovery, then
-    // purge all server_id-scoped rows (and recovery_job) through the shared
-    // service helper so this path cannot drift from delete_server again.
-    ServerService::ensure_no_running_recovery(&txn, &orphan_ids).await?;
+    // Purge all server_id-scoped rows through the shared service helper so
+    // this path cannot drift from delete_server again.
     ServerService::delete_server_scoped_rows(&txn, &orphan_ids).await?;
     server_tag::Entity::delete_many()
         .filter(server_tag::Column::ServerId.is_in(&orphan_ids))

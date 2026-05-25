@@ -29,7 +29,6 @@ pub mod ping_record;
 pub mod ping_task;
 pub mod record;
 pub mod record_hourly;
-pub mod recovery_job;
 pub mod security_event;
 pub mod server;
 pub mod server_group;

@@ -37,6 +37,9 @@ static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 enum ServerMessageOutcome {
     Continue,
+    // Constructed only by removed RebindIdentity handling; match arm is kept
+    // for now so removal is purely a struct-level change in a later task.
+    #[allow(dead_code)]
     Reconnect,
 }
 
