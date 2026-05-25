@@ -93,27 +93,38 @@ Set `ip_quality.risk_provider` in `server.toml` (or `SERVERBEE_IP_QUALITY__RISK_
 
 | Provider | Value | Notes |
 |----------|-------|-------|
-| None (default) | `none` | GeoIP metadata only, no risk score |
-| Scamalytics | `scamalytics` | API key required. Endpoint is account-bound (`api1`, `api11`, etc.) |
-| IPQualityScore | `ipqs` | API key required |
-| proxycheck.io | `proxycheck` | API key required |
-| AbuseIPDB | `abuseipdb` | API key required |
-| ip-api.com | `ip-api` | **Free tier, non-commercial use only. HTTP-only endpoint — do not use behind HTTPS in production without understanding the terms.** No API key required. |
+| ipapi.is (default) | `ipapi_is` | ~1000 requests/day per source IP at no charge. Optional paid API key for higher limits. |
+| ip-api.com (fallback) | `ip-api` | **Free tier, non-commercial use only. HTTP-only endpoint.** No API key. Geo + proxy flags only — no risk score. |
+| Disabled | `none` | GeoIP metadata only, no risk score. |
 
-<Callout type="warn">
-`ip-api` (ip-api.com) free tier allows non-commercial use only. Its API endpoint is HTTP (not HTTPS). Review its [terms of service](https://ip-api.com/docs/legal) before using it in production. For commercial use, obtain a commercial license or use one of the other providers.
-</Callout>
+**Default behavior** (no configuration needed): the server uses `ipapi_is` as the primary provider and `ip-api` as the automatic fallback when the primary fails. No API key is required to get started.
 
-Configure a provider (example using Scamalytics):
+To use an optional ipapi.is API key for higher rate limits:
 
 ```toml
 [ip_quality]
-risk_provider = "scamalytics"
+risk_provider = "ipapi_is"
+risk_provider_fallback = "ip-api"  # default; set to "none" to disable
 
-[ip_quality.scamalytics]
+[ip_quality.ipapi_is]
 api_key = "your_api_key"
-endpoint = "api1"   # Scamalytics account-bound subdomain; leave empty for default
+# endpoint = "https://api.ipapi.is"  # optional; override for self-hosted instances
 ```
+
+To disable risk scoring entirely:
+
+```toml
+[ip_quality]
+risk_provider = "none"
+```
+
+<Callout type="warn">
+`ip-api` (ip-api.com) free tier allows non-commercial use only. Its API endpoint is HTTP (not HTTPS). Review its [terms of service](https://ip-api.com/docs/legal) before using it in production.
+</Callout>
+
+<Callout type="info">
+**Migrating from an older config?** Legacy provider names (`scamalytics`, `ipqs`, `proxycheck`, `abuseipdb`) are no longer supported. If your `server.toml` or environment variables reference them, the server will log a startup warning and fall back to no-op scoring. Update `risk_provider` to `ipapi_is` (or `none` to opt out).
+</Callout>
 
 Full configuration reference: [Configuration → IP Quality](/en/docs/configuration).
 
