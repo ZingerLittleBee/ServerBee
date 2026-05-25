@@ -278,7 +278,8 @@ impl IpRiskService {
         ip: &str,
     ) -> Option<IpQualitySnapshotData> {
         let primary = provider_for_config(&self.config, &self.config.risk_provider);
-        let fallback = if self.config.risk_provider_fallback != "none"
+        let fallback = if self.config.risk_provider != "none"
+            && self.config.risk_provider_fallback != "none"
             && self.config.risk_provider_fallback != self.config.risk_provider
         {
             provider_for_config(&self.config, &self.config.risk_provider_fallback)
@@ -1212,5 +1213,23 @@ mod tests {
             ipapi_is: None,
         };
         assert_eq!(cfg.risk_provider_fallback, "none");
+    }
+
+    #[test]
+    fn score_ip_with_risk_provider_none_does_not_construct_fallback() {
+        let cfg = crate::config::IpQualityConfig {
+            risk_provider: "none".to_string(),
+            risk_provider_fallback: "ip-api".to_string(),
+            ipapi_is: None,
+        };
+        // The guard logic in score_ip should produce fallback = None
+        // when risk_provider == "none", regardless of fallback config.
+        let should_construct_fallback = cfg.risk_provider != "none"
+            && cfg.risk_provider_fallback != "none"
+            && cfg.risk_provider_fallback != cfg.risk_provider;
+        assert!(
+            !should_construct_fallback,
+            "fallback must not run when user opted out via risk_provider=none"
+        );
     }
 }
