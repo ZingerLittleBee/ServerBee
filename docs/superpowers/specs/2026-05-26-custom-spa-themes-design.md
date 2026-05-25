@@ -287,6 +287,7 @@ Stable code set (used by frontend i18n and integration tests):
 | code | HTTP | when |
 |---|---|---|
 | `UPLOAD_TOO_LARGE` | 413 | multipart body exceeds 25 MB hard cap |
+| `INVALID_MULTIPART` | 400 | multipart payload is malformed (parse failure, bad field, malformed zip) — `details.reason` carries the raw cause |
 | `MISSING_MANIFEST` | 400 | no `manifest.json` in package |
 | `INVALID_MANIFEST` | 400 | manifest fails schema validation (details.field names it) |
 | `MISSING_ENTRY` | 400 | `entry` path not present in package |
