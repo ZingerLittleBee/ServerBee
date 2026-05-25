@@ -9,6 +9,86 @@
     "version": "0.2.1"
   },
   "paths": {
+    "/api/about": {
+      "get": {
+        "tags": ["about"],
+        "operationId": "get_about",
+        "responses": {
+          "200": {
+            "description": "Server build info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AboutInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/rate-limit": {
+      "get": {
+        "tags": ["rate-limit"],
+        "operationId": "list_rate_limits",
+        "responses": {
+          "200": {
+            "description": "Current per-IP rate limit state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/admin/rate-limit/reset": {
+      "post": {
+        "tags": ["rate-limit"],
+        "operationId": "reset_rate_limit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RateLimitResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Number of entries cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitResetResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/agent/enrollments": {
       "get": {
         "tags": ["agent"],
@@ -23,40 +103,6 @@
                   "items": {
                     "$ref": "#/components/schemas/EnrollmentSummary"
                   }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ]
-      },
-      "post": {
-        "tags": ["agent"],
-        "operationId": "create_enrollment",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateEnrollmentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Enrollment code created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateEnrollmentResponse"
                 }
               }
             }
@@ -146,7 +192,7 @@
         },
         "responses": {
           "200": {
-            "description": "Agent registered",
+            "description": "Agent registered against the bound server",
             "content": {
               "application/json": {
                 "schema": {
@@ -156,10 +202,10 @@
             }
           },
           "400": {
-            "description": "Server limit reached"
+            "description": "Invalid fingerprint format"
           },
           "401": {
-            "description": "Invalid, expired, or already-used enrollment code"
+            "description": "Invalid, expired, revoked, or already-used enrollment code"
           }
         },
         "security": [
@@ -194,6 +240,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Server is pending (no token to rotate); use recover instead"
           },
           "404": {
             "description": "Server not found"
@@ -545,6 +594,42 @@
         ]
       }
     },
+    "/api/asn/download": {
+      "post": {
+        "tags": ["asn"],
+        "operationId": "asn_download",
+        "responses": {
+          "200": {
+            "description": "ASN download result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsnDownloadResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/asn/status": {
+      "get": {
+        "tags": ["asn"],
+        "operationId": "asn_status",
+        "responses": {
+          "200": {
+            "description": "ASN database install status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsnStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/audit-logs": {
       "get": {
         "tags": ["audit"],
@@ -569,6 +654,22 @@
               "format": "int64",
               "minimum": 0
             }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
           }
         ],
         "responses": {
@@ -578,6 +679,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin only"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["audit"],
+        "operationId": "clear_audit_logs",
+        "responses": {
+          "200": {
+            "description": "Number of audit log entries removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditClearResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin only"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/audit-logs/options": {
+      "get": {
+        "tags": ["audit"],
+        "operationId": "list_audit_options",
+        "responses": {
+          "200": {
+            "description": "Filter options for the audit log",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditOptionsResponse"
                 }
               }
             }
@@ -2078,6 +2241,260 @@
         ]
       }
     },
+    "/api/firewall/blocks": {
+      "get": {
+        "tags": ["firewall"],
+        "operationId": "list_blocks",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "RFC3339 timestamp from a previous `next_cursor` response.",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "origin",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "target_q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["string", "null"]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": ["integer", "null"],
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated blocklist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResp"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["firewall"],
+        "operationId": "create_block",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBlockReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockListItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin only"
+          },
+          "409": {
+            "description": "Guardrail rejected or duplicate target"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/firewall/blocks/{id}": {
+      "get": {
+        "tags": ["firewall"],
+        "operationId": "get_block",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Block id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Block detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockListItem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["firewall"],
+        "operationId": "delete_block",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Block id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          },
+          "403": {
+            "description": "Forbidden — admin only"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/firewall/stats": {
+      "get": {
+        "tags": ["firewall"],
+        "operationId": "firewall_stats",
+        "responses": {
+          "200": {
+            "description": "Aggregate counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResp"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/geoip/download": {
+      "post": {
+        "tags": ["geoip"],
+        "operationId": "geoip_download",
+        "responses": {
+          "200": {
+            "description": "GeoIP download result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoIpDownloadResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/geoip/status": {
+      "get": {
+        "tags": ["geoip"],
+        "operationId": "geoip_status",
+        "responses": {
+          "200": {
+            "description": "GeoIP database install status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoIpStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/incidents": {
       "get": {
         "tags": ["incidents"],
@@ -2289,6 +2706,389 @@
           },
           "404": {
             "description": "Incident not found"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/ip-quality/events": {
+      "get": {
+        "tags": ["ip-quality"],
+        "operationId": "ip_quality_list_events",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "IP quality status-change events for a server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UnlockEventDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/ip-quality/overview": {
+      "get": {
+        "tags": ["ip-quality"],
+        "operationId": "get_overview",
+        "responses": {
+          "200": {
+            "description": "IP quality overview for all servers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServerIpQualityData"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/ip-quality/servers/{id}": {
+      "get": {
+        "tags": ["ip-quality"],
+        "operationId": "get_server_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "IP quality data for a server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerIpQualityData"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/ip-quality/servers/{id}/check": {
+      "post": {
+        "tags": ["ip-quality"],
+        "operationId": "check_server",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "IP quality check triggered"
+          },
+          "404": {
+            "description": "Server agent is not online"
+          },
+          "409": {
+            "description": "CAP_IP_QUALITY is not effective for this server"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/ip-quality/services": {
+      "get": {
+        "tags": ["ip-quality"],
+        "operationId": "list_services",
+        "responses": {
+          "200": {
+            "description": "List all unlock services (built-in + custom)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UnlockService"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "post": {
+        "tags": ["ip-quality"],
+        "operationId": "create_service",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomServiceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Custom unlock service created"
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/ip-quality/services/{id}": {
+      "put": {
+        "tags": ["ip-quality"],
+        "operationId": "update_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Service updated"
+          },
+          "404": {
+            "description": "Service not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["ip-quality"],
+        "operationId": "delete_service",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Service ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service deleted"
+          },
+          "400": {
+            "description": "Cannot delete a built-in service"
+          },
+          "404": {
+            "description": "Service not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/ip-quality/settings": {
+      "get": {
+        "tags": ["ip-quality"],
+        "operationId": "ip_quality_get_settings",
+        "responses": {
+          "200": {
+            "description": "Global IP quality settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IpQualitySettingDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "put": {
+        "tags": ["ip-quality"],
+        "operationId": "ip_quality_update_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IpQualitySettingDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Settings updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IpQualitySettingDto"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation error"
@@ -3906,6 +4706,45 @@
             "bearer_token": []
           }
         ]
+      },
+      "post": {
+        "tags": ["servers"],
+        "summary": "Create a pending server row and a server-bound enrollment in a single\ntransaction. The server row is inserted with `token_hash = NULL` (pending),\n`capabilities = CAP_DEFAULT`, and `protocol_version = 1`. The operator-\nsupplied `tags` are persisted in `server_tags`, and the global default\nnetwork probe targets are applied to the new server. The returned plaintext\nenrollment `code` is shown exactly once — the install command on the agent\nwill consume it via `POST /api/agent/register`.",
+        "description": "`caps` is accepted in the request for the install.sh `--caps` arg but is\nNOT persisted on the server row. The server row always starts at\n`CAP_DEFAULT`; the operator can edit capabilities afterwards.",
+        "operationId": "create_server",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Server created (pending) and bound enrollment minted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateServerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or max_servers cap reached"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
       }
     },
     "/api/servers/batch-capabilities": {
@@ -4011,76 +4850,6 @@
           },
           {
             "api_key": []
-          }
-        ]
-      }
-    },
-    "/api/servers/recovery-jobs/{job_id}": {
-      "get": {
-        "tags": ["server-recovery"],
-        "operationId": "get_recovery_job",
-        "parameters": [
-          {
-            "name": "job_id",
-            "in": "path",
-            "description": "Recovery job id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Recovery job details",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryJobResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Admin required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Recovery job not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
           }
         ]
       }
@@ -4386,10 +5155,165 @@
         ]
       }
     },
+    "/api/servers/{id}/recover": {
+      "post": {
+        "tags": ["servers"],
+        "summary": "Mint a fresh bound enrollment for an already-enrolled server so the operator\ncan reinstall the agent. The target server MUST already have a token\n(`token_hash IS NOT NULL`) — recover on a pending server is rejected with\n`400`, use `regenerate-code` for that path.",
+        "description": "Recover NEVER auto-supersedes an outstanding enrollment: if one is still\nactive, this returns `409` and the operator is expected to either wait for\nit to expire or revoke it first. Only `regenerate-code` auto-supersedes.\n\n`revoke_immediately`:\n- `true` — clear `token_hash`/`token_prefix` inside the same transaction\n  and kick the currently connected agent WS after commit. The server\n  returns to pending until the new code is consumed.\n- `false` — the existing token stays valid; the new code only becomes\n  active once the agent registers with it (`verify_and_consume_tx` then\n  rotates the token via `mint_token_for_server`).",
+        "operationId": "recover_server",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Recover enrollment minted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoverResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server is pending (use regenerate-code instead)"
+          },
+          "404": {
+            "description": "Server not found"
+          },
+          "409": {
+            "description": "Outstanding enrollment exists; revoke it first"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{id}/regenerate-code": {
+      "post": {
+        "tags": ["servers"],
+        "summary": "Mint a fresh bound enrollment for a pending server, auto-superseding the\nprevious outstanding enrollment (if any) inside one transaction. The target\nserver MUST be pending (`token_hash IS NULL`); use `recover` for an already-\nenrolled server.",
+        "description": "Optimistic concurrency: callers pass `expected_enrollment_id` to guard\nagainst stomping on a concurrent operator's regenerated code. Semantics:\n- `Some(id) && matches current outstanding` → proceed (CAS pass)\n- `Some(id) && does NOT match` (including: there is no outstanding row, or\n  the row referenced has been revoked/consumed) → 409\n- `None && outstanding exists` → proceed (last-writer-wins)\n- `None && no outstanding` → proceed (fresh mint)",
+        "operationId": "regenerate_code",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegenerateCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Regenerate enrollment minted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegenerateCodeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Server is not pending; use recover instead"
+          },
+          "404": {
+            "description": "Server not found"
+          },
+          "409": {
+            "description": "expected_enrollment_id mismatch"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/servers/{id}/traceroute": {
+      "get": {
+        "tags": ["traceroute"],
+        "operationId": "list_traceroute_records",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TracerouteRecordSummary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
       "post": {
         "tags": ["traceroute"],
-        "summary": "Trigger a traceroute to a target from the specified server's agent.",
         "operationId": "trigger_traceroute",
         "parameters": [
           {
@@ -4414,7 +5338,7 @@
         },
         "responses": {
           "200": {
-            "description": "Traceroute triggered",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -4424,10 +5348,47 @@
             }
           },
           "404": {
-            "description": "Server not found or offline"
+            "description": ""
           },
           "422": {
-            "description": "Invalid target"
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["traceroute"],
+        "operationId": "clear_traceroute_history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearedResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4446,13 +5407,11 @@
     "/api/servers/{id}/traceroute/{request_id}": {
       "get": {
         "tags": ["traceroute"],
-        "summary": "Poll for the result of a previously triggered traceroute.",
-        "operationId": "get_traceroute_result",
+        "operationId": "get_traceroute_snapshot",
         "parameters": [
           {
             "name": "id",
             "in": "path",
-            "description": "Server ID",
             "required": true,
             "schema": {
               "type": "string"
@@ -4461,7 +5420,6 @@
           {
             "name": "request_id",
             "in": "path",
-            "description": "Traceroute request ID",
             "required": true,
             "schema": {
               "type": "string"
@@ -4470,17 +5428,58 @@
         ],
         "responses": {
           "200": {
-            "description": "Traceroute result",
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TracerouteResultResponse"
+                  "$ref": "#/components/schemas/TracerouteSnapshotResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "Result not found or server mismatch"
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["traceroute"],
+        "operationId": "delete_traceroute_record",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": ""
           }
         },
         "security": [
@@ -4616,189 +5615,6 @@
           },
           "404": {
             "description": "Server not found"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/servers/{target_id}/recover-merge": {
-      "post": {
-        "tags": ["server-recovery"],
-        "operationId": "start_recovery_merge",
-        "parameters": [
-          {
-            "name": "target_id",
-            "in": "path",
-            "description": "Original offline server id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StartRecoveryRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recovery job created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoveryJobResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Admin required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Server not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Recovery cannot be started in the current state",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/servers/{target_id}/recovery-candidates": {
-      "get": {
-        "tags": ["server-recovery"],
-        "operationId": "list_candidates",
-        "parameters": [
-          {
-            "name": "target_id",
-            "in": "path",
-            "description": "Original offline server id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Recommended recovery candidates",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RecoveryCandidateResponse"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Admin required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Target server not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Target must be offline and not already in a running recovery job",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
           }
         },
         "security": [
@@ -6788,6 +7604,15 @@
   },
   "components": {
     "schemas": {
+      "AboutInfo": {
+        "type": "object",
+        "required": ["version"],
+        "properties": {
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "ActiveThemeResponse": {
         "type": "object",
         "required": ["ref", "theme"],
@@ -6909,6 +7734,9 @@
           "updated_at"
         ],
         "properties": {
+          "actions_json": {
+            "type": ["string", "null"]
+          },
           "cover_type": {
             "type": "string"
           },
@@ -6948,6 +7776,31 @@
             "format": "date-time"
           }
         }
+      },
+      "AlertRuleAction": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Auto-block the `source_ip` from the triggering security event.\nOnly valid on `ssh_brute_force_detected` / `port_scan_detected` rules.",
+            "required": ["type"],
+            "properties": {
+              "comment": {
+                "type": ["string", "null"]
+              },
+              "cover_type": {
+                "type": "string"
+              },
+              "server_ids_json": {
+                "type": ["string", "null"]
+              },
+              "type": {
+                "type": "string",
+                "enum": ["block_source_ip"]
+              }
+            }
+          }
+        ],
+        "description": "Side-effect action attached to an alert rule. Currently only\n`block_source_ip` is supported, which is restricted to security rules whose\npayload carries a `source_ip` (`ssh_brute_force_detected` /\n`port_scan_detected`)."
       },
       "AlertRuleItem": {
         "type": "object",
@@ -7381,6 +8234,48 @@
           }
         }
       },
+      "AsnDownloadResponse": {
+        "type": "object",
+        "required": ["success", "message"],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AsnStatus": {
+        "type": "object",
+        "required": ["installed"],
+        "properties": {
+          "file_size": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": ["string", "null"]
+          },
+          "updated_at": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "AuditClearResponse": {
+        "type": "object",
+        "required": ["deleted"],
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "AuditListResponse": {
         "type": "object",
         "required": ["entries", "total"],
@@ -7419,6 +8314,36 @@
             "type": "string"
           },
           "user_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditOptionsResponse": {
+        "type": "object",
+        "required": ["actions", "users"],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditUserOption"
+            }
+          }
+        }
+      },
+      "AuditUserOption": {
+        "type": "object",
+        "required": ["id", "label"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
             "type": "string"
           }
         }
@@ -7479,6 +8404,56 @@
           }
         }
       },
+      "BlockListItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "target",
+          "family",
+          "cover_type",
+          "origin",
+          "created_at"
+        ],
+        "properties": {
+          "comment": {
+            "type": ["string", "null"]
+          },
+          "cover_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": ["string", "null"]
+          },
+          "family": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "origin_event_id": {
+            "type": ["string", "null"]
+          },
+          "origin_rule_id": {
+            "type": ["string", "null"]
+          },
+          "server_ids": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
       "BrandConfig": {
         "type": "object",
         "properties": {
@@ -7519,6 +8494,17 @@
           }
         }
       },
+      "ClearedResponse": {
+        "type": "object",
+        "required": ["deleted"],
+        "properties": {
+          "deleted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "CostInvalidReason": {
         "type": "string",
         "enum": [
@@ -7550,6 +8536,12 @@
         "type": "object",
         "required": ["name", "rules"],
         "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleAction"
+            }
+          },
           "cover_type": {
             "type": "string"
           },
@@ -7588,40 +8580,88 @@
           }
         }
       },
+      "CreateBlockReq": {
+        "type": "object",
+        "required": ["target"],
+        "properties": {
+          "comment": {
+            "type": ["string", "null"]
+          },
+          "cover_type": {
+            "type": "string"
+          },
+          "server_ids": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "target": {
+            "type": "string",
+            "description": "Bare IP or CIDR. Server canonicalizes to a CIDR (`/32` or `/128` for\nbare IPs, network-bits stripped for CIDRs)."
+          }
+        }
+      },
+      "CreateCustomServiceInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "category",
+          "popularity",
+          "url",
+          "method",
+          "timeout_ms",
+          "rules"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "popularity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rules": {
+            "type": "array",
+            "items": {},
+            "description": "JSON array of ordered match rules"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
       "CreateDashboardInput": {
         "type": "object",
         "required": ["name"],
         "properties": {
           "name": {
-            "type": "string"
-          }
-        }
-      },
-      "CreateEnrollmentRequest": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": ["string", "null"]
-          },
-          "ttl_secs": {
-            "type": ["integer", "null"],
-            "format": "int64",
-            "description": "Lifetime in seconds. Defaults to 600 (10 min), max 86400."
-          }
-        }
-      },
-      "CreateEnrollmentResponse": {
-        "type": "object",
-        "required": ["id", "code", "expires_at"],
-        "properties": {
-          "code": {
-            "type": "string",
-            "description": "Plaintext enrollment code — shown exactly once, never retrievable again."
-          },
-          "expires_at": {
-            "type": "string"
-          },
-          "id": {
             "type": "string"
           }
         }
@@ -7768,6 +8808,79 @@
           }
         }
       },
+      "CreateServerRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "billing_cycle": {
+            "type": ["string", "null"]
+          },
+          "billing_start_day": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "caps": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            },
+            "description": "Capabilities to encode into the install.sh `--caps` arg only; not\npersisted on the server row (which always uses `CAP_DEFAULT`)."
+          },
+          "currency": {
+            "type": ["string", "null"]
+          },
+          "expired_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "group_id": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": "string"
+          },
+          "price": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "public_remark": {
+            "type": ["string", "null"]
+          },
+          "remark": {
+            "type": ["string", "null"]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "traffic_limit": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "traffic_limit_type": {
+            "type": ["string", "null"]
+          },
+          "ttl_secs": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Defaults to 600 (10 min) per spec."
+          }
+        }
+      },
+      "CreateServerResponse": {
+        "type": "object",
+        "required": ["server_id", "enrollment"],
+        "properties": {
+          "enrollment": {
+            "$ref": "#/components/schemas/EnrollmentIssueResponse"
+          },
+          "server_id": {
+            "type": "string"
+          }
+        }
+      },
       "CreateServiceMonitor": {
         "type": "object",
         "required": ["name", "monitor_type", "target"],
@@ -7825,6 +8938,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "show_ip_quality": {
+            "type": ["boolean", "null"]
           },
           "show_values": {
             "type": ["boolean", "null"]
@@ -8058,10 +9174,30 @@
           }
         }
       },
+      "EnrollmentIssueResponse": {
+        "type": "object",
+        "required": ["id", "code", "code_prefix", "expires_at"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Plaintext enrollment code — shown exactly once at mint time. The UI\nmust surface this to the operator and warn that it cannot be recovered."
+          },
+          "code_prefix": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "EnrollmentSummary": {
         "type": "object",
         "required": [
           "id",
+          "target_server_id",
           "code_prefix",
           "created_by",
           "expires_at",
@@ -8086,8 +9222,11 @@
           "id": {
             "type": "string"
           },
-          "label": {
+          "revoked_at": {
             "type": ["string", "null"]
+          },
+          "target_server_id": {
+            "type": "string"
           }
         }
       },
@@ -8174,6 +9313,37 @@
       "FileType": {
         "type": "string",
         "enum": ["File", "Directory", "Symlink"]
+      },
+      "GeoIpDownloadResponse": {
+        "type": "object",
+        "required": ["success", "message"],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GeoIpStatus": {
+        "type": "object",
+        "required": ["installed"],
+        "properties": {
+          "file_size": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": ["string", "null"]
+          },
+          "updated_at": {
+            "type": ["string", "null"]
+          }
+        }
       },
       "GpuRecord": {
         "type": "object",
@@ -8335,6 +9505,87 @@
           }
         ]
       },
+      "IpQualitySettingDto": {
+        "type": "object",
+        "required": ["check_interval_hours"],
+        "properties": {
+          "check_interval_hours": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "IpQualitySnapshotData": {
+        "type": "object",
+        "required": [
+          "ip",
+          "ip_type",
+          "is_proxy",
+          "is_vpn",
+          "is_hosting",
+          "risk_level",
+          "checked_at"
+        ],
+        "properties": {
+          "abuse_email": {
+            "type": ["string", "null"]
+          },
+          "as_org": {
+            "type": ["string", "null"]
+          },
+          "asn": {
+            "type": ["string", "null"]
+          },
+          "asn_abuser_score": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "city": {
+            "type": ["string", "null"]
+          },
+          "country": {
+            "type": ["string", "null"]
+          },
+          "ip": {
+            "type": "string"
+          },
+          "ip_type": {
+            "type": "string"
+          },
+          "is_abuser": {
+            "type": "boolean"
+          },
+          "is_hosting": {
+            "type": "boolean"
+          },
+          "is_mobile": {
+            "type": "boolean"
+          },
+          "is_proxy": {
+            "type": "boolean"
+          },
+          "is_tor": {
+            "type": "boolean"
+          },
+          "is_vpn": {
+            "type": "boolean"
+          },
+          "region": {
+            "type": ["string", "null"]
+          },
+          "risk_level": {
+            "type": "string"
+          },
+          "risk_score": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          }
+        }
+      },
       "LatestAgentVersionResponse": {
         "type": "object",
         "properties": {
@@ -8368,6 +9619,21 @@
             "items": {
               "$ref": "#/components/schemas/FileEntry"
             }
+          }
+        }
+      },
+      "ListResp": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlockListItem"
+            }
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
           }
         }
       },
@@ -8815,6 +10081,25 @@
           }
         }
       },
+      "OutstandingEnrollmentSummary": {
+        "type": "object",
+        "description": "Outstanding-enrollment summary returned alongside a `ServerResponse` so the\nUI can render pending state and offer the install command without a second\nfetch. The plaintext code is only ever returned by the mint endpoints —\nnever here.",
+        "required": ["id", "code_prefix", "expires_at", "created_at"],
+        "properties": {
+          "code_prefix": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "PingRecord": {
         "type": "object",
         "required": [
@@ -8910,6 +10195,20 @@
               "$ref": "#/components/schemas/IncidentWithUpdates"
             }
           },
+          "ip_quality": {
+            "type": ["array", "null"],
+            "items": {
+              "$ref": "#/components/schemas/ServerIpQualityData"
+            },
+            "description": "Present only when the page has `show_ip_quality = true`.\nIPs are masked to `*.*.*.*` for unauthenticated viewers."
+          },
+          "ip_quality_services": {
+            "type": ["array", "null"],
+            "items": {
+              "$ref": "#/components/schemas/PublicUnlockServiceInfo"
+            },
+            "description": "Service display metadata for services referenced by `ip_quality`.\nPresent only when `ip_quality` is present. Allows the frontend to render\nproper service names in the unlock matrix column headers."
+          },
           "page": {
             "$ref": "#/components/schemas/StatusPageInfo"
           },
@@ -8936,6 +10235,39 @@
           }
         }
       },
+      "PublicUnlockServiceInfo": {
+        "type": "object",
+        "description": "Public-safe subset of an `unlock_service` row.\n\nDoes NOT expose `request`/`rules`/headers — those may contain internal\nURLs or secrets from custom services. Only metadata needed to label matrix\ncolumn headers is included.",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "category",
+          "popularity",
+          "is_builtin"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_builtin": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "popularity": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "PushRegisterRequest": {
         "type": "object",
         "required": ["device_token"],
@@ -8955,6 +10287,111 @@
           }
         }
       },
+      "RateLimitEntryDto": {
+        "type": "object",
+        "required": [
+          "scope",
+          "ip",
+          "count",
+          "max",
+          "window_start",
+          "seconds_remaining",
+          "blocked"
+        ],
+        "properties": {
+          "blocked": {
+            "type": "boolean",
+            "description": "True if `count >= max` and the window is still open."
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "ip": {
+            "type": "string"
+          },
+          "max": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Configured maximum requests per window for this scope.",
+            "minimum": 0
+          },
+          "scope": {
+            "$ref": "#/components/schemas/RateLimitScope"
+          },
+          "seconds_remaining": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds until the window resets. Zero if already expired."
+          },
+          "window_start": {
+            "type": "string",
+            "description": "RFC 3339 timestamp the current window opened."
+          }
+        }
+      },
+      "RateLimitListResponse": {
+        "type": "object",
+        "required": ["entries", "window_minutes", "login_max", "register_max"],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateLimitEntryDto"
+            }
+          },
+          "login_max": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "register_max": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "window_minutes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "RateLimitResetRequest": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": ["string", "null"],
+            "description": "Optional IP filter; when omitted, clears every entry in the selected scope(s)."
+          },
+          "scope": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RateLimitScope",
+                "description": "Optional scope filter; when omitted, clears both login and register."
+              }
+            ]
+          }
+        }
+      },
+      "RateLimitResetResponse": {
+        "type": "object",
+        "required": ["cleared"],
+        "properties": {
+          "cleared": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "RateLimitScope": {
+        "type": "string",
+        "enum": ["login", "register"]
+      },
       "ReadRequest": {
         "type": "object",
         "required": ["path"],
@@ -8973,94 +10410,47 @@
           }
         }
       },
-      "RecoveryCandidateResponse": {
+      "RecordedProtocol": {
+        "type": "string",
+        "description": "Persisted/read protocol enum. Extends `TraceProtocol` with `Legacy` for\nrecords normalized from pre-trippy agents whose actual probe mode is\nunknown (Unix `traceroute` defaults to UDP, `mtr` is ICMP, Windows\n`tracert` is ICMP — the legacy agent does not report which ran).",
+        "enum": ["icmp", "udp", "tcp", "legacy"]
+      },
+      "RecoverRequest": {
         "type": "object",
-        "required": ["server_id", "name", "score", "reasons"],
+        "required": ["revoke_immediately"],
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "reasons": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "score": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "server_id": {
-            "type": "string"
+          "revoke_immediately": {
+            "type": "boolean",
+            "description": "If `true`, clear the server's `token_hash`/`token_prefix` and kick the\ncurrently connected agent WebSocket as part of the same transaction.\nUse this when the operator suspects the existing agent token has been\ncompromised. If `false`, the existing token remains valid and only a\nnew bound enrollment is minted alongside it."
           }
         }
       },
-      "RecoveryJobResponse": {
+      "RecoverResponse": {
         "type": "object",
-        "required": [
-          "job_id",
-          "target_server_id",
-          "source_server_id",
-          "status",
-          "stage",
-          "started_at",
-          "created_at",
-          "updated_at"
-        ],
+        "required": ["enrollment"],
         "properties": {
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "error": {
-            "type": ["string", "null"]
-          },
-          "job_id": {
-            "type": "string"
-          },
-          "last_heartbeat_at": {
+          "enrollment": {
+            "$ref": "#/components/schemas/EnrollmentIssueResponse"
+          }
+        }
+      },
+      "RegenerateCodeRequest": {
+        "type": "object",
+        "properties": {
+          "expected_enrollment_id": {
             "type": ["string", "null"],
-            "format": "date-time"
-          },
-          "source_server_id": {
-            "type": "string"
-          },
-          "stage": {
-            "$ref": "#/components/schemas/RecoveryJobStage"
-          },
-          "started_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "$ref": "#/components/schemas/RecoveryJobStatus"
-          },
-          "target_server_id": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
+            "description": "Optimistic concurrency token. If `Some`, must match the current\noutstanding enrollment id exactly; otherwise the server returns 409.\nIf `None`, last-writer-wins: any outstanding enrollment is revoked\nand a fresh one is minted."
           }
         }
       },
-      "RecoveryJobStage": {
-        "type": "string",
-        "enum": [
-          "validating",
-          "rebinding",
-          "awaiting_target_online",
-          "freezing_writes",
-          "merging_history",
-          "finalizing",
-          "succeeded",
-          "failed",
-          "unknown"
-        ]
-      },
-      "RecoveryJobStatus": {
-        "type": "string",
-        "enum": ["running", "failed", "succeeded", "unknown"]
+      "RegenerateCodeResponse": {
+        "type": "object",
+        "required": ["enrollment"],
+        "properties": {
+          "enrollment": {
+            "$ref": "#/components/schemas/EnrollmentIssueResponse"
+          }
+        }
       },
       "RegisterRequest": {
         "type": "object",
@@ -9415,6 +10805,32 @@
           }
         }
       },
+      "ServerIpQualityData": {
+        "type": "object",
+        "description": "IP quality data for a single server: its unlock results and the latest\nIP-quality snapshot (if any). Used by both the per-server summary endpoint\nand the all-servers overview endpoint.",
+        "required": ["server_id", "unlock_results"],
+        "properties": {
+          "ip_quality": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IpQualitySnapshotData"
+              }
+            ]
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "unlock_results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnlockResultDto"
+            }
+          }
+        }
+      },
       "ServerRecord": {
         "type": "object",
         "required": [
@@ -9630,6 +11046,7 @@
           "capabilities",
           "protocol_version",
           "features",
+          "has_token",
           "created_at",
           "updated_at"
         ],
@@ -9693,6 +11110,10 @@
           "group_id": {
             "type": ["string", "null"]
           },
+          "has_token": {
+            "type": "boolean",
+            "description": "`true` iff the server row has a non-NULL `token_hash`. Pending servers\n(created via `POST /api/servers` but not yet enrolled by an agent) have\n`has_token = false`; the UI uses this to render a \"pending\" badge."
+          },
           "hidden": {
             "type": "boolean"
           },
@@ -9717,6 +11138,17 @@
           },
           "os": {
             "type": ["string", "null"]
+          },
+          "outstanding_enrollment": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OutstandingEnrollmentSummary",
+                "description": "The single outstanding (not consumed, not revoked) bound enrollment for\nthis server, if any. Plaintext code is intentionally NOT included — it\nis only returned at mint time. The UI uses this to surface a \"show\ninstall command\" button on pending or recovering servers."
+              }
+            ]
           },
           "price": {
             "type": ["number", "null"],
@@ -9948,15 +11380,6 @@
           }
         }
       },
-      "StartRecoveryRequest": {
-        "type": "object",
-        "required": ["source_server_id"],
-        "properties": {
-          "source_server_id": {
-            "type": "string"
-          }
-        }
-      },
       "StatRequest": {
         "type": "object",
         "required": ["path"],
@@ -9985,6 +11408,32 @@
           },
           "key": {
             "type": "string"
+          }
+        }
+      },
+      "StatsResp": {
+        "type": "object",
+        "required": ["total", "auto", "manual", "v4", "v6"],
+        "properties": {
+          "auto": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "manual": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "v4": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "v6": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -10075,6 +11524,7 @@
           "enabled",
           "uptime_yellow_threshold",
           "uptime_red_threshold",
+          "show_ip_quality",
           "created_at",
           "updated_at"
         ],
@@ -10100,6 +11550,9 @@
           },
           "server_ids_json": {
             "type": "string"
+          },
+          "show_ip_quality": {
+            "type": "boolean"
           },
           "show_values": {
             "type": "boolean"
@@ -10553,12 +12006,25 @@
           }
         }
       },
+      "TraceProtocol": {
+        "type": "string",
+        "description": "Strict input protocol enum used on `ServerMessage::Traceroute.protocol`\nand on the server's POST request DTO. Only the three values the user can\npick are accepted; legacy is NOT part of this enum.",
+        "enum": ["icmp", "udp", "tcp"]
+      },
       "TracerouteHop": {
         "type": "object",
         "required": ["hop"],
         "properties": {
           "asn": {
             "type": ["string", "null"]
+          },
+          "avg_ms": {
+            "type": ["number", "null"],
+            "format": "double"
+          },
+          "best_ms": {
+            "type": ["number", "null"],
+            "format": "double"
           },
           "hop": {
             "type": "integer",
@@ -10571,6 +12037,23 @@
           "ip": {
             "type": ["string", "null"]
           },
+          "ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "All IPs that responded for this TTL (ECMP). Empty when no response yet."
+          },
+          "jitter_ms": {
+            "type": ["number", "null"],
+            "format": "double",
+            "description": "Round-trip jitter (difference vs. previous probe)."
+          },
+          "loss_pct": {
+            "type": ["number", "null"],
+            "format": "double",
+            "description": "Packet loss as percentage 0.0–100.0."
+          },
           "rtt1": {
             "type": ["number", "null"],
             "format": "double"
@@ -10582,15 +12065,85 @@
           "rtt3": {
             "type": ["number", "null"],
             "format": "double"
+          },
+          "stddev_ms": {
+            "type": ["number", "null"],
+            "format": "double",
+            "description": "RTT standard deviation across all received probes."
+          },
+          "total_recv": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "minimum": 0
+          },
+          "total_sent": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "minimum": 0
+          },
+          "worst_ms": {
+            "type": ["number", "null"],
+            "format": "double"
           }
         }
       },
-      "TracerouteResultResponse": {
+      "TracerouteRecordSummary": {
         "type": "object",
-        "required": ["target", "hops", "completed"],
+        "required": [
+          "request_id",
+          "target",
+          "protocol",
+          "started_at",
+          "hop_count",
+          "has_error"
+        ],
+        "properties": {
+          "completed_at": {
+            "type": ["integer", "null"],
+            "format": "int64"
+          },
+          "has_error": {
+            "type": "boolean"
+          },
+          "hop_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/RecordedProtocol"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
+      "TracerouteSnapshotResponse": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "target",
+          "protocol",
+          "started_at",
+          "round",
+          "total_rounds",
+          "completed",
+          "hops"
+        ],
         "properties": {
           "completed": {
             "type": "boolean"
+          },
+          "completed_at": {
+            "type": ["integer", "null"],
+            "format": "int64"
           },
           "error": {
             "type": ["string", "null"]
@@ -10601,8 +12154,28 @@
               "$ref": "#/components/schemas/TracerouteHop"
             }
           },
+          "protocol": {
+            "$ref": "#/components/schemas/RecordedProtocol"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "round": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64"
+          },
           "target": {
             "type": "string"
+          },
+          "total_rounds": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -10749,9 +12322,20 @@
         "type": "object",
         "required": ["target"],
         "properties": {
+          "protocol": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TraceProtocol",
+                "description": "One of `icmp` | `udp` | `tcp`. Missing → defaults to `icmp`."
+              }
+            ]
+          },
           "target": {
             "type": "string",
-            "description": "Target host or IP (e.g. \"1.2.3.4\" or \"example.com\")"
+            "description": "Target host or IP (e.g. \"1.2.3.4\" or \"example.com\")."
           }
         }
       },
@@ -10760,14 +12344,138 @@
         "required": ["request_id"],
         "properties": {
           "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "UnlockEventDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "service_id",
+          "old_status",
+          "new_status",
+          "changed_at"
+        ],
+        "properties": {
+          "changed_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "new_status": {
+            "type": "string"
+          },
+          "old_status": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          }
+        }
+      },
+      "UnlockResultDto": {
+        "type": "object",
+        "required": ["id", "server_id", "service_id", "status", "checked_at"],
+        "properties": {
+          "checked_at": {
+            "type": "string"
+          },
+          "detail": {
+            "type": ["string", "null"]
+          },
+          "id": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "region": {
+            "type": ["string", "null"]
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "UnlockService": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "category",
+          "popularity",
+          "is_builtin",
+          "enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "created_at": {
             "type": "string",
-            "description": "Unique request ID used to poll for results"
+            "format": "date-time"
+          },
+          "detector": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_builtin": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "popularity": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "request": {
+            "type": ["string", "null"],
+            "description": "JSON: custom request config"
+          },
+          "rules": {
+            "type": ["string", "null"],
+            "description": "JSON: custom match rules"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
       "UpdateAlertRule": {
         "type": "object",
         "properties": {
+          "actions": {
+            "type": ["array", "null"],
+            "items": {
+              "$ref": "#/components/schemas/AlertRuleAction"
+            }
+          },
           "cover_type": {
             "type": ["string", "null"]
           },
@@ -10999,6 +12707,54 @@
           }
         }
       },
+      "UpdateServiceInput": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": ["string", "null"]
+          },
+          "enabled": {
+            "type": ["boolean", "null"]
+          },
+          "headers": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "method": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "popularity": {
+            "type": ["integer", "null"],
+            "format": "int32"
+          },
+          "rules": {
+            "type": ["array", "null"],
+            "items": {}
+          },
+          "timeout_ms": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "minimum": 0
+          },
+          "url": {
+            "type": ["string", "null"]
+          }
+        }
+      },
       "UpdateServiceMonitor": {
         "type": "object",
         "properties": {
@@ -11051,6 +12807,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "show_ip_quality": {
+            "type": ["boolean", "null"]
           },
           "show_values": {
             "type": ["boolean", "null"]
@@ -11459,6 +13218,10 @@
       "description": "Maintenance window management"
     },
     {
+      "name": "rate-limit",
+      "description": "In-memory per-IP rate limit inspection & manual reset (admin only)"
+    },
+    {
       "name": "audit",
       "description": "Audit logs (admin only)"
     },
@@ -11505,6 +13268,22 @@
     {
       "name": "security",
       "description": "Security events (SSH brute force, port scans, new IP logins)"
+    },
+    {
+      "name": "firewall",
+      "description": "Firewall blocklist (manual & auto-blocked IPs/CIDRs)"
+    },
+    {
+      "name": "ip-quality",
+      "description": "IP quality: service unlock detection + IP metadata & risk scoring"
+    },
+    {
+      "name": "geoip",
+      "description": "GeoIP MMDB database management (DB-IP Lite Country)"
+    },
+    {
+      "name": "asn",
+      "description": "ASN MMDB database management for traceroute enrichment (DB-IP Lite ASN)"
     }
   ]
 }

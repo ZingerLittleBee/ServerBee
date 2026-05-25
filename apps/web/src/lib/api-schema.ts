@@ -29,6 +29,14 @@ export type ServerMetricRecord = S['ServerRecord']
 export type UpdateServerInput = S['UpdateServerInput']
 export type BatchDeleteRequest = S['BatchDeleteRequest']
 export type BatchDeleteResponse = S['BatchDeleteResponse']
+export type CreateServerRequest = S['CreateServerRequest']
+export type CreateServerResponse = S['CreateServerResponse']
+export type EnrollmentIssueResponse = S['EnrollmentIssueResponse']
+export type OutstandingEnrollmentSummary = S['OutstandingEnrollmentSummary']
+export type RecoverRequest = S['RecoverRequest']
+export type RecoverResponse = S['RecoverResponse']
+export type RegenerateCodeRequest = S['RegenerateCodeRequest']
+export type RegenerateCodeResponse = S['RegenerateCodeResponse']
 
 // Cost
 export type CostOverviewResponse = S['CostOverviewResponse']
@@ -123,8 +131,6 @@ export type StatusGroup = S['StatusGroup']
 // Agent
 export type RegisterResponse = S['RegisterResponse']
 export type UpgradeRequest = S['UpgradeRequest']
-export type CreateEnrollmentRequest = S['CreateEnrollmentRequest']
-export type CreateEnrollmentResponse = S['CreateEnrollmentResponse']
 export type EnrollmentSummary = S['EnrollmentSummary']
 export type RotateTokenResponse = S['RotateTokenResponse']
 

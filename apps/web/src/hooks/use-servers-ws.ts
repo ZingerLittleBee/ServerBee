@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import type { SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
+import type { OutstandingEnrollmentSummary, SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
 import type { IpQualitySnapshotData, ServerIpQualityData, UnlockResultDto, UnlockStatus } from '@/lib/ip-quality-types'
 import type { NetworkProbeResultData } from '@/lib/network-types'
 import { WsClient } from '@/lib/ws-client'
@@ -31,6 +31,11 @@ interface ServerMetrics {
   effective_capabilities?: number | null
   features?: string[]
   group_id: string | null
+  /**
+   * `true` iff the server row has a non-NULL `token_hash`. Pending servers (created via
+   * `POST /api/servers` but not yet enrolled by an agent) have `has_token = false`.
+   */
+  has_token?: boolean
   id: string
   last_active: number
   load1: number
@@ -45,6 +50,11 @@ interface ServerMetrics {
   net_out_transfer: number
   online: boolean
   os: string | null
+  /**
+   * Summary of the active outstanding enrollment (if any). Present for pending servers
+   * so the UI can render the install hint without an extra fetch.
+   */
+  outstanding_enrollment?: OutstandingEnrollmentSummary | null
   process_count: number
   protocol_version?: number
   region: string | null

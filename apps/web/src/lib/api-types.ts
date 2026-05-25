@@ -4,6 +4,54 @@
  */
 
 export interface paths {
+  '/api/about': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_about']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/admin/rate-limit': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_rate_limits']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/admin/rate-limit/reset': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['reset_rate_limit']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/agent/{id}/rotate-token': {
     parameters: {
       query?: never
@@ -29,7 +77,7 @@ export interface paths {
     }
     get: operations['list_enrollments']
     put?: never
-    post: operations['create_enrollment']
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -164,6 +212,38 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/asn/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['asn_download']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/asn/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['asn_status']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/audit-logs': {
     parameters: {
       query?: never
@@ -172,6 +252,22 @@ export interface paths {
       cookie?: never
     }
     get: operations['list_audit_logs']
+    put?: never
+    post?: never
+    delete: operations['clear_audit_logs']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/audit-logs/options': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_audit_options']
     put?: never
     post?: never
     delete?: never
@@ -727,6 +823,86 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/firewall/blocks': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_blocks']
+    put?: never
+    post: operations['create_block']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/firewall/blocks/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_block']
+    put?: never
+    post?: never
+    delete: operations['delete_block']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/firewall/stats': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['firewall_stats']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/geoip/download': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['geoip_download']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/geoip/status': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['geoip_status']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/incidents': {
     parameters: {
       query?: never
@@ -769,6 +945,118 @@ export interface paths {
     get?: never
     put?: never
     post: operations['add_incident_update']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ip-quality/events': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ip_quality_list_events']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ip-quality/overview': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_overview']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ip-quality/servers/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['get_server_summary']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ip-quality/servers/{id}/check': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    post: operations['check_server']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ip-quality/services': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_services']
+    put?: never
+    post: operations['create_service']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ip-quality/services/{id}': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put: operations['update_service']
+    post?: never
+    delete: operations['delete_service']
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/ip-quality/settings': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['ip_quality_get_settings']
+    put: operations['ip_quality_update_settings']
+    post?: never
     delete?: never
     options?: never
     head?: never
@@ -1168,7 +1456,19 @@ export interface paths {
     }
     get: operations['list_servers']
     put?: never
-    post?: never
+    /**
+     * Create a pending server row and a server-bound enrollment in a single
+     *     transaction. The server row is inserted with `token_hash = NULL` (pending),
+     *     `capabilities = CAP_DEFAULT`, and `protocol_version = 1`. The operator-
+     *     supplied `tags` are persisted in `server_tags`, and the global default
+     *     network probe targets are applied to the new server. The returned plaintext
+     *     enrollment `code` is shown exactly once — the install command on the agent
+     *     will consume it via `POST /api/agent/register`.
+     * @description `caps` is accepted in the request for the install.sh `--caps` arg but is
+     *     NOT persisted on the server row. The server row always starts at
+     *     `CAP_DEFAULT`; the operator can edit capabilities afterwards.
+     */
+    post: operations['create_server']
     delete?: never
     options?: never
     head?: never
@@ -1239,7 +1539,7 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/api/servers/{id}/traceroute': {
+  '/api/servers/{id}/recover': {
     parameters: {
       query?: never
       header?: never
@@ -1248,9 +1548,70 @@ export interface paths {
     }
     get?: never
     put?: never
-    /** Trigger a traceroute to a target from the specified server's agent. */
-    post: operations['trigger_traceroute']
+    /**
+     * Mint a fresh bound enrollment for an already-enrolled server so the operator
+     *     can reinstall the agent. The target server MUST already have a token
+     *     (`token_hash IS NOT NULL`) — recover on a pending server is rejected with
+     *     `400`, use `regenerate-code` for that path.
+     * @description Recover NEVER auto-supersedes an outstanding enrollment: if one is still
+     *     active, this returns `409` and the operator is expected to either wait for
+     *     it to expire or revoke it first. Only `regenerate-code` auto-supersedes.
+     *
+     *     `revoke_immediately`:
+     *     - `true` — clear `token_hash`/`token_prefix` inside the same transaction
+     *       and kick the currently connected agent WS after commit. The server
+     *       returns to pending until the new code is consumed.
+     *     - `false` — the existing token stays valid; the new code only becomes
+     *       active once the agent registers with it (`verify_and_consume_tx` then
+     *       rotates the token via `mint_token_for_server`).
+     */
+    post: operations['recover_server']
     delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/regenerate-code': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Mint a fresh bound enrollment for a pending server, auto-superseding the
+     *     previous outstanding enrollment (if any) inside one transaction. The target
+     *     server MUST be pending (`token_hash IS NULL`); use `recover` for an already-
+     *     enrolled server.
+     * @description Optimistic concurrency: callers pass `expected_enrollment_id` to guard
+     *     against stomping on a concurrent operator's regenerated code. Semantics:
+     *     - `Some(id) && matches current outstanding` → proceed (CAS pass)
+     *     - `Some(id) && does NOT match` (including: there is no outstanding row, or
+     *       the row referenced has been revoked/consumed) → 409
+     *     - `None && outstanding exists` → proceed (last-writer-wins)
+     *     - `None && no outstanding` → proceed (fresh mint)
+     */
+    post: operations['regenerate_code']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/servers/{id}/traceroute': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get: operations['list_traceroute_records']
+    put?: never
+    post: operations['trigger_traceroute']
+    delete: operations['clear_traceroute_history']
     options?: never
     head?: never
     patch?: never
@@ -1263,11 +1624,10 @@ export interface paths {
       path?: never
       cookie?: never
     }
-    /** Poll for the result of a previously triggered traceroute. */
-    get: operations['get_traceroute_result']
+    get: operations['get_traceroute_snapshot']
     put?: never
     post?: never
-    delete?: never
+    delete: operations['delete_traceroute_record']
     options?: never
     head?: never
     patch?: never
@@ -1321,38 +1681,6 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/api/servers/{target_id}/recover-merge': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get?: never
-    put?: never
-    post: operations['start_recovery_merge']
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/api/servers/{target_id}/recovery-candidates': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['list_candidates']
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
   '/api/servers/batch-capabilities': {
     parameters: {
       query?: never
@@ -1396,22 +1724,6 @@ export interface paths {
     put?: never
     post?: never
     delete: operations['cleanup_orphaned_servers']
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  '/api/servers/recovery-jobs/{job_id}': {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations['get_recovery_job']
-    put?: never
-    post?: never
-    delete?: never
     options?: never
     head?: never
     patch?: never
@@ -1912,6 +2224,9 @@ export interface components {
   requestBodies: never
   responses: never
   schemas: {
+    AboutInfo: {
+      version: string
+    }
     ActiveThemeResponse: {
       ref: string
       theme: components['schemas']['ThemeResolved']
@@ -1945,6 +2260,7 @@ export interface components {
       status: string
     }
     AlertRule: {
+      actions_json?: string | null
       cover_type: string
       /** Format: date-time */
       created_at: string
@@ -1959,6 +2275,19 @@ export interface components {
       trigger_mode: string
       /** Format: date-time */
       updated_at: string
+    }
+    /**
+     * @description Side-effect action attached to an alert rule. Currently only
+     *     `block_source_ip` is supported, which is restricted to security rules whose
+     *     payload carries a `source_ip` (`ssh_brute_force_detected` /
+     *     `port_scan_detected`).
+     */
+    AlertRuleAction: {
+      comment?: string | null
+      cover_type?: string
+      server_ids_json?: string | null
+      /** @enum {string} */
+      type: 'block_source_ip'
     }
     AlertRuleItem: {
       cycle_interval?: string | null
@@ -2098,6 +2427,21 @@ export interface components {
         total_minutes: number
       }[]
     }
+    AsnDownloadResponse: {
+      message: string
+      success: boolean
+    }
+    AsnStatus: {
+      /** Format: int64 */
+      file_size?: number | null
+      installed: boolean
+      source?: string | null
+      updated_at?: string | null
+    }
+    AuditClearResponse: {
+      /** Format: int64 */
+      deleted: number
+    }
     AuditListResponse: {
       entries: components['schemas']['AuditLogEntry'][]
       /** Format: int64 */
@@ -2138,6 +2482,20 @@ export interface components {
       /** Format: int64 */
       deleted: number
     }
+    BlockListItem: {
+      comment?: string | null
+      cover_type: string
+      created_at: string
+      created_by?: string | null
+      /** Format: int32 */
+      family: number
+      id: string
+      origin: string
+      origin_event_id?: string | null
+      origin_rule_id?: string | null
+      server_ids?: string[] | null
+      target: string
+    }
     BrandConfig: {
       favicon_path?: string | null
       footer_text?: string | null
@@ -2152,6 +2510,10 @@ export interface components {
       /** Format: int64 */
       deleted_count: number
     }
+    ClearedResponse: {
+      /** Format: int64 */
+      deleted: number
+    }
     /** @enum {string} */
     CostInvalidReason: 'missing_price' | 'missing_billing_cycle' | 'invalid_billing_cycle' | 'invalid_price'
     CostOverviewResponse: {
@@ -2159,6 +2521,7 @@ export interface components {
       servers: components['schemas']['ServerCostOverview'][]
     }
     CreateAlertRule: {
+      actions?: components['schemas']['AlertRuleAction'][]
       cover_type?: string
       enabled?: boolean
       name: string
@@ -2170,22 +2533,31 @@ export interface components {
     CreateApiKeyRequest: {
       name: string
     }
+    CreateBlockReq: {
+      comment?: string | null
+      cover_type?: string
+      server_ids?: string[] | null
+      /**
+       * @description Bare IP or CIDR. Server canonicalizes to a CIDR (`/32` or `/128` for
+       *     bare IPs, network-bits stripped for CIDRs).
+       */
+      target: string
+    }
+    CreateCustomServiceInput: {
+      category: string
+      headers?: [string, string][]
+      method: string
+      name: string
+      /** Format: int32 */
+      popularity: number
+      /** @description JSON array of ordered match rules */
+      rules: unknown[]
+      /** Format: int32 */
+      timeout_ms: number
+      url: string
+    }
     CreateDashboardInput: {
       name: string
-    }
-    CreateEnrollmentRequest: {
-      label?: string | null
-      /**
-       * Format: int64
-       * @description Lifetime in seconds. Defaults to 600 (10 min), max 86400.
-       */
-      ttl_secs?: number | null
-    }
-    CreateEnrollmentResponse: {
-      /** @description Plaintext enrollment code — shown exactly once, never retrievable again. */
-      code: string
-      expires_at: string
-      id: string
     }
     CreateGroupRequest: {
       name: string
@@ -2231,6 +2603,38 @@ export interface components {
       server_ids?: string[]
       target: string
     }
+    CreateServerRequest: {
+      billing_cycle?: string | null
+      /** Format: int32 */
+      billing_start_day?: number | null
+      /**
+       * @description Capabilities to encode into the install.sh `--caps` arg only; not
+       *     persisted on the server row (which always uses `CAP_DEFAULT`).
+       */
+      caps?: string[] | null
+      currency?: string | null
+      /** Format: date-time */
+      expired_at?: string | null
+      group_id?: string | null
+      name: string
+      /** Format: double */
+      price?: number | null
+      public_remark?: string | null
+      remark?: string | null
+      tags?: string[]
+      /** Format: int64 */
+      traffic_limit?: number | null
+      traffic_limit_type?: string | null
+      /**
+       * Format: int64
+       * @description Defaults to 600 (10 min) per spec.
+       */
+      ttl_secs?: number | null
+    }
+    CreateServerResponse: {
+      enrollment: components['schemas']['EnrollmentIssueResponse']
+      server_id: string
+    }
     CreateServiceMonitor: {
       config_json?: unknown
       enabled?: boolean
@@ -2250,6 +2654,7 @@ export interface components {
       enabled?: boolean | null
       group_by_server_group?: boolean | null
       server_ids_json: string[]
+      show_ip_quality?: boolean | null
       show_values?: boolean | null
       slug: string
       title: string
@@ -2329,6 +2734,16 @@ export interface components {
       status: string
       transfer_id: string
     }
+    EnrollmentIssueResponse: {
+      /**
+       * @description Plaintext enrollment code — shown exactly once at mint time. The UI
+       *     must surface this to the operator and warn that it cannot be recovered.
+       */
+      code: string
+      code_prefix: string
+      expires_at: string
+      id: string
+    }
     EnrollmentSummary: {
       code_prefix: string
       consumed_at?: string | null
@@ -2336,7 +2751,8 @@ export interface components {
       created_by: string
       expires_at: string
       id: string
-      label?: string | null
+      revoked_at?: string | null
+      target_server_id: string
     }
     ErrorBody: {
       error: components['schemas']['ErrorDetail']
@@ -2368,6 +2784,17 @@ export interface components {
     }
     /** @enum {string} */
     FileType: 'File' | 'Directory' | 'Symlink'
+    GeoIpDownloadResponse: {
+      message: string
+      success: boolean
+    }
+    GeoIpStatus: {
+      /** Format: int64 */
+      file_size?: number | null
+      installed: boolean
+      source?: string | null
+      updated_at?: string | null
+    }
     GpuRecord: {
       /** Format: int32 */
       device_index: number
@@ -2421,6 +2848,33 @@ export interface components {
     IncidentWithUpdates: components['schemas']['Incident'] & {
       updates: components['schemas']['IncidentUpdate'][]
     }
+    IpQualitySettingDto: {
+      /** Format: int32 */
+      check_interval_hours: number
+    }
+    IpQualitySnapshotData: {
+      abuse_email?: string | null
+      as_org?: string | null
+      asn?: string | null
+      /** Format: int32 */
+      asn_abuser_score?: number | null
+      /** Format: date-time */
+      checked_at: string
+      city?: string | null
+      country?: string | null
+      ip: string
+      ip_type: string
+      is_abuser?: boolean
+      is_hosting: boolean
+      is_mobile?: boolean
+      is_proxy: boolean
+      is_tor?: boolean
+      is_vpn: boolean
+      region?: string | null
+      risk_level: string
+      /** Format: int32 */
+      risk_score?: number | null
+    }
     LatestAgentVersionResponse: {
       error?: string | null
       /** Format: date-time */
@@ -2432,6 +2886,10 @@ export interface components {
     }
     ListFilesResponse: {
       entries: components['schemas']['FileEntry'][]
+    }
+    ListResp: {
+      items: components['schemas']['BlockListItem'][]
+      next_cursor?: string | null
     }
     LoginRequest: {
       password: string
@@ -2572,6 +3030,18 @@ export interface components {
       new_password: string
       new_username?: string | null
     }
+    /**
+     * @description Outstanding-enrollment summary returned alongside a `ServerResponse` so the
+     *     UI can render pending state and offer the install command without a second
+     *     fetch. The plaintext code is only ever returned by the mint endpoints —
+     *     never here.
+     */
+    OutstandingEnrollmentSummary: {
+      code_prefix: string
+      created_at: string
+      expires_at: string
+      id: string
+    }
     PingRecord: {
       error?: string | null
       /** Format: int64 */
@@ -2598,11 +3068,38 @@ export interface components {
     }
     PublicStatusPageData: {
       active_incidents: components['schemas']['IncidentWithUpdates'][]
+      /**
+       * @description Present only when the page has `show_ip_quality = true`.
+       *     IPs are masked to `*.*.*.*` for unauthenticated viewers.
+       */
+      ip_quality?: components['schemas']['ServerIpQualityData'][] | null
+      /**
+       * @description Service display metadata for services referenced by `ip_quality`.
+       *     Present only when `ip_quality` is present. Allows the frontend to render
+       *     proper service names in the unlock matrix column headers.
+       */
+      ip_quality_services?: components['schemas']['PublicUnlockServiceInfo'][] | null
       page: components['schemas']['StatusPageInfo']
       planned_maintenances: components['schemas']['Maintenance'][]
       recent_incidents: components['schemas']['IncidentWithUpdates'][]
       servers: components['schemas']['ServerStatusInfo'][]
       theme: components['schemas']['ThemeResolved']
+    }
+    /**
+     * @description Public-safe subset of an `unlock_service` row.
+     *
+     *     Does NOT expose `request`/`rules`/headers — those may contain internal
+     *     URLs or secrets from custom services. Only metadata needed to label matrix
+     *     column headers is included.
+     */
+    PublicUnlockServiceInfo: {
+      category: string
+      id: string
+      is_builtin: boolean
+      key: string
+      name: string
+      /** Format: int32 */
+      popularity: number
     }
     PushRegisterRequest: {
       /** @description The APNs device token obtained from the iOS device. */
@@ -2611,48 +3108,85 @@ export interface components {
     PutActiveThemeInput: {
       ref: string
     }
+    RateLimitEntryDto: {
+      /** @description True if `count >= max` and the window is still open. */
+      blocked: boolean
+      /** Format: int32 */
+      count: number
+      ip: string
+      /**
+       * Format: int32
+       * @description Configured maximum requests per window for this scope.
+       */
+      max: number
+      scope: components['schemas']['RateLimitScope']
+      /**
+       * Format: int64
+       * @description Seconds until the window resets. Zero if already expired.
+       */
+      seconds_remaining: number
+      /** @description RFC 3339 timestamp the current window opened. */
+      window_start: string
+    }
+    RateLimitListResponse: {
+      entries: components['schemas']['RateLimitEntryDto'][]
+      /** Format: int32 */
+      login_max: number
+      /** Format: int32 */
+      register_max: number
+      /** Format: int64 */
+      window_minutes: number
+    }
+    RateLimitResetRequest: {
+      /** @description Optional IP filter; when omitted, clears every entry in the selected scope(s). */
+      ip?: string | null
+      scope?: null | components['schemas']['RateLimitScope']
+    }
+    RateLimitResetResponse: {
+      /** Format: int32 */
+      cleared: number
+    }
+    /** @enum {string} */
+    RateLimitScope: 'login' | 'register'
     ReadRequest: {
       path: string
     }
     ReadResponse: {
       content: string
     }
-    RecoveryCandidateResponse: {
-      name: string
-      reasons: string[]
-      /** Format: int32 */
-      score: number
-      server_id: string
+    /**
+     * @description Persisted/read protocol enum. Extends `TraceProtocol` with `Legacy` for
+     *     records normalized from pre-trippy agents whose actual probe mode is
+     *     unknown (Unix `traceroute` defaults to UDP, `mtr` is ICMP, Windows
+     *     `tracert` is ICMP — the legacy agent does not report which ran).
+     * @enum {string}
+     */
+    RecordedProtocol: 'icmp' | 'udp' | 'tcp' | 'legacy'
+    RecoverRequest: {
+      /**
+       * @description If `true`, clear the server's `token_hash`/`token_prefix` and kick the
+       *     currently connected agent WebSocket as part of the same transaction.
+       *     Use this when the operator suspects the existing agent token has been
+       *     compromised. If `false`, the existing token remains valid and only a
+       *     new bound enrollment is minted alongside it.
+       */
+      revoke_immediately: boolean
     }
-    RecoveryJobResponse: {
-      /** Format: date-time */
-      created_at: string
-      error?: string | null
-      job_id: string
-      /** Format: date-time */
-      last_heartbeat_at?: string | null
-      source_server_id: string
-      stage: components['schemas']['RecoveryJobStage']
-      /** Format: date-time */
-      started_at: string
-      status: components['schemas']['RecoveryJobStatus']
-      target_server_id: string
-      /** Format: date-time */
-      updated_at: string
+    RecoverResponse: {
+      enrollment: components['schemas']['EnrollmentIssueResponse']
     }
-    /** @enum {string} */
-    RecoveryJobStage:
-      | 'validating'
-      | 'rebinding'
-      | 'awaiting_target_online'
-      | 'freezing_writes'
-      | 'merging_history'
-      | 'finalizing'
-      | 'succeeded'
-      | 'failed'
-      | 'unknown'
-    /** @enum {string} */
-    RecoveryJobStatus: 'running' | 'failed' | 'succeeded' | 'unknown'
+    RegenerateCodeRequest: {
+      /**
+       * @description Optimistic concurrency token. If `Some`, must match the current
+       *     outstanding enrollment id exactly; otherwise the server returns 409.
+       *     If `None`, last-writer-wins: any outstanding enrollment is revoked
+       *     and a fresh one is minted.
+       */
+      expected_enrollment_id?: string | null
+    }
+    RegenerateCodeResponse: {
+      enrollment: components['schemas']['EnrollmentIssueResponse']
+    }
     RegisterRequest: {
       fingerprint?: string
     }
@@ -2785,6 +3319,16 @@ export interface components {
       /** Format: int32 */
       weight: number
     }
+    /**
+     * @description IP quality data for a single server: its unlock results and the latest
+     *     IP-quality snapshot (if any). Used by both the per-server summary endpoint
+     *     and the all-servers overview endpoint.
+     */
+    ServerIpQualityData: {
+      ip_quality?: null | components['schemas']['IpQualitySnapshotData']
+      server_id: string
+      unlock_results: components['schemas']['UnlockResultDto'][]
+    }
     ServerRecord: {
       /** Format: double */
       cpu: number
@@ -2891,6 +3435,12 @@ export interface components {
       expired_at?: string | null
       features: string[]
       group_id?: string | null
+      /**
+       * @description `true` iff the server row has a non-NULL `token_hash`. Pending servers
+       *     (created via `POST /api/servers` but not yet enrolled by an agent) have
+       *     `has_token = false`; the UI uses this to render a "pending" badge.
+       */
+      has_token: boolean
       hidden: boolean
       id: string
       ipv4?: string | null
@@ -2900,6 +3450,7 @@ export interface components {
       mem_total?: number | null
       name: string
       os?: string | null
+      outstanding_enrollment?: null | components['schemas']['OutstandingEnrollmentSummary']
       /** Format: double */
       price?: number | null
       /** Format: int32 */
@@ -2982,9 +3533,6 @@ export interface components {
       /** Format: date-time */
       time: string
     }
-    StartRecoveryRequest: {
-      source_server_id: string
-    }
     StatRequest: {
       path: string
     }
@@ -2995,6 +3543,18 @@ export interface components {
       /** Format: int64 */
       count: number
       key: string
+    }
+    StatsResp: {
+      /** Format: int64 */
+      auto: number
+      /** Format: int64 */
+      manual: number
+      /** Format: int64 */
+      total: number
+      /** Format: int64 */
+      v4: number
+      /** Format: int64 */
+      v6: number
     }
     StatusGroup: {
       id: string
@@ -3033,6 +3593,7 @@ export interface components {
       group_by_server_group: boolean
       id: string
       server_ids_json: string
+      show_ip_quality: boolean
       show_values: boolean
       slug: string
       theme_ref?: string | null
@@ -3181,24 +3742,80 @@ export interface components {
     TotpVerifyRequest: {
       code: string
     }
+    /**
+     * @description Strict input protocol enum used on `ServerMessage::Traceroute.protocol`
+     *     and on the server's POST request DTO. Only the three values the user can
+     *     pick are accepted; legacy is NOT part of this enum.
+     * @enum {string}
+     */
+    TraceProtocol: 'icmp' | 'udp' | 'tcp'
     TracerouteHop: {
       asn?: string | null
+      /** Format: double */
+      avg_ms?: number | null
+      /** Format: double */
+      best_ms?: number | null
       /** Format: int32 */
       hop: number
       hostname?: string | null
       ip?: string | null
+      /** @description All IPs that responded for this TTL (ECMP). Empty when no response yet. */
+      ips?: string[]
+      /**
+       * Format: double
+       * @description Round-trip jitter (difference vs. previous probe).
+       */
+      jitter_ms?: number | null
+      /**
+       * Format: double
+       * @description Packet loss as percentage 0.0–100.0.
+       */
+      loss_pct?: number | null
       /** Format: double */
       rtt1?: number | null
       /** Format: double */
       rtt2?: number | null
       /** Format: double */
       rtt3?: number | null
+      /**
+       * Format: double
+       * @description RTT standard deviation across all received probes.
+       */
+      stddev_ms?: number | null
+      /** Format: int32 */
+      total_recv?: number | null
+      /** Format: int32 */
+      total_sent?: number | null
+      /** Format: double */
+      worst_ms?: number | null
     }
-    TracerouteResultResponse: {
+    TracerouteRecordSummary: {
+      /** Format: int64 */
+      completed_at?: number | null
+      has_error: boolean
+      /** Format: int32 */
+      hop_count: number
+      protocol: components['schemas']['RecordedProtocol']
+      request_id: string
+      /** Format: int64 */
+      started_at: number
+      target: string
+    }
+    TracerouteSnapshotResponse: {
       completed: boolean
+      /** Format: int64 */
+      completed_at?: number | null
       error?: string | null
       hops: components['schemas']['TracerouteHop'][]
+      protocol: components['schemas']['RecordedProtocol']
+      request_id: string
+      /** Format: int32 */
+      round: number
+      /** Format: int64 */
+      started_at: number
       target: string
+      /** Format: int32 */
+      total_rounds: number
     }
     TrafficPrediction: {
       /** Format: double */
@@ -3243,14 +3860,53 @@ export interface components {
       transfers: components['schemas']['TransferInfo'][]
     }
     TriggerTracerouteRequest: {
-      /** @description Target host or IP (e.g. "1.2.3.4" or "example.com") */
+      protocol?: null | components['schemas']['TraceProtocol']
+      /** @description Target host or IP (e.g. "1.2.3.4" or "example.com"). */
       target: string
     }
     TriggerTracerouteResponse: {
-      /** @description Unique request ID used to poll for results */
       request_id: string
     }
+    UnlockEventDto: {
+      changed_at: string
+      id: string
+      new_status: string
+      old_status: string
+      server_id: string
+      service_id: string
+    }
+    UnlockResultDto: {
+      checked_at: string
+      detail?: string | null
+      id: string
+      /** Format: int32 */
+      latency_ms?: number | null
+      region?: string | null
+      server_id: string
+      service_id: string
+      status: string
+    }
+    UnlockService: {
+      category: string
+      /** Format: date-time */
+      created_at: string
+      detector?: string | null
+      enabled: boolean
+      id: string
+      is_builtin: boolean
+      key: string
+      name: string
+      /** Format: int32 */
+      popularity: number
+      /** @description JSON: custom request config */
+      request?: string | null
+      /** @description JSON: custom match rules */
+      rules?: string | null
+      /** Format: date-time */
+      updated_at: string
+    }
     UpdateAlertRule: {
+      actions?: components['schemas']['AlertRuleAction'][] | null
       cover_type?: string | null
       enabled?: boolean | null
       name?: string | null
@@ -3330,6 +3986,19 @@ export interface components {
       /** Format: int32 */
       weight?: number | null
     }
+    UpdateServiceInput: {
+      category?: string | null
+      enabled?: boolean | null
+      headers?: [string, string][] | null
+      method?: string | null
+      name?: string | null
+      /** Format: int32 */
+      popularity?: number | null
+      rules?: unknown[] | null
+      /** Format: int32 */
+      timeout_ms?: number | null
+      url?: string | null
+    }
     UpdateServiceMonitor: {
       config_json?: unknown
       enabled?: boolean | null
@@ -3348,6 +4017,7 @@ export interface components {
       enabled?: boolean | null
       group_by_server_group?: boolean | null
       server_ids_json?: string[] | null
+      show_ip_quality?: boolean | null
       show_values?: boolean | null
       slug?: string | null
       theme_ref?: string | null
@@ -3511,6 +4181,46 @@ export interface operations {
       }
     }
   }
+  asn_download: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description ASN download result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AsnDownloadResponse']
+        }
+      }
+    }
+  }
+  asn_status: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description ASN database install status */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AsnStatus']
+        }
+      }
+    }
+  }
   batch_delete: {
     parameters: {
       query?: never
@@ -3625,6 +4335,41 @@ export interface operations {
       }
     }
   }
+  check_server: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description IP quality check triggered */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server agent is not online */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description CAP_IP_QUALITY is not effective for this server */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   cleanup_orphaned_servers: {
     parameters: {
       query?: never
@@ -3641,6 +4386,54 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['CleanupResponse']
+        }
+      }
+    }
+  }
+  clear_audit_logs: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Number of audit log entries removed */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AuditClearResponse']
+        }
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  clear_traceroute_history: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ClearedResponse']
         }
       }
     }
@@ -3694,6 +4487,44 @@ export interface operations {
       }
     }
   }
+  create_block: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateBlockReq']
+      }
+    }
+    responses: {
+      /** @description Created */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BlockListItem']
+        }
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Guardrail rejected or duplicate target */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   create_dashboard: {
     parameters: {
       query?: never
@@ -3714,30 +4545,6 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['Model']
-        }
-      }
-    }
-  }
-  create_enrollment: {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['CreateEnrollmentRequest']
-      }
-    }
-    responses: {
-      /** @description Enrollment code created */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['CreateEnrollmentResponse']
         }
       }
     }
@@ -3921,6 +4728,37 @@ export interface operations {
       }
     }
   }
+  create_server: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateServerRequest']
+      }
+    }
+    responses: {
+      /** @description Server created (pending) and bound enrollment minted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['CreateServerResponse']
+        }
+      }
+      /** @description Validation error or max_servers cap reached */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   create_server_group: {
     parameters: {
       query?: never
@@ -3945,6 +4783,35 @@ export interface operations {
       }
       /** @description Group name already exists */
       409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  create_service: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['CreateCustomServiceInput']
+      }
+    }
+    responses: {
+      /** @description Custom unlock service created */
+      200: {
         headers: {
           [name: string]: unknown
         }
@@ -4169,6 +5036,41 @@ export interface operations {
         content?: never
       }
       /** @description API key not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_block: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Block id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Forbidden — admin only */
+      403: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Not found */
       404: {
         headers: {
           [name: string]: unknown
@@ -4540,6 +5442,41 @@ export interface operations {
       }
     }
   }
+  delete_service: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Service deleted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Cannot delete a built-in service */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Service not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   delete_service_monitor: {
     parameters: {
       query?: never
@@ -4666,6 +5603,32 @@ export interface operations {
       }
       /** @description Custom themes disabled */
       422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  delete_traceroute_record: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+        request_id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      404: {
         headers: {
           [name: string]: unknown
         }
@@ -4831,6 +5794,26 @@ export interface operations {
       }
     }
   }
+  firewall_stats: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Aggregate counts */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['StatsResp']
+        }
+      }
+    }
+  }
   generate_pair_code: {
     parameters: {
       query?: never
@@ -4855,6 +5838,66 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  geoip_download: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description GeoIP download result */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['GeoIpDownloadResponse']
+        }
+      }
+    }
+  }
+  geoip_status: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description GeoIP database install status */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['GeoIpStatus']
+        }
+      }
+    }
+  }
+  get_about: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Server build info */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['AboutInfo']
+        }
       }
     }
   }
@@ -4914,6 +5957,36 @@ export interface operations {
         content?: never
       }
       /** @description Alert state or rule not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  get_block: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Block id */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Block detail */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['BlockListItem']
+        }
+      }
+      /** @description Not found */
       404: {
         headers: {
           [name: string]: unknown
@@ -5128,6 +6201,26 @@ export interface operations {
       }
     }
   }
+  get_overview: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description IP quality overview for all servers */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerIpQualityData'][]
+        }
+      }
+    }
+  }
   get_ping_records: {
     parameters: {
       query: {
@@ -5212,56 +6305,6 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
-      }
-    }
-  }
-  get_recovery_job: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Recovery job id */
-        job_id: string
-      }
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description Recovery job details */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['RecoveryJobResponse']
-        }
-      }
-      /** @description Authentication required */
-      401: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Admin required */
-      403: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Recovery job not found */
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
       }
     }
   }
@@ -5430,6 +6473,36 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ServerRecord'][]
         }
+      }
+    }
+  }
+  get_server_summary: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description IP quality data for a server */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['ServerIpQualityData']
+        }
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
     }
   }
@@ -5603,30 +6676,26 @@ export interface operations {
       }
     }
   }
-  get_traceroute_result: {
+  get_traceroute_snapshot: {
     parameters: {
       query?: never
       header?: never
       path: {
-        /** @description Server ID */
         id: string
-        /** @description Traceroute request ID */
         request_id: string
       }
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Traceroute result */
       200: {
         headers: {
           [name: string]: unknown
         }
         content: {
-          'application/json': components['schemas']['TracerouteResultResponse']
+          'application/json': components['schemas']['TracerouteSnapshotResponse']
         }
       }
-      /** @description Result not found or server mismatch */
       404: {
         headers: {
           [name: string]: unknown
@@ -5863,6 +6932,80 @@ export interface operations {
       }
     }
   }
+  ip_quality_get_settings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Global IP quality settings */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IpQualitySettingDto']
+        }
+      }
+    }
+  }
+  ip_quality_list_events: {
+    parameters: {
+      query: {
+        server_id: string
+        limit?: number
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description IP quality status-change events for a server */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UnlockEventDto'][]
+        }
+      }
+    }
+  }
+  ip_quality_update_settings: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['IpQualitySettingDto']
+      }
+    }
+    responses: {
+      /** @description Settings updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['IpQualitySettingDto']
+        }
+      }
+      /** @description Validation error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   latest_version: {
     parameters: {
       query?: never
@@ -5930,6 +7073,8 @@ export interface operations {
       query?: {
         limit?: number
         offset?: number
+        action?: string | null
+        user_id?: string | null
       }
       header?: never
       path?: never
@@ -5955,61 +7100,55 @@ export interface operations {
       }
     }
   }
-  list_candidates: {
+  list_audit_options: {
     parameters: {
       query?: never
       header?: never
-      path: {
-        /** @description Original offline server id */
-        target_id: string
-      }
+      path?: never
       cookie?: never
     }
     requestBody?: never
     responses: {
-      /** @description Recommended recovery candidates */
+      /** @description Filter options for the audit log */
       200: {
         headers: {
           [name: string]: unknown
         }
         content: {
-          'application/json': components['schemas']['RecoveryCandidateResponse'][]
+          'application/json': components['schemas']['AuditOptionsResponse']
         }
       }
-      /** @description Authentication required */
-      401: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Admin required */
+      /** @description Forbidden — admin only */
       403: {
         headers: {
           [name: string]: unknown
         }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
+        content?: never
       }
-      /** @description Target server not found */
-      404: {
+    }
+  }
+  list_blocks: {
+    parameters: {
+      query?: {
+        /** @description RFC3339 timestamp from a previous `next_cursor` response. */
+        cursor?: string | null
+        origin?: string | null
+        target_q?: string | null
+        limit?: number | null
+      }
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Paginated blocklist */
+      200: {
         headers: {
           [name: string]: unknown
         }
         content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Target must be offline and not already in a running recovery job */
-      409: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
+          'application/json': components['schemas']['ListResp']
         }
       }
     }
@@ -6327,6 +7466,26 @@ export interface operations {
       }
     }
   }
+  list_rate_limits: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Current per-IP rate limit state */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RateLimitListResponse']
+        }
+      }
+    }
+  }
   list_rules: {
     parameters: {
       query?: never
@@ -6383,6 +7542,26 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['ServerResponse'][]
+        }
+      }
+    }
+  }
+  list_services: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description List all unlock services (built-in + custom) */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['UnlockService'][]
         }
       }
     }
@@ -6476,6 +7655,27 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  list_traceroute_records: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['TracerouteRecordSummary'][]
+        }
       }
     }
   }
@@ -7122,6 +8322,102 @@ export interface operations {
       }
     }
   }
+  recover_server: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RecoverRequest']
+      }
+    }
+    responses: {
+      /** @description Recover enrollment minted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RecoverResponse']
+        }
+      }
+      /** @description Server is pending (use regenerate-code instead) */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Outstanding enrollment exists; revoke it first */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  regenerate_code: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Server ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RegenerateCodeRequest']
+      }
+    }
+    responses: {
+      /** @description Regenerate enrollment minted */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RegenerateCodeResponse']
+        }
+      }
+      /** @description Server is not pending; use recover instead */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Server not found */
+      404: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description expected_enrollment_id mismatch */
+      409: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
   register: {
     parameters: {
       query?: never
@@ -7135,7 +8431,7 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Agent registered */
+      /** @description Agent registered against the bound server */
       200: {
         headers: {
           [name: string]: unknown
@@ -7144,19 +8440,43 @@ export interface operations {
           'application/json': components['schemas']['RegisterResponse']
         }
       }
-      /** @description Server limit reached */
+      /** @description Invalid fingerprint format */
       400: {
         headers: {
           [name: string]: unknown
         }
         content?: never
       }
-      /** @description Invalid, expired, or already-used enrollment code */
+      /** @description Invalid, expired, revoked, or already-used enrollment code */
       401: {
         headers: {
           [name: string]: unknown
         }
         content?: never
+      }
+    }
+  }
+  reset_rate_limit: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RateLimitResetRequest']
+      }
+    }
+    responses: {
+      /** @description Number of entries cleared */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['RateLimitResetResponse']
+        }
       }
     }
   }
@@ -7252,6 +8572,13 @@ export interface operations {
         content: {
           'application/json': components['schemas']['RotateTokenResponse']
         }
+      }
+      /** @description Server is pending (no token to rotate); use recover instead */
+      400: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
       }
       /** @description Server not found */
       404: {
@@ -7387,78 +8714,6 @@ export interface operations {
           [name: string]: unknown
         }
         content?: never
-      }
-    }
-  }
-  start_recovery_merge: {
-    parameters: {
-      query?: never
-      header?: never
-      path: {
-        /** @description Original offline server id */
-        target_id: string
-      }
-      cookie?: never
-    }
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['StartRecoveryRequest']
-      }
-    }
-    responses: {
-      /** @description Recovery job created */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['RecoveryJobResponse']
-        }
-      }
-      /** @description Authentication required */
-      401: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Admin required */
-      403: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Server not found */
-      404: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Recovery cannot be started in the current state */
-      409: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
-      }
-      /** @description Invalid request */
-      422: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          'application/json': components['schemas']['ErrorBody']
-        }
       }
     }
   }
@@ -7710,7 +8965,6 @@ export interface operations {
       }
     }
     responses: {
-      /** @description Traceroute triggered */
       200: {
         headers: {
           [name: string]: unknown
@@ -7719,14 +8973,12 @@ export interface operations {
           'application/json': components['schemas']['TriggerTracerouteResponse']
         }
       }
-      /** @description Server not found or offline */
       404: {
         headers: {
           [name: string]: unknown
         }
         content?: never
       }
-      /** @description Invalid target */
       422: {
         headers: {
           [name: string]: unknown
@@ -8146,6 +9398,38 @@ export interface operations {
       }
       /** @description Validation error */
       422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+    }
+  }
+  update_service: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        /** @description Service ID */
+        id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['UpdateServiceInput']
+      }
+    }
+    responses: {
+      /** @description Service updated */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content?: never
+      }
+      /** @description Service not found */
+      404: {
         headers: {
           [name: string]: unknown
         }

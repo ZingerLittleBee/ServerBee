@@ -22,7 +22,20 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
-import type { CreateEnrollmentResponse, EnrollmentSummary } from '@/lib/api-schema'
+import type { EnrollmentSummary } from '@/lib/api-schema'
+
+// T14: this dialog is scheduled to be rewritten against POST /api/servers +
+// the new RecoverResponse/CreateServerResponse shapes. The local fallback type
+// preserves the legacy `CreateEnrollmentResponse` shape so T13's regeneration
+// keeps typecheck clean until T14 lands.
+interface CreateEnrollmentResponse {
+  code: string
+  code_prefix: string
+  expires_at: string
+  id: string
+  install_command: string
+}
+
 import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn } from '@/lib/utils'
 
@@ -363,9 +376,8 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <code className="font-mono text-sm">{item.code_prefix}…</code>
-                              {item.label ? (
-                                <span className="truncate text-muted-foreground text-sm">{item.label}</span>
-                              ) : null}
+                              {/* T14: enrollment summary no longer carries a label; the rewrite
+                                  will surface target_server_id / server name instead. */}
                             </div>
                             <p className="text-muted-foreground text-xs">
                               {t('add_server.expires_at', {
