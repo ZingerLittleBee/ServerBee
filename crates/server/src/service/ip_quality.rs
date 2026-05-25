@@ -733,8 +733,9 @@ impl IpQualityService {
     ) -> Result<(), AppError> {
         let sql = "INSERT INTO ip_quality_snapshot \
             (id, server_id, ip, asn, as_org, country, region, city, ip_type, \
-             is_proxy, is_vpn, is_hosting, risk_score, risk_level, checked_at) \
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             is_proxy, is_vpn, is_hosting, risk_score, risk_level, \
+             is_tor, is_abuser, is_mobile, asn_abuser_score, abuse_email, checked_at) \
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
             ON CONFLICT(server_id) DO UPDATE SET \
             ip = excluded.ip, \
             asn = excluded.asn, \
@@ -748,6 +749,11 @@ impl IpQualityService {
             is_hosting = excluded.is_hosting, \
             risk_score = excluded.risk_score, \
             risk_level = excluded.risk_level, \
+            is_tor = excluded.is_tor, \
+            is_abuser = excluded.is_abuser, \
+            is_mobile = excluded.is_mobile, \
+            asn_abuser_score = excluded.asn_abuser_score, \
+            abuse_email = excluded.abuse_email, \
             checked_at = excluded.checked_at";
 
         let opt_str = |s: &Option<String>| -> Value {
@@ -781,6 +787,11 @@ impl IpQualityService {
                 Value::Int(Some(snapshot.is_hosting as i32)),
                 opt_int(snapshot.risk_score),
                 Value::String(Some(Box::new(snapshot.risk_level.clone()))),
+                Value::Int(Some(snapshot.is_tor as i32)),
+                Value::Int(Some(snapshot.is_abuser as i32)),
+                Value::Int(Some(snapshot.is_mobile as i32)),
+                opt_int(snapshot.asn_abuser_score),
+                opt_str(&snapshot.abuse_email),
                 Value::String(Some(Box::new(snapshot.checked_at.to_rfc3339()))),
             ],
         ))
@@ -1553,6 +1564,57 @@ mod tests {
         assert!(row.is_proxy);
         assert!(row.is_hosting);
         assert_eq!(row.country.as_deref(), Some("DE"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 16 regression: new columns (is_tor etc.) must persist in snapshot
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_save_ip_quality_snapshot_persists_extra_fields() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-extra").await;
+
+        let now = Utc::now();
+        let snapshot = IpQualitySnapshotData {
+            ip: "203.0.113.99".to_string(),
+            asn: None,
+            as_org: None,
+            country: Some("US".to_string()),
+            region: None,
+            city: None,
+            ip_type: "datacenter".to_string(),
+            is_proxy: false,
+            is_vpn: false,
+            is_hosting: true,
+            risk_score: Some(85),
+            risk_level: "high".to_string(),
+            is_tor: true,
+            is_abuser: true,
+            is_mobile: false,
+            asn_abuser_score: Some(72),
+            abuse_email: Some("abuse@example.com".to_string()),
+            checked_at: now,
+        };
+
+        IpQualityService::save_ip_quality_snapshot(&db, "srv-extra", &snapshot)
+            .await
+            .unwrap();
+
+        let row = ip_quality_snapshot::Entity::find()
+            .filter(ip_quality_snapshot::Column::ServerId.eq("srv-extra"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("snapshot row should exist");
+
+        assert!(row.is_tor, "is_tor must persist");
+        assert!(row.is_abuser, "is_abuser must persist");
+        assert!(!row.is_mobile, "is_mobile must persist as false");
+        assert_eq!(row.asn_abuser_score, Some(72), "asn_abuser_score must persist");
+        assert_eq!(row.abuse_email.as_deref(), Some("abuse@example.com"), "abuse_email must persist");
+        assert_eq!(row.risk_score, Some(85));
+        assert_eq!(row.risk_level, "high");
     }
 
     // -----------------------------------------------------------------------
