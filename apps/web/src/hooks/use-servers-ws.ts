@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import type { RecoveryJobResponse, SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
+import type { SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
 import type { IpQualitySnapshotData, ServerIpQualityData, UnlockResultDto, UnlockStatus } from '@/lib/ip-quality-types'
 import type { NetworkProbeResultData } from '@/lib/network-types'
 import { WsClient } from '@/lib/ws-client'
@@ -12,7 +12,6 @@ import type {
   DockerContainerStats,
   DockerEventInfo
 } from '@/routes/_authed/servers/$serverId/docker/types'
-import { useRecoveryJobsStore } from '@/stores/recovery-jobs-store'
 import { type UpgradeJob, useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 const MAX_DOCKER_EVENTS = 100
@@ -58,8 +57,8 @@ interface ServerMetrics {
 }
 
 type WsMessage =
-  | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[]; recoveries?: RecoveryJobResponse[] }
-  | { type: 'update'; servers: ServerMetrics[]; recoveries?: RecoveryJobResponse[] | null }
+  | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[] }
+  | { type: 'update'; servers: ServerMetrics[] }
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
   | {
@@ -245,30 +244,17 @@ function isWsMessageLike(raw: unknown): raw is { type: string } & Record<string,
   return typeof raw === 'object' && raw !== null && 'type' in raw && typeof (raw as { type: unknown }).type === 'string'
 }
 
-function hydrateRecoveryJobs(raw: FullSyncMessage | UpdateMessage, replaceMissing: boolean): void {
-  if (Array.isArray(raw.recoveries)) {
-    useRecoveryJobsStore.getState().setJobs(raw.recoveries)
-    return
-  }
-
-  if (replaceMissing) {
-    useRecoveryJobsStore.getState().setJobs([])
-  }
-}
-
 function handleFullSyncMessage(msg: FullSyncMessage, queryClient: QueryClient): void {
   queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
   if (Array.isArray(msg.upgrades)) {
     useUpgradeJobsStore.getState().setJobs(msg.upgrades as UpgradeJob[])
   }
-  hydrateRecoveryJobs(msg, true)
 }
 
 function handleUpdateMessage(msg: UpdateMessage, queryClient: QueryClient): void {
   queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
     prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
   )
-  hydrateRecoveryJobs(msg, false)
 }
 
 function handleServerMetricsMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
