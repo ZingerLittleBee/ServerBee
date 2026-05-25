@@ -330,3 +330,9 @@ Supporting code: new hook `use-ip-quality-api.ts` (mirrors `use-network-api.ts`)
 - `crates/agent/` — new `ip_quality/` module (`mod.rs`, `detectors/`, `rule_engine.rs`); capability handling; `capability_policy.rs` / install-script / CLI gain the `ip_quality` flag.
 - `apps/web/` — `routes/_authed/ip-quality.tsx`, `routes/_authed/settings/ip-quality.tsx`, `<IpQualityTab>` in `servers/$id.tsx`, public-status-page section, `settings/status-pages.tsx` (`show_ip_quality` toggle), `hooks/use-ip-quality-api.ts`, `lib/ip-quality-types.ts`, `use-servers-ws.ts`, sidebar nav config.
 - Docs — `ENV.md`, `apps/docs/content/docs/{en,cn}/configuration.mdx`, agent install docs (`--allow-cap ip_quality`), a new feature doc page; `README.md` / `README.zh-CN.md` feature list.
+
+---
+
+## 2026-05-25 Update — Provider Refactor
+
+The "Risk Scoring" provider model originally described here (Scamalytics / IPQS / ProxyCheck / AbuseIPDB / ip-api) has been superseded. See [`2026-05-25-ip-quality-ipapi-is-design.md`](./2026-05-25-ip-quality-ipapi-is-design.md) for the new ipapi.is-primary, ip-api-fallback design.

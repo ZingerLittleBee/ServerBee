@@ -64,6 +64,7 @@ docker compose up -d
 | [mobile-ios.md](mobile-ios.md) | iOS 移动端 & Mobile API | `/api/mobile/*`, `/settings/mobile-devices`, iOS App |
 | [agent-upgrade.md](agent-upgrade.md) | Agent 自动升级 | `/servers/:id` (Upgrade button) |
 | [agent-upgrade-pinned-source.md](agent-upgrade-pinned-source.md) | Pinned-source 升级：来源配置、防降级、SPKI pin、向后兼容 | Agent 进程 + `/servers/:id` (Upgrade button) |
+| [ip-quality/ipapi-is.md](./ip-quality/ipapi-is.md) | IP Quality ipapi.is provider + fallback verification (2026-05-25) | `/ip-quality`, `crates/server/src/service/ip_risk.rs` |
 
 ## 页面渲染快速验证
 
