@@ -26,6 +26,7 @@ pub mod network_probe;
 pub mod notification;
 pub mod oauth;
 pub mod ping;
+pub mod public_status;
 pub mod record;
 pub mod security;
 pub mod server;
