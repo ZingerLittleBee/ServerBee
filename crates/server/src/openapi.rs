@@ -172,12 +172,9 @@ impl Modify for SecurityAddon {
         crate::router::api::service_monitor::delete_monitor,
         crate::router::api::service_monitor::get_records,
         crate::router::api::service_monitor::trigger_check,
-        // status-pages
-        crate::router::api::status_page::get_public_status_page,
-        crate::router::api::status_page::list_status_pages,
-        crate::router::api::status_page::create_status_page,
+        // status-pages (singleton)
+        crate::router::api::status_page::get_status_page,
         crate::router::api::status_page::update_status_page,
-        crate::router::api::status_page::delete_status_page,
         // incidents
         crate::router::api::incident::list_incidents,
         crate::router::api::incident::create_incident,
@@ -326,7 +323,6 @@ impl Modify for SecurityAddon {
             crate::service::custom_theme::ThemeResolved,
             crate::service::custom_theme::ActiveThemeResponse,
             crate::service::theme_ref::ThemeReferences,
-            crate::service::theme_ref::StatusPageRef,
             crate::router::api::theme::ExportPayload,
             crate::router::api::theme::PutActiveThemeInput,
             // notifications
@@ -391,12 +387,7 @@ impl Modify for SecurityAddon {
             crate::service::user::UserResponse,
             crate::service::user::CreateUserInput,
             crate::service::user::UpdateUserInput,
-            // status-pages
-            crate::router::api::status_page::StatusPageInfo,
-            crate::router::api::status_page::ServerStatusInfo,
-            crate::router::api::status_page::IncidentWithUpdates,
-            crate::router::api::status_page::PublicStatusPageData,
-            crate::service::status_page::CreateStatusPage,
+            // status-pages (singleton)
             crate::service::status_page::UpdateStatusPage,
             crate::entity::status_page::Model,
             // incidents
