@@ -19,7 +19,9 @@ pub struct CreateIncident {
     #[serde(default = "default_severity")]
     pub severity: String,
     pub server_ids_json: Option<Vec<String>>,
-    pub status_page_ids_json: Option<Vec<String>>,
+    /// Whether this incident is shown on the public status page.
+    #[serde(default)]
+    pub is_public: bool,
 }
 
 fn default_status() -> String {
@@ -36,7 +38,7 @@ pub struct UpdateIncident {
     pub status: Option<String>,
     pub severity: Option<String>,
     pub server_ids_json: Option<Option<Vec<String>>>,
-    pub status_page_ids_json: Option<Option<Vec<String>>>,
+    pub is_public: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
@@ -92,14 +94,6 @@ impl IncidentService {
             })
             .transpose()?;
 
-        let status_page_ids_json = input
-            .status_page_ids_json
-            .map(|ids| {
-                serde_json::to_string(&ids)
-                    .map_err(|e| AppError::Validation(format!("Invalid status_page_ids_json: {e}")))
-            })
-            .transpose()?;
-
         let now = Utc::now();
         let resolved_at = if input.status == "resolved" {
             Some(now)
@@ -113,7 +107,7 @@ impl IncidentService {
             status: Set(input.status),
             severity: Set(input.severity),
             server_ids_json: Set(server_ids_json),
-            status_page_ids_json: Set(status_page_ids_json),
+            is_public: Set(input.is_public),
             created_at: Set(now),
             updated_at: Set(now),
             resolved_at: Set(resolved_at),
@@ -163,15 +157,8 @@ impl IncidentService {
                 .transpose()?;
             model.server_ids_json = Set(json);
         }
-        if let Some(page_ids) = input.status_page_ids_json {
-            let json = page_ids
-                .map(|ids| {
-                    serde_json::to_string(&ids).map_err(|e| {
-                        AppError::Validation(format!("Invalid status_page_ids_json: {e}"))
-                    })
-                })
-                .transpose()?;
-            model.status_page_ids_json = Set(json);
+        if let Some(is_public) = input.is_public {
+            model.is_public = Set(is_public);
         }
         model.updated_at = Set(Utc::now());
 

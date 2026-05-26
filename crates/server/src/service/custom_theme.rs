@@ -1,12 +1,12 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait,
-    QueryFilter, QueryOrder, Set, TransactionTrait,
+    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbErr, EntityTrait, QueryOrder, Set,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::entity::{config, custom_theme, status_page};
+use crate::entity::{config, custom_theme};
 use crate::error::AppError;
 use crate::service::config::ConfigService;
 use crate::service::theme_ref::{self, ThemeRef};
@@ -184,9 +184,9 @@ impl CustomThemeService {
     pub async fn delete(db: &DatabaseConnection, id: i32) -> Result<(), AppError> {
         let txn = db.begin().await?;
         let references = list_references_in_connection(&txn, id).await?;
-        if references.admin || !references.status_pages.is_empty() {
+        if references.admin {
             return Err(AppError::Conflict(
-                "Theme is in use by admin or one or more status pages; unbind it first.".into(),
+                "Theme is in use as the active admin theme; unbind it first.".into(),
             ));
         }
 
@@ -336,9 +336,7 @@ where
 fn map_theme_ref_integrity_error(err: DbErr) -> AppError {
     let message = err.to_string();
     if message.contains("custom_theme_ref_in_use") {
-        AppError::Conflict(
-            "Theme is in use by admin or one or more status pages; unbind it first.".into(),
-        )
+        AppError::Conflict("Theme is in use as the active admin theme; unbind it first.".into())
     } else if message.contains("custom_theme_ref_missing") {
         AppError::Validation("custom theme reference does not exist".into())
     } else {
@@ -400,22 +398,9 @@ where
         .one(db)
         .await?
         .map(|m| m.value);
-    let status_pages = status_page::Entity::find()
-        .filter(status_page::Column::ThemeRef.eq(urn.clone()))
-        .order_by_asc(status_page::Column::Title)
-        .order_by_asc(status_page::Column::Id)
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|m| theme_ref::StatusPageRef {
-            id: m.id,
-            name: m.title,
-        })
-        .collect();
 
     Ok(theme_ref::ThemeReferences {
         admin: active_admin_theme.as_deref() == Some(urn.as_str()),
-        status_pages,
     })
 }
 
@@ -425,7 +410,7 @@ fn default_theme_ref() -> ThemeRef {
 
 #[cfg(test)]
 mod tests {
-    use sea_orm::{ActiveModelTrait, ConnectionTrait, Set};
+    use sea_orm::ConnectionTrait;
 
     use crate::service::theme_validator::REQUIRED_VARS;
     use crate::test_utils::setup_test_db;
@@ -466,46 +451,10 @@ mod tests {
         }
     }
 
-    async fn insert_status_page_with_theme_ref(
-        db: &DatabaseConnection,
-        id: &str,
-        theme_ref: Option<String>,
-    ) -> Result<status_page::Model, DbErr> {
-        let now = Utc::now();
-        status_page::ActiveModel {
-            id: Set(id.to_string()),
-            title: Set("Status".to_string()),
-            slug: Set(id.to_string()),
-            description: Set(None),
-            server_ids_json: Set("[]".to_string()),
-            group_by_server_group: Set(true),
-            show_values: Set(true),
-            custom_css: Set(None),
-            enabled: Set(true),
-            uptime_yellow_threshold: Set(100.0),
-            uptime_red_threshold: Set(95.0),
-            theme_ref: Set(theme_ref),
-            show_ip_quality: Set(false),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(db)
-        .await
-    }
-
-    async fn update_status_page_theme_ref(
-        db: &DatabaseConnection,
-        id: &str,
-        theme_ref: Option<String>,
-    ) -> Result<status_page::Model, DbErr> {
-        let page = status_page::Entity::find_by_id(id)
-            .one(db)
-            .await?
-            .expect("status page should exist");
-        let mut active: status_page::ActiveModel = page.into();
-        active.theme_ref = Set(theme_ref);
-        active.update(db).await
-    }
+    // R4: legacy `insert_status_page_with_theme_ref` and
+    // `update_status_page_theme_ref` helpers were removed along with the
+    // dropped `status_page.theme_ref` column. Tests that exercised the
+    // status-page-side trigger are gone for the same reason.
 
     fn assert_db_err_contains(result: Result<impl std::fmt::Debug, DbErr>, needle: &str) {
         let err = result.expect_err("operation should fail");
@@ -675,30 +624,7 @@ mod tests {
             .expect_err("active theme should not be deleted");
 
         assert!(
-            matches!(err, AppError::Conflict(message) if message == "Theme is in use by admin or one or more status pages; unbind it first.")
-        );
-    }
-
-    #[tokio::test]
-    async fn delete_rejects_in_use_status_page_theme() {
-        let (db, _tmp) = setup_test_db().await;
-        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
-            .await
-            .expect("valid theme should be created");
-        insert_status_page_with_theme_ref(
-            &db,
-            "status-page-1",
-            Some(format!("custom:{}", theme.id)),
-        )
-        .await
-        .expect("status page should be inserted");
-
-        let err = CustomThemeService::delete(&db, theme.id)
-            .await
-            .expect_err("referenced theme should not be deleted");
-
-        assert!(
-            matches!(err, AppError::Conflict(message) if message == "Theme is in use by admin or one or more status pages; unbind it first.")
+            matches!(err, AppError::Conflict(message) if message == "Theme is in use as the active admin theme; unbind it first.")
         );
     }
 
@@ -718,25 +644,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delete_trigger_blocks_status_page_ref_when_service_precheck_is_bypassed() {
-        let (db, _tmp) = setup_test_db().await;
-        let theme = CustomThemeService::create(&db, create_input("Ocean"), "user-1")
-            .await
-            .expect("valid theme should be created");
-        insert_status_page_with_theme_ref(
-            &db,
-            "status-page-1",
-            Some(format!("custom:{}", theme.id)),
-        )
-        .await
-        .expect("status page should be inserted");
-
-        let result = custom_theme::Entity::delete_by_id(theme.id).exec(&db).await;
-
-        assert_db_err_contains(result, "custom_theme_ref_in_use");
-    }
-
-    #[tokio::test]
     async fn config_trigger_blocks_dangling_active_custom_ref() {
         let (db, _tmp) = setup_test_db().await;
 
@@ -745,31 +652,6 @@ mod tests {
             .expect_err("dangling active theme ref should be blocked");
 
         assert!(matches!(err, AppError::Internal(_)));
-    }
-
-    #[tokio::test]
-    async fn status_page_insert_trigger_blocks_dangling_custom_ref() {
-        let (db, _tmp) = setup_test_db().await;
-
-        let result =
-            insert_status_page_with_theme_ref(&db, "status-page-1", Some("custom:999".to_string()))
-                .await;
-
-        assert_db_err_contains(result, "custom_theme_ref_missing");
-    }
-
-    #[tokio::test]
-    async fn status_page_update_trigger_blocks_dangling_custom_ref() {
-        let (db, _tmp) = setup_test_db().await;
-        insert_status_page_with_theme_ref(&db, "status-page-1", None)
-            .await
-            .expect("status page should be inserted");
-
-        let result =
-            update_status_page_theme_ref(&db, "status-page-1", Some("custom:999".to_string()))
-                .await;
-
-        assert_db_err_contains(result, "custom_theme_ref_missing");
     }
 
     #[tokio::test]

@@ -772,10 +772,10 @@ pub async fn list_incidents(
 
         if dto.status != "resolved" {
             active.push(dto);
-        } else if let Some(ts) = r.resolved_at {
-            if ts >= recent_cutoff {
-                recent.push(dto);
-            }
+        } else if let Some(ts) = r.resolved_at
+            && ts >= recent_cutoff
+        {
+            recent.push(dto);
         }
     }
 
