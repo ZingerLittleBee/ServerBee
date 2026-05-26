@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { AlertTriangle, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
+import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { useCustomThemes } from '@/api/themes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -24,17 +24,43 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api-client'
-import type { IncidentItem, MaintenanceItem, ServerResponse, StatusPageItem } from '@/lib/api-schema'
-import { themes } from '@/themes'
+import type {
+  CreateIncidentRequest,
+  CreateMaintenanceRequest,
+  IncidentItem,
+  MaintenanceItem,
+  ServerResponse,
+  StatusPageItem,
+  UpdateIncidentRequest,
+  UpdateMaintenanceRequest,
+  UpdateStatusPageRequest
+} from '@/lib/api-schema'
 
 export const Route = createFileRoute('/_authed/settings/status-pages')({
   component: StatusPagesManagement
 })
 
 // ---------------------------------------------------------------------------
-// Shared server checkbox list
+// Helpers
 // ---------------------------------------------------------------------------
+
+/** Parse the entity's `server_ids_json` storage column into a `string[]`. */
+export function parseServerIds(raw: string | null | undefined): string[] {
+  if (!raw) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (Array.isArray(parsed)) {
+      return parsed.filter((v): v is string => typeof v === 'string')
+    }
+  } catch {
+    // ignore malformed JSON; fall through to []
+  }
+  return []
+}
 
 function ServerCheckboxItem({ checked, name, onToggle }: { checked: boolean; name: string; onToggle: () => void }) {
   return (
@@ -47,240 +73,215 @@ function ServerCheckboxItem({ checked, name, onToggle }: { checked: boolean; nam
 }
 
 // ---------------------------------------------------------------------------
-// Status Pages Tab
+// Singleton Status-Page Config
 // ---------------------------------------------------------------------------
 
-const FOLLOW_ADMIN_THEME_VALUE = '__follow_admin__'
-
-interface StatusPagePayloadInput {
+interface ConfigFormState {
+  defaultLayout: 'grid' | 'list'
   description: string
   enabled: boolean
   redThreshold: number
   selectedServers: string[]
+  showIncidents: boolean
   showIpQuality: boolean
-  slug: string
-  themeRef: string | null
+  showMaintenance: boolean
+  showNetwork: boolean
+  showServerDetail: boolean
   title: string
   yellowThreshold: number
 }
 
-export function buildStatusPagePayload(input: StatusPagePayloadInput): Record<string, unknown> {
+function configFromItem(item: StatusPageItem): ConfigFormState {
   return {
-    title: input.title.trim(),
-    slug: input.slug.trim(),
-    description: input.description.trim() || null,
-    enabled: input.enabled,
-    server_ids: input.selectedServers,
-    theme_ref: input.themeRef,
-    uptime_yellow_threshold: input.yellowThreshold,
-    uptime_red_threshold: input.redThreshold,
-    show_ip_quality: input.showIpQuality
+    defaultLayout: item.default_layout === 'grid' ? 'grid' : 'list',
+    description: item.description ?? '',
+    enabled: item.enabled,
+    redThreshold: item.uptime_red_threshold,
+    selectedServers: parseServerIds(item.server_ids_json),
+    showIncidents: item.show_incidents,
+    showIpQuality: item.show_ip_quality,
+    showMaintenance: item.show_maintenance,
+    showNetwork: item.show_network,
+    showServerDetail: item.show_server_detail,
+    title: item.title,
+    yellowThreshold: item.uptime_yellow_threshold
   }
 }
 
-function StatusPageFormDialog({
-  editing,
-  onClose,
-  onSubmit,
-  open,
-  pending,
-  servers
-}: {
-  editing: StatusPageItem | null
-  onClose: () => void
-  onSubmit: (data: Record<string, unknown>, id?: string) => void
-  open: boolean
-  pending: boolean
-  servers: ServerResponse[]
-}) {
-  const { t } = useTranslation(['settings', 'status'])
-  const { data: customThemes } = useCustomThemes()
-  const [title, setTitle] = useState('')
-  const [slug, setSlug] = useState('')
-  const [description, setDescription] = useState('')
-  const [enabled, setEnabled] = useState(true)
-  const [selectedServers, setSelectedServers] = useState<string[]>([])
-  const [yellowThreshold, setYellowThreshold] = useState(100)
-  const [redThreshold, setRedThreshold] = useState(95)
-  const [themeRef, setThemeRef] = useState<string | null>(null)
-  const [showIpQuality, setShowIpQuality] = useState(false)
+/** Build the PUT body. Sends every field so the admin can save a fully-edited
+ * form in one round-trip; matches the prevailing settings UX in this app. */
+export function buildStatusPageUpdatePayload(state: ConfigFormState): UpdateStatusPageRequest {
+  return {
+    default_layout: state.defaultLayout,
+    description: state.description.trim() ? state.description.trim() : null,
+    enabled: state.enabled,
+    server_ids: state.selectedServers,
+    show_incidents: state.showIncidents,
+    show_ip_quality: state.showIpQuality,
+    show_maintenance: state.showMaintenance,
+    show_network: state.showNetwork,
+    show_server_detail: state.showServerDetail,
+    title: state.title.trim(),
+    uptime_red_threshold: state.redThreshold,
+    uptime_yellow_threshold: state.yellowThreshold
+  }
+}
 
-  const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && editing) {
-      setTitle(editing.title)
-      setSlug(editing.slug)
-      setDescription(editing.description ?? '')
-      setEnabled(editing.enabled)
-      setSelectedServers(editing.server_ids ?? [])
-      setYellowThreshold(editing.uptime_yellow_threshold ?? 100)
-      setRedThreshold(editing.uptime_red_threshold ?? 95)
-      setThemeRef(editing.theme_ref ?? null)
-      setShowIpQuality(editing.show_ip_quality ?? false)
-    } else if (isOpen) {
-      setTitle('')
-      setSlug('')
-      setDescription('')
-      setEnabled(true)
-      setSelectedServers([])
-      setYellowThreshold(100)
-      setRedThreshold(95)
-      setThemeRef(null)
-      setShowIpQuality(false)
-    }
-    if (!isOpen) {
-      onClose()
-    }
+function StatusPageConfigForm({ servers }: { servers: ServerResponse[] }) {
+  const { t } = useTranslation(['settings', 'common'])
+  const queryClient = useQueryClient()
+
+  const { data: config, isLoading } = useQuery<StatusPageItem>({
+    queryKey: ['status-page-config'],
+    queryFn: () => api.get<StatusPageItem>('/api/status-page')
+  })
+
+  const [state, setState] = useState<ConfigFormState | null>(null)
+
+  // Lazy initialise local form state from server data on first load.
+  if (config && state === null) {
+    setState(configFromItem(config))
   }
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!(title.trim() && slug.trim())) {
-      return
-    }
-    const payload = buildStatusPagePayload({
-      title,
-      slug,
-      description,
-      enabled,
-      selectedServers,
-      themeRef,
-      yellowThreshold,
-      redThreshold,
-      showIpQuality
-    })
-    onSubmit(payload, editing?.id)
+  const mutation = useMutation({
+    mutationFn: (input: UpdateStatusPageRequest) => api.put<StatusPageItem>('/api/status-page', input),
+    onSuccess: (next) => {
+      queryClient.setQueryData(['status-page-config'], next)
+      queryClient.invalidateQueries({ queryKey: ['status-page-config'] }).catch(() => undefined)
+      toast.success(t('status_pages.config_saved'))
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
+  })
+
+  if (isLoading || !state) {
+    return (
+      <div className="space-y-2">
+        {Array.from({ length: 4 }, (_, i) => (
+          <Skeleton className="h-12" key={`skel-${i.toString()}`} />
+        ))}
+      </div>
+    )
+  }
+
+  const update = <K extends keyof ConfigFormState>(key: K, value: ConfigFormState[K]) => {
+    setState((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
 
   const toggleServer = (id: string) => {
-    setSelectedServers((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]))
+    setState((prev) => {
+      if (!prev) {
+        return prev
+      }
+      const next = prev.selectedServers.includes(id)
+        ? prev.selectedServers.filter((s) => s !== id)
+        : [...prev.selectedServers, id]
+      return { ...prev, selectedServers: next }
+    })
+  }
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!state.title.trim()) {
+      toast.error(t('status_pages.title_required'))
+      return
+    }
+    mutation.mutate(buildStatusPageUpdatePayload(state))
   }
 
   return (
-    <Dialog onOpenChange={handleOpenChange} open={open}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{editing ? t('status_pages.edit_page') : t('status_pages.create_page')}</DialogTitle>
-          <DialogDescription>
-            {editing ? t('status_pages.edit_description') : t('status_pages.create_description')}
-          </DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" id="status-page-form" onSubmit={handleSubmit}>
+    <form className="space-y-6" onSubmit={handleSubmit}>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('status_pages.section_general')}</CardTitle>
+          <CardDescription>
+            <a
+              className="inline-flex items-center gap-1 font-mono text-primary text-xs hover:underline"
+              href="/status"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              /status
+              <ExternalLink className="size-3" />
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!state.enabled && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-amber-700 text-sm dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <p>{t('status_pages.site_disabled_notice_admin')}</p>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="sp-enabled">{t('status_pages.field_enabled')}</Label>
+              <p className="text-muted-foreground text-xs">{t('status_pages.field_enabled_hint')}</p>
+            </div>
+            <Switch checked={state.enabled} id="sp-enabled" onCheckedChange={(value) => update('enabled', value)} />
+          </div>
+
           <div className="space-y-1">
             <Label htmlFor="sp-title">{t('status_pages.field_title')}</Label>
             <Input
               id="sp-title"
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => update('title', e.target.value)}
               placeholder={t('status_pages.placeholder_title')}
               required
-              value={title}
+              value={state.title}
             />
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="sp-slug">{t('status_pages.field_slug')}</Label>
-            <Input
-              id="sp-slug"
-              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-              placeholder={t('status_pages.placeholder_slug')}
-              required
-              value={slug}
-            />
-            <p className="text-muted-foreground text-xs">{t('status_pages.slug_hint')}</p>
-          </div>
+
           <div className="space-y-1">
             <Label htmlFor="sp-desc">{t('status_pages.field_description')}</Label>
-            <textarea
-              className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            <Textarea
               id="sp-desc"
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => update('description', e.target.value)}
               placeholder={t('status_pages.placeholder_description')}
               rows={2}
-              value={description}
+              value={state.description}
             />
           </div>
-          <div className="flex items-center gap-2">
-            {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
-              {t('status_pages.field_enabled')}
-            </label>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={showIpQuality} onCheckedChange={setShowIpQuality} />
-              {t('status_pages.field_show_ip_quality', { defaultValue: 'Show IP quality' })}
-            </label>
-          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('status_pages.section_servers')}</CardTitle>
+          <CardDescription>{t('status_pages.section_servers_description')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="space-y-1">
-            <Label htmlFor="sp-theme">{t('status:theme.label')}</Label>
+            <Label htmlFor="sp-layout">{t('status_pages.field_default_layout')}</Label>
             <Select
               items={{
-                [FOLLOW_ADMIN_THEME_VALUE]: t('status:theme.follow_admin'),
-                ...Object.fromEntries(themes.map((theme) => [`preset:${theme.id}`, `Preset · ${theme.name}`])),
-                ...Object.fromEntries(
-                  (customThemes ?? []).map((theme) => [`custom:${theme.id}`, `Custom · ${theme.name}`])
-                )
+                list: t('status_pages.layout_list'),
+                grid: t('status_pages.layout_grid')
               }}
               onValueChange={(value) => {
-                if (value !== null) {
-                  setThemeRef(value === FOLLOW_ADMIN_THEME_VALUE ? null : value)
+                if (value === 'list' || value === 'grid') {
+                  update('defaultLayout', value)
                 }
               }}
-              value={themeRef ?? FOLLOW_ADMIN_THEME_VALUE}
+              value={state.defaultLayout}
             >
-              <SelectTrigger id="sp-theme">
+              <SelectTrigger id="sp-layout">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={FOLLOW_ADMIN_THEME_VALUE}>{t('status:theme.follow_admin')}</SelectItem>
-                {themes.map((theme) => (
-                  <SelectItem key={theme.id} value={`preset:${theme.id}`}>
-                    Preset · {theme.name}
-                  </SelectItem>
-                ))}
-                {(customThemes ?? []).map((theme) => (
-                  <SelectItem key={theme.id} value={`custom:${theme.id}`}>
-                    Custom · {theme.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="list">{t('status_pages.layout_list')}</SelectItem>
+                <SelectItem value="grid">{t('status_pages.layout_grid')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="sp-yellow">{t('status_pages.uptime_yellow_label')}</Label>
-              <Input
-                id="sp-yellow"
-                max={100}
-                min={0}
-                onChange={(e) => setYellowThreshold(Number(e.target.value) || 100)}
-                step={0.1}
-                type="number"
-                value={yellowThreshold}
-              />
-              <p className="text-muted-foreground text-xs">{t('status_pages.uptime_yellow_hint')}</p>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="sp-red">{t('status_pages.uptime_red_label')}</Label>
-              <Input
-                id="sp-red"
-                max={100}
-                min={0}
-                onChange={(e) => setRedThreshold(Number(e.target.value) || 95)}
-                step={0.1}
-                type="number"
-                value={redThreshold}
-              />
-              <p className="text-muted-foreground text-xs">{t('status_pages.uptime_red_hint')}</p>
-            </div>
-          </div>
+
           <div className="space-y-2">
             <Label>{t('status_pages.field_servers')}</Label>
             <ScrollArea className="h-40 rounded-md border">
               <div className="space-y-1 p-2">
                 {servers.map((s) => (
                   <ServerCheckboxItem
-                    checked={selectedServers.includes(s.id)}
+                    checked={state.selectedServers.includes(s.id)}
                     key={s.id}
                     name={s.name}
                     onToggle={() => toggleServer(s.id)}
@@ -291,177 +292,121 @@ function StatusPageFormDialog({
                 )}
               </div>
             </ScrollArea>
+            <p className="text-muted-foreground text-xs">{t('status_pages.field_servers_hint')}</p>
           </div>
-        </form>
-        <DialogFooter>
-          <Button disabled={pending} form="status-page-form" type="submit">
-            {editing ? t('common:save') : t('common:create')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('status_pages.section_panels')}</CardTitle>
+          <CardDescription>{t('status_pages.section_panels_description')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <PanelToggle
+            checked={state.showServerDetail}
+            description={t('status_pages.field_show_server_detail_hint')}
+            id="sp-show-server-detail"
+            label={t('status_pages.field_show_server_detail')}
+            onChange={(v) => update('showServerDetail', v)}
+          />
+          <PanelToggle
+            checked={state.showNetwork}
+            description={t('status_pages.field_show_network_hint')}
+            id="sp-show-network"
+            label={t('status_pages.field_show_network')}
+            onChange={(v) => update('showNetwork', v)}
+          />
+          <PanelToggle
+            checked={state.showIpQuality}
+            description={t('status_pages.field_show_ip_quality_hint')}
+            id="sp-show-ip-quality"
+            label={t('status_pages.field_show_ip_quality')}
+            onChange={(v) => update('showIpQuality', v)}
+          />
+          <PanelToggle
+            checked={state.showIncidents}
+            description={t('status_pages.field_show_incidents_hint')}
+            id="sp-show-incidents"
+            label={t('status_pages.field_show_incidents')}
+            onChange={(v) => update('showIncidents', v)}
+          />
+          <PanelToggle
+            checked={state.showMaintenance}
+            description={t('status_pages.field_show_maintenance_hint')}
+            id="sp-show-maintenance"
+            label={t('status_pages.field_show_maintenance')}
+            onChange={(v) => update('showMaintenance', v)}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('status_pages.section_thresholds')}</CardTitle>
+          <CardDescription>{t('status_pages.section_thresholds_description')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="sp-yellow">{t('status_pages.uptime_yellow_label')}</Label>
+              <Input
+                id="sp-yellow"
+                max={100}
+                min={0}
+                onChange={(e) => update('yellowThreshold', Number(e.target.value) || 100)}
+                step={0.1}
+                type="number"
+                value={state.yellowThreshold}
+              />
+              <p className="text-muted-foreground text-xs">{t('status_pages.uptime_yellow_hint')}</p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="sp-red">{t('status_pages.uptime_red_label')}</Label>
+              <Input
+                id="sp-red"
+                max={100}
+                min={0}
+                onChange={(e) => update('redThreshold', Number(e.target.value) || 95)}
+                step={0.1}
+                type="number"
+                value={state.redThreshold}
+              />
+              <p className="text-muted-foreground text-xs">{t('status_pages.uptime_red_hint')}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-end">
+        <Button disabled={mutation.isPending} type="submit">
+          {t('common:save')}
+        </Button>
+      </div>
+    </form>
   )
 }
 
-function StatusPagesTab({ servers }: { servers: ServerResponse[] }) {
-  const { t } = useTranslation('settings')
-  const queryClient = useQueryClient()
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editing, setEditing] = useState<StatusPageItem | null>(null)
-
-  const { data: pages, isLoading } = useQuery<StatusPageItem[]>({
-    queryKey: ['status-pages'],
-    queryFn: () => api.get<StatusPageItem[]>('/api/status-pages')
-  })
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['status-pages'] }).catch(() => undefined)
-  }
-
-  const createMutation = useMutation({
-    mutationFn: (input: Record<string, unknown>) => api.post('/api/status-pages', input),
-    onSuccess: () => {
-      invalidate()
-      setDialogOpen(false)
-      toast.success(t('status_pages.created'))
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Record<string, unknown> }) =>
-      api.put(`/api/status-pages/${id}`, input),
-    onSuccess: () => {
-      invalidate()
-      setDialogOpen(false)
-      setEditing(null)
-      toast.success(t('status_pages.updated'))
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/api/status-pages/${id}`),
-    onSuccess: () => {
-      invalidate()
-      toast.success(t('status_pages.deleted'))
-    },
-    onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
-  })
-
-  const handleSubmit = (data: Record<string, unknown>, id?: string) => {
-    if (id) {
-      updateMutation.mutate({ id, input: data })
-    } else {
-      createMutation.mutate(data)
-    }
-  }
-
+function PanelToggle({
+  checked,
+  description,
+  id,
+  label,
+  onChange
+}: {
+  checked: boolean
+  description: string
+  id: string
+  label: string
+  onChange: (next: boolean) => void
+}) {
   return (
-    <div>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-muted-foreground text-sm">{t('status_pages.tab_description')}</p>
-        <Button
-          onClick={() => {
-            setEditing(null)
-            setDialogOpen(true)
-          }}
-          size="sm"
-        >
-          <Plus className="size-4" />
-          {t('status_pages.create_page')}
-        </Button>
+    <div className="flex items-center justify-between gap-4">
+      <div className="space-y-0.5">
+        <Label htmlFor={id}>{label}</Label>
+        <p className="text-muted-foreground text-xs">{description}</p>
       </div>
-
-      {isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 2 }, (_, i) => (
-            <Skeleton className="h-12" key={`skel-${i.toString()}`} />
-          ))}
-        </div>
-      )}
-
-      {!isLoading && (!pages || pages.length === 0) && (
-        <div className="rounded-lg border bg-card p-12 text-center">
-          <p className="text-muted-foreground">{t('status_pages.empty')}</p>
-        </div>
-      )}
-
-      {pages && pages.length > 0 && (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('status_pages.field_title')}</TableHead>
-                <TableHead>{t('status_pages.field_slug')}</TableHead>
-                <TableHead>{t('status_pages.field_enabled')}</TableHead>
-                <TableHead>{t('status_pages.col_servers')}</TableHead>
-                <TableHead className="text-right">{t('status_pages.col_actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pages.map((page) => (
-                <TableRow key={page.id}>
-                  <TableCell className="font-medium">{page.title}</TableCell>
-                  <TableCell>
-                    <a
-                      className="inline-flex items-center gap-1 font-mono text-primary text-xs hover:underline"
-                      href={`/status/${page.slug}`}
-                      rel="noopener noreferrer"
-                      target="_blank"
-                    >
-                      /status/{page.slug}
-                      <ExternalLink className="size-3" />
-                    </a>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={page.enabled ? 'default' : 'secondary'}>
-                      {page.enabled ? t('common:enable') : t('common:disable')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {page.server_ids?.length ?? 0} {t('status_pages.col_servers').toLowerCase()}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        onClick={() => {
-                          setEditing(page)
-                          setDialogOpen(true)
-                        }}
-                        size="sm"
-                        variant="ghost"
-                      >
-                        <Pencil className="size-3.5" />
-                      </Button>
-                      <Button
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(page.id)}
-                        size="sm"
-                        variant="ghost"
-                      >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      <StatusPageFormDialog
-        editing={editing}
-        onClose={() => {
-          setDialogOpen(false)
-          setEditing(null)
-        }}
-        onSubmit={handleSubmit}
-        open={dialogOpen}
-        pending={createMutation.isPending || updateMutation.isPending}
-        servers={servers}
-      />
+      <Switch checked={checked} id={id} onCheckedChange={onChange} />
     </div>
   )
 }
@@ -483,7 +428,7 @@ function IncidentFormDialog({
 }: {
   editing: IncidentItem | null
   onClose: () => void
-  onSubmit: (data: Record<string, unknown>, id?: string) => void
+  onSubmit: (data: CreateIncidentRequest | UpdateIncidentRequest, id?: string) => void
   open: boolean
   pending: boolean
   servers: ServerResponse[]
@@ -493,34 +438,38 @@ function IncidentFormDialog({
   const [severity, setSeverity] = useState<string>('minor')
   const [status, setStatus] = useState<string>('investigating')
   const [selectedServers, setSelectedServers] = useState<string[]>([])
+  const [isPublic, setIsPublic] = useState(false)
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen && editing) {
       setTitle(editing.title)
       setSeverity(editing.severity)
       setStatus(editing.status)
-      setSelectedServers(editing.server_ids ?? [])
+      setSelectedServers(parseServerIds(editing.server_ids_json))
+      setIsPublic(editing.is_public)
     } else if (isOpen) {
       setTitle('')
       setSeverity('minor')
       setStatus('investigating')
       setSelectedServers([])
+      setIsPublic(false)
     }
     if (!isOpen) {
       onClose()
     }
   }
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!title.trim()) {
       return
     }
-    const payload: Record<string, unknown> = {
+    const payload: CreateIncidentRequest | UpdateIncidentRequest = {
       title: title.trim(),
       severity,
       status,
-      server_ids: selectedServers
+      server_ids_json: selectedServers,
+      is_public: isPublic
     }
     onSubmit(payload, editing?.id)
   }
@@ -581,6 +530,13 @@ function IncidentFormDialog({
               </Select>
             </div>
           </div>
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="inc-public">{t('incidents.field_is_public')}</Label>
+              <p className="text-muted-foreground text-xs">{t('incidents.field_is_public_hint')}</p>
+            </div>
+            <Switch checked={isPublic} id="inc-public" onCheckedChange={setIsPublic} />
+          </div>
           <div className="space-y-2">
             <Label>{t('incidents.field_servers')}</Label>
             <ScrollArea className="h-32 rounded-md border">
@@ -632,7 +588,7 @@ function IncidentUpdateDialog({
     onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!message.trim()) {
       return
@@ -672,8 +628,7 @@ function IncidentUpdateDialog({
           </div>
           <div className="space-y-1">
             <Label htmlFor="upd-message">{t('incidents.field_message')}</Label>
-            <textarea
-              className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            <Textarea
               id="upd-message"
               onChange={(e) => setMessage(e.target.value)}
               placeholder={t('incidents.placeholder_message')}
@@ -710,7 +665,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
   }
 
   const createMutation = useMutation({
-    mutationFn: (input: Record<string, unknown>) => api.post('/api/incidents', input),
+    mutationFn: (input: CreateIncidentRequest) => api.post('/api/incidents', input),
     onSuccess: () => {
       invalidate()
       setDialogOpen(false)
@@ -720,8 +675,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Record<string, unknown> }) =>
-      api.put(`/api/incidents/${id}`, input),
+    mutationFn: ({ id, input }: { id: string; input: UpdateIncidentRequest }) => api.put(`/api/incidents/${id}`, input),
     onSuccess: () => {
       invalidate()
       setDialogOpen(false)
@@ -740,11 +694,11 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
     onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
-  const handleSubmit = (data: Record<string, unknown>, id?: string) => {
+  const handleSubmit = (data: CreateIncidentRequest | UpdateIncidentRequest, id?: string) => {
     if (id) {
-      updateMutation.mutate({ id, input: data })
+      updateMutation.mutate({ id, input: data as UpdateIncidentRequest })
     } else {
-      createMutation.mutate(data)
+      createMutation.mutate(data as CreateIncidentRequest)
     }
   }
 
@@ -786,6 +740,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
                 <TableHead>{t('incidents.field_title')}</TableHead>
                 <TableHead>{t('incidents.field_severity')}</TableHead>
                 <TableHead>{t('incidents.field_status')}</TableHead>
+                <TableHead>{t('incidents.field_is_public')}</TableHead>
                 <TableHead>{t('incidents.col_created')}</TableHead>
                 <TableHead className="text-right">{t('status_pages.col_actions')}</TableHead>
               </TableRow>
@@ -801,6 +756,11 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
                   </TableCell>
                   <TableCell>
                     <Badge variant={incident.status === 'resolved' ? 'default' : 'outline'}>{incident.status}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={incident.is_public ? 'default' : 'secondary'}>
+                      {incident.is_public ? t('incidents.is_public_yes') : t('incidents.is_public_no')}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {new Date(incident.created_at).toLocaleDateString()}
@@ -879,7 +839,7 @@ function MaintenanceFormDialog({
 }: {
   editing: MaintenanceItem | null
   onClose: () => void
-  onSubmit: (data: Record<string, unknown>, id?: string) => void
+  onSubmit: (data: CreateMaintenanceRequest | UpdateMaintenanceRequest, id?: string) => void
   open: boolean
   pending: boolean
   servers: ServerResponse[]
@@ -891,6 +851,7 @@ function MaintenanceFormDialog({
   const [endAt, setEndAt] = useState('')
   const [active, setActive] = useState(true)
   const [selectedServers, setSelectedServers] = useState<string[]>([])
+  const [isPublic, setIsPublic] = useState(false)
 
   const handleOpenChange = (isOpen: boolean) => {
     if (isOpen && editing) {
@@ -899,7 +860,8 @@ function MaintenanceFormDialog({
       setStartAt(editing.start_at.slice(0, 16))
       setEndAt(editing.end_at.slice(0, 16))
       setActive(editing.active)
-      setSelectedServers(editing.server_ids ?? [])
+      setSelectedServers(parseServerIds(editing.server_ids_json))
+      setIsPublic(editing.is_public)
     } else if (isOpen) {
       setTitle('')
       setDescription('')
@@ -907,24 +869,26 @@ function MaintenanceFormDialog({
       setEndAt('')
       setActive(true)
       setSelectedServers([])
+      setIsPublic(false)
     }
     if (!isOpen) {
       onClose()
     }
   }
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!(title.trim() && startAt && endAt)) {
       return
     }
-    const payload: Record<string, unknown> = {
+    const payload: CreateMaintenanceRequest | UpdateMaintenanceRequest = {
       title: title.trim(),
       description: description.trim() || null,
       start_at: new Date(startAt).toISOString(),
       end_at: new Date(endAt).toISOString(),
       active,
-      server_ids: selectedServers
+      server_ids_json: selectedServers,
+      is_public: isPublic
     }
     onSubmit(payload, editing?.id)
   }
@@ -955,8 +919,7 @@ function MaintenanceFormDialog({
           </div>
           <div className="space-y-1">
             <Label htmlFor="mnt-desc">{t('maintenance.field_description')}</Label>
-            <textarea
-              className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            <Textarea
               id="mnt-desc"
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t('maintenance.placeholder_description')}
@@ -992,6 +955,13 @@ function MaintenanceFormDialog({
               <Switch checked={active} onCheckedChange={setActive} />
               {t('maintenance.field_active')}
             </label>
+          </div>
+          <div className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="mnt-public">{t('maintenance.field_is_public')}</Label>
+              <p className="text-muted-foreground text-xs">{t('maintenance.field_is_public_hint')}</p>
+            </div>
+            <Switch checked={isPublic} id="mnt-public" onCheckedChange={setIsPublic} />
           </div>
           <div className="space-y-2">
             <Label>{t('maintenance.field_servers')}</Label>
@@ -1035,7 +1005,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
   }
 
   const createMutation = useMutation({
-    mutationFn: (input: Record<string, unknown>) => api.post('/api/maintenances', input),
+    mutationFn: (input: CreateMaintenanceRequest) => api.post('/api/maintenances', input),
     onSuccess: () => {
       invalidate()
       setDialogOpen(false)
@@ -1045,7 +1015,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Record<string, unknown> }) =>
+    mutationFn: ({ id, input }: { id: string; input: UpdateMaintenanceRequest }) =>
       api.put(`/api/maintenances/${id}`, input),
     onSuccess: () => {
       invalidate()
@@ -1065,11 +1035,11 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
     onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
   })
 
-  const handleSubmit = (data: Record<string, unknown>, id?: string) => {
+  const handleSubmit = (data: CreateMaintenanceRequest | UpdateMaintenanceRequest, id?: string) => {
     if (id) {
-      updateMutation.mutate({ id, input: data })
+      updateMutation.mutate({ id, input: data as UpdateMaintenanceRequest })
     } else {
-      createMutation.mutate(data)
+      createMutation.mutate(data as CreateMaintenanceRequest)
     }
   }
 
@@ -1112,6 +1082,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
                 <TableHead>{t('maintenance.field_start')}</TableHead>
                 <TableHead>{t('maintenance.field_end')}</TableHead>
                 <TableHead>{t('maintenance.field_active')}</TableHead>
+                <TableHead>{t('maintenance.field_is_public')}</TableHead>
                 <TableHead className="text-right">{t('status_pages.col_actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -1126,6 +1097,11 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
                   <TableCell>
                     <Badge variant={m.active ? 'default' : 'secondary'}>
                       {m.active ? t('common:enable') : t('common:disable')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={m.is_public ? 'default' : 'secondary'}>
+                      {m.is_public ? t('maintenance.is_public_yes') : t('maintenance.is_public_no')}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
@@ -1186,15 +1162,15 @@ function StatusPagesManagement() {
 
   return (
     <div>
-      <Tabs className="max-w-5xl" defaultValue="pages">
+      <Tabs className="max-w-5xl" defaultValue="config">
         <TabsList>
-          <TabsTrigger value="pages">{t('status_pages.tab_pages')}</TabsTrigger>
+          <TabsTrigger value="config">{t('status_pages.tab_config')}</TabsTrigger>
           <TabsTrigger value="incidents">{t('status_pages.tab_incidents')}</TabsTrigger>
           <TabsTrigger value="maintenance">{t('status_pages.tab_maintenance')}</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pages">
-          <StatusPagesTab servers={servers ?? []} />
+        <TabsContent value="config">
+          <StatusPageConfigForm servers={servers ?? []} />
         </TabsContent>
 
         <TabsContent value="incidents">
