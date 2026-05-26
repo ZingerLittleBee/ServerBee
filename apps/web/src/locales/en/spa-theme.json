@@ -2,12 +2,10 @@
   "section_title": "Custom Frontend",
   "section_badge": "Beta",
   "section_description": "Replace the entire ServerBee UI with a custom theme. Recovery: append ?theme=default to any URL.",
-  "empty_title": "No custom themes yet",
-  "empty_cta": "Upload first theme",
-  "empty_docs": "Read theme dev docs",
   "upload_drag": "Drag .sbtheme here or click",
   "upload_progress": "Uploading…",
-  "upload_validating": "Validating…",
+  "upload_success": "Theme uploaded",
+  "upload_upgrade_success": "Theme upgraded from v{{previous_version}}",
   "active_indicator": "Active",
   "superseded": "Superseded",
   "actions": {
@@ -17,6 +15,12 @@
     "delete": "Delete",
     "details": "Details",
     "download": "Download package"
+  },
+  "details_drawer": {
+    "size": "Size",
+    "uploaded_by": "Uploaded by",
+    "uploaded_at": "Uploaded at",
+    "manifest_heading": "manifest.json"
   },
   "preview_dialog": {
     "title": "Open preview in a new tab?",
@@ -45,6 +49,7 @@
   "reload": "Reload",
   "errors": {
     "UPLOAD_TOO_LARGE": "Package exceeds the 25 MB upload limit.",
+    "INVALID_MULTIPART": "Upload form is malformed: {{message}}",
     "MISSING_MANIFEST": "manifest.json is missing from the package.",
     "INVALID_MANIFEST": "manifest is invalid: {{reason}}",
     "MISSING_ENTRY": "Entry HTML {{entry}} is not in the package.",
@@ -62,6 +67,6 @@
     "VERSION_EXISTS": "Version {{version}} of {{manifest_id}} already exists.",
     "THEME_IN_USE": "Cannot delete: this theme is currently active.",
     "THEME_NOT_FOUND": "Theme {{uuid}} not found.",
-    "default": "Upload failed: {{message}}"
+    "default": "Operation failed: {{message}}"
   }
 }

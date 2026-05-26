@@ -482,7 +482,7 @@ function BrandSettingsSection() {
   )
 }
 
-function AppearancePage() {
+export function AppearancePage() {
   const { t } = useTranslation('settings')
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'

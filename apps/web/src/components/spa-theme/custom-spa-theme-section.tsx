@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { type SpaThemeSummary, useActivateSpaTheme, useDeleteSpaTheme, useSpaThemes } from '@/api/spa-themes'
+import {
+  type ApiError,
+  type SpaThemeSummary,
+  useActivateSpaTheme,
+  useDeleteSpaTheme,
+  useSpaThemes
+} from '@/api/spa-themes'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +46,12 @@ export function CustomSpaThemeSection() {
   const [pendingDelete, setPendingDelete] = useState<SpaThemeSummary | null>(null)
   const [drawer, setDrawer] = useState<SpaThemeSummary | null>(null)
 
+  const showApiErrorToast = (err: ApiError) => {
+    const code = err.code ?? 'default'
+    const details = (err.details ?? {}) as Record<string, unknown>
+    toast.error(t(`errors.${code}` as never, { ...details, message: err.message }))
+  }
+
   const handleActivateConfirm = () => {
     if (!pendingActivate) {
       return
@@ -61,7 +73,9 @@ export function CustomSpaThemeSection() {
     if (!pendingDelete) {
       return
     }
-    del.mutate(pendingDelete.uuid)
+    del.mutate(pendingDelete.uuid, {
+      onError: showApiErrorToast
+    })
     setPendingDelete(null)
   }
 

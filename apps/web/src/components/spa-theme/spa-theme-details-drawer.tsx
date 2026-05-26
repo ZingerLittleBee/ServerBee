@@ -56,18 +56,18 @@ export function SpaThemeDetailsDrawer({ theme, onClose }: Props) {
               <dd className="font-mono text-xs">{theme?.manifest_id ?? ''}</dd>
               <dt className="text-muted-foreground">uuid</dt>
               <dd className="break-all font-mono text-xs">{theme?.uuid ?? ''}</dd>
-              <dt className="text-muted-foreground">size</dt>
+              <dt className="text-muted-foreground">{t('details_drawer.size')}</dt>
               <dd>{theme ? formatBytes(theme.size_bytes) : ''}</dd>
-              <dt className="text-muted-foreground">uploaded_by</dt>
+              <dt className="text-muted-foreground">{t('details_drawer.uploaded_by')}</dt>
               <dd>{theme?.uploaded_by ?? ''}</dd>
-              <dt className="text-muted-foreground">uploaded_at</dt>
+              <dt className="text-muted-foreground">{t('details_drawer.uploaded_at')}</dt>
               <dd className="font-mono text-xs">{theme?.uploaded_at ?? ''}</dd>
             </dl>
 
             {theme?.description ? <p className="text-muted-foreground text-sm">{theme.description}</p> : null}
 
             <div>
-              <div className="mb-1 font-medium text-sm">manifest.json</div>
+              <div className="mb-1 font-medium text-sm">{t('details_drawer.manifest_heading')}</div>
               <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
                 {manifestPreview}
               </pre>
@@ -80,6 +80,7 @@ export function SpaThemeDetailsDrawer({ theme, onClose }: Props) {
             className={cn(buttonVariants({ variant: 'outline' }), 'w-full', !theme && 'pointer-events-none opacity-50')}
             href={downloadUrl}
             rel="noreferrer"
+            target="_blank"
           >
             <Download className="size-4" />
             {t('actions.download')}

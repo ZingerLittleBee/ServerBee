@@ -2,7 +2,7 @@ import { Upload } from 'lucide-react'
 import { type ChangeEvent, type DragEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { type UploadError, useUploadSpaTheme } from '@/api/spa-themes'
+import { type ApiError, type UploadResult, useUploadSpaTheme } from '@/api/spa-themes'
 
 export function SpaThemeUploadCard() {
   const { t } = useTranslation('spa-theme')
@@ -16,12 +16,18 @@ export function SpaThemeUploadCard() {
 
   function submit(file: File) {
     upload.mutate(file, {
-      onError: (err: UploadError) => {
+      onError: (err: ApiError) => {
         const code = err.code ?? 'default'
         const details = (err.details ?? {}) as Record<string, unknown>
         toast.error(t(`errors.${code}` as never, { ...details, message: err.message }))
       },
-      onSuccess: () => toast.success(t('upload_drag'))
+      onSuccess: (result: UploadResult) => {
+        if (result.is_upgrade_of) {
+          toast.success(t('upload_upgrade_success', { previous_version: result.is_upgrade_of.previous_version }))
+        } else {
+          toast.success(t('upload_success'))
+        }
+      }
     })
   }
 

@@ -2,12 +2,10 @@
   "section_title": "自定义前端",
   "section_badge": "Beta",
   "section_description": "用自定义主题替换整个 ServerBee 界面。恢复方法：在任意 URL 后追加 ?theme=default。",
-  "empty_title": "暂无自定义主题",
-  "empty_cta": "上传第一个主题",
-  "empty_docs": "阅读主题开发文档",
   "upload_drag": "拖拽 .sbtheme 到此处或点击上传",
   "upload_progress": "上传中…",
-  "upload_validating": "校验中…",
+  "upload_success": "主题已上传",
+  "upload_upgrade_success": "已从 v{{previous_version}} 升级主题",
   "active_indicator": "已激活",
   "superseded": "已被替代",
   "actions": {
@@ -17,6 +15,12 @@
     "delete": "删除",
     "details": "详情",
     "download": "下载包"
+  },
+  "details_drawer": {
+    "size": "大小",
+    "uploaded_by": "上传者",
+    "uploaded_at": "上传时间",
+    "manifest_heading": "manifest.json"
   },
   "preview_dialog": {
     "title": "在新标签页中打开预览？",
@@ -45,6 +49,7 @@
   "reload": "重新加载",
   "errors": {
     "UPLOAD_TOO_LARGE": "包超过 25 MB 上传限制。",
+    "INVALID_MULTIPART": "上传表单格式错误：{{message}}",
     "MISSING_MANIFEST": "包中缺少 manifest.json。",
     "INVALID_MANIFEST": "manifest 无效：{{reason}}",
     "MISSING_ENTRY": "包中不含入口 HTML {{entry}}。",
@@ -62,6 +67,6 @@
     "VERSION_EXISTS": "{{manifest_id}} 的版本 {{version}} 已存在。",
     "THEME_IN_USE": "无法删除：该主题当前处于激活状态。",
     "THEME_NOT_FOUND": "主题 {{uuid}} 不存在。",
-    "default": "上传失败：{{message}}"
+    "default": "操作失败：{{message}}"
   }
 }

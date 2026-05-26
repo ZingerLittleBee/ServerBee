@@ -24,6 +24,36 @@ export interface UploadResult {
   uuid: string
 }
 
+/**
+ * Structured error envelope returned by the SPA theme endpoints.
+ *
+ * The server responds with `{ error: { code, message, details } }` for known failure modes;
+ * we surface those fields so callers can render `t(\`errors.${code}\`, details)`.
+ */
+export interface ApiError extends Error {
+  code?: string
+  details?: Record<string, unknown>
+}
+
+interface ErrorEnvelope {
+  error?: { code?: string; message?: string; details?: Record<string, unknown> }
+}
+
+async function parseErrorBody(res: Response): Promise<ApiError> {
+  const text = await res.text().catch(() => '')
+  let parsed: unknown = null
+  try {
+    parsed = text ? JSON.parse(text) : null
+  } catch {
+    parsed = null
+  }
+  const envelope = (parsed as ErrorEnvelope | null)?.error
+  const err = new Error(envelope?.message ?? text ?? res.statusText) as ApiError
+  err.code = envelope?.code
+  err.details = envelope?.details
+  return err
+}
+
 export function useSpaThemes() {
   return useQuery<SpaThemeSummary[]>({
     queryKey: ['spa-themes'],
@@ -53,26 +83,20 @@ export function useActivateSpaTheme() {
 
 export function useDeleteSpaTheme() {
   const qc = useQueryClient()
-  return useMutation({
+  return useMutation<void, ApiError, string>({
     mutationFn: async (uuid: string) => {
       const res = await fetch(`/api/settings/spa-themes/${uuid}`, { method: 'DELETE', credentials: 'include' })
       if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new Error(text || res.statusText)
+        throw await parseErrorBody(res)
       }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['spa-themes'] })
   })
 }
 
-export interface UploadError extends Error {
-  code?: string
-  details?: Record<string, unknown>
-}
-
 export function useUploadSpaTheme() {
   const qc = useQueryClient()
-  return useMutation<UploadResult, UploadError, File>({
+  return useMutation<UploadResult, ApiError, File>({
     mutationFn: async (file: File) => {
       const fd = new FormData()
       fd.append('package', file)
@@ -81,20 +105,15 @@ export function useUploadSpaTheme() {
         credentials: 'include',
         body: fd
       })
-      const text = await res.text()
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(text)
-      } catch {
-        parsed = null
-      }
       if (!res.ok) {
-        const err = new Error((parsed as { error?: { message?: string } })?.error?.message ?? text) as UploadError
-        err.code = (parsed as { error?: { code?: string } })?.error?.code
-        err.details = (parsed as { error?: { details?: Record<string, unknown> } })?.error?.details
-        throw err
+        throw await parseErrorBody(res)
       }
-      return (parsed as { data: UploadResult }).data
+      const text = await res.text()
+      const parsed = text ? (JSON.parse(text) as { data: UploadResult }) : null
+      if (!parsed) {
+        throw new Error('Upload succeeded but response body was empty')
+      }
+      return parsed.data
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['spa-themes'] })
   })
