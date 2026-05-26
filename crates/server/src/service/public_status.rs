@@ -73,6 +73,7 @@ pub struct PublicServerSummary {
     pub uptime_percent: Option<f64>,
     pub uptime_daily: Vec<UptimeDailyEntry>,
     // No ipv4/ipv6/hostname/interfaces/public_ip — by design absent.
+    // (Spec permits `hostname`; the plan opts to omit for additional defense-in-depth.)
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -118,6 +119,7 @@ pub struct PublicUnlockResult {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PublicIpQualityEntry {
     pub server_id: String,
+    /// Absent until the agent has reported at least one snapshot.
     pub ip_quality: Option<PublicIpQualitySnapshot>,
     pub unlock_results: Vec<PublicUnlockResult>,
 }
@@ -355,7 +357,11 @@ fn build_summary(
     }
 }
 
-fn report_to_metrics(report: &serverbee_common::types::SystemReport, mem_total: i64, disk_total: i64) -> PublicMetricsSummary {
+fn report_to_metrics(
+    report: &serverbee_common::types::SystemReport,
+    mem_total: i64,
+    disk_total: i64,
+) -> PublicMetricsSummary {
     PublicMetricsSummary {
         cpu: report.cpu,
         mem_used: report.mem_used.max(0) as u64,
@@ -383,9 +389,7 @@ fn snapshot_to_public(
     }
 }
 
-fn unlock_to_public(
-    r: &crate::service::ip_quality::UnlockResultDto,
-) -> PublicUnlockResult {
+fn unlock_to_public(r: &crate::service::ip_quality::UnlockResultDto) -> PublicUnlockResult {
     PublicUnlockResult {
         service_id: r.service_id.clone(),
         status: r.status.clone(),
@@ -446,12 +450,15 @@ pub async fn list_servers(
             crate::service::maintenance::MaintenanceService::is_in_maintenance(db, &srv.id)
                 .await
                 .unwrap_or(false);
-        let group_name = srv.group_id.as_deref().and_then(|g| group_lookup.get(g).cloned());
+        let group_name = srv
+            .group_id
+            .as_deref()
+            .and_then(|g| group_lookup.get(g).cloned());
 
         let metrics = if online {
-            agent_manager
-                .get_latest_report(&srv.id)
-                .map(|r| report_to_metrics(&r, srv.mem_total.unwrap_or(0), srv.disk_total.unwrap_or(0)))
+            agent_manager.get_latest_report(&srv.id).map(|r| {
+                report_to_metrics(&r, srv.mem_total.unwrap_or(0), srv.disk_total.unwrap_or(0))
+            })
         } else {
             None
         };
@@ -513,9 +520,9 @@ pub async fn get_server_detail(
         None
     };
 
-    let metrics = latest.as_ref().map(|r| {
-        report_to_metrics(r, srv.mem_total.unwrap_or(0), srv.disk_total.unwrap_or(0))
-    });
+    let metrics = latest
+        .as_ref()
+        .map(|r| report_to_metrics(r, srv.mem_total.unwrap_or(0), srv.disk_total.unwrap_or(0)));
 
     let uptime_daily = UptimeService::get_daily_filled(db, &srv.id, 90)
         .await
@@ -629,12 +636,9 @@ pub async fn network_overview(
     let scope = resolve_scope(db).await?;
     let scope_set: HashSet<String> = scope.server_ids.iter().cloned().collect();
 
-    let all = crate::service::network_probe::NetworkProbeService::get_overview(
-        db,
-        agent_manager,
-        config,
-    )
-    .await?;
+    let all =
+        crate::service::network_probe::NetworkProbeService::get_overview(db, agent_manager, config)
+            .await?;
     let servers = all
         .into_iter()
         .filter(|s| scope_set.contains(&s.server_id))

@@ -313,7 +313,8 @@ pub struct PublicUnlockResult {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PublicIpQualityEntry {
     pub server_id: String,
-    pub ip_quality: PublicIpQualitySnapshot,
+    // Absent when the agent has not yet reported an ip-quality snapshot.
+    pub ip_quality: Option<PublicIpQualitySnapshot>,
     pub unlock_results: Vec<PublicUnlockResult>,
 }
 
