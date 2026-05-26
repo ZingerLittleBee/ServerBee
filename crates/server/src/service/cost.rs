@@ -1221,8 +1221,8 @@ mod tests {
         let now = Utc::now();
         server::ActiveModel {
             id: Set(id.to_string()),
-            token_hash: Set("test_hash".to_string()),
-            token_prefix: Set("serverbee_test".to_string()),
+            token_hash: Set(Some("test_hash".to_string())),
+            token_prefix: Set(Some("serverbee_test".to_string())),
             name: Set(name.to_string()),
             cpu_cores: Set(Some(2)),
             mem_total: Set(Some(8 * 1024_i64.pow(3))),

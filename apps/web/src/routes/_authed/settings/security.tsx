@@ -15,10 +15,8 @@ export const Route = createFileRoute('/_authed/settings/security')({
 })
 
 function SecurityPage() {
-  const { t } = useTranslation(['settings', 'common'])
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('security.title')}</h1>
       <div className="max-w-2xl space-y-8">
         <TwoFactorSection />
         <ChangePasswordSection />

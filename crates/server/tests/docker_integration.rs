@@ -146,17 +146,17 @@ async fn list_audit_entries(client: &Client, base_url: &str) -> Vec<serde_json::
 async fn mint_enrollment_code(client: &Client, base_url: &str) -> String {
     login_admin(client, base_url).await;
     let resp = client
-        .post(format!("{}/api/agent/enrollments", base_url))
-        .json(&json!({}))
+        .post(format!("{}/api/servers", base_url))
+        .json(&json!({ "name": "docker-integration-test" }))
         .send()
         .await
-        .expect("Enrollment mint request failed");
-    assert_eq!(resp.status(), 200, "Enrollment mint should succeed");
+        .expect("Create-server request failed");
+    assert_eq!(resp.status(), 200, "Create server should succeed");
     let body: serde_json::Value = resp
         .json()
         .await
-        .expect("Failed to parse enrollment response");
-    body["data"]["code"]
+        .expect("Failed to parse create-server response");
+    body["data"]["enrollment"]["code"]
         .as_str()
         .expect("enrollment code missing")
         .to_string()

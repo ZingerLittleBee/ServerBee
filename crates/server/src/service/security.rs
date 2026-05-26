@@ -360,8 +360,8 @@ mod tests {
         let now = Utc::now();
         server_entity::ActiveModel {
             id: Set(id.to_string()),
-            token_hash: Set("hash".to_string()),
-            token_prefix: Set("prefix".to_string()),
+            token_hash: Set(Some("hash".to_string())),
+            token_prefix: Set(Some("prefix".to_string())),
             name: Set(format!("Server {id}")),
             weight: Set(0),
             hidden: Set(false),

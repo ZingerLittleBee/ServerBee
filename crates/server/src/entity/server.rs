@@ -6,8 +6,8 @@ use serde::Serialize;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
-    pub token_hash: String,
-    pub token_prefix: String,
+    pub token_hash: Option<String>,
+    pub token_prefix: Option<String>,
     pub name: String,
     pub cpu_name: Option<String>,
     pub cpu_cores: Option<i32>,

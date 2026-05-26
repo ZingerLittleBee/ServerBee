@@ -14,8 +14,6 @@ function SettingsPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <h1 className="mb-6 font-bold text-2xl">{t('title')}</h1>
-
       <div className="w-full min-w-0 max-w-3xl space-y-8">
         <SettingsSection
           footer={

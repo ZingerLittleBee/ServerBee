@@ -35,11 +35,6 @@ const DOCKER_RETRY_SECS: u64 = 30;
 
 static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
-enum ServerMessageOutcome {
-    Continue,
-    Reconnect,
-}
-
 pub struct Reporter {
     config: AgentConfig,
     fingerprint: String,
@@ -499,20 +494,7 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            match self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &server_capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval, &unlock_checker).await? {
-                                ServerMessageOutcome::Continue => {}
-                                ServerMessageOutcome::Reconnect => {
-                                    ping_manager.stop_all();
-                                    terminal_manager.close_all();
-                                    network_prober.stop_all();
-                                    unlock_checker.stop();
-                                    file_manager.cancel_all_transfers();
-                                    if let Some(dm) = docker_manager.as_mut() {
-                                        dm.cleanup();
-                                    }
-                                    return Ok(());
-                                }
-                            }
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &server_capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval, &unlock_checker).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
@@ -577,7 +559,7 @@ impl Reporter {
         docker_available: &mut bool,
         docker_stats_interval: &mut Option<tokio::time::Interval>,
         unlock_checker: &UnlockChecker,
-    ) -> anyhow::Result<ServerMessageOutcome>
+    ) -> anyhow::Result<()>
     where
         S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     {
@@ -587,7 +569,7 @@ impl Reporter {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("Failed to parse server message: {e}");
-                return Ok(ServerMessageOutcome::Continue);
+                return Ok(());
             }
         };
 
@@ -642,7 +624,7 @@ impl Reporter {
                     tokio::spawn(async move {
                         let _ = tx.send(denied).await;
                     });
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 tracing::info!("Executing command (task_id={task_id}): {command}");
                 let tx = cmd_result_tx.clone();
@@ -660,39 +642,6 @@ impl Reporter {
                         tracing::info!("TaskResult ready for task_id={task_id}");
                     }
                 });
-            }
-            ServerMessage::RebindIdentity {
-                job_id,
-                target_server_id,
-                token,
-            } => {
-                tracing::info!(
-                    "Rebinding identity for job_id={job_id} to target_server_id={target_server_id}"
-                );
-
-                if let Err(write_err) = register::save_token(&token) {
-                    tracing::warn!(
-                        "Failed to persist rebind token for job_id={job_id}: {write_err}"
-                    );
-                    let failed = AgentMessage::RebindIdentityFailed {
-                        job_id: job_id.clone(),
-                        error: write_err.to_string(),
-                    };
-                    let json = serde_json::to_string(&failed)?;
-                    if let Err(send_err) = write.send(Message::Text(json.into())).await {
-                        tracing::warn!(
-                            "Failed to send RebindIdentityFailed for job_id={job_id}: {send_err}"
-                        );
-                    }
-                    return Ok(ServerMessageOutcome::Continue);
-                }
-
-                self.config.token = token;
-                let ack = AgentMessage::RebindIdentityAck { job_id };
-                let json = serde_json::to_string(&ack)?;
-                write.send(Message::Text(json.into())).await?;
-                write.send(Message::Close(None)).await?;
-                return Ok(ServerMessageOutcome::Reconnect);
             }
             ServerMessage::Ack { msg_id } => {
                 tracing::debug!("Received Ack for msg_id={msg_id}");
@@ -748,7 +697,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&denied)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
 
                 if UPGRADE_IN_PROGRESS
@@ -767,7 +716,7 @@ impl Reporter {
                         )
                         .await;
                     });
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
 
                 tracing::info!("Upgrade requested: v{version} (pinned source)");
@@ -821,7 +770,7 @@ impl Reporter {
                     tokio::spawn(async move {
                         let _ = tx.send(denied).await;
                     });
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
 
                 // Input validation: target must be domain or IP only.
@@ -847,7 +796,7 @@ impl Reporter {
                             })
                             .await;
                     });
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
 
                 let proto =
@@ -875,7 +824,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 let result = file_manager.list_dir(&path).await;
                 let msg = match result {
@@ -905,7 +854,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 let result = file_manager.stat(&path).await;
                 let msg = match result {
@@ -937,7 +886,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 let result = file_manager.read_file(&path, max_size).await;
                 let msg = match result {
@@ -969,7 +918,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&result)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 let result = file_manager.write_file(&path, &content).await;
                 let msg = match result {
@@ -1001,7 +950,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&result)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 let result = file_manager.delete(&path, recursive).await;
                 let msg = match result {
@@ -1029,7 +978,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&result)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 let result = file_manager.mkdir(&path).await;
                 let msg = match result {
@@ -1057,7 +1006,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&result)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 let result = file_manager.rename_path(&from, &to).await;
                 let msg = match result {
@@ -1084,7 +1033,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 file_manager.start_download(transfer_id, path, file_tx.clone());
             }
@@ -1104,7 +1053,7 @@ impl Reporter {
                     };
                     let json = serde_json::to_string(&msg)?;
                     write.send(Message::Text(json.into())).await?;
-                    return Ok(ServerMessageOutcome::Continue);
+                    return Ok(());
                 }
                 match file_manager
                     .start_upload(transfer_id.clone(), path, size)
@@ -1261,7 +1210,7 @@ impl Reporter {
             }
         }
 
-        Ok(ServerMessageOutcome::Continue)
+        Ok(())
     }
 }
 

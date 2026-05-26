@@ -1186,8 +1186,6 @@ function StatusPagesManagement() {
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('status_pages.title')}</h1>
-
       <Tabs className="max-w-5xl" defaultValue="pages">
         <TabsList>
           <TabsTrigger value="pages">{t('status_pages.tab_pages')}</TabsTrigger>

@@ -32,12 +32,9 @@ function FirewallPage() {
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 min-w-0">
-        <h1 className="font-bold text-2xl">{t('page.title', { defaultValue: 'Firewall' })}</h1>
-        <p className="text-muted-foreground text-sm">
-          {t('page.subtitle', { defaultValue: 'Block abusive IPs across one or more agents.' })}
-        </p>
-      </div>
+      <p className="mb-6 min-w-0 text-muted-foreground text-sm">
+        {t('page.subtitle', { defaultValue: 'Block abusive IPs across one or more agents.' })}
+      </p>
 
       <div className="mb-4">
         <FirewallKpiCards />

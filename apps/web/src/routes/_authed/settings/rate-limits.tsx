@@ -124,7 +124,6 @@ function RateLimitsPage() {
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
-          <h1 className="font-bold text-2xl">{t('rate_limit.title')}</h1>
           <p className="text-muted-foreground text-sm">
             {t('rate_limit.description', { minutes: data?.window_minutes ?? 15 })}
           </p>

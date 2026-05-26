@@ -12,7 +12,7 @@ import { AddServerDialog } from '@/components/server/add-server-dialog'
 import { CostCell } from '@/components/server/cost-cell'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
-import { StatusDot } from '@/components/server/status-dot'
+import { deriveServerStatus, StatusDot } from '@/components/server/status-dot'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
 import {
   AlertDialog,
@@ -189,7 +189,7 @@ function ServersListPage() {
         accessorFn: (row) => (row.online ? 'online' : 'offline'),
         enableSorting: false,
         header: () => null,
-        cell: ({ row }) => <StatusDot online={row.original.online} />,
+        cell: ({ row }) => <StatusDot status={deriveServerStatus(row.original)} />,
         filterFn: arrayIncludesFilter,
         enableColumnFilter: true,
         size: 36,

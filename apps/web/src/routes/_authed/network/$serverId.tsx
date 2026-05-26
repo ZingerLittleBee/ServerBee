@@ -1002,7 +1002,7 @@ export function NetworkDetailPage() {
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <h1 className="font-bold text-2xl">{summary.server_name}</h1>
-            <StatusBadge online={summary.online} />
+            <StatusBadge status={summary.online ? 'online' : 'offline'} />
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={() => setShowTracerouteDialog(true)} size="sm" variant="outline">

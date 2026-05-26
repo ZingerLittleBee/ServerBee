@@ -42,10 +42,6 @@ vi.mock('@/components/server/agent-version-section', () => ({
   )
 }))
 
-vi.mock('@/components/server/recovery-merge-dialog', () => ({
-  RecoveryMergeDialog: () => <div data-testid="recovery-dialog" />
-}))
-
 vi.mock('@/components/server/capabilities-dialog', () => ({
   CapabilitiesDialog: () => <div>capabilities</div>
 }))
@@ -60,6 +56,10 @@ vi.mock('@/components/server/metrics-chart', () => ({
 
 vi.mock('@/components/server/server-edit-dialog', () => ({
   ServerEditDialog: () => null
+}))
+
+vi.mock('@/components/server/recover-agent-dialog', () => ({
+  RecoverAgentDialog: () => null
 }))
 
 vi.mock('@/components/server/status-badge', () => ({
@@ -164,14 +164,6 @@ vi.mock('@/lib/widget-helpers', () => ({
 
 vi.mock('@/stores/upgrade-jobs-store', () => ({
   useUpgradeJobsStore: () => undefined
-}))
-
-vi.mock('@/stores/recovery-jobs-store', () => ({
-  useRecoveryJobsStore: (selector: (state: { hydrated: boolean; jobs: Map<string, unknown> }) => unknown) =>
-    selector({
-      hydrated: true,
-      jobs: new Map()
-    })
 }))
 
 const { ServerDetailPage } = await import('./$id-page')

@@ -6,6 +6,16 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -523,111 +533,130 @@ function NotificationsPage() {
     }
   }
 
-  const toggleChannelForm = () => {
-    if (editingId || showForm) {
-      resetForm()
-    } else {
-      setShowForm(true)
-    }
+  const prepareCreateChannel = () => {
+    setEditingId(null)
+    setName('')
+    setNotifyType('webhook')
+    setConfigFields({ url: '' })
+    setToAddresses([])
+    setToInput('')
+    setIsEnabled(true)
   }
 
-  const toggleGroupForm = () => {
-    if (editingGroupId || showGroupForm) {
-      resetGroupForm()
-    } else {
-      setShowGroupForm(true)
-    }
+  const prepareCreateGroup = () => {
+    setEditingGroupId(null)
+    setGroupName('')
+    setSelectedIds([])
   }
 
   return (
     <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('notifications.title')}</h1>
-
       <div className="max-w-2xl space-y-6">
-        {/* Create notification */}
-        <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-4 rounded-lg border bg-card p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('notifications.channels')}</h2>
-            <Button onClick={toggleChannelForm} size="sm" variant="outline">
-              <Plus className="size-4" />
-              {t('common:add')}
-            </Button>
+            <Dialog
+              onOpenChange={(open) => {
+                setShowForm(open)
+                if (!open) {
+                  resetForm()
+                }
+              }}
+              open={showForm}
+            >
+              <DialogTrigger onClick={prepareCreateChannel} render={<Button size="sm" variant="outline" />}>
+                <Plus className="size-4" />
+                {t('common:add')}
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingId ? t('notifications.edit_channel_title') : t('notifications.add_channel_title')}
+                  </DialogTitle>
+                  <DialogDescription>{t('notifications.channel_dialog_description')}</DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <form className="space-y-3" id="notification-channel-form" onSubmit={handleCreate}>
+                    <Input
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder={t('notifications.channel_name')}
+                      required
+                      type="text"
+                      value={name}
+                    />
+                    <Select
+                      disabled={editingId !== null}
+                      items={typeLabels}
+                      onValueChange={(val) => handleTypeChange(val as NotifyType)}
+                      value={notifyType}
+                    >
+                      <SelectTrigger className="h-9 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(typeLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {editingId !== null && (
+                      <p className="text-muted-foreground text-xs">{t('notifications.type_locked_in_edit')}</p>
+                    )}
+                    {notifyType === 'apns' && (
+                      <ApnsFormFields
+                        apnsFileInputRef={apnsFileInputRef}
+                        configFields={configFields}
+                        onFieldChange={(patch) => setConfigFields((prev) => ({ ...prev, ...patch }))}
+                        onFileUpload={handleApnsFileUpload}
+                      />
+                    )}
+                    {notifyType === 'email' && (
+                      <EmailFormFields
+                        from={configFields.from ?? ''}
+                        onAddRecipient={handleAddRecipient}
+                        onFromChange={(value) => setConfigFields((prev) => ({ ...prev, from: value }))}
+                        onRemoveRecipient={handleRemoveRecipient}
+                        onToInputChange={setToInput}
+                        toAddresses={toAddresses}
+                        toInput={toInput}
+                      />
+                    )}
+                    {notifyType !== 'apns' &&
+                      notifyType !== 'email' &&
+                      Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
+                        <Input
+                          key={key}
+                          onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                          placeholder={label}
+                          required
+                          type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
+                          value={configFields[key] ?? ''}
+                        />
+                      ))}
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <Label className="text-sm">{t('notifications.enabled_label')}</Label>
+                      <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
+                    </div>
+                  </form>
+                </DialogBody>
+                <DialogFooter>
+                  <Button onClick={resetForm} size="sm" type="button" variant="ghost">
+                    {t('common:cancel')}
+                  </Button>
+                  <Button
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                    form="notification-channel-form"
+                    size="sm"
+                    type="submit"
+                  >
+                    {editingId ? t('notifications.update_channel') : t('common:create')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
-
-          {showForm && (
-            <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreate}>
-              <Input
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('notifications.channel_name')}
-                required
-                type="text"
-                value={name}
-              />
-              <Select
-                disabled={editingId !== null}
-                items={typeLabels}
-                onValueChange={(val) => handleTypeChange(val as NotifyType)}
-                value={notifyType}
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(typeLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {editingId !== null && (
-                <p className="text-muted-foreground text-xs">{t('notifications.type_locked_in_edit')}</p>
-              )}
-              {notifyType === 'apns' && (
-                <ApnsFormFields
-                  apnsFileInputRef={apnsFileInputRef}
-                  configFields={configFields}
-                  onFieldChange={(patch) => setConfigFields((prev) => ({ ...prev, ...patch }))}
-                  onFileUpload={handleApnsFileUpload}
-                />
-              )}
-              {notifyType === 'email' && (
-                <EmailFormFields
-                  from={configFields.from ?? ''}
-                  onAddRecipient={handleAddRecipient}
-                  onFromChange={(value) => setConfigFields((prev) => ({ ...prev, from: value }))}
-                  onRemoveRecipient={handleRemoveRecipient}
-                  onToInputChange={setToInput}
-                  toAddresses={toAddresses}
-                  toInput={toInput}
-                />
-              )}
-              {notifyType !== 'apns' &&
-                notifyType !== 'email' &&
-                Object.entries(configFieldLabels[notifyType] ?? {}).map(([key, label]) => (
-                  <Input
-                    key={key}
-                    onChange={(e) => setConfigFields((prev) => ({ ...prev, [key]: e.target.value }))}
-                    placeholder={label}
-                    required
-                    type={SENSITIVE_FIELDS.has(key) ? 'password' : 'text'}
-                    value={configFields[key] ?? ''}
-                  />
-                ))}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Label className="text-sm">{t('notifications.enabled_label')}</Label>
-                <Switch checked={isEnabled} onCheckedChange={setIsEnabled} />
-              </div>
-              <div className="flex gap-2">
-                <Button disabled={createMutation.isPending || updateMutation.isPending} size="sm" type="submit">
-                  {editingId ? t('notifications.update_channel') : t('common:create')}
-                </Button>
-                <Button onClick={resetForm} size="sm" type="button" variant="ghost">
-                  {t('common:cancel')}
-                </Button>
-              </div>
-            </form>
-          )}
 
           {isLoading && (
             <div className="space-y-2">
@@ -691,53 +720,79 @@ function NotificationsPage() {
         </div>
 
         {/* Notification Groups */}
-        <div className="rounded-lg border bg-card p-6">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-4 rounded-lg border bg-card p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-lg">{t('notifications.groups')}</h2>
-            <Button onClick={toggleGroupForm} size="sm" variant="outline">
-              <Plus className="size-4" />
-              {t('common:add')}
-            </Button>
-          </div>
-
-          {showGroupForm && notifications && notifications.length > 0 && (
-            <form className="mb-4 space-y-3 rounded-md border bg-muted/30 p-4" onSubmit={handleCreateGroup}>
-              <Input
-                onChange={(e) => setGroupName(e.target.value)}
-                placeholder={t('notifications.group_name')}
-                required
-                type="text"
-                value={groupName}
-              />
-              <fieldset className="space-y-1">
-                <legend className="text-sm">{t('notifications.select_channels')}</legend>
-                {notifications.map((n) => (
-                  // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                  <label className="flex items-center gap-2 text-sm" key={n.id}>
-                    <Checkbox
-                      checked={selectedIds.includes(n.id)}
-                      onCheckedChange={(checked) => {
-                        setSelectedIds((prev) => (checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)))
-                      }}
+            <Dialog
+              onOpenChange={(open) => {
+                setShowGroupForm(open)
+                if (!open) {
+                  resetGroupForm()
+                }
+              }}
+              open={showGroupForm}
+            >
+              <DialogTrigger
+                disabled={!notifications || notifications.length === 0}
+                onClick={prepareCreateGroup}
+                render={<Button size="sm" variant="outline" />}
+              >
+                <Plus className="size-4" />
+                {t('common:add')}
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>
+                    {editingGroupId ? t('notifications.edit_group_title') : t('notifications.add_group_title')}
+                  </DialogTitle>
+                  <DialogDescription>{t('notifications.group_dialog_description')}</DialogDescription>
+                </DialogHeader>
+                <DialogBody>
+                  <form className="space-y-3" id="notification-group-form" onSubmit={handleCreateGroup}>
+                    <Input
+                      onChange={(e) => setGroupName(e.target.value)}
+                      placeholder={t('notifications.group_name')}
+                      required
+                      type="text"
+                      value={groupName}
                     />
-                    {n.name} ({typeLabels[n.notify_type as NotifyType] ?? n.notify_type})
-                  </label>
-                ))}
-              </fieldset>
-              <div className="flex gap-2">
-                <Button
-                  disabled={createGroupMutation.isPending || updateGroupMutation.isPending || selectedIds.length === 0}
-                  size="sm"
-                  type="submit"
-                >
-                  {editingGroupId ? t('notifications.update_group') : t('notifications.create_group')}
-                </Button>
-                <Button onClick={resetGroupForm} size="sm" type="button" variant="ghost">
-                  {t('common:cancel')}
-                </Button>
-              </div>
-            </form>
-          )}
+                    <fieldset className="space-y-2">
+                      <legend className="text-sm">{t('notifications.select_channels')}</legend>
+                      <div className="space-y-1 rounded-md border p-2">
+                        {notifications?.map((n) => (
+                          // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                          <label className="flex items-center gap-2 text-sm" key={n.id}>
+                            <Checkbox
+                              checked={selectedIds.includes(n.id)}
+                              onCheckedChange={(checked) => {
+                                setSelectedIds((prev) => (checked ? [...prev, n.id] : prev.filter((id) => id !== n.id)))
+                              }}
+                            />
+                            {n.name} ({typeLabels[n.notify_type as NotifyType] ?? n.notify_type})
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  </form>
+                </DialogBody>
+                <DialogFooter>
+                  <Button onClick={resetGroupForm} size="sm" type="button" variant="ghost">
+                    {t('common:cancel')}
+                  </Button>
+                  <Button
+                    disabled={
+                      createGroupMutation.isPending || updateGroupMutation.isPending || selectedIds.length === 0
+                    }
+                    form="notification-group-form"
+                    size="sm"
+                    type="submit"
+                  >
+                    {editingGroupId ? t('notifications.update_group') : t('notifications.create_group')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
 
           {!groups || groups.length === 0 ? (
             <p className="text-center text-muted-foreground text-sm">{t('notifications.no_groups')}</p>
