@@ -36,6 +36,7 @@ pub mod server_tag;
 pub mod service_monitor;
 pub mod service_monitor_record;
 pub mod session;
+pub mod spa_theme;
 pub mod status_page;
 pub mod task;
 pub mod task_result;

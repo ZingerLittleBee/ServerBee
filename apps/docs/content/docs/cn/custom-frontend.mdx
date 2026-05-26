@@ -1,0 +1,222 @@
+---
+title: 自定义前端主题
+description: 将整个 ServerBee 仪表盘替换为你上传的自定义 React/Vue/Svelte SPA（.sbtheme 包）。
+---
+
+ServerBee 允许管理员将内置仪表盘替换为任意上传的 `.sbtheme` 包。自定义前端与服务端同源运行，使用相同的 REST 和 WebSocket API，可以是一个精简的只读视图、深度品牌定制的白标产品，或者完全自定义的监控界面。
+
+这是一次完整的 SPA 替换，而非插件或颜色主题叠加。当自定义前端激活后，它接管所有路由（登录页、仪表盘、设置等）。现有的[自定义主题](/cn/docs/custom-themes)颜色变量系统和品牌设置在自定义前端激活期间不起作用，界面会显示相应提示。
+
+## 可以和不可以自定义的内容
+
+| 可以做的 | 不可以做的 |
+|----------|-----------|
+| 替换完整的 HTML/CSS/JS 前端 | 添加服务端代码、数据库迁移或 Rust crate |
+| 实现自己的路由、登录页和品牌 | 访问 `/api/*`、`/swagger-ui/*` 或 `/__system/*` 下的路由——这些始终由服务端处理 |
+| 调用所有现有的 REST 或 WebSocket API | 加载外部脚本、样式表、字体，或发起跨域 fetch/XHR/WebSocket 请求（CSP 限制） |
+| 使用任意 JS 框架（React、Vue、Svelte、原生 JS） | 在其他来源的 iframe 中嵌入前端（CSP `frame-ancestors: none`） |
+| 使用自己的颜色、字体、图标和资源 | 超过 20 MB 的未压缩内容或超过 1000 个文件 |
+| 通过现有认证 API 读取当前用户会话 | 按用户设置主题——全系统只有一个激活主题 |
+
+**信任模型：** 管理员安装的主题与服务端同源运行，具有与当前登录用户相同的数据访问权限——等同于管理员直接替换磁盘上的内置 SPA。CSP 是纵深防御（可阻止被动资源加载等机会性泄露途径），但**不是**隔离边界。请只安装你信任的主题。
+
+## 快速上手
+
+**前置条件：** 已安装 [bun](https://bun.sh) 并有一个正在运行的 ServerBee 服务端。
+
+### 1. 脚手架初始化
+
+```bash
+npx degit ZingerLittleBee/ServerBee/templates/serverbee-theme-starter my-theme
+cd my-theme
+bun install
+```
+
+Starter 包含一个极简的 Vite + TypeScript SPA，内置预接好的 API 客户端（`src/lib/serverbee.ts`），使用同源 Session 认证。
+
+### 2. 编辑与构建
+
+修改 `src/App.tsx` 及其他源文件，运行 `bun run dev` 在本地针对任意运行中的 ServerBee 服务端进行迭代开发（在 `vite.config.ts` 中配置 dev proxy）。
+
+### 3. 打包
+
+```bash
+bun run pack
+```
+
+该命令会执行 Vite 生产构建，按照服务端相同的约束（文件大小、扩展名、manifest）验证输出，并在项目根目录生成一个确定性的 `.sbtheme` zip 文件（如 `my-theme-1.0.0.sbtheme`）。
+
+### 4. 上传
+
+在 ServerBee 中打开 **设置 → 外观**。管理员用户可以在顶部看到**自定义前端**区域。将 `.sbtheme` 文件拖到上传卡片，或点击选择文件。
+
+上传后，点击 **预览** 在新标签页中打开主题，不会影响全局激活状态。确认后，点击 **激活**。
+
+<Callout type="warn">
+激活操作立即全局生效。每个重新加载根路径的用户都会看到新主题。激活前请使用**预览**进行验证。如果出现问题，可访问 `?theme=default` 进行恢复（参见[恢复与调试](#恢复与调试)）。
+</Callout>
+
+## Manifest 参考
+
+每个 `.sbtheme` 包的 zip 根目录下必须包含 `manifest.json`：
+
+```json
+{
+  "schema_version": 1,
+  "id": "acme-dashboard",
+  "name": "Acme Corp Dashboard",
+  "version": "1.2.0",
+  "author": "Acme Inc",
+  "homepage": "https://acme.example.com",
+  "description": "Branded dashboard for Acme.",
+  "entry": "index.html",
+  "preview": "preview.png"
+}
+```
+
+| 字段 | 必填 | 约束 |
+|------|------|------|
+| `schema_version` | 是 | 整数；当前只接受 `1` |
+| `id` | 是 | 匹配 `^[a-z][a-z0-9-]{2,63}$` |
+| `name` | 是 | 1–64 字符；HTML 标签会被过滤 |
+| `version` | 是 | 合法的 semver（如 `1.2.0`） |
+| `author` | 否 | ≤ 64 字符；HTML 标签会被过滤 |
+| `homepage` | 否 | 合法的 `http(s)://` URL |
+| `description` | 否 | ≤ 500 字符；HTML 标签会被过滤 |
+| `entry` | 否 | 默认为 `index.html`；路径必须存在于包中且以 `.html` 结尾 |
+| `min_serverbee_version` | 否 | semver；上传时若运行中的服务端版本低于此值，上传将被拒绝 |
+| `preview` | 否 | 预览图的相对路径；必须存在；≤ 500 KB；仅支持 `png`、`jpg`、`webp` |
+
+<Callout type="warn">
+**`min_serverbee_version` 与预发布版本：** semver 规定正式版（如 `1.0.0`）**大于**预发布版（如 `1.0.0-alpha.3`）。如果你的目标部署运行的是预发布构建，设置 `"min_serverbee_version": "1.0.0"` 会导致上传被拒绝。除非你确实依赖某个更新的服务端特性，否则请不要填写此字段。
+</Callout>
+
+`id` 字段作为主题系列标识符。同一 `id` 可以上传多个版本，服务端会保留完整历史，允许激活其中任意一个。上传的版本号低于同 `id` 最新版本时，将以 `NO_DOWNGRADE` 拒绝。
+
+## 大小与文件限制
+
+| 限制项 | 限制值 |
+|--------|--------|
+| multipart 上传硬上限 | 25 MB |
+| 解压后内容总大小 | 20 MB |
+| 单文件大小 | 5 MB |
+| 文件数量 | 1000 |
+| 单文件路径长度 | 255 字符 |
+| 预览图大小 | 500 KB |
+
+**允许的文件扩展名**（大小写不敏感）：`html`、`htm`、`js`、`mjs`、`css`、`png`、`jpg`、`jpeg`、`svg`、`webp`、`gif`、`ico`、`woff`、`woff2`、`ttf`、`otf`、`json`、`txt`、`map`。
+
+服务端还会执行压缩比检查：任意单个 zip 条目的解压大小超过压缩大小 100 倍以上时，将被拒绝（防止 zip 炸弹）。
+
+以下情况会直接拒绝：目录穿越条目（`../`）、绝对路径、Windows 盘符、符号链接 zip 条目和重复条目。
+
+<Callout type="info">
+不要将文档、README 和源码 map 文件放入 `.sbtheme` 包。它们会消耗大小配额，服务端也永远不会提供这些文件。建议将它们放在主题源码仓库中单独分发。
+</Callout>
+
+## API 与 WebSocket 参考
+
+自定义前端调用与内置仪表盘相同的 HTTP REST API 和 WebSocket 端点，不需要单独的"主题 SDK"。
+
+- **完整 REST API 文档：** [`/swagger-ui/`](/swagger-ui/) — 在你的运行实例上实时可用
+- **OpenAPI 文档：** [`/api-docs/openapi.json`](/api-docs/openapi.json)
+- **认证：** Session cookie 由 `POST /api/auth/login` 设置，同源请求自动携带。也支持通过 `X-API-Key` 请求头进行 API Key 认证。
+- **WebSocket（服务器更新）：** 连接到 `GET /api/ws/servers`（浏览器 WebSocket）。服务端推送 `BrowserMessage` JSON 帧，包含 `FullSync`、`Update`、`ServerOnline`、`ServerOffline` 等变体。
+- **终端：** 在 `/api/ws/terminal/:sessionId` 使用 Binary WebSocket 帧，前 16 字节为 Session UUID，其余为原始 PTY 数据。
+
+`/__system/*` 前缀始终由默认 SPA 提供服务，自定义主题无法覆盖。该路径提供恢复 UI 以及 `POST /__system/clear-recovery` / `POST /__system/clear-preview` 端点。
+
+## CSP 约束
+
+服务自定义主题文件的所有响应都包含以下 Content Security Policy：
+
+```
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' 'unsafe-eval';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob:;
+  font-src 'self' data:;
+  connect-src 'self';
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+```
+
+**`connect-src 'self'` 对主题开发者意味着什么：**
+
+- fetch、XHR 和 WebSocket 连接限制为同源。主题可以自由调用 `/api/*`，以及连接同一服务端上的 WebSocket 端点。
+- 外部 URL 的连接（如 `https://api.example.com`、`wss://external.host`）会被浏览器拦截。
+- 如果你的主题集成了向外部发起网络请求的埋点、错误上报 SDK 或 CDN 资源，这些请求将被拦截。
+
+**CSP 不会阻止的内容：**
+
+- 顶层导航泄露（`location.href = 'https://...'`）。理论上可覆盖此场景的 CSP3 `navigate-to` 指令在浏览器中实际上不被支持。
+- 同源 API 访问——主题携带用户会话，可以读取用户有权访问的任何数据。
+
+`unsafe-eval` 为了兼容大多数 React、Vue、Svelte 和 wasm-bindgen 构建而默认开启。
+
+以上头信息仅对自定义主题响应生效，不影响内置默认 SPA。
+
+## 恢复与调试
+
+### 从损坏的主题中恢复
+
+如果自定义主题导致 UI 无法使用，无法导航到管理页面：
+
+1. 在浏览器中访问 `/?theme=default`。服务端会立即返回内置默认 SPA（无论当前激活的主题是什么），并设置一个恢复 cookie（`sb_force_default`），让该来源在一小时内保持在默认 SPA 上。
+2. 此时你已回到默认 SPA。导航到 **设置 → 外观**，停用或删除损坏的主题。
+3. 要手动退出恢复状态并返回自定义主题，点击默认 SPA 上的**退出恢复**按钮，或访问 `/?theme=active`。这会调用 `POST /__system/clear-recovery` 并清除 cookie。
+
+<Callout type="info">
+恢复 cookie 的作用域为整个浏览器（同源），有效期为一小时。在 cookie 过期或恢复被清除之前，同一浏览器中重新加载的任何标签页都会看到默认 SPA。
+</Callout>
+
+### 激活前预览
+
+在系统范围内激活主题前，可以先安全地预览：
+
+1. 上传主题。不会自动激活。
+2. 点击主题卡片上的**预览**。弹窗会说明预览是浏览器范围的。
+3. 确认后，新标签页在 `/?theme=preview:<uuid>` 打开，主题内会出现一个固定横幅，显示剩余时间和**退出预览**按钮。
+4. 查看主题。完成后，点击横幅中的**退出预览**。标签页会返回默认 SPA。
+5. 在管理界面点击**激活**，完成全局切换。
+
+预览使用一个有效期 15 分钟的 cookie（`sb_preview_theme`）。它的作用域是整个浏览器：同一浏览器中重新加载的任何标签页都会看到预览主题。如果你需要在长时间预览期间保持管理界面可用，请使用另一个浏览器或无痕窗口。
+
+### 强制显示激活主题
+
+访问 `/?theme=active` 可同时清除恢复和预览两个 cookie，并返回当前激活的主题（若未激活任何主题，则返回默认 SPA）。
+
+### 调试 CSP 违规
+
+打开浏览器 **DevTools → Console**。CSP 违规会以错误形式显示，包含被拦截的 URL 和违反的指令。常见原因：
+
+- 被 `connect-src 'self'` 拦截的外部 fetch 或 WebSocket 请求——将请求迁移到你自己的代理端点，或移除对外部依赖的引用。
+- 被 `font-src`/`img-src` 拦截的外部字体或图片——从 `.sbtheme` 包内提供资源，或改用 `data:` URI。
+- `eval()` 调用被拦截——自定义主题的 CSP 已包含 `unsafe-eval`，正常情况下不应出现此错误。如果仍然报错，检查浏览器扩展是否覆盖了 CSP。
+
+## 最佳实践
+
+### 资源 URL 与 SPA history 路由
+
+在 Vite 配置中设置 `base: '/'`（Starter 默认值）。服务端会将任意未匹配到已知资源的深层路径（如 `/servers/abc`）回退为你的 `index.html`。使用 `base: '/'` 时，资源 URL 为绝对路径（`/assets/app.js`），无论当前 SPA 路由如何都能正确解析。使用 `base: './'` 时，在 `/servers/abc` 刷新会请求 `./assets/app.js` → `/servers/assets/app.js` → 404。
+
+### 国际化
+
+尽可能使用与内置 SPA 相同的语言键。用户偏好语言可通过 `Accept-Language` 请求头（服务端）或 `navigator.language`（客户端）获取。如果主题面向广泛用户，建议至少提供中英文两套翻译。
+
+### 深色模式
+
+使用 `prefers-color-scheme` 检测用户配色偏好，或将其持久化到 `localStorage`。内置 SPA 使用 OKLCH 变量——如果希望与现有颜色主题基础设施互操作，可在 `<html>` 上暴露 `data-theme` 属性并使用相同的变量名。
+
+### 无障碍
+
+- 确保足够的颜色对比度（WCAG AA：正文 4.5:1，大字 3:1）。
+- 为交互组件使用语义化 HTML 和 ARIA role。
+- 所有交互元素必须支持键盘导航。
+
+### 移动端
+
+在 375 px 视口宽度下进行测试，避免固定宽度布局。Starter 已内置响应式基础，不要删除 `<meta name="viewport">` 标签。
+

@@ -1,0 +1,222 @@
+---
+title: Custom Frontend Themes
+description: Replace the entire ServerBee dashboard with a custom React/Vue/Svelte SPA uploaded as a .sbtheme package.
+---
+
+ServerBee lets administrators swap out the built-in dashboard with any SPA they upload as a `.sbtheme` package. The custom frontend runs at the same origin as the server, uses the same REST and WebSocket API, and can be anything — a stripped-down read-only view, a heavily branded white-label product, or a completely custom monitoring experience.
+
+This is a full SPA replacement, not a plugin or color-theme overlay. When a custom frontend is active, it owns every route (login page, dashboards, settings, everything). The existing [Custom themes](/en/docs/custom-themes) color-variable system and brand settings have no effect while a custom frontend is active; the UI shows a notice explaining this.
+
+## What Can and Cannot Be Customized
+
+| What you can do | What you cannot do |
+|-----------------|-------------------|
+| Replace the full HTML/CSS/JS frontend | Add server-side code, migrations, or Rust crates |
+| Implement your own routing, login page, branding | Access any route under `/api/*`, `/swagger-ui/*`, or `/__system/*` — these are always served by the server |
+| Call any existing REST or WebSocket API | Load external scripts, stylesheets, fonts, or make cross-origin fetch/XHR/WebSocket connections (CSP enforces this) |
+| Bundle any JS framework (React, Vue, Svelte, vanilla) | Embed the frontend in an iframe on another origin (CSP `frame-ancestors: none`) |
+| Use your own colors, fonts, icons, and assets | Ship more than 20 MB of uncompressed content or more than 1000 files |
+| Read the current user session via the existing auth API | Per-user themes — one theme is active system-wide for all users |
+
+**Trust model:** Admin-installed themes run same-origin with the server. They have the same data-access authority as the logged-in user — equivalent to an admin replacing the built-in SPA on disk. CSP is defense-in-depth (it raises the bar for opportunistic exfiltration like remote image beacons and cross-origin script loads) but is **not** a containment boundary. Only install themes you trust.
+
+## Quickstart
+
+**Prerequisites:** [bun](https://bun.sh) and a running ServerBee server.
+
+### 1. Scaffold the starter template
+
+```bash
+npx degit ZingerLittleBee/ServerBee/templates/serverbee-theme-starter my-theme
+cd my-theme
+bun install
+```
+
+The starter contains a minimal Vite + TypeScript SPA with a pre-wired API client (`src/lib/serverbee.ts`) that uses same-origin session authentication.
+
+### 2. Edit and build
+
+Customize `src/App.tsx` and the rest of the source. Run `bun run dev` to iterate locally against any running ServerBee server (configure the dev proxy in `vite.config.ts`).
+
+### 3. Pack
+
+```bash
+bun run pack
+```
+
+This runs a Vite production build, validates the output against the same constraints the server enforces (file sizes, extensions, manifest), and produces a deterministic zip with the `.sbtheme` extension in the project root (e.g. `my-theme-1.0.0.sbtheme`).
+
+### 4. Upload
+
+In ServerBee, go to **Settings → Appearance**. The **Custom Frontend** section appears at the top for admin users. Drag the `.sbtheme` file onto the upload card, or click to browse.
+
+After upload, click **Preview** to open the theme in a new tab without activating it system-wide. When you are satisfied, click **Activate**.
+
+<Callout type="warn">
+Activation is immediately global. Every user who reloads any root-level URL will see the new theme. Use **Preview** to verify before activating. If something goes wrong, visit `?theme=default` to recover (see [Recovery and debugging](#recovery-and-debugging)).
+</Callout>
+
+## Manifest Reference
+
+Every `.sbtheme` package must contain a `manifest.json` at the root of the zip:
+
+```json
+{
+  "schema_version": 1,
+  "id": "acme-dashboard",
+  "name": "Acme Corp Dashboard",
+  "version": "1.2.0",
+  "author": "Acme Inc",
+  "homepage": "https://acme.example.com",
+  "description": "Branded dashboard for Acme.",
+  "entry": "index.html",
+  "preview": "preview.png"
+}
+```
+
+| Field | Required | Constraints |
+|-------|----------|-------------|
+| `schema_version` | yes | Integer; only `1` is accepted |
+| `id` | yes | Matches `^[a-z][a-z0-9-]{2,63}$` |
+| `name` | yes | 1–64 chars; HTML tags stripped |
+| `version` | yes | Valid semver (e.g. `1.2.0`) |
+| `author` | no | ≤ 64 chars; HTML tags stripped |
+| `homepage` | no | Valid `http(s)://` URL |
+| `description` | no | ≤ 500 chars; HTML tags stripped |
+| `entry` | no | Defaults to `index.html`; path must exist in the package and end with `.html` |
+| `min_serverbee_version` | no | Semver; upload is rejected if the running server version is lower |
+| `preview` | no | Relative path to a preview image; must exist; ≤ 500 KB; `png`, `jpg`, or `webp` only |
+
+<Callout type="warn">
+**`min_serverbee_version` and pre-releases:** semver treats a release like `1.0.0` as **greater** than a pre-release like `1.0.0-alpha.3`. If your target deployment runs a pre-release build, setting `"min_serverbee_version": "1.0.0"` will cause the upload to be rejected. Leave this field out unless you actually depend on a specific newer server feature.
+</Callout>
+
+The `id` field acts as a theme family identifier. You can upload multiple versions with the same `id`; the server keeps the full history and lets you activate any of them. Uploading a lower version than the newest existing version for the same `id` is rejected with `NO_DOWNGRADE`.
+
+## Size and File Limits
+
+| Limit | Value |
+|-------|-------|
+| Multipart upload hard cap | 25 MB |
+| Total uncompressed content | 20 MB |
+| Single file | 5 MB |
+| File count | 1000 |
+| Per-file path length | 255 chars |
+| Preview image | 500 KB |
+
+**Allowed file extensions** (case-insensitive): `html`, `htm`, `js`, `mjs`, `css`, `png`, `jpg`, `jpeg`, `svg`, `webp`, `gif`, `ico`, `woff`, `woff2`, `ttf`, `otf`, `json`, `txt`, `map`.
+
+The server also enforces a compression-ratio guard: any single zip entry whose decompressed size exceeds its compressed size by more than 100× is rejected (zip bomb defense).
+
+Files rejected outright: directory traversal entries (`../`), absolute paths, Windows drive letters, symlink zip entries, and duplicate entries.
+
+<Callout type="info">
+Keep documentation, README files, and source maps out of the `.sbtheme` package. They inflate the size budget and the server never serves them. Distribute them alongside the theme source repo instead.
+</Callout>
+
+## API and WebSocket Reference
+
+A custom frontend calls the same HTTP REST API and WebSocket endpoints as the built-in dashboard. There is no separate "theme SDK."
+
+- **Full REST API reference:** [`/swagger-ui/`](/swagger-ui/) — live on your running server
+- **OpenAPI document:** [`/api-docs/openapi.json`](/api-docs/openapi.json)
+- **Authentication:** The session cookie is set by `POST /api/auth/login` and is automatically included in all same-origin requests. API key authentication via `X-API-Key` header is also supported.
+- **WebSocket (server updates):** Connect to `GET /api/ws/servers` (browser WebSocket). The server pushes `BrowserMessage` frames (JSON) with `FullSync`, `Update`, `ServerOnline`, `ServerOffline`, and other variants.
+- **Terminal:** Binary WebSocket frames on `/api/ws/terminal/:sessionId`. The first 16 bytes are the session UUID; the rest is raw PTY data.
+
+The `/__system/*` prefix is always served by the default SPA and cannot be overridden by a custom theme. It provides the recovery UI and the `POST /__system/clear-recovery` / `POST /__system/clear-preview` endpoints used by the recovery and preview mechanisms.
+
+## CSP Constraints
+
+All responses that serve custom theme files include the following Content Security Policy:
+
+```
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' 'unsafe-eval';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob:;
+  font-src 'self' data:;
+  connect-src 'self';
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+```
+
+**What `connect-src 'self'` means for theme authors:**
+
+- Fetch, XHR, and WebSocket connections are restricted to the same origin. Your theme can freely call `/api/*` and connect to WebSocket endpoints on the same server.
+- Connections to external URLs (e.g. `https://api.example.com`, `wss://external.host`) are blocked by the browser.
+- If your theme bundles analytics, error-reporting SDKs, or CDN-hosted assets that make external network requests, those requests will be blocked.
+
+**What the CSP does not prevent:**
+
+- Top-level navigation exfiltration (`location.href = 'https://...'`). The CSP3 `navigate-to` directive that would cover this is not supported by browsers in practice.
+- Same-origin API access — the theme runs with the user's session and can read anything the user can read.
+
+`unsafe-eval` is included for compatibility with most React, Vue, Svelte, and wasm-bindgen builds.
+
+The default built-in SPA is not affected by these headers. The CSP above applies only to custom theme responses.
+
+## Recovery and Debugging
+
+### Recover from a broken theme
+
+If a custom theme breaks the UI and you cannot navigate to the management page:
+
+1. Visit `/?theme=default` in your browser. The server immediately returns the built-in default SPA regardless of the active theme and sets a recovery cookie (`sb_force_default`) that keeps the origin on the default SPA for one hour.
+2. You are now on the default SPA. Navigate to **Settings → Appearance** and deactivate or delete the broken theme.
+3. To exit recovery manually and return to the custom theme, click **Exit recovery** on the default SPA, or visit `/?theme=active`. This calls `POST /__system/clear-recovery` and clears the cookie.
+
+<Callout type="info">
+The recovery cookie is browser-wide (origin-scoped) and lasts one hour. Any tab in the same browser that reloads will see the default SPA until recovery is cleared or the cookie expires.
+</Callout>
+
+### Preview before activating
+
+To safely inspect a theme before making it active system-wide:
+
+1. Upload the theme. It is not activated automatically.
+2. Click **Preview** on the theme card. A dialog explains that preview is browser-wide.
+3. Confirm — a new tab opens at `/?theme=preview:<uuid>` and a sticky banner appears inside the theme showing remaining time and an **Exit preview** button.
+4. Review the theme. When done, click **Exit preview** in the banner. The tab returns to the default SPA.
+5. Click **Activate** in the management UI to commit system-wide.
+
+Preview uses a 15-minute cookie (`sb_preview_theme`). It is browser-wide: any tab in the same browser that reloads will see the preview theme. If you need the management UI live during a long review, use a separate browser or incognito window.
+
+### Force the active theme
+
+Visit `/?theme=active` to clear both the recovery and preview cookies and serve the currently active theme (or the default if none is active).
+
+### Debug CSP violations
+
+Open the browser **DevTools → Console**. CSP violations appear as errors with the blocked URL and the violated directive. Common causes:
+
+- External fetch or WebSocket call blocked by `connect-src 'self'` — move the request to your own proxy endpoint or remove the external dependency.
+- External font or image blocked by `font-src`/`img-src` — serve assets from within the `.sbtheme` package or use `data:` URIs.
+- `eval()` call blocked — `unsafe-eval` is already included in the CSP for custom themes, so this should not occur. If you still see this error, check whether your browser extension is overriding the CSP.
+
+## Best Practices
+
+### Asset URLs and SPA history routing
+
+Set `base: '/'` in your Vite config (this is the starter default). The server falls back to serving your `index.html` for any deep path that is not a known asset (e.g. `/servers/abc`). With `base: '/'`, asset URLs are absolute (`/assets/app.js`) and resolve correctly regardless of the current SPA route. With `base: './'`, a reload at `/servers/abc` would request `./assets/app.js` → `/servers/assets/app.js` → 404.
+
+### Internationalization
+
+Use the same locale keys as the built-in SPA where possible. The user's preferred language is available via the `Accept-Language` header (server-side) or `navigator.language` (client-side). Consider shipping translations for at least English and Chinese if your theme is intended for wide use.
+
+### Dark mode
+
+Detect the user's color scheme preference with `prefers-color-scheme` or persist it in `localStorage`. The built-in SPA uses OKLCH variables — if you want your theme to interoperate with the existing color-theme infrastructure, expose a `data-theme` attribute on `<html>` and use the same variable names.
+
+### Accessibility
+
+- Ensure sufficient color contrast (WCAG AA: 4.5:1 for normal text, 3:1 for large text).
+- Use semantic HTML and ARIA roles for interactive components.
+- Keyboard navigation must work for all interactive elements.
+
+### Mobile
+
+Test at 375 px viewport width. Avoid fixed-width layouts. The starter includes a responsive base; do not remove the `<meta name="viewport">` tag.
+

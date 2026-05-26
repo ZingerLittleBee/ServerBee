@@ -4,7 +4,9 @@ import { Loader2, Plus, Upload } from 'lucide-react'
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useActiveSpaTheme } from '@/api/spa-themes'
 import { type ExportPayload, useCustomThemes, useDuplicateTheme, useImportTheme, useThemeQuery } from '@/api/themes'
+import { CustomSpaThemeBanner, CustomSpaThemeSection } from '@/components/spa-theme/custom-spa-theme-section'
 import { DeleteThemeDialog } from '@/components/theme/delete-theme-dialog'
 import { ThemeCard } from '@/components/theme/theme-card'
 import { useTheme } from '@/components/theme-provider'
@@ -480,11 +482,20 @@ function BrandSettingsSection() {
   )
 }
 
-function AppearancePage() {
+export function AppearancePage() {
+  const { t } = useTranslation('settings')
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const { data: activeSpaTheme } = useActiveSpaTheme()
+  const spaThemeActive = activeSpaTheme?.theme_id != null
+
   return (
     <div>
+      <h1 className="mb-6 font-bold text-2xl">{t('appearance.title')}</h1>
+      {isAdmin ? <CustomSpaThemeSection /> : null}
       <LegacyMigrationPrompt />
       <div className="max-w-3xl space-y-6">
+        {spaThemeActive ? <CustomSpaThemeBanner /> : null}
         <ThemeGrid />
         <BrandSettingsSection />
       </div>

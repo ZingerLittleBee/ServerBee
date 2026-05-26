@@ -84,6 +84,8 @@ pub struct AppState {
     pub exec_audit_contexts: DashMap<String, ExecAuditContext>,
     /// DNS PTR enricher for traceroute hops (shared across requests).
     pub traceroute_enricher: crate::service::traceroute_enrich::TracerouteEnricher,
+    /// Currently active custom SPA theme (hot-swappable, None = default built-in SPA).
+    pub active_spa_theme: crate::service::spa_theme::loaded::ActiveSpaThemeSlot,
 }
 
 static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -207,6 +209,8 @@ impl AppState {
         let asn_arc = Arc::new(std::sync::RwLock::new(asn));
         let traceroute_enricher =
             crate::service::traceroute_enrich::TracerouteEnricher::new().with_asn(asn_arc.clone());
+        let active_spa_theme = crate::service::spa_theme::loaded::new_slot();
+        crate::service::spa_theme::SpaThemeService::load_on_startup(&db, &active_spa_theme).await;
         Ok(Arc::new(Self {
             db,
             agent_manager,
@@ -233,6 +237,7 @@ impl AppState {
             docker_logs_audit_contexts: DashMap::new(),
             exec_audit_contexts: DashMap::new(),
             traceroute_enricher,
+            active_spa_theme,
         }))
     }
 }

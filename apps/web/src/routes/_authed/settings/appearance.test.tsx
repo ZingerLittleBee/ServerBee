@@ -1,9 +1,12 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockSetActiveThemeRef = vi.fn()
 let mockRole = 'admin'
 let mockActiveThemeRef = 'preset:default'
+let mockActiveSpaThemeId: string | null = null
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>()
@@ -24,8 +27,13 @@ function createMemoryStorage(): Storage {
   }
 }
 
+const mockNavigate = vi.fn()
+
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (config: Record<string, unknown>) => config
+  createFileRoute: () => (config: Record<string, unknown>) => ({
+    ...config,
+    useNavigate: () => mockNavigate
+  })
 }))
 
 vi.mock('react-i18next', () => ({
@@ -48,7 +56,37 @@ vi.mock('@/hooks/use-auth', () => ({
   })
 }))
 
-const { LegacyMigrationPrompt } = await import('./appearance')
+// SPA-theme API mocks. The hooks live in @/api/spa-themes; tests need to
+// control useActiveSpaTheme + useSpaThemes return values to drive the
+// CustomSpaThemeSection/Banner render paths.
+vi.mock('@/api/spa-themes', () => ({
+  useActiveSpaTheme: () => ({ data: { theme_id: mockActiveSpaThemeId } }),
+  useSpaThemes: () => ({ data: [] }),
+  useActivateSpaTheme: () => ({ mutate: vi.fn() }),
+  useDeleteSpaTheme: () => ({ mutate: vi.fn() }),
+  useUploadSpaTheme: () => ({ mutate: vi.fn(), isPending: false })
+}))
+
+// Legacy color-theme APIs used by ThemeGrid; we don't need their behaviour, just
+// to keep the page from blowing up during render.
+vi.mock('@/api/themes', () => ({
+  useCustomThemes: () => ({ data: [] }),
+  useDuplicateTheme: () => ({ mutate: vi.fn() }),
+  useImportTheme: () => ({ mutate: vi.fn() }),
+  useThemeQuery: () => ({ data: undefined })
+}))
+
+const { AppearancePage, LegacyMigrationPrompt } = await import('./appearance')
+
+function wrap(node: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false }
+    }
+  })
+  return <QueryClientProvider client={queryClient}>{node}</QueryClientProvider>
+}
 
 describe('LegacyMigrationPrompt', () => {
   beforeEach(() => {
@@ -88,5 +126,45 @@ describe('LegacyMigrationPrompt', () => {
     render(<LegacyMigrationPrompt />)
 
     expect(screen.queryByText('Detected tokyo-night')).not.toBeInTheDocument()
+  })
+})
+
+describe('AppearancePage', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', createMemoryStorage())
+    // ThemeGrid → useResolvedIsDark calls window.matchMedia; jsdom doesn't provide it.
+    vi.stubGlobal('matchMedia', (_query: string) => ({
+      matches: false,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined
+    }))
+    mockNavigate.mockReset()
+    mockRole = 'admin'
+    mockActiveThemeRef = 'preset:default'
+    mockActiveSpaThemeId = null
+  })
+
+  it('renders the custom SPA theme section for admin users', () => {
+    mockRole = 'admin'
+    render(wrap(<AppearancePage />))
+    expect(screen.getByText('section_title')).toBeInTheDocument()
+  })
+
+  it('hides the custom SPA theme section from member users', () => {
+    mockRole = 'member'
+    render(wrap(<AppearancePage />))
+    expect(screen.queryByText('section_title')).not.toBeInTheDocument()
+  })
+
+  it('shows the color/brand disabled banner when an SPA theme is active', () => {
+    mockActiveSpaThemeId = 'some-uuid'
+    render(wrap(<AppearancePage />))
+    expect(screen.getByText('color_brand_disabled_banner')).toBeInTheDocument()
+  })
+
+  it('hides the banner when no SPA theme is active', () => {
+    mockActiveSpaThemeId = null
+    render(wrap(<AppearancePage />))
+    expect(screen.queryByText('color_brand_disabled_banner')).not.toBeInTheDocument()
   })
 })
