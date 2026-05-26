@@ -65,6 +65,11 @@ pub fn public_router(state: Arc<AppState>) -> Router<Arc<AppState>> {
 // budgets.
 // ---------------------------------------------------------------------------
 
+// TODO(public-rate-limit-config): hoist these constants into
+// `config.rate_limit.public_max` / `public_window_seconds` so operators can
+// tune the public-status budget per deployment. Mirrors the constants in
+// `router/api/rate_limit.rs::{PUBLIC_MAX,PUBLIC_WINDOW_SECONDS}` — keep the
+// two in sync until the config migration lands.
 const PUBLIC_STATUS_WINDOW_SECONDS: i64 = 60;
 const PUBLIC_STATUS_MAX_REQUESTS: u32 = 60;
 
