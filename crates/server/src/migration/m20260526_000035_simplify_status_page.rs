@@ -12,12 +12,17 @@
 // the migration tries to do anything substantive (ALTER TABLE DROP COLUMN,
 // for example).
 //
-// Atomicity instead relies on each statement being idempotent enough that a
-// mid-migration crash + retry replays cleanly. The destructive steps below
-// (DROP COLUMN, DELETE) are sequenced so that a re-run after partial
-// progress still converges. If you add a non-idempotent step, factor it so
-// it can be safely retried, or wrap *only that step* in a single-connection
-// `db.begin()` transaction.
+// This migration is single-shot. SQLite's `ALTER TABLE ADD COLUMN` and
+// `DROP COLUMN` are NOT idempotent (no `IF NOT EXISTS` / `IF EXISTS` form),
+// and step 6's `UPDATE … status_page_ids_json` references columns that step
+// 7 drops, so a partial-progress retry will fail loudly on the second run.
+// sea-orm-migration only records the migration as applied on full `up()`
+// success, so a partially-applied migration will be retried on next startup
+// and crash at the first already-applied ALTER. **Recovery is operator
+// intervention: restore from a pre-migration SQLite snapshot before
+// retrying.** If you add a non-idempotent step, factor it so it can be
+// safely retried (e.g., a `PRAGMA table_info` pre-check), or wrap *only
+// that step* in a single-connection `db.begin()` transaction.
 
 use sea_orm::{ConnectionTrait, DbErr, Statement};
 use sea_orm_migration::prelude::*;
