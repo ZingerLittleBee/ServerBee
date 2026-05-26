@@ -1,5 +1,12 @@
-use sea_orm::ConnectionTrait;
-use sea_orm::Statement;
+// The body of `up()` is wrapped in a SQLite transaction (BEGIN/COMMIT, with
+// ROLLBACK on error) so a mid-migration failure does not leave the schema
+// half-altered. This is safe because every step uses raw SQL via
+// `db.execute_unprepared` / `db.execute` — we do not call any
+// `SchemaManager::alter_table` / `create_table` helpers, which historically
+// have their own connection-management semantics. If you add such a call,
+// re-evaluate whether the transaction still wraps it correctly.
+
+use sea_orm::{ConnectionTrait, DbErr, Statement};
 use sea_orm_migration::prelude::*;
 
 pub struct Migration;
@@ -14,6 +21,28 @@ impl MigrationName for Migration {
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
+
+        db.execute_unprepared("BEGIN TRANSACTION").await?;
+        let outcome = Self::run_up(db).await;
+        match outcome {
+            Ok(()) => {
+                db.execute_unprepared("COMMIT").await?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = db.execute_unprepared("ROLLBACK").await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
+        Ok(())
+    }
+}
+
+impl Migration {
+    async fn run_up(db: &impl ConnectionTrait) -> Result<(), DbErr> {
         let backend = db.get_database_backend();
 
         // 1. Resolve the surviving status_page row id.
@@ -43,6 +72,12 @@ impl MigrationTrait for Migration {
                     row.try_get::<String>("", "id")?
                 } else {
                     // Empty: insert a default singleton row.
+                    // Column list must match the cumulative `status_page` schema as
+                    // it stands at the start of this migration — do not reorder
+                    // this step relative to the ALTER TABLE statements below.
+                    // Note: `slug` is set to the row id purely to satisfy NOT NULL;
+                    // the slug column is dropped later in this migration, so this
+                    // value never reaches the post-migration state.
                     let new_id = uuid::Uuid::new_v4().to_string();
                     db.execute(Statement::from_sql_and_values(
                         backend,
@@ -61,7 +96,7 @@ impl MigrationTrait for Migration {
             }
         };
 
-        // 2. Drop the slug unique index.
+        // 2. Drop the slug unique index (created in m20260320_000009_status_page).
         db.execute_unprepared("DROP INDEX IF EXISTS idx_status_page_slug_unique")
             .await?;
 
@@ -113,18 +148,23 @@ impl MigrationTrait for Migration {
         // 6. Backfill is_public preserving existing public-visibility semantics.
         //    A row was visible on a public slug page if status_page_ids_json was
         //    NULL, empty [], or contained the surviving page's id.
-        //    The surviving_id is a generated UUID so substring quoting is safe.
-        let backfill_incident = format!(
-            "UPDATE incident SET is_public = 1 WHERE status_page_ids_json IS NULL OR status_page_ids_json = '[]' OR status_page_ids_json LIKE '%\"{}\"%'",
-            surviving_id
-        );
-        db.execute_unprepared(&backfill_incident).await?;
+        //    `status_page_ids_json` is a serde_json-serialised `Vec<String>`, so
+        //    ids are always wrapped in `"…"` inside the JSON array literal — the
+        //    `\"` in the LIKE pattern brackets that quoting. The id itself is
+        //    bound as a parameter so no row-sourced data is interpolated into SQL.
+        db.execute(Statement::from_sql_and_values(
+            backend,
+            "UPDATE incident SET is_public = 1 WHERE status_page_ids_json IS NULL OR status_page_ids_json = '[]' OR status_page_ids_json LIKE '%\"' || ? || '\"%'",
+            [surviving_id.clone().into()],
+        ))
+        .await?;
 
-        let backfill_maintenance = format!(
-            "UPDATE maintenance SET is_public = 1 WHERE status_page_ids_json IS NULL OR status_page_ids_json = '[]' OR status_page_ids_json LIKE '%\"{}\"%'",
-            surviving_id
-        );
-        db.execute_unprepared(&backfill_maintenance).await?;
+        db.execute(Statement::from_sql_and_values(
+            backend,
+            "UPDATE maintenance SET is_public = 1 WHERE status_page_ids_json IS NULL OR status_page_ids_json = '[]' OR status_page_ids_json LIKE '%\"' || ? || '\"%'",
+            [surviving_id.clone().into()],
+        ))
+        .await?;
 
         // 7. Drop legacy columns.
         db.execute_unprepared("ALTER TABLE incident DROP COLUMN status_page_ids_json")
@@ -148,10 +188,6 @@ impl MigrationTrait for Migration {
         ))
         .await?;
 
-        Ok(())
-    }
-
-    async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
         Ok(())
     }
 }
