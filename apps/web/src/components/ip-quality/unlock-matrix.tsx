@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { categoryLabel, categoryRank } from '@/lib/ip-quality-constants'
-import type { ServerIpQualityData, UnlockService, UnlockStatus } from '@/lib/ip-quality-types'
+import type { UnlockStatus } from '@/lib/ip-quality-types'
 import { cn } from '@/lib/utils'
 import { UnlockStatusBadge } from './unlock-status-badge'
 
@@ -10,25 +10,44 @@ interface MatrixServer {
   name: string
 }
 
+/** Structural subset of unlock results needed for matrix rendering. Both the
+ *  admin `ServerIpQualityData` and public `PublicIpQualityEntry` shapes satisfy
+ *  this — neither leaks admin-only fields through this matrix. */
+interface MatrixOverviewEntry {
+  server_id: string
+  unlock_results: { service_id: string; status: string }[]
+}
+
+/** Structural subset of service metadata needed for matrix column rendering.
+ *  Both `UnlockService` (admin) and `PublicIpQualityServiceMeta` (public)
+ *  satisfy this without exposing admin-only fields. */
+interface MatrixService {
+  category: string
+  id: string
+  key: string
+  name: string
+  popularity: number
+}
+
 interface Props {
   className?: string
   /** One entry per server with its unlock results. */
-  overview: ServerIpQualityData[]
+  overview: MatrixOverviewEntry[]
   /** Servers to render as rows, in display order. */
   servers: MatrixServer[]
   /** Catalog of services to render as columns. */
-  services: UnlockService[]
+  services: MatrixService[]
 }
 
 interface CategoryGroup {
   category: string
-  services: UnlockService[]
+  services: MatrixService[]
 }
 
 /** Group services by category, ordered by CATEGORY_ORDER, services within a
  *  group sorted by popularity descending. */
-function groupServices(services: UnlockService[]): CategoryGroup[] {
-  const byCategory = new Map<string, UnlockService[]>()
+function groupServices(services: MatrixService[]): CategoryGroup[] {
+  const byCategory = new Map<string, MatrixService[]>()
   for (const svc of services) {
     const list = byCategory.get(svc.category) ?? []
     list.push(svc)

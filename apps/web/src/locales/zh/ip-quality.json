@@ -33,6 +33,8 @@
   "card_abuser": "已知滥用",
   "card_mobile": "移动网络",
   "card_asn_score": "ASN 风险",
+  "card_checked_at": "检测时间",
+  "card_country": "国家/地区",
 
   "ip_type_residential": "住宅",
   "ip_type_datacenter": "数据中心",
