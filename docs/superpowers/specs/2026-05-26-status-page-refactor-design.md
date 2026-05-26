@@ -73,27 +73,51 @@ relying on UI hiding.
 ### Removed
 
 - Multi-slug routing on the public side.
-- `status_pages.slug`, `status_pages.theme_ref`, `status_pages.custom_css`,
-  `status_pages.show_values` columns.
+- `status_page.slug`, `status_page.theme_ref`, `status_page.custom_css`,
+  `status_page.show_values` columns.
+- `incidents.status_page_ids_json`, `maintenances.status_page_ids_json`
+  columns (replaced by `is_public`).
+
+### Naming note
+
+The actual SQLite table is `status_page` (singular) per
+`crates/server/src/entity/status_page.rs`. The migration and service code
+must use that exact name; the column-list references in this spec follow
+the same convention.
 
 ## Architecture
 
 ### Defense-in-depth: redaction at the API boundary
 
-All `/api/status/*` endpoints are anonymous (no session, no API key, no
-token). Each endpoint defines a dedicated `PublicXxxDto` struct that contains
-only the fields safe to expose. Handlers explicitly `map` entity rows into the
+The `/api/status/*` endpoints are designed for anonymous use, but the
+existing SPA `api` client always sends credentials (`credentials: 'include'`
+in `apps/web/src/lib/api-client.ts`). The redaction policy therefore must be
+**unconditional**: handlers ignore any session cookie / API key / agent
+token entirely when building the response. The existing
+`status_page.rs:274` pattern that unmasks egress IP for authenticated
+viewers is removed; on the public surface, an admin in the same browser
+sees exactly what a stranger sees.
+
+Each endpoint defines a dedicated `PublicXxxDto` struct that contains only
+the fields safe to expose. Handlers explicitly `map` entity rows into the
 DTO; sensitive fields are not present on the DTO at all, so accidental
 serialization is impossible. We do not use `#[serde(skip_serializing_if = …)]`
-patterns for redaction — runtime-conditional skipping is too easy to bypass
-during a refactor.
+patterns for redaction — runtime-conditional skipping is too easy to
+bypass during a refactor.
 
 Sensitive fields stripped in DTOs:
 
-- Server identity: `ipv4`, `ipv6`, agent-detected public IP, interface list
-  (names + per-interface IPs + MAC).
-- IP quality: egress IP, ASN, ISP, operator, and any free-form
-  provider/operator strings inside the quality probe response.
+- **Server identity**: `ipv4`, `ipv6`, agent-detected public IP, full
+  interface list (names + per-interface IPs + MACs).
+- **IP quality snapshot** (full strip; field names per
+  `crates/common/src/protocol.rs:148`): `ip`, `asn`, `as_org`, `region`,
+  `city`, `is_proxy`, `is_vpn`, `is_hosting`, `is_tor`, `is_abuser`,
+  `is_mobile`, `asn_abuser_score`, `abuse_email`.
+- **Unlock result detail string** (`UnlockResultDto.detail`,
+  `crates/server/src/service/ip_quality.rs:58`): free-form error / probe
+  messages from custom service definitions may leak identifying strings;
+  the public DTO drops this field entirely. The unlock status, region
+  hint, and latency are retained.
 
 Retained (per user decision, 2026-05-26):
 
@@ -102,9 +126,28 @@ Retained (per user decision, 2026-05-26):
   names, process / TCP / UDP counts.
 - Network-probe `target` IPs and traceroute hop IPs (admin-configured probe
   topology; treated as public information).
-- IP quality fields that describe geography or classification without
-  identifying the egress: `country`, type (residential/datacenter), risk
-  score, unlock results per service.
+- IP-quality coarse fields that classify without identifying the egress:
+  `country`, `ip_type` (residential / datacenter / mobile), `risk_score`,
+  `risk_level`, and per-service unlock status / region / latency.
+
+### Public server scope
+
+A response from any `/api/status/*` endpoint must only refer to servers
+that admin has explicitly selected in `status_page.server_ids_json` and
+that still exist (deleted-server stragglers stripped, mirroring the
+existing `status_page.rs:286` "scoped_ids" pattern).
+
+- `GET /api/status` — only servers in the scope set.
+- `GET /api/status/servers/:id` and `:id/metrics` and `:id/uptime-daily`
+  — `404 Not Found` if `id` is not in scope (intentionally indistinguishable
+  from "server does not exist", to avoid confirming existence of hidden
+  servers).
+- `GET /api/status/network` and `/api/status/network/:id` — same scope
+  filter; per-server detail returns `404` for out-of-scope `id`.
+- `GET /api/status/ip-quality` — only entries for in-scope server IDs.
+
+Tests assert that requesting an out-of-scope or hidden server ID yields
+`404` and that the response body contains no metadata about that server.
 
 ### Sub-page gating
 
@@ -188,32 +231,57 @@ Every handler annotated with `#[utoipa::path]`, every DTO with
 
 ### Database migration
 
-A single new migration file `crates/server/src/migration/mNNNN_simplify_status_page.rs`:
+A single new migration file
+`crates/server/src/migration/mNNNN_simplify_status_page.rs`:
 
-1. Identify the surviving `status_pages` row: prefer the most-recently-
+1. **Resolve the surviving `status_page` row.** Prefer the most-recently-
    updated `enabled = true` row; fall back to the most-recently-updated row
-   if none is enabled. If the table is empty, insert a default row with
-   `enabled = false` and default toggles.
-2. Add new columns to `status_pages`:
+   if none is enabled; if the table is empty, insert a default row with
+   `enabled = false` and default toggles. Capture its `id` as
+   `surviving_id`.
+2. **Drop blocking constraints / triggers before column changes.** SQLite's
+   ALTER TABLE for column drops requires no dependent objects on those
+   columns:
+   - Drop unique index `idx_status_page_slug_unique`
+     (`m20260320_000009_status_page.rs:65`).
+   - Drop the `trg_custom_theme_status_page_insert_ref_exists`,
+     `trg_custom_theme_status_page_update_ref_exists`, and any sibling
+     triggers from `m20260430_000021_custom_theme_ref_integrity.rs` that
+     reference `theme_ref`.
+3. **Extend `status_page`** with new columns:
    - `default_layout` TEXT NOT NULL DEFAULT `'grid'`
    - `show_server_detail` BOOLEAN NOT NULL DEFAULT `true`
    - `show_network` BOOLEAN NOT NULL DEFAULT `false`
    - `show_incidents` BOOLEAN NOT NULL DEFAULT `true`
    - `show_maintenance` BOOLEAN NOT NULL DEFAULT `true`
-3. Add `is_public` BOOLEAN NOT NULL DEFAULT `false` to both `incidents` and
-   `maintenances`. Backfill: `is_public = true` for any row whose
-   `status_page_ids_json` is non-null and non-empty (i.e. it used to be
-   bound to at least one slug-based page).
-4. Drop `incidents.status_page_ids_json` and
-   `maintenances.status_page_ids_json`.
-5. Delete all `status_pages` rows except the surviving one.
-6. Drop `status_pages` columns: `slug`, `theme_ref`, `custom_css`,
-   `show_values`.
-7. Singleton invariant: enforced at the service layer (reads always select
-   first row, writes always target the singleton row's id). SQLite does not
-   easily enforce a row-count CHECK.
+4. **Extend `incidents` and `maintenances`** with
+   `is_public BOOLEAN NOT NULL DEFAULT false`.
+5. **Backfill `is_public`** preserving the existing public-visibility
+   semantics (per `status_page.rs:223`/`:264`): a row was visible on a
+   public slug page if its `status_page_ids_json` was `NULL`, empty `[]`,
+   or contained that page's id. After collapsing to a single page, mark
+   public:
+   ```sql
+   UPDATE incidents
+   SET is_public = 1
+   WHERE status_page_ids_json IS NULL
+      OR status_page_ids_json = '[]'
+      OR status_page_ids_json LIKE '%"' || :surviving_id || '"%';
+   -- same for maintenances
+   ```
+   The `LIKE` is a pragmatic substring check; the JSON value is always a
+   simple array of quoted ids in the existing serializer. (The
+   alternative — parsing JSON per row in SQL — is brittle in SQLite.)
+   Rows referencing only deleted slug pages remain `is_public = false`.
+6. **Drop legacy columns** in order: `incidents.status_page_ids_json`,
+   `maintenances.status_page_ids_json`, then on `status_page`: `slug`,
+   `theme_ref`, `custom_css`, `show_values`.
+7. **Delete non-surviving `status_page` rows** (`WHERE id != surviving_id`).
+8. **Singleton invariant** is enforced at the service layer: reads always
+   select first row by `ORDER BY created_at LIMIT 1`, writes target the
+   singleton row's id. SQLite does not easily enforce a row-count CHECK.
 
-Migration is `up()`-only per project convention.
+The migration is `up()`-only per project convention.
 
 ### Removed/changed back-end files
 
@@ -282,9 +350,12 @@ Existing `_authed/servers/$id-page.tsx`, `_authed/network/index.tsx`,
      Files, Docker, anomaly delete, target edit, agent upgrade).
    - Hides metadata rows whose data is `null` after backend redaction (IP
      rows, interface names, etc.).
-4. `<IpQualityCard variant="public">` renders only country / type / risk
-   score / unlock summary; egress IP / ASN / ISP / operator are not rendered
-   (and not present in the public DTO).
+4. `<IpQualityCard variant="public">` renders only `country`, `ip_type`,
+   `risk_score`, `risk_level`, and the per-service unlock summary. The
+   public DTO does not contain `ip`, `asn`, `as_org`, region/city,
+   `is_proxy` / `is_vpn` / `is_hosting` / `is_tor` / `is_abuser` /
+   `is_mobile`, `asn_abuser_score`, or `abuse_email`, so those rows never
+   render even if a logged-in admin views `/status` in the same browser.
 
 The content components live in `apps/web/src/components/status-content/`
 or in the existing feature folders alongside their authenticated wrappers —
@@ -294,9 +365,13 @@ is fixed.
 ### Data fetching
 
 TanStack Query, one query key per endpoint, `refetchInterval: 30_000` for
-servers/network/IP quality, `refetchInterval: 5 * 60_000` for config.
-Anonymous: no WebSocket, no auth header. The shared `api` client suffices
-because session cookies absent → backend hits the anonymous handler path.
+servers/network/IP quality, `refetchInterval: 5 * 60_000` for config. No
+WebSocket. The shared `api` client (`apps/web/src/lib/api-client.ts`) sends
+`credentials: 'include'` on every request, so an admin logged into the
+same browser will still send a session cookie when visiting `/status`.
+Backend redaction is unconditional and ignores auth state (see
+"Defense-in-depth"), so this is not a leak vector — the admin sees the
+same DTO as a logged-out visitor.
 
 ### Removed/changed frontend files
 
@@ -337,18 +412,33 @@ admins).
 
 ### Rust integration tests (`crates/server/tests/`)
 
+The redaction tests walk the full JSON-key tree (not a string contains
+check) and assert the listed keys are absent.
+
 - `public_status_redaction.rs`:
-  - `GET /api/status` and `GET /api/status/servers/:id` response JSON
-    must not contain keys `ipv4`, `ipv6`, `interfaces`, `public_ip`, or
-    any sub-object containing them. Assert by full JSON-key walk, not
-    string contains.
+  - `GET /api/status` and `GET /api/status/servers/:id` response JSON must
+    not contain any of: `ipv4`, `ipv6`, `interfaces`, `public_ip`,
+    `mac_address`, or nested `network_interface` arrays.
 - `public_status_ip_quality_redaction.rs`:
-  - `GET /api/status/ip-quality` must not contain `egress_ip`,
-    `outbound_ip`, `asn`, `isp`, `operator`, or equivalent provider name
-    fields.
+  - `GET /api/status/ip-quality` must not contain any of: `ip`, `asn`,
+    `as_org`, `region`, `city`, `is_proxy`, `is_vpn`, `is_hosting`,
+    `is_tor`, `is_abuser`, `is_mobile`, `asn_abuser_score`, `abuse_email`.
+  - Each entry under `unlock_results` must not contain the `detail` key.
+- `public_status_redaction_authenticated.rs`:
+  - Same assertions as the two tests above, but the requests carry a
+    valid admin session cookie **and** a valid admin API key. Redaction
+    must be identical to the anonymous case — no field unmasked for
+    authenticated callers.
+- `public_status_scope.rs`:
+  - Configure `server_ids = [A]`; request `/api/status/servers/B` →
+    `404`; `/api/status/network/B` → `404`; `/api/status` and
+    `/api/status/network` and `/api/status/ip-quality` responses must
+    not reference `B` in any field.
 - `public_status_gating.rs`:
   - Disabling each toggle independently causes the corresponding endpoint
-    to return `403 Disabled`.
+    to return `403 Disabled`. Test matrix: `show_server_detail`,
+    `show_network`, `show_ip_quality`, `show_incidents`,
+    `show_maintenance`.
 - `public_status_anonymous.rs`:
   - All endpoints return 200 without any auth header, with `enabled=true`
     config and at least one server.
@@ -372,11 +462,27 @@ toggle behavior, and visual regressions across light/dark + zh/en.
 - No feature flag; the change is a refactor of an existing surface.
 - Frontend deploys atomically with the backend (single binary embeds the
   SPA via `rust-embed`).
-- Rollback: revert the deployment. The migration is not reversed; the
-  removed columns are reconstructable from defaults if a rollback ships a
-  prior version that still references them, which is acceptable for this
-  project's "no down migration" stance.
+- **Rollback is database-restore only.** Reverting the binary alone after
+  this migration runs will fail at startup because the prior version's
+  `status_page` / `incident` / `maintenance` entity structs reference
+  columns (`slug`, `theme_ref`, `custom_css`, `show_values`,
+  `status_page_ids_json`) that no longer exist. To roll back, restore from
+  a pre-deploy SQLite backup; do not attempt to revert the binary against
+  the migrated database.
 
 ## Open Questions
 
-None outstanding. Each section was confirmed during 2026-05-26 brainstorming.
+### Incidents / maintenances linked only to deleted slug pages
+
+Rows whose `status_page_ids_json` referenced one or more **non-surviving**
+slug pages — and never the surviving page, never NULL, never empty — are
+backfilled as `is_public = false` (private). The reasoning: those rows
+were intentionally scoped to a specific customer / audience page that no
+longer exists; promoting them to the global public surface would surprise
+admins. They remain editable in the admin UI, where an operator can flip
+`is_public` if they decide the announcement should now be globally visible.
+
+This matches the spec's backfill rules in step 5 of the migration. The
+decision is recorded here because the alternative ("promote all old
+linkage to public") would be a one-way data event that's hard to undo.
+Flagged for confirmation during spec review.
