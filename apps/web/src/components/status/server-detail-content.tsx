@@ -236,6 +236,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
 
   const chartFormatTime = useChartTickFormatter(isRealtime, range, realtimeData)
   const tooltipFormatTime = useTooltipFormatter(isRealtime, range)
+  const xAxisInterval = useXAxisInterval(isRealtime, range, chartData.length)
   const gpuChartData = useGpuChartData(isAdminVariant, gpuRecords, publicMetrics)
 
   const diskIoMergedData = useMemo(
@@ -308,7 +309,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
             rangeIndex={rangeIndex}
             ranges={ranges}
             serverId={serverId}
-            xAxisInterval={isRealtime ? 0 : undefined}
+            xAxisInterval={xAxisInterval}
           />
         }
         serverId={serverId}
@@ -420,21 +421,32 @@ function useChartTickFormatter(isRealtime: boolean, range: TimeRange, realtimeDa
       }
     }
     if (range.hours >= 168) {
-      let lastDate = ''
       return (time: string) => {
         const d = new Date(time)
         const mm = String(d.getMonth() + 1).padStart(2, '0')
         const dd = String(d.getDate()).padStart(2, '0')
-        const dateStr = `${mm}-${dd}`
-        if (dateStr === lastDate) {
-          return ''
-        }
-        lastDate = dateStr
-        return dateStr
+        return `${mm}-${dd}`
       }
     }
     return undefined
   }, [isRealtime, realtimeData, range])
+}
+
+/** Recharts X-axis `interval` (stride = N+1 ticks). Returns a numeric stride for
+ * long ranges so the auto-generated tick labels do not overlap on narrow viewports.
+ * 7d/30d hourly buckets produce 168 / 720 samples — labelling every one collapses
+ * into illegible overlap, so we target roughly 8 evenly spaced labels. */
+function useXAxisInterval(isRealtime: boolean, range: TimeRange, dataLength: number) {
+  return useMemo<number | undefined>(() => {
+    if (isRealtime) {
+      return 0
+    }
+    if (range.hours >= 168 && dataLength > 0) {
+      const targetLabels = 8
+      return Math.max(0, Math.floor(dataLength / targetLabels) - 1)
+    }
+    return undefined
+  }, [isRealtime, range, dataLength])
 }
 
 function useTooltipFormatter(isRealtime: boolean, range: TimeRange) {
