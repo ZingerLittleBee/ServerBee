@@ -373,68 +373,18 @@ export interface PublicMetricsRangeQuery {
 // row; GET returns the full model, PUT accepts a partial-update payload.
 // ---------------------------------------------------------------------------
 
-export interface StatusPageItem {
-  created_at: string
-  default_layout: 'list' | 'grid'
-  description: string | null
-  enabled: boolean
-  id: string
-  server_ids: string[]
-  show_incidents: boolean
-  show_ip_quality: boolean
-  show_maintenance: boolean
-  show_network: boolean
-  show_server_detail: boolean
-  title: string
-  updated_at: string
-  uptime_red_threshold: number
-  uptime_yellow_threshold: number
-}
+export type StatusPageItem = S['StatusPage']
 
-/** Partial PATCH-style payload for `PUT /api/admin/status-page`. */
-export interface UpdateStatusPageRequest {
-  default_layout?: 'list' | 'grid'
-  description?: string | null
-  enabled?: boolean
-  server_ids?: string[]
-  show_incidents?: boolean
-  show_ip_quality?: boolean
-  show_maintenance?: boolean
-  show_network?: boolean
-  show_server_detail?: boolean
-  title?: string
-  uptime_red_threshold?: number
-  uptime_yellow_threshold?: number
-}
+/** Partial PATCH-style payload for `PUT /api/status-page`. */
+export type UpdateStatusPageRequest = S['UpdateStatusPage']
 
-export interface IncidentItem {
-  created_at: string
-  id: string
-  resolved_at: string | null
-  server_ids: string[]
-  severity: string
-  status: string
-  title: string
-  updated_at: string
-  updates: Array<{
-    created_at: string
-    id: string
-    message: string
-    status: string
-  }>
-}
+export type IncidentItem = S['Incident']
+export type CreateIncidentRequest = S['CreateIncident']
+export type UpdateIncidentRequest = S['UpdateIncident']
 
-export interface MaintenanceItem {
-  active: boolean
-  created_at: string
-  description: string | null
-  end_at: string
-  id: string
-  server_ids: string[]
-  start_at: string
-  title: string
-  updated_at: string
-}
+export type MaintenanceItem = S['Maintenance']
+export type CreateMaintenanceRequest = S['CreateMaintenance']
+export type UpdateMaintenanceRequest = S['UpdateMaintenance']
 
 // Errors
 export type ErrorBody = S['ErrorBody']

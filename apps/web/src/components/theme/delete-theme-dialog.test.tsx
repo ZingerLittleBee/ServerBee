@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockDeleteMutate = vi.fn()
-let mockReferences: { admin: boolean; status_pages: { id: string; name: string }[] } | undefined
+let mockReferences: { admin: boolean } | undefined
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -50,21 +50,19 @@ describe('DeleteThemeDialog', () => {
     mockReferences = undefined
   })
 
-  it('blocks deletion when a theme is referenced', () => {
+  it('blocks deletion when a theme is referenced as the admin active theme', () => {
     mockReferences = {
-      admin: true,
-      status_pages: [{ id: 'status-1', name: 'Public Status' }]
+      admin: true
     }
 
     render(<DeleteThemeDialog onClose={vi.fn()} theme={{ id: 7, name: 'In Use' }} />)
 
     expect(screen.getByText('appearance.custom_themes.delete_used_admin')).toBeInTheDocument()
-    expect(screen.getByText('appearance.custom_themes.delete_used_status_page:Public Status')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'common:delete' })).not.toBeInTheDocument()
   })
 
   it('calls delete mutation when no references exist', () => {
-    mockReferences = { admin: false, status_pages: [] }
+    mockReferences = { admin: false }
 
     render(<DeleteThemeDialog onClose={vi.fn()} theme={{ id: 7, name: 'Unused' }} />)
 

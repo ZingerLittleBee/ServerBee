@@ -37,7 +37,7 @@
         "operationId": "list_rate_limits",
         "responses": {
           "200": {
-            "description": "Current per-IP rate limit state",
+            "description": "Current per-IP rate limit state across login, register, and public status buckets",
             "content": {
               "application/json": {
                 "schema": {
@@ -7160,42 +7160,51 @@
     "/api/status": {
       "get": {
         "tags": [
-          "status"
+          "public-status"
         ],
-        "operationId": "public_status",
+        "operationId": "public_list_servers",
         "responses": {
           "200": {
-            "description": "Public server status page data",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusPageResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/status-pages": {
-      "get": {
-        "tags": [
-          "status-pages"
-        ],
-        "operationId": "list_status_pages",
-        "responses": {
-          "200": {
-            "description": "List all status pages",
+            "description": "Scoped server summaries",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/StatusPage"
+                    "$ref": "#/components/schemas/PublicServerSummary"
                   }
                 }
               }
             }
+          },
+          "403": {
+            "description": "Public status page disabled"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status-page": {
+      "get": {
+        "tags": [
+          "status-pages"
+        ],
+        "operationId": "get_status_page",
+        "responses": {
+          "200": {
+            "description": "Singleton status page config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Singleton row missing"
           }
         },
         "security": [
@@ -7210,69 +7219,11 @@
           }
         ]
       },
-      "post": {
-        "tags": [
-          "status-pages"
-        ],
-        "operationId": "create_status_page",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateStatusPage"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Status page created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusPage"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Slug conflict"
-          },
-          "422": {
-            "description": "Validation error"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/status-pages/{id}": {
       "put": {
         "tags": [
           "status-pages"
         ],
         "operationId": "update_status_page",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Status page ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -7295,46 +7246,10 @@
             }
           },
           "404": {
-            "description": "Not found"
+            "description": "Singleton row missing"
           },
-          "409": {
-            "description": "Slug conflict"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "status-pages"
-        ],
-        "operationId": "delete_status_page",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Status page ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Status page deleted"
-          },
-          "404": {
-            "description": "Not found"
+          "422": {
+            "description": "Validation error"
           }
         },
         "security": [
@@ -7350,17 +7265,147 @@
         ]
       }
     },
-    "/api/status/{slug}": {
+    "/api/status/config": {
       "get": {
         "tags": [
-          "status-pages"
+          "public-status"
         ],
-        "operationId": "get_public_status_page",
+        "operationId": "get_config",
+        "responses": {
+          "200": {
+            "description": "Public status page configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicStatusConfig"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/incidents": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "public_list_incidents",
+        "responses": {
+          "200": {
+            "description": "Active and recently-resolved incidents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicIncidentsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Public status page or incidents panel disabled"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/ip-quality": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "ip_quality_overview",
+        "responses": {
+          "200": {
+            "description": "Redacted IP-quality overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicIpQualityOverview"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Public status page or IP-quality panel disabled"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/maintenances": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "public_list_maintenances",
+        "responses": {
+          "200": {
+            "description": "Upcoming and active maintenance windows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicMaintenance"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Public status page or maintenance panel disabled"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/network": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "network_overview",
+        "responses": {
+          "200": {
+            "description": "Network probe overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicNetworkOverview"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Public status page or network panel disabled"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/network/{id}": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "network_server_detail",
         "parameters": [
           {
-            "name": "slug",
+            "name": "id",
             "in": "path",
-            "description": "Status page URL slug",
+            "description": "Server ID",
             "required": true,
             "schema": {
               "type": "string"
@@ -7369,17 +7414,176 @@
         ],
         "responses": {
           "200": {
-            "description": "Public status page data",
+            "description": "Per-server network detail",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublicStatusPageData"
+                  "$ref": "#/components/schemas/PublicNetworkServerDetail"
                 }
               }
             }
           },
+          "403": {
+            "description": "Public status page or network panel disabled"
+          },
           "404": {
-            "description": "Not found"
+            "description": "Server not in public scope"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/servers/{id}": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "get_server_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scoped server detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicServerDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Public status page or server-detail panel disabled"
+          },
+          "404": {
+            "description": "Server not in public scope"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/servers/{id}/metrics": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "get_server_metrics",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "ISO-8601 range start",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "ISO-8601 range end",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "interval",
+            "in": "query",
+            "description": "auto | raw | hourly",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Time-series metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicMetricsPoint"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Public status page or server-detail panel disabled"
+          },
+          "404": {
+            "description": "Server not in public scope"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/status/servers/{id}/uptime-daily": {
+      "get": {
+        "tags": [
+          "public-status"
+        ],
+        "operationId": "get_server_uptime_daily",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "90-day uptime band",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UptimeDailyEntry"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Public status page disabled"
+          },
+          "404": {
+            "description": "Server not in public scope"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
           }
         }
       }
@@ -9398,6 +9602,10 @@
           "title"
         ],
         "properties": {
+          "is_public": {
+            "type": "boolean",
+            "description": "Whether this incident is shown on the public status page."
+          },
           "server_ids_json": {
             "type": [
               "array",
@@ -9412,15 +9620,6 @@
           },
           "status": {
             "type": "string"
-          },
-          "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
           },
           "title": {
             "type": "string"
@@ -9466,6 +9665,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "is_public": {
+            "type": "boolean",
+            "description": "Whether this maintenance window is shown on the public status page."
+          },
           "server_ids_json": {
             "type": [
               "array",
@@ -9478,15 +9681,6 @@
           "start_at": {
             "type": "string",
             "format": "date-time"
-          },
-          "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
           },
           "title": {
             "type": "string"
@@ -9720,78 +9914,6 @@
           },
           "target": {
             "type": "string"
-          }
-        }
-      },
-      "CreateStatusPage": {
-        "type": "object",
-        "required": [
-          "title",
-          "slug",
-          "server_ids_json"
-        ],
-        "properties": {
-          "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "enabled": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "group_by_server_group": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "server_ids_json": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "show_ip_quality": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "show_values": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "slug": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "uptime_red_threshold": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "uptime_yellow_threshold": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
           }
         }
       },
@@ -10379,6 +10501,7 @@
           "title",
           "status",
           "severity",
+          "is_public",
           "created_at",
           "updated_at"
         ],
@@ -10389,6 +10512,9 @@
           },
           "id": {
             "type": "string"
+          },
+          "is_public": {
+            "type": "boolean"
           },
           "resolved_at": {
             "type": [
@@ -10408,12 +10534,6 @@
           },
           "status": {
             "type": "string"
-          },
-          "status_page_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "title": {
             "type": "string"
@@ -10451,27 +10571,6 @@
             "type": "string"
           }
         }
-      },
-      "IncidentWithUpdates": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/Incident"
-          },
-          {
-            "type": "object",
-            "required": [
-              "updates"
-            ],
-            "properties": {
-              "updates": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/IncidentUpdate"
-                }
-              }
-            }
-          }
-        ]
       },
       "IpQualitySettingDto": {
         "type": "object",
@@ -10700,6 +10799,7 @@
           "title",
           "start_at",
           "end_at",
+          "is_public",
           "active",
           "created_at",
           "updated_at"
@@ -10725,6 +10825,9 @@
           "id": {
             "type": "string"
           },
+          "is_public": {
+            "type": "boolean"
+          },
           "server_ids_json": {
             "type": [
               "string",
@@ -10734,12 +10837,6 @@
           "start_at": {
             "type": "string",
             "format": "date-time"
-          },
-          "status_page_ids_json": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "title": {
             "type": "string"
@@ -11039,6 +11136,34 @@
           }
         }
       },
+      "NetworkProbeAnomaly": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "target_id",
+          "target_name",
+          "anomaly_type",
+          "value"
+        ],
+        "properties": {
+          "anomaly_type": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "target_name": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "Notification": {
         "type": "object",
         "required": [
@@ -11271,72 +11396,143 @@
           }
         }
       },
-      "PublicStatusPageData": {
+      "PublicIncident": {
         "type": "object",
         "required": [
-          "page",
-          "theme",
-          "servers",
-          "active_incidents",
-          "planned_maintenances",
-          "recent_incidents"
+          "id",
+          "title",
+          "severity",
+          "status",
+          "created_at",
+          "updates"
         ],
         "properties": {
-          "active_incidents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IncidentWithUpdates"
-            }
+          "created_at": {
+            "type": "string"
           },
-          "ip_quality": {
+          "id": {
+            "type": "string"
+          },
+          "resolved_at": {
             "type": [
-              "array",
+              "string",
               "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/ServerIpQualityData"
-            },
-            "description": "Present only when the page has `show_ip_quality = true`.\nIPs are masked to `*.*.*.*` for unauthenticated viewers."
+            ]
           },
-          "ip_quality_services": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "$ref": "#/components/schemas/PublicUnlockServiceInfo"
-            },
-            "description": "Service display metadata for services referenced by `ip_quality`.\nPresent only when `ip_quality` is present. Allows the frontend to render\nproper service names in the unlock matrix column headers."
+          "severity": {
+            "type": "string"
           },
-          "page": {
-            "$ref": "#/components/schemas/StatusPageInfo"
+          "status": {
+            "type": "string"
           },
-          "planned_maintenances": {
+          "title": {
+            "type": "string"
+          },
+          "updates": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Maintenance"
+              "$ref": "#/components/schemas/PublicIncidentUpdate"
             }
-          },
-          "recent_incidents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IncidentWithUpdates"
-            }
-          },
-          "servers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ServerStatusInfo"
-            }
-          },
-          "theme": {
-            "$ref": "#/components/schemas/ThemeResolved"
           }
         }
       },
-      "PublicUnlockServiceInfo": {
+      "PublicIncidentUpdate": {
         "type": "object",
-        "description": "Public-safe subset of an `unlock_service` row.\n\nDoes NOT expose `request`/`rules`/headers — those may contain internal\nURLs or secrets from custom services. Only metadata needed to label matrix\ncolumn headers is included.",
+        "required": [
+          "id",
+          "status",
+          "message",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicIncidentsResponse": {
+        "type": "object",
+        "description": "Payload shape for `/api/status/incidents`. Splits active vs recent\n(resolved-within-7-days) incidents so the SPA can render them in separate\nregions without a second query.",
+        "required": [
+          "active",
+          "recent"
+        ],
+        "properties": {
+          "active": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicIncident"
+            }
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicIncident"
+            }
+          }
+        }
+      },
+      "PublicIpQualityEntry": {
+        "type": "object",
+        "required": [
+          "server_id",
+          "unlock_results"
+        ],
+        "properties": {
+          "ip_quality": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PublicIpQualitySnapshot",
+                "description": "Absent until the agent has reported at least one snapshot."
+              }
+            ]
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "unlock_results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicUnlockResult"
+            }
+          }
+        }
+      },
+      "PublicIpQualityOverview": {
+        "type": "object",
+        "required": [
+          "entries",
+          "services"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicIpQualityEntry"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicIpQualityServiceMeta"
+            }
+          }
+        }
+      },
+      "PublicIpQualityServiceMeta": {
+        "type": "object",
         "required": [
           "id",
           "key",
@@ -11364,6 +11560,528 @@
           "popularity": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "PublicIpQualitySnapshot": {
+        "type": "object",
+        "required": [
+          "ip_type",
+          "risk_level",
+          "checked_at"
+        ],
+        "properties": {
+          "checked_at": {
+            "type": "string"
+          },
+          "country": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ip_type": {
+            "type": "string"
+          },
+          "risk_level": {
+            "type": "string"
+          },
+          "risk_score": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "PublicMaintenance": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "start_at",
+          "end_at"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "start_at": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicMetricsPoint": {
+        "type": "object",
+        "required": [
+          "time",
+          "cpu",
+          "mem_used",
+          "disk_used",
+          "net_in_speed",
+          "net_out_speed",
+          "net_in_transfer",
+          "net_out_transfer",
+          "load1",
+          "load5",
+          "load15",
+          "tcp_conn",
+          "udp_conn",
+          "process_count"
+        ],
+        "properties": {
+          "cpu": {
+            "type": "number",
+            "format": "double"
+          },
+          "disk_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "gpu_usage": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "load1": {
+            "type": "number",
+            "format": "double"
+          },
+          "load15": {
+            "type": "number",
+            "format": "double"
+          },
+          "load5": {
+            "type": "number",
+            "format": "double"
+          },
+          "mem_used": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_in_speed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_in_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_out_speed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "net_out_transfer": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "process_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tcp_conn": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "temperature": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "time": {
+            "type": "string"
+          },
+          "udp_conn": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PublicMetricsRangeQuery": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "interval": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PublicMetricsSummary": {
+        "type": "object",
+        "required": [
+          "cpu",
+          "mem_used",
+          "mem_total",
+          "disk_used",
+          "disk_total",
+          "net_in_speed",
+          "net_out_speed",
+          "load_1",
+          "load_5",
+          "load_15",
+          "uptime"
+        ],
+        "properties": {
+          "cpu": {
+            "type": "number",
+            "format": "double"
+          },
+          "disk_total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "disk_used": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "load_1": {
+            "type": "number",
+            "format": "double"
+          },
+          "load_15": {
+            "type": "number",
+            "format": "double"
+          },
+          "load_5": {
+            "type": "number",
+            "format": "double"
+          },
+          "mem_total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "mem_used": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "net_in_speed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "net_out_speed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "uptime": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "PublicNetworkOverview": {
+        "type": "object",
+        "required": [
+          "servers"
+        ],
+        "properties": {
+          "servers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServerOverview"
+            }
+          }
+        }
+      },
+      "PublicNetworkServerDetail": {
+        "type": "object",
+        "required": [
+          "summary",
+          "anomalies"
+        ],
+        "properties": {
+          "anomalies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NetworkProbeAnomaly"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ServerSummary"
+          }
+        }
+      },
+      "PublicServerDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PublicServerSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "agent_version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cpu_arch": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cpu_cores": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "cpu_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "disk_total": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "kernel_version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "mem_total": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 0
+              },
+              "process_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "tcp_conn": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "udp_conn": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        ]
+      },
+      "PublicServerSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "online",
+          "in_maintenance",
+          "uptime_daily"
+        ],
+        "properties": {
+          "country_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "in_maintenance": {
+            "type": "boolean"
+          },
+          "metrics": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PublicMetricsSummary"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "public_remark": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uptime_daily": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UptimeDailyEntry"
+            }
+          },
+          "uptime_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "PublicStatusConfig": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "title",
+          "default_layout",
+          "show_server_detail",
+          "show_network",
+          "show_ip_quality",
+          "show_incidents",
+          "show_maintenance",
+          "uptime_yellow_threshold",
+          "uptime_red_threshold"
+        ],
+        "properties": {
+          "default_layout": {
+            "type": "string",
+            "description": "\"list\" | \"grid\""
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "show_incidents": {
+            "type": "boolean"
+          },
+          "show_ip_quality": {
+            "type": "boolean"
+          },
+          "show_maintenance": {
+            "type": "boolean"
+          },
+          "show_network": {
+            "type": "boolean"
+          },
+          "show_server_detail": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "uptime_red_threshold": {
+            "type": "number",
+            "format": "double"
+          },
+          "uptime_yellow_threshold": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "PublicUnlockResult": {
+        "type": "object",
+        "required": [
+          "service_id",
+          "status",
+          "checked_at"
+        ],
+        "properties": {
+          "checked_at": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Service-specific unlock region (e.g. \"US-NY\" for Netflix); distinct\nfrom the egress IP's geographic region, which is stripped."
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -11397,6 +12115,7 @@
           "ip",
           "count",
           "max",
+          "window_seconds",
           "window_start",
           "seconds_remaining",
           "blocked"
@@ -11428,6 +12147,11 @@
             "format": "int64",
             "description": "Seconds until the window resets. Zero if already expired."
           },
+          "window_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Window length in seconds. Login/register share a 15-minute window\nwhile the public bucket uses 60 seconds; surface it per-entry so\ncallers don't have to special-case scopes."
+          },
           "window_start": {
             "type": "string",
             "description": "RFC 3339 timestamp the current window opened."
@@ -11438,11 +12162,18 @@
         "type": "object",
         "required": [
           "entries",
-          "window_minutes",
           "login_max",
-          "register_max"
+          "register_max",
+          "public_max",
+          "auth_window_seconds",
+          "public_window_seconds"
         ],
         "properties": {
+          "auth_window_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Window length (seconds) for the login + register buckets."
+          },
           "entries": {
             "type": "array",
             "items": {
@@ -11454,14 +12185,20 @@
             "format": "int32",
             "minimum": 0
           },
-          "register_max": {
+          "public_max": {
             "type": "integer",
             "format": "int32",
             "minimum": 0
           },
-          "window_minutes": {
+          "public_window_seconds": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Window length (seconds) for the public-status bucket."
+          },
+          "register_max": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -11482,7 +12219,7 @@
               },
               {
                 "$ref": "#/components/schemas/RateLimitScope",
-                "description": "Optional scope filter; when omitted, clears both login and register."
+                "description": "Optional scope filter; when omitted, clears every bucket."
               }
             ]
           }
@@ -11505,7 +12242,8 @@
         "type": "string",
         "enum": [
           "login",
-          "register"
+          "register",
+          "public"
         ]
       },
       "ReadRequest": {
@@ -12090,6 +12828,65 @@
           }
         }
       },
+      "ServerOverview": {
+        "type": "object",
+        "required": [
+          "server_id",
+          "server_name",
+          "online",
+          "targets",
+          "anomaly_count",
+          "latency_sparkline",
+          "loss_sparkline"
+        ],
+        "properties": {
+          "anomaly_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_probe_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latency_sparkline": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          },
+          "loss_sparkline": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "server_name": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TargetSummary"
+            }
+          }
+        }
+      },
       "ServerRecord": {
         "type": "object",
         "required": [
@@ -12546,51 +13343,28 @@
           }
         }
       },
-      "ServerStatusInfo": {
+      "ServerSummary": {
         "type": "object",
         "required": [
           "server_id",
           "server_name",
           "online",
-          "uptime_daily",
-          "in_maintenance"
+          "targets",
+          "anomaly_count"
         ],
         "properties": {
-          "country_code": {
+          "anomaly_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_probe_at": {
             "type": [
               "string",
               "null"
             ]
-          },
-          "group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "group_name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "in_maintenance": {
-            "type": "boolean"
           },
           "online": {
             "type": "boolean"
-          },
-          "os": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "region": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "server_id": {
             "type": "string"
@@ -12598,18 +13372,11 @@
           "server_name": {
             "type": "string"
           },
-          "uptime_daily": {
+          "targets": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/UptimeDailyEntry"
+              "$ref": "#/components/schemas/TargetSummary"
             }
-          },
-          "uptime_percent": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
           }
         }
       },
@@ -12856,97 +13623,22 @@
           }
         }
       },
-      "StatusGroup": {
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "StatusMetrics": {
-        "type": "object",
-        "required": [
-          "cpu",
-          "mem_used",
-          "mem_total",
-          "disk_used",
-          "disk_total",
-          "net_in_speed",
-          "net_out_speed",
-          "net_in_transfer",
-          "net_out_transfer",
-          "uptime",
-          "load1"
-        ],
-        "properties": {
-          "cpu": {
-            "type": "number",
-            "format": "double"
-          },
-          "disk_total": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "disk_used": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "load1": {
-            "type": "number",
-            "format": "double"
-          },
-          "mem_total": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "mem_used": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "net_in_speed": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "net_in_transfer": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "net_out_speed": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "net_out_transfer": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "uptime": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        }
-      },
       "StatusPage": {
         "type": "object",
         "required": [
           "id",
           "title",
-          "slug",
           "server_ids_json",
           "group_by_server_group",
-          "show_values",
           "enabled",
           "uptime_yellow_threshold",
           "uptime_red_threshold",
           "show_ip_quality",
+          "default_layout",
+          "show_server_detail",
+          "show_network",
+          "show_incidents",
+          "show_maintenance",
           "created_at",
           "updated_at"
         ],
@@ -12955,11 +13647,8 @@
             "type": "string",
             "format": "date-time"
           },
-          "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "default_layout": {
+            "type": "string"
           },
           "description": {
             "type": [
@@ -12979,20 +13668,20 @@
           "server_ids_json": {
             "type": "string"
           },
+          "show_incidents": {
+            "type": "boolean"
+          },
           "show_ip_quality": {
             "type": "boolean"
           },
-          "show_values": {
+          "show_maintenance": {
             "type": "boolean"
           },
-          "slug": {
-            "type": "string"
+          "show_network": {
+            "type": "boolean"
           },
-          "theme_ref": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "show_server_detail": {
+            "type": "boolean"
           },
           "title": {
             "type": "string"
@@ -13008,162 +13697,6 @@
           "uptime_yellow_threshold": {
             "type": "number",
             "format": "double"
-          }
-        }
-      },
-      "StatusPageInfo": {
-        "type": "object",
-        "required": [
-          "id",
-          "title",
-          "slug",
-          "group_by_server_group",
-          "show_values",
-          "uptime_yellow_threshold",
-          "uptime_red_threshold"
-        ],
-        "properties": {
-          "custom_css": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "group_by_server_group": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "show_values": {
-            "type": "boolean"
-          },
-          "slug": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "uptime_red_threshold": {
-            "type": "number",
-            "format": "double"
-          },
-          "uptime_yellow_threshold": {
-            "type": "number",
-            "format": "double"
-          }
-        }
-      },
-      "StatusPageRef": {
-        "type": "object",
-        "required": [
-          "id",
-          "name"
-        ],
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        }
-      },
-      "StatusPageResponse": {
-        "type": "object",
-        "required": [
-          "servers",
-          "groups",
-          "online_count",
-          "total_count"
-        ],
-        "properties": {
-          "groups": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StatusGroup"
-            }
-          },
-          "online_count": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "servers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StatusServer"
-            }
-          },
-          "total_count": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
-      "StatusServer": {
-        "type": "object",
-        "description": "Public status info for a single server.",
-        "required": [
-          "id",
-          "name",
-          "online"
-        ],
-        "properties": {
-          "country_code": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "group_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "metrics": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/StatusMetrics",
-                "description": "Live metrics (present only when online)."
-              }
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "online": {
-            "type": "boolean"
-          },
-          "os": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "public_remark": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "region": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         }
       },
@@ -13204,6 +13737,56 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TargetSummary": {
+        "type": "object",
+        "required": [
+          "target_id",
+          "target_name",
+          "provider",
+          "packet_loss",
+          "availability"
+        ],
+        "properties": {
+          "availability": {
+            "type": "number",
+            "format": "double"
+          },
+          "avg_latency": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "max_latency": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "min_latency": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "packet_loss": {
+            "type": "number",
+            "format": "double"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "target_name": {
+            "type": "string"
           }
         }
       },
@@ -13385,19 +13968,13 @@
       },
       "ThemeReferences": {
         "type": "object",
+        "description": "Where a custom theme is referenced.\n\nAfter R1 the public status page no longer carries its own `theme_ref` —\nonly the admin UI's active theme can pin a custom theme. The previous\n`status_pages: Vec<StatusPageRef>` collection has therefore been removed.",
         "required": [
-          "admin",
-          "status_pages"
+          "admin"
         ],
         "properties": {
           "admin": {
             "type": "boolean"
-          },
-          "status_pages": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StatusPageRef"
-            }
           }
         }
       },
@@ -14218,6 +14795,12 @@
       "UpdateIncident": {
         "type": "object",
         "properties": {
+          "is_public": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "server_ids_json": {
             "type": [
               "array",
@@ -14238,15 +14821,6 @@
               "string",
               "null"
             ]
-          },
-          "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
           },
           "title": {
             "type": [
@@ -14278,6 +14852,12 @@
             ],
             "format": "date-time"
           },
+          "is_public": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "server_ids_json": {
             "type": [
               "array",
@@ -14293,15 +14873,6 @@
               "null"
             ],
             "format": "date-time"
-          },
-          "status_page_ids_json": {
-            "type": [
-              "array",
-              "null"
-            ],
-            "items": {
-              "type": "string"
-            }
           },
           "title": {
             "type": [
@@ -14625,8 +15196,9 @@
       },
       "UpdateStatusPage": {
         "type": "object",
+        "description": "Partial-update payload for the singleton status_page row.\n\nEvery field is optional so the admin UI can PATCH individual toggles\nwithout re-sending the entire config. Matches the prevailing admin\nupdate-DTO convention in this codebase (see `UpdateMaintenance`,\n`UpdateIncident`, `UpdateServerInput`): `Option<T>` = leave alone,\n`Option<Option<T>>` = leave alone / clear / set for nullable columns.",
         "properties": {
-          "custom_css": {
+          "default_layout": {
             "type": [
               "string",
               "null"
@@ -14636,7 +15208,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Nullable in the entity — `Option<Option<String>>` so callers can\ndistinguish \"leave alone\" (absent / null at the outer Option) from\n\"explicitly clear\" (`Some(None)`). Mirrors `UpdateMaintenance`."
           },
           "enabled": {
             "type": [
@@ -14644,20 +15217,21 @@
               "null"
             ]
           },
-          "group_by_server_group": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "server_ids_json": {
+          "server_ids": {
             "type": [
               "array",
               "null"
             ],
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Replace the full set of pinned servers. `None` = leave alone,\n`Some(vec![])` = explicitly no servers. The service serialises\nthis to the entity's `server_ids_json` storage column."
+          },
+          "show_incidents": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "show_ip_quality": {
             "type": [
@@ -14665,21 +15239,21 @@
               "null"
             ]
           },
-          "show_values": {
+          "show_maintenance": {
             "type": [
               "boolean",
               "null"
             ]
           },
-          "slug": {
+          "show_network": {
             "type": [
-              "string",
+              "boolean",
               "null"
             ]
           },
-          "theme_ref": {
+          "show_server_detail": {
             "type": [
-              "string",
+              "boolean",
               "null"
             ]
           },

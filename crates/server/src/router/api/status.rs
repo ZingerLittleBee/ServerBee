@@ -206,6 +206,7 @@ async fn get_config(
 #[utoipa::path(
     get,
     path = "/api/status",
+    operation_id = "public_list_servers",
     tag = "public-status",
     responses(
         (status = 200, description = "Scoped server summaries", body = Vec<svc::PublicServerSummary>),
@@ -375,6 +376,7 @@ pub struct PublicIncidentsResponse {
 #[utoipa::path(
     get,
     path = "/api/status/incidents",
+    operation_id = "public_list_incidents",
     tag = "public-status",
     responses(
         (status = 200, description = "Active and recently-resolved incidents", body = PublicIncidentsResponse),
@@ -394,6 +396,7 @@ async fn list_incidents(
 #[utoipa::path(
     get,
     path = "/api/status/maintenances",
+    operation_id = "public_list_maintenances",
     tag = "public-status",
     responses(
         (status = 200, description = "Upcoming and active maintenance windows", body = Vec<svc::PublicMaintenance>),
