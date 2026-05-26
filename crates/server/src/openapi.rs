@@ -57,7 +57,16 @@ impl Modify for SecurityAddon {
         crate::router::api::oauth::oauth_authorize,
         crate::router::api::oauth::oauth_callback,
         // status (public)
-        crate::router::api::status::public_status,
+        crate::router::api::status::get_config,
+        crate::router::api::status::list_servers,
+        crate::router::api::status::get_server_detail,
+        crate::router::api::status::get_server_metrics,
+        crate::router::api::status::get_server_uptime_daily,
+        crate::router::api::status::network_overview,
+        crate::router::api::status::network_server_detail,
+        crate::router::api::status::ip_quality_overview,
+        crate::router::api::status::list_incidents,
+        crate::router::api::status::list_maintenances,
         // about (public)
         crate::router::api::about::get_about,
         // agent
@@ -352,11 +361,24 @@ impl Modify for SecurityAddon {
             // ping-tasks
             crate::service::ping::CreatePingTask,
             crate::service::ping::UpdatePingTask,
-            // status
-            crate::router::api::status::StatusPageResponse,
-            crate::router::api::status::StatusServer,
-            crate::router::api::status::StatusMetrics,
-            crate::router::api::status::StatusGroup,
+            // public status surface
+            crate::service::public_status::PublicStatusConfig,
+            crate::service::public_status::PublicServerSummary,
+            crate::service::public_status::PublicServerDetail,
+            crate::service::public_status::PublicMetricsSummary,
+            crate::service::public_status::PublicMetricsPoint,
+            crate::service::public_status::PublicMetricsRangeQuery,
+            crate::service::public_status::PublicNetworkOverview,
+            crate::service::public_status::PublicNetworkServerDetail,
+            crate::service::public_status::PublicIpQualityOverview,
+            crate::service::public_status::PublicIpQualityEntry,
+            crate::service::public_status::PublicIpQualitySnapshot,
+            crate::service::public_status::PublicIpQualityServiceMeta,
+            crate::service::public_status::PublicUnlockResult,
+            crate::service::public_status::PublicIncident,
+            crate::service::public_status::PublicIncidentUpdate,
+            crate::service::public_status::PublicMaintenance,
+            crate::router::api::status::PublicIncidentsResponse,
             // about
             crate::router::api::about::AboutInfo,
             // audit

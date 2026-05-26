@@ -60,6 +60,10 @@ pub struct AppState {
     pub login_rate_limit: DashMap<String, RateLimitEntry>,
     /// Rate limiter for agent registration attempts, keyed by IP.
     pub register_rate_limit: DashMap<String, RateLimitEntry>,
+    /// Rate limiter for the public status surface (`/api/status/*`),
+    /// keyed by IP. Budget: 60 req / 60s, enforced by
+    /// `router::api::status::public_status_rate_limit`.
+    pub public_rate_limit: DashMap<String, RateLimitEntry>,
     /// Manages file download/upload transfers between browser and agent.
     pub file_transfers: Arc<FileTransferManager>,
     /// Tracks browser connections subscribed to Docker updates per server.
@@ -222,6 +226,7 @@ impl AppState {
             pending_totp: DashMap::new(),
             login_rate_limit: DashMap::new(),
             register_rate_limit: DashMap::new(),
+            public_rate_limit: DashMap::new(),
             file_transfers,
             docker_viewers: DockerViewerTracker::new(),
             task_scheduler,

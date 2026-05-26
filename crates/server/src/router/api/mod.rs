@@ -48,7 +48,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(mobile::public_router())
         .merge(agent::public_router())
         .merge(oauth::router())
-        .merge(status::router())
+        .merge(status::public_router(state.clone()))
         .merge(status_page::public_router())
         .merge(brand::public_router())
         .merge(about::router())
