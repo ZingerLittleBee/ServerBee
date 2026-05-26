@@ -22,6 +22,7 @@ import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settin
 import { Route as AuthedServersIndexRouteImport } from './routes/_authed/servers/index'
 import { Route as AuthedSecurityIndexRouteImport } from './routes/_authed/security/index'
 import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network/index'
+import { Route as StatusServerServerIdRouteImport } from './routes/status.server.$serverId'
 import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
 import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
@@ -112,6 +113,11 @@ const AuthedNetworkIndexRoute = AuthedNetworkIndexRouteImport.update({
   id: '/network/',
   path: '/network/',
   getParentRoute: () => AuthedRoute,
+} as any)
+const StatusServerServerIdRoute = StatusServerServerIdRouteImport.update({
+  id: '/server/$serverId',
+  path: '/server/$serverId',
+  getParentRoute: () => StatusRoute,
 } as any)
 const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
   id: '/terminal/$serverId',
@@ -286,6 +292,7 @@ export interface FileRoutesByFullPath {
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/status/server/$serverId': typeof StatusServerServerIdRoute
   '/network/': typeof AuthedNetworkIndexRoute
   '/security/': typeof AuthedSecurityIndexRoute
   '/servers/': typeof AuthedServersIndexRoute
@@ -325,6 +332,7 @@ export interface FileRoutesByTo {
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/status/server/$serverId': typeof StatusServerServerIdRoute
   '/network': typeof AuthedNetworkIndexRoute
   '/security': typeof AuthedSecurityIndexRoute
   '/servers': typeof AuthedServersIndexRoute
@@ -367,6 +375,7 @@ export interface FileRoutesById {
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
   '/_authed/settings/users': typeof AuthedSettingsUsersRoute
   '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/status/server/$serverId': typeof StatusServerServerIdRoute
   '/_authed/network/': typeof AuthedNetworkIndexRoute
   '/_authed/security/': typeof AuthedSecurityIndexRoute
   '/_authed/servers/': typeof AuthedServersIndexRoute
@@ -409,6 +418,7 @@ export interface FileRouteTypes {
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
+    | '/status/server/$serverId'
     | '/network/'
     | '/security/'
     | '/servers/'
@@ -448,6 +458,7 @@ export interface FileRouteTypes {
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
+    | '/status/server/$serverId'
     | '/network'
     | '/security'
     | '/servers'
@@ -489,6 +500,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/tasks'
     | '/_authed/settings/users'
     | '/_authed/terminal/$serverId'
+    | '/status/server/$serverId'
     | '/_authed/network/'
     | '/_authed/security/'
     | '/_authed/servers/'
@@ -598,6 +610,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/network/'
       preLoaderRoute: typeof AuthedNetworkIndexRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/status/server/$serverId': {
+      id: '/status/server/$serverId'
+      path: '/server/$serverId'
+      fullPath: '/status/server/$serverId'
+      preLoaderRoute: typeof StatusServerServerIdRouteImport
+      parentRoute: typeof StatusRoute
     }
     '/_authed/terminal/$serverId': {
       id: '/_authed/terminal/$serverId'
@@ -876,11 +895,13 @@ const AuthedRouteWithChildren =
 interface StatusRouteChildren {
   StatusSlugRoute: typeof StatusSlugRoute
   StatusIndexRoute: typeof StatusIndexRoute
+  StatusServerServerIdRoute: typeof StatusServerServerIdRoute
 }
 
 const StatusRouteChildren: StatusRouteChildren = {
   StatusSlugRoute: StatusSlugRoute,
   StatusIndexRoute: StatusIndexRoute,
+  StatusServerServerIdRoute: StatusServerServerIdRoute,
 }
 
 const StatusRouteWithChildren =

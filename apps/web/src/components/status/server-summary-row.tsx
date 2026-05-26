@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -74,12 +75,10 @@ export function ServerSummaryRow({ server, clickable, thresholds }: Props) {
   )
 
   if (clickable) {
-    // R8 will introduce `/status/server/$serverId` as a TanStack Router route.
-    // Until then, use a plain anchor so this round typechecks against the current route tree.
     return (
-      <a className="block" href={`/status/server/${server.id}`}>
+      <Link className="block" params={{ serverId: server.id }} to="/status/server/$serverId">
         {inner}
-      </a>
+      </Link>
     )
   }
   return inner
