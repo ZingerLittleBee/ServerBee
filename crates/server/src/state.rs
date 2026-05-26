@@ -18,7 +18,6 @@ use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
 use crate::service::firewall::FirewallService;
-use crate::service::recovery_lock::RecoveryLockService;
 use crate::service::security::SecurityService;
 use crate::service::task_scheduler::TaskScheduler;
 use crate::service::upgrade_release::UpgradeReleaseService;
@@ -75,8 +74,6 @@ pub struct AppState {
     /// Firewall blocklist service. CRUD wiring lives in
     /// `router::api::firewall`; WS push is invoked from there.
     pub firewall: Arc<FirewallService>,
-    /// In-memory freeze gate for agent-originated writes during recovery.
-    pub recovery_lock: RecoveryLockService,
     /// Pending mobile pairing codes for QR login, keyed by code.
     pub pending_pairs: DashMap<String, PendingPair>,
     /// Terminal session audit contexts keyed by session_id.
@@ -231,7 +228,6 @@ impl AppState {
             alert_state_manager,
             security_service,
             firewall,
-            recovery_lock: RecoveryLockService::new(),
             pending_pairs: DashMap::new(),
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),

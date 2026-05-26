@@ -114,6 +114,7 @@ const server: ServerResponse = {
   expired_at: null,
   features: [],
   group_id: null,
+  has_token: true,
   hidden: false,
   id: 'server-1',
   name: 'Tokyo Edge',

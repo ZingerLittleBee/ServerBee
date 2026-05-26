@@ -252,11 +252,12 @@ impl AgentManager {
             disk_write_bytes_per_sec,
             tags: Vec::new(),
             cpu_cores: None,
+            has_token: true,
+            outstanding_enrollment: None,
         };
 
         let _ = self.browser_tx.send(BrowserMessage::Update {
             servers: vec![status],
-            recoveries: None,
         });
 
         // Cache the report
@@ -734,16 +735,12 @@ pub async fn cleanup_disconnected_docker_state(state: &AppState, server_id: &str
     let persisted_features = features.clone();
     state.agent_manager.update_features(server_id, features);
 
-    if state.recovery_lock.writes_allowed_for(server_id) {
-        let _ = crate::service::server::ServerService::update_features(
-            &state.db,
-            server_id,
-            &persisted_features,
-        )
-        .await;
-    } else {
-        tracing::info!("Skipping recovery-frozen docker feature write for {server_id}");
-    }
+    let _ = crate::service::server::ServerService::update_features(
+        &state.db,
+        server_id,
+        &persisted_features,
+    )
+    .await;
 
     state
         .agent_manager

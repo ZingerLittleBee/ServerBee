@@ -167,6 +167,19 @@ pub struct NetworkProbeResultData {
     pub timestamp: DateTime<Utc>,
 }
 
+/// Outstanding-enrollment summary returned alongside a `ServerResponse` so the
+/// UI can render pending state and offer the install command without a second
+/// fetch. The plaintext code is only ever returned by the mint endpoints —
+/// never here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct OutstandingEnrollmentSummary {
+    pub id: String,
+    pub code_prefix: String,
+    pub expires_at: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStatus {
     pub id: String,
@@ -206,6 +219,21 @@ pub struct ServerStatus {
     pub tags: Vec<String>,
     #[serde(default)]
     pub cpu_cores: Option<i32>,
+    /// `true` iff the server row has a non-NULL `token_hash`. Pending servers
+    /// (created via `POST /api/servers` but not yet enrolled by an agent) have
+    /// `has_token = false`. Defaults to `true` for backward compatibility with
+    /// older serialized snapshots.
+    #[serde(default = "default_has_token")]
+    pub has_token: bool,
+    /// Summary of the active outstanding enrollment, if one exists for this
+    /// server. The UI uses this to render pending state and offer the install
+    /// command without an extra fetch. Plaintext code is never included here.
+    #[serde(default)]
+    pub outstanding_enrollment: Option<OutstandingEnrollmentSummary>,
+}
+
+fn default_has_token() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

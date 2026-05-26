@@ -123,16 +123,20 @@ async fn login_member(client: &reqwest::Client, base_url: &str) {
 }
 
 async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, String) {
-    // Mint an enrollment code
+    // Create a pending server (this is the new flow that also mints the
+    // enrollment code as part of the same response).
     let enroll_resp = client
-        .post(format!("{}/api/agent/enrollments", base_url))
-        .json(&json!({}))
+        .post(format!("{}/api/servers", base_url))
+        .json(&json!({ "name": "ip-quality-test" }))
         .send()
         .await
-        .expect("Enrollment creation failed");
+        .expect("Create-server request failed");
     assert_eq!(enroll_resp.status(), 200);
     let enroll_body: serde_json::Value = enroll_resp.json().await.unwrap();
-    let code = enroll_body["data"]["code"].as_str().unwrap().to_string();
+    let code = enroll_body["data"]["enrollment"]["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // Register
     let register_resp = client

@@ -109,6 +109,7 @@ async fn list_services(
     get,
     path = "/api/ip-quality/settings",
     tag = "ip-quality",
+    operation_id = "ip_quality_get_settings",
     responses(
         (status = 200, description = "Global IP quality settings", body = IpQualitySettingDto),
     ),
@@ -160,6 +161,7 @@ async fn get_server_summary(
     get,
     path = "/api/ip-quality/events",
     tag = "ip-quality",
+    operation_id = "ip_quality_list_events",
     params(EventsQuery),
     responses(
         (status = 200, description = "IP quality status-change events for a server", body = Vec<UnlockEventDto>),
@@ -251,6 +253,7 @@ async fn delete_service(
     put,
     path = "/api/ip-quality/settings",
     tag = "ip-quality",
+    operation_id = "ip_quality_update_settings",
     request_body = IpQualitySettingDto,
     responses(
         (status = 200, description = "Settings updated", body = IpQualitySettingDto),

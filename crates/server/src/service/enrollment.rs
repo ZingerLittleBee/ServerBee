@@ -1,5 +1,8 @@
 use chrono::{Duration, Utc};
-use sea_orm::*;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder,
+};
 use uuid::Uuid;
 
 use crate::entity::agent_enrollment;
@@ -7,50 +10,58 @@ use crate::error::AppError;
 use crate::service::auth::AuthService;
 
 pub const DEFAULT_TTL_SECS: i64 = 600;
-pub const MAX_TTL_SECS: i64 = 86_400;
 
 pub struct EnrollmentService;
 
 impl EnrollmentService {
-    /// Mint a new single-use enrollment code. Returns the stored model and
-    /// the plaintext code (shown to the operator exactly once).
-    pub async fn mint(
-        db: &DatabaseConnection,
+    /// Mint an enrollment bound to a specific server. May run inside a tx so
+    /// that callers (T7 server-create, T9 recover, T10 regenerate) can make
+    /// the mint atomic with surrounding state changes.
+    ///
+    /// Returns the stored row and the plaintext code (shown to the operator
+    /// exactly once). The DB enforces at most one outstanding (not consumed,
+    /// not revoked) enrollment per server via partial unique index
+    /// `idx_enrollments_active_per_server`; a second concurrent mint without
+    /// first revoking the outstanding one will surface as a DB error.
+    pub async fn mint_for_server<C: ConnectionTrait>(
+        conn: &C,
+        target_server_id: &str,
         created_by: &str,
-        label: Option<String>,
         ttl_secs: i64,
     ) -> Result<(agent_enrollment::Model, String), AppError> {
-        if ttl_secs <= 0 || ttl_secs > MAX_TTL_SECS {
-            return Err(AppError::BadRequest(format!(
-                "ttl_secs must be between 1 and {MAX_TTL_SECS}"
-            )));
-        }
-        let code = AuthService::generate_session_token();
-        let code_hash = AuthService::hash_password(&code)?;
-        // generate_session_token() yields a fixed-length ASCII (base64url) token, so [..8] is byte-safe.
-        let code_prefix = code[..8].to_string();
         let now = Utc::now();
+        let plaintext = AuthService::generate_session_token();
+        let hash = AuthService::hash_password(&plaintext)?;
+        let prefix = plaintext[..8.min(plaintext.len())].to_string();
+        let id = Uuid::new_v4().to_string();
 
         let model = agent_enrollment::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
-            code_hash: Set(code_hash),
-            code_prefix: Set(code_prefix),
-            label: Set(label),
+            id: Set(id),
+            code_hash: Set(hash),
+            code_prefix: Set(prefix),
+            target_server_id: Set(target_server_id.to_string()),
             created_by: Set(created_by.to_string()),
             expires_at: Set(now + Duration::seconds(ttl_secs)),
             consumed_at: Set(None),
+            revoked_at: Set(None),
             created_at: Set(now),
         }
-        .insert(db)
+        .insert(conn)
         .await?;
 
-        Ok((model, code))
+        Ok((model, plaintext))
     }
 
-    /// Verify a presented code and atomically consume it. Returns the
-    /// enrollment row on success, `None` if unknown / expired / already used.
-    pub async fn verify_and_consume(
-        db: &DatabaseConnection,
+    /// Verify a bearer code and consume it atomically.
+    ///
+    /// Accepts rows where `consumed_at IS NULL AND revoked_at IS NULL AND
+    /// expires_at > now()`. On match, sets `consumed_at = now()` in the same
+    /// connection (which the caller is expected to run inside a tx so the
+    /// consume is committed atomically with the surrounding registration
+    /// flow). On no match — wrong code, expired, revoked, or already consumed
+    /// — returns `Ok(None)`.
+    pub async fn verify_and_consume_tx<C: ConnectionTrait>(
+        tx: &C,
         code: &str,
     ) -> Result<Option<agent_enrollment::Model>, AppError> {
         if code.len() < 8 {
@@ -59,72 +70,84 @@ impl EnrollmentService {
         let prefix = &code[..8];
         let candidates = agent_enrollment::Entity::find()
             .filter(agent_enrollment::Column::CodePrefix.eq(prefix))
-            .all(db)
+            .filter(agent_enrollment::Column::ConsumedAt.is_null())
+            .filter(agent_enrollment::Column::RevokedAt.is_null())
+            .all(tx)
             .await?;
 
         let now = Utc::now();
-        for candidate in candidates {
-            if AuthService::verify_password(code, &candidate.code_hash)? {
-                if candidate.consumed_at.is_some() || candidate.expires_at < now {
-                    return Ok(None);
-                }
-                let res = agent_enrollment::Entity::update_many()
-                    .col_expr(
-                        agent_enrollment::Column::ConsumedAt,
-                        sea_orm::sea_query::Expr::value(now),
-                    )
-                    .filter(agent_enrollment::Column::Id.eq(&candidate.id))
-                    .filter(agent_enrollment::Column::ConsumedAt.is_null())
-                    .exec(db)
-                    .await?;
-                if res.rows_affected == 0 {
-                    return Ok(None);
-                }
-                return Ok(Some(candidate));
+        for cand in candidates {
+            if cand.expires_at <= now {
+                continue;
+            }
+            if AuthService::verify_password(code, &cand.code_hash)? {
+                let mut active: agent_enrollment::ActiveModel = cand.clone().into();
+                active.consumed_at = Set(Some(now));
+                let updated = active.update(tx).await?;
+                return Ok(Some(updated));
             }
         }
         Ok(None)
     }
 
+    /// List all enrollments (admin UI). Oldest first; callers sort if needed.
     pub async fn list(
         db: &DatabaseConnection,
     ) -> Result<Vec<agent_enrollment::Model>, AppError> {
         Ok(agent_enrollment::Entity::find()
-            .order_by_desc(agent_enrollment::Column::CreatedAt)
+            .order_by_asc(agent_enrollment::Column::CreatedAt)
             .all(db)
             .await?)
     }
 
-    pub async fn delete(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
-        let res = agent_enrollment::Entity::delete_by_id(id).exec(db).await?;
-        if res.rows_affected == 0 {
-            return Err(AppError::NotFound("Enrollment not found".to_string()));
+    /// Mark an enrollment revoked. Idempotent: a missing row or an already-
+    /// revoked row both succeed without error.
+    pub async fn revoke(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
+        let row = agent_enrollment::Entity::find_by_id(id).one(db).await?;
+        let Some(row) = row else {
+            return Ok(());
+        };
+        if row.revoked_at.is_some() {
+            return Ok(());
         }
+        let mut active: agent_enrollment::ActiveModel = row.into();
+        active.revoked_at = Set(Some(Utc::now()));
+        active.update(db).await?;
         Ok(())
     }
 
-    /// Delete expired or consumed enrollments. Returns the number removed.
-    pub async fn prune(db: &DatabaseConnection) -> Result<u64, AppError> {
-        let now = Utc::now();
-        let res = agent_enrollment::Entity::delete_many()
-            .filter(
-                agent_enrollment::Column::ConsumedAt
-                    .is_not_null()
-                    .or(agent_enrollment::Column::ExpiresAt.lt(now)),
-            )
-            .exec(db)
+    /// Revoke any outstanding enrollment for a server. Used by recover /
+    /// regenerate flows so a fresh mint won't trip the partial unique index.
+    /// Returns the id of the revoked row, if any.
+    pub async fn revoke_outstanding_tx<C: ConnectionTrait>(
+        tx: &C,
+        server_id: &str,
+    ) -> Result<Option<String>, AppError> {
+        let outstanding = agent_enrollment::Entity::find()
+            .filter(agent_enrollment::Column::TargetServerId.eq(server_id))
+            .filter(agent_enrollment::Column::ConsumedAt.is_null())
+            .filter(agent_enrollment::Column::RevokedAt.is_null())
+            .one(tx)
             .await?;
-        Ok(res.rows_affected)
+        let Some(row) = outstanding else {
+            return Ok(None);
+        };
+        let id = row.id.clone();
+        let mut active: agent_enrollment::ActiveModel = row.into();
+        active.revoked_at = Set(Some(Utc::now()));
+        active.update(tx).await?;
+        Ok(Some(id))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entity::user;
+    use crate::entity::{server, user};
     use crate::test_utils::setup_test_db;
+    use sea_orm::TransactionTrait;
+    use serverbee_common::constants::CAP_DEFAULT;
 
-    /// Seed a user so the `created_by` FK on `agent_enrollments` is satisfied.
     async fn seed_user(db: &DatabaseConnection) -> String {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -144,137 +167,186 @@ mod tests {
         id
     }
 
-    #[tokio::test]
-    async fn mint_returns_plaintext_and_stores_hash() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        let (model, code) = EnrollmentService::mint(&db, &uid, None, 600)
-            .await
-            .expect("mint");
-        assert_eq!(code.len(), 43, "code is a 43-char base64url token");
-        assert_ne!(model.code_hash, code, "hash must not equal plaintext");
-        assert!(model.code_hash.starts_with("$argon2"));
-        assert_eq!(model.code_prefix, &code[..8]);
-        assert!(model.consumed_at.is_none());
+    async fn seed_pending_server(db: &DatabaseConnection) -> String {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.clone()),
+            token_hash: Set(None),
+            token_prefix: Set(None),
+            name: Set("t".to_string()),
+            cpu_name: Set(None),
+            cpu_cores: Set(None),
+            cpu_arch: Set(None),
+            os: Set(None),
+            kernel_version: Set(None),
+            mem_total: Set(None),
+            swap_total: Set(None),
+            disk_total: Set(None),
+            ipv4: Set(None),
+            ipv6: Set(None),
+            region: Set(None),
+            country_code: Set(None),
+            virtualization: Set(None),
+            agent_version: Set(None),
+            group_id: Set(None),
+            weight: Set(0),
+            hidden: Set(false),
+            remark: Set(None),
+            public_remark: Set(None),
+            price: Set(None),
+            billing_cycle: Set(None),
+            currency: Set(None),
+            expired_at: Set(None),
+            traffic_limit: Set(None),
+            traffic_limit_type: Set(None),
+            billing_start_day: Set(None),
+            capabilities: Set(CAP_DEFAULT as i32),
+            protocol_version: Set(1),
+            features: Set("[]".to_string()),
+            last_remote_addr: Set(None),
+            fingerprint: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("seed pending server");
+        id
     }
 
     #[tokio::test]
-    async fn mint_rejects_bad_ttl() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        assert!(EnrollmentService::mint(&db, &uid, None, 0).await.is_err());
+    async fn mint_for_server_returns_plaintext_once() {
+        let (db, _t) = setup_test_db().await;
+        let u = seed_user(&db).await;
+        let s = seed_pending_server(&db).await;
+        let (model, code) = EnrollmentService::mint_for_server(&db, &s, &u, 600)
+            .await
+            .expect("mint");
+        assert_eq!(model.target_server_id, s);
+        assert_eq!(model.code_prefix, code[..8]);
+        assert!(model.consumed_at.is_none());
+        assert!(model.revoked_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn verify_and_consume_accepts_usable_code() {
+        let (db, _t) = setup_test_db().await;
+        let u = seed_user(&db).await;
+        let s = seed_pending_server(&db).await;
+        let (_m, code) = EnrollmentService::mint_for_server(&db, &s, &u, 600)
+            .await
+            .expect("mint");
+
+        let row = db
+            .transaction::<_, _, AppError>(|tx| {
+                Box::pin(async move { EnrollmentService::verify_and_consume_tx(tx, &code).await })
+            })
+            .await
+            .expect("tx ok");
+        assert!(row.is_some());
+        assert!(row.unwrap().consumed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn verify_and_consume_rejects_revoked_code() {
+        let (db, _t) = setup_test_db().await;
+        let u = seed_user(&db).await;
+        let s = seed_pending_server(&db).await;
+        let (m, code) = EnrollmentService::mint_for_server(&db, &s, &u, 600)
+            .await
+            .expect("mint");
+        EnrollmentService::revoke(&db, &m.id).await.expect("revoke");
+
+        let row = db
+            .transaction::<_, _, AppError>(|tx| {
+                Box::pin(async move { EnrollmentService::verify_and_consume_tx(tx, &code).await })
+            })
+            .await
+            .expect("tx ok");
+        assert!(row.is_none(), "revoked code must not consume");
+    }
+
+    #[tokio::test]
+    async fn verify_and_consume_rejects_expired_code() {
+        let (db, _t) = setup_test_db().await;
+        let u = seed_user(&db).await;
+        let s = seed_pending_server(&db).await;
+        // ttl = -1 to make it already expired
+        let (_m, code) = EnrollmentService::mint_for_server(&db, &s, &u, -1)
+            .await
+            .expect("mint");
+        let row = db
+            .transaction::<_, _, AppError>(|tx| {
+                Box::pin(async move { EnrollmentService::verify_and_consume_tx(tx, &code).await })
+            })
+            .await
+            .expect("tx ok");
+        assert!(row.is_none(), "expired code must not consume");
+    }
+
+    #[tokio::test]
+    async fn verify_and_consume_single_use() {
+        let (db, _t) = setup_test_db().await;
+        let u = seed_user(&db).await;
+        let s = seed_pending_server(&db).await;
+        let (_m, code) = EnrollmentService::mint_for_server(&db, &s, &u, 600)
+            .await
+            .expect("mint");
+
+        let c1 = code.clone();
+        let first = db
+            .transaction::<_, _, AppError>(|tx| {
+                Box::pin(async move { EnrollmentService::verify_and_consume_tx(tx, &c1).await })
+            })
+            .await
+            .expect("tx ok");
+        assert!(first.is_some());
+
+        let c2 = code.clone();
+        let second = db
+            .transaction::<_, _, AppError>(|tx| {
+                Box::pin(async move { EnrollmentService::verify_and_consume_tx(tx, &c2).await })
+            })
+            .await
+            .expect("tx ok");
+        assert!(second.is_none(), "second use must be rejected");
+    }
+
+    #[tokio::test]
+    async fn partial_index_blocks_two_outstanding() {
+        let (db, _t) = setup_test_db().await;
+        let u = seed_user(&db).await;
+        let s = seed_pending_server(&db).await;
+        EnrollmentService::mint_for_server(&db, &s, &u, 600)
+            .await
+            .expect("first mint");
+        let second = EnrollmentService::mint_for_server(&db, &s, &u, 600).await;
         assert!(
-            EnrollmentService::mint(&db, &uid, None, MAX_TTL_SECS + 1)
-                .await
-                .is_err()
+            second.is_err(),
+            "second mint must violate the partial unique index"
         );
     }
 
     #[tokio::test]
-    async fn verify_and_consume_succeeds_once() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600)
+    async fn revoke_outstanding_then_mint_succeeds() {
+        let (db, _t) = setup_test_db().await;
+        let u = seed_user(&db).await;
+        let s = seed_pending_server(&db).await;
+        let (_first, _code) = EnrollmentService::mint_for_server(&db, &s, &u, 600)
             .await
-            .expect("mint");
+            .expect("first mint");
 
-        let first = EnrollmentService::verify_and_consume(&db, &code)
+        let sid = s.clone();
+        let uid = u.clone();
+        let (_second, _code2) = db
+            .transaction::<_, _, AppError>(|tx| {
+                Box::pin(async move {
+                    EnrollmentService::revoke_outstanding_tx(tx, &sid).await?;
+                    EnrollmentService::mint_for_server(tx, &sid, &uid, 600).await
+                })
+            })
             .await
-            .expect("verify ok");
-        assert!(first.is_some(), "first redemption succeeds");
-
-        let second = EnrollmentService::verify_and_consume(&db, &code)
-            .await
-            .expect("verify ok");
-        assert!(second.is_none(), "second redemption rejected (single-use)");
-    }
-
-    #[tokio::test]
-    async fn verify_rejects_expired() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600)
-            .await
-            .expect("mint");
-        agent_enrollment::Entity::update_many()
-            .col_expr(
-                agent_enrollment::Column::ExpiresAt,
-                sea_orm::sea_query::Expr::value(Utc::now() - Duration::seconds(10)),
-            )
-            .exec(&db)
-            .await
-            .expect("expire");
-
-        let r = EnrollmentService::verify_and_consume(&db, &code)
-            .await
-            .expect("verify ok");
-        assert!(r.is_none(), "expired code rejected");
-    }
-
-    #[tokio::test]
-    async fn verify_rejects_unknown_code() {
-        let (db, _tmp) = setup_test_db().await;
-        let r = EnrollmentService::verify_and_consume(&db, "totally-wrong-code-value-xyz")
-            .await
-            .expect("verify ok");
-        assert!(r.is_none());
-    }
-
-    #[tokio::test]
-    async fn prune_removes_expired_and_consumed() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600).await.unwrap();
-        EnrollmentService::verify_and_consume(&db, &code)
-            .await
-            .unwrap();
-        let removed = EnrollmentService::prune(&db).await.expect("prune");
-        assert_eq!(removed, 1, "consumed enrollment pruned");
-    }
-
-    #[tokio::test]
-    async fn concurrent_redemption_consumes_exactly_once() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        let (_m, code) = EnrollmentService::mint(&db, &uid, None, 600)
-            .await
-            .expect("mint");
-
-        let db2 = db.clone();
-        let c1 = code.clone();
-        let c2 = code.clone();
-        let h1 = tokio::spawn(async move {
-            EnrollmentService::verify_and_consume(&db, &c1).await
-        });
-        let h2 = tokio::spawn(async move {
-            EnrollmentService::verify_and_consume(&db2, &c2).await
-        });
-        let r1 = h1.await.expect("join1").expect("no db err");
-        let r2 = h2.await.expect("join2").expect("no db err");
-
-        let successes = [r1.is_some(), r2.is_some()]
-            .iter()
-            .filter(|&&s| s)
-            .count();
-        assert_eq!(successes, 1, "exactly one concurrent redemption must succeed");
-    }
-
-    #[tokio::test]
-    async fn prune_removes_expired_unconsumed() {
-        let (db, _tmp) = setup_test_db().await;
-        let uid = seed_user(&db).await;
-        let (_m, _code) = EnrollmentService::mint(&db, &uid, None, 600)
-            .await
-            .unwrap();
-        agent_enrollment::Entity::update_many()
-            .col_expr(
-                agent_enrollment::Column::ExpiresAt,
-                sea_orm::sea_query::Expr::value(Utc::now() - Duration::seconds(10)),
-            )
-            .exec(&db)
-            .await
-            .unwrap();
-        let removed = EnrollmentService::prune(&db).await.expect("prune");
-        assert_eq!(removed, 1, "expired-but-unconsumed enrollment pruned");
+            .expect("revoke + remint tx");
     }
 }

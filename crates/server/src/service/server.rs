@@ -171,9 +171,7 @@ impl ServerService {
     ///
     /// These tables intentionally have no foreign key to `servers`, so a
     /// server delete does not cascade and would otherwise leave orphaned
-    /// rows that only age out via the time-based cleanup task. recovery_job
-    /// rows referencing the server via target/source are purged too (running
-    /// recoveries are blocked separately by [`Self::ensure_no_running_recovery`]).
+    /// rows that only age out via the time-based cleanup task.
     /// Multi-server association tables (alert_rules, incident, maintenance,
     /// ping_tasks, service_monitor, status_page, tasks) are deliberately
     /// excluded: their rows stay valid for the other servers they reference
@@ -184,8 +182,8 @@ impl ServerService {
     ) -> Result<(), AppError> {
         use crate::entity::{
             alert_state, docker_event, gpu_record, network_probe_config, network_probe_record,
-            network_probe_record_hourly, ping_record, record, record_hourly, recovery_job,
-            task_result, traffic_daily, traffic_hourly, traffic_state, uptime_daily,
+            network_probe_record_hourly, ping_record, record, record_hourly, task_result,
+            traffic_daily, traffic_hourly, traffic_state, uptime_daily,
         };
 
         macro_rules! purge {
@@ -212,43 +210,6 @@ impl ServerService {
         purge!(traffic_state);
         purge!(uptime_daily);
 
-        // recovery_job references servers via two columns, not `server_id`.
-        recovery_job::Entity::delete_many()
-            .filter(
-                Condition::any()
-                    .add(recovery_job::Column::TargetServerId.is_in(ids.iter().cloned()))
-                    .add(recovery_job::Column::SourceServerId.is_in(ids.iter().cloned())),
-            )
-            .exec(conn)
-            .await?;
-
-        Ok(())
-    }
-
-    /// Reject deleting a server that is the target or source of a currently
-    /// running recovery job: tearing its rows out mid-run would leave the
-    /// recovery task's guards and browser sync in a stale active state.
-    pub(crate) async fn ensure_no_running_recovery<C: ConnectionTrait>(
-        conn: &C,
-        ids: &[String],
-    ) -> Result<(), AppError> {
-        use crate::entity::recovery_job;
-
-        let running = recovery_job::Entity::find()
-            .filter(recovery_job::Column::Status.eq("running"))
-            .filter(
-                Condition::any()
-                    .add(recovery_job::Column::TargetServerId.is_in(ids.iter().cloned()))
-                    .add(recovery_job::Column::SourceServerId.is_in(ids.iter().cloned())),
-            )
-            .count(conn)
-            .await?;
-
-        if running > 0 {
-            return Err(AppError::Conflict(
-                "Cannot delete a server that is part of a running recovery job".to_string(),
-            ));
-        }
         Ok(())
     }
 
@@ -256,7 +217,6 @@ impl ServerService {
     pub async fn delete_server(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
         let ids = [id.to_string()];
         let txn = db.begin().await?;
-        Self::ensure_no_running_recovery(&txn, &ids).await?;
         let result = server::Entity::delete_by_id(id).exec(&txn).await?;
         if result.rows_affected == 0 {
             txn.rollback().await?;
@@ -273,7 +233,6 @@ impl ServerService {
             return Ok(0);
         }
         let txn = db.begin().await?;
-        Self::ensure_no_running_recovery(&txn, ids).await?;
         let result = server::Entity::delete_many()
             .filter(server::Column::Id.is_in(ids.iter().cloned()))
             .exec(&txn)
@@ -346,8 +305,8 @@ mod tests {
         let now = Utc::now();
         server::ActiveModel {
             id: Set(id.to_string()),
-            token_hash: Set(token_hash),
-            token_prefix: Set("serverbee_test".to_string()),
+            token_hash: Set(Some(token_hash)),
+            token_prefix: Set(Some("serverbee_test".to_string())),
             name: Set(name.to_string()),
             weight: Set(0),
             hidden: Set(false),
@@ -473,44 +432,11 @@ mod tests {
         .expect("insert traffic_state");
     }
 
-    async fn insert_recovery_job(
-        db: &DatabaseConnection,
-        job_id: &str,
-        target: &str,
-        source: &str,
-        status: &str,
-    ) {
-        let now = Utc::now();
-        crate::entity::recovery_job::ActiveModel {
-            job_id: Set(job_id.to_string()),
-            target_server_id: Set(target.to_string()),
-            source_server_id: Set(source.to_string()),
-            status: Set(status.to_string()),
-            stage: Set(if status == "running" {
-                "validating".to_string()
-            } else {
-                "succeeded".to_string()
-            }),
-            checkpoint_json: Set(None),
-            error: Set(None),
-            started_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            last_heartbeat_at: Set(None),
-        }
-        .insert(db)
-        .await
-        .expect("insert recovery_job");
-    }
-
     #[tokio::test]
-    async fn delete_server_purges_scoped_and_recovery_rows() {
+    async fn delete_server_purges_scoped_rows() {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "srv-purge", "Purge").await;
-        insert_test_server(&db, "srv-other", "Other").await;
         insert_traffic_state(&db, "srv-purge").await;
-        // A finished recovery that referenced the server as target.
-        insert_recovery_job(&db, "rec-done", "srv-purge", "srv-other", "succeeded").await;
 
         ServerService::delete_server(&db, "srv-purge")
             .await
@@ -522,35 +448,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(traffic_left, 0, "scoped traffic_state row must be purged");
-
-        let recovery_left = crate::entity::recovery_job::Entity::find()
-            .filter(
-                Condition::any()
-                    .add(crate::entity::recovery_job::Column::TargetServerId.eq("srv-purge"))
-                    .add(crate::entity::recovery_job::Column::SourceServerId.eq("srv-purge")),
-            )
-            .count(&db)
-            .await
-            .unwrap();
-        assert_eq!(recovery_left, 0, "recovery_job row must be purged");
-    }
-
-    #[tokio::test]
-    async fn delete_server_blocked_by_running_recovery() {
-        let (db, _tmp) = setup_test_db().await;
-        insert_test_server(&db, "srv-running", "Running").await;
-        insert_test_server(&db, "srv-src", "Source").await;
-        insert_recovery_job(&db, "rec-run", "srv-running", "srv-src", "running").await;
-
-        let result = ServerService::delete_server(&db, "srv-running").await;
-        assert!(
-            matches!(result, Err(AppError::Conflict(_))),
-            "delete must be rejected while a recovery is running, got {result:?}"
-        );
-        assert!(
-            ServerService::get_server(&db, "srv-running").await.is_ok(),
-            "server must still exist after a blocked delete"
-        );
     }
 
     #[tokio::test]

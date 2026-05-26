@@ -8,19 +8,16 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
-use sea_orm::{EntityTrait, QueryOrder};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
-use crate::entity::{recovery_job, server_tag};
+use crate::entity::{agent_enrollment, server_tag};
 use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::auth::AuthService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
-use serverbee_common::protocol::{
-    BrowserClientMessage, BrowserMessage, RecoveryJobDto, RecoveryJobStage, RecoveryJobStatus,
-    ServerMessage,
-};
-use serverbee_common::types::ServerStatus;
+use serverbee_common::protocol::{BrowserClientMessage, BrowserMessage, ServerMessage};
+use serverbee_common::types::{OutstandingEnrollmentSummary, ServerStatus};
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new().route("/ws/servers", get(browser_ws_handler))
@@ -261,12 +258,7 @@ async fn handle_browser_client_message(
     }
 }
 
-async fn build_full_sync(state: &Arc<AppState>, is_admin: bool) -> BrowserMessage {
-    let recoveries = if is_admin {
-        recovery_snapshot(state).await.unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessage {
     let servers = match ServerService::list_servers(&state.db).await {
         Ok(servers) => servers,
         Err(e) => {
@@ -274,7 +266,6 @@ async fn build_full_sync(state: &Arc<AppState>, is_admin: bool) -> BrowserMessag
             return BrowserMessage::FullSync {
                 servers: Vec::new(),
                 upgrades: state.upgrade_tracker.snapshot(),
-                recoveries,
             };
         }
     };
@@ -291,6 +282,31 @@ async fn build_full_sync(state: &Arc<AppState>, is_admin: bool) -> BrowserMessag
             .entry(row.server_id)
             .or_default()
             .push(row.tag);
+    }
+
+    let server_ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
+    let outstanding_rows = if server_ids.is_empty() {
+        Vec::new()
+    } else {
+        agent_enrollment::Entity::find()
+            .filter(agent_enrollment::Column::TargetServerId.is_in(server_ids))
+            .filter(agent_enrollment::Column::ConsumedAt.is_null())
+            .filter(agent_enrollment::Column::RevokedAt.is_null())
+            .all(&state.db)
+            .await
+            .unwrap_or_default()
+    };
+    let mut outstanding_by_server: HashMap<String, OutstandingEnrollmentSummary> = HashMap::new();
+    for row in outstanding_rows {
+        outstanding_by_server.insert(
+            row.target_server_id.clone(),
+            OutstandingEnrollmentSummary {
+                id: row.id,
+                code_prefix: row.code_prefix,
+                expires_at: row.expires_at.to_rfc3339(),
+                created_at: row.created_at.to_rfc3339(),
+            },
+        );
     }
 
     let statuses: Vec<ServerStatus> = servers
@@ -383,6 +399,8 @@ async fn build_full_sync(state: &Arc<AppState>, is_admin: bool) -> BrowserMessag
                 disk_write_bytes_per_sec,
                 tags: tags_by_server.remove(&server.id).unwrap_or_default(),
                 cpu_cores: server.cpu_cores,
+                has_token: server.token_hash.is_some(),
+                outstanding_enrollment: outstanding_by_server.remove(&server.id),
             }
         })
         .collect();
@@ -390,49 +408,11 @@ async fn build_full_sync(state: &Arc<AppState>, is_admin: bool) -> BrowserMessag
     BrowserMessage::FullSync {
         servers: statuses,
         upgrades: state.upgrade_tracker.snapshot(),
-        recoveries,
     }
 }
 
-pub(crate) async fn recovery_snapshot(state: &Arc<AppState>) -> Option<Vec<RecoveryJobDto>> {
-    match recovery_job::Entity::find().all(&state.db).await {
-        Ok(jobs) => Some(jobs.into_iter().map(Into::into).collect()),
-        Err(e) => {
-            tracing::error!("Failed to list recovery jobs for browser sync: {e}");
-            None
-        }
-    }
-}
-
-pub(crate) async fn broadcast_recovery_update(state: &Arc<AppState>) {
-    let Some(recoveries) = recovery_snapshot(state).await else {
-        return;
-    };
-    let _ = state.browser_tx.send(BrowserMessage::Update {
-        servers: Vec::new(),
-        recoveries: Some(recoveries),
-    });
-}
-
-fn filter_browser_message(msg: BrowserMessage, is_admin: bool) -> Option<BrowserMessage> {
-    if is_admin {
-        return Some(msg);
-    }
-
-    match msg {
-        BrowserMessage::FullSync {
-            servers, upgrades, ..
-        } => Some(BrowserMessage::FullSync {
-            servers,
-            upgrades,
-            recoveries: Vec::new(),
-        }),
-        BrowserMessage::Update { servers, .. } => Some(BrowserMessage::Update {
-            servers,
-            recoveries: None,
-        }),
-        other => Some(other),
-    }
+fn filter_browser_message(msg: BrowserMessage, _is_admin: bool) -> Option<BrowserMessage> {
+    Some(msg)
 }
 
 async fn send_browser_message(
@@ -443,293 +423,3 @@ async fn send_browser_message(
     sink.send(Message::Text(text.into())).await
 }
 
-impl From<recovery_job::Model> for RecoveryJobDto {
-    fn from(value: recovery_job::Model) -> Self {
-        Self {
-            job_id: value.job_id,
-            target_server_id: value.target_server_id,
-            source_server_id: value.source_server_id,
-            status: recovery_job_status_from_str(&value.status),
-            stage: recovery_job_stage_from_str(&value.stage),
-            error: value.error,
-            started_at: value.started_at,
-            created_at: value.created_at,
-            updated_at: value.updated_at,
-            last_heartbeat_at: value.last_heartbeat_at,
-        }
-    }
-}
-
-fn recovery_job_status_from_str(value: &str) -> RecoveryJobStatus {
-    match value {
-        "running" => RecoveryJobStatus::Running,
-        "failed" => RecoveryJobStatus::Failed,
-        "succeeded" => RecoveryJobStatus::Succeeded,
-        _ => RecoveryJobStatus::Unknown,
-    }
-}
-
-fn recovery_job_stage_from_str(value: &str) -> RecoveryJobStage {
-    match value {
-        "validating" => RecoveryJobStage::Validating,
-        "rebinding" => RecoveryJobStage::Rebinding,
-        "awaiting_target_online" => RecoveryJobStage::AwaitingTargetOnline,
-        "freezing_writes" => RecoveryJobStage::FreezingWrites,
-        "merging_history" => RecoveryJobStage::MergingHistory,
-        "finalizing" => RecoveryJobStage::Finalizing,
-        "succeeded" => RecoveryJobStage::Succeeded,
-        "failed" => RecoveryJobStage::Failed,
-        _ => RecoveryJobStage::Unknown,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::AppConfig;
-    use crate::entity::server;
-    use crate::service::auth::AuthService;
-    use crate::test_utils::setup_test_db;
-    use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, Set};
-    use serverbee_common::constants::CAP_DEFAULT;
-
-    async fn insert_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
-        let now = Utc::now();
-        let token_hash = AuthService::hash_password("test").unwrap();
-        server::ActiveModel {
-            id: Set(id.to_string()),
-            token_hash: Set(token_hash),
-            token_prefix: Set("serverbee_test".to_string()),
-            name: Set(name.to_string()),
-            weight: Set(0),
-            hidden: Set(false),
-            capabilities: Set(CAP_DEFAULT as i32),
-            protocol_version: Set(1),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn full_sync_includes_running_recoveries() {
-        let (db, _tmp) = setup_test_db().await;
-        insert_server(&db, "target-1", "Target").await;
-        insert_server(&db, "source-1", "Source").await;
-        let state = AppState::new(db.clone(), AppConfig::default())
-            .await
-            .unwrap();
-
-        let now = Utc::now();
-        recovery_job::ActiveModel {
-            job_id: Set("job-1".to_string()),
-            target_server_id: Set("target-1".to_string()),
-            source_server_id: Set("source-1".to_string()),
-            status: Set("running".to_string()),
-            stage: Set("rebinding".to_string()),
-            checkpoint_json: Set(None),
-            error: Set(None),
-            started_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            last_heartbeat_at: Set(Some(now)),
-        }
-        .insert(&db)
-        .await
-        .unwrap();
-
-        let message = build_full_sync(&state, true).await;
-
-        match message {
-            BrowserMessage::FullSync { recoveries, .. } => {
-                assert_eq!(recoveries.len(), 1);
-                assert_eq!(recoveries[0].job_id, "job-1");
-                assert_eq!(recoveries[0].stage, RecoveryJobStage::Rebinding);
-                assert_eq!(recoveries[0].status, RecoveryJobStatus::Running);
-            }
-            other => panic!("expected full sync, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn full_sync_includes_terminal_recovery_states() {
-        let (db, _tmp) = setup_test_db().await;
-        insert_server(&db, "target-1", "Target").await;
-        insert_server(&db, "source-1", "Source").await;
-        let state = AppState::new(db.clone(), AppConfig::default())
-            .await
-            .unwrap();
-
-        let now = Utc::now();
-        recovery_job::ActiveModel {
-            job_id: Set("job-failed".to_string()),
-            target_server_id: Set("target-1".to_string()),
-            source_server_id: Set("source-1".to_string()),
-            status: Set("failed".to_string()),
-            stage: Set("failed".to_string()),
-            checkpoint_json: Set(None),
-            error: Set(Some("boom".to_string())),
-            started_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            last_heartbeat_at: Set(Some(now)),
-        }
-        .insert(&db)
-        .await
-        .unwrap();
-        recovery_job::ActiveModel {
-            job_id: Set("job-succeeded".to_string()),
-            target_server_id: Set("target-1".to_string()),
-            source_server_id: Set("source-1".to_string()),
-            status: Set("succeeded".to_string()),
-            stage: Set("succeeded".to_string()),
-            checkpoint_json: Set(None),
-            error: Set(None),
-            started_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            last_heartbeat_at: Set(Some(now)),
-        }
-        .insert(&db)
-        .await
-        .unwrap();
-
-        let message = build_full_sync(&state, true).await;
-
-        match message {
-            BrowserMessage::FullSync { recoveries, .. } => {
-                assert_eq!(recoveries.len(), 2);
-                assert!(recoveries.iter().any(|job| {
-                    job.job_id == "job-failed"
-                        && job.status == RecoveryJobStatus::Failed
-                        && job.stage == RecoveryJobStage::Failed
-                }));
-                assert!(recoveries.iter().any(|job| {
-                    job.job_id == "job-succeeded"
-                        && job.status == RecoveryJobStatus::Succeeded
-                        && job.stage == RecoveryJobStage::Succeeded
-                }));
-            }
-            other => panic!("expected full sync, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn full_sync_hides_recoveries_for_non_admin() {
-        let (db, _tmp) = setup_test_db().await;
-        insert_server(&db, "target-1", "Target").await;
-        insert_server(&db, "source-1", "Source").await;
-        let state = AppState::new(db.clone(), AppConfig::default())
-            .await
-            .unwrap();
-
-        let now = Utc::now();
-        recovery_job::ActiveModel {
-            job_id: Set("job-1".to_string()),
-            target_server_id: Set("target-1".to_string()),
-            source_server_id: Set("source-1".to_string()),
-            status: Set("running".to_string()),
-            stage: Set("rebinding".to_string()),
-            checkpoint_json: Set(None),
-            error: Set(None),
-            started_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            last_heartbeat_at: Set(Some(now)),
-        }
-        .insert(&db)
-        .await
-        .unwrap();
-
-        let message = build_full_sync(&state, false).await;
-
-        match message {
-            BrowserMessage::FullSync { recoveries, .. } => assert!(recoveries.is_empty()),
-            other => panic!("expected full sync, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn broadcast_recovery_update_includes_terminal_recovery_states() {
-        let (db, _tmp) = setup_test_db().await;
-        insert_server(&db, "target-1", "Target").await;
-        insert_server(&db, "source-1", "Source").await;
-        let state = AppState::new(db.clone(), AppConfig::default())
-            .await
-            .unwrap();
-        let mut browser_rx = state.browser_tx.subscribe();
-
-        let now = Utc::now();
-        recovery_job::ActiveModel {
-            job_id: Set("job-failed".to_string()),
-            target_server_id: Set("target-1".to_string()),
-            source_server_id: Set("source-1".to_string()),
-            status: Set("failed".to_string()),
-            stage: Set("failed".to_string()),
-            checkpoint_json: Set(None),
-            error: Set(Some("boom".to_string())),
-            started_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            last_heartbeat_at: Set(Some(now)),
-        }
-        .insert(&db)
-        .await
-        .unwrap();
-
-        broadcast_recovery_update(&state).await;
-
-        let message = browser_rx.recv().await.unwrap();
-        match message {
-            BrowserMessage::Update {
-                recoveries: Some(recoveries),
-                ..
-            } => {
-                assert_eq!(recoveries.len(), 1);
-                assert_eq!(recoveries[0].job_id, "job-failed");
-                assert_eq!(recoveries[0].status, RecoveryJobStatus::Failed);
-                assert_eq!(recoveries[0].stage, RecoveryJobStage::Failed);
-            }
-            other => panic!("expected update with recoveries, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn full_sync_strips_recoveries_for_non_admin() {
-        let (db, _tmp) = setup_test_db().await;
-        insert_server(&db, "target-1", "Target").await;
-        insert_server(&db, "source-1", "Source").await;
-        let state = AppState::new(db.clone(), AppConfig::default())
-            .await
-            .unwrap();
-
-        let now = Utc::now();
-        recovery_job::ActiveModel {
-            job_id: Set("job-1".to_string()),
-            target_server_id: Set("target-1".to_string()),
-            source_server_id: Set("source-1".to_string()),
-            status: Set("running".to_string()),
-            stage: Set("rebinding".to_string()),
-            checkpoint_json: Set(None),
-            error: Set(None),
-            started_at: Set(now),
-            created_at: Set(now),
-            updated_at: Set(now),
-            last_heartbeat_at: Set(Some(now)),
-        }
-        .insert(&db)
-        .await
-        .unwrap();
-
-        let message = build_full_sync(&state, false).await;
-
-        match message {
-            BrowserMessage::FullSync { recoveries, .. } => assert!(recoveries.is_empty()),
-            other => panic!("expected full sync, got {other:?}"),
-        }
-    }
-}

@@ -1590,8 +1590,8 @@ mod tests {
         let now = Utc::now();
         server::ActiveModel {
             id: Set(id.to_string()),
-            token_hash: Set("hash".to_string()),
-            token_prefix: Set("prefix".to_string()),
+            token_hash: Set(Some("hash".to_string())),
+            token_prefix: Set(Some("prefix".to_string())),
             name: Set(name.to_string()),
             weight: Set(0),
             hidden: Set(false),

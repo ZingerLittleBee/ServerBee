@@ -327,6 +327,7 @@ async fn delete_block(
     get,
     path = "/api/firewall/stats",
     tag = "firewall",
+    operation_id = "firewall_stats",
     responses(
         (status = 200, description = "Aggregate counts", body = StatsResp),
     ),

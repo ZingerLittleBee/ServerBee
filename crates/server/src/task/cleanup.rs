@@ -119,12 +119,10 @@ pub async fn run(state: Arc<AppState>) {
         // Clean up security events
         cleanup_security_events(&state.db, retention.security_event_days).await;
 
-        // Clean up expired/consumed agent enrollment codes
-        match crate::service::enrollment::EnrollmentService::prune(&state.db).await {
-            Ok(n) if n > 0 => tracing::info!("Pruned {n} expired/consumed enrollments"),
-            Err(e) => tracing::warn!("Enrollment prune failed: {e}"),
-            _ => {}
-        }
+        // Enrollment pruning: removed in T6 — enrollments are now bound 1:1
+        // to a server (revoked_at, target_server_id). They expire / get
+        // revoked / get consumed but stay in the table for audit. A later
+        // task may add a windowed cleanup if the table grows.
 
         // Clean up expired file transfers (idle for > 30 minutes)
         state.file_transfers.cleanup_expired(Duration::from_secs(
@@ -242,8 +240,8 @@ mod tests {
         let now = Utc::now();
         server::ActiveModel {
             id: Set("srv-cleanup".to_string()),
-            token_hash: Set(hash),
-            token_prefix: Set("serverbee_test".to_string()),
+            token_hash: Set(Some(hash)),
+            token_prefix: Set(Some("serverbee_test".to_string())),
             name: Set("cleanup-test-server".to_string()),
             weight: Set(0),
             hidden: Set(false),
