@@ -5,7 +5,6 @@
  * Regenerate: pnpm run generate:api-types
  */
 import type { components } from './api-types'
-import type { ServerIpQualityData } from './ip-quality-types'
 
 export type { IpQualitySnapshotData, ServerIpQualityData } from './ip-quality-types'
 
@@ -122,12 +121,6 @@ export type TotpDisableRequest = S['TotpDisableRequest']
 // System settings
 export type SystemSettings = S['SystemSettings']
 
-// Status page (public)
-export type StatusPageResponse = S['StatusPageResponse']
-export type StatusServer = S['StatusServer']
-export type StatusMetrics = S['StatusMetrics']
-export type StatusGroup = S['StatusGroup']
-
 // Agent
 export type RegisterResponse = S['RegisterResponse']
 export type UpgradeRequest = S['UpgradeRequest']
@@ -165,89 +158,253 @@ export interface UptimeDailyEntry {
 
 export type ThemeResolved = S['ThemeResolved']
 
-// Public status page (slug-based)
-export interface PublicStatusPageData {
-  active_incidents: Array<{
-    created_at: string
-    id: string
-    severity: string
-    status: string
-    title: string
-    updates: Array<{
-      created_at: string
-      id: string
-      message: string
-      status: string
-    }>
-  }>
-  /** Present only when the page has show_ip_quality enabled. */
-  ip_quality?: ServerIpQualityData[] | null
-  /** Service display metadata for services referenced by ip_quality.
-   *  Present when ip_quality is present. Use this for matrix column headers
-   *  instead of falling back to raw service IDs. */
-  ip_quality_services?: Array<{
-    id: string
-    key: string
-    name: string
-    category: string
-    popularity: number
-    is_builtin: boolean
-  }> | null
-  page: {
-    custom_css: string | null
-    description: string | null
-    show_values: boolean
-    title: string
-    uptime_red_threshold: number
-    uptime_yellow_threshold: number
-  }
-  planned_maintenances: Array<{
-    description: string | null
-    end_at: string
-    id: string
-    start_at: string
-    title: string
-  }>
-  recent_incidents: Array<{
-    created_at: string
-    id: string
-    resolved_at: string | null
-    severity: string
-    status: string
-    title: string
-    updates: Array<{
-      created_at: string
-      id: string
-      message: string
-      status: string
-    }>
-  }>
-  servers: Array<{
-    group_name: string | null
-    in_maintenance: boolean
-    online: boolean
-    server_id: string
-    server_name: string
-    uptime_daily: UptimeDailyEntry[]
-    uptime_percent: number | null
-  }>
-  theme: ThemeResolved
+// ---------------------------------------------------------------------------
+// Public status page DTOs (singleton, mirror of `crates/server/src/service/public_status.rs`).
+// Field names match the Rust JSON shape exactly (snake_case); no IP-level
+// identifiers or free-form leak fields are present here by design.
+// ---------------------------------------------------------------------------
+
+export interface PublicStatusConfig {
+  default_layout: 'list' | 'grid'
+  description: string | null
+  enabled: boolean
+  show_incidents: boolean
+  show_ip_quality: boolean
+  show_maintenance: boolean
+  show_network: boolean
+  show_server_detail: boolean
+  title: string
+  uptime_red_threshold: number
+  uptime_yellow_threshold: number
 }
 
-// Admin status page management
+export interface PublicMetricsSummary {
+  cpu: number
+  disk_total: number
+  disk_used: number
+  load_1: number
+  load_5: number
+  load_15: number
+  mem_total: number
+  mem_used: number
+  net_in_speed: number
+  net_out_speed: number
+  uptime: number
+}
+
+export interface PublicServerSummary {
+  country_code: string | null
+  group_name: string | null
+  id: string
+  in_maintenance: boolean
+  metrics: PublicMetricsSummary | null
+  name: string
+  online: boolean
+  os: string | null
+  public_remark: string | null
+  region: string | null
+  uptime_daily: UptimeDailyEntry[]
+  uptime_percent: number | null
+}
+
+export type PublicServerDetail = PublicServerSummary & {
+  cpu_name: string | null
+  cpu_cores: number | null
+  cpu_arch: string | null
+  kernel_version: string | null
+  agent_version: string | null
+  mem_total: number | null
+  disk_total: number | null
+  process_count: number | null
+  tcp_conn: number | null
+  udp_conn: number | null
+}
+
+export interface PublicIpQualitySnapshot {
+  checked_at: string
+  country: string | null
+  ip_type: string
+  risk_level: string
+  risk_score: number | null
+}
+
+export interface PublicUnlockResult {
+  checked_at: string
+  latency_ms: number | null
+  region: string | null
+  service_id: string
+  status: string
+}
+
+export interface PublicIpQualityEntry {
+  /** Absent until the agent has reported at least once. */
+  ip_quality: PublicIpQualitySnapshot | null
+  server_id: string
+  unlock_results: PublicUnlockResult[]
+}
+
+export interface PublicIpQualityServiceMeta {
+  category: string
+  id: string
+  is_builtin: boolean
+  key: string
+  name: string
+  popularity: number
+}
+
+export interface PublicIpQualityOverview {
+  entries: PublicIpQualityEntry[]
+  services: PublicIpQualityServiceMeta[]
+}
+
+export interface PublicIncidentUpdate {
+  created_at: string
+  id: string
+  message: string
+  status: string
+}
+
+export interface PublicIncident {
+  created_at: string
+  id: string
+  resolved_at: string | null
+  severity: string
+  status: string
+  title: string
+  updates: PublicIncidentUpdate[]
+}
+
+export interface PublicMaintenance {
+  description: string | null
+  end_at: string
+  id: string
+  start_at: string
+  title: string
+}
+
+export interface PublicIncidentsResponse {
+  active: PublicIncident[]
+  recent: PublicIncident[]
+}
+
+// Network DTOs mirror `service::network_probe::{TargetSummary, ServerSummary,
+// ServerOverview, NetworkProbeAnomaly}`. The auth'd TS layer in
+// `lib/network-types.ts` conflates `ServerSummary` and `ServerOverview` into a
+// single `NetworkServerSummary` shape; here we mirror the Rust shapes
+// faithfully because the public surface is the contract source of truth.
+
+export interface PublicNetworkTargetSummary {
+  availability: number
+  avg_latency: number | null
+  max_latency: number | null
+  min_latency: number | null
+  packet_loss: number
+  provider: string
+  target_id: string
+  target_name: string
+}
+
+export interface PublicNetworkServerOverview {
+  anomaly_count: number
+  last_probe_at: string | null
+  latency_sparkline: (number | null)[]
+  loss_sparkline: (number | null)[]
+  online: boolean
+  server_id: string
+  server_name: string
+  targets: PublicNetworkTargetSummary[]
+}
+
+export interface PublicNetworkServerSummary {
+  anomaly_count: number
+  last_probe_at: string | null
+  online: boolean
+  server_id: string
+  server_name: string
+  targets: PublicNetworkTargetSummary[]
+}
+
+export interface PublicNetworkProbeAnomaly {
+  anomaly_type: string
+  target_id: string
+  target_name: string
+  timestamp: string
+  value: number
+}
+
+export interface PublicNetworkOverview {
+  servers: PublicNetworkServerOverview[]
+}
+
+export interface PublicNetworkServerDetail {
+  anomalies: PublicNetworkProbeAnomaly[]
+  summary: PublicNetworkServerSummary
+}
+
+export interface PublicMetricsPoint {
+  cpu: number
+  disk_used: number
+  gpu_usage: number | null
+  load1: number
+  load5: number
+  load15: number
+  mem_used: number
+  net_in_speed: number
+  net_in_transfer: number
+  net_out_speed: number
+  net_out_transfer: number
+  process_count: number
+  tcp_conn: number
+  temperature: number | null
+  time: string
+  udp_conn: number
+}
+
+export interface PublicMetricsRangeQuery {
+  from: string
+  /** "auto" | "raw" | "hourly". Defaults to "auto" server-side. */
+  interval?: string
+  to: string
+}
+
+// ---------------------------------------------------------------------------
+// Admin status-page (singleton, mirror of
+// `crates/server/src/service/status_page.rs`). After R1 there is exactly one
+// row; GET returns the full model, PUT accepts a partial-update payload.
+// ---------------------------------------------------------------------------
+
 export interface StatusPageItem {
   created_at: string
+  default_layout: 'list' | 'grid'
   description: string | null
   enabled: boolean
   id: string
   server_ids: string[]
-  show_ip_quality?: boolean
-  slug: string
-  theme_ref?: string | null
+  show_incidents: boolean
+  show_ip_quality: boolean
+  show_maintenance: boolean
+  show_network: boolean
+  show_server_detail: boolean
   title: string
   updated_at: string
   uptime_red_threshold: number
   uptime_yellow_threshold: number
+}
+
+/** Partial PATCH-style payload for `PUT /api/admin/status-page`. */
+export interface UpdateStatusPageRequest {
+  default_layout?: 'list' | 'grid'
+  description?: string | null
+  enabled?: boolean
+  server_ids?: string[]
+  show_incidents?: boolean
+  show_ip_quality?: boolean
+  show_maintenance?: boolean
+  show_network?: boolean
+  show_server_detail?: boolean
+  title?: string
+  uptime_red_threshold?: number
+  uptime_yellow_threshold?: number
 }
 
 export interface IncidentItem {
