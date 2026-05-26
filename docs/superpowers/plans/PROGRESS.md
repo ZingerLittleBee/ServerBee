@@ -1239,3 +1239,39 @@ DELETE /api/maintenances/:id           删除维护窗口
 - 新增 5 个高价值字段: `risk_score`, `is_tor`, `is_abuser`, `is_mobile`, `asn_abuser_score`, `abuse_email`
 - 删除 4 个需要付费 API key 的旧 provider 实现
 - `SERVERBEE_IP_QUALITY__RISK_PROVIDER` 新默认值 `ipapi_is`（替代 `none`）
+
+---
+
+## 2026-05-26 — 公开状态页重构 (Public Status Page Refactor)
+
+**分支**: `newport-beach`
+**日期**: 2026-05-26
+**设计文档**: `docs/superpowers/specs/2026-05-26-status-page-refactor-design.md`
+**实现计划**: `docs/superpowers/plans/2026-05-26-status-page-refactor.md`
+**状态**: **代码完成，待远程 VPS 验证**
+
+| Round | 名称 | 状态 |
+|------|------|------|
+| R1 | Schema migration + entities (status_page singleton, incident/maintenance is_public) | **done** |
+| R2 | Public DTOs + service queries with scope guard | **done** |
+| R3 | Public router + handlers + rate limit | **done** |
+| R4 | Admin reshape (singleton GET/PUT) + admin rate-limit Public scope | **done** |
+| R5 | Backend integration tests (6 files: anonymous, redaction, redaction_authenticated, ip_quality_redaction, scope, gating) | **done** |
+| R6 | Frontend api-schema.ts public DTOs | **done** |
+| R7 | Public layout + StatusHeader + servers index (list/grid toggle) | **done** |
+| R8 | Extract ServerDetailContent (admin/public variants) | **done** |
+| R9 | Extract NetworkOverviewContent + NetworkDetailContent | **done** |
+| R10 | Extract IpQualityContent + public IpQualityCard variant | **done** |
+| R11 | Singleton settings form + is_public on incidents/maintenances | **done** |
+| R12 | Cleanup (slug routes deleted, i18n keys added) — folded into R11 | **done** |
+| R13 | Final workspace checks (cargo test, clippy, typecheck, vitest, ultracite) | **done** |
+| R14 | Remote VPS deploy + smoke test on 207.241.173.217 | *pending* |
+
+**变更摘要:**
+- 单一公开页 `/status`（移除 multi-slug），4 个子页面（servers / server detail / network / ip-quality）由 admin toggle 控制
+- 所有 `/api/status/*` endpoints 都在 API 层脱敏（专用 PublicXxxDto），不依赖前端隐藏；脱敏 unconditional，admin cookie/API key 同样返回脱敏数据
+- 删除 `status_page.slug/theme_ref/custom_css/show_values` 列；`incident.status_page_ids_json` / `maintenance.status_page_ids_json` 替换为 `is_public` 布尔
+- 前端 `_authed/servers/$id`、`_authed/network/*`、`_authed/ip-quality` 抽取 presentation 组件 + variant pattern，公开页和管理页共用
+- 60 req / 60 s 每 IP 限流；admin rate-limit 端点新增 Public scope
+- 6 个集成测试覆盖 anonymous、redaction（含 authenticated）、IP-quality redaction、scope（hidden/out-of-list/nonexistent）、gating（5 个 toggle + enabled=false）
+- Workspace 测试 0 failure: cargo (R5) + vitest 564 pass + ultracite clean + clippy clean

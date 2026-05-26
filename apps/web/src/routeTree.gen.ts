@@ -15,13 +15,17 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as StatusIndexRouteImport } from './routes/status.index'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
-import { Route as StatusSlugRouteImport } from './routes/status.$slug'
+import { Route as StatusNetworkRouteImport } from './routes/status.network'
+import { Route as StatusIpQualityRouteImport } from './routes/status.ip-quality'
 import { Route as AuthedIpQualityRouteImport } from './routes/_authed/ip-quality'
+import { Route as StatusNetworkIndexRouteImport } from './routes/status.network.index'
 import { Route as AuthedTrafficIndexRouteImport } from './routes/_authed/traffic/index'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedServersIndexRouteImport } from './routes/_authed/servers/index'
 import { Route as AuthedSecurityIndexRouteImport } from './routes/_authed/security/index'
 import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network/index'
+import { Route as StatusServerServerIdRouteImport } from './routes/status.server.$serverId'
+import { Route as StatusNetworkServerIdRouteImport } from './routes/status.network.$serverId'
 import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
 import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
@@ -78,15 +82,25 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const StatusSlugRoute = StatusSlugRouteImport.update({
-  id: '/$slug',
-  path: '/$slug',
+const StatusNetworkRoute = StatusNetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
+  getParentRoute: () => StatusRoute,
+} as any)
+const StatusIpQualityRoute = StatusIpQualityRouteImport.update({
+  id: '/ip-quality',
+  path: '/ip-quality',
   getParentRoute: () => StatusRoute,
 } as any)
 const AuthedIpQualityRoute = AuthedIpQualityRouteImport.update({
   id: '/ip-quality',
   path: '/ip-quality',
   getParentRoute: () => AuthedRoute,
+} as any)
+const StatusNetworkIndexRoute = StatusNetworkIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StatusNetworkRoute,
 } as any)
 const AuthedTrafficIndexRoute = AuthedTrafficIndexRouteImport.update({
   id: '/traffic/',
@@ -112,6 +126,16 @@ const AuthedNetworkIndexRoute = AuthedNetworkIndexRouteImport.update({
   id: '/network/',
   path: '/network/',
   getParentRoute: () => AuthedRoute,
+} as any)
+const StatusServerServerIdRoute = StatusServerServerIdRouteImport.update({
+  id: '/server/$serverId',
+  path: '/server/$serverId',
+  getParentRoute: () => StatusRoute,
+} as any)
+const StatusNetworkServerIdRoute = StatusNetworkServerIdRouteImport.update({
+  id: '/$serverId',
+  path: '/$serverId',
+  getParentRoute: () => StatusNetworkRoute,
 } as any)
 const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
   id: '/terminal/$serverId',
@@ -261,7 +285,8 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/status': typeof StatusRouteWithChildren
   '/ip-quality': typeof AuthedIpQualityRoute
-  '/status/$slug': typeof StatusSlugRoute
+  '/status/ip-quality': typeof StatusIpQualityRoute
+  '/status/network': typeof StatusNetworkRouteWithChildren
   '/status/': typeof StatusIndexRoute
   '/files/$serverId': typeof AuthedFilesServerIdRoute
   '/network/$serverId': typeof AuthedNetworkServerIdRoute
@@ -286,11 +311,14 @@ export interface FileRoutesByFullPath {
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/status/network/$serverId': typeof StatusNetworkServerIdRoute
+  '/status/server/$serverId': typeof StatusServerServerIdRoute
   '/network/': typeof AuthedNetworkIndexRoute
   '/security/': typeof AuthedSecurityIndexRoute
   '/servers/': typeof AuthedServersIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
   '/traffic/': typeof AuthedTrafficIndexRoute
+  '/status/network/': typeof StatusNetworkIndexRoute
   '/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
   '/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
@@ -299,7 +327,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/ip-quality': typeof AuthedIpQualityRoute
-  '/status/$slug': typeof StatusSlugRoute
+  '/status/ip-quality': typeof StatusIpQualityRoute
   '/': typeof AuthedIndexRoute
   '/status': typeof StatusIndexRoute
   '/files/$serverId': typeof AuthedFilesServerIdRoute
@@ -325,11 +353,14 @@ export interface FileRoutesByTo {
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/status/network/$serverId': typeof StatusNetworkServerIdRoute
+  '/status/server/$serverId': typeof StatusServerServerIdRoute
   '/network': typeof AuthedNetworkIndexRoute
   '/security': typeof AuthedSecurityIndexRoute
   '/servers': typeof AuthedServersIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
   '/traffic': typeof AuthedTrafficIndexRoute
+  '/status/network': typeof StatusNetworkIndexRoute
   '/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
   '/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/servers/$serverId/docker': typeof AuthedServersServerIdDockerIndexRoute
@@ -341,7 +372,8 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/status': typeof StatusRouteWithChildren
   '/_authed/ip-quality': typeof AuthedIpQualityRoute
-  '/status/$slug': typeof StatusSlugRoute
+  '/status/ip-quality': typeof StatusIpQualityRoute
+  '/status/network': typeof StatusNetworkRouteWithChildren
   '/_authed/': typeof AuthedIndexRoute
   '/status/': typeof StatusIndexRoute
   '/_authed/files/$serverId': typeof AuthedFilesServerIdRoute
@@ -367,11 +399,14 @@ export interface FileRoutesById {
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
   '/_authed/settings/users': typeof AuthedSettingsUsersRoute
   '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
+  '/status/network/$serverId': typeof StatusNetworkServerIdRoute
+  '/status/server/$serverId': typeof StatusServerServerIdRoute
   '/_authed/network/': typeof AuthedNetworkIndexRoute
   '/_authed/security/': typeof AuthedSecurityIndexRoute
   '/_authed/servers/': typeof AuthedServersIndexRoute
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
   '/_authed/traffic/': typeof AuthedTrafficIndexRoute
+  '/status/network/': typeof StatusNetworkIndexRoute
   '/_authed/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
   '/_authed/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/_authed/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
@@ -384,7 +419,8 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/status'
     | '/ip-quality'
-    | '/status/$slug'
+    | '/status/ip-quality'
+    | '/status/network'
     | '/status/'
     | '/files/$serverId'
     | '/network/$serverId'
@@ -409,11 +445,14 @@ export interface FileRouteTypes {
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
+    | '/status/network/$serverId'
+    | '/status/server/$serverId'
     | '/network/'
     | '/security/'
     | '/servers/'
     | '/settings/'
     | '/traffic/'
+    | '/status/network/'
     | '/settings/appearance/themes/$id'
     | '/settings/appearance/themes/new'
     | '/servers/$serverId/docker/'
@@ -422,7 +461,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/onboarding'
     | '/ip-quality'
-    | '/status/$slug'
+    | '/status/ip-quality'
     | '/'
     | '/status'
     | '/files/$serverId'
@@ -448,11 +487,14 @@ export interface FileRouteTypes {
     | '/settings/tasks'
     | '/settings/users'
     | '/terminal/$serverId'
+    | '/status/network/$serverId'
+    | '/status/server/$serverId'
     | '/network'
     | '/security'
     | '/servers'
     | '/settings'
     | '/traffic'
+    | '/status/network'
     | '/settings/appearance/themes/$id'
     | '/settings/appearance/themes/new'
     | '/servers/$serverId/docker'
@@ -463,7 +505,8 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/status'
     | '/_authed/ip-quality'
-    | '/status/$slug'
+    | '/status/ip-quality'
+    | '/status/network'
     | '/_authed/'
     | '/status/'
     | '/_authed/files/$serverId'
@@ -489,11 +532,14 @@ export interface FileRouteTypes {
     | '/_authed/settings/tasks'
     | '/_authed/settings/users'
     | '/_authed/terminal/$serverId'
+    | '/status/network/$serverId'
+    | '/status/server/$serverId'
     | '/_authed/network/'
     | '/_authed/security/'
     | '/_authed/servers/'
     | '/_authed/settings/'
     | '/_authed/traffic/'
+    | '/status/network/'
     | '/_authed/settings/appearance/themes/$id'
     | '/_authed/settings/appearance/themes/new'
     | '/_authed/servers/$serverId/docker/'
@@ -550,11 +596,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/status/$slug': {
-      id: '/status/$slug'
-      path: '/$slug'
-      fullPath: '/status/$slug'
-      preLoaderRoute: typeof StatusSlugRouteImport
+    '/status/network': {
+      id: '/status/network'
+      path: '/network'
+      fullPath: '/status/network'
+      preLoaderRoute: typeof StatusNetworkRouteImport
+      parentRoute: typeof StatusRoute
+    }
+    '/status/ip-quality': {
+      id: '/status/ip-quality'
+      path: '/ip-quality'
+      fullPath: '/status/ip-quality'
+      preLoaderRoute: typeof StatusIpQualityRouteImport
       parentRoute: typeof StatusRoute
     }
     '/_authed/ip-quality': {
@@ -563,6 +616,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/ip-quality'
       preLoaderRoute: typeof AuthedIpQualityRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/status/network/': {
+      id: '/status/network/'
+      path: '/'
+      fullPath: '/status/network/'
+      preLoaderRoute: typeof StatusNetworkIndexRouteImport
+      parentRoute: typeof StatusNetworkRoute
     }
     '/_authed/traffic/': {
       id: '/_authed/traffic/'
@@ -598,6 +658,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/network/'
       preLoaderRoute: typeof AuthedNetworkIndexRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/status/server/$serverId': {
+      id: '/status/server/$serverId'
+      path: '/server/$serverId'
+      fullPath: '/status/server/$serverId'
+      preLoaderRoute: typeof StatusServerServerIdRouteImport
+      parentRoute: typeof StatusRoute
+    }
+    '/status/network/$serverId': {
+      id: '/status/network/$serverId'
+      path: '/$serverId'
+      fullPath: '/status/network/$serverId'
+      preLoaderRoute: typeof StatusNetworkServerIdRouteImport
+      parentRoute: typeof StatusNetworkRoute
     }
     '/_authed/terminal/$serverId': {
       id: '/_authed/terminal/$serverId'
@@ -873,14 +947,32 @@ const AuthedRouteChildren: AuthedRouteChildren = {
 const AuthedRouteWithChildren =
   AuthedRoute._addFileChildren(AuthedRouteChildren)
 
+interface StatusNetworkRouteChildren {
+  StatusNetworkServerIdRoute: typeof StatusNetworkServerIdRoute
+  StatusNetworkIndexRoute: typeof StatusNetworkIndexRoute
+}
+
+const StatusNetworkRouteChildren: StatusNetworkRouteChildren = {
+  StatusNetworkServerIdRoute: StatusNetworkServerIdRoute,
+  StatusNetworkIndexRoute: StatusNetworkIndexRoute,
+}
+
+const StatusNetworkRouteWithChildren = StatusNetworkRoute._addFileChildren(
+  StatusNetworkRouteChildren,
+)
+
 interface StatusRouteChildren {
-  StatusSlugRoute: typeof StatusSlugRoute
+  StatusIpQualityRoute: typeof StatusIpQualityRoute
+  StatusNetworkRoute: typeof StatusNetworkRouteWithChildren
   StatusIndexRoute: typeof StatusIndexRoute
+  StatusServerServerIdRoute: typeof StatusServerServerIdRoute
 }
 
 const StatusRouteChildren: StatusRouteChildren = {
-  StatusSlugRoute: StatusSlugRoute,
+  StatusIpQualityRoute: StatusIpQualityRoute,
+  StatusNetworkRoute: StatusNetworkRouteWithChildren,
   StatusIndexRoute: StatusIndexRoute,
+  StatusServerServerIdRoute: StatusServerServerIdRoute,
 }
 
 const StatusRouteWithChildren =

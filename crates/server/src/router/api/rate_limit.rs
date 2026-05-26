@@ -15,13 +15,26 @@ use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::state::{AppState, RateLimitEntry};
 
-const WINDOW_MINUTES: i64 = 15;
+/// Login + register limiters use a 15-minute window — see
+/// `AppState::check_rate`. Public-status uses a much shorter window;
+/// see `PUBLIC_WINDOW_SECONDS`.
+const AUTH_WINDOW_SECONDS: i64 = 15 * 60;
+
+/// Public-status rate limiter window. Mirrors
+/// `router::api::status::PUBLIC_STATUS_WINDOW_SECONDS`.
+// TODO(public-rate-limit-config): hoist into `config.rate_limit` once we
+// decide on canonical bucket naming; for R4 we keep the constants colocated
+// with the two existing call sites (here and in `router/api/status.rs`).
+const PUBLIC_WINDOW_SECONDS: i64 = 60;
+const PUBLIC_MAX: u32 = 60;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RateLimitScope {
     Login,
     Register,
+    /// Per-IP bucket for the unauthenticated `/api/status/*` surface.
+    Public,
 }
 
 impl RateLimitScope {
@@ -29,6 +42,17 @@ impl RateLimitScope {
         match self {
             Self::Login => "login",
             Self::Register => "register",
+            Self::Public => "public",
+        }
+    }
+
+    /// Per-scope window length in seconds. Login/register use the historic
+    /// 15-minute window; the public surface uses a much shorter 60-second
+    /// window because it is hit by browsers polling the public dashboard.
+    fn window_seconds(self) -> i64 {
+        match self {
+            Self::Login | Self::Register => AUTH_WINDOW_SECONDS,
+            Self::Public => PUBLIC_WINDOW_SECONDS,
         }
     }
 }
@@ -40,6 +64,10 @@ pub struct RateLimitEntryDto {
     pub count: u32,
     /// Configured maximum requests per window for this scope.
     pub max: u32,
+    /// Window length in seconds. Login/register share a 15-minute window
+    /// while the public bucket uses 60 seconds; surface it per-entry so
+    /// callers don't have to special-case scopes.
+    pub window_seconds: i64,
     /// RFC 3339 timestamp the current window opened.
     pub window_start: String,
     /// Seconds until the window resets. Zero if already expired.
@@ -51,14 +79,18 @@ pub struct RateLimitEntryDto {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct RateLimitListResponse {
     pub entries: Vec<RateLimitEntryDto>,
-    pub window_minutes: i64,
     pub login_max: u32,
     pub register_max: u32,
+    pub public_max: u32,
+    /// Window length (seconds) for the login + register buckets.
+    pub auth_window_seconds: i64,
+    /// Window length (seconds) for the public-status bucket.
+    pub public_window_seconds: i64,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct RateLimitResetRequest {
-    /// Optional scope filter; when omitted, clears both login and register.
+    /// Optional scope filter; when omitted, clears every bucket.
     #[serde(default)]
     pub scope: Option<RateLimitScope>,
     /// Optional IP filter; when omitted, clears every entry in the selected scope(s).
@@ -83,7 +115,8 @@ fn collect_entries(
     max: u32,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Vec<RateLimitEntryDto> {
-    let window = chrono::Duration::minutes(WINDOW_MINUTES);
+    let window_seconds = scope.window_seconds();
+    let window = chrono::Duration::seconds(window_seconds);
     map.iter()
         .filter_map(|entry| {
             let elapsed = now - entry.window_start;
@@ -97,6 +130,7 @@ fn collect_entries(
                 ip: entry.key().clone(),
                 count: entry.count,
                 max,
+                window_seconds,
                 window_start: entry.window_start.to_rfc3339(),
                 seconds_remaining,
                 blocked: entry.count >= max,
@@ -111,7 +145,7 @@ fn collect_entries(
     operation_id = "list_rate_limits",
     tag = "rate-limit",
     responses(
-        (status = 200, description = "Current per-IP rate limit state", body = RateLimitListResponse),
+        (status = 200, description = "Current per-IP rate limit state across login, register, and public status buckets", body = RateLimitListResponse),
     ),
     security(("session_cookie" = []), ("api_key" = []))
 )]
@@ -122,11 +156,22 @@ pub async fn list_rate_limits(
     let login_max = state.config.rate_limit.login_max;
     let register_max = state.config.rate_limit.register_max;
 
-    let mut entries = collect_entries(&state.login_rate_limit, RateLimitScope::Login, login_max, now);
+    let mut entries = collect_entries(
+        &state.login_rate_limit,
+        RateLimitScope::Login,
+        login_max,
+        now,
+    );
     entries.extend(collect_entries(
         &state.register_rate_limit,
         RateLimitScope::Register,
         register_max,
+        now,
+    ));
+    entries.extend(collect_entries(
+        &state.public_rate_limit,
+        RateLimitScope::Public,
+        PUBLIC_MAX,
         now,
     ));
 
@@ -140,9 +185,11 @@ pub async fn list_rate_limits(
 
     ok(RateLimitListResponse {
         entries,
-        window_minutes: WINDOW_MINUTES,
         login_max,
         register_max,
+        public_max: PUBLIC_MAX,
+        auth_window_seconds: AUTH_WINDOW_SECONDS,
+        public_window_seconds: PUBLIC_WINDOW_SECONDS,
     })
 }
 
@@ -168,8 +215,13 @@ pub async fn reset_rate_limit(
         Some(s) => match s {
             RateLimitScope::Login => &[RateLimitScope::Login],
             RateLimitScope::Register => &[RateLimitScope::Register],
+            RateLimitScope::Public => &[RateLimitScope::Public],
         },
-        None => &[RateLimitScope::Login, RateLimitScope::Register],
+        None => &[
+            RateLimitScope::Login,
+            RateLimitScope::Register,
+            RateLimitScope::Public,
+        ],
     };
 
     let mut cleared: u32 = 0;
@@ -177,6 +229,7 @@ pub async fn reset_rate_limit(
         let map = match scope {
             RateLimitScope::Login => &state.login_rate_limit,
             RateLimitScope::Register => &state.register_rate_limit,
+            RateLimitScope::Public => &state.public_rate_limit,
         };
         match req.ip.as_deref() {
             Some(ip) if !ip.is_empty() => {

@@ -2014,7 +2014,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get: operations["public_status"];
+        get: operations["public_list_servers"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2023,46 +2023,158 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/status-pages": {
+    "/api/status-page": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["list_status_pages"];
-        put?: never;
-        post: operations["create_status_page"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/status-pages/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
+        get: operations["get_status_page"];
         put: operations["update_status_page"];
         post?: never;
-        delete: operations["delete_status_page"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/status/{slug}": {
+    "/api/status/config": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_public_status_page"];
+        get: operations["get_config"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["public_list_incidents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/ip-quality": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ip_quality_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/maintenances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["public_list_maintenances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["network_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/network/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["network_server_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/servers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_server_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/servers/{id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_server_metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/status/servers/{id}/uptime-daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_server_uptime_daily"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2561,10 +2673,11 @@ export interface components {
             name: string;
         };
         CreateIncident: {
+            /** @description Whether this incident is shown on the public status page. */
+            is_public?: boolean;
             server_ids_json?: string[] | null;
             severity?: string;
             status?: string;
-            status_page_ids_json?: string[] | null;
             title: string;
         };
         CreateIncidentUpdate: {
@@ -2576,10 +2689,11 @@ export interface components {
             description?: string | null;
             /** Format: date-time */
             end_at: string;
+            /** @description Whether this maintenance window is shown on the public status page. */
+            is_public?: boolean;
             server_ids_json?: string[] | null;
             /** Format: date-time */
             start_at: string;
-            status_page_ids_json?: string[] | null;
             title: string;
         };
         CreateNotification: {
@@ -2645,21 +2759,6 @@ export interface components {
             retry_count?: number;
             server_ids_json?: string[] | null;
             target: string;
-        };
-        CreateStatusPage: {
-            custom_css?: string | null;
-            description?: string | null;
-            enabled?: boolean | null;
-            group_by_server_group?: boolean | null;
-            server_ids_json: string[];
-            show_ip_quality?: boolean | null;
-            show_values?: boolean | null;
-            slug: string;
-            title: string;
-            /** Format: double */
-            uptime_red_threshold?: number | null;
-            /** Format: double */
-            uptime_yellow_threshold?: number | null;
         };
         CreateTaskRequest: {
             command: string;
@@ -2825,12 +2924,12 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             id: string;
+            is_public: boolean;
             /** Format: date-time */
             resolved_at?: string | null;
             server_ids_json?: string | null;
             severity: string;
             status: string;
-            status_page_ids_json?: string | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -2842,9 +2941,6 @@ export interface components {
             incident_id: string;
             message: string;
             status: string;
-        };
-        IncidentWithUpdates: components["schemas"]["Incident"] & {
-            updates: components["schemas"]["IncidentUpdate"][];
         };
         IpQualitySettingDto: {
             /** Format: int32 */
@@ -2908,10 +3004,10 @@ export interface components {
             /** Format: date-time */
             end_at: string;
             id: string;
+            is_public: boolean;
             server_ids_json?: string | null;
             /** Format: date-time */
             start_at: string;
-            status_page_ids_json?: string | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -2995,6 +3091,14 @@ export interface components {
             from: string;
             to: string;
         };
+        NetworkProbeAnomaly: {
+            anomaly_type: string;
+            target_id: string;
+            target_name: string;
+            timestamp: string;
+            /** Format: double */
+            value: number;
+        };
         Notification: {
             config_json: string;
             /** Format: date-time */
@@ -3064,33 +3168,40 @@ export interface components {
             server_ids_json: string;
             target: string;
         };
-        PublicStatusPageData: {
-            active_incidents: components["schemas"]["IncidentWithUpdates"][];
-            /**
-             * @description Present only when the page has `show_ip_quality = true`.
-             *     IPs are masked to `*.*.*.*` for unauthenticated viewers.
-             */
-            ip_quality?: components["schemas"]["ServerIpQualityData"][] | null;
-            /**
-             * @description Service display metadata for services referenced by `ip_quality`.
-             *     Present only when `ip_quality` is present. Allows the frontend to render
-             *     proper service names in the unlock matrix column headers.
-             */
-            ip_quality_services?: components["schemas"]["PublicUnlockServiceInfo"][] | null;
-            page: components["schemas"]["StatusPageInfo"];
-            planned_maintenances: components["schemas"]["Maintenance"][];
-            recent_incidents: components["schemas"]["IncidentWithUpdates"][];
-            servers: components["schemas"]["ServerStatusInfo"][];
-            theme: components["schemas"]["ThemeResolved"];
+        PublicIncident: {
+            created_at: string;
+            id: string;
+            resolved_at?: string | null;
+            severity: string;
+            status: string;
+            title: string;
+            updates: components["schemas"]["PublicIncidentUpdate"][];
+        };
+        PublicIncidentUpdate: {
+            created_at: string;
+            id: string;
+            message: string;
+            status: string;
         };
         /**
-         * @description Public-safe subset of an `unlock_service` row.
-         *
-         *     Does NOT expose `request`/`rules`/headers — those may contain internal
-         *     URLs or secrets from custom services. Only metadata needed to label matrix
-         *     column headers is included.
+         * @description Payload shape for `/api/status/incidents`. Splits active vs recent
+         *     (resolved-within-7-days) incidents so the SPA can render them in separate
+         *     regions without a second query.
          */
-        PublicUnlockServiceInfo: {
+        PublicIncidentsResponse: {
+            active: components["schemas"]["PublicIncident"][];
+            recent: components["schemas"]["PublicIncident"][];
+        };
+        PublicIpQualityEntry: {
+            ip_quality?: null | components["schemas"]["PublicIpQualitySnapshot"];
+            server_id: string;
+            unlock_results: components["schemas"]["PublicUnlockResult"][];
+        };
+        PublicIpQualityOverview: {
+            entries: components["schemas"]["PublicIpQualityEntry"][];
+            services: components["schemas"]["PublicIpQualityServiceMeta"][];
+        };
+        PublicIpQualityServiceMeta: {
             category: string;
             id: string;
             is_builtin: boolean;
@@ -3098,6 +3209,153 @@ export interface components {
             name: string;
             /** Format: int32 */
             popularity: number;
+        };
+        PublicIpQualitySnapshot: {
+            checked_at: string;
+            country?: string | null;
+            ip_type: string;
+            risk_level: string;
+            /** Format: int32 */
+            risk_score?: number | null;
+        };
+        PublicMaintenance: {
+            description?: string | null;
+            end_at: string;
+            id: string;
+            start_at: string;
+            title: string;
+        };
+        PublicMetricsPoint: {
+            /** Format: double */
+            cpu: number;
+            /** Format: int64 */
+            disk_used: number;
+            /** Format: double */
+            gpu_usage?: number | null;
+            /** Format: double */
+            load1: number;
+            /** Format: double */
+            load15: number;
+            /** Format: double */
+            load5: number;
+            /** Format: int64 */
+            mem_used: number;
+            /** Format: int64 */
+            net_in_speed: number;
+            /** Format: int64 */
+            net_in_transfer: number;
+            /** Format: int64 */
+            net_out_speed: number;
+            /** Format: int64 */
+            net_out_transfer: number;
+            /** Format: int32 */
+            process_count: number;
+            /** Format: int32 */
+            tcp_conn: number;
+            /** Format: double */
+            temperature?: number | null;
+            time: string;
+            /** Format: int32 */
+            udp_conn: number;
+        };
+        PublicMetricsRangeQuery: {
+            /** Format: date-time */
+            from: string;
+            interval?: string;
+            /** Format: date-time */
+            to: string;
+        };
+        PublicMetricsSummary: {
+            /** Format: double */
+            cpu: number;
+            /** Format: int64 */
+            disk_total: number;
+            /** Format: int64 */
+            disk_used: number;
+            /** Format: double */
+            load_1: number;
+            /** Format: double */
+            load_15: number;
+            /** Format: double */
+            load_5: number;
+            /** Format: int64 */
+            mem_total: number;
+            /** Format: int64 */
+            mem_used: number;
+            /** Format: int64 */
+            net_in_speed: number;
+            /** Format: int64 */
+            net_out_speed: number;
+            /** Format: int64 */
+            uptime: number;
+        };
+        PublicNetworkOverview: {
+            servers: components["schemas"]["ServerOverview"][];
+        };
+        PublicNetworkServerDetail: {
+            anomalies: components["schemas"]["NetworkProbeAnomaly"][];
+            summary: components["schemas"]["ServerSummary"];
+        };
+        PublicServerDetail: components["schemas"]["PublicServerSummary"] & {
+            agent_version?: string | null;
+            cpu_arch?: string | null;
+            /** Format: int32 */
+            cpu_cores?: number | null;
+            cpu_name?: string | null;
+            /** Format: int64 */
+            disk_total?: number | null;
+            kernel_version?: string | null;
+            /** Format: int64 */
+            mem_total?: number | null;
+            /** Format: int32 */
+            process_count?: number | null;
+            /** Format: int32 */
+            tcp_conn?: number | null;
+            /** Format: int32 */
+            udp_conn?: number | null;
+        };
+        PublicServerSummary: {
+            country_code?: string | null;
+            group_name?: string | null;
+            id: string;
+            in_maintenance: boolean;
+            metrics?: null | components["schemas"]["PublicMetricsSummary"];
+            name: string;
+            online: boolean;
+            os?: string | null;
+            public_remark?: string | null;
+            region?: string | null;
+            uptime_daily: components["schemas"]["UptimeDailyEntry"][];
+            /** Format: double */
+            uptime_percent?: number | null;
+        };
+        PublicStatusConfig: {
+            /** @description "list" | "grid" */
+            default_layout: string;
+            description?: string | null;
+            enabled: boolean;
+            show_incidents: boolean;
+            show_ip_quality: boolean;
+            show_maintenance: boolean;
+            show_network: boolean;
+            show_server_detail: boolean;
+            title: string;
+            /** Format: double */
+            uptime_red_threshold: number;
+            /** Format: double */
+            uptime_yellow_threshold: number;
+        };
+        PublicUnlockResult: {
+            checked_at: string;
+            /** Format: int32 */
+            latency_ms?: number | null;
+            /**
+             * @description Service-specific unlock region (e.g. "US-NY" for Netflix); distinct
+             *     from the egress IP's geographic region, which is stripped.
+             */
+            region?: string | null;
+            service_id: string;
+            status: string;
         };
         PushRegisterRequest: {
             /** @description The APNs device token obtained from the iOS device. */
@@ -3123,17 +3381,34 @@ export interface components {
              * @description Seconds until the window resets. Zero if already expired.
              */
             seconds_remaining: number;
+            /**
+             * Format: int64
+             * @description Window length in seconds. Login/register share a 15-minute window
+             *     while the public bucket uses 60 seconds; surface it per-entry so
+             *     callers don't have to special-case scopes.
+             */
+            window_seconds: number;
             /** @description RFC 3339 timestamp the current window opened. */
             window_start: string;
         };
         RateLimitListResponse: {
+            /**
+             * Format: int64
+             * @description Window length (seconds) for the login + register buckets.
+             */
+            auth_window_seconds: number;
             entries: components["schemas"]["RateLimitEntryDto"][];
             /** Format: int32 */
             login_max: number;
             /** Format: int32 */
+            public_max: number;
+            /**
+             * Format: int64
+             * @description Window length (seconds) for the public-status bucket.
+             */
+            public_window_seconds: number;
+            /** Format: int32 */
             register_max: number;
-            /** Format: int64 */
-            window_minutes: number;
         };
         RateLimitResetRequest: {
             /** @description Optional IP filter; when omitted, clears every entry in the selected scope(s). */
@@ -3145,7 +3420,7 @@ export interface components {
             cleared: number;
         };
         /** @enum {string} */
-        RateLimitScope: "login" | "register";
+        RateLimitScope: "login" | "register" | "public";
         ReadRequest: {
             path: string;
         };
@@ -3327,6 +3602,17 @@ export interface components {
             server_id: string;
             unlock_results: components["schemas"]["UnlockResultDto"][];
         };
+        ServerOverview: {
+            /** Format: int64 */
+            anomaly_count: number;
+            last_probe_at?: string | null;
+            latency_sparkline: (number | null)[];
+            loss_sparkline: (number | null)[];
+            online: boolean;
+            server_id: string;
+            server_name: string;
+            targets: components["schemas"]["TargetSummary"][];
+        };
         ServerRecord: {
             /** Format: double */
             cpu: number;
@@ -3467,19 +3753,14 @@ export interface components {
             /** Format: int32 */
             weight: number;
         };
-        ServerStatusInfo: {
-            country_code?: string | null;
-            group_id?: string | null;
-            group_name?: string | null;
-            in_maintenance: boolean;
+        ServerSummary: {
+            /** Format: int64 */
+            anomaly_count: number;
+            last_probe_at?: string | null;
             online: boolean;
-            os?: string | null;
-            region?: string | null;
             server_id: string;
             server_name: string;
-            uptime_daily: components["schemas"]["UptimeDailyEntry"][];
-            /** Format: double */
-            uptime_percent?: number | null;
+            targets: components["schemas"]["TargetSummary"][];
         };
         ServerTrafficOverview: {
             billing_cycle?: string | null;
@@ -3554,47 +3835,20 @@ export interface components {
             /** Format: int64 */
             v6: number;
         };
-        StatusGroup: {
-            id: string;
-            name: string;
-        };
-        StatusMetrics: {
-            /** Format: double */
-            cpu: number;
-            /** Format: int64 */
-            disk_total: number;
-            /** Format: int64 */
-            disk_used: number;
-            /** Format: double */
-            load1: number;
-            /** Format: int64 */
-            mem_total: number;
-            /** Format: int64 */
-            mem_used: number;
-            /** Format: int64 */
-            net_in_speed: number;
-            /** Format: int64 */
-            net_in_transfer: number;
-            /** Format: int64 */
-            net_out_speed: number;
-            /** Format: int64 */
-            net_out_transfer: number;
-            /** Format: int64 */
-            uptime: number;
-        };
         StatusPage: {
             /** Format: date-time */
             created_at: string;
-            custom_css?: string | null;
+            default_layout: string;
             description?: string | null;
             enabled: boolean;
             group_by_server_group: boolean;
             id: string;
             server_ids_json: string;
+            show_incidents: boolean;
             show_ip_quality: boolean;
-            show_values: boolean;
-            slug: string;
-            theme_ref?: string | null;
+            show_maintenance: boolean;
+            show_network: boolean;
+            show_server_detail: boolean;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -3602,41 +3856,6 @@ export interface components {
             uptime_red_threshold: number;
             /** Format: double */
             uptime_yellow_threshold: number;
-        };
-        StatusPageInfo: {
-            custom_css?: string | null;
-            description?: string | null;
-            group_by_server_group: boolean;
-            id: string;
-            show_values: boolean;
-            slug: string;
-            title: string;
-            /** Format: double */
-            uptime_red_threshold: number;
-            /** Format: double */
-            uptime_yellow_threshold: number;
-        };
-        StatusPageRef: {
-            id: string;
-            name: string;
-        };
-        StatusPageResponse: {
-            groups: components["schemas"]["StatusGroup"][];
-            online_count: number;
-            servers: components["schemas"]["StatusServer"][];
-            total_count: number;
-        };
-        /** @description Public status info for a single server. */
-        StatusServer: {
-            country_code?: string | null;
-            group_id?: string | null;
-            id: string;
-            metrics?: null | components["schemas"]["StatusMetrics"];
-            name: string;
-            online: boolean;
-            os?: string | null;
-            public_remark?: string | null;
-            region?: string | null;
         };
         SuccessResponse: {
             success: boolean;
@@ -3646,6 +3865,21 @@ export interface components {
             custom_js?: string | null;
             site_description?: string | null;
             site_name?: string | null;
+        };
+        TargetSummary: {
+            /** Format: double */
+            availability: number;
+            /** Format: double */
+            avg_latency?: number | null;
+            /** Format: double */
+            max_latency?: number | null;
+            /** Format: double */
+            min_latency?: number | null;
+            /** Format: double */
+            packet_loss: number;
+            provider: string;
+            target_id: string;
+            target_name: string;
         };
         TaskResponse: {
             command: string;
@@ -3697,9 +3931,15 @@ export interface components {
             vars_dark: components["schemas"]["HashMap"];
             vars_light: components["schemas"]["HashMap"];
         };
+        /**
+         * @description Where a custom theme is referenced.
+         *
+         *     After R1 the public status page no longer carries its own `theme_ref` —
+         *     only the admin UI's active theme can pin a custom theme. The previous
+         *     `status_pages: Vec<StatusPageRef>` collection has therefore been removed.
+         */
         ThemeReferences: {
             admin: boolean;
-            status_pages: components["schemas"]["StatusPageRef"][];
         };
         ThemeResolved: {
             id: string;
@@ -3924,10 +4164,10 @@ export interface components {
             weight?: number | null;
         };
         UpdateIncident: {
+            is_public?: boolean | null;
             server_ids_json?: string[] | null;
             severity?: string | null;
             status?: string | null;
-            status_page_ids_json?: string[] | null;
             title?: string | null;
         };
         UpdateMaintenance: {
@@ -3935,10 +4175,10 @@ export interface components {
             description?: string | null;
             /** Format: date-time */
             end_at?: string | null;
+            is_public?: boolean | null;
             server_ids_json?: string[] | null;
             /** Format: date-time */
             start_at?: string | null;
-            status_page_ids_json?: string[] | null;
             title?: string | null;
         };
         UpdateNotification: {
@@ -4010,16 +4250,35 @@ export interface components {
             server_ids_json?: string[] | null;
             target?: string | null;
         };
+        /**
+         * @description Partial-update payload for the singleton status_page row.
+         *
+         *     Every field is optional so the admin UI can PATCH individual toggles
+         *     without re-sending the entire config. Matches the prevailing admin
+         *     update-DTO convention in this codebase (see `UpdateMaintenance`,
+         *     `UpdateIncident`, `UpdateServerInput`): `Option<T>` = leave alone,
+         *     `Option<Option<T>>` = leave alone / clear / set for nullable columns.
+         */
         UpdateStatusPage: {
-            custom_css?: string | null;
+            default_layout?: string | null;
+            /**
+             * @description Nullable in the entity — `Option<Option<String>>` so callers can
+             *     distinguish "leave alone" (absent / null at the outer Option) from
+             *     "explicitly clear" (`Some(None)`). Mirrors `UpdateMaintenance`.
+             */
             description?: string | null;
             enabled?: boolean | null;
-            group_by_server_group?: boolean | null;
-            server_ids_json?: string[] | null;
+            /**
+             * @description Replace the full set of pinned servers. `None` = leave alone,
+             *     `Some(vec![])` = explicitly no servers. The service serialises
+             *     this to the entity's `server_ids_json` storage column.
+             */
+            server_ids?: string[] | null;
+            show_incidents?: boolean | null;
             show_ip_quality?: boolean | null;
-            show_values?: boolean | null;
-            slug?: string | null;
-            theme_ref?: string | null;
+            show_maintenance?: boolean | null;
+            show_network?: boolean | null;
+            show_server_detail?: boolean | null;
             title?: string | null;
             /** Format: double */
             uptime_red_threshold?: number | null;
@@ -4162,7 +4421,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Current per-IP rate limit state */
+            /** @description Current per-IP rate limit state across login, register, and public status buckets */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -9195,7 +9454,7 @@ export interface operations {
             };
         };
     };
-    public_status: {
+    public_list_servers: {
         parameters: {
             query?: never;
             header?: never;
@@ -9204,18 +9463,32 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Public server status page data */
+            /** @description Scoped server summaries */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StatusPageResponse"];
+                    "application/json": components["schemas"]["PublicServerSummary"][];
                 };
+            };
+            /** @description Public status page disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
-    list_status_pages: {
+    get_status_page: {
         parameters: {
             query?: never;
             header?: never;
@@ -9224,31 +9497,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description List all status pages */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusPage"][];
-                };
-            };
-        };
-    };
-    create_status_page: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateStatusPage"];
-            };
-        };
-        responses: {
-            /** @description Status page created */
+            /** @description Singleton status page config */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -9257,15 +9506,8 @@ export interface operations {
                     "application/json": components["schemas"]["StatusPage"];
                 };
             };
-            /** @description Slug conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error */
-            422: {
+            /** @description Singleton row missing */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9277,10 +9519,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                /** @description Status page ID */
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody: {
@@ -9298,15 +9537,15 @@ export interface operations {
                     "application/json": components["schemas"]["StatusPage"];
                 };
             };
-            /** @description Not found */
+            /** @description Singleton row missing */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Slug conflict */
-            409: {
+            /** @description Validation error */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9314,27 +9553,206 @@ export interface operations {
             };
         };
     };
-    delete_status_page: {
+    get_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public status page configuration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicStatusConfig"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    public_list_incidents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active and recently-resolved incidents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicIncidentsResponse"];
+                };
+            };
+            /** @description Public status page or incidents panel disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ip_quality_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redacted IP-quality overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicIpQualityOverview"];
+                };
+            };
+            /** @description Public status page or IP-quality panel disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    public_list_maintenances: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Upcoming and active maintenance windows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicMaintenance"][];
+                };
+            };
+            /** @description Public status page or maintenance panel disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    network_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Network probe overview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNetworkOverview"];
+                };
+            };
+            /** @description Public status page or network panel disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    network_server_detail: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Status page ID */
+                /** @description Server ID */
                 id: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Status page deleted */
+            /** @description Per-server network detail */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicNetworkServerDetail"];
+                };
+            };
+            /** @description Public status page or network panel disabled */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Not found */
+            /** @description Server not in public scope */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9342,29 +9760,138 @@ export interface operations {
             };
         };
     };
-    get_public_status_page: {
+    get_server_detail: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Status page URL slug */
-                slug: string;
+                /** @description Server ID */
+                id: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Public status page data */
+            /** @description Scoped server detail */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PublicStatusPageData"];
+                    "application/json": components["schemas"]["PublicServerDetail"];
                 };
             };
-            /** @description Not found */
+            /** @description Public status page or server-detail panel disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not in public scope */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_server_metrics: {
+        parameters: {
+            query: {
+                /** @description ISO-8601 range start */
+                from: string;
+                /** @description ISO-8601 range end */
+                to: string;
+                /** @description auto | raw | hourly */
+                interval?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Time-series metrics */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicMetricsPoint"][];
+                };
+            };
+            /** @description Public status page or server-detail panel disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not in public scope */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_server_uptime_daily: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 90-day uptime band */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UptimeDailyEntry"][];
+                };
+            };
+            /** @description Public status page disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not in public scope */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

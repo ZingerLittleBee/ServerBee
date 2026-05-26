@@ -14,13 +14,11 @@ import {
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { AnomalyTable } from '@/components/network/anomaly-table'
 import { LatencyChart } from '@/components/network/latency-chart'
-import { TargetCard } from '@/components/network/target-card'
 import { StatusBadge } from '@/components/server/status-badge'
+import { NetworkDetailContent } from '@/components/status/network-detail-content'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -28,7 +26,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
@@ -60,15 +57,7 @@ import type {
   TracerouteHop,
   TracerouteRecordSummary
 } from '@/lib/network-types'
-import {
-  formatLatency,
-  formatPacketLoss,
-  getLossTextClassName,
-  getProviderLabel,
-  isNewSchemaHop,
-  latencyColorClass,
-  type TraceProtocol
-} from '@/lib/network-types'
+import { getLossTextClassName, isNewSchemaHop, latencyColorClass, type TraceProtocol } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_authed/network/$serverId')({
@@ -93,100 +82,6 @@ const TIME_RANGES: TimeRangeOption[] = [
   { label: '7d', value: 168 },
   { label: '30d', value: 720 }
 ]
-
-const PROVIDER_KEYS = ['ct', 'cu', 'cm', 'international'] as const
-
-const PROVIDER_TO_KEY: Record<string, string> = {
-  Telecom: 'ct',
-  Unicom: 'cu',
-  Mobile: 'cm',
-  International: 'international'
-}
-
-function groupTargetsByProvider(targets: NetworkTargetSummary[]) {
-  const groups: Record<string, NetworkTargetSummary[]> = {}
-  for (const target of targets) {
-    const key = PROVIDER_TO_KEY[target.provider] || target.provider || 'unknown'
-    if (!groups[key]) {
-      groups[key] = []
-    }
-    groups[key].push(target)
-  }
-  return groups
-}
-
-function ProviderColumn({
-  getTargetDisplayName,
-  provider,
-  targets,
-  t
-}: {
-  getTargetDisplayName: (target: NetworkTargetSummary) => string
-  provider: string
-  targets: NetworkTargetSummary[]
-  t: (key: string, options?: { defaultValue?: string }) => string
-}) {
-  const providerI18nKey = `provider_${provider}`
-  const label = t(providerI18nKey, { defaultValue: getProviderLabel(provider) })
-
-  const avgLatency = useMemo(() => {
-    const valid = targets.filter((t) => t.avg_latency != null)
-    if (valid.length === 0) {
-      return null
-    }
-    return valid.reduce((sum, t) => sum + (t.avg_latency ?? 0), 0) / valid.length
-  }, [targets])
-
-  const avgPacketLoss = useMemo(() => {
-    if (targets.length === 0) {
-      return 0
-    }
-    return targets.reduce((sum, t) => sum + t.packet_loss, 0) / targets.length
-  }, [targets])
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{label}</CardTitle>
-        <div className="flex gap-3 text-muted-foreground text-xs">
-          <span>
-            {t('avg_latency')}: <span className="font-mono">{formatLatency(avgLatency)}</span>
-          </span>
-          <span>
-            {t('packet_loss')}: <span className="font-mono">{formatPacketLoss(avgPacketLoss)}</span>
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {targets.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm">{t('no_data')}</p>
-        ) : (
-          <div className="space-y-2">
-            {targets.map((target) => (
-              <div
-                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                key={target.target_id}
-              >
-                <span className="font-medium">{getTargetDisplayName(target)}</span>
-                <div className="flex items-center gap-3 text-xs">
-                  <span
-                    className={cn(
-                      'font-mono',
-                      latencyColorClass(target.avg_latency, { failed: target.packet_loss >= 1 })
-                    )}
-                  >
-                    {formatLatency(target.avg_latency)}
-                  </span>
-                  <span className="text-muted-foreground">{formatPacketLoss(target.packet_loss)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 function deriveHopStats(hop: TracerouteHop, isNew: boolean) {
   const legacyRtts = [hop.rtt1, hop.rtt2, hop.rtt3].filter((v): v is number => v != null)
@@ -787,18 +682,6 @@ export function NetworkDetailPage() {
 
   const targets = useMemo(() => summary?.targets ?? [], [summary])
 
-  // Group targets by provider for the "By Provider" tab
-  const providerGroups = useMemo(() => groupTargetsByProvider(targets), [targets])
-
-  // Ordered provider keys: known providers first, then any remaining
-  const orderedProviderKeys = useMemo(() => {
-    const known = PROVIDER_KEYS.filter((k) => providerGroups[k]?.length)
-    const remaining = Object.keys(providerGroups).filter(
-      (k) => !PROVIDER_KEYS.includes(k as (typeof PROVIDER_KEYS)[number])
-    )
-    return [...known, ...remaining]
-  }, [providerGroups])
-
   // Initialize visible targets to all when summary loads
   const effectiveVisible = useMemo(() => {
     if (visibleTargets != null) {
@@ -1058,118 +941,80 @@ export function NetworkDetailPage() {
         )}
       </div>
 
-      {/* Time range selector */}
-      <div className="mb-4 flex gap-1">
-        {TIME_RANGES.map((tr) => (
-          <Button
-            className={cn(timeRange === tr.value && 'bg-primary text-primary-foreground')}
-            key={tr.value}
-            onClick={() => handleTimeRangeChange(tr.value)}
-            size="sm"
-            variant={timeRange === tr.value ? 'default' : 'outline'}
-          >
-            {tr.value === 'realtime' ? t('realtime') : tr.label}
-          </Button>
-        ))}
-      </div>
-
-      {/* Target cards with tabs: All Targets / By Provider */}
-      {targets.length > 0 && (
-        <Tabs className="mb-4" defaultValue="all">
-          <TabsList>
-            <TabsTrigger value="all">{t('all_targets')}</TabsTrigger>
-            <TabsTrigger value="provider">{t('by_provider')}</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="all">
-            <div className="flex flex-wrap gap-2 pt-2">
-              {targets.map((target) => (
-                <TargetCard
-                  color={targetColorMap[target.target_id] ?? CHART_COLORS[0]}
-                  displayName={getSummaryTargetDisplayName(target)}
-                  key={target.target_id}
-                  onToggle={() => toggleTarget(target.target_id)}
-                  target={target}
-                  visible={effectiveVisible.has(target.target_id)}
-                />
-              ))}
+      {/* Body — target tabs + chart + bottom stats + anomaly dialog all live
+          inside `NetworkDetailContent`. We pass admin-only sub-trees via
+          slots so the public surface can render the same shell without the
+          chart/stats/range-selector noise. */}
+      <NetworkDetailContent
+        anomalies={anomalies}
+        anomalyOpen={anomalyOpen}
+        anomalyWindowHours={anomalyHours}
+        chartSlot={
+          <div className="mb-4">
+            <LatencyChart hours={hours} isRealtime={isRealtime} records={records} targets={chartTargets} />
+          </div>
+        }
+        controlsSlot={
+          <div className="mb-4 flex gap-1">
+            {TIME_RANGES.map((tr) => (
+              <Button
+                className={cn(timeRange === tr.value && 'bg-primary text-primary-foreground')}
+                key={tr.value}
+                onClick={() => handleTimeRangeChange(tr.value)}
+                size="sm"
+                variant={timeRange === tr.value ? 'default' : 'outline'}
+              >
+                {tr.value === 'realtime' ? t('realtime') : tr.label}
+              </Button>
+            ))}
+          </div>
+        }
+        extraStatsSlot={
+          <div className="mb-6 grid gap-4 sm:grid-cols-4">
+            <div className="rounded-lg border bg-card p-4 text-center">
+              <p className="font-mono font-semibold text-lg tabular-nums">
+                {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
+              </p>
+              <p className="text-muted-foreground text-xs">{t('avg_latency')}</p>
             </div>
-          </TabsContent>
-
-          <TabsContent value="provider">
-            <div className="grid gap-4 pt-2 md:grid-cols-2 lg:grid-cols-3">
-              {orderedProviderKeys.map((provider) => (
-                <ProviderColumn
-                  getTargetDisplayName={getSummaryTargetDisplayName}
-                  key={provider}
-                  provider={provider}
-                  t={t}
-                  targets={providerGroups[provider]}
-                />
-              ))}
+            <div className="rounded-lg border bg-card p-4 text-center">
+              <p className="font-mono font-semibold text-lg tabular-nums">{stats.availability.toFixed(1)}%</p>
+              <p className="text-muted-foreground text-xs">{t('availability')}</p>
             </div>
-          </TabsContent>
-        </Tabs>
-      )}
-
-      {/* Latency chart */}
-      <div className="mb-4">
-        <LatencyChart hours={hours} isRealtime={isRealtime} records={records} targets={chartTargets} />
-      </div>
-
-      {/* Bottom stats */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-4">
-        <div className="rounded-lg border bg-card p-4 text-center">
-          <p className="font-mono font-semibold text-lg tabular-nums">
-            {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
-          </p>
-          <p className="text-muted-foreground text-xs">{t('avg_latency')}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
-          <p className="font-mono font-semibold text-lg tabular-nums">{stats.availability.toFixed(1)}%</p>
-          <p className="text-muted-foreground text-xs">{t('availability')}</p>
-        </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
-          <p className="font-mono font-semibold text-lg tabular-nums">{stats.targetCount}</p>
-          <p className="text-muted-foreground text-xs">{t('targets')}</p>
-        </div>
-        <button
-          aria-label={t('anomaly_count')}
-          className={cn(
-            'cursor-pointer rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            anomalies.length > 0 &&
-              'border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
-          )}
-          onClick={() => setAnomalyOpen(true)}
-          type="button"
-        >
-          <p
-            className={cn(
-              'flex items-center justify-center gap-1.5 font-mono font-semibold text-lg tabular-nums',
-              anomalies.length > 0 && 'text-amber-700 dark:text-amber-400'
-            )}
-          >
-            {anomalies.length > 0 && <AlertTriangle aria-hidden="true" className="size-4" />}
-            {anomalies.length}
-          </p>
-          <p className="text-muted-foreground text-xs">{t('anomaly_count')}</p>
-        </button>
-      </div>
-
-      {/* Anomaly Dialog */}
-      <Dialog onOpenChange={setAnomalyOpen} open={anomalyOpen}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-4 pr-8">
-              <DialogTitle>{t('anomaly_count_with_value', { count: anomalies.length })}</DialogTitle>
-              <span className="text-muted-foreground text-xs">{t('anomaly_window', { hours: anomalyHours })}</span>
+            <div className="rounded-lg border bg-card p-4 text-center">
+              <p className="font-mono font-semibold text-lg tabular-nums">{stats.targetCount}</p>
+              <p className="text-muted-foreground text-xs">{t('targets')}</p>
             </div>
-          </DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
-            <AnomalyTable anomalies={anomalies} windowHours={anomalyHours} />
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+            <button
+              aria-label={t('anomaly_count')}
+              className={cn(
+                'cursor-pointer rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                anomalies.length > 0 &&
+                  'border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
+              )}
+              onClick={() => setAnomalyOpen(true)}
+              type="button"
+            >
+              <p
+                className={cn(
+                  'flex items-center justify-center gap-1.5 font-mono font-semibold text-lg tabular-nums',
+                  anomalies.length > 0 && 'text-amber-700 dark:text-amber-400'
+                )}
+              >
+                {anomalies.length > 0 && <AlertTriangle aria-hidden="true" className="size-4" />}
+                {anomalies.length}
+              </p>
+              <p className="text-muted-foreground text-xs">{t('anomaly_count')}</p>
+            </button>
+          </div>
+        }
+        getTargetDisplayName={getSummaryTargetDisplayName}
+        onAnomalyOpenChange={setAnomalyOpen}
+        onToggleTarget={toggleTarget}
+        summary={summary}
+        variant="admin"
+        visibleTargetIds={effectiveVisible}
+      />
 
       {/* Traceroute Dialog */}
       <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>

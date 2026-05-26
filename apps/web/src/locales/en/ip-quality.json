@@ -33,6 +33,8 @@
   "card_abuser": "Known abuser",
   "card_mobile": "Mobile network",
   "card_asn_score": "ASN risk",
+  "card_checked_at": "Checked",
+  "card_country": "Country",
 
   "ip_type_residential": "Residential",
   "ip_type_datacenter": "Datacenter",

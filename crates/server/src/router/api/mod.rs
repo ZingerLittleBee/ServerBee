@@ -14,13 +14,13 @@ pub mod geoip;
 pub mod incident;
 pub mod ip_quality;
 pub mod maintenance_api;
-pub mod security;
 pub mod mobile;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
 pub mod ping;
 pub mod rate_limit;
+pub mod security;
 pub mod server;
 pub mod server_group;
 pub mod server_tag;
@@ -49,8 +49,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .merge(mobile::public_router())
         .merge(agent::public_router())
         .merge(oauth::router())
-        .merge(status::router())
-        .merge(status_page::public_router())
+        .merge(status::public_router(state.clone()))
         .merge(brand::public_router())
         .merge(about::router())
         .merge(

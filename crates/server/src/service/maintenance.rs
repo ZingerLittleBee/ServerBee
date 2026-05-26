@@ -17,7 +17,9 @@ pub struct CreateMaintenance {
     #[schema(value_type = String, format = DateTime)]
     pub end_at: DateTime<Utc>,
     pub server_ids_json: Option<Vec<String>>,
-    pub status_page_ids_json: Option<Vec<String>>,
+    /// Whether this maintenance window is shown on the public status page.
+    #[serde(default)]
+    pub is_public: bool,
     pub active: Option<bool>,
 }
 
@@ -30,7 +32,7 @@ pub struct UpdateMaintenance {
     #[schema(value_type = Option<String>, format = DateTime)]
     pub end_at: Option<DateTime<Utc>>,
     pub server_ids_json: Option<Option<Vec<String>>>,
-    pub status_page_ids_json: Option<Option<Vec<String>>>,
+    pub is_public: Option<bool>,
     pub active: Option<bool>,
 }
 
@@ -67,14 +69,6 @@ impl MaintenanceService {
             })
             .transpose()?;
 
-        let status_page_ids_json = input
-            .status_page_ids_json
-            .map(|ids| {
-                serde_json::to_string(&ids)
-                    .map_err(|e| AppError::Validation(format!("Invalid status_page_ids_json: {e}")))
-            })
-            .transpose()?;
-
         let now = Utc::now();
         let model = maintenance::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
@@ -83,7 +77,7 @@ impl MaintenanceService {
             start_at: Set(input.start_at),
             end_at: Set(input.end_at),
             server_ids_json: Set(server_ids_json),
-            status_page_ids_json: Set(status_page_ids_json),
+            is_public: Set(input.is_public),
             active: Set(input.active.unwrap_or(true)),
             created_at: Set(now),
             updated_at: Set(now),
@@ -121,15 +115,8 @@ impl MaintenanceService {
                 .transpose()?;
             model.server_ids_json = Set(json);
         }
-        if let Some(page_ids) = input.status_page_ids_json {
-            let json = page_ids
-                .map(|ids| {
-                    serde_json::to_string(&ids).map_err(|e| {
-                        AppError::Validation(format!("Invalid status_page_ids_json: {e}"))
-                    })
-                })
-                .transpose()?;
-            model.status_page_ids_json = Set(json);
+        if let Some(is_public) = input.is_public {
+            model.is_public = Set(is_public);
         }
         if let Some(active) = input.active {
             model.active = Set(active);

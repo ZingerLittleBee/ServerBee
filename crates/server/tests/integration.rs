@@ -941,32 +941,37 @@ async fn test_member_read_only() {
 
 #[tokio::test]
 async fn test_public_status_no_auth() {
+    // After the R1 refactor the public status surface is `/api/status/*` and
+    // the singleton config defaults to `enabled = false`. The unauthenticated
+    // contract on the bare `/api/status` route is therefore:
+    //   - disabled => 403 with body `{"error":"public_status_disabled", ...}`
+    //   - enabled  => 200 with body `{"data":[...]}` (Vec<PublicServerSummary>)
+    // Detailed scope/gating/redaction behavior is exercised by the dedicated
+    // `public_status_*.rs` integration tests; this test pins only the
+    // "unauthenticated access reaches the surface" property.
     let (base_url, _tmp) = start_test_server().await;
-    // Use a plain client with NO cookies and NO auth headers
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
         .expect("Failed to build plain HTTP client");
 
     let resp = client
-        .get(format!("{}/api/status", base_url))
+        .get(format!("{}/api/status/config", base_url))
         .send()
         .await
-        .expect("GET /api/status failed");
+        .expect("GET /api/status/config failed");
 
+    // /api/status/config is reachable without auth even when the page is
+    // disabled (the SPA needs to render a "site disabled" notice).
     assert_eq!(
         resp.status(),
         200,
-        "Public /api/status should be accessible without auth"
+        "Public /api/status/config should be accessible without auth"
     );
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(
-        body["data"]["servers"].is_array(),
-        "data.servers should be an array"
-    );
-    assert!(
-        body["data"]["total_count"].is_number(),
-        "data.total_count should be a number"
+    assert_eq!(
+        body["data"]["enabled"], false,
+        "default singleton row has enabled = false"
     );
 }
 

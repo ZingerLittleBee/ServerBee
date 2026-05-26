@@ -1,7 +1,7 @@
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{DatabaseConnection, EntityTrait};
 use serde::Serialize;
 
-use crate::entity::{custom_theme, status_page};
+use crate::entity::custom_theme;
 use crate::error::AppError;
 use crate::service::config::ConfigService;
 
@@ -95,16 +95,14 @@ pub fn is_preset_id(id: &str) -> bool {
     PRESET_IDS.contains(&id)
 }
 
+/// Where a custom theme is referenced.
+///
+/// After R1 the public status page no longer carries its own `theme_ref` —
+/// only the admin UI's active theme can pin a custom theme. The previous
+/// `status_pages: Vec<StatusPageRef>` collection has therefore been removed.
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct ThemeReferences {
     pub admin: bool,
-    pub status_pages: Vec<StatusPageRef>,
-}
-
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-pub struct StatusPageRef {
-    pub id: String,
-    pub name: String,
 }
 
 pub async fn list_references(
@@ -119,32 +117,15 @@ pub async fn list_references(
 
     let urn = ThemeRef::Custom(custom_id).to_urn();
     let active_admin_theme = ConfigService::get(db, "active_admin_theme").await?;
-    let status_pages = status_page::Entity::find()
-        .filter(status_page::Column::ThemeRef.eq(urn.clone()))
-        .order_by_asc(status_page::Column::Title)
-        .order_by_asc(status_page::Column::Id)
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|m| StatusPageRef {
-            id: m.id,
-            name: m.title,
-        })
-        .collect();
 
     Ok(ThemeReferences {
         admin: active_admin_theme.as_deref() == Some(urn.as_str()),
-        status_pages,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, Set};
-
-    use crate::entity::{custom_theme, status_page};
     use crate::test_utils::setup_test_db;
 
     #[test]
@@ -313,76 +294,8 @@ mod tests {
         assert!(matches!(err, AppError::Validation(message) if message == "invalid custom id: -1"));
     }
 
-    #[tokio::test]
-    async fn list_references_orders_status_pages_by_title_then_id() {
-        let (db, _tmp) = setup_test_db().await;
-
-        insert_custom_theme(&db, 42).await;
-        insert_custom_theme(&db, 43).await;
-        insert_status_page(&db, "page-zulu", "Zulu", "custom:42").await;
-        insert_status_page(&db, "page-alpha-b", "Alpha", "custom:42").await;
-        insert_status_page(&db, "page-alpha-a", "Alpha", "custom:42").await;
-        insert_status_page(&db, "page-other", "Beta", "custom:43").await;
-
-        let refs = list_references(&db, 42)
-            .await
-            .expect("references should load");
-
-        let ordered_ids: Vec<String> = refs.status_pages.into_iter().map(|r| r.id).collect();
-        assert_eq!(
-            ordered_ids,
-            vec![
-                "page-alpha-a".to_string(),
-                "page-alpha-b".to_string(),
-                "page-zulu".to_string(),
-            ]
-        );
-    }
-
-    async fn insert_custom_theme(db: &sea_orm::DatabaseConnection, id: i32) {
-        let now = Utc::now();
-        custom_theme::ActiveModel {
-            id: Set(id),
-            name: Set(format!("Theme {id}")),
-            description: Set(None),
-            based_on: Set(Some("default".to_string())),
-            vars_light: Set("{}".to_string()),
-            vars_dark: Set("{}".to_string()),
-            created_by: Set("user-1".to_string()),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(db)
-        .await
-        .expect("custom theme insert should succeed");
-    }
-
-    async fn insert_status_page(
-        db: &sea_orm::DatabaseConnection,
-        id: &str,
-        title: &str,
-        theme_ref: &str,
-    ) {
-        let now = Utc::now();
-        status_page::ActiveModel {
-            id: Set(id.to_string()),
-            title: Set(title.to_string()),
-            slug: Set(id.to_string()),
-            description: Set(None),
-            server_ids_json: Set("[]".to_string()),
-            group_by_server_group: Set(false),
-            show_values: Set(false),
-            custom_css: Set(None),
-            enabled: Set(true),
-            uptime_yellow_threshold: Set(99.0),
-            uptime_red_threshold: Set(95.0),
-            theme_ref: Set(Some(theme_ref.to_string())),
-            show_ip_quality: Set(false),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(db)
-        .await
-        .expect("status page insert should succeed");
-    }
+    // NOTE: The legacy `list_references_orders_status_pages_by_title_then_id`
+    // test was removed in R4 along with the multi-status-page admin surface —
+    // `ThemeReferences` no longer carries a `status_pages` collection because
+    // the singleton status page no longer pins its own theme.
 }

@@ -43,5 +43,12 @@ pub async fn run(state: Arc<AppState>) {
         state
             .register_rate_limit
             .retain(|_, v| v.window_start > rate_cutoff);
+
+        // Clean expired public-status rate limit entries (older than 5 minutes;
+        // the bucket window is 60s so this is a generous safety margin).
+        let public_cutoff = now - chrono::Duration::minutes(5);
+        state
+            .public_rate_limit
+            .retain(|_, v| v.window_start > public_cutoff);
     }
 }

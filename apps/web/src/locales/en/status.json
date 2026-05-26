@@ -1,9 +1,13 @@
 {
   "servers": "servers",
   "online": "online",
-  "loading": "Loading status\u2026",
+  "loading": "Loading status…",
   "load_failed": "Failed to load status data",
   "no_servers": "No servers available",
+  "site_disabled_notice": "This status page is currently disabled.",
+  "detail_loading": "Loading server detail…",
+  "detail_not_found": "Server not found or not publicly visible.",
+  "detail_back": "Back to status",
   "ungrouped": "Ungrouped",
   "unknown": "Unknown",
   "cpu": "CPU",
@@ -17,6 +21,14 @@
   "planned_maintenance": "Planned Maintenance",
   "server_status": "Server Status",
   "recent_incidents": "Recent Incidents (Last 7 Days)",
+
+  "nav_servers": "Servers",
+  "nav_network": "Network",
+  "nav_ip_quality": "IP Quality",
+  "signin": "Sign in",
+
+  "layout_grid_tooltip": "Grid view",
+  "layout_list_tooltip": "List view",
 
   "network_in": "Network In",
   "network_out": "Network Out",

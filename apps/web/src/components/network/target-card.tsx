@@ -6,12 +6,14 @@ import { cn } from '@/lib/utils'
 interface TargetCardProps {
   color: string
   displayName?: string
-  onToggle: () => void
+  /** Omit to render the card without the show/hide toggle (read-only mode). */
+  onToggle?: () => void
   target: NetworkTargetSummary
-  visible: boolean
+  /** When `onToggle` is omitted the card is always rendered as visible. */
+  visible?: boolean
 }
 
-export function TargetCard({ target, color, displayName, visible, onToggle }: TargetCardProps) {
+export function TargetCard({ target, color, displayName, visible = true, onToggle }: TargetCardProps) {
   const { t } = useTranslation('network')
   const targetName = displayName ?? target.target_name
 
@@ -33,14 +35,16 @@ export function TargetCard({ target, color, displayName, visible, onToggle }: Ta
           </span>
         </div>
       </div>
-      <button
-        aria-label={targetName}
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={onToggle}
-        type="button"
-      >
-        {visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
-      </button>
+      {onToggle && (
+        <button
+          aria-label={targetName}
+          className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={onToggle}
+          type="button"
+        >
+          {visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+        </button>
+      )}
     </div>
   )
 }

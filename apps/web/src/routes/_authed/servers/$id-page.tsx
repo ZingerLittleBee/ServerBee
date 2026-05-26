@@ -1,61 +1,26 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import {
-  ArrowLeft,
-  BarChart3,
-  Container,
-  FileText,
-  Pencil,
-  ShieldAlert,
-  ShieldCheck,
-  Terminal as TerminalIcon
-} from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ArrowLeft, Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { IpQualityTab } from '@/components/ip-quality/ip-quality-tab'
-import { ServerSecurityTab } from '@/components/security/server-security-tab'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
-import { CostInsightBar } from '@/components/server/cost-insight-bar'
-import { DiskIoChart } from '@/components/server/disk-io-chart'
-import { MetricsChart } from '@/components/server/metrics-chart'
 import { RecoverAgentDialog } from '@/components/server/recover-agent-dialog'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
-import { TrafficCard } from '@/components/server/traffic-card'
-import { TrafficTab } from '@/components/server/traffic-tab'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
+import { ServerDetailContent } from '@/components/status/server-detail-content'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
-import { useServer, useServerRecords, useUptimeDaily } from '@/hooks/use-api'
+import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
-import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
-import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
-import { cn, countryCodeToFlag, formatBytes } from '@/lib/utils'
-import { computeAggregateUptime } from '@/lib/widget-helpers'
+import { countryCodeToFlag, formatBytes } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { Route } from './$id'
-
-interface TimeRange {
-  hours: number
-  interval: string
-  key: string
-  label: string
-}
-
-interface GpuRecordAggregated {
-  gpu_usage_avg: number
-  mem_total_avg: number
-  mem_used_avg: number
-  temperature_avg: number
-  time: string
-}
 
 interface ServerWithCaps {
   agent_local_capabilities?: number | null
@@ -64,15 +29,6 @@ interface ServerWithCaps {
   id: string
   protocol_version?: number | null
 }
-
-const TIME_RANGES: TimeRange[] = [
-  { key: 'realtime', label: 'range_realtime', hours: 0, interval: 'realtime' },
-  { key: '1h', label: 'range_1h', hours: 1, interval: 'raw' },
-  { key: '6h', label: 'range_6h', hours: 6, interval: 'raw' },
-  { key: '24h', label: 'range_24h', hours: 24, interval: 'raw' },
-  { key: '7d', label: 'range_7d', hours: 168, interval: 'hourly' },
-  { key: '30d', label: 'range_30d', hours: 720, interval: 'hourly' }
-]
 
 function ServerInfoMeta({ server }: { server: ServerResponse }) {
   const { t } = useTranslation('servers')
@@ -187,204 +143,11 @@ function ServerActionButtons({
   )
 }
 
-function MetricsTabContent({
-  chartData,
-  diskIoMergedData,
-  diskIoPerDiskData,
-  gpuChartData,
-  hasDiskIo,
-  hasGpu,
-  hasTemperature,
-  rangeIndex,
-  formatTime,
-  formatTooltipLabel,
-  serverId,
-  xAxisInterval
-}: {
-  chartData: Record<string, unknown>[]
-  diskIoMergedData: { read_bytes_per_sec: number; timestamp: string; write_bytes_per_sec: number }[]
-  diskIoPerDiskData: {
-    data: { read_bytes_per_sec: number; timestamp: string; write_bytes_per_sec: number }[]
-    name: string
-  }[]
-  gpuChartData: Record<string, unknown>[]
-  hasDiskIo: boolean
-  hasGpu: boolean
-  hasTemperature: boolean
-  rangeIndex: number
-  formatTime: ((time: string) => string) | undefined
-  formatTooltipLabel: ((time: string) => string) | undefined
-  serverId: string
-  xAxisInterval?: number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd' | 'equidistantPreserveStart'
-}) {
-  const { t } = useTranslation('servers')
-  const navigate = Route.useNavigate()
-
-  return (
-    <>
-      <div className="mt-4 mb-4 flex flex-wrap gap-1">
-        {TIME_RANGES.map((tr, i) => (
-          <Button
-            className={cn(rangeIndex === i && 'bg-primary text-primary-foreground')}
-            key={tr.label}
-            onClick={() => navigate({ search: (prev) => ({ ...prev, range: tr.key }) })}
-            size="sm"
-            variant={rangeIndex === i ? 'default' : 'outline'}
-          >
-            {t(tr.label)}
-          </Button>
-        ))}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <MetricsChart
-          color="var(--color-chart-1)"
-          data={chartData}
-          dataKey="cpu"
-          domain={[0, 100]}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_cpu')}
-          unit="%"
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-2)"
-          data={chartData}
-          dataKey="memory_pct"
-          domain={[0, 100]}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_memory')}
-          unit="%"
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-3)"
-          data={chartData}
-          dataKey="disk_pct"
-          domain={[0, 100]}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_disk')}
-          unit="%"
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-4)"
-          data={chartData}
-          dataKey="net_in_speed"
-          formatTick={(v) => formatBytes(v)}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          formatValue={(v) => formatBytes(v)}
-          title={t('chart_net_in')}
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-5)"
-          data={chartData}
-          dataKey="net_out_speed"
-          formatTick={(v) => formatBytes(v)}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          formatValue={(v) => formatBytes(v)}
-          title={t('chart_net_out')}
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-1)"
-          data={chartData}
-          dataKey="load1"
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_load')}
-          xAxisInterval={xAxisInterval}
-        />
-
-        {hasTemperature && (
-          <MetricsChart
-            color="var(--color-chart-4)"
-            data={chartData}
-            dataKey="temperature"
-            formatTime={formatTime}
-            formatTooltipLabel={formatTooltipLabel}
-            title={t('chart_temperature')}
-            unit="°C"
-            xAxisInterval={xAxisInterval}
-          />
-        )}
-
-        {hasGpu && (
-          <>
-            <MetricsChart
-              color="var(--color-chart-5)"
-              data={gpuChartData}
-              dataKey="gpu_usage"
-              domain={[0, 100]}
-              formatTime={formatTime}
-              formatTooltipLabel={formatTooltipLabel}
-              title={t('chart_gpu')}
-              unit="%"
-              xAxisInterval={xAxisInterval}
-            />
-            <MetricsChart
-              color="var(--color-chart-2)"
-              data={gpuChartData}
-              dataKey="gpu_temp"
-              formatTime={formatTime}
-              formatTooltipLabel={formatTooltipLabel}
-              title={t('chart_gpu_temp')}
-              unit="°C"
-              xAxisInterval={xAxisInterval}
-            />
-          </>
-        )}
-      </div>
-
-      {hasDiskIo && (
-        <DiskIoChart formatTime={formatTime} mergedData={diskIoMergedData} perDiskData={diskIoPerDiskData} />
-      )}
-
-      <TrafficCard serverId={serverId} />
-    </>
-  )
-}
-
-function UptimeCard({ serverId }: { serverId: string }) {
-  const { t } = useTranslation('servers')
-  const { data: uptimeDays, isPending } = useUptimeDaily(serverId)
-  // Reserve space while loading so tabs below don't shift down when data arrives.
-  if (isPending) {
-    return (
-      <div className="mb-6 rounded-lg border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <Skeleton className="h-5 w-24" />
-          <Skeleton className="h-4 w-14" />
-        </div>
-        <Skeleton className="h-12 w-full" />
-      </div>
-    )
-  }
-  if (!uptimeDays || uptimeDays.length === 0) {
-    return null
-  }
-  const uptimePct = computeAggregateUptime(uptimeDays)
-  return (
-    <div className="mb-6 rounded-lg border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="font-semibold text-sm">{t('uptime_title')}</h3>
-        <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '—'}</span>
-      </div>
-      <UptimeTimeline days={uptimeDays} rangeDays={90} showLabels showLegend />
-    </div>
-  )
-}
-
 export function ServerDetailPage() {
   const { t } = useTranslation('servers')
   const { id } = Route.useParams()
   const { range: rangeParam } = Route.useSearch()
+  const navigate = Route.useNavigate()
   const [editOpen, setEditOpen] = useState(false)
   const [recoverOpen, setRecoverOpen] = useState(false)
   const { user } = useAuth()
@@ -394,28 +157,7 @@ export function ServerDetailPage() {
     staleTime: 60_000
   })
 
-  const selectedRange = TIME_RANGES.findIndex((tr) => tr.key === rangeParam)
-  const rangeIndex = selectedRange >= 0 ? selectedRange : 0
-  const range = TIME_RANGES[rangeIndex]
-  const isRealtime = range.key === 'realtime'
-
   const { data: server, isLoading: serverLoading } = useServer(id)
-  const realtimeData = useRealtimeMetrics(id)
-  const { data: records } = useServerRecords(id, range.hours, range.interval, { enabled: !isRealtime })
-
-  const { data: gpuRecords } = useQuery<GpuRecordAggregated[]>({
-    queryKey: ['servers', id, 'gpu-records', range.hours],
-    queryFn: () => {
-      const now = new Date()
-      const gpuFrom = new Date(now.getTime() - range.hours * 3600 * 1000).toISOString()
-      const gpuTo = now.toISOString()
-      return api.get<GpuRecordAggregated[]>(
-        `/api/servers/${id}/gpu-records?from=${encodeURIComponent(gpuFrom)}&to=${encodeURIComponent(gpuTo)}`
-      )
-    },
-    enabled: id.length > 0 && !isRealtime,
-    refetchInterval: 60_000
-  })
 
   const { data: liveServers } = useQuery<ServerMetrics[]>({
     queryKey: ['servers'],
@@ -428,109 +170,6 @@ export function ServerDetailPage() {
   const liveData = liveServers?.find((s) => s.id === id)
   const upgradeJob = useUpgradeJobsStore((state) => state.jobs.get(id))
   const isAdmin = user?.role === 'admin'
-
-  const chartData: Record<string, unknown>[] = useMemo(() => {
-    if (isRealtime) {
-      return realtimeData as unknown as Record<string, unknown>[]
-    }
-    if (!records) {
-      return []
-    }
-    return records.map((r) => ({
-      timestamp: r.time,
-      cpu: r.cpu,
-      memory_pct: server?.mem_total ? (r.mem_used / server.mem_total) * 100 : 0,
-      disk_pct: server?.disk_total ? (r.disk_used / server.disk_total) * 100 : 0,
-      net_in_speed: r.net_in_speed,
-      net_out_speed: r.net_out_speed,
-      net_in_transfer: r.net_in_transfer,
-      net_out_transfer: r.net_out_transfer,
-      load1: r.load1,
-      load5: r.load5,
-      load15: r.load15,
-      temperature: r.temperature
-    }))
-  }, [isRealtime, realtimeData, records, server])
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: realtimeData in deps forces closure rebuild on buffer updates so `lastLabel` resets before Recharts re-iterates ticks
-  const chartFormatTime = useMemo<((time: string) => string) | undefined>(() => {
-    if (isRealtime) {
-      let lastLabel = ''
-      return (time: string) => {
-        const d = new Date(time)
-        const label = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-        if (label === lastLabel) {
-          return ''
-        }
-        lastLabel = label
-        return label
-      }
-    }
-    if (range.hours >= 168) {
-      let lastDate = ''
-      return (time: string) => {
-        const d = new Date(time)
-        const mm = String(d.getMonth() + 1).padStart(2, '0')
-        const dd = String(d.getDate()).padStart(2, '0')
-        const dateStr = `${mm}-${dd}`
-        if (dateStr === lastDate) {
-          return ''
-        }
-        lastDate = dateStr
-        return dateStr
-      }
-    }
-    return undefined
-  }, [isRealtime, realtimeData, range])
-
-  const tooltipFormatTime = useMemo<((time: string) => string) | undefined>(() => {
-    if (isRealtime) {
-      return (time: string) => {
-        const d = new Date(time)
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-      }
-    }
-    if (range.hours >= 168) {
-      return (time: string) => {
-        const d = new Date(time)
-        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-      }
-    }
-    return undefined
-  }, [isRealtime, range])
-
-  const gpuChartData = useMemo(() => {
-    if (!gpuRecords || gpuRecords.length === 0) {
-      return []
-    }
-    return gpuRecords.map((r) => ({
-      timestamp: r.time,
-      gpu_usage: r.gpu_usage_avg,
-      gpu_temp: r.temperature_avg,
-      gpu_mem_pct: r.mem_total_avg > 0 ? (r.mem_used_avg / r.mem_total_avg) * 100 : 0
-    }))
-  }, [gpuRecords])
-
-  const diskIoMergedData = useMemo(() => {
-    if (isRealtime || !records) {
-      return []
-    }
-
-    return buildMergedDiskIoSeries(records)
-  }, [isRealtime, records])
-
-  const diskIoPerDiskData = useMemo(() => {
-    if (isRealtime || !records) {
-      return []
-    }
-
-    return buildPerDiskIoSeries(records)
-  }, [isRealtime, records])
-
-  const hasTemperature =
-    !isRealtime && chartData.some((d) => 'temperature' in d && d.temperature != null && (d.temperature as number) > 0)
-  const hasDiskIo = !isRealtime && diskIoPerDiskData.length > 0
-  const hasGpu = !isRealtime && gpuChartData.length > 0
 
   if (serverLoading) {
     return (
@@ -555,7 +194,6 @@ export function ServerDetailPage() {
 
   const serverWithCaps = server as ServerResponse & ServerWithCaps
   const isOnline = liveData?.online ?? false
-  const hasBilling = server.price != null || server.expired_at != null || server.traffic_limit != null
   const flag = countryCodeToFlag(server.country_code)
   const terminalEnabled = getEffectiveCapabilityEnabled(
     serverWithCaps.effective_capabilities,
@@ -572,10 +210,6 @@ export function ServerDetailPage() {
     serverWithCaps.capabilities,
     CAP_DOCKER
   )
-
-  // Network cumulative traffic from live data
-  const liveNetIn = liveData?.net_in_transfer ?? 0
-  const liveNetOut = liveData?.net_out_transfer ?? 0
 
   return (
     <div className="pb-6">
@@ -624,83 +258,13 @@ export function ServerDetailPage() {
         </div>
       </div>
 
-      {hasBilling && <CostInsightBar server={server} serverId={id} />}
-
-      {/* Network bar: reserve space once server data is loaded so WS-driven values
-          do not push the tabs down later. Shows "—" until WS reports live data;
-          stays visible after that even if traffic is 0. */}
-      <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
-        <span className="text-muted-foreground">
-          {t('detail_network_in')}{' '}
-          <span className="font-medium text-foreground">{liveData ? formatBytes(liveNetIn) : '—'}</span>
-        </span>
-        <span className="text-muted-foreground">
-          {t('detail_network_out')}{' '}
-          <span className="font-medium text-foreground">{liveData ? formatBytes(liveNetOut) : '—'}</span>
-        </span>
-        <span className="text-muted-foreground">
-          {t('detail_network_total')}{' '}
-          <span className="font-medium text-foreground">{liveData ? formatBytes(liveNetIn + liveNetOut) : '—'}</span>
-        </span>
-      </div>
-
-      <UptimeCard serverId={id} />
-
-      <Tabs className="mt-6" defaultValue="metrics">
-        <TabsList>
-          <TabsTrigger value="metrics">{t('metrics_tab')}</TabsTrigger>
-          {server.billing_cycle && (
-            <TabsTrigger value="traffic">
-              <BarChart3 aria-hidden="true" className="mr-1 size-3.5" />
-              {t('traffic_tab')}
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="security">
-            <ShieldAlert aria-hidden="true" className="mr-1 size-3.5" />
-            {t('security_tab')}
-          </TabsTrigger>
-          <TabsTrigger value="ip-quality">
-            <ShieldCheck aria-hidden="true" className="mr-1 size-3.5" />
-            {t('ip-quality:tab_title')}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="metrics">
-          <MetricsTabContent
-            chartData={chartData}
-            diskIoMergedData={diskIoMergedData}
-            diskIoPerDiskData={diskIoPerDiskData}
-            formatTime={chartFormatTime}
-            formatTooltipLabel={tooltipFormatTime}
-            gpuChartData={gpuChartData}
-            hasDiskIo={hasDiskIo}
-            hasGpu={hasGpu}
-            hasTemperature={hasTemperature}
-            rangeIndex={rangeIndex}
-            serverId={id}
-            xAxisInterval={isRealtime ? 0 : undefined}
-          />
-        </TabsContent>
-
-        {server.billing_cycle && (
-          <TabsContent value="traffic">
-            <TrafficTab billingCycle={server.billing_cycle} serverId={id} />
-          </TabsContent>
-        )}
-
-        <TabsContent value="security">
-          <ServerSecurityTab serverId={id} />
-        </TabsContent>
-
-        <TabsContent value="ip-quality">
-          <IpQualityTab
-            agentLocalCapabilities={server.agent_local_capabilities}
-            capabilities={server.capabilities}
-            serverId={id}
-            serverName={server.name}
-          />
-        </TabsContent>
-      </Tabs>
+      <ServerDetailContent
+        onRangeChange={(rangeKey) => navigate({ search: (prev) => ({ ...prev, range: rangeKey }) })}
+        rangeKey={rangeParam}
+        server={server}
+        serverId={id}
+        variant="admin"
+      />
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
       <RecoverAgentDialog

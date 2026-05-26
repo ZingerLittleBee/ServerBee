@@ -16,7 +16,7 @@ export function DeleteThemeDialog({ onClose, theme }: DeleteThemeDialogProps) {
   const { t } = useTranslation(['settings', 'common'])
   const { data: references, isLoading } = useThemeReferences(theme.id)
   const deleteTheme = useDeleteTheme()
-  const blocked = references !== undefined && (references.admin || references.status_pages.length > 0)
+  const blocked = references?.admin === true
 
   return (
     <Dialog
@@ -41,9 +41,6 @@ export function DeleteThemeDialog({ onClose, theme }: DeleteThemeDialogProps) {
             <p>{t('appearance.custom_themes.delete_blocked')}</p>
             <ul className="list-disc pl-6">
               {references.admin && <li>{t('appearance.custom_themes.delete_used_admin')}</li>}
-              {references.status_pages.map((page) => (
-                <li key={page.id}>{t('appearance.custom_themes.delete_used_status_page', { name: page.name })}</li>
-              ))}
             </ul>
           </div>
         )}
