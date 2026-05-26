@@ -57,6 +57,7 @@ docker compose up -d
 | [status-page.md](status-page.md) | 状态页增强 | `/status/:slug`, `/settings/status-pages` |
 | [appearance.md](appearance.md) | 主题、品牌、响应式 | `/settings/appearance` |
 | [appearance/custom-theme.md](appearance/custom-theme.md) | 自定义主题 | `/settings/appearance`, `/status/:slug` |
+| [spa-themes.md](spa-themes.md) | 自定义前端主题（SPA 替换） | `/settings/appearance`, `/__system/admin/spa-themes`, `/?theme=default` |
 | [audit-logs.md](audit-logs.md) | 审计日志 | `/settings/audit-logs` |
 | [i18n.md](i18n.md) | 国际化 | 全站 |
 | [terminal.md](terminal.md) | Web 终端 | `/terminal/:serverId` |

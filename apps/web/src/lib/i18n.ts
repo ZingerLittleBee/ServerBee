@@ -15,6 +15,7 @@ import enSecurity from '@/locales/en/security.json'
 import enServers from '@/locales/en/servers.json'
 import enServiceMonitors from '@/locales/en/service-monitors.json'
 import enSettings from '@/locales/en/settings.json'
+import enSpaTheme from '@/locales/en/spa-theme.json'
 import enStatus from '@/locales/en/status.json'
 import enTerminal from '@/locales/en/terminal.json'
 
@@ -31,6 +32,7 @@ import zhSecurity from '@/locales/zh/security.json'
 import zhServers from '@/locales/zh/servers.json'
 import zhServiceMonitors from '@/locales/zh/service-monitors.json'
 import zhSettings from '@/locales/zh/settings.json'
+import zhSpaTheme from '@/locales/zh/spa-theme.json'
 import zhStatus from '@/locales/zh/status.json'
 import zhTerminal from '@/locales/zh/terminal.json'
 
@@ -46,15 +48,16 @@ i18next
         file: enFile,
         firewall: enFirewall,
         'ip-quality': enIpQuality,
-        servers: enServers,
-        'service-monitors': enServiceMonitors,
-        terminal: enTerminal,
-        settings: enSettings,
         login: enLogin,
-        status: enStatus,
         network: enNetwork,
         onboarding: enOnboarding,
-        security: enSecurity
+        security: enSecurity,
+        servers: enServers,
+        'service-monitors': enServiceMonitors,
+        settings: enSettings,
+        'spa-theme': enSpaTheme,
+        status: enStatus,
+        terminal: enTerminal
       },
       zh: {
         common: zhCommon,
@@ -63,15 +66,16 @@ i18next
         file: zhFile,
         firewall: zhFirewall,
         'ip-quality': zhIpQuality,
-        servers: zhServers,
-        'service-monitors': zhServiceMonitors,
-        terminal: zhTerminal,
-        settings: zhSettings,
         login: zhLogin,
-        status: zhStatus,
         network: zhNetwork,
         onboarding: zhOnboarding,
-        security: zhSecurity
+        security: zhSecurity,
+        servers: zhServers,
+        'service-monitors': zhServiceMonitors,
+        settings: zhSettings,
+        'spa-theme': zhSpaTheme,
+        status: zhStatus,
+        terminal: zhTerminal
       }
     },
     fallbackLng: 'en',

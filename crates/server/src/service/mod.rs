@@ -31,6 +31,7 @@ pub mod record;
 pub mod security;
 pub mod server;
 pub mod server_tag;
+pub mod spa_theme;
 pub mod service_monitor;
 pub mod status_page;
 pub mod task_scheduler;

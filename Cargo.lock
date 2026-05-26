@@ -139,6 +139,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "argon2"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3272,6 +3281,7 @@ dependencies = [
  "cookie",
  "cookie_store",
  "futures-core",
+ "futures-util",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -3280,6 +3290,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "mime_guess",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -4017,6 +4028,7 @@ version = "1.0.0-alpha.3"
 dependencies = [
  "a2",
  "anyhow",
+ "arc-swap",
  "argon2",
  "async-trait",
  "axum",
@@ -4043,6 +4055,7 @@ dependencies = [
  "rustls 0.23.37",
  "sea-orm",
  "sea-orm-migration",
+ "semver",
  "serde",
  "serde_json",
  "serverbee-common",
@@ -4068,6 +4081,7 @@ dependencies = [
  "webpki-roots 1.0.6",
  "whois-rust",
  "x509-parser",
+ "zip 2.4.2",
 ]
 
 [[package]]
@@ -5307,7 +5321,7 @@ dependencies = [
  "serde_json",
  "url",
  "utoipa",
- "zip",
+ "zip 3.0.0",
 ]
 
 [[package]]
@@ -6224,6 +6238,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "zip"
+version = "2.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "crossbeam-utils",
+ "displaydoc",
+ "flate2",
+ "indexmap 2.13.0",
+ "memchr",
+ "thiserror 2.0.18",
+ "zopfli",
 ]
 
 [[package]]

@@ -34,7 +34,8 @@ mod m20260523_000031_default_caps_add_firewall_ip_quality;
 mod m20260524_000032_create_traceroute_record;
 mod m20260525_000033_ip_quality_snapshot_extra_fields;
 mod m20260525_000034_agent_registration_redesign;
-mod m20260526_000035_simplify_status_page;
+mod m20260526_000035_create_spa_themes;
+mod m20260526_000036_simplify_status_page;
 
 pub struct Migrator;
 
@@ -75,7 +76,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260524_000032_create_traceroute_record::Migration),
             Box::new(m20260525_000033_ip_quality_snapshot_extra_fields::Migration),
             Box::new(m20260525_000034_agent_registration_redesign::Migration),
-            Box::new(m20260526_000035_simplify_status_page::Migration),
+            Box::new(m20260526_000035_create_spa_themes::Migration),
+            Box::new(m20260526_000036_simplify_status_page::Migration),
         ]
     }
 }

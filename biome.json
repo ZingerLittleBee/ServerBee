@@ -30,7 +30,8 @@
       "!**/target",
       "!apps/ios",
       "!apps/web/openapi.json",
-      "!apps/web/src/lib/api-types.ts"
+      "!apps/web/src/lib/api-types.ts",
+      "!templates"
     ]
   },
   "formatter": {

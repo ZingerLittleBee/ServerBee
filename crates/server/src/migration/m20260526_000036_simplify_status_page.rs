@@ -31,7 +31,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m20260526_000035_simplify_status_page"
+        "m20260526_000036_simplify_status_page"
     }
 }
 

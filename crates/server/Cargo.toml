@@ -55,10 +55,13 @@ webpki-roots = "1"
 sha2 = "0.10"
 ipnet = { version = "2", features = ["serde"] }
 url = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+arc-swap = "1"
+semver = "1"
 a2 = { version = "0.10", default-features = false, features = ["ring"] }
 
 [dev-dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies", "multipart"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 tempfile = "3"
 futures-util = "0.3"
