@@ -21,14 +21,21 @@ pub struct StatusPageService;
 /// Partial-update payload for the singleton status_page row.
 ///
 /// Every field is optional so the admin UI can PATCH individual toggles
-/// without re-sending the entire config. Fields that map 1:1 to the
-/// entity model use the same name.
+/// without re-sending the entire config. Matches the prevailing admin
+/// update-DTO convention in this codebase (see `UpdateMaintenance`,
+/// `UpdateIncident`, `UpdateServerInput`): `Option<T>` = leave alone,
+/// `Option<Option<T>>` = leave alone / clear / set for nullable columns.
 #[derive(Debug, Default, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct UpdateStatusPage {
     pub title: Option<String>,
+    /// Nullable in the entity — `Option<Option<String>>` so callers can
+    /// distinguish "leave alone" (absent / null at the outer Option) from
+    /// "explicitly clear" (`Some(None)`). Mirrors `UpdateMaintenance`.
     pub description: Option<Option<String>>,
-    pub server_ids_json: Option<Vec<String>>,
-    pub group_by_server_group: Option<bool>,
+    /// Replace the full set of pinned servers. `None` = leave alone,
+    /// `Some(vec![])` = explicitly no servers. The service serialises
+    /// this to the entity's `server_ids_json` storage column.
+    pub server_ids: Option<Vec<String>>,
     pub enabled: Option<bool>,
     pub uptime_yellow_threshold: Option<f64>,
     pub uptime_red_threshold: Option<f64>,
@@ -67,14 +74,16 @@ impl StatusPageService {
         if let Some(description) = input.description {
             model.description = Set(description);
         }
-        if let Some(server_ids) = input.server_ids_json {
+        if let Some(server_ids) = input.server_ids {
             let json = serde_json::to_string(&server_ids)
-                .map_err(|e| AppError::Validation(format!("Invalid server_ids_json: {e}")))?;
+                .map_err(|e| AppError::Validation(format!("Invalid server_ids: {e}")))?;
             model.server_ids_json = Set(json);
         }
-        if let Some(group_by) = input.group_by_server_group {
-            model.group_by_server_group = Set(group_by);
-        }
+        // `group_by_server_group` is intentionally not exposed on the admin
+        // update DTO — the spec's "Admin Settings UI" no longer includes the
+        // toggle. The entity column is preserved (left untouched here) so its
+        // current value is kept for any internal callers; removal can happen
+        // as a follow-up migration once nothing reads it.
         if let Some(enabled) = input.enabled {
             model.enabled = Set(enabled);
         }
