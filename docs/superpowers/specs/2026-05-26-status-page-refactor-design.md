@@ -45,7 +45,7 @@ relying on UI hiding.
 ### Reused unchanged
 
 - `UptimeService::get_daily_filled` and the `uptime_daily` table.
-- `incidents` and `maintenances` tables (and their admin CRUD UI). The
+- `incident` and `maintenance` tables (and their admin CRUD UI). The
   per-row `status_page_ids_json` many-to-many array column is replaced by a
   simpler `is_public` boolean (see migration). Behavior: any row with
   `is_public = true` renders on the public status page when the
@@ -75,15 +75,17 @@ relying on UI hiding.
 - Multi-slug routing on the public side.
 - `status_page.slug`, `status_page.theme_ref`, `status_page.custom_css`,
   `status_page.show_values` columns.
-- `incidents.status_page_ids_json`, `maintenances.status_page_ids_json`
+- `incident.status_page_ids_json`, `maintenance.status_page_ids_json`
   columns (replaced by `is_public`).
 
 ### Naming note
 
-The actual SQLite table is `status_page` (singular) per
-`crates/server/src/entity/status_page.rs`. The migration and service code
-must use that exact name; the column-list references in this spec follow
-the same convention.
+The SeaORM table names (per the `#[sea_orm(table_name = …)]` attributes)
+are `status_page`, `incident`, `maintenance` — all singular. The only
+plural table referenced in this spec is `servers`
+(`crates/server/src/entity/server.rs:5`). Migration SQL and service code
+must use those exact names; the column-list references in this spec
+follow the same convention.
 
 ## Architecture
 
@@ -109,15 +111,16 @@ Sensitive fields stripped in DTOs:
 
 - **Server identity**: `ipv4`, `ipv6`, agent-detected public IP, full
   interface list (names + per-interface IPs + MACs).
-- **IP quality snapshot** (full strip; field names per
+- **IP quality snapshot** (`IpQualitySnapshotData`; full strip per
   `crates/common/src/protocol.rs:148`): `ip`, `asn`, `as_org`, `region`,
   `city`, `is_proxy`, `is_vpn`, `is_hosting`, `is_tor`, `is_abuser`,
   `is_mobile`, `asn_abuser_score`, `abuse_email`.
 - **Unlock result detail string** (`UnlockResultDto.detail`,
   `crates/server/src/service/ip_quality.rs:58`): free-form error / probe
   messages from custom service definitions may leak identifying strings;
-  the public DTO drops this field entirely. The unlock status, region
-  hint, and latency are retained.
+  the public DTO drops this field entirely. The unlock status, the
+  per-service region hint, and latency are retained (see note on
+  `region` below).
 
 Retained (per user decision, 2026-05-26):
 
@@ -130,12 +133,25 @@ Retained (per user decision, 2026-05-26):
   `country`, `ip_type` (residential / datacenter / mobile), `risk_score`,
   `risk_level`, and per-service unlock status / region / latency.
 
+**Note on the `region` key.** Two different objects expose a field named
+`region`: the snapshot's `region` (egress-IP geographic region — stripped)
+and each unlock result's `region` (target service's detected unlock
+region, e.g. "US-NY" for Netflix — retained). The redaction tests scope
+the strip assertion to the snapshot object specifically (see Testing
+section).
+
 ### Public server scope
 
 A response from any `/api/status/*` endpoint must only refer to servers
-that admin has explicitly selected in `status_page.server_ids_json` and
-that still exist (deleted-server stragglers stripped, mirroring the
-existing `status_page.rs:286` "scoped_ids" pattern).
+that satisfy **all** of:
+
+1. The server id is listed in `status_page.server_ids_json`.
+2. The server row still exists (deleted-server stragglers stripped,
+   mirroring `status_page.rs:286` "scoped_ids" filter).
+3. `server.hidden = false` (mirrors the existing default
+   `status.rs:73` "non-hidden servers" filter; a server that an admin
+   has hidden must never appear publicly, even if its id is still in
+   `server_ids_json`).
 
 - `GET /api/status` — only servers in the scope set.
 - `GET /api/status/servers/:id` and `:id/metrics` and `:id/uptime-daily`
@@ -254,7 +270,7 @@ A single new migration file
    - `show_network` BOOLEAN NOT NULL DEFAULT `false`
    - `show_incidents` BOOLEAN NOT NULL DEFAULT `true`
    - `show_maintenance` BOOLEAN NOT NULL DEFAULT `true`
-4. **Extend `incidents` and `maintenances`** with
+4. **Extend `incident` and `maintenance`** with
    `is_public BOOLEAN NOT NULL DEFAULT false`.
 5. **Backfill `is_public`** preserving the existing public-visibility
    semantics (per `status_page.rs:223`/`:264`): a row was visible on a
@@ -262,19 +278,19 @@ A single new migration file
    or contained that page's id. After collapsing to a single page, mark
    public:
    ```sql
-   UPDATE incidents
+   UPDATE incident
    SET is_public = 1
    WHERE status_page_ids_json IS NULL
       OR status_page_ids_json = '[]'
       OR status_page_ids_json LIKE '%"' || :surviving_id || '"%';
-   -- same for maintenances
+   -- same for maintenance
    ```
    The `LIKE` is a pragmatic substring check; the JSON value is always a
    simple array of quoted ids in the existing serializer. (The
    alternative — parsing JSON per row in SQL — is brittle in SQLite.)
    Rows referencing only deleted slug pages remain `is_public = false`.
-6. **Drop legacy columns** in order: `incidents.status_page_ids_json`,
-   `maintenances.status_page_ids_json`, then on `status_page`: `slug`,
+6. **Drop legacy columns** in order: `incident.status_page_ids_json`,
+   `maintenance.status_page_ids_json`, then on `status_page`: `slug`,
    `theme_ref`, `custom_css`, `show_values`.
 7. **Delete non-surviving `status_page` rows** (`WHERE id != surviving_id`).
 8. **Singleton invariant** is enforced at the service layer: reads always
@@ -420,9 +436,14 @@ check) and assert the listed keys are absent.
     not contain any of: `ipv4`, `ipv6`, `interfaces`, `public_ip`,
     `mac_address`, or nested `network_interface` arrays.
 - `public_status_ip_quality_redaction.rs`:
-  - `GET /api/status/ip-quality` must not contain any of: `ip`, `asn`,
-    `as_org`, `region`, `city`, `is_proxy`, `is_vpn`, `is_hosting`,
-    `is_tor`, `is_abuser`, `is_mobile`, `asn_abuser_score`, `abuse_email`.
+  - For each entry's `ip_quality` object (the public snapshot), the
+    following keys must be absent: `ip`, `asn`, `as_org`, `region`,
+    `city`, `is_proxy`, `is_vpn`, `is_hosting`, `is_tor`, `is_abuser`,
+    `is_mobile`, `asn_abuser_score`, `abuse_email`. The assertion is
+    scoped to the snapshot sub-object specifically — the test walks the
+    snapshot's own keys, not the entire response tree, because each
+    `unlock_results` entry legitimately retains its own `region` field
+    (the service unlock region, distinct from the egress region).
   - Each entry under `unlock_results` must not contain the `detail` key.
 - `public_status_redaction_authenticated.rs`:
   - Same assertions as the two tests above, but the requests carry a
