@@ -12,10 +12,11 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::Json;
 use axum::extract::{ConnectInfo, Path, Query, Request, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::HeaderMap;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -67,14 +68,20 @@ pub fn public_router(state: Arc<AppState>) -> Router<Arc<AppState>> {
 const PUBLIC_STATUS_WINDOW_SECONDS: i64 = 60;
 const PUBLIC_STATUS_MAX_REQUESTS: u32 = 60;
 
+/// In-band sweep counter. Every 100th invocation of `check_public_rate`
+/// triggers eviction of long-stale entries. Mirrors `RATE_CHECK_COUNTER` in
+/// `state.rs` so the two limiters use the same idiom.
+static SWEEP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Per-IP token-bucket-ish rate limiter for the public status surface.
 ///
 /// Extracts the client IP using the project's standard `extract_client_ip`
 /// helper (which honours `trusted_proxies` config and refuses spoofed XFF
-/// headers from untrusted sources). Denied requests return `429` with a small
-/// JSON body; the underlying entry counter is not incremented on denial so a
-/// flood does not extend the window arbitrarily.
-pub async fn public_status_rate_limit(
+/// headers from untrusted sources). Denied requests return `429` via the
+/// canonical `AppError::TooManyRequests` path; the underlying entry counter
+/// is not incremented on denial so a flood does not extend the window
+/// arbitrarily.
+async fn public_status_rate_limit(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
@@ -89,18 +96,10 @@ pub async fn public_status_rate_limit(
     .to_string();
 
     if !check_public_rate(&state.public_rate_limit, &ip) {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(serde_json::json!({
-                "error": {
-                    "code": "TOO_MANY_REQUESTS",
-                    "message": format!(
-                        "Public status surface rate limit exceeded ({PUBLIC_STATUS_MAX_REQUESTS} requests per {PUBLIC_STATUS_WINDOW_SECONDS}s)."
-                    ),
-                }
-            })),
-        )
-            .into_response();
+        return AppError::TooManyRequests(format!(
+            "Public status surface rate limit exceeded ({PUBLIC_STATUS_MAX_REQUESTS} requests per {PUBLIC_STATUS_WINDOW_SECONDS}s)."
+        ))
+        .into_response();
     }
 
     next.run(req).await
@@ -110,10 +109,19 @@ pub async fn public_status_rate_limit(
 /// the request is allowed. Mirrors the structure of `AppState::check_rate`
 /// (login/register) but uses a 60-second window keyed in seconds rather than
 /// minutes so callers don't need to know about that detail.
-fn check_public_rate(
-    map: &dashmap::DashMap<String, RateLimitEntry>,
-    ip: &str,
-) -> bool {
+///
+/// Every 100th call sweeps `map` for entries whose `window_start` is older
+/// than `PUBLIC_STATUS_WINDOW_SECONDS * 2` seconds (2× margin avoids evicting
+/// a window that is still actively counting). `session_cleaner.rs` runs an
+/// hourly safety-net sweep on top of this in-band pruning.
+fn check_public_rate(map: &dashmap::DashMap<String, RateLimitEntry>, ip: &str) -> bool {
+    let count = SWEEP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    if count.is_multiple_of(100) {
+        let cutoff =
+            chrono::Utc::now() - chrono::Duration::seconds(PUBLIC_STATUS_WINDOW_SECONDS * 2);
+        map.retain(|_, entry| entry.window_start > cutoff);
+    }
+
     let now = chrono::Utc::now();
     let window = chrono::Duration::seconds(PUBLIC_STATUS_WINDOW_SECONDS);
 
@@ -144,7 +152,7 @@ fn check_public_rate(
 async fn resolve_enabled_scope(state: &AppState) -> Result<PublicScope, AppError> {
     let scope = svc::resolve_scope(&state.db).await?;
     if !scope.config.enabled {
-        return Err(AppError::Forbidden("disabled".into()));
+        return Err(AppError::Forbidden("public_status_disabled".into()));
     }
     Ok(scope)
 }
@@ -155,7 +163,7 @@ fn gate_subpage(
     toggle: fn(&status_page::Model) -> bool,
 ) -> Result<(), AppError> {
     if !toggle(&scope.config) {
-        return Err(AppError::Forbidden("disabled".into()));
+        return Err(AppError::Forbidden("public_status_panel_disabled".into()));
     }
     Ok(())
 }
@@ -178,6 +186,7 @@ fn gate_scope_id(scope: &PublicScope, id: &str) -> Result<(), AppError> {
     tag = "public-status",
     responses(
         (status = 200, description = "Public status page configuration", body = svc::PublicStatusConfig),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn get_config(
@@ -196,6 +205,7 @@ async fn get_config(
     responses(
         (status = 200, description = "Scoped server summaries", body = Vec<svc::PublicServerSummary>),
         (status = 403, description = "Public status page disabled"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn list_servers(
@@ -215,6 +225,7 @@ async fn list_servers(
         (status = 200, description = "Scoped server detail", body = svc::PublicServerDetail),
         (status = 403, description = "Public status page or server-detail panel disabled"),
         (status = 404, description = "Server not in public scope"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn get_server_detail(
@@ -242,6 +253,7 @@ async fn get_server_detail(
         (status = 200, description = "Time-series metrics", body = Vec<svc::PublicMetricsPoint>),
         (status = 403, description = "Public status page or server-detail panel disabled"),
         (status = 404, description = "Server not in public scope"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn get_server_metrics(
@@ -265,6 +277,7 @@ async fn get_server_metrics(
         (status = 200, description = "90-day uptime band", body = Vec<UptimeDailyEntry>),
         (status = 403, description = "Public status page disabled"),
         (status = 404, description = "Server not in public scope"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn get_server_uptime_daily(
@@ -284,6 +297,7 @@ async fn get_server_uptime_daily(
     responses(
         (status = 200, description = "Network probe overview", body = svc::PublicNetworkOverview),
         (status = 403, description = "Public status page or network panel disabled"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn network_overview(
@@ -292,8 +306,7 @@ async fn network_overview(
     let scope = resolve_enabled_scope(&state).await?;
     gate_subpage(&scope, |c| c.show_network)?;
     let overview =
-        svc::network_overview(&state.db, &state.agent_manager, &state.config.network_probe)
-            .await?;
+        svc::network_overview(&state.db, &state.agent_manager, &state.config.network_probe).await?;
     ok(overview)
 }
 
@@ -306,6 +319,7 @@ async fn network_overview(
         (status = 200, description = "Per-server network detail", body = svc::PublicNetworkServerDetail),
         (status = 403, description = "Public status page or network panel disabled"),
         (status = 404, description = "Server not in public scope"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn network_server_detail(
@@ -332,6 +346,7 @@ async fn network_server_detail(
     responses(
         (status = 200, description = "Redacted IP-quality overview", body = svc::PublicIpQualityOverview),
         (status = 403, description = "Public status page or IP-quality panel disabled"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn ip_quality_overview(
@@ -359,6 +374,7 @@ pub struct PublicIncidentsResponse {
     responses(
         (status = 200, description = "Active and recently-resolved incidents", body = PublicIncidentsResponse),
         (status = 403, description = "Public status page or incidents panel disabled"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn list_incidents(
@@ -377,6 +393,7 @@ async fn list_incidents(
     responses(
         (status = 200, description = "Upcoming and active maintenance windows", body = Vec<svc::PublicMaintenance>),
         (status = 403, description = "Public status page or maintenance panel disabled"),
+        (status = 429, description = "Rate limit exceeded"),
     )
 )]
 async fn list_maintenances(
