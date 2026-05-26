@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.4] - 2026-05-27
+
+### Added
+
+- **Public status page** -- New `/api/status/*` public surface with field redaction and a singleton `is_public` toggle exposes a curated public dashboard; the web app gained public variants of the server list, server detail, network overview, network detail, and IP quality cards with grid/list toggles and i18n coverage
+- **Custom SPA themes** -- Operators can upload zip-packaged frontend themes from Settings → Appearance. The server validates the manifest, runs zip-bomb and symlink security checks, supports preview/activate flows with cookie-based theme selection, exposes `/__system/clear-recovery` and `/__system/clear-preview` recovery endpoints, and ships a starter template under `templates/` with a `pack.ts` helper
+- **Agent registration redesign** -- "Add Server" now creates a pending server with full metadata up front; admins can recover offline agents via a dedicated dialog, regenerate enrollment codes with optimistic CAS, and bound enrollments tie tokens to specific servers. The UI surfaces pending status indicators and disables rotate-token on pending rows
+- **Rate limit management page** -- New admin page and API to inspect and reset per-IP rate limits, with separate scopes for login, registration, and the public status surface; admin rate_limit endpoint reports the public scope alongside the existing ones
+- **Network anomaly KPI card** -- The anomaly count is surfaced as a clickable KPI tile with a dialog containing the table, count, and window selector; latency anomaly detection thresholds are now configurable via env vars
+- **ipapi.is IP quality provider** -- Default IP risk provider switched to ipapi.is with ip-api as automatic fallback orchestrated by `IpRiskService`; the snapshot entity and DTOs gained the new abuser_score and related fields, and the IP quality card renders them
+
+### Changed
+
+- **Settings forms moved into dialogs** -- Notification channels and groups, user creation, and ping task creation were converted to dialogs; outer card wrappers were dropped on alerts, notifications, and api-keys pages in favour of inline layouts, and redundant page titles were removed from settings routes
+- **Service monitors and notifications polished** -- Service monitors gained a header description and an inline add button within the table column; notification sections wrap in cards for clearer grouping
+- **Latency charts use 24-hour time** -- Avoids am/pm ambiguity on dense timelines
+- **Agent registration error handling** -- Agent categorizes registration errors and backs off in-process instead of looping fast on permanent failures; registration is transactional with no implicit server creation
+- **Default register rate-limit raised** -- From 3 to 10 attempts per 15-minute window so legitimate batch installs do not lock themselves out
+- **Status page collapsed to singleton** -- Admin status-page router and service collapsed to `GET`/`PUT` on a single row, with new `is_public` columns and DTO/field cleanup
+- **Canonical 429 error** -- OpenAPI rate-limit responses standardised and the in-band sweep tightened
+
+### Fixed
+
+- **IP quality provider edge cases** -- `abuser_score` clamps to `0..=100`; `risk_provider=none` suppresses fallback; misconfigured provider names warn at startup; new ipapi.is fields persist correctly in `save_ip_quality_snapshot`
+- **Status page migration safety** -- Dropped a broken manual transaction from `simplify_status_page` and parameterised migration `LIKE` clauses inside a transaction; servers migration now uses explicit column names to avoid positional drift
+- **SPA theme handler** -- Tightened the serve handler for spec compliance with cookie precedence, preview banner, and review fixes; the theme extractor was hardened with additional zip-bomb and symlink coverage
+- **Agent token validation** -- `validate_agent_token` filters `NULL token_hash` at the query layer with a half-bound row regression test
+- **Latency chart and UI polish** -- Anomaly count card gained `cursor-pointer`; tag chips test alignment with placeholder behaviour
+- **Web bun.lock** -- Synced with the v1.0.0-alpha.3 web version bump that landed without lockfile refresh
+
+### Removed
+
+- **Recovery-merge subsystem** -- Replaced by the new agent recovery flow; the legacy server and web code, including orphaned type re-exports, were removed
+- **Legacy paid IP risk providers** -- Removed in favour of the ipapi.is + ip-api stack
+- **RebindIdentity protocol** -- Handler and protocol removed as part of the registration redesign
+- **Dead `ServerMessageOutcome` enum** -- Removed along with legacy test helpers
+- **Legacy slug-based status page surface** -- The `/status/$slug` route was dropped after the singleton refactor
+
+### Documentation
+
+- **Custom frontend theme guide** -- New EN/CN docs cover `pack.ts`, manifest fields, and the upload flow; the SPA theme manual E2E checklist was added under `tests/`
+- **Network probe anomaly thresholds** -- Configurable latency anomaly env vars are documented in ENV.md and the bilingual configuration pages
+- **Design specs and plans** -- Added specs and plans for the public status page refactor, custom SPA themes, agent registration redesign, and ipapi.is provider refactor, with multiple review-driven revisions
+- **IP quality docs replaced** -- The IP quality provider docs were rewritten around ipapi.is with the ip-api fallback story
+- **Removed fabricated env vars** -- Stripped references to `SERVERBEE_FEATURE__SPA_THEMES` that never existed in the codebase
+
 ## [1.0.0-alpha.3] - 2026-05-25
 
 ### Added
