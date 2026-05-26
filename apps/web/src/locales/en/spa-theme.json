@@ -1,0 +1,67 @@
+{
+  "section_title": "Custom Frontend",
+  "section_badge": "Beta",
+  "section_description": "Replace the entire ServerBee UI with a custom theme. Recovery: append ?theme=default to any URL.",
+  "empty_title": "No custom themes yet",
+  "empty_cta": "Upload first theme",
+  "empty_docs": "Read theme dev docs",
+  "upload_drag": "Drag .sbtheme here or click",
+  "upload_progress": "Uploading…",
+  "upload_validating": "Validating…",
+  "active_indicator": "Active",
+  "superseded": "Superseded",
+  "actions": {
+    "preview": "Preview",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "delete": "Delete",
+    "details": "Details",
+    "download": "Download package"
+  },
+  "preview_dialog": {
+    "title": "Open preview in a new tab?",
+    "body": "Preview is browser-wide for up to 15 minutes. Any tab that reloads / in this browser will see the preview theme until you exit. If you need the management UI live during preview, use a separate browser or an incognito window.",
+    "confirm": "Open preview",
+    "cancel": "Cancel"
+  },
+  "activate_dialog": {
+    "title": "Activate {{name}} v{{version}}?",
+    "body": "This will replace the entire UI for ALL users (including the login page).",
+    "recovery_hint": "Recovery: if the theme breaks, open any URL with ?theme=default to restore the built-in UI.",
+    "confirm_checkbox": "I understand and want to activate",
+    "confirm": "Activate",
+    "cancel": "Cancel"
+  },
+  "delete_dialog": {
+    "title": "Delete theme?",
+    "description": "Delete \"{{name}}\"? This cannot be undone.",
+    "confirm": "Delete",
+    "cancel": "Cancel"
+  },
+  "delete_active_blocked": "Cannot delete the active theme. Deactivate first.",
+  "color_brand_disabled_banner": "A custom frontend is active. The color theme and brand settings below have no effect until it is deactivated.",
+  "theme_activated": "Theme activated — reload to see changes",
+  "theme_deactivated": "Custom theme deactivated",
+  "reload": "Reload",
+  "errors": {
+    "UPLOAD_TOO_LARGE": "Package exceeds the 25 MB upload limit.",
+    "MISSING_MANIFEST": "manifest.json is missing from the package.",
+    "INVALID_MANIFEST": "manifest is invalid: {{reason}}",
+    "MISSING_ENTRY": "Entry HTML {{entry}} is not in the package.",
+    "INCOMPATIBLE_VERSION": "Requires ServerBee {{min}}; running {{running}}.",
+    "ZIP_SLIP": "Package contains an unsafe path: {{entry}}",
+    "ZIP_BOMB": "Compression ratio too high on {{entry}}",
+    "SYMLINK_NOT_ALLOWED": "Symlinks are not allowed: {{entry}}",
+    "DUPLICATE_ENTRY": "Duplicate entry: {{entry}}",
+    "DISALLOWED_EXTENSION": "File extension not allowed: {{entry}} ({{ext}})",
+    "FILE_TOO_LARGE": "{{entry}} is too large ({{size}} bytes; limit {{limit}}).",
+    "TOO_MANY_FILES": "Too many files ({{count}}; limit {{limit}}).",
+    "TOTAL_SIZE_EXCEEDED": "Total size exceeded ({{size}} bytes; limit {{limit}}).",
+    "PREVIEW_TOO_LARGE": "Preview image too large ({{size}} bytes; limit {{limit}}).",
+    "NO_DOWNGRADE": "Cannot downgrade: uploaded {{uploaded}}, existing {{existing}}.",
+    "VERSION_EXISTS": "Version {{version}} of {{manifest_id}} already exists.",
+    "THEME_IN_USE": "Cannot delete: this theme is currently active.",
+    "THEME_NOT_FOUND": "Theme {{uuid}} not found.",
+    "default": "Upload failed: {{message}}"
+  }
+}
