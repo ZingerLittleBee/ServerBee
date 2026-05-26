@@ -14,7 +14,7 @@ pub struct Model {
     #[schema(value_type = String, format = DateTime)]
     pub end_at: DateTimeUtc,
     pub server_ids_json: Option<String>,
-    pub status_page_ids_json: Option<String>,
+    pub is_public: bool,
     pub active: bool,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,

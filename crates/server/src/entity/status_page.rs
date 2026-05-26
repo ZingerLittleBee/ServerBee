@@ -8,17 +8,18 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub title: String,
-    pub slug: String,
     pub description: Option<String>,
     pub server_ids_json: String,
     pub group_by_server_group: bool,
-    pub show_values: bool,
-    pub custom_css: Option<String>,
     pub enabled: bool,
     pub uptime_yellow_threshold: f64,
     pub uptime_red_threshold: f64,
-    pub theme_ref: Option<String>,
     pub show_ip_quality: bool,
+    pub default_layout: String,
+    pub show_server_detail: bool,
+    pub show_network: bool,
+    pub show_incidents: bool,
+    pub show_maintenance: bool,
     #[schema(value_type = String, format = DateTime)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String, format = DateTime)]
