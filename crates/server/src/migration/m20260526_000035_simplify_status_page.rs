@@ -1,10 +1,23 @@
-// The body of `up()` is wrapped in a SQLite transaction (BEGIN/COMMIT, with
-// ROLLBACK on error) so a mid-migration failure does not leave the schema
-// half-altered. This is safe because every step uses raw SQL via
-// `db.execute_unprepared` / `db.execute` — we do not call any
-// `SchemaManager::alter_table` / `create_table` helpers, which historically
-// have their own connection-management semantics. If you add such a call,
-// re-evaluate whether the transaction still wraps it correctly.
+// Runs as a sequence of raw SQL statements via `db.execute_unprepared` /
+// `db.execute`. We intentionally do NOT wrap the body in a manual
+// `BEGIN TRANSACTION` / `COMMIT` pair: sea-orm's SQLite migration runner uses
+// the pooled `DatabaseConnection` directly (no per-migration transaction —
+// see `sea-orm-migration` ≥ 1.x `exec_with_connection` for the `Sqlite` arm),
+// so each `execute_unprepared` may land on a different pooled connection.
+// A manual `BEGIN TRANSACTION` started on one pooled connection does not
+// follow the next statement to a different connection, which (a) silently
+// breaks the transaction guarantee and (b) leaves the original connection
+// holding an IMMEDIATE lock that fights subsequent writers on other
+// connections — producing "database is locked" (SQLITE_BUSY 517) the moment
+// the migration tries to do anything substantive (ALTER TABLE DROP COLUMN,
+// for example).
+//
+// Atomicity instead relies on each statement being idempotent enough that a
+// mid-migration crash + retry replays cleanly. The destructive steps below
+// (DROP COLUMN, DELETE) are sequenced so that a re-run after partial
+// progress still converges. If you add a non-idempotent step, factor it so
+// it can be safely retried, or wrap *only that step* in a single-connection
+// `db.begin()` transaction.
 
 use sea_orm::{ConnectionTrait, DbErr, Statement};
 use sea_orm_migration::prelude::*;
@@ -20,20 +33,7 @@ impl MigrationName for Migration {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        let db = manager.get_connection();
-
-        db.execute_unprepared("BEGIN TRANSACTION").await?;
-        let outcome = Self::run_up(db).await;
-        match outcome {
-            Ok(()) => {
-                db.execute_unprepared("COMMIT").await?;
-                Ok(())
-            }
-            Err(e) => {
-                let _ = db.execute_unprepared("ROLLBACK").await;
-                Err(e)
-            }
-        }
+        Self::run_up(manager.get_connection()).await
     }
 
     async fn down(&self, _manager: &SchemaManager) -> Result<(), DbErr> {
