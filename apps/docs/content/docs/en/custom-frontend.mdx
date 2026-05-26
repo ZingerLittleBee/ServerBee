@@ -220,13 +220,3 @@ Detect the user's color scheme preference with `prefers-color-scheme` or persist
 
 Test at 375 px viewport width. Avoid fixed-width layouts. The starter includes a responsive base; do not remove the `<meta name="viewport">` tag.
 
-## Disable Custom Frontend Themes
-
-To prevent any custom frontend from being activated:
-
-```toml
-[feature]
-spa_themes = false
-```
-
-Or set `SERVERBEE_FEATURE__SPA_THEMES=false`. When disabled, upload and activation endpoints reject writes; any active custom frontend falls back to the default SPA at serve time. Stored packages are preserved.

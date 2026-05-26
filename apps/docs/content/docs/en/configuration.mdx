@@ -52,7 +52,6 @@ There is no admin username/password environment variable. On first start (when n
 | `SERVERBEE_SERVER__TRUSTED_PROXIES` | private/loopback CIDRs | CIDR list of trusted reverse proxies. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | Timezone for daily traffic aggregation (e.g. `Asia/Shanghai`) |
 | `SERVERBEE_FEATURE__CUSTOM_THEMES` | `true` | Set `feature.custom_themes` to false to disable user-defined themes. Custom refs are read-coerced to `preset:default` |
-| `SERVERBEE_FEATURE__SPA_THEMES` | `true` | Set `feature.spa_themes` to false to disable custom frontend theme upload and activation. Any active custom frontend falls back to the default SPA at serve time; stored packages are preserved. See [Custom Frontend Themes](/en/docs/custom-frontend). If a custom frontend is active and you need to recover the default UI, visit `?theme=default` in your browser |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
 

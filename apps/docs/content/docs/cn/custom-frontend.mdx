@@ -220,13 +220,3 @@ Content-Security-Policy:
 
 在 375 px 视口宽度下进行测试，避免固定宽度布局。Starter 已内置响应式基础，不要删除 `<meta name="viewport">` 标签。
 
-## 禁用自定义前端主题
-
-如需阻止任何自定义前端被激活：
-
-```toml
-[feature]
-spa_themes = false
-```
-
-或设置 `SERVERBEE_FEATURE__SPA_THEMES=false`。禁用后，上传和激活接口将拒绝写入；任何已激活的自定义前端在访问时都会回退到默认 SPA。已存储的包数据会保留。
