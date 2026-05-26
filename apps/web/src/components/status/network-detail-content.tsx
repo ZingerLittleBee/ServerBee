@@ -196,7 +196,7 @@ export function NetworkDetailContent(props: NetworkDetailContentProps) {
     <>
       {controlsSlot}
 
-      {targets.length > 0 && (
+      {targets.length > 0 ? (
         <Tabs className="mb-4" defaultValue="all">
           <TabsList>
             <TabsTrigger value="all">{t('all_targets')}</TabsTrigger>
@@ -232,6 +232,10 @@ export function NetworkDetailContent(props: NetworkDetailContentProps) {
             </div>
           </TabsContent>
         </Tabs>
+      ) : (
+        <div className="mb-4 rounded-lg border bg-card p-12 text-center text-muted-foreground text-sm">
+          {t('no_targets')}
+        </div>
       )}
 
       {chartSlot}
