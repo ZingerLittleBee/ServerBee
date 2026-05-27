@@ -180,15 +180,24 @@ export interface PublicStatusConfig {
 
 export interface PublicMetricsSummary {
   cpu: number
+  disk_read_bytes_per_sec: number
   disk_total: number
   disk_used: number
+  disk_write_bytes_per_sec: number
   load_1: number
   load_5: number
   load_15: number
   mem_total: number
   mem_used: number
   net_in_speed: number
+  net_in_transfer: number
   net_out_speed: number
+  net_out_transfer: number
+  process_count: number
+  swap_total: number
+  swap_used: number
+  tcp_conn: number
+  udp_conn: number
   uptime: number
 }
 

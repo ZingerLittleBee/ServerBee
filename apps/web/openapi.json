@@ -11740,13 +11740,22 @@
           "cpu",
           "mem_used",
           "mem_total",
+          "swap_used",
+          "swap_total",
           "disk_used",
           "disk_total",
+          "disk_read_bytes_per_sec",
+          "disk_write_bytes_per_sec",
           "net_in_speed",
           "net_out_speed",
+          "net_in_transfer",
+          "net_out_transfer",
           "load_1",
           "load_5",
           "load_15",
+          "tcp_conn",
+          "udp_conn",
+          "process_count",
           "uptime"
         ],
         "properties": {
@@ -11754,12 +11763,22 @@
             "type": "number",
             "format": "double"
           },
+          "disk_read_bytes_per_sec": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
           "disk_total": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
           },
           "disk_used": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "disk_write_bytes_per_sec": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
@@ -11791,9 +11810,44 @@
             "format": "int64",
             "minimum": 0
           },
+          "net_in_transfer": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
           "net_out_speed": {
             "type": "integer",
             "format": "int64",
+            "minimum": 0
+          },
+          "net_out_transfer": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "process_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "swap_total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "swap_used": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "tcp_conn": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "udp_conn": {
+            "type": "integer",
+            "format": "int32",
             "minimum": 0
           },
           "uptime": {
