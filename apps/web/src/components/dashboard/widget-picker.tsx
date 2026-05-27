@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  Cpu,
   FileText,
   Gauge,
   Globe,
@@ -26,6 +27,7 @@ interface WidgetPickerProps {
 
 const WIDGET_ICONS: Record<string, typeof Server> = {
   'stat-number': TrendingUp,
+  'metric-card': Cpu,
   'server-cards': LayoutGrid,
   gauge: Gauge,
   'line-chart': LineChart,
