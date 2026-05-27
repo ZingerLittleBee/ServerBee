@@ -7,6 +7,7 @@ node_modules
 dist
 build
 target
+docker-bins
 *.tsbuildinfo
 
 # Environment variables
