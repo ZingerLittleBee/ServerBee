@@ -1,5 +1,6 @@
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { ServerMetricRecord, UptimeDailyEntry } from '@/lib/api-schema'
+import { parseDiskIoJson } from './disk-io'
 
 // --- Shared metric labels ---
 
@@ -13,7 +14,9 @@ export const METRIC_LABELS: Record<string, string> = {
   load15: 'Load (15m)',
   net_in: 'Network In',
   net_out: 'Network Out',
-  bandwidth: 'Bandwidth'
+  bandwidth: 'Bandwidth',
+  network: 'Network',
+  disk_io: 'Disk I/O'
 }
 
 export const METRIC_UNITS: Record<string, string> = {
@@ -39,10 +42,22 @@ export function extractLiveMetric(server: ServerMetrics, metric: string): number
     case 'swap':
       return server.swap_total > 0 ? (server.swap_used / server.swap_total) * 100 : 0
     case 'bandwidth':
+    case 'network':
       return server.net_in_speed + server.net_out_speed
+    case 'disk_io':
+      return server.disk_read_bytes_per_sec + server.disk_write_bytes_per_sec
     default:
       return 0
   }
+}
+
+function sumDiskIoJson(raw: string | null | undefined): number {
+  const samples = parseDiskIoJson(raw)
+  let total = 0
+  for (const sample of samples) {
+    total += sample.read_bytes_per_sec + sample.write_bytes_per_sec
+  }
+  return total
 }
 
 export function extractRecordMetric(record: ServerMetricRecord, metric: string, server?: ServerMetrics): number {
@@ -63,6 +78,10 @@ export function extractRecordMetric(record: ServerMetricRecord, metric: string, 
       return record.net_in_speed
     case 'net_out':
       return record.net_out_speed
+    case 'network':
+      return record.net_in_speed + record.net_out_speed
+    case 'disk_io':
+      return sumDiskIoJson(record.disk_io_json)
     default:
       return 0
   }
