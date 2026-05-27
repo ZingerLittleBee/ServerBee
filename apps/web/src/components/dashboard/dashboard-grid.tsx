@@ -22,6 +22,7 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn } from '@/lib/utils'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { layoutToPatch, widgetsToLayout } from './dashboard-layout'
+import { COLS, MARGIN, MARGIN_Y, ROW_HEIGHT, SCALE } from './grid-constants'
 import { VisibilityGate } from './visibility-gate'
 import { WidgetRenderer } from './widget-renderer'
 
@@ -43,15 +44,6 @@ function isWidgetStatic(configJson: string): boolean {
   }
 }
 
-const COLS = 12
-// Vertical fine-grain factor: persisted (coarse) grid rows are split into SCALE
-// finer rows so content-sized widgets quantize to ~ROW_HEIGHT px instead of a
-// whole coarse row. Invariant for pixel-identical legacy widgets: the legacy
-// per-row step (80 + 16) must equal SCALE * (ROW_HEIGHT + MARGIN_Y) → 4*(8+16)=96.
-const SCALE = 4
-const ROW_HEIGHT = 8
-const MARGIN: [number, number] = [16, 16]
-const MARGIN_Y = MARGIN[1]
 // Legacy coarse row pixel height, used only for the mobile single-column min-height.
 const MOBILE_ROW_PX = 80
 const MOBILE_BREAKPOINT = 768
