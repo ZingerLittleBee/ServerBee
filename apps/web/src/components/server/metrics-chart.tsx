@@ -47,7 +47,7 @@ export function MetricsChart({
     <div className="rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{title}</h3>
       <ChartContainer className="h-[260px] w-full" config={chartConfig}>
-        <AreaChart accessibilityLayer data={data}>
+        <AreaChart accessibilityLayer data={data} margin={{ left: 0, right: 16, top: 5, bottom: 0 }}>
           <CartesianGrid vertical={false} />
           <XAxis
             axisLine={false}
@@ -59,7 +59,12 @@ export function MetricsChart({
           <YAxis
             axisLine={false}
             domain={domain}
-            tickFormatter={formatTick}
+            tickFormatter={(value: number) => {
+              if (value === 0) {
+                return ''
+              }
+              return formatTick ? formatTick(value) : String(value)
+            }}
             tickLine={false}
             width={formatTick ? 60 : 45}
           />
