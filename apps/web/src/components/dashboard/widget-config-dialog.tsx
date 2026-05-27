@@ -290,7 +290,7 @@ function MetricCardForm({
     <>
       <ServerSelect
         label={t('widgets.common.labels.server')}
-        onChange={(v) => onChange({ ...config, metric, server_id: v, label })}
+        onChange={(v) => onChange({ ...config, server_id: v })}
         placeholder={t('widgets.common.placeholders.selectServer')}
         servers={servers}
         value={serverId}
@@ -298,14 +298,14 @@ function MetricCardForm({
       <MetricSelect
         label={t('widgets.common.labels.metric')}
         metrics={METRIC_CARD_METRICS}
-        onChange={(v) => onChange({ ...config, metric: v as MetricCardMetric, server_id: serverId, label })}
+        onChange={(v) => onChange({ ...config, metric: v as MetricCardMetric })}
         placeholder={t('widgets.common.placeholders.selectMetric')}
         value={metric}
       />
       <div className="space-y-1.5">
         <Label>{t('widgets.common.labels.labelOptional')}</Label>
         <Input
-          onChange={(e) => onChange({ ...config, metric, server_id: serverId, label: e.target.value })}
+          onChange={(e) => onChange({ ...config, label: e.target.value })}
           placeholder={t('widgets.common.placeholders.optionalLabel')}
           value={label}
         />
