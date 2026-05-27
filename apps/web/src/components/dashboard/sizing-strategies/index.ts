@@ -57,17 +57,13 @@ export function snapOnRelease(item: LayoutItem, strategy: SizingStrategy, _ctx: 
       const tier = nearestTier(item.w, strategy.tiers)
       return { w: tier, h: tier }
     }
-    case 'free':
-    case 'fixed':
-    case 'content-height':
+    default:
       return {}
   }
 }
 
 export function applyStrategy(strategy: SizingStrategy, measuredFineH?: number): StrategyDescriptor {
   switch (strategy.kind) {
-    case 'free':
-      return { constraints: [], resizeHandles: undefined, isResizable: true }
     case 'fixed':
       return { constraints: [], resizeHandles: [], isResizable: false }
     case 'aspect-square':
@@ -78,5 +74,7 @@ export function applyStrategy(strategy: SizingStrategy, measuredFineH?: number):
         resizeHandles: ['e'],
         isResizable: true
       }
+    default:
+      return { constraints: [], resizeHandles: undefined, isResizable: true }
   }
 }

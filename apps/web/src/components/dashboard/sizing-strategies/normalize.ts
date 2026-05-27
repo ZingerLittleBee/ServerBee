@@ -37,8 +37,7 @@ export function normalizeRenderItem(item: LayoutItem, strategy: SizingStrategy, 
       }
       return item
     }
-    case 'fixed':
-    case 'free':
+    default:
       return item
   }
 }
