@@ -24,6 +24,17 @@ export const WIDGET_TYPES = [
     maxW: 2,
     maxH: 1
   },
+  {
+    id: 'metric-card',
+    label: 'Metric Card',
+    category: 'Real-time',
+    defaultW: 4,
+    defaultH: 4,
+    minW: 3,
+    minH: 3,
+    maxW: 6,
+    maxH: 6
+  },
   { id: 'server-cards', label: 'Server Cards', category: 'Real-time', defaultW: 12, defaultH: 6, minW: 4, minH: 3 },
   { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 2, defaultH: 2, minW: 2, minH: 2, maxW: 6, maxH: 6 },
   {
@@ -129,6 +140,14 @@ export interface StatNumberConfig {
   unit?: string
 }
 
+export type MetricCardMetric = 'cpu' | 'memory' | 'network' | 'disk_io'
+
+export interface MetricCardConfig {
+  label?: string
+  metric: MetricCardMetric
+  server_id: string
+}
+
 export interface ServerCardsConfig {
   columns?: number
   server_ids?: string[]
@@ -196,6 +215,7 @@ export interface UptimeTimelineConfig {
 
 export type WidgetConfig =
   | StatNumberConfig
+  | MetricCardConfig
   | ServerCardsConfig
   | GaugeConfig
   | LineChartConfig

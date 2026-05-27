@@ -43,6 +43,10 @@
         "label": "数值统计",
         "description": "带图标的单一指标值"
       },
+      "metric-card": {
+        "label": "指标卡片",
+        "description": "当前值 + 1h 变化 + 24h sparkline 与峰值/均值"
+      },
       "server-cards": {
         "label": "服务器卡片",
         "description": "服务器概览卡片网格"
@@ -162,7 +166,8 @@
         "maxItems": "最大条目数",
         "markdownContent": "Markdown 内容",
         "days": "天数",
-        "titleOptional": "标题（可选）"
+        "titleOptional": "标题（可选）",
+        "labelOptional": "标签（可选）"
       },
       "placeholders": {
         "selectServer": "选择服务器",
@@ -170,7 +175,8 @@
         "selectRange": "选择范围",
         "widgetTitle": "小组件标题",
         "allServers": "所有服务器",
-        "writeMarkdown": "在此编写 Markdown..."
+        "writeMarkdown": "在此编写 Markdown...",
+        "optionalLabel": "覆盖默认标签"
       },
       "empty": {
         "noServers": "暂无可用服务器"
@@ -188,6 +194,8 @@
       "load15m": "负载（15分钟）",
       "networkIn": "网络入站",
       "networkOut": "网络出站",
+      "network": "网络",
+      "diskIo": "磁盘 I/O",
       "bandwidth": "带宽",
       "serverCount": "服务器数量",
       "avgCpu": "平均 CPU",
@@ -227,5 +235,17 @@
     "loading": "加载中...",
     "downloading": "下载中...",
     "download_failed": "下载失败"
+  },
+  "metricCard": {
+    "metric": {
+      "cpu": "CPU",
+      "memory": "内存",
+      "network": "网络",
+      "diskIo": "磁盘 I/O"
+    },
+    "past1h": "过去 1 小时",
+    "peak": "24H 峰值",
+    "avg": "24H 均值",
+    "unknownServer": "未知服务器"
   }
 }

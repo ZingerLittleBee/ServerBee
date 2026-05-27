@@ -43,6 +43,10 @@
         "label": "Stat Number",
         "description": "Single metric value with icon"
       },
+      "metric-card": {
+        "label": "Metric Card",
+        "description": "Current value + 1h delta + 24h sparkline & stats"
+      },
       "server-cards": {
         "label": "Server Cards",
         "description": "Server overview cards grid"
@@ -162,7 +166,8 @@
         "maxItems": "Max Items",
         "markdownContent": "Markdown Content",
         "days": "Days",
-        "titleOptional": "Title (optional)"
+        "titleOptional": "Title (optional)",
+        "labelOptional": "Label (optional)"
       },
       "placeholders": {
         "selectServer": "Select server",
@@ -170,7 +175,8 @@
         "selectRange": "Select range",
         "widgetTitle": "Widget title",
         "allServers": "All Servers",
-        "writeMarkdown": "Write markdown here..."
+        "writeMarkdown": "Write markdown here...",
+        "optionalLabel": "Override label"
       },
       "empty": {
         "noServers": "No servers available"
@@ -188,6 +194,8 @@
       "load15m": "Load (15m)",
       "networkIn": "Network In",
       "networkOut": "Network Out",
+      "network": "Network",
+      "diskIo": "Disk I/O",
       "bandwidth": "Bandwidth",
       "serverCount": "Server Count",
       "avgCpu": "Average CPU",
@@ -227,5 +235,17 @@
     "loading": "Loading...",
     "downloading": "Downloading...",
     "download_failed": "Download failed"
+  },
+  "metricCard": {
+    "metric": {
+      "cpu": "CPU",
+      "memory": "Memory",
+      "network": "Network",
+      "diskIo": "Disk I/O"
+    },
+    "past1h": "past 1h",
+    "peak": "24H PEAK",
+    "avg": "24H AVG",
+    "unknownServer": "Unknown server"
   }
 }
