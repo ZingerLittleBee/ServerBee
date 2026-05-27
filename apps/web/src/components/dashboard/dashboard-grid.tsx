@@ -265,8 +265,6 @@ export function DashboardGrid({
           h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
         }
         if (squareIdSet.has(item.i)) {
-          // Lock height to width (in fine units, h = w * SCALE) so the gauge
-          // stays a coarse-unit square no matter which dimension the user drags.
           base.h = base.w * SCALE
         }
         return base

@@ -12,12 +12,14 @@ interface GaugeWidgetProps {
 // SVG geometry constants (viewBox is 100x100)
 const VIEWBOX = 100
 const CENTER = VIEWBOX / 2
-const RADIUS = 38
+// Radius pushes the ring close to the viewBox edge so the gauge fills the
+// card; clamped so the round linecap (STROKE/2 outward) still fits inside.
+const RADIUS = 44
 const STROKE = 8
-const BALL_R = 5.5
-const BALL_R_INNER = 2
-// 270° sweep, gap centered at top. Angles in degrees, clockwise from 12 o'clock.
-const START_ANGLE = 135
+// 270° sweep, gap centered at bottom. Angles in degrees, clockwise from 12 o'clock.
+// Start at 7:30 (225°), sweep clockwise past 9, 12, 3 to 4:30 (135°), leaving a
+// 90° gap centered at 6 o'clock — matches the reference horseshoe orientation.
+const START_ANGLE = 225
 const SWEEP = 270
 
 interface Gradient {
@@ -109,79 +111,94 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
 
   const trackPathD = arcPath(CENTER, CENTER, RADIUS, START_ANGLE, trackEnd)
   const progressPathD = arcPath(CENTER, CENTER, RADIUS, START_ANGLE, progressEnd)
-  const startCap = polarToCartesian(CENTER, CENTER, RADIUS, START_ANGLE)
-  const endCap = polarToCartesian(CENTER, CENTER, RADIUS, progressEnd)
 
   const showProgress = value > 0
 
-  return (
-    <div className="@container/gauge relative flex h-full flex-col items-center justify-center overflow-hidden rounded-lg border bg-card p-3">
-      <svg
+  const mainText = (
+    <>
+      <Icon
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full"
-        data-testid="gauge-svg"
-        viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
+        className="@[14rem]:h-4 @[20rem]:h-5 h-3.5 @[14rem]:w-4 @[20rem]:w-5 w-3.5"
+        style={{ color: gradient.start }}
+      />
+      <p
+        className="mt-1 truncate font-medium @[14rem]:text-sm text-xs"
+        data-testid="gauge-label"
+        style={{ color: gradient.start }}
       >
-        <defs>
-          <linearGradient data-testid="gauge-gradient" id={gradientId} x1="0%" x2="100%" y1="0%" y2="100%">
-            <stop offset="0%" stopColor={gradient.start} />
-            <stop offset="100%" stopColor={gradient.end} />
-          </linearGradient>
-        </defs>
+        {label}
+      </p>
+      <p
+        className="mt-1 font-bold @[14rem]:text-2xl @[20rem]:text-3xl @[26rem]:text-4xl text-foreground text-xl tabular-nums"
+        data-testid="gauge-value"
+      >
+        {value.toFixed(1)}%
+      </p>
+    </>
+  )
+
+  // Server name sits at the bottom of the card, inside the arc gap (the 90°
+  // opening centered at 6 o'clock). Anchored via absolute positioning so it
+  // doesn't shift the centered icon/label/value stack.
+  const subtitle = (
+    <p
+      className="absolute inset-x-3 bottom-[8%] z-10 truncate text-center text-muted-foreground text-xs"
+      data-testid="gauge-subtitle"
+    >
+      {server.name}
+    </p>
+  )
+
+  const svg = (
+    <svg
+      aria-hidden="true"
+      className="absolute inset-0 h-full w-full"
+      data-testid="gauge-svg"
+      viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
+    >
+      <defs>
+        <linearGradient data-testid="gauge-gradient" id={gradientId} x1="0%" x2="100%" y1="0%" y2="100%">
+          <stop offset="0%" stopColor={gradient.start} />
+          <stop offset="100%" stopColor={gradient.end} />
+        </linearGradient>
+      </defs>
+      <path
+        d={trackPathD}
+        data-testid="gauge-track"
+        fill="none"
+        stroke="var(--color-muted)"
+        strokeLinecap="round"
+        strokeOpacity={0.35}
+        strokeWidth={STROKE}
+      />
+      {showProgress && (
         <path
-          d={trackPathD}
-          data-testid="gauge-track"
+          d={progressPathD}
+          data-testid="gauge-progress"
           fill="none"
-          stroke="var(--color-muted)"
+          stroke={`url(#${gradientId})`}
           strokeLinecap="round"
-          strokeOpacity={0.35}
           strokeWidth={STROKE}
         />
-        {showProgress && (
-          <path
-            d={progressPathD}
-            data-testid="gauge-progress"
-            fill="none"
-            stroke={`url(#${gradientId})`}
-            strokeLinecap="round"
-            strokeWidth={STROKE}
-          />
-        )}
-        {showProgress && (
-          <g data-testid="gauge-endcaps">
-            <circle cx={startCap.x} cy={startCap.y} fill="white" r={BALL_R} />
-            <circle cx={startCap.x} cy={startCap.y} fill={gradient.start} r={BALL_R_INNER} />
-            <circle cx={endCap.x} cy={endCap.y} fill="white" r={BALL_R} />
-            <circle cx={endCap.x} cy={endCap.y} fill={gradient.end} r={BALL_R_INNER} />
-          </g>
-        )}
-      </svg>
+      )}
+    </svg>
+  )
 
-      <div className="relative z-10 flex flex-col items-center text-center">
-        <Icon
-          aria-hidden="true"
-          className="@[10rem]:h-4 @[14rem]:h-5 h-3.5 @[10rem]:w-4 @[14rem]:w-5 w-3.5"
-          style={{ color: gradient.start }}
-        />
-        <p
-          className="mt-1 truncate font-medium @[10rem]:text-sm text-xs"
-          data-testid="gauge-label"
-          style={{ color: gradient.start }}
-        >
-          {label}
-        </p>
-        <p
-          className="mt-1 font-bold @[10rem]:text-3xl @[14rem]:text-4xl text-2xl text-foreground tabular-nums"
-          data-testid="gauge-value"
-        >
-          {value.toFixed(1)}%
-        </p>
-        <p
-          className="mt-1 @[8rem]:block hidden max-w-[80%] truncate text-muted-foreground text-xs"
-          data-testid="gauge-subtitle"
-        >
-          {server.name}
-        </p>
+  // The grid cell is generally not square (12-col grid step ≠ row step), so we
+  // size the visible card to min(cell_w, cell_h) via container-size queries on
+  // the wrapper. The card itself is always aspect-square; the cell may have
+  // empty space on one side that's transparent.
+  return (
+    <div className="grid h-full w-full place-items-center" style={{ containerType: 'size' }}>
+      <div
+        className="@container/gauge relative aspect-square overflow-hidden rounded-lg border bg-card"
+        style={{ width: 'min(100cqi, 100cqb)', height: 'min(100cqi, 100cqb)' }}
+      >
+        <div className="absolute inset-3">{svg}</div>
+        <div className="absolute inset-0 z-10 flex min-w-0 flex-col items-center justify-center p-3 text-center">
+          {mainText}
+        </div>
+        {subtitle}
       </div>
     </div>
   )

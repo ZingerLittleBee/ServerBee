@@ -57,7 +57,7 @@ Stack (centered, vertical):
 
 Ring:
 
-- Sweep **270°** with the gap centered at the top (start angle `135°`, end angle `45°` measured clockwise from 12 o'clock — equivalent to the reference image's gap orientation).
+- Sweep **270°** with the gap centered at the bottom (start angle `225°`, end angle `135°` measured clockwise from 12 o'clock — a speedometer-style horseshoe opening downward).
 - Two SVG `<path>` elements:
   - **Track**: full 270° sweep, `stroke=var(--color-muted)`, low opacity.
   - **Progress**: from start angle to `start + (value/max) * 270°`, `stroke=url(#gauge-gradient-{id})`.
@@ -137,7 +137,7 @@ Constants (in viewBox units, 100×100):
 - `STROKE = 8`
 - `BALL_R = 5.5`
 - `BALL_R_INNER = 2`
-- Sweep: `startAngle = 135°`, `endAngle = 45°` (clockwise, 270° total)
+- Sweep: `startAngle = 225°`, `endAngle = 135°` (clockwise, 270° total)
 
 The text stack (icon + label + value + subtitle) sits in a centered absolutely-positioned `<div>` inside the same flex column, layered above the SVG via `position: relative` on the wrapper. Text never lives inside the SVG — this lets Tailwind's responsive font sizing and `truncate` work as usual.
 
