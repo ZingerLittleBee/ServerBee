@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { MetricCardWidget } from './metric-card'
 
@@ -22,8 +22,10 @@ vi.mock('react-i18next', () => ({
   })
 }))
 
+const useServerRecordsMock = vi.fn(() => ({ data: [] as unknown[], isLoading: false }))
+
 vi.mock('@/hooks/use-api', () => ({
-  useServerRecords: () => ({ data: [], isLoading: false })
+  useServerRecords: () => useServerRecordsMock()
 }))
 
 function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
@@ -52,6 +54,10 @@ function wrap(node: ReactNode) {
 }
 
 describe('MetricCardWidget', () => {
+  beforeEach(() => {
+    useServerRecordsMock.mockReturnValue({ data: [], isLoading: false })
+  })
+
   it('renders the CPU value', () => {
     render(wrap(<MetricCardWidget config={{ metric: 'cpu', server_id: 's1' }} servers={[makeServer()]} />))
     expect(screen.getByTestId('metric-card-value')).toHaveTextContent('42.5%')
@@ -77,5 +83,38 @@ describe('MetricCardWidget', () => {
       )
     )
     expect(screen.getByText('RAM Pressure')).toBeInTheDocument()
+  })
+
+  it('renders a negative delta with U+2212 minus sign when one-hour history is higher than live value', () => {
+    const now = Date.now()
+    const oneHourAgo = new Date(now - 60 * 60_000).toISOString()
+    useServerRecordsMock.mockReturnValue({
+      data: [
+        {
+          cpu: 80,
+          disk_used: 0,
+          id: 1,
+          load1: 0,
+          load5: 0,
+          load15: 0,
+          mem_used: 0,
+          net_in_speed: 0,
+          net_in_transfer: 0,
+          net_out_speed: 0,
+          net_out_transfer: 0,
+          process_count: 0,
+          server_id: 's1',
+          swap_used: 0,
+          tcp_conn: 0,
+          time: oneHourAgo,
+          udp_conn: 0
+        }
+      ],
+      isLoading: false
+    })
+    render(wrap(<MetricCardWidget config={{ metric: 'cpu', server_id: 's1' }} servers={[makeServer({ cpu: 40 })]} />))
+    const delta = screen.getByTestId('metric-card-delta')
+    expect(delta.textContent).toContain('−')
+    expect(delta.textContent).toContain('40.0pp')
   })
 })

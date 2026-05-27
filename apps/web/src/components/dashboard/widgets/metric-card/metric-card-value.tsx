@@ -30,7 +30,6 @@ function deltaColor(delta: number, tone: DeltaTone): string {
 }
 
 export function MetricCardValue({ formattedValue, delta, deltaUnit, deltaTone, pastLabel }: MetricCardValueProps) {
-  const Trend = delta !== null && delta < 0 ? TrendingDown : TrendingUp
   return (
     <div className="space-y-0.5">
       <p
@@ -50,7 +49,7 @@ export function MetricCardValue({ formattedValue, delta, deltaUnit, deltaTone, p
           <span>—</span>
         ) : (
           <>
-            <Trend className="size-3" />
+            {delta < 0 ? <TrendingDown className="size-3" /> : <TrendingUp className="size-3" />}
             <span className="font-medium tabular-nums">{formatDelta(delta, deltaUnit)}</span>
           </>
         )}
