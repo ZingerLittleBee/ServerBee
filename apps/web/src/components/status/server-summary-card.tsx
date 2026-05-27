@@ -2,21 +2,70 @@ import { Link } from '@tanstack/react-router'
 import { Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CompactMetric } from '@/components/server/compact-metric'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Badge } from '@/components/ui/badge'
+import { RingChart } from '@/components/ui/ring-chart'
 import type { PublicServerSummary } from '@/lib/api-schema'
-import { cn, countryCodeToFlag, formatSpeed, formatUptime } from '@/lib/utils'
+import { computeTrafficQuota } from '@/lib/traffic'
+import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
-function ProgressBar({ value, label, color }: { color: string; label: string; value: number }) {
-  const pct = Math.min(100, Math.max(0, value))
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+  return Math.min(100, Math.max(0, value))
+}
+
+function getRingColor(pct: number, brandColor: string): string {
+  if (pct > 90) {
+    return '#ef4444'
+  }
+  if (pct > 70) {
+    return '#f59e0b'
+  }
+  return brandColor
+}
+
+function metricPercent(used: number, total: number): number {
+  return total > 0 ? (used / total) * 100 : 0
+}
+
+function finiteMetric(value: number | null | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function renderSpeedValue(bytesPerSec: number): ReactNode {
+  if (bytesPerSec <= 0) {
+    return '0'
+  }
+  const formatted = formatSpeed(bytesPerSec)
+  const lastSpace = formatted.lastIndexOf(' ')
+  if (lastSpace < 0) {
+    return formatted
+  }
   return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium">{pct.toFixed(1)}%</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
+    <>
+      {formatted.slice(0, lastSpace)}
+      <span className="ml-0.5 font-normal text-[10px] text-muted-foreground">{formatted.slice(lastSpace + 1)}</span>
+    </>
+  )
+}
+
+interface RingMetricProps {
+  color: string
+  label: string
+  subText: ReactNode
+  value: number
+}
+
+function RingMetric({ color, label, subText, value }: RingMetricProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <RingChart color={color} compact label={label} value={value} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+        <span className="truncate text-[10px] text-muted-foreground tabular-nums">{subText}</span>
       </div>
     </div>
   )
@@ -28,24 +77,47 @@ interface Props {
 }
 
 export function ServerSummaryCard({ server, clickable }: Props) {
-  const { t } = useTranslation('status')
+  const { t } = useTranslation(['status', 'servers'])
   const m = server.metrics
-  const memPct = m && m.mem_total > 0 ? (m.mem_used / m.mem_total) * 100 : 0
-  const diskPct = m && m.disk_total > 0 ? (m.disk_used / m.disk_total) * 100 : 0
+  const memPct = m ? metricPercent(m.mem_used, m.mem_total) : 0
+  const diskPct = m ? metricPercent(m.disk_used, m.disk_total) : 0
+  const swapPct = m ? metricPercent(m.swap_used, m.swap_total) : 0
+  const processCount = m ? finiteMetric(m.process_count) : 0
+  const tcpConn = m ? finiteMetric(m.tcp_conn) : 0
+  const udpConn = m ? finiteMetric(m.udp_conn) : 0
+  const traffic = m
+    ? computeTrafficQuota({
+        entry: undefined,
+        netInTransfer: m.net_in_transfer,
+        netOutTransfer: m.net_out_transfer
+      })
+    : { limit: 0, pct: 0, used: 0 }
   const flag = countryCodeToFlag(server.country_code)
+  const status = server.online ? 'online' : 'offline'
 
   const body: ReactNode = (
     <div
       className={cn(
-        'rounded-lg border bg-card p-4 shadow-sm transition-colors',
+        'relative flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm transition-colors',
         clickable && 'hover:border-primary/40 hover:bg-accent/40'
       )}
+      data-slot="status-server-card"
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
+      {!server.online && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-grayscale"
+        />
+      )}
+      <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5 truncate">
-          {flag && <span className="shrink-0 text-sm">{flag}</span>}
-          <h3 className="truncate font-semibold text-sm">{server.name}</h3>
-          {server.region && <span className="shrink-0 text-muted-foreground text-xs">{server.region}</span>}
+          {flag && (
+            <span className="shrink-0 text-sm" title={server.country_code ?? ''}>
+              {flag}
+            </span>
+          )}
+          <h3 className="truncate font-semibold text-[13px]">{server.name}</h3>
+          {server.region && <span className="shrink-0 text-[11px] text-muted-foreground">{server.region}</span>}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {server.in_maintenance && (
@@ -54,31 +126,132 @@ export function ServerSummaryCard({ server, clickable }: Props) {
               {t('maintenance')}
             </Badge>
           )}
-          <StatusBadge status={server.online ? 'online' : 'offline'} />
+          <StatusBadge status={status} />
         </div>
       </div>
 
-      {server.public_remark && <p className="mb-3 text-muted-foreground text-xs">{server.public_remark}</p>}
+      {server.public_remark && <p className="line-clamp-2 text-muted-foreground text-xs">{server.public_remark}</p>}
 
       {m ? (
         <>
-          <div className="space-y-2.5">
-            <ProgressBar color="bg-chart-1" label={t('cpu')} value={m.cpu} />
-            <ProgressBar color="bg-chart-2" label={t('memory')} value={memPct} />
-            <ProgressBar color="bg-chart-3" label={t('disk')} value={diskPct} />
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+            <RingMetric
+              color={getRingColor(m.cpu, 'var(--color-chart-1)')}
+              label={t('cpu')}
+              subText={`load ${m.load_1.toFixed(2)}`}
+              value={m.cpu}
+            />
+            <RingMetric
+              color={getRingColor(memPct, 'var(--color-chart-2)')}
+              label={t('memory')}
+              subText={
+                <>
+                  <span className="font-medium text-foreground">{formatBytes(m.mem_used)}</span>
+                  <span className="mx-0.5">/</span>
+                  {formatBytes(m.mem_total)}
+                </>
+              }
+              value={memPct}
+            />
+            <RingMetric
+              color={getRingColor(diskPct, 'var(--color-chart-3)')}
+              label={t('disk')}
+              subText={
+                <>
+                  <span className="font-medium text-foreground">{formatBytes(m.disk_used)}</span>
+                  <span className="mx-0.5">/</span>
+                  {formatBytes(m.disk_total)}
+                </>
+              }
+              value={diskPct}
+            />
+            <RingMetric
+              color={getRingColor(traffic.pct, 'var(--color-chart-4)')}
+              label={t('card_traffic_quota', { ns: 'servers' })}
+              subText={
+                <>
+                  <span className="font-medium text-foreground">{formatBytes(traffic.used)}</span>
+                  <span className="mx-0.5">/</span>
+                  {formatBytes(traffic.limit)}
+                </>
+              }
+              value={clampPercent(traffic.pct)}
+            />
           </div>
-          <div className="mt-3 flex items-center justify-between text-muted-foreground text-xs">
-            <div className="flex gap-3">
-              <span title={t('network_in')}>{formatSpeed(m.net_in_speed)}</span>
-              <span title={t('network_out')}>{formatSpeed(m.net_out_speed)}</span>
+
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/40 px-2 py-1.5">
+            <CompactMetric label={t('card_net_in_speed', { ns: 'servers' })} value={renderSpeedValue(m.net_in_speed)} />
+            <CompactMetric
+              label={t('card_net_out_speed', { ns: 'servers' })}
+              value={renderSpeedValue(m.net_out_speed)}
+            />
+            <CompactMetric
+              label={
+                <span
+                  aria-label={t('card_disk_read', { ns: 'servers' })}
+                  className="inline-flex items-center gap-1"
+                  role="img"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+                  >
+                    R
+                  </span>
+                  {t('card_disk_read', { ns: 'servers' })}
+                </span>
+              }
+              value={renderSpeedValue(m.disk_read_bytes_per_sec)}
+            />
+            <CompactMetric
+              label={
+                <span
+                  aria-label={t('card_disk_write', { ns: 'servers' })}
+                  className="inline-flex items-center gap-1"
+                  role="img"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+                  >
+                    W
+                  </span>
+                  {t('card_disk_write', { ns: 'servers' })}
+                </span>
+              }
+              value={renderSpeedValue(m.disk_write_bytes_per_sec)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+            <div className="flex items-baseline justify-between">
+              <span>{t('uptime')}</span>
+              <span className="font-medium text-foreground tabular-nums">{formatUptime(m.uptime)}</span>
             </div>
-            <span title={t('uptime')}>{formatUptime(m.uptime)}</span>
+            <div className="flex items-baseline justify-between">
+              <span>{t('card_swap', { ns: 'servers' })}</span>
+              <span className="font-medium text-foreground tabular-nums">{`${swapPct.toFixed(0)}%`}</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span>{t('card_load_trend', { ns: 'servers' })}</span>
+              <span className="inline-flex items-center gap-1.5 font-medium text-foreground tabular-nums">
+                <span>{m.load_5.toFixed(2)}</span>
+                <span aria-hidden="true">·</span>
+                <span>{m.load_15.toFixed(2)}</span>
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span>{t('card_proc_conn_label', { ns: 'servers' })}</span>
+              <span className="font-medium text-foreground tabular-nums">
+                {`${processCount} / ${tcpConn} / ${udpConn}`}
+              </span>
+            </div>
           </div>
         </>
       ) : (
-        <div className="flex h-24 items-center justify-center text-muted-foreground text-xs">
-          {server.os && <span className="mr-2">{server.os}</span>}
-          {!server.online && <span>{t('offline')}</span>}
+        <div className="flex min-h-32 flex-col justify-center gap-1 rounded-md bg-muted/40 px-3 py-4 text-muted-foreground text-xs">
+          {server.os && <span>{server.os}</span>}
+          <span>{server.online ? t('uptime_no_data') : t('offline')}</span>
         </div>
       )}
     </div>
