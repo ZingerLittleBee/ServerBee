@@ -1,4 +1,5 @@
 pub mod config;
+pub mod dev_demo;
 pub mod entity;
 pub mod error;
 pub mod middleware;
