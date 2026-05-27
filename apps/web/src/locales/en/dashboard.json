@@ -162,7 +162,8 @@
         "maxItems": "Max Items",
         "markdownContent": "Markdown Content",
         "days": "Days",
-        "titleOptional": "Title (optional)"
+        "titleOptional": "Title (optional)",
+        "labelOptional": "Label (optional)"
       },
       "placeholders": {
         "selectServer": "Select server",
@@ -170,7 +171,8 @@
         "selectRange": "Select range",
         "widgetTitle": "Widget title",
         "allServers": "All Servers",
-        "writeMarkdown": "Write markdown here..."
+        "writeMarkdown": "Write markdown here...",
+        "optionalLabel": "Override label"
       },
       "empty": {
         "noServers": "No servers available"
@@ -188,6 +190,8 @@
       "load15m": "Load (15m)",
       "networkIn": "Network In",
       "networkOut": "Network Out",
+      "network": "Network",
+      "diskIo": "Disk I/O",
       "bandwidth": "Bandwidth",
       "serverCount": "Server Count",
       "avgCpu": "Average CPU",

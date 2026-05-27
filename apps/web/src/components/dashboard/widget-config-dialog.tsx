@@ -16,6 +16,8 @@ import type {
   GaugeConfig,
   LineChartConfig,
   MarkdownConfig,
+  MetricCardConfig,
+  MetricCardMetric,
   MultiLineConfig,
   ServerCardsConfig,
   StatNumberConfig,
@@ -65,6 +67,15 @@ function useLineMetrics(t: (key: string) => string): { label: string; value: str
     { label: t('common.metrics.load15m'), value: 'load15' },
     { label: t('common.metrics.networkIn'), value: 'net_in' },
     { label: t('common.metrics.networkOut'), value: 'net_out' }
+  ]
+}
+
+function useMetricCardMetrics(t: (key: string) => string): { label: string; value: MetricCardMetric }[] {
+  return [
+    { label: t('common.metrics.cpu'), value: 'cpu' },
+    { label: t('common.metrics.memory'), value: 'memory' },
+    { label: t('common.metrics.network'), value: 'network' },
+    { label: t('common.metrics.diskIo'), value: 'disk_io' }
   ]
 }
 
@@ -256,6 +267,50 @@ function StatNumberForm({
       placeholder={t('widgets.common.placeholders.selectMetric')}
       value={config.metric ?? ''}
     />
+  )
+}
+
+function MetricCardForm({
+  config,
+  servers,
+  onChange,
+  t
+}: {
+  config: Partial<MetricCardConfig>
+  onChange: (c: Partial<MetricCardConfig>) => void
+  servers: ServerMetrics[]
+  t: (key: string) => string
+}) {
+  const METRIC_CARD_METRICS = useMetricCardMetrics(t)
+  const metric = (config.metric ?? 'cpu') as MetricCardMetric
+  const serverId = config.server_id ?? ''
+  const label = config.label ?? ''
+
+  return (
+    <>
+      <ServerSelect
+        label={t('widgets.common.labels.server')}
+        onChange={(v) => onChange({ ...config, metric, server_id: v, label })}
+        placeholder={t('widgets.common.placeholders.selectServer')}
+        servers={servers}
+        value={serverId}
+      />
+      <MetricSelect
+        label={t('widgets.common.labels.metric')}
+        metrics={METRIC_CARD_METRICS}
+        onChange={(v) => onChange({ ...config, metric: v as MetricCardMetric, server_id: serverId, label })}
+        placeholder={t('widgets.common.placeholders.selectMetric')}
+        value={metric}
+      />
+      <div className="space-y-1.5">
+        <Label>{t('widgets.common.labels.labelOptional')}</Label>
+        <Input
+          onChange={(e) => onChange({ ...config, metric, server_id: serverId, label: e.target.value })}
+          placeholder={t('widgets.common.placeholders.optionalLabel')}
+          value={label}
+        />
+      </div>
+    </>
   )
 }
 
@@ -676,6 +731,9 @@ export function WidgetConfigDialog({
 
           {widgetType === 'stat-number' && (
             <StatNumberForm config={config as Partial<StatNumberConfig>} onChange={setConfig} t={t} />
+          )}
+          {widgetType === 'metric-card' && (
+            <MetricCardForm config={config as Partial<MetricCardConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'gauge' && (
             <GaugeForm config={config as Partial<GaugeConfig>} onChange={setConfig} servers={servers} t={t} />

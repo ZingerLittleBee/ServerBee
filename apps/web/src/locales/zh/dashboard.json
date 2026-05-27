@@ -162,7 +162,8 @@
         "maxItems": "最大条目数",
         "markdownContent": "Markdown 内容",
         "days": "天数",
-        "titleOptional": "标题（可选）"
+        "titleOptional": "标题（可选）",
+        "labelOptional": "标签（可选）"
       },
       "placeholders": {
         "selectServer": "选择服务器",
@@ -170,7 +171,8 @@
         "selectRange": "选择范围",
         "widgetTitle": "小组件标题",
         "allServers": "所有服务器",
-        "writeMarkdown": "在此编写 Markdown..."
+        "writeMarkdown": "在此编写 Markdown...",
+        "optionalLabel": "覆盖默认标签"
       },
       "empty": {
         "noServers": "暂无可用服务器"
@@ -188,6 +190,8 @@
       "load15m": "负载（15分钟）",
       "networkIn": "网络入站",
       "networkOut": "网络出站",
+      "network": "网络",
+      "diskIo": "磁盘 I/O",
       "bandwidth": "带宽",
       "serverCount": "服务器数量",
       "avgCpu": "平均 CPU",
