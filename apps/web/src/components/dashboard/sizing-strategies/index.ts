@@ -1,4 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout'
+import type { LayoutConstraint, ResizeHandleAxis } from 'react-grid-layout/core'
+import { aspectRatio } from 'react-grid-layout/core'
+import type { SizingStrategy } from '@/lib/widget-types'
 import { SCALE } from '../grid-constants'
 
 // Returns the tier closest to `value`. Ties pick the first (smaller) tier —
@@ -19,5 +22,44 @@ export function applyCoarsePatch(item: LayoutItem, patch: SnapPatch): LayoutItem
     ...item,
     w: patch.w ?? item.w,
     h: patch.h !== undefined ? patch.h * SCALE : item.h
+  }
+}
+
+export interface StrategyDescriptor {
+  // Constraints attached to LayoutItem.constraints. Applied by RGL inside
+  // applySizeConstraints during the resize pipeline. NOT applied at idle
+  // layout sync — use `normalizeRenderItem` for idle h.
+  constraints: LayoutConstraint[]
+
+  // Whether the item participates in resize at all.
+  isResizable: boolean
+
+  // Which resize handles to render. undefined = RGL default (all 8 corners/edges).
+  resizeHandles?: ResizeHandleAxis[]
+}
+
+function lockHeight(fineH: number): LayoutConstraint {
+  return {
+    name: `lockHeight(${fineH})`,
+    constrainSize(_item, w) {
+      return { w, h: fineH }
+    }
+  }
+}
+
+export function applyStrategy(strategy: SizingStrategy, measuredFineH?: number): StrategyDescriptor {
+  switch (strategy.kind) {
+    case 'free':
+      return { constraints: [], resizeHandles: undefined, isResizable: true }
+    case 'fixed':
+      return { constraints: [], resizeHandles: [], isResizable: false }
+    case 'aspect-square':
+      return { constraints: [aspectRatio(1)], resizeHandles: ['se'], isResizable: true }
+    case 'content-height':
+      return {
+        constraints: measuredFineH !== undefined ? [lockHeight(measuredFineH)] : [],
+        resizeHandles: ['e'],
+        isResizable: true
+      }
   }
 }

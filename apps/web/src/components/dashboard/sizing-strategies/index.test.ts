@@ -1,6 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout'
 import { describe, expect, it } from 'vitest'
-import { applyCoarsePatch, nearestTier, type SnapPatch } from './index'
+import type { SizingStrategy } from '@/lib/widget-types'
+import { applyCoarsePatch, applyStrategy, nearestTier, type SnapPatch } from './index'
 
 describe('nearestTier', () => {
   const tiers = [2, 3, 4, 5, 6] as const
@@ -73,5 +74,65 @@ describe('applyCoarsePatch', () => {
     applyCoarsePatch(baseItem, patch)
     expect(baseItem.w).toBe(2)
     expect(baseItem.h).toBe(8)
+  })
+})
+
+describe('applyStrategy', () => {
+  it('free returns no constraints and undefined resize handles', () => {
+    const strategy: SizingStrategy = { kind: 'free' }
+    const desc = applyStrategy(strategy)
+    expect(desc.constraints).toEqual([])
+    expect(desc.resizeHandles).toBeUndefined()
+    expect(desc.isResizable).toBe(true)
+  })
+
+  it('fixed returns no constraints, empty resize handles, isResizable false', () => {
+    const strategy: SizingStrategy = { kind: 'fixed' }
+    const desc = applyStrategy(strategy)
+    expect(desc.constraints).toEqual([])
+    expect(desc.resizeHandles).toEqual([])
+    expect(desc.isResizable).toBe(false)
+  })
+
+  it('aspect-square returns aspectRatio(1) constraint and SE handle', () => {
+    const strategy: SizingStrategy = { kind: 'aspect-square', tiers: [2, 3, 4, 5, 6] }
+    const desc = applyStrategy(strategy)
+    expect(desc.constraints).toHaveLength(1)
+    expect(desc.constraints[0].name).toBe('aspectRatio(1)')
+    expect(desc.resizeHandles).toEqual(['se'])
+    expect(desc.isResizable).toBe(true)
+  })
+
+  it('content-height returns lockHeight constraint when measured', () => {
+    const strategy: SizingStrategy = { kind: 'content-height' }
+    const desc = applyStrategy(strategy, 11)
+    expect(desc.constraints).toHaveLength(1)
+    expect(desc.constraints[0].name).toBe('lockHeight(11)')
+    expect(desc.resizeHandles).toEqual(['e'])
+    expect(desc.isResizable).toBe(true)
+  })
+
+  it('content-height returns no constraint when unmeasured', () => {
+    const strategy: SizingStrategy = { kind: 'content-height' }
+    const desc = applyStrategy(strategy)
+    expect(desc.constraints).toEqual([])
+    expect(desc.resizeHandles).toEqual(['e'])
+    expect(desc.isResizable).toBe(true)
+  })
+
+  it('lockHeight constraint locks h to the measured value', () => {
+    const strategy: SizingStrategy = { kind: 'content-height' }
+    const desc = applyStrategy(strategy, 11)
+    const constraint = desc.constraints[0]
+    // Call the constraint directly — params: item, w, h, handle, context
+    const result = constraint.constrainSize?.({ i: 'x', x: 0, y: 0, w: 4, h: 99 }, 4, 99, 'e', {
+      cols: 12,
+      containerWidth: 1000,
+      maxRows: Number.POSITIVE_INFINITY,
+      rowHeight: 8,
+      margin: [16, 16],
+      layout: []
+    } as any)
+    expect(result).toEqual({ w: 4, h: 11 })
   })
 })
