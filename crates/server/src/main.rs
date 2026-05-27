@@ -7,6 +7,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 use tracing_subscriber::EnvFilter;
 
 use serverbee_server::config::AppConfig;
+use serverbee_server::dev_demo;
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
@@ -39,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
     for w in config.ip_quality.validate_warnings() {
         tracing::warn!("{w}");
     }
+    dev_demo::validate_demo_config(&config)?;
 
     // Ensure data dir exists
     let data_dir = &config.server.data_dir;
@@ -74,6 +76,12 @@ async fn main() -> anyhow::Result<()> {
     Migrator::up(&db, None).await?;
     tracing::info!("Database migrations complete");
 
+    if config.dev.demo_data {
+        dev_demo::seed_demo_data(&db)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
+
     // Initialize admin user (creates if users table is empty)
     let generated_admin_password = AuthService::init_admin(&db).await?;
 
@@ -81,6 +89,12 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState::new(db, config.clone())
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if config.dev.demo_data {
+        dev_demo::start_demo_agents(state.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
 
     // Spawn background tasks
     let s = state.clone();
@@ -135,7 +149,8 @@ async fn main() -> anyhow::Result<()> {
              afterwards — copy it now.\n\
              \n\
              ============================================================\n",
-            AuthService::DEFAULT_ADMIN_USERNAME, pwd
+            AuthService::DEFAULT_ADMIN_USERNAME,
+            pwd
         );
         tracing::warn!("{}", banner);
     }

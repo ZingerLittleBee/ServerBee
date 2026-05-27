@@ -1,7 +1,6 @@
-import { LayoutGrid, List } from 'lucide-react'
+import { LayoutGrid, Table2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 interface Props {
   onChange: (next: 'list' | 'grid') => void
@@ -11,25 +10,23 @@ interface Props {
 export function LayoutToggle({ value, onChange }: Props) {
   const { t } = useTranslation('status')
   return (
-    <div className="inline-flex rounded-md border">
-      <Button
-        className={cn('rounded-r-none', value === 'grid' && 'bg-muted')}
-        onClick={() => onChange('grid')}
-        size="sm"
-        title={t('layout_grid_tooltip')}
-        variant="ghost"
-      >
+    <ToggleGroup
+      multiple={false}
+      onValueChange={(next) => {
+        if (next.length > 0) {
+          onChange(next[0] as 'list' | 'grid')
+        }
+      }}
+      size="default"
+      value={[value]}
+      variant="outline"
+    >
+      <ToggleGroupItem aria-label={t('layout_list_tooltip')} value="list">
+        <Table2 className="size-4" />
+      </ToggleGroupItem>
+      <ToggleGroupItem aria-label={t('layout_grid_tooltip')} value="grid">
         <LayoutGrid className="size-4" />
-      </Button>
-      <Button
-        className={cn('rounded-l-none border-l', value === 'list' && 'bg-muted')}
-        onClick={() => onChange('list')}
-        size="sm"
-        title={t('layout_list_tooltip')}
-        variant="ghost"
-      >
-        <List className="size-4" />
-      </Button>
-    </div>
+      </ToggleGroupItem>
+    </ToggleGroup>
   )
 }

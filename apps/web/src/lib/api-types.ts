@@ -3269,9 +3269,13 @@ export interface components {
             /** Format: double */
             cpu: number;
             /** Format: int64 */
+            disk_read_bytes_per_sec: number;
+            /** Format: int64 */
             disk_total: number;
             /** Format: int64 */
             disk_used: number;
+            /** Format: int64 */
+            disk_write_bytes_per_sec: number;
             /** Format: double */
             load_1: number;
             /** Format: double */
@@ -3285,7 +3289,21 @@ export interface components {
             /** Format: int64 */
             net_in_speed: number;
             /** Format: int64 */
+            net_in_transfer: number;
+            /** Format: int64 */
             net_out_speed: number;
+            /** Format: int64 */
+            net_out_transfer: number;
+            /** Format: int32 */
+            process_count: number;
+            /** Format: int64 */
+            swap_total: number;
+            /** Format: int64 */
+            swap_used: number;
+            /** Format: int32 */
+            tcp_conn: number;
+            /** Format: int32 */
+            udp_conn: number;
             /** Format: int64 */
             uptime: number;
         };
