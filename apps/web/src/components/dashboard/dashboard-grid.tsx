@@ -194,6 +194,23 @@ export function DashboardGrid({
     [widgets]
   )
 
+  // Square widgets persist as `w_coarse === h_coarse`, but coarse rows are
+  // taller than columns (96px vs ~85px), so the rendered cell is rectangular.
+  // Override the render height in fine units so the cell is pixel-square. The
+  // persisted coarse height is left untouched — only the rendered height
+  // changes, and a drag commit re-derives both from `w`.
+  const visualSquareHFine = useCallback(
+    (wCoarse: number): number => {
+      if (width <= 0) {
+        return wCoarse * SCALE
+      }
+      const colStepPx = (width + MARGIN[0]) / COLS
+      const fineRowStepPx = ROW_HEIGHT + MARGIN_Y
+      return Math.max(1, Math.round((wCoarse * colStepPx) / fineRowStepPx))
+    },
+    [width]
+  )
+
   // Persisted grid units are coarse (1 row == ROW_HEIGHT*SCALE px). The grid
   // itself runs at a SCALE-times finer row so content-sized widgets can hug
   // their content within ~ROW_HEIGHT px instead of a full coarse row. Scale the
@@ -219,15 +236,28 @@ export function DashboardGrid({
         item.resizeHandles = ['e']
       }
       if (squareIdSet.has(item.i)) {
-        // Square widgets resize on the corner only and snap to w === h on commit.
+        // Square widgets resize via the SE corner so the user can grow by
+        // dragging either edge of the cell. Idle h is the pixel-square value
+        // (visualSquareHFine); minH/maxH are also derived so RGL doesn't clamp
+        // h back to the un-overridden coarse-fine value.
         item.resizeHandles = ['se']
+        item.h = visualSquareHFine(item.w)
+        const minW = item.minW ?? 2
+        const maxW = item.maxW
+        item.minH = visualSquareHFine(minW)
+        item.maxH = maxW !== undefined ? visualSquareHFine(maxW) : undefined
       }
     }
     return deoverlapLayout(layout)
-  }, [widgets, autoUnits, squareIdSet])
+  }, [widgets, autoUnits, squareIdSet, visualSquareHFine])
 
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
+  // Mirror interactionState into a ref so updateLiveLayout's callback (called
+  // on every RGL echo) can branch on "currently resizing" without forcing a
+  // re-bind every state transition.
+  const interactionStateRef = useRef(interactionState)
+  interactionStateRef.current = interactionState
 
   // While editing (or actively dragging/resizing), freeze the servers snapshot fed
   // to widgets. Otherwise every websocket tick swaps the servers array reference
@@ -265,7 +295,11 @@ export function DashboardGrid({
           h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
         }
         if (squareIdSet.has(item.i)) {
-          base.h = base.w * SCALE
+          // While the user is actively resizing, h follows w in coarse units so
+          // react-resizable's cursor delta tracking stays consistent. On the
+          // idle echo (RGL re-emitting the rendered layout) keep the rendered
+          // pixel-square value so we don't undo the baseLayout override.
+          base.h = interactionStateRef.current === 'resizing' ? base.w * SCALE : visualSquareHFine(base.w)
         }
         return base
       })
@@ -274,7 +308,7 @@ export function DashboardGrid({
       // raw (overlapping) persisted positions over the de-overlapped layout.
       setLiveLayout(deoverlapLayout(snapped))
     },
-    [autoIdSet, squareIdSet]
+    [autoIdSet, squareIdSet, visualSquareHFine]
   )
 
   // Resync the rendered layout to the widgets-derived one the moment `widgets`
@@ -316,7 +350,7 @@ export function DashboardGrid({
           h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
         }
         if (squareIdSet.has(item.i)) {
-          base.h = base.w * SCALE
+          base.h = visualSquareHFine(base.w)
         }
         return base
       })
@@ -325,14 +359,16 @@ export function DashboardGrid({
       const coarseLayout = resolved.map((item) => ({
         ...item,
         y: Math.round(item.y / SCALE),
-        h: Math.round(item.h / SCALE)
+        // Squares persist as h_coarse = w_coarse regardless of the visual
+        // fine-height override (which stays a pure render-time concern).
+        h: squareIdSet.has(item.i) ? item.w : Math.round(item.h / SCALE)
       }))
       const patch = layoutToPatch(coarseLayout, widgets)
       if (patch.length > 0) {
         onLayoutChange(patch)
       }
     },
-    [autoIdSet, squareIdSet, onLayoutChange, widgets]
+    [autoIdSet, squareIdSet, onLayoutChange, widgets, visualSquareHFine]
   )
 
   const sortedWidgets = useMemo(() => {
