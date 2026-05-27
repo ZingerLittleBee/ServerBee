@@ -40,6 +40,12 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |
 
+### Development Only
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_DEV__DEMO_DATA` | `dev.demo_data` | bool | `false` | Reset and seed the local synthetic demo dataset. Only allowed when `database.path = "dev-demo.db"`; creates `admin` / `admin123` and in-memory demo agents for local development |
+
 ### OAuth (Optional)
 
 | Environment Variable | TOML Key | Type | Default | Description |

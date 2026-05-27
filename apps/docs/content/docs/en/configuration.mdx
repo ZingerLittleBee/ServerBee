@@ -55,6 +55,12 @@ There is no admin username/password environment variable. On first start (when n
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
 
+#### Development Only
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SERVERBEE_DEV__DEMO_DATA` | `false` | Reset and seed the local synthetic demo dataset. Only allowed with `SERVERBEE_DATABASE__PATH=dev-demo.db`; creates `admin` / `admin123` and in-memory demo agents for local development |
+
 #### OAuth (Optional)
 
 | Environment Variable | Default | Description |
@@ -238,6 +244,12 @@ Tunes the agent-side security event detectors (SSH login / brute force, port sca
 | `session_ttl` | i64 | `86400` | Session cookie lifetime in seconds (24 hours) |
 | `max_servers` | u32 | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
 | `secure_cookie` | bool | `true` | Set the `Secure` flag on session cookies. Use `false` only when the browser accesses ServerBee over plain HTTP |
+
+### `[dev]` -- Local Development
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `demo_data` | bool | `false` | Reset and seed the synthetic local development dataset. Guarded to `database.path = "dev-demo.db"` so it cannot accidentally run against normal local or production-copy databases |
 
 ### `[retention]` -- Data Retention
 
