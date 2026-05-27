@@ -132,7 +132,8 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
         className="mt-1 font-bold @[14rem]:text-2xl @[20rem]:text-3xl @[26rem]:text-4xl text-foreground text-xl tabular-nums"
         data-testid="gauge-value"
       >
-        {value.toFixed(1)}%
+        {value.toFixed(1)}
+        <span className="ml-0.5 font-medium text-[0.6em] text-muted-foreground/70">%</span>
       </p>
     </>
   )
