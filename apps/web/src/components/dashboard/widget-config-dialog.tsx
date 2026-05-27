@@ -128,7 +128,9 @@ function ServerSelect({
         value={value}
       >
         <SelectTrigger className="w-full">
-          <SelectValue placeholder={placeholder} />
+          <SelectValue placeholder={placeholder}>
+            {(v: string | null) => servers.find((s) => s.id === v)?.name ?? placeholder}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {servers.map((s) => (
@@ -160,7 +162,9 @@ function MetricSelect({
       <Label>{label}</Label>
       <Select items={metrics} onValueChange={(v) => v !== null && onChange(v)} value={value}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder={placeholder} />
+          <SelectValue placeholder={placeholder}>
+            {(v: string | null) => metrics.find((m) => m.value === v)?.label ?? placeholder}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {metrics.map((m) => (
@@ -707,7 +711,14 @@ export function WidgetConfigDialog({
   const needsNoConfig = widgetType === 'service-status' || widgetType === 'server-map'
 
   const handleSubmit = () => {
-    onSubmit(title, JSON.stringify(config))
+    // Seed per-widget defaults that the form only shows but doesn't write,
+    // so a "save without changes" doesn't persist an invalid empty config
+    // (e.g. the metric-card form displays 'cpu' but only commits it on user change).
+    const normalized = { ...config }
+    if (widgetType === 'metric-card' && normalized.metric === undefined) {
+      normalized.metric = 'cpu'
+    }
+    onSubmit(title, JSON.stringify(normalized))
     onOpenChange(false)
   }
 
