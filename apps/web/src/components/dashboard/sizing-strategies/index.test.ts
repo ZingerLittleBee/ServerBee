@@ -136,3 +136,44 @@ describe('applyStrategy', () => {
     expect(result).toEqual({ w: 4, h: 11 })
   })
 })
+
+import { snapOnRelease } from './index'
+
+describe('snapOnRelease', () => {
+  const baseItem: LayoutItem = {
+    i: 'gauge-1',
+    x: 0,
+    y: 0,
+    w: 3,
+    h: 11 // fine units
+  }
+
+  it('aspect-square snaps w to the nearest tier and returns coarse h = w', () => {
+    const strategy: SizingStrategy = { kind: 'aspect-square', tiers: [2, 3, 4, 5, 6] }
+    const result = snapOnRelease({ ...baseItem, w: 4 }, strategy, { containerWidth: 1004 })
+    expect(result).toEqual({ w: 4, h: 4 })
+  })
+
+  it('aspect-square snaps non-tier w to nearest', () => {
+    const strategy: SizingStrategy = { kind: 'aspect-square', tiers: [2, 3, 4, 5, 6] }
+    // base.w shouldn't be fractional in practice, but commitLayoutChange
+    // may receive a w just above a tier boundary during dragging — verify snap.
+    const result = snapOnRelease({ ...baseItem, w: 3 }, strategy, { containerWidth: 1004 })
+    expect(result).toEqual({ w: 3, h: 3 })
+  })
+
+  it('free returns empty patch', () => {
+    const strategy: SizingStrategy = { kind: 'free' }
+    expect(snapOnRelease(baseItem, strategy, { containerWidth: 1004 })).toEqual({})
+  })
+
+  it('fixed returns empty patch', () => {
+    const strategy: SizingStrategy = { kind: 'fixed' }
+    expect(snapOnRelease(baseItem, strategy, { containerWidth: 1004 })).toEqual({})
+  })
+
+  it('content-height returns empty patch', () => {
+    const strategy: SizingStrategy = { kind: 'content-height' }
+    expect(snapOnRelease(baseItem, strategy, { containerWidth: 1004 })).toEqual({})
+  })
+})

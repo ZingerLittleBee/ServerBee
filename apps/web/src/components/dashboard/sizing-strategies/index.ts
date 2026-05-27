@@ -47,6 +47,23 @@ function lockHeight(fineH: number): LayoutConstraint {
   }
 }
 
+export interface SnapContext {
+  containerWidth: number
+}
+
+export function snapOnRelease(item: LayoutItem, strategy: SizingStrategy, _ctx: SnapContext): SnapPatch {
+  switch (strategy.kind) {
+    case 'aspect-square': {
+      const tier = nearestTier(item.w, strategy.tiers)
+      return { w: tier, h: tier }
+    }
+    case 'free':
+    case 'fixed':
+    case 'content-height':
+      return {}
+  }
+}
+
 export function applyStrategy(strategy: SizingStrategy, measuredFineH?: number): StrategyDescriptor {
   switch (strategy.kind) {
     case 'free':
