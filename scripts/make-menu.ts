@@ -394,8 +394,7 @@ const COMMANDS: CommandDefinition[] = [
     name: 'server:dev:prod',
     category: 'Rust',
     description: 'Run server with production database copy (data/prod.db, run db-pull first)',
-    command:
-      'SERVERBEE_DATABASE__PATH=prod.db SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    command: 'SERVERBEE_DATABASE__PATH=prod.db SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
     featured: true
   },
   {
