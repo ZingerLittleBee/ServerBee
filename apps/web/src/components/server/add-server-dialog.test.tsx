@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockPost = vi.fn()
-const mockInvalidateQueries = vi.fn()
+const mockGet = vi.fn()
+const mockSetQueryData = vi.fn()
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -33,7 +34,7 @@ vi.mock('@tanstack/react-query', () => ({
     }
   }),
   useQuery: () => ({ data: [], isLoading: false }),
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries })
+  useQueryClient: () => ({ setQueryData: mockSetQueryData })
 }))
 
 vi.mock('sonner', () => ({
@@ -45,7 +46,7 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/api-client', () => ({
   api: {
-    get: vi.fn(),
+    get: (path: string) => mockGet(path),
     post: (path: string, body: unknown) => mockPost(path, body)
   }
 }))
@@ -112,7 +113,8 @@ const { AddServerDialog } = await import('./add-server-dialog')
 describe('AddServerDialog', () => {
   beforeEach(() => {
     mockPost.mockReset()
-    mockInvalidateQueries.mockReset()
+    mockGet.mockReset()
+    mockSetQueryData.mockReset()
   })
 
   it('POSTs to /api/servers with the form payload and transitions to the install-command view on success', async () => {
@@ -125,6 +127,7 @@ describe('AddServerDialog', () => {
         expires_at: '2030-01-01T00:00:00Z'
       }
     })
+    mockGet.mockResolvedValueOnce([])
 
     render(<AddServerDialog onClose={vi.fn()} open />)
 
@@ -147,7 +150,8 @@ describe('AddServerDialog', () => {
     })
 
     expect(screen.getByText('add_server.shown_once_warning')).toBeInTheDocument()
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['servers'] })
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/servers'))
+    expect(mockSetQueryData).toHaveBeenCalledWith(['servers'], expect.any(Function))
     expect(screen.queryByRole('button', { name: 'add_server.generate' })).not.toBeInTheDocument()
   })
 

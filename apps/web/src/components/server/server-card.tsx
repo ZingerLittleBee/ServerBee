@@ -238,7 +238,9 @@ function PendingActionMenu({ serverId, serverName }: PendingActionMenuProps) {
   const deleteMutation = useMutation({
     mutationFn: () => api.delete<void>(`/api/servers/${serverId}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['servers'] })
+      // ['servers'] is a WS-fed cache (queryFn: () => []); invalidating it would
+      // wipe the whole list. Remove the deleted row in place.
+      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => prev?.filter((s) => s.id !== serverId))
       toast.success(t('servers:card_pending.deleted'))
       setConfirmDeleteOpen(false)
     },

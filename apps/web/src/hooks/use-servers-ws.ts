@@ -170,6 +170,74 @@ export function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics
   return updated
 }
 
+/**
+ * Default-zero runtime metrics for a brand-new server stub. The REST
+ * `ServerResponse` only carries static + identity fields; runtime metrics
+ * (cpu, mem_used, online, …) populate on the next WS push.
+ */
+function blankServerMetrics(id: string): ServerMetrics {
+  return {
+    id,
+    name: '',
+    cpu: 0,
+    cpu_cores: null,
+    cpu_name: null,
+    mem_total: 0,
+    mem_used: 0,
+    swap_total: 0,
+    swap_used: 0,
+    disk_total: 0,
+    disk_used: 0,
+    disk_read_bytes_per_sec: 0,
+    disk_write_bytes_per_sec: 0,
+    net_in_speed: 0,
+    net_in_transfer: 0,
+    net_out_speed: 0,
+    net_out_transfer: 0,
+    load1: 0,
+    load5: 0,
+    load15: 0,
+    process_count: 0,
+    tcp_conn: 0,
+    udp_conn: 0,
+    uptime: 0,
+    last_active: 0,
+    online: false,
+    country_code: null,
+    group_id: null,
+    os: null,
+    region: null
+  }
+}
+
+/**
+ * Reconcile the WS-fed `['servers']` cache against a fresh REST list. Membership
+ * comes from REST (handles add / delete / cleanup), but per-row runtime metrics
+ * are preserved from the existing cache so we don't blink to zeros while
+ * waiting for the next WS update.
+ */
+export function reconcileServersFromRest(
+  prev: ServerMetrics[] | undefined,
+  fresh: Array<Partial<ServerMetrics> & { id: string }>
+): ServerMetrics[] {
+  const prevMap = new Map((prev ?? []).map((s) => [s.id, s]))
+  return fresh.map((row) => {
+    const existing = prevMap.get(row.id)
+    if (existing) {
+      const merged: Record<string, unknown> = { ...existing }
+      for (const [key, value] of Object.entries(row)) {
+        const isStaticDefault =
+          STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))
+        if (!isStaticDefault) {
+          merged[key] = value
+        }
+      }
+      return merged as unknown as ServerMetrics
+    }
+    return { ...blankServerMetrics(row.id), ...row } as ServerMetrics
+  })
+}
+
 export function setServerOnlineStatus(prev: ServerMetrics[], serverId: string, online: boolean): ServerMetrics[] {
   return prev.map((s) => (s.id === serverId ? { ...s, online } : s))
 }

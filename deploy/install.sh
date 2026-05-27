@@ -1515,7 +1515,12 @@ install_binary_agent() {
 
     mkdir -p "$CONFIG_DIR"
 
-    # Generate agent.toml (skip if exists)
+    # Generate agent.toml, or refresh enrollment fields if it already exists.
+    # On reinstall/recover the operator pastes a fresh `--enrollment-code` and
+    # expects the agent to re-register with it. Previously we just `warn`-ed
+    # and left the stale code (and any persisted `token`) in place, silently
+    # breaking the recover flow. Clearing `token` forces the register path so
+    # the new enrollment_code is actually consumed.
     if [ ! -f "${CONFIG_DIR}/agent.toml" ]; then
         cat > "${CONFIG_DIR}/agent.toml" << TOML
 server_url = "${SERVER_URL}"
@@ -1527,7 +1532,10 @@ enable_temperature = true
 TOML
         info "Created ${CONFIG_DIR}/agent.toml"
     else
-        warn "${CONFIG_DIR}/agent.toml already exists, not overwriting"
+        info "${CONFIG_DIR}/agent.toml exists — refreshing server_url, enrollment_code, clearing token"
+        toml_set "${CONFIG_DIR}/agent.toml" "server_url" "${SERVER_URL}"
+        toml_set "${CONFIG_DIR}/agent.toml" "enrollment_code" "${ENROLLMENT_CODE}"
+        toml_set "${CONFIG_DIR}/agent.toml" "token" ""
     fi
 
     # systemd service
@@ -1642,7 +1650,9 @@ install_docker_agent() {
     conf_dir="$(docker_conf_dir)"
     mkdir -p "$conf_dir"
 
-    # Generate agent.toml (skip if exists)
+    # Generate agent.toml, or refresh enrollment fields if it already exists.
+    # See the binary-mode comment above for rationale: silently keeping the
+    # stale enrollment_code/token broke the recover flow.
     if [ ! -f "${conf_dir}/agent.toml" ]; then
         cat > "${conf_dir}/agent.toml" << TOML
 server_url = "${SERVER_URL}"
@@ -1654,7 +1664,10 @@ enable_temperature = true
 TOML
         info "Created ${conf_dir}/agent.toml"
     else
-        warn "${conf_dir}/agent.toml already exists, not overwriting"
+        info "${conf_dir}/agent.toml exists — refreshing server_url, enrollment_code, clearing token"
+        toml_set "${conf_dir}/agent.toml" "server_url" "${SERVER_URL}"
+        toml_set "${conf_dir}/agent.toml" "enrollment_code" "${ENROLLMENT_CODE}"
+        toml_set "${conf_dir}/agent.toml" "token" ""
     fi
 
     mkdir -p "$DOCKER_DIR"

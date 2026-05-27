@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { ApiError, api } from '@/lib/api-client'
 import type { RegenerateCodeRequest, RegenerateCodeResponse } from '@/lib/api-schema'
 
@@ -28,7 +29,26 @@ export function RegenerateCodeDialog({ open, onOpenChange, serverId }: Regenerat
       setIssued(data)
       setErrorMessage(null)
       toast.success(t('servers:card_pending.regenerated'))
-      queryClient.invalidateQueries({ queryKey: ['servers'] })
+      // The ['servers'] key is a WS-fed cache whose queryFn returns []. Calling
+      // `invalidateQueries` here would re-run that queryFn and wipe the visible
+      // list (along with the ServerCard hosting this dialog). Patch the affected
+      // row's outstanding_enrollment in place instead — the next WS push will
+      // overwrite anything we got wrong.
+      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+        prev?.map((s) =>
+          s.id === serverId
+            ? {
+                ...s,
+                outstanding_enrollment: {
+                  id: data.enrollment.id,
+                  code_prefix: data.enrollment.code_prefix,
+                  expires_at: data.enrollment.expires_at,
+                  created_at: new Date().toISOString()
+                }
+              }
+            : s
+        )
+      )
     },
     onError: (err: unknown) => {
       const message =
