@@ -1215,8 +1215,8 @@ async fn trigger_upgrade(
 
     let version = normalize_version(&body.version);
 
-    // Validate version format
-    if version.is_empty() || !version.chars().all(|c| c.is_ascii_digit() || c == '.') {
+    // Validate version format (SemVer, with optional pre-release / build metadata).
+    if semver::Version::parse(version).is_err() {
         return Err(AppError::BadRequest("Invalid version format".into()));
     }
 
