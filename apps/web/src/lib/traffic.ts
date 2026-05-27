@@ -15,7 +15,9 @@ interface ComputeInput {
 }
 
 export function computeTrafficQuota({ entry, netInTransfer, netOutTransfer }: ComputeInput): TrafficQuota {
-  const used = entry ? entry.cycle_in + entry.cycle_out : netInTransfer + netOutTransfer
+  const fallbackIn = Number.isFinite(netInTransfer) ? netInTransfer : 0
+  const fallbackOut = Number.isFinite(netOutTransfer) ? netOutTransfer : 0
+  const used = entry ? entry.cycle_in + entry.cycle_out : fallbackIn + fallbackOut
   const rawLimit = entry?.traffic_limit ?? null
   const limit = rawLimit != null && rawLimit > 0 ? rawLimit : DEFAULT_TRAFFIC_LIMIT_BYTES
   const rawPct = limit > 0 ? (used / limit) * 100 : 0

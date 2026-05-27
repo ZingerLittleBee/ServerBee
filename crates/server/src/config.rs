@@ -39,6 +39,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub feature: FeatureConfig,
     #[serde(default)]
+    pub dev: DevConfig,
+    #[serde(default)]
     pub firewall: FirewallConfig,
     #[serde(default)]
     pub ip_quality: IpQualityConfig,
@@ -64,6 +66,7 @@ impl Default for AppConfig {
             mobile: MobileConfig::default(),
             resend: ResendConfig::default(),
             feature: FeatureConfig::default(),
+            dev: DevConfig::default(),
             firewall: FirewallConfig::default(),
             ip_quality: IpQualityConfig::default(),
             network_probe: NetworkProbeConfig::default(),
@@ -458,7 +461,10 @@ where
         fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
             self.visit_str(&v)
         }
-        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
             let mut out = Vec::new();
             while let Some(item) = seq.next_element::<String>()? {
                 out.push(item);
@@ -509,6 +515,12 @@ impl Default for FeatureConfig {
             custom_themes: default_true(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DevConfig {
+    #[serde(default)]
+    pub demo_data: bool,
 }
 
 fn default_utc() -> String {
@@ -672,6 +684,22 @@ mod tests {
     }
 
     #[test]
+    fn dev_demo_data_defaults_to_disabled_and_reads_env_var() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.dev.demo_data);
+
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_DEV__DEMO_DATA", "true");
+            let cfg: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()
+                .expect("dev demo flag should deserialize from env");
+            assert!(cfg.dev.demo_data);
+            Ok(())
+        });
+    }
+
+    #[test]
     fn firewall_allow_list_from_env() {
         figment::Jail::expect_with(|jail| {
             jail.set_env(
@@ -772,9 +800,11 @@ mod tests {
             ipapi_is: None,
         };
         let warnings = cfg.validate_warnings();
-        assert!(warnings
-            .iter()
-            .any(|w| w.contains("unknown risk_provider 'scamalytics'")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("unknown risk_provider 'scamalytics'"))
+        );
     }
 
     #[test]

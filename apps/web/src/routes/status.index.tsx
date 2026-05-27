@@ -6,6 +6,7 @@ import { LayoutToggle } from '@/components/status/layout-toggle'
 import { ServerSummaryCard } from '@/components/status/server-summary-card'
 import { ServerSummaryRow } from '@/components/status/server-summary-row'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicServerSummary, PublicStatusConfig } from '@/lib/api-schema'
@@ -93,16 +94,32 @@ function PublicStatusIndex() {
       </div>
 
       {layout === 'grid' ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {servers.map((s) => (
-            <ServerSummaryCard clickable={clickable} key={s.id} server={s} />
+            <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={s.id}>
+              <ServerSummaryCard clickable={clickable} server={s} />
+            </div>
           ))}
         </div>
       ) : (
         <div className="overflow-hidden rounded-md border">
-          {servers.map((s) => (
-            <ServerSummaryRow clickable={clickable} key={s.id} server={s} thresholds={thresholds} />
-          ))}
+          <Table className="min-w-[1120px]">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[220px]">{t('nav_servers')}</TableHead>
+                <TableHead className="w-[180px]">{t('cpu')}</TableHead>
+                <TableHead className="w-[180px]">{t('memory')}</TableHead>
+                <TableHead className="w-[184px]">{t('disk')}</TableHead>
+                <TableHead className="hidden w-[184px] lg:table-cell">{t('network_in')}</TableHead>
+                <TableHead className="hidden w-[220px] xl:table-cell">{t('uptime')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {servers.map((s) => (
+                <ServerSummaryRow clickable={clickable} key={s.id} server={s} thresholds={thresholds} />
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

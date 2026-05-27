@@ -56,6 +56,8 @@ COMMAND_TARGETS := \
 	server-dev-prod \
 	agent-dev \
 	dev-full \
+	dev-demo \
+	server-dev-demo \
 	docker-build \
 	docker-up \
 	docker-down \

@@ -248,7 +248,18 @@ async fn public_status_endpoints_return_200_when_fully_enabled() {
         SystemReport {
             cpu: 12.5,
             mem_used: 8_000_000_000,
+            swap_used: 2_000_000_000,
             disk_used: 30_000_000_000,
+            net_in_transfer: 123_000_000,
+            net_out_transfer: 456_000_000,
+            disk_io: Some(vec![serverbee_common::types::DiskIo {
+                name: "vda".to_string(),
+                read_bytes_per_sec: 1_000,
+                write_bytes_per_sec: 2_000,
+            }]),
+            tcp_conn: 42,
+            udp_conn: 7,
+            process_count: 88,
             ..Default::default()
         },
     );
@@ -260,36 +271,39 @@ async fn public_status_endpoints_return_200_when_fully_enabled() {
     let to = now.to_rfc3339();
 
     let endpoints: Vec<(&str, String)> = vec![
-        ("/api/status/config", format!("{}/api/status/config", base_url)),
+        (
+            "/api/status/config",
+            format!("{}/api/status/config", base_url),
+        ),
         ("/api/status", format!("{}/api/status", base_url)),
         (
             "/api/status/servers/{id}",
             format!("{}/api/status/servers/{}", base_url, server_id),
         ),
-        (
-            "/api/status/servers/{id}/metrics",
-            {
-                // reqwest will URL-encode the `:` etc. in the ISO-8601
-                // strings via the `query()` builder; constructing a raw URL
-                // string would break with `400 Bad Request` on the chrono
-                // serde format. We build the encoded URL via `Url::parse_with_params`.
-                let mut url = reqwest::Url::parse(&format!(
-                    "{}/api/status/servers/{}/metrics",
-                    base_url, server_id
-                ))
-                .unwrap();
-                url.query_pairs_mut()
-                    .append_pair("from", &from)
-                    .append_pair("to", &to)
-                    .append_pair("interval", "raw");
-                url.to_string()
-            },
-        ),
+        ("/api/status/servers/{id}/metrics", {
+            // reqwest will URL-encode the `:` etc. in the ISO-8601
+            // strings via the `query()` builder; constructing a raw URL
+            // string would break with `400 Bad Request` on the chrono
+            // serde format. We build the encoded URL via `Url::parse_with_params`.
+            let mut url = reqwest::Url::parse(&format!(
+                "{}/api/status/servers/{}/metrics",
+                base_url, server_id
+            ))
+            .unwrap();
+            url.query_pairs_mut()
+                .append_pair("from", &from)
+                .append_pair("to", &to)
+                .append_pair("interval", "raw");
+            url.to_string()
+        }),
         (
             "/api/status/servers/{id}/uptime-daily",
             format!("{}/api/status/servers/{}/uptime-daily", base_url, server_id),
         ),
-        ("/api/status/network", format!("{}/api/status/network", base_url)),
+        (
+            "/api/status/network",
+            format!("{}/api/status/network", base_url),
+        ),
         (
             "/api/status/network/{id}",
             format!("{}/api/status/network/{}", base_url, server_id),
@@ -338,6 +352,28 @@ async fn public_status_endpoints_return_200_when_fully_enabled() {
     assert!(body["data"]["active"].is_array());
     assert!(body["data"]["recent"].is_array());
 
-    // Suppress unused: json! import path is used elsewhere in the suite.
-    let _ = json!({});
+    // Summary cards use the same runtime surface as the authenticated
+    // `/servers` card where it is safe for public status. A cached report
+    // should be rendered even when the agent is not currently connected, under
+    // the same offline overlay the authenticated page uses.
+    let resp = client
+        .get(format!("{}/api/status", base_url))
+        .send()
+        .await
+        .unwrap();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let metrics = &body["data"][0]["metrics"];
+    assert!(
+        metrics.is_object(),
+        "summary metrics should be populated: {body:?}"
+    );
+    assert_eq!(metrics["swap_used"], json!(2_000_000_000u64));
+    assert_eq!(metrics["swap_total"], json!(4_000_000_000u64));
+    assert_eq!(metrics["net_in_transfer"], json!(123_000_000u64));
+    assert_eq!(metrics["net_out_transfer"], json!(456_000_000u64));
+    assert_eq!(metrics["disk_read_bytes_per_sec"], json!(1_000u64));
+    assert_eq!(metrics["disk_write_bytes_per_sec"], json!(2_000u64));
+    assert_eq!(metrics["tcp_conn"], json!(42u32));
+    assert_eq!(metrics["udp_conn"], json!(7u32));
+    assert_eq!(metrics["process_count"], json!(88u32));
 }

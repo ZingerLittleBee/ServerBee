@@ -377,17 +377,24 @@ const COMMANDS: CommandDefinition[] = [
     key: 'server-dev',
     name: 'server:dev',
     category: 'Rust',
-    description: 'Run server in dev mode (admin/admin123, no secure cookie)',
-    command: 'SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    description: 'Run server in dev mode (no secure cookie; first-run password is printed once)',
+    command: 'SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    featured: true
+  },
+  {
+    key: 'server-dev-demo',
+    name: 'server:dev:demo',
+    category: 'Rust',
+    description: 'Run server with reset local demo data (data/dev-demo.db, admin/admin123)',
+    command: 'bash scripts/server-dev-demo.sh',
     featured: true
   },
   {
     key: 'server-dev-prod',
     name: 'server:dev:prod',
     category: 'Rust',
-    description: 'Run server with production database (data/prod.db, run db-pull first)',
-    command:
-      'SERVERBEE_DATABASE__PATH=prod.db SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
+    description: 'Run server with production database copy (data/prod.db, run db-pull first)',
+    command: 'SERVERBEE_DATABASE__PATH=prod.db SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server',
     featured: true
   },
   {
@@ -404,6 +411,14 @@ const COMMANDS: CommandDefinition[] = [
     category: 'Workspace',
     description: 'Start server + web dev, print agent command with a freshly minted enrollment code',
     command: 'bash scripts/dev-full.sh',
+    featured: true
+  },
+  {
+    key: 'dev-demo',
+    name: 'dev:demo',
+    category: 'Workspace',
+    description: 'Start server + web dev with reset synthetic local data and in-memory demo agents',
+    command: 'bash scripts/dev-demo.sh',
     featured: true
   },
   {

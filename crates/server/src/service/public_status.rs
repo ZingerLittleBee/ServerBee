@@ -19,6 +19,7 @@ use crate::entity::{
     incident, incident_update, maintenance, server, server_group, status_page, unlock_service,
 };
 use crate::error::AppError;
+use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::ip_quality::IpQualityService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::uptime::{UptimeDailyEntry, UptimeService};
@@ -48,13 +49,22 @@ pub struct PublicMetricsSummary {
     pub cpu: f64,
     pub mem_used: u64,
     pub mem_total: u64,
+    pub swap_used: u64,
+    pub swap_total: u64,
     pub disk_used: u64,
     pub disk_total: u64,
+    pub disk_read_bytes_per_sec: u64,
+    pub disk_write_bytes_per_sec: u64,
     pub net_in_speed: u64,
     pub net_out_speed: u64,
+    pub net_in_transfer: u64,
+    pub net_out_transfer: u64,
     pub load_1: f64,
     pub load_5: f64,
     pub load_15: f64,
+    pub tcp_conn: u32,
+    pub udp_conn: u32,
+    pub process_count: u32,
     pub uptime: u64,
 }
 
@@ -360,19 +370,30 @@ fn build_summary(
 fn report_to_metrics(
     report: &serverbee_common::types::SystemReport,
     mem_total: i64,
+    swap_total: i64,
     disk_total: i64,
 ) -> PublicMetricsSummary {
+    let (disk_read_bytes_per_sec, disk_write_bytes_per_sec) = aggregate_disk_io(report);
     PublicMetricsSummary {
         cpu: report.cpu,
         mem_used: report.mem_used.max(0) as u64,
         mem_total: mem_total.max(0) as u64,
+        swap_used: report.swap_used.max(0) as u64,
+        swap_total: swap_total.max(0) as u64,
         disk_used: report.disk_used.max(0) as u64,
         disk_total: disk_total.max(0) as u64,
+        disk_read_bytes_per_sec,
+        disk_write_bytes_per_sec,
         net_in_speed: report.net_in_speed.max(0) as u64,
         net_out_speed: report.net_out_speed.max(0) as u64,
+        net_in_transfer: report.net_in_transfer.max(0) as u64,
+        net_out_transfer: report.net_out_transfer.max(0) as u64,
         load_1: report.load1,
         load_5: report.load5,
         load_15: report.load15,
+        tcp_conn: report.tcp_conn.max(0) as u32,
+        udp_conn: report.udp_conn.max(0) as u32,
+        process_count: report.process_count.max(0) as u32,
         uptime: report.uptime,
     }
 }
@@ -455,13 +476,14 @@ pub async fn list_servers(
             .as_deref()
             .and_then(|g| group_lookup.get(g).cloned());
 
-        let metrics = if online {
-            agent_manager.get_latest_report(&srv.id).map(|r| {
-                report_to_metrics(&r, srv.mem_total.unwrap_or(0), srv.disk_total.unwrap_or(0))
-            })
-        } else {
-            None
-        };
+        let metrics = agent_manager.get_latest_report(&srv.id).map(|r| {
+            report_to_metrics(
+                &r,
+                srv.mem_total.unwrap_or(0),
+                srv.swap_total.unwrap_or(0),
+                srv.disk_total.unwrap_or(0),
+            )
+        });
 
         // 90-day uptime band (canonical for the public surface).
         let uptime_daily = UptimeService::get_daily_filled(db, &srv.id, 90)
@@ -514,15 +536,16 @@ pub async fn get_server_detail(
         None
     };
 
-    let latest = if online {
-        agent_manager.get_latest_report(&srv.id)
-    } else {
-        None
-    };
+    let latest = agent_manager.get_latest_report(&srv.id);
 
-    let metrics = latest
-        .as_ref()
-        .map(|r| report_to_metrics(r, srv.mem_total.unwrap_or(0), srv.disk_total.unwrap_or(0)));
+    let metrics = latest.as_ref().map(|r| {
+        report_to_metrics(
+            r,
+            srv.mem_total.unwrap_or(0),
+            srv.swap_total.unwrap_or(0),
+            srv.disk_total.unwrap_or(0),
+        )
+    });
 
     let uptime_daily = UptimeService::get_daily_filled(db, &srv.id, 90)
         .await
