@@ -43,6 +43,10 @@
         "label": "Stat Number",
         "description": "Single metric value with icon"
       },
+      "metric-card": {
+        "label": "Metric Card",
+        "description": "Current value + 1h delta + 24h sparkline & stats"
+      },
       "server-cards": {
         "label": "Server Cards",
         "description": "Server overview cards grid"
@@ -231,5 +235,17 @@
     "loading": "Loading...",
     "downloading": "Downloading...",
     "download_failed": "Download failed"
+  },
+  "metricCard": {
+    "metric": {
+      "cpu": "CPU",
+      "memory": "Memory",
+      "network": "Network",
+      "diskIo": "Disk I/O"
+    },
+    "past1h": "past 1h",
+    "peak": "24H PEAK",
+    "avg": "24H AVG",
+    "unknownServer": "Unknown server"
   }
 }

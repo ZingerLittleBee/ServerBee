@@ -43,6 +43,10 @@
         "label": "数值统计",
         "description": "带图标的单一指标值"
       },
+      "metric-card": {
+        "label": "指标卡片",
+        "description": "当前值 + 1h 变化 + 24h sparkline 与峰值/均值"
+      },
       "server-cards": {
         "label": "服务器卡片",
         "description": "服务器概览卡片网格"
@@ -231,5 +235,17 @@
     "loading": "加载中...",
     "downloading": "下载中...",
     "download_failed": "下载失败"
+  },
+  "metricCard": {
+    "metric": {
+      "cpu": "CPU",
+      "memory": "内存",
+      "network": "网络",
+      "diskIo": "磁盘 I/O"
+    },
+    "past1h": "过去 1 小时",
+    "peak": "24H 峰值",
+    "avg": "24H 均值",
+    "unknownServer": "未知服务器"
   }
 }
