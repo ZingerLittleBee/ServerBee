@@ -8,6 +8,7 @@ import type {
   GaugeConfig,
   LineChartConfig,
   MarkdownConfig,
+  MetricCardConfig,
   MultiLineConfig,
   ServerCardsConfig,
   ServerMapConfig,
@@ -23,6 +24,7 @@ import { DiskIoWidget } from './widgets/disk-io'
 import { GaugeWidget } from './widgets/gauge'
 import { LineChartWidget } from './widgets/line-chart-widget'
 import { MarkdownWidget } from './widgets/markdown'
+import { MetricCardWidget } from './widgets/metric-card'
 import { MultiLineWidget } from './widgets/multi-line'
 import { ServerCardsWidget } from './widgets/server-cards'
 import { ServerMapWidget } from './widgets/server-map'
@@ -86,6 +88,8 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
   switch (widget.widget_type) {
     case 'stat-number':
       return <StatNumberWidget config={config as unknown as StatNumberConfig} servers={servers} />
+    case 'metric-card':
+      return <MetricCardWidget config={config as unknown as MetricCardConfig} servers={servers} />
     case 'server-cards':
       return <ServerCardsWidget config={config as unknown as ServerCardsConfig} servers={servers} />
     case 'gauge':
