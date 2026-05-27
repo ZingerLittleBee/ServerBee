@@ -6,7 +6,7 @@ import { CAP_DEFAULT } from '@/lib/capabilities'
 
 const mockPost = vi.fn()
 const mockDelete = vi.fn()
-const mockInvalidateQueries = vi.fn()
+const mockSetQueryData = vi.fn()
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -22,20 +22,20 @@ vi.mock('@tanstack/react-query', () => ({
   }: {
     mutationFn: (...args: unknown[]) => Promise<unknown>
     onError?: (err: unknown) => void
-    onSuccess?: (data: unknown) => void
+    onSuccess?: (data: unknown, variables: unknown) => void
   }) => ({
     error: null,
     isPending: false,
     mutate: async (vars: unknown) => {
       try {
         const result = await mutationFn(vars)
-        onSuccess?.(result)
+        onSuccess?.(result, vars)
       } catch (err) {
         onError?.(err)
       }
     }
   }),
-  useQueryClient: () => ({ invalidateQueries: mockInvalidateQueries })
+  useQueryClient: () => ({ setQueryData: mockSetQueryData })
 }))
 
 vi.mock('sonner', () => ({
@@ -131,7 +131,7 @@ describe('RecoverAgentDialog', () => {
   beforeEach(() => {
     mockPost.mockReset()
     mockDelete.mockReset()
-    mockInvalidateQueries.mockReset()
+    mockSetQueryData.mockReset()
   })
 
   it('renders the server name in a read-only header (not as an input)', () => {
@@ -179,7 +179,18 @@ describe('RecoverAgentDialog', () => {
       expect(screen.getByText('plaintext-recover-code')).toBeInTheDocument()
     })
     expect(screen.getByText('add_server.shown_once_warning')).toBeInTheDocument()
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['servers'] })
+    expect(mockSetQueryData).toHaveBeenCalledWith(['servers'], expect.any(Function))
+    // The updater should patch outstanding_enrollment and (since revoke_immediately
+    // defaulted to true) flip has_token / online to false.
+    const updater = mockSetQueryData.mock.calls[0][1] as (
+      prev: Record<string, unknown>[] | undefined
+    ) => Record<string, unknown>[] | undefined
+    const patched = updater([{ id: 'srv-42', has_token: true, online: true, outstanding_enrollment: null }])
+    expect(patched?.[0]).toMatchObject({
+      has_token: false,
+      online: false,
+      outstanding_enrollment: { id: 'enr-9', code_prefix: 'plaint' }
+    })
   })
 
   it('toggling revoke_immediately off changes the submitted body to false', async () => {
@@ -233,7 +244,13 @@ describe('RecoverAgentDialog', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledTimes(1))
     expect(mockDelete).toHaveBeenCalledWith('/api/agent/enrollments/enr-out-1')
     await waitFor(() => {
-      expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['servers'] })
+      expect(mockSetQueryData).toHaveBeenCalledWith(['servers'], expect.any(Function))
     })
+    // The updater should clear outstanding_enrollment on the affected row.
+    const updater = mockSetQueryData.mock.calls[0][1] as (
+      prev: Record<string, unknown>[] | undefined
+    ) => Record<string, unknown>[] | undefined
+    const patched = updater([{ id: 'srv-42', outstanding_enrollment: { id: 'enr-out-1', code_prefix: 'abc123' } }])
+    expect(patched?.[0]).toMatchObject({ outstanding_enrollment: null })
   })
 })

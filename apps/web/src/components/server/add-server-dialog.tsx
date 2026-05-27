@@ -10,8 +10,9 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { reconcileServersFromRest, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
-import type { CreateServerRequest, CreateServerResponse, ServerGroup } from '@/lib/api-schema'
+import type { CreateServerRequest, CreateServerResponse, ServerGroup, ServerResponse } from '@/lib/api-schema'
 import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn } from '@/lib/utils'
 
@@ -191,9 +192,20 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
 
   const mutation = useMutation({
     mutationFn: (body: CreateServerRequest) => api.post<CreateServerResponse>('/api/servers', body),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setIssued(data)
-      queryClient.invalidateQueries({ queryKey: ['servers'] })
+      // ['servers'] is a WS-fed cache (queryFn: () => []); invalidating it
+      // would wipe the list. Refresh membership from REST and reconcile —
+      // existing rows keep their runtime metrics, the brand-new row is
+      // inserted as a stub until the next WS push fills it in.
+      try {
+        const fresh = await api.get<ServerResponse[]>('/api/servers')
+        queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+          reconcileServersFromRest(prev, fresh as unknown as Array<Partial<ServerMetrics> & { id: string }>)
+        )
+      } catch {
+        // Best-effort: the new row will surface on the next WS full_sync.
+      }
     },
     onError: (err: unknown) => {
       toast.error(err instanceof Error ? err.message : t('add_server.generate_failed'))

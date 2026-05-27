@@ -36,10 +36,10 @@ import { useCostOverview } from '@/hooks/use-cost'
 import { useDataTable } from '@/hooks/use-data-table'
 import { useNetworkOverview, useNetworkSetting } from '@/hooks/use-network-api'
 import { useScrollViewportHeight } from '@/hooks/use-scroll-viewport-height'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { reconcileServersFromRest, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import { api } from '@/lib/api-client'
-import type { ServerGroup } from '@/lib/api-schema'
+import type { ServerGroup, ServerResponse } from '@/lib/api-schema'
 import { withMockServers } from '@/lib/dev-mock-servers'
 import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { cn } from '@/lib/utils'
@@ -327,8 +327,17 @@ function ServersListPage() {
 
   const cleanupMutation = useMutation({
     mutationFn: () => api.delete<{ deleted_count: number }>('/api/servers/cleanup'),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['servers'] })
+    onSuccess: async (data) => {
+      // ['servers'] is a WS-fed cache (queryFn: () => []); refresh membership
+      // from REST instead of invalidating (which would wipe the visible list).
+      try {
+        const fresh = await api.get<ServerResponse[]>('/api/servers')
+        queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
+          reconcileServersFromRest(prev, fresh as unknown as Array<Partial<ServerMetrics> & { id: string }>)
+        )
+      } catch {
+        // Best-effort: next WS full_sync will reconcile.
+      }
       toast.success(t('servers:cleanup_success', { count: data.deleted_count }))
     },
     onError: (err) => {
@@ -338,9 +347,11 @@ function ServersListPage() {
 
   const batchDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => api.post<{ deleted: number }>('/api/servers/batch-delete', { ids }),
-    onSuccess: () => {
+    onSuccess: (_data, ids) => {
       table.toggleAllRowsSelected(false)
-      queryClient.invalidateQueries({ queryKey: ['servers'] })
+      const removed = new Set(ids)
+      // Same WS-cache caveat: filter the deleted ids out in place.
+      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => prev?.filter((s) => !removed.has(s.id)))
     }
   })
 
