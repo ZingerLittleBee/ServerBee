@@ -316,6 +316,135 @@ async fn list_includes_builtin_hello_world() {
 }
 
 #[tokio::test]
+async fn install_single_file_via_multipart_and_uninstall() {
+    let ctx = start_test_server_with_db().await;
+
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let code = r#"/**
+ * @serverbee-widget {
+ *   "id": "com.test.uploaded",
+ *   "version": "1.0.0",
+ *   "name": "Uploaded",
+ *   "category": "Real-time",
+ *   "sizing": { "defaultW": 2, "defaultH": 2, "minW": 1, "minH": 1, "strategy": "free" },
+ *   "sdkVersion": "^0.1.0"
+ * }
+ */
+export default {};"#;
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(code.as_bytes().to_vec()).file_name("uploaded.js"),
+    );
+
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(res.status(), 200, "install should return 200");
+    let body: serde_json::Value = res.json().await.expect("invalid JSON");
+    assert_eq!(body["data"]["id"], "com.test.uploaded");
+    assert_eq!(body["data"]["version"], "1.0.0");
+
+    let res2 = client
+        .get(format!("{}/api/widget-modules", ctx.base_url))
+        .send()
+        .await
+        .expect("list request failed");
+    assert_eq!(res2.status(), 200);
+    let list: serde_json::Value = res2.json().await.expect("invalid JSON");
+    assert!(
+        list["data"]
+            .as_array()
+            .expect("data array")
+            .iter()
+            .any(|m| m["id"] == "com.test.uploaded"),
+        "uploaded module should appear in list: {list}"
+    );
+
+    let res3 = client
+        .delete(format!(
+            "{}/api/widget-modules/com.test.uploaded",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("delete request failed");
+    assert_eq!(res3.status(), 204, "uninstall should return 204");
+
+    let res4 = client
+        .get(format!("{}/api/widget-modules", ctx.base_url))
+        .send()
+        .await
+        .expect("post-delete list failed");
+    let list2: serde_json::Value = res4.json().await.expect("invalid JSON");
+    assert!(
+        !list2["data"]
+            .as_array()
+            .expect("data array")
+            .iter()
+            .any(|m| m["id"] == "com.test.uploaded"),
+        "module should be gone after uninstall: {list2}"
+    );
+}
+
+#[tokio::test]
+async fn install_rejects_invalid_manifest() {
+    let ctx = start_test_server_with_db().await;
+
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    // No @serverbee-widget block at all.
+    let code = b"export default {};";
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(code.to_vec()).file_name("bad.js"),
+    );
+
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(
+        res.status(),
+        400,
+        "install without manifest block should 400"
+    );
+}
+
+#[tokio::test]
+async fn cannot_uninstall_builtin() {
+    let ctx = start_test_server_with_db().await;
+    serverbee_server::service::widget_module::builtin::register_all(&ctx.db)
+        .await
+        .expect("register builtin widgets");
+
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let res = client
+        .delete(format!(
+            "{}/api/widget-modules/com.serverbee.hello-world",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("delete request failed");
+    assert!(
+        res.status().is_client_error(),
+        "uninstalling builtin should be a client error, got {}",
+        res.status()
+    );
+}
+
+#[tokio::test]
 async fn serve_builtin_asset_returns_js_bytes() {
     let ctx = start_test_server_with_db().await;
     serverbee_server::service::widget_module::builtin::register_all(&ctx.db)
