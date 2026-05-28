@@ -46,8 +46,19 @@ static SEMVER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\d+\.\d+\.\d+(-[\w.]+
 static SEMVER_RANGE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[\^~]?\d+\.\d+\.\d+").unwrap());
 
+/// Hard cap on input length we'll regex-scan for a `@serverbee-widget` JSDoc
+/// block. The regex is already bounded by JSDoc start/end markers but feeding
+/// a multi-megabyte string to `Regex::captures` is a cheap DoS vector; reject
+/// up front. 1 MiB is well above any realistic single JS file we accept.
+pub const MAX_SOURCE_BYTES_FOR_REGEX: usize = 1_048_576;
+
 pub fn extract_manifest(source: &str) -> Result<WidgetManifest, super::WidgetModuleError> {
     use super::WidgetModuleError as E;
+    if source.len() > MAX_SOURCE_BYTES_FOR_REGEX {
+        return Err(E::ManifestValidation(
+            "source too large for manifest extraction".into(),
+        ));
+    }
     let captures = JSDOC_RE
         .captures(source)
         .ok_or_else(|| E::ManifestExtraction("no @serverbee-widget JSDoc block found".into()))?;
