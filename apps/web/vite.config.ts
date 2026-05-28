@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { createDevProxy } from './vite/dev-proxy'
+import { builtinWidgetsPlugin } from './vite-plugins/builtin-widgets'
 
 const apiRuntimePattern = /^\/api\//
 const pwaRuntimePattern = /^\/pwa-/
@@ -115,6 +116,7 @@ export default defineConfig(({ mode }) => {
         routeFileIgnorePattern
       }),
       react(),
+      builtinWidgetsPlugin(),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
