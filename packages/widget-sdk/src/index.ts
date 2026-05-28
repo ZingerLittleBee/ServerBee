@@ -8,6 +8,7 @@ export type {
   WidgetModule
 } from './define-widget'
 export { defineWidget } from './define-widget'
+export { renderConfigForm } from './form'
 export * from './hooks'
 export type { SizingStrategy, WidgetCategory, WidgetManifest, WidgetSizing } from './manifest'
 export { validateManifest } from './manifest'
