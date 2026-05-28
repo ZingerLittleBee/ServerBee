@@ -1,6 +1,6 @@
 ---
 title: Status Pages
-description: Publish public server health pages with incidents, maintenance windows, uptime history, and custom themes.
+description: Publish public server health pages with incidents, maintenance windows, and uptime history.
 icon: Globe
 ---
 
@@ -48,7 +48,6 @@ Create and manage pages in **Settings → Status Pages**. Each page has its own 
 | Enabled | `enabled` | Disabled pages return 404 |
 | Yellow uptime threshold | `uptime_yellow_threshold` | Days below this percentage show as degraded |
 | Red uptime threshold | `uptime_red_threshold` | Days below this percentage show as major outage |
-| Theme | `theme_ref` | Preset/custom theme reference, or `null` to follow admin default |
 
 <Callout type="info">
 The current API request fields use `server_ids_json` and `status_page_ids_json` for selected IDs. These fields accept JSON arrays in request bodies.
@@ -63,7 +62,6 @@ GET /api/status/{slug}
 The response includes:
 
 - `page` -- page metadata and display options
-- `theme` -- resolved theme variables
 - `servers` -- selected server statuses, uptime percentages, and 90-day daily uptime data
 - `active_incidents` -- unresolved incidents linked to the page
 - `planned_maintenances` -- active/upcoming maintenance windows linked to the page
@@ -157,8 +155,6 @@ Create example:
   "uptime_red_threshold": 95
 }
 ```
-
-To set a custom theme during update, pass `theme_ref`, for example `"preset:default"` or a custom theme reference. Use `null` to follow the admin default.
 
 <Cards>
   <Card title="Custom Widgets" href="/en/docs/custom-widgets" />

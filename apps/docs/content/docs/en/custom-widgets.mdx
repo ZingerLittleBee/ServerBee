@@ -276,12 +276,16 @@ Built-in widgets (for example `com.serverbee.hello-world`) cannot be uninstalled
 
 ## Limits and safety
 
-- **Size cap**: a single `.js` file or `.zip` may not exceed **1 MiB**; each entry inside the zip is capped at **5 MiB** uncompressed.
-- **SSRF protection**: URL installs reject private, loopback, and link-local addresses outright.
+- **Size caps**: a single `.js` file or `.zip` may not exceed **1 MiB** on upload; each entry inside a zip is capped at **5 MiB** uncompressed; the whole zip is capped at **32 MiB** total uncompressed across at most **64 entries**.
+- **SSRF protection**: URL installs resolve DNS and reject any host whose IP falls in a reserved/private range — loopback (`127.0.0.0/8`, `::1`), private networks (`10/8`, `172.16/12`, `192.168/16`), CGNAT (`100.64/10`), link-local (`169.254/16` — includes cloud metadata endpoints), IPv6 ULA (`fc00::/7`) and link-local (`fe80::/10`), benchmarking, documentation, multicast, and reserved ranges. HTTP redirects are disabled — 3xx responses are rejected outright so a public URL cannot pivot into the private network.
 - **Zip-slip protection**: extraction rejects entries with `..` or absolute paths.
-- **Static parsing only**: the manifest must be extractable with a plain regex — there is no `eval` / `Function()` involved in installation.
+- **Static parsing only**: the manifest must be extractable with a plain regex — there is no `eval` / `Function()` involved in installation. The extractor itself rejects sources > 1 MiB up front.
+- **ID conflict rejection**: an upload whose `id` already belongs to a module from a different source (e.g. trying to overwrite a built-in with an upload) is refused with `409 Conflict`.
+- **SDK version gating**: each manifest declares `sdkVersion` as a semver range; the loader refuses to register a module whose required range does not match the host SDK.
 - **Admin-gated**: install and uninstall endpoints require admin privileges; members can only list and fetch served assets.
+- **Audit logged**: every install and uninstall is recorded in the audit log with the actor, source, id, version, and code SHA-256.
 - **Same-origin execution**: widgets run in the same browsing context as the main SPA — only install code from sources you trust.
+- **Action buttons** declared via `defineWidget({ actions })` get a built-in confirm dialog (when `confirm` is set), pending state, and toast notifications on success/failure.
 
 <Cards>
   <Card title="Dashboards & Widgets" href="/en/docs/dashboards" />

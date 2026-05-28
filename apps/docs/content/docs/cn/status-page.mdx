@@ -1,6 +1,6 @@
 ---
 title: 公开状态页
-description: 发布包含事件公告、维护窗口、可用性历史和自定义主题的公开健康状态页。
+description: 发布包含事件公告、维护窗口和可用性历史的公开健康状态页。
 icon: Globe
 ---
 
@@ -48,7 +48,6 @@ GET /api/status
 | 启用 | `enabled` | 禁用后页面返回 404 |
 | 黄色可用性阈值 | `uptime_yellow_threshold` | 低于该百分比的日期显示为降级 |
 | 红色可用性阈值 | `uptime_red_threshold` | 低于该百分比的日期显示为严重故障 |
-| 主题 | `theme_ref` | 预设/自定义主题引用，或 `null` 跟随后台默认主题 |
 
 <Callout type="info">
 当前 API 请求字段使用 `server_ids_json` 和 `status_page_ids_json` 表示选择的 ID。这些字段在请求体中接受 JSON 数组。
@@ -63,7 +62,6 @@ GET /api/status/{slug}
 响应包含：
 
 - `page` -- 页面元数据和显示选项
-- `theme` -- 解析后的主题变量
 - `servers` -- 选中服务器状态、可用性百分比和 90 天每日可用性数据
 - `active_incidents` -- 关联到页面且尚未解决的事件
 - `planned_maintenances` -- 关联到页面的活动/计划维护窗口
@@ -157,8 +155,6 @@ GET /api/status/{slug}
   "uptime_red_threshold": 95
 }
 ```
-
-更新时可以传入 `theme_ref` 设置自定义主题，例如 `"preset:default"` 或自定义主题引用。传 `null` 表示跟随后台默认主题。
 
 <Cards>
   <Card title="自定义组件" href="/cn/docs/custom-widgets" />
