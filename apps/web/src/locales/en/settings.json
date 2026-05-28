@@ -525,8 +525,8 @@
   "widgets.install_from_url_desc": "Fetch a widget module from an HTTPS URL. The server validates and stores it locally.",
   "widgets.url_label": "Module URL",
   "widgets.install": "Install",
-  "widgets.upload_file": "Upload .js file",
-  "widgets.upload_file_desc": "Pick a single-file widget bundle (.js or .mjs) from your computer.",
+  "widgets.upload_file": "Upload widget bundle",
+  "widgets.upload_file_desc": "Pick a single .js/.mjs widget bundle or a .zip collection bundle from your computer.",
   "widgets.uploading": "Uploading…",
   "widgets.installed_modules": "Installed modules",
   "widgets.no_modules": "No widget modules installed yet.",
@@ -534,5 +534,8 @@
   "widgets.builtin_locked": "Built-in (cannot uninstall)",
   "widgets.confirm_uninstall": "Uninstall \"{{name}}\"? Any dashboard widgets using this module will stop rendering.",
   "widgets.toast_installed": "Installed {{id}} v{{version}}",
-  "widgets.toast_uninstalled": "Uninstalled {{id}}"
+  "widgets.toast_installed_collection": "Installed {{count}} widgets from collection",
+  "widgets.toast_uninstalled": "Uninstalled {{id}}",
+  "widgets.widget_config_module_not_installed": "Widget module is not installed",
+  "widgets.widget_config_module_no_fields": "This module exposes no configurable fields."
 }

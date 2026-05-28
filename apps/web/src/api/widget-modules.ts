@@ -11,9 +11,24 @@ export interface ModuleSummary {
   version: string
 }
 
-export interface ModuleInstallResult {
+export interface ModuleInstallEntry {
   id: string
   version: string
+}
+
+export type ModuleInstallResult =
+  | { kind: 'single'; id: string; version: string }
+  | { kind: 'collection'; widgets: ModuleInstallEntry[] }
+
+function asInstallResult(data: unknown): ModuleInstallResult {
+  if (Array.isArray(data)) {
+    return {
+      kind: 'collection',
+      widgets: data as ModuleInstallEntry[]
+    }
+  }
+  const entry = data as ModuleInstallEntry
+  return { kind: 'single', id: entry.id, version: entry.version }
 }
 
 const LIST_KEY = ['widget-modules'] as const
@@ -56,7 +71,7 @@ export function useInstallFromUrl() {
         throw new Error(await readError(res))
       }
       const json = await res.json()
-      return json.data as ModuleInstallResult
+      return asInstallResult(json.data)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: LIST_KEY }).catch(() => undefined)
@@ -79,7 +94,7 @@ export function useInstallFromFile() {
         throw new Error(await readError(res))
       }
       const json = await res.json()
-      return json.data as ModuleInstallResult
+      return asInstallResult(json.data)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: LIST_KEY }).catch(() => undefined)

@@ -57,7 +57,11 @@ function WidgetsPage() {
     installUrl.mutate(trimmed, {
       onSuccess: (data) => {
         setUrl('')
-        toast.success(t('widgets.toast_installed', { id: data.id, version: data.version }))
+        if (data.kind === 'collection') {
+          toast.success(t('widgets.toast_installed_collection', { count: data.widgets.length }))
+        } else {
+          toast.success(t('widgets.toast_installed', { id: data.id, version: data.version }))
+        }
       },
       onError: (err) => {
         toast.error(err.message)
@@ -72,7 +76,11 @@ function WidgetsPage() {
     }
     installFile.mutate(file, {
       onSuccess: (data) => {
-        toast.success(t('widgets.toast_installed', { id: data.id, version: data.version }))
+        if (data.kind === 'collection') {
+          toast.success(t('widgets.toast_installed_collection', { count: data.widgets.length }))
+        } else {
+          toast.success(t('widgets.toast_installed', { id: data.id, version: data.version }))
+        }
       },
       onError: (err) => {
         toast.error(err.message)
@@ -131,7 +139,7 @@ function WidgetsPage() {
           <p className="text-muted-foreground text-sm">{t('widgets.upload_file_desc')}</p>
           <div className="flex items-center gap-2">
             <Input
-              accept=".js,.mjs"
+              accept=".js,.mjs,.zip"
               aria-label={t('widgets.upload_file')}
               className="flex-1"
               disabled={installFile.isPending}

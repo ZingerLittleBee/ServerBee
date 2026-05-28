@@ -506,8 +506,8 @@
   "widgets.install_from_url_desc": "从 HTTPS URL 拉取 Widget 模块，服务端会校验并本地存储。",
   "widgets.url_label": "模块 URL",
   "widgets.install": "安装",
-  "widgets.upload_file": "上传 .js 文件",
-  "widgets.upload_file_desc": "从本地选择一个单文件 Widget 包（.js 或 .mjs）。",
+  "widgets.upload_file": "上传 Widget 包",
+  "widgets.upload_file_desc": "从本地选择单文件 Widget 包（.js / .mjs），或选择 .zip 集合包。",
   "widgets.uploading": "上传中…",
   "widgets.installed_modules": "已安装的模块",
   "widgets.no_modules": "尚未安装任何 Widget 模块。",
@@ -515,5 +515,8 @@
   "widgets.builtin_locked": "内置（不可卸载）",
   "widgets.confirm_uninstall": "确定卸载 “{{name}}” 吗？任何仪表盘上使用该模块的小组件都将无法渲染。",
   "widgets.toast_installed": "已安装 {{id}} v{{version}}",
-  "widgets.toast_uninstalled": "已卸载 {{id}}"
+  "widgets.toast_installed_collection": "安装了 {{count}} 个 widget",
+  "widgets.toast_uninstalled": "已卸载 {{id}}",
+  "widgets.widget_config_module_not_installed": "Widget 模块未安装",
+  "widgets.widget_config_module_no_fields": "该模块没有可配置字段。"
 }
