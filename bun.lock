@@ -55,6 +55,7 @@
         "@base-ui/react": "^1.2.0",
         "@fontsource-variable/inter": "^5.2.8",
         "@monaco-editor/react": "^4.7.0",
+        "@serverbee/widget-sdk": "workspace:*",
         "@tailwindcss/vite": "^4.1.17",
         "@tanstack/react-query": "^5.90.21",
         "@tanstack/react-router": "^1.166.7",
@@ -195,6 +196,24 @@
         "@types/react-dom": "catalog:",
         "tailwindcss": "catalog:",
         "typescript": "^5.9.3",
+      },
+    },
+    "packages/widget-sdk": {
+      "name": "@serverbee/widget-sdk",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@tanstack/react-query": "^5.90.21",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^19.2.5",
+        "jsdom": "^28.1.0",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+        "typescript": "~5.9.3",
+        "vitest": "^4.1.0",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
       },
     },
   },
@@ -971,6 +990,8 @@
     "@serverbee/ui": ["@serverbee/ui@workspace:packages/ui"],
 
     "@serverbee/web": ["@serverbee/web@workspace:apps/web"],
+
+    "@serverbee/widget-sdk": ["@serverbee/widget-sdk@workspace:packages/widget-sdk"],
 
     "@shikijs/core": ["@shikijs/core@4.0.2", "", { "dependencies": { "@shikijs/primitive": "4.0.2", "@shikijs/types": "4.0.2", "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4", "hast-util-to-html": "^9.0.5" } }, "sha512-hxT0YF4ExEqB8G/qFdtJvpmHXBYJ2lWW7qTHDarVkIudPFE6iCIrqdgWxGn5s+ppkGXI0aEGlibI0PAyzP3zlw=="],
 
