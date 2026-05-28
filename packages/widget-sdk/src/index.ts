@@ -9,4 +9,6 @@ export type {
 export { defineWidget } from './define-widget'
 export type { SizingStrategy, WidgetCategory, WidgetManifest, WidgetSizing } from './manifest'
 export { validateManifest } from './manifest'
+export type { ServerSummary, WidgetRuntime } from './runtime-context'
+export { createWidgetRuntime, getRuntime, resetRuntime } from './runtime-context'
 export { type Infer, ZError, ZodSchema, type ZodTypeAny, z } from './z'
