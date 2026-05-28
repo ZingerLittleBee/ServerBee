@@ -22,15 +22,15 @@ export function useApiQuery<T>(
   }
 ): UseQueryResult<T> {
   const params = opts?.params
-  const url = params
-    ? `${path}?${new URLSearchParams(
-        Object.fromEntries(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined)
-            .map(([k, v]) => [k, String(v)])
-        )
-      ).toString()}`
-    : path
+  // Sort entries by key so the resulting URL — and therefore the React Query
+  // cache key — is stable regardless of the order callers pass params in.
+  const sortedEntries = params
+    ? Object.entries(params)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, String(v)] as [string, string])
+        .sort(([a], [b]) => a.localeCompare(b))
+    : []
+  const url = sortedEntries.length > 0 ? `${path}?${new URLSearchParams(sortedEntries).toString()}` : path
   return useQuery<T>({
     queryKey: ['widget-api', url],
     queryFn: () => request<T>('GET', url),

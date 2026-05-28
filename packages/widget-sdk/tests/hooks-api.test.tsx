@@ -39,4 +39,21 @@ describe('api hooks', () => {
       expect.objectContaining({ method: 'POST', credentials: 'include' })
     )
   })
+
+  it('useApiQuery sorts params for stable URL + cache key', async () => {
+    const { result: out1 } = renderHook(() => useApiQuery<{ hello: string }>('/api/test', { params: { b: 2, a: 1 } }), {
+      wrapper
+    })
+    await waitFor(() => expect(out1.current.data).toEqual({ hello: 'world' }))
+    const { result: out2 } = renderHook(() => useApiQuery<{ hello: string }>('/api/test', { params: { a: 1, b: 2 } }), {
+      wrapper
+    })
+    await waitFor(() => expect(out2.current.data).toEqual({ hello: 'world' }))
+
+    // Both should hit the same URL: a before b.
+    const calledUrls = (global.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
+      (call) => call[0] as string
+    )
+    expect(calledUrls.every((u) => u === '/api/test?a=1&b=2')).toBe(true)
+  })
 })
