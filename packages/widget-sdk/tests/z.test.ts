@@ -80,3 +80,36 @@ describe('z extensions', () => {
     expect(() => s.parse('bogus')).toThrow()
   })
 })
+
+describe('ZodSchema.introspect', () => {
+  it('reports kind/label/default/optional', () => {
+    const s = z.string().describe('Name').default('anon').optional()
+    const info = s.introspect()
+    expect(info.kind).toBe('string')
+    expect(info.label).toBe('Name')
+    expect(info.default).toBe('anon')
+    expect(info.optional).toBe(true)
+  })
+
+  it('exposes shape for z.object()', () => {
+    const s = z.object({ a: z.string(), b: z.number() })
+    const info = s.introspect()
+    expect(info.kind).toBe('object')
+    expect(info.shape).toBeDefined()
+    expect(Object.keys(info.shape ?? {})).toEqual(['a', 'b'])
+  })
+
+  it('exposes values for z.enum()', () => {
+    const s = z.enum(['x', 'y', 'z'] as const)
+    const info = s.introspect()
+    expect(info.kind).toBe('enum')
+    expect(info.values).toEqual(['x', 'y', 'z'])
+  })
+
+  it('reports extension kinds', () => {
+    expect(z.metricPath().introspect().kind).toBe('metricPath')
+    expect(z.color().introspect().kind).toBe('color')
+    expect(z.duration().introspect().kind).toBe('duration')
+    expect(z.serverId().introspect().kind).toBe('serverId')
+  })
+})

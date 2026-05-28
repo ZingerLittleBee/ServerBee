@@ -3,6 +3,15 @@ import { ZError } from './validate'
 export type Infer<T> = T extends ZodSchema<infer U> ? U : never
 export type ZodTypeAny = ZodSchema<any>
 
+export interface SchemaIntrospection<T = unknown> {
+  default?: T
+  kind: string
+  label?: string
+  optional: boolean
+  shape?: Record<string, ZodTypeAny>
+  values?: readonly string[]
+}
+
 export abstract class ZodSchema<T> {
   abstract _kind: string
   _label?: string
@@ -36,6 +45,27 @@ export abstract class ZodSchema<T> {
   optional(): this {
     this._optional = true
     return this
+  }
+
+  /**
+   * Public, type-safe introspection of schema metadata for form renderers and
+   * other tooling. Avoids reaching into private `_kind` / `shape` / `values`
+   * via `as any`. Subclasses may expose `shape` (for object) or `values`
+   * (for enum) — they are surfaced here in a tagged shape.
+   */
+  introspect(): SchemaIntrospection<T> {
+    const self = this as unknown as {
+      shape?: Record<string, ZodTypeAny>
+      values?: readonly string[]
+    }
+    return {
+      kind: this._kind,
+      label: this._label,
+      default: this._default,
+      optional: this._optional,
+      shape: self.shape,
+      values: self.values
+    }
   }
 }
 

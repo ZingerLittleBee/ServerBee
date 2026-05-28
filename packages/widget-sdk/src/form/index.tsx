@@ -7,14 +7,16 @@ export function renderConfigForm(
   value: Record<string, unknown>,
   onChange: (v: Record<string, unknown>) => void
 ): ReactNode {
-  if ((schema as any)._kind !== 'object') {
+  const info = schema.introspect()
+  if (info.kind !== 'object' || !info.shape) {
     return <em>Top-level schema must be z.object()</em>
   }
-  const shape = (schema as any).shape as Record<string, ZodTypeAny>
+  const shape = info.shape
   return (
     <div>
       {Object.entries(shape).map(([key, fieldSchema]) => {
-        const label = (fieldSchema as any)._label ?? key
+        const fieldInfo = fieldSchema.introspect()
+        const label = fieldInfo.label ?? key
         const id = `cfg-${key}`
         return (
           <div key={key} style={{ marginBottom: 8 }}>
