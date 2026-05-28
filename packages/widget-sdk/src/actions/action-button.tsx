@@ -21,6 +21,7 @@ async function askConfirm(action: ActionDefinition): Promise<boolean> {
   }
   if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
     const body = action.confirm.body ? `\n\n${action.confirm.body}` : ''
+    // biome-ignore lint/suspicious/noAlert: deliberate fallback when host runtime has not wired requestConfirm
     return window.confirm(`${action.confirm.title}${body}`)
   }
   return true

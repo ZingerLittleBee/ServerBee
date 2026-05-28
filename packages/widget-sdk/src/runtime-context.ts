@@ -27,7 +27,7 @@ export interface WidgetRuntime {
   apiBaseUrl: string
   /** Optional: hint list of well-known metric paths for the metricPath picker. */
   getMetricPaths?: () => string[]
-  /** Optional: host-provided toast hook. SDK falls back to console.* */
+  /** Optional: host-provided toast hook. SDK falls back to console.*/
   notify?: (opts: NotifyOptions) => void
   onConfigUpdate: (instanceId: string, patch: Record<string, unknown>) => void
   queryClient: QueryClient

@@ -74,6 +74,7 @@ export function useCapability(id: string | null, cap: string): boolean {
       return false
     }
     const server = rt.serversStore().find((s) => s.id === id)
+    // biome-ignore lint/suspicious/noBitwiseOperators: capabilities is a bitmask, AND is the intended operation
     return server ? (server.capabilities & bit) !== 0 : false
   }, [rt, id, cap])
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)

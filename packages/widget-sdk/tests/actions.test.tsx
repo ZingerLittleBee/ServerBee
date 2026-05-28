@@ -33,14 +33,14 @@ describe('actions helper', () => {
     const run = vi.fn().mockResolvedValue(undefined)
     const actions: ActionDefinition[] = [{ id: 'a1', label: 'Do it', run }]
     const helper = createActionsHelper(actions)
-    render(<>{helper.render('a1')}</>)
+    render(helper.render('a1'))
     fireEvent.click(screen.getByRole('button', { name: 'Do it' }))
     await waitFor(() => expect(run).toHaveBeenCalledOnce())
   })
 
   it('returns null for unknown id', () => {
     const helper = createActionsHelper([])
-    const { container } = render(<>{helper.render('missing')}</>)
+    const { container } = render(helper.render('missing'))
     expect(container.textContent).toBe('')
   })
 
@@ -57,7 +57,7 @@ describe('actions helper', () => {
       }
     ]
     const helper = createActionsHelper(actions)
-    render(<>{helper.render('a1')}</>)
+    render(helper.render('a1'))
     fireEvent.click(screen.getByRole('button', { name: 'Restart' }))
     await waitFor(() =>
       expect(requestConfirm).toHaveBeenCalledWith({ title: 'Restart server?', body: 'Are you sure?' })
@@ -72,7 +72,7 @@ describe('actions helper', () => {
     installRuntime({ requestConfirm, notify })
     const actions: ActionDefinition[] = [{ id: 'a1', label: 'Restart', run, confirm: { title: 'Restart?' } }]
     const helper = createActionsHelper(actions)
-    render(<>{helper.render('a1')}</>)
+    render(helper.render('a1'))
     fireEvent.click(screen.getByRole('button', { name: 'Restart' }))
     await waitFor(() => expect(run).toHaveBeenCalledOnce())
     await waitFor(() => expect(notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' })))
@@ -84,7 +84,7 @@ describe('actions helper', () => {
     installRuntime({ notify })
     const actions: ActionDefinition[] = [{ id: 'a1', label: 'Risky', run }]
     const helper = createActionsHelper(actions)
-    render(<>{helper.render('a1')}</>)
+    render(helper.render('a1'))
     fireEvent.click(screen.getByRole('button', { name: 'Risky' }))
     await waitFor(() =>
       expect(notify).toHaveBeenCalledWith(
