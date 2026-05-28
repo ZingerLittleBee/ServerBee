@@ -15,16 +15,7 @@ const queryClient = new QueryClient({
   }
 })
 
-mountRuntimeBridge({
-  queryClient,
-  serversStore: () => [],
-  serverByIdStore: () => undefined,
-  themeStore: () => ({
-    mode: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-    cssVar: (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
-  }),
-  onConfigUpdate: () => {}
-})
+mountRuntimeBridge({ queryClient })
 
 // Best-effort: don't block rendering. Endpoint may return empty in Plan 1.
 bootstrapLoader().catch((e) => console.warn('widget bootstrap failed', e))
