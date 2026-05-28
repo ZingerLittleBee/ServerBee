@@ -16,13 +16,23 @@ impl UnpackedPackage {
         Self { entries }
     }
 
-    /// Unpack a zip blob (defends against zip-slip and oversize entries).
+    /// Unpack a zip blob (defends against zip-slip, oversize entries, and
+    /// zip-bomb style total uncompressed size or excessive entry counts).
     pub fn from_zip(blob: &[u8]) -> Result<Self, WidgetModuleError> {
         const MAX_ENTRY_BYTES: u64 = 5 * 1024 * 1024;
+        const MAX_ZIP_ENTRIES: usize = 64;
+        const MAX_TOTAL_UNCOMPRESSED: u64 = 32 * 1024 * 1024;
+
         let reader = Cursor::new(blob);
         let mut zip = zip::ZipArchive::new(reader)
             .map_err(|e| WidgetModuleError::ManifestExtraction(format!("invalid zip: {e}")))?;
+        if zip.len() > MAX_ZIP_ENTRIES {
+            return Err(WidgetModuleError::ManifestExtraction(
+                "too many entries".into(),
+            ));
+        }
         let mut entries = HashMap::new();
+        let mut total: u64 = 0;
         for i in 0..zip.len() {
             let mut entry = zip
                 .by_index(i)
@@ -39,6 +49,12 @@ impl UnpackedPackage {
                 return Err(WidgetModuleError::ManifestExtraction(format!(
                     "entry too large: {name}"
                 )));
+            }
+            total = total.saturating_add(entry.size());
+            if total > MAX_TOTAL_UNCOMPRESSED {
+                return Err(WidgetModuleError::ManifestExtraction(
+                    "zip too large".into(),
+                ));
             }
             let mut buf = Vec::with_capacity(entry.size() as usize);
             entry
