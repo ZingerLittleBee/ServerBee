@@ -44,3 +44,4 @@ pub mod upgrade_release;
 pub mod upgrade_tracker;
 pub mod uptime;
 pub mod user;
+pub mod widget_module;
