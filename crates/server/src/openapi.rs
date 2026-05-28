@@ -164,6 +164,9 @@ impl Modify for SecurityAddon {
         crate::router::api::dashboard::create_dashboard,
         crate::router::api::dashboard::update_dashboard,
         crate::router::api::dashboard::delete_dashboard,
+        // widget-modules
+        crate::router::api::widget_module::list_modules,
+        crate::router::api::widget_module::serve_asset,
         // service-monitors
         crate::router::api::service_monitor::list_monitors,
         crate::router::api::service_monitor::get_monitor,
@@ -357,6 +360,8 @@ impl Modify for SecurityAddon {
             crate::service::dashboard::CreateDashboardInput,
             crate::service::dashboard::UpdateDashboardInput,
             crate::service::dashboard::WidgetInput,
+            // widget-modules
+            crate::service::widget_module::service::WidgetModuleListEntry,
             // service-monitors
             crate::service::service_monitor::CreateServiceMonitor,
             crate::service::service_monitor::UpdateServiceMonitor,
@@ -537,6 +542,7 @@ impl Modify for SecurityAddon {
         (name = "users", description = "User management (admin only)"),
         (name = "tasks", description = "Remote command execution"),
         (name = "dashboards", description = "Custom dashboard management"),
+        (name = "widget-modules", description = "Custom widget module registry & asset serving"),
         (name = "service-monitors", description = "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"),
         (name = "ping-tasks", description = "Ping probe tasks"),
         (name = "traceroute", description = "Traceroute diagnostics"),

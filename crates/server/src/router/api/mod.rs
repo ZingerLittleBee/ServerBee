@@ -35,6 +35,7 @@ pub mod traceroute;
 pub mod traffic;
 pub mod uptime;
 pub mod user;
+pub mod widget_module;
 
 use std::sync::Arc;
 
@@ -73,6 +74,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(status_page::read_router())
                 .merge(uptime::read_router())
                 .merge(dashboard::read_router())
+                .merge(widget_module::read_router())
                 .merge(theme::read_router())
                 .merge(alert::alert_events_router())
                 .merge(geoip::read_router())
