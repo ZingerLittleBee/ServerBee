@@ -102,6 +102,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(service_monitor::write_router())
                         .merge(traceroute::write_router())
                         .merge(dashboard::write_router())
+                        .merge(widget_module::write_router())
                         .merge(theme::write_router())
                         .merge(setting::router())
                         .merge(agent::admin_router())

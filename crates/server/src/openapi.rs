@@ -167,6 +167,8 @@ impl Modify for SecurityAddon {
         // widget-modules
         crate::router::api::widget_module::list_modules,
         crate::router::api::widget_module::serve_asset,
+        crate::router::api::widget_module::install_module,
+        crate::router::api::widget_module::uninstall_module,
         // service-monitors
         crate::router::api::service_monitor::list_monitors,
         crate::router::api::service_monitor::get_monitor,

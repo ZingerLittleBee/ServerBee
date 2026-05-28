@@ -5,6 +5,12 @@ use utoipa::ToSchema;
 use super::{WidgetModuleError, package::UnpackedPackage};
 use crate::entity::widget_module::{self, Entity as WidgetModuleEntity};
 
+#[derive(Debug, Clone)]
+pub enum InstalledFrom {
+    Url(String),
+    Upload(String),
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WidgetModuleListEntry {
     pub id: String,
@@ -108,6 +114,96 @@ impl WidgetModuleService {
             .to_vec();
         let mime = mime_for(requested);
         Ok((bytes, mime))
+    }
+
+    /// Install (or upgrade) a single-file JS widget module by extracting the
+    /// JSDoc manifest, computing a sha256 fingerprint, and upserting the row.
+    pub async fn install_single_file(
+        db: &DatabaseConnection,
+        code: Vec<u8>,
+        from: InstalledFrom,
+        installed_by: Option<i64>,
+    ) -> Result<crate::entity::widget_module::Model, WidgetModuleError> {
+        use chrono::Utc;
+        use sea_orm::sea_query::OnConflict;
+        use sea_orm::{ActiveValue::Set, EntityTrait};
+        use sha2::{Digest, Sha256};
+
+        use crate::entity::widget_module::{self, SourceType};
+
+        let source = std::str::from_utf8(&code).map_err(|e| {
+            WidgetModuleError::ManifestValidation(format!("not utf-8: {e}"))
+        })?;
+        let manifest = super::extractor::extract_manifest(source)?;
+
+        let sha = {
+            let mut h = Sha256::new();
+            h.update(&code);
+            format!("{:x}", h.finalize())
+        };
+
+        let (source_type, source_url) = match from {
+            InstalledFrom::Url(u) => (SourceType::Url, Some(u)),
+            InstalledFrom::Upload(name) => (SourceType::Upload, Some(name)),
+        };
+
+        let manifest_json = serde_json::to_string(&manifest).map_err(|e| {
+            WidgetModuleError::ManifestValidation(format!("serialize manifest: {e}"))
+        })?;
+        let id_clone = manifest.id.clone();
+
+        let active = widget_module::ActiveModel {
+            id: Set(manifest.id.clone()),
+            version: Set(manifest.version.clone()),
+            source_type: Set(source_type),
+            source_url: Set(source_url),
+            bundled_by_theme_id: Set(None),
+            manifest_json: Set(manifest_json),
+            code_sha256: Set(sha),
+            entry_path: Set("index.js".into()),
+            package_blob: Set(Some(code)),
+            installed_by: Set(installed_by),
+            installed_at: Set(Utc::now()),
+            enabled: Set(true),
+        };
+
+        widget_module::Entity::insert(active)
+            .on_conflict(
+                OnConflict::column(widget_module::Column::Id)
+                    .update_columns([
+                        widget_module::Column::Version,
+                        widget_module::Column::SourceType,
+                        widget_module::Column::SourceUrl,
+                        widget_module::Column::ManifestJson,
+                        widget_module::Column::CodeSha256,
+                        widget_module::Column::PackageBlob,
+                        widget_module::Column::InstalledBy,
+                        widget_module::Column::InstalledAt,
+                        widget_module::Column::Enabled,
+                    ])
+                    .to_owned(),
+            )
+            .exec(db)
+            .await?;
+
+        Self::get(db, &id_clone).await
+    }
+
+    /// Delete a widget module row. Refuses to delete Builtin rows.
+    pub async fn uninstall(db: &DatabaseConnection, id: &str) -> Result<(), WidgetModuleError> {
+        let row = Self::get(db, id).await?;
+        if matches!(
+            row.source_type,
+            crate::entity::widget_module::SourceType::Builtin
+        ) {
+            return Err(WidgetModuleError::ManifestValidation(
+                "cannot uninstall builtin widget".into(),
+            ));
+        }
+        crate::entity::widget_module::Entity::delete_by_id(id.to_string())
+            .exec(db)
+            .await?;
+        Ok(())
     }
 }
 
