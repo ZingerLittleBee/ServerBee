@@ -26,15 +26,14 @@ pub mod server_group;
 pub mod server_tag;
 pub mod service_monitor;
 pub mod setting;
-pub mod spa_theme;
 pub mod status;
 pub mod status_page;
 pub mod task;
-pub mod theme;
 pub mod traceroute;
 pub mod traffic;
 pub mod uptime;
 pub mod user;
+pub mod widget_module;
 
 use std::sync::Arc;
 
@@ -73,7 +72,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(status_page::read_router())
                 .merge(uptime::read_router())
                 .merge(dashboard::read_router())
-                .merge(theme::read_router())
+                .merge(widget_module::read_router())
                 .merge(alert::alert_events_router())
                 .merge(geoip::read_router())
                 .merge(asn::read_router())
@@ -100,7 +99,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(service_monitor::write_router())
                         .merge(traceroute::write_router())
                         .merge(dashboard::write_router())
-                        .merge(theme::write_router())
+                        .merge(widget_module::write_router())
                         .merge(setting::router())
                         .merge(agent::admin_router())
                         .merge(brand::write_router())
@@ -116,7 +115,6 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(rate_limit::router())
                         .merge(security::write_router())
                         .merge(firewall::write_router())
-                        .merge(spa_theme::router())
                         .merge(status_page::write_router())
                         .layer(middleware::from_fn(require_admin)),
                 )

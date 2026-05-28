@@ -117,12 +117,48 @@
     {
       "includes": [
         "apps/docs/src/lib/cn.ts",
-        "packages/db/src/schema/index.ts"
+        "packages/db/src/schema/index.ts",
+        "packages/widget-sdk/src/index.ts",
+        "packages/widget-sdk/src/hooks/index.ts",
+        "packages/widget-sdk/src/z/index.ts"
       ],
       "linter": {
         "rules": {
           "performance": {
             "noBarrelFile": "off"
+          },
+          "style": {
+            "noExportedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/widget-sdk/src/z/primitives.ts",
+        "packages/widget-sdk/src/manifest.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/widget-sdk/tests/**"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "useTopLevelRegex": "off"
+          },
+          "suspicious": {
+            "noEmptyBlockStatements": "off",
+            "noBitwiseOperators": "off"
+          },
+          "complexity": {
+            "noUselessFragments": "off"
           }
         }
       }

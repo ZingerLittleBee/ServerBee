@@ -33,6 +33,7 @@
   "nav_api_keys": "API Keys",
   "nav_security": "Security",
   "nav_appearance": "Appearance",
+  "nav_widgets": "Widget Modules",
   "nav_audit_logs": "Audit Logs",
   "nav_rate_limits": "Rate Limits",
   "nav_geoip": "GeoIP",

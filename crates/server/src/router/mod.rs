@@ -1,6 +1,5 @@
 pub mod api;
 mod static_files;
-mod system;
 pub mod utils;
 pub mod ws;
 
@@ -30,11 +29,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api", ws::docker_logs::router())
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // System reserved routes must be mounted before the catch-all fallback so
-        // they are never shadowed by custom theme packages (spec § 6.4).
-        .nest("/__system", system::router())
-        // Embedded frontend: theme-aware serve with cookie precedence (spec § 6.5).
-        .fallback(static_files::theme_handler)
+        // Embedded frontend: serve the rust-embed SPA assets.
+        .fallback(static_files::spa_handler)
         // Security headers
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::header::X_FRAME_OPTIONS,
@@ -44,9 +40,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             axum::http::header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         ))
-        // Referrer-Policy uses `if_not_present` so the theme serve handler can
-        // override it to `same-origin` per spec § 5.5. All other responses fall
-        // back to `strict-origin-when-cross-origin` as the implicit default.
         .layer(SetResponseHeaderLayer::if_not_present(
             axum::http::header::REFERRER_POLICY,
             HeaderValue::from_static("strict-origin-when-cross-origin"),

@@ -1,7 +1,9 @@
+import type { WidgetManifest, WidgetModule } from '@serverbee/widget-sdk'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { DashboardWidget } from '@/lib/widget-types'
+import { registryActions, useWidgetRegistry } from '@/widgets-runtime/registry'
 import { WidgetRenderer } from './widget-renderer'
 
 const { renderCounts } = vi.hoisted(() => ({
@@ -62,7 +64,11 @@ vi.mock('./widgets/uptime-timeline-widget', () => ({
   UptimeTimelineWidget: () => <div data-testid="widget-uptime-timeline">uptime-timeline</div>
 }))
 
-function makeWidget(widgetType: string, config: Record<string, unknown> = {}): DashboardWidget {
+function makeWidget(
+  widgetType: string,
+  config: Record<string, unknown> = {},
+  extra: Partial<DashboardWidget> = {}
+): DashboardWidget {
   return {
     id: 'w-1',
     dashboard_id: 'dash-1',
@@ -74,7 +80,8 @@ function makeWidget(widgetType: string, config: Record<string, unknown> = {}): D
     grid_w: 4,
     grid_h: 3,
     sort_order: 0,
-    created_at: '2026-03-20T00:00:00Z'
+    created_at: '2026-03-20T00:00:00Z',
+    ...extra
   }
 }
 
@@ -130,6 +137,8 @@ const WIDGET_TYPES = [
   'markdown',
   'uptime-timeline'
 ] as const
+
+const NOT_INSTALLED_RE = /not installed/i
 
 describe('WidgetRenderer', () => {
   beforeEach(() => {
@@ -201,5 +210,44 @@ describe('WidgetRenderer', () => {
     rerender(<WidgetRenderer servers={[{ ...server, cpu: 90 }]} widget={widget} />)
 
     expect(renderCounts.gauge).toBe(2)
+  })
+
+  describe('module widgets', () => {
+    beforeEach(() => {
+      useWidgetRegistry.setState({ modules: new Map(), failures: new Map() })
+    })
+
+    const fakeManifest: WidgetManifest = {
+      id: 'com.test.fake',
+      version: '1.0.0',
+      name: 'Fake',
+      category: 'Real-time',
+      sizing: { defaultW: 2, defaultH: 2, minW: 1, minH: 1, strategy: 'free' },
+      sdkVersion: '^0.1.0'
+    }
+
+    function makeFakeModule(component: WidgetModule['component']): WidgetModule {
+      return {
+        __brand: 'WidgetModule',
+        configSchema: { parse: (v: unknown) => v } as unknown as WidgetModule['configSchema'],
+        component,
+        actions: []
+      }
+    }
+
+    it('renders the registered module component', () => {
+      registryActions.register(
+        'com.test.fake',
+        makeFakeModule(() => <div data-testid="fake-module">hello from module</div>),
+        fakeManifest
+      )
+      render(<WidgetRenderer servers={[]} widget={makeWidget('module', {}, { module_id: 'com.test.fake' })} />)
+      expect(screen.getByTestId('fake-module')).toBeInTheDocument()
+    })
+
+    it('shows a placeholder when the referenced module is not installed', () => {
+      render(<WidgetRenderer servers={[]} widget={makeWidget('module', {}, { module_id: 'com.test.missing' })} />)
+      expect(screen.getByText(NOT_INSTALLED_RE)).toBeInTheDocument()
+    })
   })
 })

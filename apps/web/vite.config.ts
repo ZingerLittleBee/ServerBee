@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { createDevProxy } from './vite/dev-proxy'
+import { builtinWidgetsPlugin } from './vite-plugins/builtin-widgets'
 
 const apiRuntimePattern = /^\/api\//
 const pwaRuntimePattern = /^\/pwa-/
@@ -70,7 +71,17 @@ export default defineConfig(({ mode }) => {
       ],
       resolve: {
         alias: {
-          '@': path.resolve(import.meta.dirname, './src')
+          '@': path.resolve(import.meta.dirname, './src'),
+          '@serverbee/widget-sdk': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/index.ts'),
+          '@serverbee/widget-sdk/z': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/z/index.ts'),
+          '@serverbee/widget-sdk/hooks': path.resolve(
+            import.meta.dirname,
+            '../../packages/widget-sdk/src/hooks/index.ts'
+          ),
+          '@serverbee/widget-sdk/actions': path.resolve(
+            import.meta.dirname,
+            '../../packages/widget-sdk/src/actions/index.ts'
+          )
         }
       },
       build: {
@@ -105,6 +116,7 @@ export default defineConfig(({ mode }) => {
         routeFileIgnorePattern
       }),
       react(),
+      builtinWidgetsPlugin(),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
@@ -134,7 +146,17 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(import.meta.dirname, './src')
+        '@': path.resolve(import.meta.dirname, './src'),
+        '@serverbee/widget-sdk': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/index.ts'),
+        '@serverbee/widget-sdk/z': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/z/index.ts'),
+        '@serverbee/widget-sdk/hooks': path.resolve(
+          import.meta.dirname,
+          '../../packages/widget-sdk/src/hooks/index.ts'
+        ),
+        '@serverbee/widget-sdk/actions': path.resolve(
+          import.meta.dirname,
+          '../../packages/widget-sdk/src/actions/index.ts'
+        )
       }
     },
     build: {

@@ -15,7 +15,6 @@ import enSecurity from '@/locales/en/security.json'
 import enServers from '@/locales/en/servers.json'
 import enServiceMonitors from '@/locales/en/service-monitors.json'
 import enSettings from '@/locales/en/settings.json'
-import enSpaTheme from '@/locales/en/spa-theme.json'
 import enStatus from '@/locales/en/status.json'
 import enTerminal from '@/locales/en/terminal.json'
 
@@ -32,7 +31,6 @@ import zhSecurity from '@/locales/zh/security.json'
 import zhServers from '@/locales/zh/servers.json'
 import zhServiceMonitors from '@/locales/zh/service-monitors.json'
 import zhSettings from '@/locales/zh/settings.json'
-import zhSpaTheme from '@/locales/zh/spa-theme.json'
 import zhStatus from '@/locales/zh/status.json'
 import zhTerminal from '@/locales/zh/terminal.json'
 
@@ -55,7 +53,6 @@ i18next
         servers: enServers,
         'service-monitors': enServiceMonitors,
         settings: enSettings,
-        'spa-theme': enSpaTheme,
         status: enStatus,
         terminal: enTerminal
       },
@@ -73,7 +70,6 @@ i18next
         servers: zhServers,
         'service-monitors': zhServiceMonitors,
         settings: zhSettings,
-        'spa-theme': zhSpaTheme,
         status: zhStatus,
         terminal: zhTerminal
       }

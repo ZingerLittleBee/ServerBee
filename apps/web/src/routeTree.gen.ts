@@ -27,6 +27,7 @@ import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network
 import { Route as StatusServerServerIdRouteImport } from './routes/status.server.$serverId'
 import { Route as StatusNetworkServerIdRouteImport } from './routes/status.network.$serverId'
 import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
+import { Route as AuthedSettingsWidgetsRouteImport } from './routes/_authed/settings/widgets'
 import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
 import { Route as AuthedSettingsStatusPagesRouteImport } from './routes/_authed/settings/status-pages'
@@ -50,8 +51,6 @@ import { Route as AuthedSecurityServerIdRouteImport } from './routes/_authed/sec
 import { Route as AuthedNetworkServerIdRouteImport } from './routes/_authed/network/$serverId'
 import { Route as AuthedFilesServerIdRouteImport } from './routes/_authed/files.$serverId'
 import { Route as AuthedServersServerIdDockerIndexRouteImport } from './routes/_authed/servers/$serverId/docker/index'
-import { Route as AuthedSettingsAppearanceThemesNewRouteImport } from './routes/_authed/settings/appearance/themes.new'
-import { Route as AuthedSettingsAppearanceThemesIdRouteImport } from './routes/_authed/settings/appearance/themes/$id'
 
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
@@ -140,6 +139,11 @@ const StatusNetworkServerIdRoute = StatusNetworkServerIdRouteImport.update({
 const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
   id: '/terminal/$serverId',
   path: '/terminal/$serverId',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsWidgetsRoute = AuthedSettingsWidgetsRouteImport.update({
+  id: '/settings/widgets',
+  path: '/settings/widgets',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsUsersRoute = AuthedSettingsUsersRouteImport.update({
@@ -266,18 +270,6 @@ const AuthedServersServerIdDockerIndexRoute =
     path: '/servers/$serverId/docker/',
     getParentRoute: () => AuthedRoute,
   } as any)
-const AuthedSettingsAppearanceThemesNewRoute =
-  AuthedSettingsAppearanceThemesNewRouteImport.update({
-    id: '/themes/new',
-    path: '/themes/new',
-    getParentRoute: () => AuthedSettingsAppearanceRoute,
-  } as any)
-const AuthedSettingsAppearanceThemesIdRoute =
-  AuthedSettingsAppearanceThemesIdRouteImport.update({
-    id: '/themes/$id',
-    path: '/themes/$id',
-    getParentRoute: () => AuthedSettingsAppearanceRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
@@ -295,7 +287,7 @@ export interface FileRoutesByFullPath {
   '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
-  '/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
+  '/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/firewall': typeof AuthedSettingsFirewallRoute
@@ -310,6 +302,7 @@ export interface FileRoutesByFullPath {
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
+  '/settings/widgets': typeof AuthedSettingsWidgetsRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/status/network/$serverId': typeof StatusNetworkServerIdRoute
   '/status/server/$serverId': typeof StatusServerServerIdRoute
@@ -319,8 +312,6 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof AuthedSettingsIndexRoute
   '/traffic/': typeof AuthedTrafficIndexRoute
   '/status/network/': typeof StatusNetworkIndexRoute
-  '/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
-  '/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRoutesByTo {
@@ -337,7 +328,7 @@ export interface FileRoutesByTo {
   '/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/settings/api-keys': typeof AuthedSettingsApiKeysRoute
-  '/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
+  '/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/settings/firewall': typeof AuthedSettingsFirewallRoute
@@ -352,6 +343,7 @@ export interface FileRoutesByTo {
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
+  '/settings/widgets': typeof AuthedSettingsWidgetsRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/status/network/$serverId': typeof StatusNetworkServerIdRoute
   '/status/server/$serverId': typeof StatusServerServerIdRoute
@@ -361,8 +353,6 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthedSettingsIndexRoute
   '/traffic': typeof AuthedTrafficIndexRoute
   '/status/network': typeof StatusNetworkIndexRoute
-  '/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
-  '/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/servers/$serverId/docker': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRoutesById {
@@ -383,7 +373,7 @@ export interface FileRoutesById {
   '/_authed/service-monitors/$id': typeof AuthedServiceMonitorsIdRoute
   '/_authed/settings/alerts': typeof AuthedSettingsAlertsRoute
   '/_authed/settings/api-keys': typeof AuthedSettingsApiKeysRoute
-  '/_authed/settings/appearance': typeof AuthedSettingsAppearanceRouteWithChildren
+  '/_authed/settings/appearance': typeof AuthedSettingsAppearanceRoute
   '/_authed/settings/audit-logs': typeof AuthedSettingsAuditLogsRoute
   '/_authed/settings/capabilities': typeof AuthedSettingsCapabilitiesRoute
   '/_authed/settings/firewall': typeof AuthedSettingsFirewallRoute
@@ -398,6 +388,7 @@ export interface FileRoutesById {
   '/_authed/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
   '/_authed/settings/users': typeof AuthedSettingsUsersRoute
+  '/_authed/settings/widgets': typeof AuthedSettingsWidgetsRoute
   '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/status/network/$serverId': typeof StatusNetworkServerIdRoute
   '/status/server/$serverId': typeof StatusServerServerIdRoute
@@ -407,8 +398,6 @@ export interface FileRoutesById {
   '/_authed/settings/': typeof AuthedSettingsIndexRoute
   '/_authed/traffic/': typeof AuthedTrafficIndexRoute
   '/status/network/': typeof StatusNetworkIndexRoute
-  '/_authed/settings/appearance/themes/$id': typeof AuthedSettingsAppearanceThemesIdRoute
-  '/_authed/settings/appearance/themes/new': typeof AuthedSettingsAppearanceThemesNewRoute
   '/_authed/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRouteTypes {
@@ -444,6 +433,7 @@ export interface FileRouteTypes {
     | '/settings/status-pages'
     | '/settings/tasks'
     | '/settings/users'
+    | '/settings/widgets'
     | '/terminal/$serverId'
     | '/status/network/$serverId'
     | '/status/server/$serverId'
@@ -453,8 +443,6 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/traffic/'
     | '/status/network/'
-    | '/settings/appearance/themes/$id'
-    | '/settings/appearance/themes/new'
     | '/servers/$serverId/docker/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -486,6 +474,7 @@ export interface FileRouteTypes {
     | '/settings/status-pages'
     | '/settings/tasks'
     | '/settings/users'
+    | '/settings/widgets'
     | '/terminal/$serverId'
     | '/status/network/$serverId'
     | '/status/server/$serverId'
@@ -495,8 +484,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/traffic'
     | '/status/network'
-    | '/settings/appearance/themes/$id'
-    | '/settings/appearance/themes/new'
     | '/servers/$serverId/docker'
   id:
     | '__root__'
@@ -531,6 +518,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/status-pages'
     | '/_authed/settings/tasks'
     | '/_authed/settings/users'
+    | '/_authed/settings/widgets'
     | '/_authed/terminal/$serverId'
     | '/status/network/$serverId'
     | '/status/server/$serverId'
@@ -540,8 +528,6 @@ export interface FileRouteTypes {
     | '/_authed/settings/'
     | '/_authed/traffic/'
     | '/status/network/'
-    | '/_authed/settings/appearance/themes/$id'
-    | '/_authed/settings/appearance/themes/new'
     | '/_authed/servers/$serverId/docker/'
   fileRoutesById: FileRoutesById
 }
@@ -678,6 +664,13 @@ declare module '@tanstack/react-router' {
       path: '/terminal/$serverId'
       fullPath: '/terminal/$serverId'
       preLoaderRoute: typeof AuthedTerminalServerIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/widgets': {
+      id: '/_authed/settings/widgets'
+      path: '/settings/widgets'
+      fullPath: '/settings/widgets'
+      preLoaderRoute: typeof AuthedSettingsWidgetsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/users': {
@@ -841,40 +834,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedServersServerIdDockerIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/settings/appearance/themes/new': {
-      id: '/_authed/settings/appearance/themes/new'
-      path: '/themes/new'
-      fullPath: '/settings/appearance/themes/new'
-      preLoaderRoute: typeof AuthedSettingsAppearanceThemesNewRouteImport
-      parentRoute: typeof AuthedSettingsAppearanceRoute
-    }
-    '/_authed/settings/appearance/themes/$id': {
-      id: '/_authed/settings/appearance/themes/$id'
-      path: '/themes/$id'
-      fullPath: '/settings/appearance/themes/$id'
-      preLoaderRoute: typeof AuthedSettingsAppearanceThemesIdRouteImport
-      parentRoute: typeof AuthedSettingsAppearanceRoute
-    }
   }
 }
-
-interface AuthedSettingsAppearanceRouteChildren {
-  AuthedSettingsAppearanceThemesIdRoute: typeof AuthedSettingsAppearanceThemesIdRoute
-  AuthedSettingsAppearanceThemesNewRoute: typeof AuthedSettingsAppearanceThemesNewRoute
-}
-
-const AuthedSettingsAppearanceRouteChildren: AuthedSettingsAppearanceRouteChildren =
-  {
-    AuthedSettingsAppearanceThemesIdRoute:
-      AuthedSettingsAppearanceThemesIdRoute,
-    AuthedSettingsAppearanceThemesNewRoute:
-      AuthedSettingsAppearanceThemesNewRoute,
-  }
-
-const AuthedSettingsAppearanceRouteWithChildren =
-  AuthedSettingsAppearanceRoute._addFileChildren(
-    AuthedSettingsAppearanceRouteChildren,
-  )
 
 interface AuthedRouteChildren {
   AuthedIpQualityRoute: typeof AuthedIpQualityRoute
@@ -886,7 +847,7 @@ interface AuthedRouteChildren {
   AuthedServiceMonitorsIdRoute: typeof AuthedServiceMonitorsIdRoute
   AuthedSettingsAlertsRoute: typeof AuthedSettingsAlertsRoute
   AuthedSettingsApiKeysRoute: typeof AuthedSettingsApiKeysRoute
-  AuthedSettingsAppearanceRoute: typeof AuthedSettingsAppearanceRouteWithChildren
+  AuthedSettingsAppearanceRoute: typeof AuthedSettingsAppearanceRoute
   AuthedSettingsAuditLogsRoute: typeof AuthedSettingsAuditLogsRoute
   AuthedSettingsCapabilitiesRoute: typeof AuthedSettingsCapabilitiesRoute
   AuthedSettingsFirewallRoute: typeof AuthedSettingsFirewallRoute
@@ -901,6 +862,7 @@ interface AuthedRouteChildren {
   AuthedSettingsStatusPagesRoute: typeof AuthedSettingsStatusPagesRoute
   AuthedSettingsTasksRoute: typeof AuthedSettingsTasksRoute
   AuthedSettingsUsersRoute: typeof AuthedSettingsUsersRoute
+  AuthedSettingsWidgetsRoute: typeof AuthedSettingsWidgetsRoute
   AuthedTerminalServerIdRoute: typeof AuthedTerminalServerIdRoute
   AuthedNetworkIndexRoute: typeof AuthedNetworkIndexRoute
   AuthedSecurityIndexRoute: typeof AuthedSecurityIndexRoute
@@ -920,7 +882,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedServiceMonitorsIdRoute: AuthedServiceMonitorsIdRoute,
   AuthedSettingsAlertsRoute: AuthedSettingsAlertsRoute,
   AuthedSettingsApiKeysRoute: AuthedSettingsApiKeysRoute,
-  AuthedSettingsAppearanceRoute: AuthedSettingsAppearanceRouteWithChildren,
+  AuthedSettingsAppearanceRoute: AuthedSettingsAppearanceRoute,
   AuthedSettingsAuditLogsRoute: AuthedSettingsAuditLogsRoute,
   AuthedSettingsCapabilitiesRoute: AuthedSettingsCapabilitiesRoute,
   AuthedSettingsFirewallRoute: AuthedSettingsFirewallRoute,
@@ -935,6 +897,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsStatusPagesRoute: AuthedSettingsStatusPagesRoute,
   AuthedSettingsTasksRoute: AuthedSettingsTasksRoute,
   AuthedSettingsUsersRoute: AuthedSettingsUsersRoute,
+  AuthedSettingsWidgetsRoute: AuthedSettingsWidgetsRoute,
   AuthedTerminalServerIdRoute: AuthedTerminalServerIdRoute,
   AuthedNetworkIndexRoute: AuthedNetworkIndexRoute,
   AuthedSecurityIndexRoute: AuthedSecurityIndexRoute,

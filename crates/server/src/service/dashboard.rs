@@ -4,7 +4,7 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{dashboard, dashboard_widget};
+use crate::entity::{dashboard, dashboard_widget, widget_module};
 use crate::error::AppError;
 
 const VALID_WIDGET_TYPES: &[&str] = &[
@@ -40,6 +40,8 @@ pub struct UpdateDashboardInput {
 pub struct WidgetInput {
     pub id: Option<String>,
     pub widget_type: String,
+    #[serde(default)]
+    pub module_id: Option<String>,
     pub title: Option<String>,
     pub config_json: serde_json::Value,
     pub grid_x: i32,
@@ -150,10 +152,31 @@ impl DashboardService {
             ));
         }
 
-        // Validate widget types
+        // Validate widget types and module references.
+        //
+        // Module lookups happen pre-transaction for simplicity. The race window
+        // (module uninstalled between this check and the txn) is tiny and the
+        // consequence is the same as referencing a missing module at render
+        // time: the UI shows a placeholder. Defense in depth lives in the
+        // widget renderer.
         if let Some(ref widgets) = input.widgets {
             for w in widgets {
-                if !VALID_WIDGET_TYPES.contains(&w.widget_type.as_str()) {
+                if w.widget_type == "module" {
+                    let Some(module_id) = w.module_id.as_ref() else {
+                        return Err(AppError::BadRequest(
+                            "widget_type 'module' requires module_id".into(),
+                        ));
+                    };
+                    let exists = widget_module::Entity::find_by_id(module_id)
+                        .one(db)
+                        .await?
+                        .is_some();
+                    if !exists {
+                        return Err(AppError::BadRequest(format!(
+                            "module_id '{module_id}' is not installed"
+                        )));
+                    }
+                } else if !VALID_WIDGET_TYPES.contains(&w.widget_type.as_str()) {
                     return Err(AppError::BadRequest(format!(
                         "Unknown widget_type: {}",
                         w.widget_type
@@ -206,6 +229,7 @@ impl DashboardService {
                         id: Set(wid),
                         dashboard_id: Set(id.to_string()),
                         widget_type: Set(w.widget_type),
+                        module_id: Set(w.module_id),
                         title: Set(w.title),
                         config_json: Set(config_str),
                         grid_x: Set(w.grid_x),
@@ -223,6 +247,7 @@ impl DashboardService {
                         id: Set(new_id),
                         dashboard_id: Set(id.to_string()),
                         widget_type: Set(w.widget_type),
+                        module_id: Set(w.module_id),
                         title: Set(w.title),
                         config_json: Set(config_str),
                         grid_x: Set(w.grid_x),
@@ -310,6 +335,7 @@ impl DashboardService {
                 id: Set(Uuid::new_v4().to_string()),
                 dashboard_id: Set(dash_id.clone()),
                 widget_type: Set(wtype.to_string()),
+                module_id: Set(None),
                 title: Set(None),
                 config_json: Set(config.to_string()),
                 grid_x: Set(x),
@@ -433,6 +459,7 @@ mod tests {
                     WidgetInput {
                         id: None,
                         widget_type: "gauge".to_string(),
+                        module_id: None,
                         title: Some("CPU".to_string()),
                         config_json: serde_json::json!({"metric": "cpu"}),
                         grid_x: 0,
@@ -444,6 +471,7 @@ mod tests {
                     WidgetInput {
                         id: None,
                         widget_type: "gauge".to_string(),
+                        module_id: None,
                         title: Some("Memory".to_string()),
                         config_json: serde_json::json!({"metric": "memory"}),
                         grid_x: 4,
@@ -474,6 +502,7 @@ mod tests {
                     WidgetInput {
                         id: Some(keep_id.clone()),
                         widget_type: "gauge".to_string(),
+                        module_id: None,
                         title: Some("CPU Updated".to_string()),
                         config_json: serde_json::json!({"metric": "cpu"}),
                         grid_x: 0,
@@ -485,6 +514,7 @@ mod tests {
                     WidgetInput {
                         id: None,
                         widget_type: "markdown".to_string(),
+                        module_id: None,
                         title: Some("Notes".to_string()),
                         config_json: serde_json::json!({"content": "hello"}),
                         grid_x: 6,
@@ -617,6 +647,7 @@ mod tests {
                 widgets: Some(vec![WidgetInput {
                     id: None,
                     widget_type: "nonexistent-widget".to_string(),
+                    module_id: None,
                     title: None,
                     config_json: serde_json::json!({}),
                     grid_x: 0,
@@ -636,6 +667,120 @@ mod tests {
             }
             other => panic!("Expected BadRequest, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn test_update_unknown_module_id_rejected() {
+        let (db, _tmp) = setup_db_with_fk().await;
+
+        let dash = DashboardService::create(
+            &db,
+            CreateDashboardInput {
+                name: "Test".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = DashboardService::update(
+            &db,
+            &dash.id,
+            UpdateDashboardInput {
+                name: None,
+                is_default: None,
+                sort_order: None,
+                widgets: Some(vec![WidgetInput {
+                    id: None,
+                    widget_type: "module".to_string(),
+                    module_id: Some("com.does.not.exist".to_string()),
+                    title: None,
+                    config_json: serde_json::json!({}),
+                    grid_x: 0,
+                    grid_y: 0,
+                    grid_w: 4,
+                    grid_h: 3,
+                    sort_order: 0,
+                }]),
+            },
+        )
+        .await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::BadRequest(msg) => {
+                assert!(
+                    msg.contains("is not installed"),
+                    "unexpected error message: {msg}"
+                );
+                assert!(msg.contains("com.does.not.exist"));
+            }
+            other => panic!("Expected BadRequest, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_installed_module_id_accepted() {
+        use chrono::Utc;
+        use sea_orm::Set;
+
+        let (db, _tmp) = setup_db_with_fk().await;
+
+        // Seed a fake installed module
+        let module = widget_module::ActiveModel {
+            id: Set("com.test.widget".to_string()),
+            version: Set("1.0.0".to_string()),
+            source_type: Set(widget_module::SourceType::Upload),
+            source_url: Set(None),
+            bundled_by_theme_id: Set(None),
+            manifest_json: Set("{}".to_string()),
+            code_sha256: Set("abc".to_string()),
+            entry_path: Set("index.js".to_string()),
+            package_blob: Set(None),
+            installed_by: Set(None),
+            installed_at: Set(Utc::now()),
+            enabled: Set(true),
+        };
+        module.insert(&db).await.unwrap();
+
+        let dash = DashboardService::create(
+            &db,
+            CreateDashboardInput {
+                name: "Test".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = DashboardService::update(
+            &db,
+            &dash.id,
+            UpdateDashboardInput {
+                name: None,
+                is_default: None,
+                sort_order: None,
+                widgets: Some(vec![WidgetInput {
+                    id: None,
+                    widget_type: "module".to_string(),
+                    module_id: Some("com.test.widget".to_string()),
+                    title: Some("Custom".to_string()),
+                    config_json: serde_json::json!({}),
+                    grid_x: 0,
+                    grid_y: 0,
+                    grid_w: 4,
+                    grid_h: 3,
+                    sort_order: 0,
+                }]),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.widgets.len(), 1);
+        assert_eq!(result.widgets[0].widget_type, "module");
+        assert_eq!(
+            result.widgets[0].module_id,
+            Some("com.test.widget".to_string())
+        );
     }
 
     #[tokio::test]
@@ -734,6 +879,7 @@ mod tests {
                 widgets: Some(vec![WidgetInput {
                     id: None,
                     widget_type: "gauge".to_string(),
+                    module_id: None,
                     title: Some("CPU".to_string()),
                     config_json: serde_json::json!({}),
                     grid_x: 0,

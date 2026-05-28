@@ -7,7 +7,15 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@serverbee/widget-sdk": ["../../packages/widget-sdk/src/index.ts"],
+      "@serverbee/widget-sdk/z": ["../../packages/widget-sdk/src/z/index.ts"],
+      "@serverbee/widget-sdk/hooks": [
+        "../../packages/widget-sdk/src/hooks/index.ts"
+      ],
+      "@serverbee/widget-sdk/actions": [
+        "../../packages/widget-sdk/src/actions/index.ts"
+      ]
     }
   }
 }

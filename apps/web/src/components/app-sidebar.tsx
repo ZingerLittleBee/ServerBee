@@ -15,6 +15,7 @@ import {
   LogOut,
   Monitor,
   Palette,
+  Puzzle,
   Radar,
   Settings,
   Shield,
@@ -74,6 +75,7 @@ const settingsItems = [
   { to: '/settings/api-keys', labelKey: 'nav_api_keys', icon: Key },
   { to: '/settings/security', labelKey: 'nav_security', icon: Shield },
   { to: '/settings/appearance', labelKey: 'nav_appearance', icon: Palette },
+  { to: '/settings/widgets', labelKey: 'nav_widgets', icon: Puzzle, adminOnly: true },
   { to: '/settings/audit-logs', labelKey: 'nav_audit_logs', icon: ClipboardList, adminOnly: true },
   { to: '/settings/rate-limits', labelKey: 'nav_rate_limits', icon: Gauge, adminOnly: true },
   { to: '/settings', labelKey: 'nav_settings', icon: Settings, adminOnly: true }

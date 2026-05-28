@@ -106,18 +106,6 @@ impl Modify for SecurityAddon {
         crate::router::api::setting::update_settings,
         crate::router::api::setting::create_backup,
         crate::router::api::setting::restore_backup,
-        // themes
-        crate::router::api::theme::list_themes,
-        crate::router::api::theme::get_theme,
-        crate::router::api::theme::export_theme,
-        crate::router::api::theme::get_active_theme,
-        crate::router::api::theme::create_theme,
-        crate::router::api::theme::update_theme,
-        crate::router::api::theme::delete_theme,
-        crate::router::api::theme::get_references,
-        crate::router::api::theme::duplicate_theme,
-        crate::router::api::theme::import_theme,
-        crate::router::api::theme::put_active_theme,
         // notifications
         crate::router::api::notification::list_notifications,
         crate::router::api::notification::get_notification,
@@ -164,6 +152,11 @@ impl Modify for SecurityAddon {
         crate::router::api::dashboard::create_dashboard,
         crate::router::api::dashboard::update_dashboard,
         crate::router::api::dashboard::delete_dashboard,
+        // widget-modules
+        crate::router::api::widget_module::list_modules,
+        crate::router::api::widget_module::serve_asset,
+        crate::router::api::widget_module::install_widget_module,
+        crate::router::api::widget_module::uninstall_module,
         // service-monitors
         crate::router::api::service_monitor::list_monitors,
         crate::router::api::service_monitor::get_monitor,
@@ -263,15 +256,6 @@ impl Modify for SecurityAddon {
         crate::router::api::ip_quality::get_server_summary,
         crate::router::api::ip_quality::list_events,
         crate::router::api::ip_quality::check_server,
-        // spa-themes
-        crate::router::api::spa_theme::list,
-        crate::router::api::spa_theme::get_one,
-        crate::router::api::spa_theme::get_preview,
-        crate::router::api::spa_theme::get_package,
-        crate::router::api::spa_theme::delete_one,
-        crate::router::api::spa_theme::upload,
-        crate::router::api::spa_theme::get_active,
-        crate::router::api::spa_theme::put_active,
     ),
     components(
         schemas(
@@ -324,16 +308,6 @@ impl Modify for SecurityAddon {
             crate::router::api::brand::UploadResponse,
             // settings
             crate::router::api::setting::SystemSettings,
-            // themes
-            crate::service::custom_theme::ThemeSummary,
-            crate::service::custom_theme::Theme,
-            crate::service::custom_theme::CreateThemeInput,
-            crate::service::custom_theme::UpdateThemeInput,
-            crate::service::custom_theme::ThemeResolved,
-            crate::service::custom_theme::ActiveThemeResponse,
-            crate::service::theme_ref::ThemeReferences,
-            crate::router::api::theme::ExportPayload,
-            crate::router::api::theme::PutActiveThemeInput,
             // notifications
             crate::service::notification::CreateNotification,
             crate::service::notification::UpdateNotification,
@@ -357,6 +331,8 @@ impl Modify for SecurityAddon {
             crate::service::dashboard::CreateDashboardInput,
             crate::service::dashboard::UpdateDashboardInput,
             crate::service::dashboard::WidgetInput,
+            // widget-modules
+            crate::service::widget_module::service::WidgetModuleListEntry,
             // service-monitors
             crate::service::service_monitor::CreateServiceMonitor,
             crate::service::service_monitor::UpdateServiceMonitor,
@@ -506,12 +482,6 @@ impl Modify for SecurityAddon {
             crate::service::ip_quality::ServerIpQualityData,
             crate::service::ip_quality::UnlockResultDto,
             crate::service::ip_quality::UnlockEventDto,
-            // spa-themes
-            crate::service::spa_theme::service::SpaThemeSummary,
-            crate::service::spa_theme::service::UploadResult,
-            crate::service::spa_theme::service::UpgradeOf,
-            crate::router::api::spa_theme::PutActiveBody,
-            crate::router::api::spa_theme::ActiveResp,
         ),
     ),
     tags(
@@ -524,7 +494,6 @@ impl Modify for SecurityAddon {
         (name = "server-groups", description = "Server group management"),
         (name = "brand", description = "Custom branding (logo, favicon, site title)"),
         (name = "settings", description = "System settings"),
-        (name = "themes", description = "Custom theme management"),
         (name = "notifications", description = "Notification channels"),
         (name = "notification-groups", description = "Notification groups"),
         (name = "alert-rules", description = "Alert rules"),
@@ -537,6 +506,7 @@ impl Modify for SecurityAddon {
         (name = "users", description = "User management (admin only)"),
         (name = "tasks", description = "Remote command execution"),
         (name = "dashboards", description = "Custom dashboard management"),
+        (name = "widget-modules", description = "Custom widget module registry & asset serving"),
         (name = "service-monitors", description = "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"),
         (name = "ping-tasks", description = "Ping probe tasks"),
         (name = "traceroute", description = "Traceroute diagnostics"),

@@ -32,6 +32,12 @@
   "dashboard_name_placeholder": "Dashboard name",
   "no_widgets_title": "No widgets yet",
   "no_widgets_description": "Click Edit to start adding widgets to your dashboard",
+  "picker_custom_widgets": "Custom Widgets",
+  "picker_no_custom_widgets": "No custom widgets installed yet.",
+  "module_not_installed": "Widget module not installed",
+  "module_not_installed_id": "Widget module \"{{id}}\" not installed",
+  "module_config_invalid": "Widget config invalid: {{message}}",
+  "module_config_no_fields": "This module exposes no configurable fields.",
   "widgetPicker": {
     "categories": {
       "Real-time": "Real-time",

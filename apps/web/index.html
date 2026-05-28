@@ -9,6 +9,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script type="importmap">
+    {
+      "imports": {
+        "@serverbee/widget-sdk": "/runtime/widget-sdk.js",
+        "react": "/runtime/react.js",
+        "react-dom": "/runtime/react-dom.js",
+        "react/jsx-runtime": "/runtime/react-jsx-runtime.js"
+      }
+    }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

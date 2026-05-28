@@ -37,8 +37,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub resend: ResendConfig,
     #[serde(default)]
-    pub feature: FeatureConfig,
-    #[serde(default)]
     pub dev: DevConfig,
     #[serde(default)]
     pub firewall: FirewallConfig,
@@ -65,7 +63,6 @@ impl Default for AppConfig {
             file: FileConfig::default(),
             mobile: MobileConfig::default(),
             resend: ResendConfig::default(),
-            feature: FeatureConfig::default(),
             dev: DevConfig::default(),
             firewall: FirewallConfig::default(),
             ip_quality: IpQualityConfig::default(),
@@ -503,20 +500,6 @@ fn default_very_high_latency_ms() -> f64 {
     800.0
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct FeatureConfig {
-    #[serde(default = "default_true")]
-    pub custom_themes: bool,
-}
-
-impl Default for FeatureConfig {
-    fn default() -> Self {
-        Self {
-            custom_themes: default_true(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct DevConfig {
     #[serde(default)]
@@ -678,12 +661,6 @@ mod tests {
     }
 
     #[test]
-    fn test_app_config_default_enables_custom_themes() {
-        let cfg = AppConfig::default();
-        assert!(cfg.feature.custom_themes);
-    }
-
-    #[test]
     fn dev_demo_data_defaults_to_disabled_and_reads_env_var() {
         let cfg = AppConfig::default();
         assert!(!cfg.dev.demo_data);
@@ -831,16 +808,4 @@ mod tests {
         assert!(!warnings.iter().any(|w| w.contains("matches risk_provider")));
     }
 
-    #[test]
-    fn test_feature_config_reads_custom_themes_env_var() {
-        figment::Jail::expect_with(|jail| {
-            jail.set_env("SERVERBEE_FEATURE__CUSTOM_THEMES", "false");
-            let cfg: AppConfig = figment::Figment::new()
-                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
-                .extract()
-                .expect("custom themes feature flag should deserialize from env");
-            assert!(!cfg.feature.custom_themes);
-            Ok(())
-        });
-    }
 }

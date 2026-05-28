@@ -36,6 +36,9 @@ mod m20260525_000033_ip_quality_snapshot_extra_fields;
 mod m20260525_000034_agent_registration_redesign;
 mod m20260526_000035_create_spa_themes;
 mod m20260526_000036_simplify_status_page;
+mod m20260528_000037_create_widget_module;
+mod m20260528_000060_drop_legacy_theme_tables;
+mod m20260528_000070_dashboard_widget_module_id;
 
 pub struct Migrator;
 
@@ -78,6 +81,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260525_000034_agent_registration_redesign::Migration),
             Box::new(m20260526_000035_create_spa_themes::Migration),
             Box::new(m20260526_000036_simplify_status_page::Migration),
+            Box::new(m20260528_000037_create_widget_module::Migration),
+            Box::new(m20260528_000060_drop_legacy_theme_tables::Migration),
+            Box::new(m20260528_000070_dashboard_widget_module_id::Migration),
         ]
     }
 }

@@ -65,11 +65,11 @@ vi.mock('./widget-picker', () => ({
     open
   }: {
     onOpenChange: (open: boolean) => void
-    onSelect: (widgetType: string) => void
+    onSelect: (selection: { type: 'builtin'; widgetType: string }) => void
     open: boolean
   }) =>
     open ? (
-      <button onClick={() => onSelect('line-chart')} type="button">
+      <button onClick={() => onSelect({ type: 'builtin', widgetType: 'line-chart' })} type="button">
         pick-line-chart
       </button>
     ) : null
@@ -195,6 +195,7 @@ describe('DashboardEditorView', () => {
       {
         id: 'w-1',
         widget_type: 'stat-number',
+        module_id: null,
         title: 'CPU',
         config_json: { metric: 'avg_cpu' },
         grid_x: 4,
@@ -260,6 +261,7 @@ describe('DashboardEditorView', () => {
       {
         id: 'w-1',
         widget_type: 'stat-number',
+        module_id: null,
         title: 'CPU',
         config_json: { metric: 'avg_cpu' },
         grid_x: 0,
@@ -332,6 +334,7 @@ describe('DashboardEditorView', () => {
       {
         id: 'w-1',
         widget_type: 'stat-number',
+        module_id: null,
         title: 'CPU updated',
         config_json: { metric: 'avg_mem' },
         grid_x: 0,

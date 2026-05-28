@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.5] - 2026-05-28
+
+### Added
+
+- **Custom widget system (B/C method)** -- New `@serverbee/widget-sdk` workspace package exposes `defineWidget`, a bundled `z` schema validator, and a typed hook surface (live: `useServers/useServer/useMetric/useCapability` via `useSyncExternalStore`; domain: `useHistory/useTraffic/useAlerts/useServiceMonitors/useUptime/useGeoIp`; host: `useTheme/useConfigUpdate`; escape hatches: `useApiQuery/useApiMutation`). Widgets are authored as a single ESM file with a top-of-file `@serverbee-widget` JSDoc manifest, statically extractable, no `eval`. Admins install via `POST /api/widget-modules` (URL or multipart upload) for single `.js`/`.mjs` files or `.zip` collection bundles with a `collection.json` index. Built-in widgets are emitted by a new Vite nested-build plugin to `apps/web/dist/builtin-widgets/`, embedded into the server binary via rust-embed, and registered at boot
+- **Dashboard module rendering** -- `dashboard_widget` gained a `module_id` column; `widget_type='module'` widgets dispatch through the widget registry and render via the SDK component contract. The picker surfaces installed modules under a "Custom Widgets" section; the config dialog renders the module's `configSchema` via the SDK form renderer (real renderers for `z.metricPath`/`z.color`/`z.duration`) with friendly placeholders for missing modules or empty schemas. `ActionButton` from the SDK ships with confirm dialog, pending state, and success/error toast wiring
+- **Bilingual widget docs** -- `apps/docs/content/docs/{en,cn}/custom-widgets.mdx` covers method B (single file) and method C (zip bundle) end-to-end: manifest fields, build pipeline with React/SDK externals, install flows, asset resolution rules, SDK surface summary, and the full safety/limits table
+
+### Changed
+
+- **Widget install hardening** -- SSRF guard now resolves DNS and rejects any host whose IP falls in a reserved/private range (loopback, RFC 1918, CGNAT, link-local incl. cloud metadata, IPv6 ULA/link-local, benchmarking, documentation, multicast, reserved); HTTP redirects are disabled; uploads enforce a per-route 1 MiB body limit with streaming size accounting; zip extraction caps total uncompressed size at 32 MiB across at most 64 entries; manifest extractor rejects sources > 1 MiB up front; id conflicts across `source_type` (e.g. upload trying to overwrite a builtin) return `409 Conflict`; `dashboard_widget.module_id` is validated against installed modules; SDK declarations carry a `sdkVersion` semver range checked at load time. Install and uninstall events emit audit log entries
+- **Runtime bridge** -- `mountRuntimeBridge` now wires the SDK runtime to the live React Query servers cache and the host theme provider via `useSyncExternalStore`, surfaces sonner toasts, and exposes a confirm-dialog request channel. `/runtime/*` import-map shims are served with `Cache-Control: no-cache` to avoid stale shim drift across SPA upgrades. `defineWidget` rejects duplicate action ids
+
+### Removed
+
+- **Legacy SPA theme + custom CSS theme system** -- The `spa_theme` package upload feature, `custom_theme` CSS variable system, and seven preset themes are deleted in their entirety (backend service/router/entity, migrations dropping `spa_themes` and `custom_theme`, the appearance settings UI, preset CSS files, `theme_ref` from public status pages, and the `SERVERBEE_FEATURE__CUSTOM_THEMES` config field). The theme provider is collapsed to light/dark/system. The old `custom-themes.mdx` and `custom-frontend.mdx` doc pages are replaced by `custom-widgets.mdx`
+
 ## [1.0.0-alpha.4] - 2026-05-27
 
 ### Added
