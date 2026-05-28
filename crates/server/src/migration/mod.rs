@@ -37,6 +37,7 @@ mod m20260525_000034_agent_registration_redesign;
 mod m20260526_000035_create_spa_themes;
 mod m20260526_000036_simplify_status_page;
 mod m20260528_000037_create_widget_module;
+mod m20260528_000060_drop_legacy_theme_tables;
 
 pub struct Migrator;
 
@@ -80,6 +81,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260526_000035_create_spa_themes::Migration),
             Box::new(m20260526_000036_simplify_status_page::Migration),
             Box::new(m20260528_000037_create_widget_module::Migration),
+            Box::new(m20260528_000060_drop_legacy_theme_tables::Migration),
         ]
     }
 }
