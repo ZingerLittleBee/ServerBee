@@ -48,4 +48,31 @@ describe('renderConfigForm', () => {
     render(<Wrapper initial={{ srv: 's1' }} schema={schema} />)
     expect(screen.getByLabelText('Server')).toBeTruthy()
   })
+
+  it('renders a metric path text+datalist for z.metricPath()', () => {
+    const schema = z.object({ path: z.metricPath().describe('Metric path') })
+    render(<Wrapper initial={{ path: 'cpu.total' }} schema={schema} />)
+    const input = screen.getByLabelText('Metric path') as HTMLInputElement
+    expect(input.tagName).toBe('INPUT')
+    expect(input.type).toBe('text')
+    expect(input.getAttribute('list')).toBeTruthy()
+    expect(input.value).toBe('cpu.total')
+  })
+
+  it('renders a color picker for z.color()', () => {
+    const schema = z.object({ tint: z.color().describe('Tint') })
+    render(<Wrapper initial={{ tint: '#ff8800' }} schema={schema} />)
+    const input = screen.getByLabelText('Tint') as HTMLInputElement
+    expect(input.type).toBe('color')
+    expect(input.value).toBe('#ff8800')
+  })
+
+  it('renders a duration input with pattern for z.duration()', () => {
+    const schema = z.object({ every: z.duration().describe('Every') })
+    render(<Wrapper initial={{ every: '30s' }} schema={schema} />)
+    const input = screen.getByLabelText('Every') as HTMLInputElement
+    expect(input.type).toBe('text')
+    expect(input.getAttribute('pattern')).toBe('^\\d+(s|m|h|d)$')
+    expect(input.value).toBe('30s')
+  })
 })
