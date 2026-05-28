@@ -1,5 +1,11 @@
 export type WidgetCategory = 'Real-time' | 'Charts' | 'Status'
 
+export type SizingStrategy =
+  | { kind: 'free' }
+  | { kind: 'fixed' }
+  | { kind: 'aspect-square'; tiers: readonly number[] }
+  | { kind: 'content-height' }
+
 export interface WidgetTypeDefinition {
   category: WidgetCategory
   defaultH: number
@@ -10,6 +16,7 @@ export interface WidgetTypeDefinition {
   maxW?: number
   minH: number
   minW: number
+  sizing: SizingStrategy
 }
 
 export const WIDGET_TYPES = [
@@ -22,7 +29,8 @@ export const WIDGET_TYPES = [
     minW: 2,
     minH: 1,
     maxW: 2,
-    maxH: 1
+    maxH: 1,
+    sizing: { kind: 'fixed' }
   },
   {
     id: 'metric-card',
@@ -33,10 +41,31 @@ export const WIDGET_TYPES = [
     minW: 3,
     minH: 3,
     maxW: 6,
-    maxH: 6
+    maxH: 6,
+    sizing: { kind: 'free' }
   },
-  { id: 'server-cards', label: 'Server Cards', category: 'Real-time', defaultW: 12, defaultH: 6, minW: 4, minH: 3 },
-  { id: 'gauge', label: 'Gauge', category: 'Real-time', defaultW: 2, defaultH: 2, minW: 2, minH: 2, maxW: 6, maxH: 6 },
+  {
+    id: 'server-cards',
+    label: 'Server Cards',
+    category: 'Real-time',
+    defaultW: 12,
+    defaultH: 6,
+    minW: 4,
+    minH: 3,
+    sizing: { kind: 'free' }
+  },
+  {
+    id: 'gauge',
+    label: 'Gauge',
+    category: 'Real-time',
+    defaultW: 2,
+    defaultH: 2,
+    minW: 2,
+    minH: 2,
+    maxW: 6,
+    maxH: 6,
+    sizing: { kind: 'aspect-square', tiers: [2, 3, 4, 5, 6] }
+  },
   {
     id: 'line-chart',
     label: 'Line Chart',
@@ -46,7 +75,8 @@ export const WIDGET_TYPES = [
     minW: 4,
     minH: 3,
     maxW: 12,
-    maxH: 8
+    maxH: 8,
+    sizing: { kind: 'free' }
   },
   {
     id: 'multi-line',
@@ -57,9 +87,21 @@ export const WIDGET_TYPES = [
     minW: 4,
     minH: 3,
     maxW: 12,
-    maxH: 8
+    maxH: 8,
+    sizing: { kind: 'free' }
   },
-  { id: 'top-n', label: 'Top N', category: 'Real-time', defaultW: 4, defaultH: 2, minW: 3, minH: 2, maxW: 6, maxH: 8 },
+  {
+    id: 'top-n',
+    label: 'Top N',
+    category: 'Real-time',
+    defaultW: 4,
+    defaultH: 2,
+    minW: 3,
+    minH: 2,
+    maxW: 6,
+    maxH: 8,
+    sizing: { kind: 'content-height' }
+  },
   {
     id: 'alert-list',
     label: 'Alert List',
@@ -69,7 +111,8 @@ export const WIDGET_TYPES = [
     minW: 3,
     minH: 2,
     maxW: 8,
-    maxH: 8
+    maxH: 8,
+    sizing: { kind: 'free' }
   },
   {
     id: 'service-status',
@@ -80,7 +123,8 @@ export const WIDGET_TYPES = [
     minW: 3,
     minH: 2,
     maxW: 12,
-    maxH: 6
+    maxH: 6,
+    sizing: { kind: 'free' }
   },
   {
     id: 'traffic-bar',
@@ -91,7 +135,8 @@ export const WIDGET_TYPES = [
     minW: 4,
     minH: 3,
     maxW: 12,
-    maxH: 8
+    maxH: 8,
+    sizing: { kind: 'free' }
   },
   {
     id: 'disk-io',
@@ -102,7 +147,8 @@ export const WIDGET_TYPES = [
     minW: 4,
     minH: 3,
     maxW: 12,
-    maxH: 8
+    maxH: 8,
+    sizing: { kind: 'free' }
   },
   {
     id: 'server-map',
@@ -113,9 +159,19 @@ export const WIDGET_TYPES = [
     minW: 4,
     minH: 3,
     maxW: 12,
-    maxH: 8
+    maxH: 8,
+    sizing: { kind: 'free' }
   },
-  { id: 'markdown', label: 'Markdown', category: 'Status', defaultW: 4, defaultH: 3, minW: 2, minH: 2 },
+  {
+    id: 'markdown',
+    label: 'Markdown',
+    category: 'Status',
+    defaultW: 4,
+    defaultH: 3,
+    minW: 2,
+    minH: 2,
+    sizing: { kind: 'free' }
+  },
   {
     id: 'uptime-timeline',
     label: 'Uptime Timeline',
@@ -125,7 +181,8 @@ export const WIDGET_TYPES = [
     minW: 4,
     minH: 2,
     maxW: 12,
-    maxH: 6
+    maxH: 6,
+    sizing: { kind: 'free' }
   }
 ] as const satisfies readonly WidgetTypeDefinition[]
 

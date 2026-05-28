@@ -29,10 +29,21 @@ export function MetricCardWidget({ config, servers }: MetricCardWidgetProps) {
   const server = useMemo(() => servers.find((s) => s.id === config.server_id), [servers, config.server_id])
 
   const { data: records } = useServerRecords(config.server_id, HISTORY_HOURS, HISTORY_INTERVAL, {
-    enabled: Boolean(config.server_id) && Boolean(server)
+    enabled: Boolean(config.server_id) && Boolean(server) && Boolean(spec)
   })
 
   const series = useMetricSeries({ records, server, metric: config.metric })
+
+  if (!spec) {
+    return (
+      <div
+        className="flex h-full items-center justify-center rounded-xl border bg-card text-muted-foreground text-sm"
+        data-testid="metric-card-missing-metric"
+      >
+        {t('metricCard.unknownMetric')}
+      </div>
+    )
+  }
 
   if (!server) {
     return (

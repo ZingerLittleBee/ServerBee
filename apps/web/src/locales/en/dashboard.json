@@ -246,6 +246,7 @@
     "past1h": "past 1h",
     "peak": "24H PEAK",
     "avg": "24H AVG",
-    "unknownServer": "Unknown server"
+    "unknownServer": "Unknown server",
+    "unknownMetric": "Metric not configured"
   }
 }

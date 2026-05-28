@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { layoutToPatch, mergeLayoutPatch, normalizeNewWidgetPlacement, widgetsToLayout } from './dashboard-layout'
 
+function makeWidget(overrides: Partial<DashboardWidget>): DashboardWidget {
+  return {
+    id: 'w1',
+    dashboard_id: 'd1',
+    widget_type: 'gauge',
+    grid_x: 0,
+    grid_y: 0,
+    grid_w: 2,
+    grid_h: 2,
+    sort_order: 0,
+    title: null,
+    config_json: '{}',
+    created_at: '2026-05-28T00:00:00Z',
+    ...overrides
+  }
+}
+
 const widgets: DashboardWidget[] = [
   {
     id: 'w-1',
@@ -30,6 +47,41 @@ const widgets: DashboardWidget[] = [
     created_at: '2026-03-20T00:00:00Z'
   }
 ]
+
+describe('widgetsToLayout', () => {
+  describe('aspect-square clamp', () => {
+    it('snaps a non-square gauge to the nearest tier (uses max of w/h)', () => {
+      // grid_w=3, grid_h=5 → max=5 → nearest tier in [2,3,4,5,6] is 5
+      const widget = makeWidget({ grid_w: 3, grid_h: 5 })
+      const [item] = widgetsToLayout([widget])
+      expect(item.w).toBe(5)
+      expect(item.h).toBe(5)
+    })
+
+    it('preserves a gauge already at a legal tier', () => {
+      const widget = makeWidget({ grid_w: 4, grid_h: 4 })
+      const [item] = widgetsToLayout([widget])
+      expect(item.w).toBe(4)
+      expect(item.h).toBe(4)
+    })
+
+    it('clamps an oversized gauge to maxW tier', () => {
+      // grid_w=10 → clamped to maxW=6 by existing logic → tier=6
+      const widget = makeWidget({ grid_w: 10, grid_h: 10 })
+      const [item] = widgetsToLayout([widget])
+      expect(item.w).toBe(6)
+      expect(item.h).toBe(6)
+    })
+
+    it('does not snap non-aspect-square widgets', () => {
+      // metric-card is free; should keep grid_w/h as-is (within min/max)
+      const widget = makeWidget({ widget_type: 'metric-card', grid_w: 4, grid_h: 3 })
+      const [item] = widgetsToLayout([widget])
+      expect(item.w).toBe(4)
+      expect(item.h).toBe(3)
+    })
+  })
+})
 
 describe('dashboard-layout', () => {
   it('widgetsToLayout adds min and max constraints from widget definitions', () => {

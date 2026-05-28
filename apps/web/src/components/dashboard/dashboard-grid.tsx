@@ -20,8 +20,12 @@ import 'react-grid-layout/css/styles.css'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn } from '@/lib/utils'
-import type { DashboardWidget } from '@/lib/widget-types'
+import type { DashboardWidget, SizingStrategy, WidgetTypeDefinition } from '@/lib/widget-types'
+import { WIDGET_TYPES } from '@/lib/widget-types'
 import { layoutToPatch, widgetsToLayout } from './dashboard-layout'
+import { COLS, MARGIN, MARGIN_Y, ROW_HEIGHT, SCALE } from './grid-constants'
+import { applyCoarsePatch, applyStrategy, snapOnRelease } from './sizing-strategies'
+import { normalizeRenderItem } from './sizing-strategies/normalize'
 import { VisibilityGate } from './visibility-gate'
 import { WidgetRenderer } from './widget-renderer'
 
@@ -43,26 +47,11 @@ function isWidgetStatic(configJson: string): boolean {
   }
 }
 
-const COLS = 12
-// Vertical fine-grain factor: persisted (coarse) grid rows are split into SCALE
-// finer rows so content-sized widgets quantize to ~ROW_HEIGHT px instead of a
-// whole coarse row. Invariant for pixel-identical legacy widgets: the legacy
-// per-row step (80 + 16) must equal SCALE * (ROW_HEIGHT + MARGIN_Y) → 4*(8+16)=96.
-const SCALE = 4
-const ROW_HEIGHT = 8
-const MARGIN: [number, number] = [16, 16]
-const MARGIN_Y = MARGIN[1]
 // Legacy coarse row pixel height, used only for the mobile single-column min-height.
 const MOBILE_ROW_PX = 80
 const MOBILE_BREAKPOINT = 768
 
-// Widgets whose grid cell height should follow their measured content height
-// instead of a fixed/estimated number of rows.
-const AUTO_HEIGHT_TYPES = new Set(['top-n'])
-
-// Widgets that must stay square (1:1 in coarse grid units). Width and height
-// are locked together during resize so the radial visual stays balanced.
-const SQUARE_TYPES = new Set(['gauge'])
+const WIDGET_TYPE_MAP = new Map<string, WidgetTypeDefinition>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
 
 function pxToGridUnits(px: number): number {
   return Math.max(2, Math.ceil((px + MARGIN_Y) / (ROW_HEIGHT + MARGIN_Y)))
@@ -189,9 +178,18 @@ export function DashboardGrid({
     setAutoUnits((prev) => (prev[id] === units ? prev : { ...prev, [id]: units }))
   }, [])
 
-  const squareIdSet = useMemo(
-    () => new Set(widgets.filter((w) => SQUARE_TYPES.has(w.widget_type)).map((w) => w.id)),
-    [widgets]
+  const widgetById = useMemo(() => new Map(widgets.map((w) => [w.id, w])), [widgets])
+
+  const getStrategy = useCallback(
+    (itemId: string): SizingStrategy => {
+      const widget = widgetById.get(itemId)
+      if (!widget) {
+        return { kind: 'free' }
+      }
+      const def = WIDGET_TYPE_MAP.get(widget.widget_type)
+      return def?.sizing ?? { kind: 'free' }
+    },
+    [widgetById]
   )
 
   // Persisted grid units are coarse (1 row == ROW_HEIGHT*SCALE px). The grid
@@ -209,22 +207,33 @@ export function DashboardGrid({
       if (item.maxH !== undefined) {
         item.maxH *= SCALE
       }
-      const units = autoUnits[item.i]
-      if (units !== undefined) {
-        // Auto-height widgets fit their content exactly: height is locked to the
-        // measured content and cannot be adjusted. Only horizontal resize stays.
-        item.minH = units
-        item.maxH = units
-        item.h = units
-        item.resizeHandles = ['e']
+
+      const strategy = getStrategy(item.i)
+      const measured = autoUnits[item.i]
+
+      // Layer A: idle h / minH / maxH per strategy.
+      const normalized = normalizeRenderItem(item, strategy, {
+        containerWidth: width,
+        autoMeasuredFineH: measured
+      })
+      item.h = normalized.h
+      item.minH = normalized.minH
+      item.maxH = normalized.maxH
+
+      // Layer B: resize-time constraints, handles, resizability.
+      const desc = applyStrategy(strategy, measured)
+      if (desc.constraints.length > 0) {
+        item.constraints = desc.constraints
       }
-      if (squareIdSet.has(item.i)) {
-        // Square widgets resize on the corner only and snap to w === h on commit.
-        item.resizeHandles = ['se']
+      if (desc.resizeHandles) {
+        item.resizeHandles = desc.resizeHandles
+      }
+      if (!desc.isResizable) {
+        item.isResizable = false
       }
     }
     return deoverlapLayout(layout)
-  }, [widgets, autoUnits, squareIdSet])
+  }, [widgets, autoUnits, width, getStrategy])
 
   const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
   const [interactionState, setInteractionState] = useState<InteractionState>('idle')
@@ -241,11 +250,6 @@ export function DashboardGrid({
   }
   const widgetServers = shouldFreeze ? frozenServersRef.current : servers
 
-  const autoIdSet = useMemo(
-    () => new Set(widgets.filter((w) => AUTO_HEIGHT_TYPES.has(w.widget_type)).map((w) => w.id)),
-    [widgets]
-  )
-
   // No auto-compaction (widgets stay exactly where dropped, so items in
   // different columns can be aligned freely) and preventCollision blocks
   // dropping onto another widget (it snaps back), so widgets never overlap.
@@ -255,19 +259,20 @@ export function DashboardGrid({
   // whole coarse rows (SCALE-aligned) while dragging/resizing. Otherwise the
   // dropped fine position gets rounded on commit and the widget visibly snaps
   // back, then ping-pongs with RGL's onLayoutChange echo (the "jitter").
-  // Auto-height widgets keep their measured fine height untouched.
+  // content-height widgets keep their measured fine height untouched.
   const updateLiveLayout = useCallback(
     (nextLayout: Layout) => {
       const snapped = nextLayout.map((item) => {
+        const strategy = getStrategy(item.i)
         const base = {
           ...item,
-          y: Math.round(item.y / SCALE) * SCALE,
-          h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+          y: Math.round(item.y / SCALE) * SCALE
         }
-        if (squareIdSet.has(item.i)) {
-          // Lock height to width (in fine units, h = w * SCALE) so the gauge
-          // stays a coarse-unit square no matter which dimension the user drags.
-          base.h = base.w * SCALE
+        // Snap h to SCALE multiples only for strategies that operate at coarse h.
+        // aspect-square: h is fine pixel-square (RGL constraints handle resize); leave it.
+        // content-height: h locked to measurement; leave it.
+        if (strategy.kind === 'free' || strategy.kind === 'fixed') {
+          base.h = Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
         }
         return base
       })
@@ -276,7 +281,7 @@ export function DashboardGrid({
       // raw (overlapping) persisted positions over the de-overlapped layout.
       setLiveLayout(deoverlapLayout(snapped))
     },
-    [autoIdSet, squareIdSet]
+    [getStrategy]
   )
 
   // Resync the rendered layout to the widgets-derived one the moment `widgets`
@@ -305,25 +310,33 @@ export function DashboardGrid({
   const commitLayoutChange = useCallback(
     (finalLayout: Layout) => {
       setInteractionState('idle')
-      // Convert the fine grid back to coarse persisted units. Auto-height widgets
-      // persist their height too so a user-grown size sticks (the measured
-      // content height still acts as the floor on the next render).
-      // Snap to coarse rows then resolve any residual penetration. preventCollision
-      // can block the move so no patch is emitted; without this the live layout
-      // would keep the penetrating drag position until the next widgets change.
+
+      // Per-strategy snap. For free/fixed: snap h to coarse multiples. For
+      // aspect-square: apply snapOnRelease's coarse SnapPatch via applyCoarsePatch
+      // (sets w and re-derives fine h via SCALE). Then re-normalize so the live
+      // layout matches what the next baseLayout render will produce.
       const snapped = finalLayout.map((item) => {
-        const base = {
+        const strategy = getStrategy(item.i)
+        const measured = autoUnits[item.i]
+
+        let base = {
           ...item,
-          y: Math.round(item.y / SCALE) * SCALE,
-          h: autoIdSet.has(item.i) ? item.h : Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+          y: Math.round(item.y / SCALE) * SCALE
         }
-        if (squareIdSet.has(item.i)) {
-          base.h = base.w * SCALE
+        if (strategy.kind === 'free' || strategy.kind === 'fixed') {
+          base.h = Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
         }
-        return base
+
+        const snap = snapOnRelease(base, strategy, { containerWidth: width })
+        base = applyCoarsePatch(base, snap)
+        return normalizeRenderItem(base, strategy, {
+          containerWidth: width,
+          autoMeasuredFineH: measured
+        })
       })
       const resolved = deoverlapLayout(snapped)
       setLiveLayout(resolved)
+
       const coarseLayout = resolved.map((item) => ({
         ...item,
         y: Math.round(item.y / SCALE),
@@ -334,7 +347,7 @@ export function DashboardGrid({
         onLayoutChange(patch)
       }
     },
-    [autoIdSet, squareIdSet, onLayoutChange, widgets]
+    [autoUnits, getStrategy, onLayoutChange, widgets, width]
   )
 
   const sortedWidgets = useMemo(() => {
@@ -345,7 +358,7 @@ export function DashboardGrid({
     return (
       <div className="space-y-4">
         {sortedWidgets.map((widget) => {
-          const isAuto = AUTO_HEIGHT_TYPES.has(widget.widget_type)
+          const isAuto = getStrategy(widget.id).kind === 'content-height'
           return (
             <div className="relative" key={widget.id}>
               {isEditing && (
@@ -393,7 +406,7 @@ export function DashboardGrid({
           width={width}
         >
           {widgets.map((widget) => {
-            const isAuto = AUTO_HEIGHT_TYPES.has(widget.widget_type)
+            const isAuto = getStrategy(widget.id).kind === 'content-height'
             return (
               <div className="relative h-full" key={widget.id}>
                 {isEditing && (

@@ -1,6 +1,7 @@
 import type { Layout, LayoutItem } from 'react-grid-layout'
 import type { DashboardWidget, WidgetTypeDefinition } from '@/lib/widget-types'
 import { WIDGET_TYPES } from '@/lib/widget-types'
+import { nearestTier } from './sizing-strategies'
 
 export interface LayoutPatch {
   grid_h: number
@@ -42,6 +43,17 @@ export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
     if (maxH !== undefined) {
       h = Math.min(h, maxH)
     }
+
+    // Aspect-square widgets persist as w_coarse === h_coarse. If historical data
+    // somehow has them out of sync (or grid_w not at a legal tier), snap here so
+    // the cell renders square on first load. Next user drag/resize writes back.
+    const sizing = WIDGET_TYPE_MAP.get(widget.widget_type)?.sizing
+    if (sizing?.kind === 'aspect-square') {
+      const tier = nearestTier(Math.max(w, h), sizing.tiers)
+      w = tier
+      h = tier
+    }
+
     const item: LayoutItem = {
       i: widget.id,
       x: widget.grid_x,
@@ -56,9 +68,6 @@ export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
     }
     if (maxH !== undefined) {
       item.maxH = maxH
-    }
-    if (maxW !== undefined && maxH !== undefined && minW === maxW && minH === maxH) {
-      item.isResizable = false
     }
     if (isWidgetStatic(widget.config_json)) {
       item.static = true
