@@ -27,6 +27,7 @@ import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network
 import { Route as StatusServerServerIdRouteImport } from './routes/status.server.$serverId'
 import { Route as StatusNetworkServerIdRouteImport } from './routes/status.network.$serverId'
 import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
+import { Route as AuthedSettingsWidgetsRouteImport } from './routes/_authed/settings/widgets'
 import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
 import { Route as AuthedSettingsStatusPagesRouteImport } from './routes/_authed/settings/status-pages'
@@ -140,6 +141,11 @@ const StatusNetworkServerIdRoute = StatusNetworkServerIdRouteImport.update({
 const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
   id: '/terminal/$serverId',
   path: '/terminal/$serverId',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsWidgetsRoute = AuthedSettingsWidgetsRouteImport.update({
+  id: '/settings/widgets',
+  path: '/settings/widgets',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsUsersRoute = AuthedSettingsUsersRouteImport.update({
@@ -310,6 +316,7 @@ export interface FileRoutesByFullPath {
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
+  '/settings/widgets': typeof AuthedSettingsWidgetsRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/status/network/$serverId': typeof StatusNetworkServerIdRoute
   '/status/server/$serverId': typeof StatusServerServerIdRoute
@@ -352,6 +359,7 @@ export interface FileRoutesByTo {
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
+  '/settings/widgets': typeof AuthedSettingsWidgetsRoute
   '/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/status/network/$serverId': typeof StatusNetworkServerIdRoute
   '/status/server/$serverId': typeof StatusServerServerIdRoute
@@ -398,6 +406,7 @@ export interface FileRoutesById {
   '/_authed/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
   '/_authed/settings/users': typeof AuthedSettingsUsersRoute
+  '/_authed/settings/widgets': typeof AuthedSettingsWidgetsRoute
   '/_authed/terminal/$serverId': typeof AuthedTerminalServerIdRoute
   '/status/network/$serverId': typeof StatusNetworkServerIdRoute
   '/status/server/$serverId': typeof StatusServerServerIdRoute
@@ -444,6 +453,7 @@ export interface FileRouteTypes {
     | '/settings/status-pages'
     | '/settings/tasks'
     | '/settings/users'
+    | '/settings/widgets'
     | '/terminal/$serverId'
     | '/status/network/$serverId'
     | '/status/server/$serverId'
@@ -486,6 +496,7 @@ export interface FileRouteTypes {
     | '/settings/status-pages'
     | '/settings/tasks'
     | '/settings/users'
+    | '/settings/widgets'
     | '/terminal/$serverId'
     | '/status/network/$serverId'
     | '/status/server/$serverId'
@@ -531,6 +542,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/status-pages'
     | '/_authed/settings/tasks'
     | '/_authed/settings/users'
+    | '/_authed/settings/widgets'
     | '/_authed/terminal/$serverId'
     | '/status/network/$serverId'
     | '/status/server/$serverId'
@@ -678,6 +690,13 @@ declare module '@tanstack/react-router' {
       path: '/terminal/$serverId'
       fullPath: '/terminal/$serverId'
       preLoaderRoute: typeof AuthedTerminalServerIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/widgets': {
+      id: '/_authed/settings/widgets'
+      path: '/settings/widgets'
+      fullPath: '/settings/widgets'
+      preLoaderRoute: typeof AuthedSettingsWidgetsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/users': {
@@ -901,6 +920,7 @@ interface AuthedRouteChildren {
   AuthedSettingsStatusPagesRoute: typeof AuthedSettingsStatusPagesRoute
   AuthedSettingsTasksRoute: typeof AuthedSettingsTasksRoute
   AuthedSettingsUsersRoute: typeof AuthedSettingsUsersRoute
+  AuthedSettingsWidgetsRoute: typeof AuthedSettingsWidgetsRoute
   AuthedTerminalServerIdRoute: typeof AuthedTerminalServerIdRoute
   AuthedNetworkIndexRoute: typeof AuthedNetworkIndexRoute
   AuthedSecurityIndexRoute: typeof AuthedSecurityIndexRoute
@@ -935,6 +955,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsStatusPagesRoute: AuthedSettingsStatusPagesRoute,
   AuthedSettingsTasksRoute: AuthedSettingsTasksRoute,
   AuthedSettingsUsersRoute: AuthedSettingsUsersRoute,
+  AuthedSettingsWidgetsRoute: AuthedSettingsWidgetsRoute,
   AuthedTerminalServerIdRoute: AuthedTerminalServerIdRoute,
   AuthedNetworkIndexRoute: AuthedNetworkIndexRoute,
   AuthedSecurityIndexRoute: AuthedSecurityIndexRoute,

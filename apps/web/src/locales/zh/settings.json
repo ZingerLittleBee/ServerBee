@@ -537,5 +537,20 @@
   "rate_limit.summary_total": "{{count}} 条活跃",
   "rate_limit.limits": "阈值：每 {{minutes}} 分钟 登录 {{login}} 次 / 注册 {{register}} 次",
   "rate_limit.toast_reset": "已清除 {{count}} 条",
-  "rate_limit.toast_reset_failed": "清除速率限制失败"
+  "rate_limit.toast_reset_failed": "清除速率限制失败",
+
+  "widgets.install_from_url": "从 URL 安装",
+  "widgets.install_from_url_desc": "从 HTTPS URL 拉取 Widget 模块，服务端会校验并本地存储。",
+  "widgets.url_label": "模块 URL",
+  "widgets.install": "安装",
+  "widgets.upload_file": "上传 .js 文件",
+  "widgets.upload_file_desc": "从本地选择一个单文件 Widget 包（.js 或 .mjs）。",
+  "widgets.uploading": "上传中…",
+  "widgets.installed_modules": "已安装的模块",
+  "widgets.no_modules": "尚未安装任何 Widget 模块。",
+  "widgets.uninstall": "卸载",
+  "widgets.builtin_locked": "内置（不可卸载）",
+  "widgets.confirm_uninstall": "确定卸载 “{{name}}” 吗？任何仪表盘上使用该模块的小组件都将无法渲染。",
+  "widgets.toast_installed": "已安装 {{id}} v{{version}}",
+  "widgets.toast_uninstalled": "已卸载 {{id}}"
 }

@@ -556,5 +556,20 @@
   "rate_limit.summary_total": "{{count}} active",
   "rate_limit.limits": "Limit: {{login}} login / {{register}} register per {{minutes}} min",
   "rate_limit.toast_reset": "Cleared {{count}} entr(y/ies)",
-  "rate_limit.toast_reset_failed": "Failed to reset rate limit"
+  "rate_limit.toast_reset_failed": "Failed to reset rate limit",
+
+  "widgets.install_from_url": "Install from URL",
+  "widgets.install_from_url_desc": "Fetch a widget module from an HTTPS URL. The server validates and stores it locally.",
+  "widgets.url_label": "Module URL",
+  "widgets.install": "Install",
+  "widgets.upload_file": "Upload .js file",
+  "widgets.upload_file_desc": "Pick a single-file widget bundle (.js or .mjs) from your computer.",
+  "widgets.uploading": "Uploading…",
+  "widgets.installed_modules": "Installed modules",
+  "widgets.no_modules": "No widget modules installed yet.",
+  "widgets.uninstall": "Uninstall",
+  "widgets.builtin_locked": "Built-in (cannot uninstall)",
+  "widgets.confirm_uninstall": "Uninstall \"{{name}}\"? Any dashboard widgets using this module will stop rendering.",
+  "widgets.toast_installed": "Installed {{id}} v{{version}}",
+  "widgets.toast_uninstalled": "Uninstalled {{id}}"
 }
