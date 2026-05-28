@@ -10,6 +10,8 @@ pub enum WidgetModuleError {
     IdConflict(String),
     #[error("module not found: {0}")]
     NotFound(String),
+    #[error("asset not found: {0}")]
+    AssetNotFound(String),
     #[error("invalid asset path")]
     InvalidAssetPath,
     #[error("database: {0}")]
@@ -19,7 +21,9 @@ pub enum WidgetModuleError {
 impl From<WidgetModuleError> for AppError {
     fn from(err: WidgetModuleError) -> Self {
         match err {
-            WidgetModuleError::NotFound(msg) => AppError::NotFound(msg),
+            WidgetModuleError::NotFound(msg) | WidgetModuleError::AssetNotFound(msg) => {
+                AppError::NotFound(msg)
+            }
             WidgetModuleError::IdConflict(msg) => AppError::Conflict(msg),
             WidgetModuleError::InvalidAssetPath
             | WidgetModuleError::ManifestExtraction(_)

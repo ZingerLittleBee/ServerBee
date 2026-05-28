@@ -3,7 +3,16 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use super::{WidgetModuleError, package::UnpackedPackage};
-use crate::entity::widget_module::{self, Entity as WidgetModuleEntity};
+use crate::entity::widget_module::{self, Entity as WidgetModuleEntity, SourceType};
+
+/// Asset bytes plus the per-row metadata callers need to set caching headers
+/// without re-querying the database.
+pub struct ServedAsset {
+    pub bytes: Vec<u8>,
+    pub mime: String,
+    pub version: String,
+    pub code_sha256: String,
+}
 
 #[derive(Debug, Clone)]
 pub enum InstalledFrom {
@@ -65,22 +74,24 @@ impl WidgetModuleService {
             .ok_or_else(|| WidgetModuleError::NotFound(id.to_string()))
     }
 
-    /// Loads the package and returns bytes + mime for a requested asset path.
+    /// Loads the package and returns bytes + mime + ETag inputs for a requested
+    /// asset path. The route layer wraps these into HTTP cache headers without
+    /// needing a second database round-trip.
     pub async fn serve_asset(
         db: &DatabaseConnection,
         id: &str,
         requested: &str,
-    ) -> Result<(Vec<u8>, String), WidgetModuleError> {
+    ) -> Result<ServedAsset, WidgetModuleError> {
         let row = Self::get(db, id).await?;
 
         if requested.contains("..") {
             return Err(WidgetModuleError::InvalidAssetPath);
         }
 
-        if matches!(
-            row.source_type,
-            crate::entity::widget_module::SourceType::Builtin
-        ) {
+        let version = row.version.clone();
+        let code_sha256 = row.code_sha256.clone();
+
+        if matches!(row.source_type, SourceType::Builtin) {
             // Builtin: the URL `/api/widget-modules/<id>/<requested>` resolves to a path
             // within the embedded directory. `row.entry_path` is the module's main file
             // (e.g. "hello-world/index.js"); we resolve `requested` relative to its folder.
@@ -95,8 +106,13 @@ impl WidgetModuleService {
                 format!("{folder}/{requested}")
             };
             let bytes = crate::service::widget_module::builtin::builtin_asset_bytes(&full)
-                .ok_or(WidgetModuleError::InvalidAssetPath)?;
-            return Ok((bytes, mime_for(&full)));
+                .ok_or_else(|| WidgetModuleError::AssetNotFound(requested.to_string()))?;
+            return Ok(ServedAsset {
+                bytes,
+                mime: mime_for(&full),
+                version,
+                code_sha256,
+            });
         }
 
         let blob = row
@@ -130,10 +146,15 @@ impl WidgetModuleService {
 
         let bytes = package
             .get(&lookup_path)
-            .ok_or(WidgetModuleError::InvalidAssetPath)?
+            .ok_or_else(|| WidgetModuleError::AssetNotFound(requested.to_string()))?
             .to_vec();
         let mime = mime_for(&lookup_path);
-        Ok((bytes, mime))
+        Ok(ServedAsset {
+            bytes,
+            mime,
+            version,
+            code_sha256,
+        })
     }
 
     /// Install (or upgrade) a single-file JS widget module by extracting the
@@ -166,6 +187,19 @@ impl WidgetModuleService {
             InstalledFrom::Url(u) => (SourceType::Url, Some(u)),
             InstalledFrom::Upload(name) => (SourceType::Upload, Some(name)),
         };
+
+        // Reject if an existing row owns this id under a different source_type.
+        // Spec §3.5: a user-uploaded module must never silently overwrite a
+        // builtin (or vice versa) — those are separate trust domains.
+        if let Some(existing) =
+            widget_module::Entity::find_by_id(manifest.id.clone()).one(db).await?
+            && existing.source_type != source_type
+        {
+            return Err(WidgetModuleError::IdConflict(format!(
+                "id {} already installed as {:?}",
+                manifest.id, existing.source_type
+            )));
+        }
 
         let manifest_json = serde_json::to_string(&manifest).map_err(|e| {
             WidgetModuleError::ManifestValidation(format!("serialize manifest: {e}"))
@@ -316,6 +350,20 @@ impl WidgetModuleService {
             InstalledFrom::Upload(name) => (SourceType::Upload, Some(name)),
         };
 
+        // Reject the whole collection up front if any id collides with an
+        // existing row owned by a different source_type (e.g. Builtin).
+        for (manifest, _, _) in prepared.iter() {
+            if let Some(existing) =
+                widget_module::Entity::find_by_id(manifest.id.clone()).one(db).await?
+                && existing.source_type != source_type
+            {
+                return Err(WidgetModuleError::IdConflict(format!(
+                    "id {} already installed as {:?}",
+                    manifest.id, existing.source_type
+                )));
+            }
+        }
+
         let now = Utc::now();
         let mut installed: Vec<widget_module::Model> = Vec::with_capacity(prepared.len());
 
@@ -401,6 +449,14 @@ fn mime_for(path: &str) -> String {
         "image/jpeg"
     } else if lower.ends_with(".webp") {
         "image/webp"
+    } else if lower.ends_with(".wasm") {
+        "application/wasm"
+    } else if lower.ends_with(".html") || lower.ends_with(".htm") {
+        "text/html; charset=utf-8"
+    } else if lower.ends_with(".txt") {
+        "text/plain; charset=utf-8"
+    } else if lower.ends_with(".md") {
+        "text/markdown; charset=utf-8"
     } else {
         "application/octet-stream"
     }
