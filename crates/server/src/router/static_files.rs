@@ -29,6 +29,11 @@ fn embedded_file_response(path: &str, file: &rust_embed::EmbeddedFile) -> Respon
     let mut builder = Response::builder().header(header::CONTENT_TYPE, mime.as_ref());
     if path.starts_with("assets/") {
         builder = builder.header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
+    } else if path.starts_with("runtime/") {
+        // The runtime shim files are unhashed and re-emitted on every SPA
+        // upgrade; a stale browser cache here breaks the import-map and the
+        // dynamically-imported widget modules. Disable all caching.
+        builder = builder.header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate");
     } else {
         builder = builder.header(header::CACHE_CONTROL, "public, max-age=60");
     }
