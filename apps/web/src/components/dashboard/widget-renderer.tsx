@@ -18,6 +18,7 @@ import type {
   TrafficBarConfig,
   UptimeTimelineConfig
 } from '@/lib/widget-types'
+import { ModuleWidgetHost } from './module-widget-host'
 import { areWidgetServerDependenciesEqual } from './widget-render-dependencies'
 import { AlertListWidget } from './widgets/alert-list'
 import { DiskIoWidget } from './widgets/disk-io'
@@ -84,6 +85,10 @@ function ErrorFallback() {
 
 function WidgetContent({ widget, servers }: WidgetRendererProps) {
   const config = useMemo(() => parseConfig<Record<string, unknown>>(widget.config_json), [widget.config_json])
+
+  if (widget.widget_type === 'module') {
+    return <ModuleWidgetHost servers={servers} widget={widget} />
+  }
 
   switch (widget.widget_type) {
     case 'stat-number':
