@@ -37,6 +37,7 @@
   "module_not_installed": "组件模块未安装",
   "module_not_installed_id": "组件模块 \"{{id}}\" 未安装",
   "module_config_invalid": "组件配置无效：{{message}}",
+  "module_config_no_fields": "该模块没有可配置字段。",
   "widgetPicker": {
     "categories": {
       "Real-time": "实时",

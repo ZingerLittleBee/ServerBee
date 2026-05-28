@@ -1,3 +1,4 @@
+import { renderConfigForm } from '@serverbee/widget-sdk'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,7 @@ import type {
   UptimeTimelineConfig,
   WidgetConfig
 } from '@/lib/widget-types'
+import { type RegistryEntry, registryActions } from '@/widgets-runtime/registry'
 
 interface WidgetConfigDialogProps {
   onOpenChange: (open: boolean) => void
@@ -644,6 +646,25 @@ function useUptimeDaysOptions(t: (key: string) => string): { label: string; valu
   ]
 }
 
+function ModuleForm({
+  entry,
+  config,
+  onChange,
+  t
+}: {
+  config: Record<string, unknown>
+  entry: RegistryEntry
+  onChange: (c: Record<string, unknown>) => void
+  t: (key: string) => string
+}) {
+  const schema = entry.module.configSchema
+  const info = useMemo(() => schema.introspect(), [schema])
+  if (info.kind !== 'object' || !info.shape || Object.keys(info.shape).length === 0) {
+    return <p className="text-muted-foreground text-sm">{t('module_config_no_fields')}</p>
+  }
+  return <div data-testid="module-config-form">{renderConfigForm(schema, config, onChange)}</div>
+}
+
 function UptimeTimelineForm({
   config,
   servers,
@@ -688,6 +709,7 @@ function UptimeTimelineForm({
   )
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: dispatcher renders one form per widget_type; refactoring to a table is more work than the value
 export function WidgetConfigDialog({
   open,
   onOpenChange,
@@ -709,6 +731,13 @@ export function WidgetConfigDialog({
   }, [widget])
 
   const needsNoConfig = widgetType === 'service-status' || widgetType === 'server-map'
+  const isModule = widgetType === 'module'
+  const moduleId = widget?.module_id ?? null
+  const moduleEntry = useMemo(
+    () => (isModule && moduleId ? registryActions.get(moduleId) : undefined),
+    [isModule, moduleId]
+  )
+  const moduleMissing = isModule && !moduleEntry
 
   const handleSubmit = () => {
     // Seed per-widget defaults that the form only shows but doesn't write,
@@ -784,12 +813,20 @@ export function WidgetConfigDialog({
               t={t}
             />
           )}
+          {isModule && moduleEntry && <ModuleForm config={config} entry={moduleEntry} onChange={setConfig} t={t} />}
+          {moduleMissing && (
+            <p className="text-destructive text-sm">
+              {moduleId ? t('module_not_installed_id').replace('{{id}}', moduleId) : t('module_not_installed')}
+            </p>
+          )}
           {needsNoConfig && (
             <p className="text-muted-foreground text-sm">{t('dialogs.widgetConfig.messages.noConfigNeeded')}</p>
           )}
         </div>
         <DialogFooter>
-          <Button onClick={handleSubmit}>{widget ? t('save') : t('add_widget')}</Button>
+          <Button disabled={moduleMissing} onClick={handleSubmit}>
+            {widget ? t('save') : t('add_widget')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

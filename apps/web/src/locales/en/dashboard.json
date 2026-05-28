@@ -37,6 +37,7 @@
   "module_not_installed": "Widget module not installed",
   "module_not_installed_id": "Widget module \"{{id}}\" not installed",
   "module_config_invalid": "Widget config invalid: {{message}}",
+  "module_config_no_fields": "This module exposes no configurable fields.",
   "widgetPicker": {
     "categories": {
       "Real-time": "Real-time",

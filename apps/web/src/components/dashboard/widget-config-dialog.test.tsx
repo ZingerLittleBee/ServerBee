@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { defineWidget, type WidgetManifest, z } from '@serverbee/widget-sdk'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { registryActions } from '@/widgets-runtime/registry'
 import { WidgetConfigDialog } from './widget-config-dialog'
 
 const translations: Record<string, string> = {
@@ -26,7 +28,12 @@ const translations: Record<string, string> = {
   'common.timeRange.24hours': '24 hours',
   'common.timeRange.30days': '30 days',
   'common.timeRange.60days': '60 days',
-  'common.timeRange.90days': '90 days'
+  'common.timeRange.90days': '90 days',
+  module_not_installed: 'Widget module not installed',
+  module_not_installed_id: 'Widget module "{{id}}" not installed',
+  module_config_no_fields: 'This module exposes no configurable fields.',
+  save: 'Save',
+  add_widget: 'Add'
 }
 
 vi.mock('react-i18next', () => ({
@@ -126,6 +133,7 @@ const mockServers = [
 ]
 
 const noop = vi.fn()
+const NOT_INSTALLED_RE = /not installed/i
 
 describe('WidgetConfigDialog', () => {
   it('renders metric select for stat-number widget', () => {
@@ -281,5 +289,134 @@ describe('WidgetConfigDialog', () => {
     expect(screen.getByText('30 days')).toBeInTheDocument()
     expect(screen.getByText('60 days')).toBeInTheDocument()
     expect(screen.getByText('90 days')).toBeInTheDocument()
+  })
+
+  describe('module widgets', () => {
+    const moduleId = 'com.test.cfg-dialog'
+    const fakeManifest: WidgetManifest = {
+      id: moduleId,
+      version: '1.0.0',
+      name: 'Test',
+      category: 'Real-time',
+      sizing: { defaultW: 2, defaultH: 2, minW: 1, minH: 1, strategy: 'free' },
+      sdkVersion: '^0.1.0'
+    }
+
+    afterEach(() => {
+      registryActions.unregister(moduleId)
+    })
+
+    it('renders the SDK config form fields for a registered module widget', () => {
+      const module = defineWidget({
+        configSchema: z.object({
+          label: z.string().describe('Label')
+        }),
+        component: () => <div />
+      })
+      registryActions.register(moduleId, module, fakeManifest)
+
+      const onSubmit = vi.fn()
+      render(
+        <WidgetConfigDialog
+          onOpenChange={noop}
+          onSubmit={onSubmit}
+          open
+          servers={mockServers as never}
+          widget={{
+            id: 'w-mod',
+            dashboard_id: 'd-1',
+            widget_type: 'module',
+            module_id: moduleId,
+            title: null,
+            config_json: '{"label":"hi"}',
+            grid_x: 0,
+            grid_y: 0,
+            grid_w: 2,
+            grid_h: 2,
+            sort_order: 0,
+            created_at: '2026-03-20T00:00:00Z'
+          }}
+          widgetType="module"
+        />
+      )
+
+      // The renderer surfaces the field label
+      expect(screen.getByText('Label')).toBeInTheDocument()
+      // Existing value is loaded into the input
+      const labelInput = screen.getByDisplayValue('hi') as HTMLInputElement
+      expect(labelInput).toBeInTheDocument()
+
+      // Type a new value and save
+      fireEvent.change(labelInput, { target: { value: 'world' } })
+      fireEvent.click(screen.getByText('Save'))
+      expect(onSubmit).toHaveBeenCalledTimes(1)
+      const [, configJson] = onSubmit.mock.calls[0]
+      expect(JSON.parse(configJson)).toMatchObject({ label: 'world' })
+    })
+
+    it('shows a placeholder when the module is not installed and disables save', () => {
+      const onSubmit = vi.fn()
+      render(
+        <WidgetConfigDialog
+          onOpenChange={noop}
+          onSubmit={onSubmit}
+          open
+          servers={mockServers as never}
+          widget={{
+            id: 'w-mod',
+            dashboard_id: 'd-1',
+            widget_type: 'module',
+            module_id: 'com.does.not.exist',
+            title: null,
+            config_json: '{}',
+            grid_x: 0,
+            grid_y: 0,
+            grid_w: 2,
+            grid_h: 2,
+            sort_order: 0,
+            created_at: '2026-03-20T00:00:00Z'
+          }}
+          widgetType="module"
+        />
+      )
+
+      expect(screen.getByText(NOT_INSTALLED_RE)).toBeInTheDocument()
+      const saveButton = screen.getByText('Save') as HTMLButtonElement
+      expect(saveButton).toBeDisabled()
+    })
+
+    it('shows a "no configurable fields" message for modules with empty configSchema', () => {
+      const module = defineWidget({
+        configSchema: z.object({}),
+        component: () => <div />
+      })
+      registryActions.register(moduleId, module, fakeManifest)
+
+      render(
+        <WidgetConfigDialog
+          onOpenChange={noop}
+          onSubmit={noop}
+          open
+          servers={mockServers as never}
+          widget={{
+            id: 'w-mod',
+            dashboard_id: 'd-1',
+            widget_type: 'module',
+            module_id: moduleId,
+            title: null,
+            config_json: '{}',
+            grid_x: 0,
+            grid_y: 0,
+            grid_w: 2,
+            grid_h: 2,
+            sort_order: 0,
+            created_at: '2026-03-20T00:00:00Z'
+          }}
+          widgetType="module"
+        />
+      )
+
+      expect(screen.getByText('This module exposes no configurable fields.')).toBeInTheDocument()
+    })
   })
 })
