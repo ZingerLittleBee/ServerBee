@@ -90,8 +90,11 @@ class ZBoolean extends ZodSchema<boolean> {
 
 class ZEnum<U extends readonly string[]> extends ZodSchema<U[number]> {
   _kind = 'enum'
-  constructor(public values: U) {
+  values: U
+
+  constructor(values: U) {
     super()
+    this.values = values
   }
 
   _parse(input: unknown, path: string[]): U[number] {
@@ -104,8 +107,11 @@ class ZEnum<U extends readonly string[]> extends ZodSchema<U[number]> {
 
 class ZArray<T> extends ZodSchema<T[]> {
   _kind = 'array'
-  constructor(public inner: ZodSchema<T>) {
+  inner: ZodSchema<T>
+
+  constructor(inner: ZodSchema<T>) {
     super()
+    this.inner = inner
   }
 
   _parse(input: unknown, path: string[]): T[] {
@@ -120,8 +126,11 @@ class ZObject<Shape extends Record<string, ZodTypeAny>> extends ZodSchema<{
   [K in keyof Shape]: Infer<Shape[K]>
 }> {
   _kind = 'object'
-  constructor(public shape: Shape) {
+  shape: Shape
+
+  constructor(shape: Shape) {
     super()
+    this.shape = shape
   }
 
   _parse(input: unknown, path: string[]) {
