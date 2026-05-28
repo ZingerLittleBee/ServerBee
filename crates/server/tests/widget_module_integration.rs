@@ -290,3 +290,62 @@ async fn serve_asset_rejects_path_traversal() {
         "path traversal should be rejected with 4xx, got status line: {status_line}"
     );
 }
+
+#[tokio::test]
+async fn list_includes_builtin_hello_world() {
+    let ctx = start_test_server_with_db().await;
+    serverbee_server::service::widget_module::builtin::register_all(&ctx.db)
+        .await
+        .expect("register builtin widgets");
+
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let res = client
+        .get(format!("{}/api/widget-modules", ctx.base_url))
+        .send()
+        .await
+        .expect("GET /api/widget-modules failed");
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.expect("invalid JSON");
+    let list = body["data"].as_array().expect("data should be array");
+    assert!(
+        list.iter().any(|m| m["id"] == "com.serverbee.hello-world"),
+        "expected hello-world in list, got {body:#?}"
+    );
+}
+
+#[tokio::test]
+async fn serve_builtin_asset_returns_js_bytes() {
+    let ctx = start_test_server_with_db().await;
+    serverbee_server::service::widget_module::builtin::register_all(&ctx.db)
+        .await
+        .expect("register builtin widgets");
+
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let res = client
+        .get(format!(
+            "{}/api/widget-modules/com.serverbee.hello-world/index.js",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("GET builtin asset failed");
+    assert_eq!(res.status(), 200);
+    let ct = res
+        .headers()
+        .get("content-type")
+        .expect("content-type missing")
+        .to_str()
+        .expect("invalid content-type")
+        .to_string();
+    assert!(ct.contains("javascript"), "unexpected content-type: {ct}");
+    let body = res.text().await.expect("body text");
+    assert!(
+        body.contains("@serverbee/widget-sdk") || body.contains("defineWidget"),
+        "expected SDK import or defineWidget in builtin js, got: {}",
+        &body[..body.len().min(200)]
+    );
+}
