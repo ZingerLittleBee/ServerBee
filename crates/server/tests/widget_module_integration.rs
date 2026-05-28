@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -477,4 +478,277 @@ async fn serve_builtin_asset_returns_js_bytes() {
         "expected SDK import or defineWidget in builtin js, got: {}",
         &body[..body.len().min(200)]
     );
+}
+
+// ---------- zip collection install tests ----------
+
+/// Build a single-file widget JS source with the given id baked into the
+/// JSDoc manifest and the body so we can confirm it round-trips.
+fn build_widget_js(id: &str) -> String {
+    format!(
+        r#"/**
+ * @serverbee-widget {{
+ *   "id": "{id}",
+ *   "version": "1.0.0",
+ *   "name": "Test {id}",
+ *   "category": "Real-time",
+ *   "sizing": {{ "defaultW": 3, "defaultH": 3, "minW": 2, "minH": 2, "strategy": "aspect-square" }},
+ *   "sdkVersion": "^0.1.0"
+ * }}
+ */
+export default {{ id: "{id}" }};
+"#
+    )
+}
+
+/// Build an in-memory zip collection bundle from a list of `(folder, id)`
+/// pairs. Each pair becomes a file at `{folder}/index.js`, and a top-level
+/// `collection.json` is added listing every entry.
+fn build_collection_zip(widgets: &[(&str, &str)]) -> Vec<u8> {
+    use zip::write::SimpleFileOptions;
+
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut zw = zip::ZipWriter::new(cursor);
+        let opts =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+        let entries: Vec<serde_json::Value> = widgets
+            .iter()
+            .map(|(folder, _)| json!({ "entry": format!("{folder}/index.js") }))
+            .collect();
+        let manifest = json!({ "widgets": entries });
+        zw.start_file("collection.json", opts).unwrap();
+        zw.write_all(serde_json::to_string_pretty(&manifest).unwrap().as_bytes())
+            .unwrap();
+
+        for (folder, id) in widgets {
+            zw.start_file(format!("{folder}/index.js"), opts).unwrap();
+            zw.write_all(build_widget_js(id).as_bytes()).unwrap();
+        }
+
+        zw.finish().unwrap();
+    }
+    buf
+}
+
+#[tokio::test]
+async fn install_collection_zip_returns_array_of_widgets() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let zip = build_collection_zip(&[
+        ("weather", "com.test.weather"),
+        ("clock", "com.test.clock"),
+    ]);
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(zip).file_name("pack.zip"),
+    );
+
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install zip request failed");
+    assert_eq!(res.status(), 200, "zip install should return 200");
+    let body: serde_json::Value = res.json().await.expect("invalid JSON");
+    let arr = body["data"].as_array().expect("data should be array");
+    assert_eq!(arr.len(), 2);
+    let ids: Vec<String> = arr
+        .iter()
+        .map(|v| v["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(ids.contains(&"com.test.weather".to_string()));
+    assert!(ids.contains(&"com.test.clock".to_string()));
+
+    // Each widget served at its own /{id}/index.js, resolving inside its zip folder.
+    for id in ["com.test.weather", "com.test.clock"] {
+        let res = client
+            .get(format!("{}/api/widget-modules/{id}/index.js", ctx.base_url))
+            .send()
+            .await
+            .expect("asset get failed");
+        assert_eq!(res.status(), 200, "asset {id} should be 200");
+        let body = res.text().await.expect("body text");
+        assert!(
+            body.contains(id),
+            "expected body for {id} to contain its id, got: {}",
+            &body[..body.len().min(160)]
+        );
+    }
+
+    // List endpoint exposes both.
+    let res = client
+        .get(format!("{}/api/widget-modules", ctx.base_url))
+        .send()
+        .await
+        .expect("list request failed");
+    let listed: serde_json::Value = res.json().await.expect("invalid JSON");
+    let listed_ids: Vec<String> = listed["data"]
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|m| m["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(listed_ids.contains(&"com.test.weather".to_string()));
+    assert!(listed_ids.contains(&"com.test.clock".to_string()));
+
+    // Deleting one leaves the other intact.
+    let del = client
+        .delete(format!(
+            "{}/api/widget-modules/com.test.weather",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("delete failed");
+    assert_eq!(del.status(), 204);
+
+    let res = client
+        .get(format!(
+            "{}/api/widget-modules/com.test.clock/index.js",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("asset get failed");
+    assert_eq!(
+        res.status(),
+        200,
+        "remaining widget should still be served after sibling is removed"
+    );
+}
+
+#[tokio::test]
+async fn install_zip_missing_collection_json_is_400() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    // Build a zip with just a widget file but no collection.json.
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut zw = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zw.start_file("weather/index.js", opts).unwrap();
+        zw.write_all(build_widget_js("com.test.weather").as_bytes())
+            .unwrap();
+        zw.finish().unwrap();
+    }
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(buf).file_name("bad.zip"),
+    );
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(res.status(), 400);
+}
+
+#[tokio::test]
+async fn install_zip_duplicate_ids_is_400() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    // Two folders point to widgets that declare the same id.
+    let zip = build_collection_zip(&[
+        ("a", "com.test.dup"),
+        ("b", "com.test.dup"),
+    ]);
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(zip).file_name("dup.zip"),
+    );
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(res.status(), 400);
+}
+
+#[tokio::test]
+async fn install_zip_entry_with_dotdot_is_400() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    // Manually craft a zip whose collection.json points outside the bundle.
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut zw = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        let manifest = json!({ "widgets": [{ "entry": "../escape.js" }] });
+        zw.start_file("collection.json", opts).unwrap();
+        zw.write_all(manifest.to_string().as_bytes()).unwrap();
+
+        // A regular widget at a sibling location too so the zip itself is valid.
+        zw.start_file("weather/index.js", opts).unwrap();
+        zw.write_all(build_widget_js("com.test.weather").as_bytes())
+            .unwrap();
+        zw.finish().unwrap();
+    }
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(buf).file_name("evil.zip"),
+    );
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(res.status(), 400);
+}
+
+#[tokio::test]
+async fn install_zip_entry_missing_jsdoc_is_400() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut zw = zip::ZipWriter::new(cursor);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        let manifest = json!({ "widgets": [{ "entry": "weather/index.js" }] });
+        zw.start_file("collection.json", opts).unwrap();
+        zw.write_all(manifest.to_string().as_bytes()).unwrap();
+        // Body has no @serverbee-widget block.
+        zw.start_file("weather/index.js", opts).unwrap();
+        zw.write_all(b"export default {};").unwrap();
+        zw.finish().unwrap();
+    }
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(buf).file_name("missing.zip"),
+    );
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(res.status(), 400);
 }

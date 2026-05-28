@@ -27,7 +27,7 @@ pub fn read_router() -> Router<Arc<AppState>> {
 
 pub fn write_router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/widget-modules", post(install_module))
+        .route("/widget-modules", post(install_widget_module))
         .route("/widget-modules/{id}", delete(uninstall_module))
 }
 
@@ -117,19 +117,22 @@ fn is_private_host(host: &str) -> bool {
     path = "/api/widget-modules",
     tag = "widget-modules",
     params(
-        ("url" = Option<String>, Query, description = "HTTPS URL to fetch the single-file widget JS from"),
+        ("url" = Option<String>, Query, description = "HTTPS URL to fetch the widget bundle from. Accepts either a single `.js` file or a `.zip` collection bundle."),
     ),
     request_body(
         content_type = "multipart/form-data",
-        description = "Alternatively, upload the widget JS in a `file` field",
+        description = "Alternatively, upload the widget bundle in a `file` field. Accepts either a single `.js` file or a `.zip` collection bundle.",
     ),
     responses(
-        (status = 200, description = "Installed (or upgraded) widget module"),
+        (
+            status = 200,
+            description = "Installed (or upgraded) widget module(s). For a single `.js` file the response is `{ data: { id, version } }`. For a `.zip` collection it is `{ data: [{ id, version }, ...] }` — one entry per widget in the collection.",
+        ),
         (status = 400, description = "Bad URL, unsupported source, or invalid manifest"),
     ),
     security(("session_cookie" = []), ("api_key" = []))
 )]
-pub async fn install_module(
+pub async fn install_widget_module(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<CurrentUser>,
     Query(q): Query<InstallQuery>,
@@ -204,8 +207,21 @@ pub async fn install_module(
         ));
     };
 
-    let row = WidgetModuleService::install_single_file(&state.db, bytes, from, user_id).await?;
-    ok(serde_json::json!({ "id": row.id, "version": row.version }))
+    if bytes.starts_with(b"PK\x03\x04") {
+        let rows = WidgetModuleService::install_collection_from_zip(
+            &state.db, bytes, from, user_id,
+        )
+        .await?;
+        let payload: Vec<serde_json::Value> = rows
+            .into_iter()
+            .map(|r| serde_json::json!({ "id": r.id, "version": r.version }))
+            .collect();
+        ok(serde_json::Value::Array(payload))
+    } else {
+        let row =
+            WidgetModuleService::install_single_file(&state.db, bytes, from, user_id).await?;
+        ok(serde_json::json!({ "id": row.id, "version": row.version }))
+    }
 }
 
 #[utoipa::path(
