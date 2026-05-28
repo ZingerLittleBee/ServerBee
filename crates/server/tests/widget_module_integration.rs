@@ -73,6 +73,10 @@ async fn start_test_server_with_db() -> TestServerContext {
         .await
         .expect("Failed to seed admin");
 
+    AuthService::create_user(&db, "member", "memberpass", "member")
+        .await
+        .expect("Failed to seed member");
+
     let state_db = db.clone();
     let state = AppState::new(state_db, config)
         .await
@@ -717,6 +721,239 @@ async fn install_zip_entry_with_dotdot_is_400() {
         .await
         .expect("install request failed");
     assert_eq!(res.status(), 400);
+}
+
+async fn login_member(client: &Client, base_url: &str) {
+    let resp = client
+        .post(format!("{base_url}/api/auth/login"))
+        .json(&json!({ "username": "member", "password": "memberpass" }))
+        .send()
+        .await
+        .expect("Login request failed");
+    assert_eq!(resp.status(), 200, "member login should succeed");
+}
+
+// ---------- B3: id collision across source_types ----------
+
+#[tokio::test]
+async fn install_rejects_collision_with_builtin_source_type() {
+    let ctx = start_test_server_with_db().await;
+    serverbee_server::service::widget_module::builtin::register_all(&ctx.db)
+        .await
+        .expect("register builtin widgets");
+
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    // Upload a single-file widget whose id matches the Builtin hello-world.
+    let code = r#"/**
+ * @serverbee-widget {
+ *   "id": "com.serverbee.hello-world",
+ *   "version": "9.9.9",
+ *   "name": "Hijacked",
+ *   "category": "Real-time",
+ *   "sizing": { "defaultW": 2, "defaultH": 2, "minW": 1, "minH": 1, "strategy": "free" },
+ *   "sdkVersion": "^0.1.0"
+ * }
+ */
+export default {};"#;
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(code.as_bytes().to_vec())
+            .file_name("hijack.js"),
+    );
+
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(
+        res.status(),
+        409,
+        "upload colliding with Builtin id must return 409 Conflict"
+    );
+}
+
+#[tokio::test]
+async fn install_allows_upgrade_of_same_source_type() {
+    let ctx = start_test_server_with_db().await;
+
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let body_v1 = r#"/**
+ * @serverbee-widget {
+ *   "id": "com.test.upgradeable",
+ *   "version": "1.0.0",
+ *   "name": "Up",
+ *   "category": "Real-time",
+ *   "sizing": { "defaultW": 2, "defaultH": 2, "minW": 1, "minH": 1, "strategy": "free" },
+ *   "sdkVersion": "^0.1.0"
+ * }
+ */
+export default {};"#;
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(body_v1.as_bytes().to_vec()).file_name("up.js"),
+    );
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("first install failed");
+    assert_eq!(res.status(), 200);
+
+    let body_v2 = r#"/**
+ * @serverbee-widget {
+ *   "id": "com.test.upgradeable",
+ *   "version": "1.1.0",
+ *   "name": "Up",
+ *   "category": "Real-time",
+ *   "sizing": { "defaultW": 2, "defaultH": 2, "minW": 1, "minH": 1, "strategy": "free" },
+ *   "sdkVersion": "^0.1.0"
+ * }
+ */
+export default {};"#;
+    let form2 = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(body_v2.as_bytes().to_vec()).file_name("up.js"),
+    );
+    let res2 = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form2)
+        .send()
+        .await
+        .expect("upgrade install failed");
+    assert_eq!(
+        res2.status(),
+        200,
+        "upgrading an existing Upload-source row should succeed"
+    );
+    let body: serde_json::Value = res2.json().await.expect("invalid JSON");
+    assert_eq!(body["data"]["version"], "1.1.0");
+}
+
+// ---------- B4: SSRF guard ----------
+
+#[tokio::test]
+async fn install_rejects_loopback_url() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let res = client
+        .post(format!(
+            "{}/api/widget-modules?url=http://127.0.0.1:9527/widget.js",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(
+        res.status(),
+        400,
+        "loopback url must be rejected by SSRF guard"
+    );
+}
+
+#[tokio::test]
+async fn install_rejects_link_local_metadata_url() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let res = client
+        .post(format!(
+            "{}/api/widget-modules?url=http://169.254.169.254/latest/meta-data/",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(
+        res.status(),
+        400,
+        "cloud metadata url must be rejected by SSRF guard"
+    );
+}
+
+#[tokio::test]
+async fn install_rejects_private_cidr_url() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_admin(&client, &ctx.base_url).await;
+
+    let res = client
+        .post(format!(
+            "{}/api/widget-modules?url=http://10.0.0.1/widget.js",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(res.status(), 400);
+}
+
+// ---------- I14: member role denied ----------
+
+#[tokio::test]
+async fn install_rejects_member_role() {
+    let ctx = start_test_server_with_db().await;
+    let client = http_client();
+    login_member(&client, &ctx.base_url).await;
+
+    let code = r#"/**
+ * @serverbee-widget {
+ *   "id": "com.test.member-attempt",
+ *   "version": "1.0.0",
+ *   "name": "X",
+ *   "category": "Real-time",
+ *   "sizing": { "defaultW": 2, "defaultH": 2, "minW": 1, "minH": 1, "strategy": "free" },
+ *   "sdkVersion": "^0.1.0"
+ * }
+ */
+export default {};"#;
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(code.as_bytes().to_vec()).file_name("x.js"),
+    );
+    let res = client
+        .post(format!("{}/api/widget-modules", ctx.base_url))
+        .multipart(form)
+        .send()
+        .await
+        .expect("install request failed");
+    assert_eq!(
+        res.status(),
+        403,
+        "member must not be able to POST widget-modules"
+    );
+}
+
+#[tokio::test]
+async fn uninstall_rejects_member_role() {
+    let ctx = start_test_server_with_db().await;
+    seed_module(&ctx.db, "com.test.foo").await;
+
+    let client = http_client();
+    login_member(&client, &ctx.base_url).await;
+
+    let res = client
+        .delete(format!(
+            "{}/api/widget-modules/com.test.foo",
+            ctx.base_url
+        ))
+        .send()
+        .await
+        .expect("delete request failed");
+    assert_eq!(
+        res.status(),
+        403,
+        "member must not be able to DELETE widget-modules"
+    );
 }
 
 #[tokio::test]
