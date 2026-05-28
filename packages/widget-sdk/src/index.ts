@@ -7,6 +7,7 @@ export type {
   WidgetModule
 } from './define-widget'
 export { defineWidget } from './define-widget'
+export * from './hooks'
 export type { SizingStrategy, WidgetCategory, WidgetManifest, WidgetSizing } from './manifest'
 export { validateManifest } from './manifest'
 export type { ServerSummary, WidgetRuntime } from './runtime-context'
