@@ -1,16 +1,23 @@
-import { renderHook } from '@testing-library/react'
+import { act, render, renderHook, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useCapability, useMetric, useServers } from '../src/hooks/live'
-import { createWidgetRuntime, resetRuntime } from '../src/runtime-context'
+import { createWidgetRuntime, resetRuntime, type ServerSummary } from '../src/runtime-context'
 
 describe('live hooks', () => {
   beforeEach(() => {
     resetRuntime()
+    // Cached references — useSyncExternalStore requires snapshots to be stable
+    // across calls when nothing changed; the production runtime backs both
+    // stores by React Query, which already memoizes its returns.
+    const cachedServers: ServerSummary[] = [
+      { id: 's1', name: 'one', online: true, lastSeen: null, capabilities: 1 | 8 }
+    ]
+    const cachedDetail = { id: 's1', cpu: { usage: 42 }, disks: [{ used: 100 }] }
     createWidgetRuntime({
       apiBaseUrl: '/api',
       queryClient: {} as any,
-      serversStore: () => [{ id: 's1', name: 'one', online: true, lastSeen: null, capabilities: 1 | 8 }],
-      serverByIdStore: (id) => (id === 's1' ? { id: 's1', cpu: { usage: 42 }, disks: [{ used: 100 }] } : undefined),
+      serversStore: () => cachedServers,
+      serverByIdStore: (id) => (id === 's1' ? cachedDetail : undefined),
       themeStore: () => ({ mode: 'light', cssVar: () => '' }),
       onConfigUpdate: () => {}
     })
@@ -44,5 +51,47 @@ describe('live hooks', () => {
     expect(term.current).toBe(true)
     const { result: docker } = renderHook(() => useCapability('s1', 'CAP_DOCKER'))
     expect(docker.current).toBe(false)
+  })
+})
+
+describe('useServers re-renders on subscription', () => {
+  it('rerenders when subscribe callback fires after store mutation', () => {
+    resetRuntime()
+    let servers: ServerSummary[] = []
+    const listeners = new Set<() => void>()
+    createWidgetRuntime({
+      apiBaseUrl: '/api',
+      queryClient: {} as any,
+      serversStore: () => servers,
+      serverByIdStore: (id) => servers.find((s) => s.id === id),
+      subscribeServers: (cb) => {
+        listeners.add(cb)
+        return () => {
+          listeners.delete(cb)
+        }
+      },
+      themeStore: () => ({ mode: 'light', cssVar: () => '' }),
+      onConfigUpdate: () => {}
+    })
+
+    function Probe() {
+      const list = useServers()
+      return <div data-testid="count">{list.length}</div>
+    }
+
+    render(<Probe />)
+    expect(screen.getByTestId('count').textContent).toBe('0')
+
+    act(() => {
+      servers = [
+        { id: 's1', name: 'one', online: true, lastSeen: null, capabilities: 0 },
+        { id: 's2', name: 'two', online: true, lastSeen: null, capabilities: 0 }
+      ]
+      for (const cb of listeners) {
+        cb()
+      }
+    })
+
+    expect(screen.getByTestId('count').textContent).toBe('2')
   })
 })

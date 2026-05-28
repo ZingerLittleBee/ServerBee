@@ -1,7 +1,9 @@
-import { getRuntime } from '../runtime-context'
+import { useSyncExternalStore } from 'react'
+import { getRuntime, type ThemeSnapshot } from '../runtime-context'
 
-export function useTheme() {
-  return getRuntime().themeStore()
+export function useTheme(): ThemeSnapshot {
+  const rt = getRuntime()
+  return useSyncExternalStore(rt.subscribeTheme, rt.themeStore, rt.themeStore)
 }
 
 export function useConfigUpdate<TConfig = Record<string, unknown>>(instanceId: string) {
