@@ -535,7 +535,5 @@
   "widgets.confirm_uninstall": "Uninstall \"{{name}}\"? Any dashboard widgets using this module will stop rendering.",
   "widgets.toast_installed": "Installed {{id}} v{{version}}",
   "widgets.toast_installed_collection": "Installed {{count}} widgets from collection",
-  "widgets.toast_uninstalled": "Uninstalled {{id}}",
-  "widgets.widget_config_module_not_installed": "Widget module is not installed",
-  "widgets.widget_config_module_no_fields": "This module exposes no configurable fields."
+  "widgets.toast_uninstalled": "Uninstalled {{id}}"
 }

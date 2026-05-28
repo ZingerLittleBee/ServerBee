@@ -516,7 +516,5 @@
   "widgets.confirm_uninstall": "确定卸载 “{{name}}” 吗？任何仪表盘上使用该模块的小组件都将无法渲染。",
   "widgets.toast_installed": "已安装 {{id}} v{{version}}",
   "widgets.toast_installed_collection": "安装了 {{count}} 个 widget",
-  "widgets.toast_uninstalled": "已卸载 {{id}}",
-  "widgets.widget_config_module_not_installed": "Widget 模块未安装",
-  "widgets.widget_config_module_no_fields": "该模块没有可配置字段。"
+  "widgets.toast_uninstalled": "已卸载 {{id}}"
 }
