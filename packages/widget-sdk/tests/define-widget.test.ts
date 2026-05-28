@@ -25,4 +25,17 @@ describe('defineWidget', () => {
   it('throws when component is missing', () => {
     expect(() => defineWidget({ configSchema: {} as any } as any)).toThrow(/component/)
   })
+
+  it('throws on duplicate action ids', () => {
+    expect(() =>
+      defineWidget({
+        configSchema: { _kind: 'object', shape: {} } as any,
+        component: () => null,
+        actions: [
+          { id: 'restart', label: 'Restart', run: async () => {} },
+          { id: 'restart', label: 'Restart again', run: async () => {} }
+        ]
+      })
+    ).toThrow(/duplicate action id "restart"/)
+  })
 })

@@ -43,10 +43,18 @@ export function defineWidget<TSchema extends ZodTypeAny>(
   if (!input || typeof input.component !== 'function') {
     throw new Error('defineWidget: component is required')
   }
+  const actions = input.actions ?? []
+  const seen = new Set<string>()
+  for (const a of actions) {
+    if (seen.has(a.id)) {
+      throw new Error(`defineWidget: duplicate action id "${a.id}"`)
+    }
+    seen.add(a.id)
+  }
   return {
     __brand: 'WidgetModule',
     configSchema: input.configSchema,
-    component: input.component as any,
-    actions: input.actions ?? []
+    component: input.component,
+    actions
   }
 }
