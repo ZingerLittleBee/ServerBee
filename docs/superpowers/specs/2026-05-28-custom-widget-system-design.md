@@ -509,7 +509,14 @@ The rewrite is chunked to surface SDK gaps early:
 
 After Chunk C lands, the old `WidgetRenderer` + `widget-types.ts` + per-type config dialog code is deleted in a single cleanup commit.
 
-Per project convention, `dashboard_widget.widget_type` is renamed to `module_id` in a schema-only migration; no data conversion (dev period).
+### Schema reality (implementation note)
+
+The first cut keeps `widget_type` alongside a new nullable `module_id` column rather than renaming:
+
+- Legacy widgets continue to use `widget_type='gauge' | 'markdown' | ...` with `module_id=NULL`.
+- Module-backed widgets use `widget_type='module'` with `module_id` pointing at `widget_module.id`.
+
+This lets the 14 legacy widgets keep their V1 switch-based renderer while V2 module dispatch runs in parallel. When Chunks A–C land and the legacy renderer is deleted, the `widget_type` column is dropped in a follow-up migration and `module_id` becomes mandatory.
 
 ---
 

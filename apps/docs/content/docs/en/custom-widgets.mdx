@@ -255,8 +255,9 @@ See [Dashboards & Widgets](/en/docs/dashboards) for more on layout and editing.
 
 - `defineWidget` — declares a widget's entry point.
 - `z` / `ZodSchema` — bundled Zod for describing config schemas.
-- Data hooks: `useServers`, `useServer`, `useMetric`, `useHistory`, `useTraffic`, `useAlerts`, `useServiceMonitors`, `useUptime`, `useGeoIp`.
-- Host hooks: `useTheme`, `useConfigUpdate`, `useCapability`.
+- Live hooks: `useServers`, `useServer`, `useMetric`, `useCapability` (subscribe to the live WebSocket store via `useSyncExternalStore`).
+- Domain hooks: `useHistory`, `useTraffic`, `useAlerts`, `useServiceMonitors`, `useUptime`, `useGeoIp`.
+- Host hooks: `useTheme`, `useConfigUpdate`.
 - Generic escape hatches: `useApiQuery` / `useApiMutation` for direct REST calls.
 - `createActionsHelper` and `ActionDefinition` for registering action buttons on a widget.
 

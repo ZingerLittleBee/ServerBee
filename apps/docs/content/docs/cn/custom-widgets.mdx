@@ -255,8 +255,9 @@ curl -X POST "https://your-host/api/widget-modules" \
 
 - `defineWidget` — 声明组件的入口；
 - `z` / `ZodSchema` — 内嵌的 Zod，用于描述配置项 schema；
-- 数据钩子：`useServers`、`useServer`、`useMetric`、`useHistory`、`useTraffic`、`useAlerts`、`useServiceMonitors`、`useUptime`、`useGeoIp`；
-- 宿主钩子：`useTheme`、`useConfigUpdate`、`useCapability`；
+- 实时钩子：`useServers`、`useServer`、`useMetric`、`useCapability`（通过 `useSyncExternalStore` 订阅 WebSocket 实时数据）；
+- 业务钩子：`useHistory`、`useTraffic`、`useAlerts`、`useServiceMonitors`、`useUptime`、`useGeoIp`；
+- 宿主钩子：`useTheme`、`useConfigUpdate`；
 - 通用逃生舱：`useApiQuery` / `useApiMutation` 直接调用后端 REST API；
 - `createActionsHelper` 与 `ActionDefinition` —— 在组件上注册按钮操作。
 
