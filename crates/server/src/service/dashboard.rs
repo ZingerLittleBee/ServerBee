@@ -40,6 +40,8 @@ pub struct UpdateDashboardInput {
 pub struct WidgetInput {
     pub id: Option<String>,
     pub widget_type: String,
+    #[serde(default)]
+    pub module_id: Option<String>,
     pub title: Option<String>,
     pub config_json: serde_json::Value,
     pub grid_x: i32,
@@ -153,7 +155,13 @@ impl DashboardService {
         // Validate widget types
         if let Some(ref widgets) = input.widgets {
             for w in widgets {
-                if !VALID_WIDGET_TYPES.contains(&w.widget_type.as_str()) {
+                if w.widget_type == "module" {
+                    if w.module_id.is_none() {
+                        return Err(AppError::BadRequest(
+                            "widget_type 'module' requires module_id".into(),
+                        ));
+                    }
+                } else if !VALID_WIDGET_TYPES.contains(&w.widget_type.as_str()) {
                     return Err(AppError::BadRequest(format!(
                         "Unknown widget_type: {}",
                         w.widget_type
@@ -206,6 +214,7 @@ impl DashboardService {
                         id: Set(wid),
                         dashboard_id: Set(id.to_string()),
                         widget_type: Set(w.widget_type),
+                        module_id: Set(w.module_id),
                         title: Set(w.title),
                         config_json: Set(config_str),
                         grid_x: Set(w.grid_x),
@@ -223,6 +232,7 @@ impl DashboardService {
                         id: Set(new_id),
                         dashboard_id: Set(id.to_string()),
                         widget_type: Set(w.widget_type),
+                        module_id: Set(w.module_id),
                         title: Set(w.title),
                         config_json: Set(config_str),
                         grid_x: Set(w.grid_x),
@@ -310,6 +320,7 @@ impl DashboardService {
                 id: Set(Uuid::new_v4().to_string()),
                 dashboard_id: Set(dash_id.clone()),
                 widget_type: Set(wtype.to_string()),
+                module_id: Set(None),
                 title: Set(None),
                 config_json: Set(config.to_string()),
                 grid_x: Set(x),
@@ -433,6 +444,7 @@ mod tests {
                     WidgetInput {
                         id: None,
                         widget_type: "gauge".to_string(),
+                        module_id: None,
                         title: Some("CPU".to_string()),
                         config_json: serde_json::json!({"metric": "cpu"}),
                         grid_x: 0,
@@ -444,6 +456,7 @@ mod tests {
                     WidgetInput {
                         id: None,
                         widget_type: "gauge".to_string(),
+                        module_id: None,
                         title: Some("Memory".to_string()),
                         config_json: serde_json::json!({"metric": "memory"}),
                         grid_x: 4,
@@ -474,6 +487,7 @@ mod tests {
                     WidgetInput {
                         id: Some(keep_id.clone()),
                         widget_type: "gauge".to_string(),
+                        module_id: None,
                         title: Some("CPU Updated".to_string()),
                         config_json: serde_json::json!({"metric": "cpu"}),
                         grid_x: 0,
@@ -485,6 +499,7 @@ mod tests {
                     WidgetInput {
                         id: None,
                         widget_type: "markdown".to_string(),
+                        module_id: None,
                         title: Some("Notes".to_string()),
                         config_json: serde_json::json!({"content": "hello"}),
                         grid_x: 6,
@@ -617,6 +632,7 @@ mod tests {
                 widgets: Some(vec![WidgetInput {
                     id: None,
                     widget_type: "nonexistent-widget".to_string(),
+                    module_id: None,
                     title: None,
                     config_json: serde_json::json!({}),
                     grid_x: 0,
@@ -734,6 +750,7 @@ mod tests {
                 widgets: Some(vec![WidgetInput {
                     id: None,
                     widget_type: "gauge".to_string(),
+                    module_id: None,
                     title: Some("CPU".to_string()),
                     config_json: serde_json::json!({}),
                     grid_x: 0,

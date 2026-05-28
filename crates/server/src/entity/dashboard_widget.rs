@@ -8,6 +8,7 @@ pub struct Model {
     pub id: String,
     pub dashboard_id: String,
     pub widget_type: String,
+    pub module_id: Option<String>,
     pub title: Option<String>,
     pub config_json: String,
     pub grid_x: i32,
