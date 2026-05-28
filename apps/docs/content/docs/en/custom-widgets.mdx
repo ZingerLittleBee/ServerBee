@@ -1,0 +1,289 @@
+---
+title: Custom Widgets
+description: Author custom dashboard widgets with React + Zod, and install them into ServerBee as a single file or a zip collection.
+icon: Puzzle
+---
+
+ServerBee dashboards natively support custom widget modules. Each widget is a standalone ES module that an admin installs once and then drops onto any dashboard, exactly like a built-in widget. This guide covers the two supported install methods:
+
+- **Method B** — a single `.js` file (one widget per file)
+- **Method C** — a `.zip` collection bundle (multiple widgets in one upload, sharing the same build output)
+
+## Concepts
+
+A widget module has three parts:
+
+1. **Static JSDoc manifest** — a `@serverbee-widget {...}` JSON block at the top of the file declaring the widget's `id`, `version`, `name`, `category`, default sizing, required SDK version, and so on. The manifest is **statically parseable**: the server can index it without ever executing the module, which means offline scanning and permission checks work the same way as runtime loading.
+2. **Default export** — the object returned by `defineWidget({ configSchema, component, actions? })`. `configSchema` is a Zod schema describing the configurable fields; `component` is a React component that receives `{ config, size, isEditing, actions }` props at runtime.
+3. **Runtime dependencies** — imported as `react`, `react/jsx-runtime`, and `@serverbee/widget-sdk`. These are **provided by the host** and must be marked `external` at build time; the browser reuses the main app's instances.
+
+### Trust model
+
+Custom widgets are **admin-only to install** and run **same-origin** in the browser, sharing the session of the logged-in user. That means:
+
+- An approved widget can issue any API request that the current user is authorized for.
+- All widgets share the same React context, so do not introduce global side effects that could break sibling widgets.
+- The platform does not sandbox widget code — **only install code you trust**.
+
+## Method B — single `.widget.js` file
+
+### Anatomy
+
+```js
+/**
+ * @serverbee-widget {
+ *   "id": "com.example.hello",
+ *   "version": "1.0.0",
+ *   "name": "Hello",
+ *   "description": "A minimal example widget.",
+ *   "author": "Your Name",
+ *   "category": "Real-time",
+ *   "sizing": { "defaultW": 3, "defaultH": 2, "minW": 2, "minH": 2, "strategy": "free" },
+ *   "sdkVersion": "^0.1.0"
+ * }
+ */
+import { defineWidget, useServers, useTheme, z } from '@serverbee/widget-sdk'
+
+const ConfigSchema = z.object({
+  greeting: z.string().describe('Greeting text').default('Hello, ServerBee')
+})
+
+export default defineWidget({
+  configSchema: ConfigSchema,
+  component: ({ config }) => {
+    const servers = useServers()
+    const theme = useTheme()
+    const online = servers.filter((s) => s.online).length
+    const { greeting } = config
+    return (
+      <div style={{ padding: 12 }}>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>{greeting}</div>
+        <div style={{ marginTop: 8, color: 'var(--muted-foreground)' }}>
+          {online} / {servers.length} online · {theme.mode} mode
+        </div>
+      </div>
+    )
+  }
+})
+```
+
+### Manifest fields
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `id` | yes | Reverse-DNS-style unique identifier, e.g. `com.example.cpu` |
+| `version` | yes | Semantic version `MAJOR.MINOR.PATCH` |
+| `name` | yes | Display name in the widget picker |
+| `description` | – | Free-form description |
+| `author` | – | Author name or organization |
+| `category` | yes | One of `Real-time`, `Charts`, `Status` |
+| `sizing.defaultW/H` | yes | Default width / height in grid cells |
+| `sizing.minW/H` | yes | Minimum allowed size |
+| `sizing.maxW/H` | – | Optional maximum size |
+| `sizing.strategy` | yes | `free` / `fixed` / `aspect-square` / `content-height` |
+| `sdkVersion` | yes | SDK version range, e.g. `^0.1.0` |
+
+### Build requirements
+
+A custom widget must be built as an **ES module** with the following dependencies marked `external`:
+
+- `react`
+- `react/jsx-runtime`
+- `@serverbee/widget-sdk`
+
+Just as important: the **JSDoc manifest comment must be preserved verbatim at the top of the output**. Most minifiers strip comments by default, so explicitly opt into preserving the manifest comment.
+
+A typical Vite + Terser config:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    lib: {
+      entry: 'src/index.tsx',
+      formats: ['es'],
+      fileName: () => 'index.js'
+    },
+    rollupOptions: {
+      external: ['react', 'react/jsx-runtime', '@serverbee/widget-sdk']
+    },
+    minify: 'terser',
+    terserOptions: {
+      format: {
+        // Keep the @serverbee-widget manifest comment.
+        comments: /@serverbee-widget/
+      }
+    }
+  }
+})
+```
+
+### Install via UI
+
+1. Sign in as an admin.
+2. Open **Settings → Widget Modules**.
+3. Choose **Upload `.js`** to upload a local file, or **Import URL** to fetch over HTTPS.
+4. Once installed, open any dashboard, click **Edit → Add Widget**, and the new widget appears in the picker.
+
+### Install via API
+
+```bash
+# Upload a local file
+curl -X POST "https://your-host/api/widget-modules" \
+  -H "X-API-Key: $SERVERBEE_API_KEY" \
+  -F file=@my.widget.js
+
+# Fetch from URL
+curl -X POST "https://your-host/api/widget-modules?url=https://cdn.example.com/my.widget.js" \
+  -H "X-API-Key: $SERVERBEE_API_KEY"
+```
+
+On success:
+
+```json
+{ "data": { "id": "com.example.hello", "version": "1.0.0" } }
+```
+
+If a widget with the same `id` already exists, it is upgraded in place — the version, manifest, and code are all replaced.
+
+## Method C — `.zip` collection bundle
+
+A collection lets you install **multiple widgets in a single upload**. Each widget still follows the Method B rules (its own JSDoc manifest, its own entry file). They are simply packaged together in one `.zip`, and a root-level `collection.json` enumerates them.
+
+### Package layout
+
+```
+my-pack.zip
+├── collection.json
+├── weather/
+│   ├── index.js          ← contains the @serverbee-widget manifest
+│   └── icon.svg          ← optional asset
+├── clock/
+│   └── index.js
+└── shared/
+    └── helpers.js        ← optional; not auto-injected — entry files must import as needed
+```
+
+### `collection.json` schema
+
+```json
+{
+  "widgets": [
+    { "entry": "weather/index.js" },
+    { "entry": "clock/index.js" }
+  ]
+}
+```
+
+Constraints:
+
+- `entry` must be a relative path (no leading `/`, no `..`).
+- Must point to a `.js` or `.mjs` file.
+- Every entry file must contain a valid `@serverbee-widget` JSDoc block.
+- Widget `id`s must be **unique within the bundle** — duplicates are rejected.
+
+### Asset resolution
+
+Assets inside the bundle (images, JSON, helper scripts, etc.) are served via `GET /api/widget-modules/{id}/{relative-path}`. The relative path is resolved against the **folder of the entry file**:
+
+| Request URL | Resolved zip path |
+|-------------|-------------------|
+| `/api/widget-modules/com.example.weather/index.js` | `weather/index.js` |
+| `/api/widget-modules/com.example.weather/icon.svg` | `weather/icon.svg` |
+| `/api/widget-modules/com.example.clock/index.js` | `clock/index.js` |
+
+Reference assets from widget code like this:
+
+```ts
+const iconUrl = `/api/widget-modules/com.example.weather/icon.svg`
+```
+
+Note: widgets cannot reach into each other's folders — asset resolution is scoped per `id`.
+
+### Build and pack
+
+1. Use your bundler of choice (Vite, tsup, esbuild, ...) to build each widget's `index.js`, externalizing React and the SDK and preserving the manifest comment.
+2. Lay the build outputs out in the directory structure above.
+3. Write `collection.json` at the package root.
+4. Zip it:
+
+```bash
+zip -r my-pack.zip collection.json weather/ clock/
+```
+
+### Install
+
+The UI flow is identical to Method B — just upload the `.zip`. The server sniffs the `PK\x03\x04` magic bytes and dispatches automatically.
+
+```bash
+curl -X POST "https://your-host/api/widget-modules" \
+  -H "X-API-Key: $SERVERBEE_API_KEY" \
+  -F file=@my-pack.zip
+```
+
+A collection install returns an **array** — one entry per widget in the bundle:
+
+```json
+{
+  "data": [
+    { "id": "com.example.weather", "version": "1.0.0" },
+    { "id": "com.example.clock",   "version": "1.0.0" }
+  ]
+}
+```
+
+Each widget gets its own row in the database and can be enabled, disabled, or uninstalled individually. They share a single underlying zip blob for storage.
+
+## Sizing strategies
+
+`sizing.strategy` controls how a widget can be resized on the dashboard:
+
+- `free` — user can resize freely between `minW/H` and `maxW/H`.
+- `fixed` — locked to `defaultW/H`; resizing is disabled.
+- `aspect-square` — always 1:1; snaps to the nearest tier.
+- `content-height` — width is resizable; height is driven by content.
+
+See [Dashboards & Widgets](/en/docs/dashboards) for more on layout and editing.
+
+## SDK surface at a glance
+
+`@serverbee/widget-sdk` is the stable API exposed to custom widgets. It includes:
+
+- `defineWidget` — declares a widget's entry point.
+- `z` / `ZodSchema` — bundled Zod for describing config schemas.
+- Data hooks: `useServers`, `useServer`, `useMetric`, `useHistory`, `useTraffic`, `useAlerts`, `useServiceMonitors`, `useUptime`, `useGeoIp`.
+- Host hooks: `useTheme`, `useConfigUpdate`, `useCapability`.
+- Generic escape hatches: `useApiQuery` / `useApiMutation` for direct REST calls.
+- `createActionsHelper` and `ActionDefinition` for registering action buttons on a widget.
+
+See `packages/widget-sdk/README.md` in the repo for the complete API reference.
+
+## Uninstall
+
+Click the delete button next to a widget in **Settings → Widget Modules**, or:
+
+```bash
+curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
+  -H "X-API-Key: $SERVERBEE_API_KEY"
+```
+
+Built-in widgets (for example `com.serverbee.hello-world`) cannot be uninstalled — `DELETE` against them returns `400`.
+
+## Limits and safety
+
+- **Size cap**: a single `.js` file or `.zip` may not exceed **1 MiB**; each entry inside the zip is capped at **5 MiB** uncompressed.
+- **SSRF protection**: URL installs reject private, loopback, and link-local addresses outright.
+- **Zip-slip protection**: extraction rejects entries with `..` or absolute paths.
+- **Static parsing only**: the manifest must be extractable with a plain regex — there is no `eval` / `Function()` involved in installation.
+- **Admin-gated**: install and uninstall endpoints require admin privileges; members can only list and fetch served assets.
+- **Same-origin execution**: widgets run in the same browsing context as the main SPA — only install code from sources you trust.
+
+<Cards>
+  <Card title="Dashboards & Widgets" href="/en/docs/dashboards" />
+  <Card title="Capabilities" href="/en/docs/capabilities" />
+  <Card title="API Reference" href="/en/docs/api-reference" />
+</Cards>

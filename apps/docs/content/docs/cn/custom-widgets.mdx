@@ -1,0 +1,289 @@
+---
+title: 自定义组件
+description: 用 React + Zod 编写自定义仪表盘组件，通过单文件或 zip 集合包安装到 ServerBee。
+icon: Puzzle
+---
+
+ServerBee 的仪表盘原生支持自定义组件（Widget Module）。每个组件就是一个独立的 ES 模块，由管理员安装后即可像内置组件一样拖拽到任意仪表盘上。本指南介绍两种安装方式：
+
+- **方式 B** — 单个 `.js` 文件（一个组件 = 一个文件）
+- **方式 C** — `.zip` 集合包（一次安装多个组件，可共享同一份发布产物）
+
+## 概念
+
+一个 Widget Module 包含三部分：
+
+1. **静态 JSDoc 清单** — 文件顶部的 `@serverbee-widget {...}` JSON 块，描述组件的 `id`、`version`、`name`、`category`、默认尺寸、所需 SDK 版本等。清单必须**可静态解析**：服务端不会执行模块代码就能完成索引与权限校验，离线扫描也能识别。
+2. **默认导出** — 调用 `defineWidget({ configSchema, component, actions? })` 返回的对象。`configSchema` 是一个 Zod schema，用来描述组件可配置项；`component` 是一个 React 组件，运行时收到 `{ config, size, isEditing, actions }` props。
+3. **运行时依赖** — 通过 `import` 引用 `react`、`react/jsx-runtime`、`@serverbee/widget-sdk`。这些都是**宿主提供**的依赖，打包时必须声明为 `external`，浏览器加载时会重用主应用已有的实例。
+
+### 信任模型
+
+自定义组件**仅管理员可安装**，且运行在**同源**的浏览器环境中，与登录用户共享同一份会话。这意味着：
+
+- 一个被批准的组件可以发出任何当前用户有权访问的 API 请求；
+- 组件之间共享同一个全局 React 上下文，不要在组件里塞入会破坏其它组件的全局副作用；
+- 平台不沙箱执行组件——所以**只安装你信任的代码**。
+
+## 方式 B — 单文件 `.widget.js`
+
+### 文件结构
+
+```js
+/**
+ * @serverbee-widget {
+ *   "id": "com.example.hello",
+ *   "version": "1.0.0",
+ *   "name": "Hello",
+ *   "description": "最小可行示例。",
+ *   "author": "Your Name",
+ *   "category": "Real-time",
+ *   "sizing": { "defaultW": 3, "defaultH": 2, "minW": 2, "minH": 2, "strategy": "free" },
+ *   "sdkVersion": "^0.1.0"
+ * }
+ */
+import { defineWidget, useServers, useTheme, z } from '@serverbee/widget-sdk'
+
+const ConfigSchema = z.object({
+  greeting: z.string().describe('问候语').default('Hello, ServerBee')
+})
+
+export default defineWidget({
+  configSchema: ConfigSchema,
+  component: ({ config }) => {
+    const servers = useServers()
+    const theme = useTheme()
+    const online = servers.filter((s) => s.online).length
+    const { greeting } = config
+    return (
+      <div style={{ padding: 12 }}>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>{greeting}</div>
+        <div style={{ marginTop: 8, color: 'var(--muted-foreground)' }}>
+          {online} / {servers.length} 在线 · {theme.mode} 模式
+        </div>
+      </div>
+    )
+  }
+})
+```
+
+### 清单字段
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `id` | ✅ | 反向域名风格的唯一标识，例如 `com.example.cpu` |
+| `version` | ✅ | 语义化版本号 `MAJOR.MINOR.PATCH` |
+| `name` | ✅ | 在组件选择器中展示的名称 |
+| `description` | – | 描述文本 |
+| `author` | – | 作者名或组织 |
+| `category` | ✅ | 取值 `Real-time`、`Charts` 或 `Status` |
+| `sizing.defaultW/H` | ✅ | 在网格中的默认宽 / 高（格子数） |
+| `sizing.minW/H` | ✅ | 允许的最小尺寸 |
+| `sizing.maxW/H` | – | 可选的最大尺寸 |
+| `sizing.strategy` | ✅ | `free` / `fixed` / `aspect-square` / `content-height` |
+| `sdkVersion` | ✅ | SDK 版本范围，例如 `^0.1.0` |
+
+### 打包要求
+
+自定义组件必须输出 **ES Module** 格式，且把以下依赖声明为 `external`：
+
+- `react`
+- `react/jsx-runtime`
+- `@serverbee/widget-sdk`
+
+更重要的是：**JSDoc 清单注释必须原样保留在输出文件顶部**。多数压缩器默认会删掉注释，记得开启「保留特定注释」选项。
+
+Vite + Terser 的典型配置：
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    lib: {
+      entry: 'src/index.tsx',
+      formats: ['es'],
+      fileName: () => 'index.js'
+    },
+    rollupOptions: {
+      external: ['react', 'react/jsx-runtime', '@serverbee/widget-sdk']
+    },
+    minify: 'terser',
+    terserOptions: {
+      format: {
+        // 保留 @serverbee-widget 清单注释
+        comments: /@serverbee-widget/
+      }
+    }
+  }
+})
+```
+
+### 通过 UI 安装
+
+1. 用管理员账号登录。
+2. 打开 **Settings → Widget Modules**。
+3. 选择 **Upload `.js`** 上传本地文件，或选择 **Import URL** 填入 HTTPS 链接。
+4. 安装成功后，到任意仪表盘点击 **Edit** → **Add Widget**，新组件就会出现在列表里。
+
+### 通过 API 安装
+
+```bash
+# 上传本地文件
+curl -X POST "https://your-host/api/widget-modules" \
+  -H "X-API-Key: $SERVERBEE_API_KEY" \
+  -F file=@my.widget.js
+
+# 从 URL 安装
+curl -X POST "https://your-host/api/widget-modules?url=https://cdn.example.com/my.widget.js" \
+  -H "X-API-Key: $SERVERBEE_API_KEY"
+```
+
+成功时返回：
+
+```json
+{ "data": { "id": "com.example.hello", "version": "1.0.0" } }
+```
+
+如果同 ID 的组件已存在，会就地升级（版本号、清单、代码都被替换）。
+
+## 方式 C — `.zip` 集合包
+
+集合包让你**用一次上传**安装多个组件。每个组件仍然遵循方式 B 的规则（独立的 JSDoc 清单、独立的 entry 文件），只是被打包进同一个 `.zip` 里，由根目录的 `collection.json` 列举。
+
+### 包结构
+
+```
+my-pack.zip
+├── collection.json
+├── weather/
+│   ├── index.js          ← 含 @serverbee-widget 清单
+│   └── icon.svg          ← 可选的资源文件
+├── clock/
+│   └── index.js
+└── shared/
+    └── helpers.js        ← 可选；当前不会自动注入，需要 entry 文件自行处理
+```
+
+### `collection.json` 格式
+
+```json
+{
+  "widgets": [
+    { "entry": "weather/index.js" },
+    { "entry": "clock/index.js" }
+  ]
+}
+```
+
+约束：
+
+- `entry` 必须是相对路径（不能以 `/` 开头，不能包含 `..`）；
+- 必须指向 `.js` 或 `.mjs` 文件；
+- 每个 entry 文件都必须包含合法的 `@serverbee-widget` JSDoc 块；
+- 同一个 `.zip` 内**组件 `id` 必须唯一**——重复 `id` 会被拒绝。
+
+### 资源解析
+
+集合包里的资源（图片、JSON、辅助 JS 等）通过 `GET /api/widget-modules/{id}/{相对路径}` 访问。相对路径会自动以 entry 所在文件夹为根目录拼接：
+
+| 请求 URL | 解析到的 zip 内路径 |
+|----------|--------------------|
+| `/api/widget-modules/com.example.weather/index.js` | `weather/index.js` |
+| `/api/widget-modules/com.example.weather/icon.svg` | `weather/icon.svg` |
+| `/api/widget-modules/com.example.clock/index.js` | `clock/index.js` |
+
+组件代码里可以这样引用：
+
+```ts
+const iconUrl = `/api/widget-modules/com.example.weather/icon.svg`
+```
+
+注意：不同 `id` 之间不能跨目录互相访问彼此的资源。
+
+### 打包流程
+
+1. 用你喜欢的打包工具（Vite、tsup、esbuild 等）分别为每个组件构建 `index.js`，外部化 React 和 SDK，保留清单注释；
+2. 把所有产物按上面的目录结构放好；
+3. 在包根目录写 `collection.json`；
+4. 用 `zip` 命令压缩：
+
+```bash
+zip -r my-pack.zip collection.json weather/ clock/
+```
+
+### 安装
+
+UI 操作和方式 B 完全一致——直接上传 `.zip` 即可，后端会通过文件首部的 `PK\x03\x04` 魔数自动识别。
+
+```bash
+curl -X POST "https://your-host/api/widget-modules" \
+  -H "X-API-Key: $SERVERBEE_API_KEY" \
+  -F file=@my-pack.zip
+```
+
+集合包安装成功时返回**一个数组**——每个元素对应包里的一个组件：
+
+```json
+{
+  "data": [
+    { "id": "com.example.weather", "version": "1.0.0" },
+    { "id": "com.example.clock",   "version": "1.0.0" }
+  ]
+}
+```
+
+每个组件会在数据库中独立成行，可以单独启用、停用或卸载；同时它们共享同一份 zip blob 存储。
+
+## 尺寸策略
+
+`sizing.strategy` 决定组件在仪表盘里如何被调整大小：
+
+- `free` — 用户可在 `minW/H` 到 `maxW/H` 之间自由调整宽高；
+- `fixed` — 锁定 `defaultW/H`，不允许调整；
+- `aspect-square` — 始终保持 1:1，会就近吸附到最接近的层级；
+- `content-height` — 宽度可调，高度由内容决定。
+
+更多布局与编辑细节见[仪表盘与组件](/cn/docs/dashboards)。
+
+## SDK 速览
+
+`@serverbee/widget-sdk` 是 ServerBee 暴露给自定义组件的稳定 API 表面，包含：
+
+- `defineWidget` — 声明组件的入口；
+- `z` / `ZodSchema` — 内嵌的 Zod，用于描述配置项 schema；
+- 数据钩子：`useServers`、`useServer`、`useMetric`、`useHistory`、`useTraffic`、`useAlerts`、`useServiceMonitors`、`useUptime`、`useGeoIp`；
+- 宿主钩子：`useTheme`、`useConfigUpdate`、`useCapability`；
+- 通用逃生舱：`useApiQuery` / `useApiMutation` 直接调用后端 REST API；
+- `createActionsHelper` 与 `ActionDefinition` —— 在组件上注册按钮操作。
+
+完整 API 见 SDK 自带的 `packages/widget-sdk/README.md`。
+
+## 卸载
+
+在 **Settings → Widget Modules** 里点击组件右侧的删除按钮，或者：
+
+```bash
+curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
+  -H "X-API-Key: $SERVERBEE_API_KEY"
+```
+
+内置组件（如 `com.serverbee.hello-world`）不能被卸载，对其调用 DELETE 会返回 `400`。
+
+## 限制与安全
+
+- **大小上限**：单个文件或 `.zip` 不超过 **1 MiB**；zip 中单个条目最大 **5 MiB**（解压后）。
+- **SSRF 防护**：从 URL 安装时，私网、回环、链路本地地址会被直接拒绝。
+- **Zip-slip 防护**：解压时会拒绝包含 `..` 或绝对路径的条目。
+- **静态解析**：清单必须能用纯正则解析出来；没有任何 `eval` / `Function()` 调用。
+- **管理员限定**：安装、卸载接口都要求管理员权限；普通成员只能读取列表与资源。
+- **同源运行**：组件运行在主 SPA 同源环境，请只安装来源可信的代码。
+
+<Cards>
+  <Card title="仪表盘与组件" href="/cn/docs/dashboards" />
+  <Card title="功能开关" href="/cn/docs/capabilities" />
+  <Card title="API 参考" href="/cn/docs/api-reference" />
+</Cards>
