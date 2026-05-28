@@ -70,7 +70,17 @@ export default defineConfig(({ mode }) => {
       ],
       resolve: {
         alias: {
-          '@': path.resolve(import.meta.dirname, './src')
+          '@': path.resolve(import.meta.dirname, './src'),
+          '@serverbee/widget-sdk': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/index.ts'),
+          '@serverbee/widget-sdk/z': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/z/index.ts'),
+          '@serverbee/widget-sdk/hooks': path.resolve(
+            import.meta.dirname,
+            '../../packages/widget-sdk/src/hooks/index.ts'
+          ),
+          '@serverbee/widget-sdk/actions': path.resolve(
+            import.meta.dirname,
+            '../../packages/widget-sdk/src/actions/index.ts'
+          )
         }
       },
       build: {
@@ -134,7 +144,17 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(import.meta.dirname, './src')
+        '@': path.resolve(import.meta.dirname, './src'),
+        '@serverbee/widget-sdk': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/index.ts'),
+        '@serverbee/widget-sdk/z': path.resolve(import.meta.dirname, '../../packages/widget-sdk/src/z/index.ts'),
+        '@serverbee/widget-sdk/hooks': path.resolve(
+          import.meta.dirname,
+          '../../packages/widget-sdk/src/hooks/index.ts'
+        ),
+        '@serverbee/widget-sdk/actions': path.resolve(
+          import.meta.dirname,
+          '../../packages/widget-sdk/src/actions/index.ts'
+        )
       }
     },
     build: {
