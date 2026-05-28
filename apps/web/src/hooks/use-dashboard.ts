@@ -15,6 +15,7 @@ export interface WidgetInput {
   grid_x: number
   grid_y: number
   id?: string
+  module_id?: string | null
   sort_order: number
   title?: string | null
   widget_type: string

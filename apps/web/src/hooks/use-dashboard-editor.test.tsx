@@ -144,6 +144,7 @@ describe('useDashboardEditor', () => {
     expect(result.current.buildSaveInput()[0]).toEqual({
       id: undefined,
       widget_type: 'stat-number',
+      module_id: null,
       title: null,
       config_json: { metric: 'avg_mem', window: 5 },
       grid_x: 0,

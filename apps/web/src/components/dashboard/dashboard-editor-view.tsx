@@ -10,7 +10,7 @@ import type { Dashboard, DashboardWithWidgets } from '@/lib/widget-types'
 import { DashboardGrid } from './dashboard-grid'
 import { DashboardSwitcher } from './dashboard-switcher'
 import { WidgetConfigDialog } from './widget-config-dialog'
-import { WidgetPicker } from './widget-picker'
+import { WidgetPicker, type WidgetPickerSelection } from './widget-picker'
 
 interface DashboardEditorViewProps {
   activeDashboardId: string
@@ -100,10 +100,28 @@ export function DashboardEditorView({
     handleCancel()
   }
 
-  function handlePickerSelect(widgetType: string) {
+  function handlePickerSelect(selection: WidgetPickerSelection) {
     setPickerOpen(false)
     setEditingWidgetId(null)
-    setConfigWidgetType(widgetType)
+    if (selection.type === 'module') {
+      // Modules currently use their own configSchema; we add directly with an empty
+      // config object instead of opening the legacy config dialog (which is built
+      // around hard-coded form variants per builtin widget type).
+      if (isDashboardReady && dashboard) {
+        const sizing = selection.manifest.sizing
+        editor.addWidget({
+          dashboardId: dashboard.id,
+          widgetType: 'module',
+          moduleId: selection.moduleId,
+          title: selection.manifest.name,
+          configJson: '{}',
+          gridW: sizing.defaultW ?? 4,
+          gridH: sizing.defaultH ?? 3
+        })
+      }
+      return
+    }
+    setConfigWidgetType(selection.widgetType)
     setConfigOpen(true)
   }
 

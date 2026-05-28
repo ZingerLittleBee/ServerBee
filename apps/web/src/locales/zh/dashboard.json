@@ -32,6 +32,11 @@
   "dashboard_name_placeholder": "仪表盘名称",
   "no_widgets_title": "暂无小组件",
   "no_widgets_description": "点击编辑开始向仪表盘添加小组件",
+  "picker_custom_widgets": "自定义组件",
+  "picker_no_custom_widgets": "尚未安装自定义组件。",
+  "module_not_installed": "组件模块未安装",
+  "module_not_installed_id": "组件模块 \"{{id}}\" 未安装",
+  "module_config_invalid": "组件配置无效：{{message}}",
   "widgetPicker": {
     "categories": {
       "Real-time": "实时",

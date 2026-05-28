@@ -12,6 +12,9 @@ import type { WidgetInput } from './use-dashboard'
 interface AddWidgetInput {
   configJson: string
   dashboardId: string
+  gridH?: number
+  gridW?: number
+  moduleId?: string | null
   title: string | null
   widgetType: string
 }
@@ -56,18 +59,19 @@ export function useDashboardEditor() {
     setDraftWidgets((current) => mergeLayoutPatch(current, patch))
   }
 
-  function addWidget({ configJson, dashboardId, title, widgetType }: AddWidgetInput) {
+  function addWidget({ configJson, dashboardId, gridH, gridW, moduleId, title, widgetType }: AddWidgetInput) {
     setDraftWidgets((current) => {
-      const { grid_h, grid_w } = getWidgetTypeDefaults(widgetType)
+      const defaults = getWidgetTypeDefaults(widgetType)
       const newWidget: DashboardWidget = {
         config_json: configJson,
         created_at: new Date().toISOString(),
         dashboard_id: dashboardId,
-        grid_h,
-        grid_w,
+        grid_h: gridH ?? defaults.grid_h,
+        grid_w: gridW ?? defaults.grid_w,
         grid_x: 0,
         grid_y: Number.POSITIVE_INFINITY,
         id: `temp-${crypto.randomUUID()}`,
+        module_id: moduleId ?? null,
         sort_order: current.length,
         title,
         widget_type: widgetType
@@ -105,6 +109,7 @@ export function useDashboardEditor() {
     return draftWidgets.map((widget) => ({
       id: widget.id.startsWith('temp-') ? undefined : widget.id,
       widget_type: widget.widget_type,
+      module_id: widget.module_id ?? null,
       title: widget.title,
       config_json: parseConfig(widget.config_json),
       grid_x: widget.grid_x,
