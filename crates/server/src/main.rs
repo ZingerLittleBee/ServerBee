@@ -76,6 +76,13 @@ async fn main() -> anyhow::Result<()> {
     Migrator::up(&db, None).await?;
     tracing::info!("Database migrations complete");
 
+    serverbee_server::service::widget_module::builtin::register_all(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("failed to register builtin widgets: {e}");
+            e
+        })?;
+
     if config.dev.demo_data {
         dev_demo::seed_demo_data(&db)
             .await

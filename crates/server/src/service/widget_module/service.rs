@@ -66,6 +66,32 @@ impl WidgetModuleService {
         requested: &str,
     ) -> Result<(Vec<u8>, String), WidgetModuleError> {
         let row = Self::get(db, id).await?;
+
+        if matches!(
+            row.source_type,
+            crate::entity::widget_module::SourceType::Builtin
+        ) {
+            // Builtin: the URL `/api/widget-modules/<id>/<requested>` resolves to a path
+            // within the embedded directory. `row.entry_path` is the module's main file
+            // (e.g. "hello-world/index.js"); we resolve `requested` relative to its folder.
+            let folder = row
+                .entry_path
+                .rsplit_once('/')
+                .map(|(d, _)| d)
+                .unwrap_or("");
+            let full = if folder.is_empty() {
+                requested.to_string()
+            } else {
+                format!("{folder}/{requested}")
+            };
+            if full.contains("..") {
+                return Err(WidgetModuleError::InvalidAssetPath);
+            }
+            let bytes = crate::service::widget_module::builtin::builtin_asset_bytes(&full)
+                .ok_or(WidgetModuleError::InvalidAssetPath)?;
+            return Ok((bytes, mime_for(&full)));
+        }
+
         let blob = row
             .package_blob
             .ok_or_else(|| WidgetModuleError::NotFound(format!("{id}: no blob")))?;
