@@ -62,6 +62,11 @@ function getWidgetServerScope(widget: DashboardWidget): ServerScope {
       return selectedServerScope(config.server_ids, 'map')
     case 'uptime-timeline':
       return configuredServerScope(config.server_ids, 'name')
+    case 'network-latency':
+    case 'network-quality':
+      return singleServerScope(config.server_id, 'name')
+    case 'network-overview':
+      return selectedServerScope(config.server_ids, 'name')
     case 'markdown':
     case 'service-status':
       return { mode: 'none' }

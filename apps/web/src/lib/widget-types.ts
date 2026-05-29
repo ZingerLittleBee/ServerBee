@@ -183,6 +183,42 @@ export const WIDGET_TYPES = [
     maxW: 12,
     maxH: 6,
     sizing: { kind: 'free' }
+  },
+  {
+    id: 'network-latency',
+    label: 'Network Latency',
+    category: 'Charts',
+    defaultW: 6,
+    defaultH: 4,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 8,
+    sizing: { kind: 'free' }
+  },
+  {
+    id: 'network-quality',
+    label: 'Network Quality',
+    category: 'Real-time',
+    defaultW: 4,
+    defaultH: 4,
+    minW: 3,
+    minH: 3,
+    maxW: 8,
+    maxH: 8,
+    sizing: { kind: 'free' }
+  },
+  {
+    id: 'network-overview',
+    label: 'Network Overview',
+    category: 'Status',
+    defaultW: 8,
+    defaultH: 5,
+    minW: 4,
+    minH: 3,
+    maxW: 12,
+    maxH: 8,
+    sizing: { kind: 'free' }
   }
 ] as const satisfies readonly WidgetTypeDefinition[]
 
@@ -270,6 +306,19 @@ export interface UptimeTimelineConfig {
   server_ids: string[]
 }
 
+export interface NetworkLatencyConfig {
+  hours?: number // 0 means realtime
+  server_id: string
+}
+
+export interface NetworkQualityConfig {
+  server_id: string
+}
+
+export interface NetworkOverviewConfig {
+  server_ids?: string[]
+}
+
 export type WidgetConfig =
   | StatNumberConfig
   | MetricCardConfig
@@ -285,6 +334,9 @@ export type WidgetConfig =
   | ServerMapConfig
   | MarkdownConfig
   | UptimeTimelineConfig
+  | NetworkLatencyConfig
+  | NetworkQualityConfig
+  | NetworkOverviewConfig
 
 // API response types
 

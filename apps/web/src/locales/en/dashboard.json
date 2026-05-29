@@ -100,6 +100,18 @@
       "uptime-timeline": {
         "label": "Uptime Timeline",
         "description": "90-day uptime timeline bar"
+      },
+      "network-latency": {
+        "label": "Network Latency",
+        "description": "Latency over time to network probe targets"
+      },
+      "network-quality": {
+        "label": "Network Quality",
+        "description": "Current latency and packet loss per target"
+      },
+      "network-overview": {
+        "label": "Network Overview",
+        "description": "Network quality across servers"
       }
     }
   },
@@ -187,6 +199,24 @@
       "empty": {
         "noServers": "No servers available"
       }
+    },
+    "networkLatency": {
+      "title": "Network Latency",
+      "empty": {
+        "noData": "No network probe data available"
+      }
+    },
+    "networkQuality": {
+      "title": "Network Quality",
+      "empty": {
+        "noData": "No network probe data available"
+      }
+    },
+    "networkOverview": {
+      "title": "Network Overview",
+      "empty": {
+        "noData": "No network probe data available"
+      }
     }
   },
   "common": {
@@ -218,7 +248,8 @@
       "7days": "7 days",
       "30days": "30 days",
       "60days": "60 days",
-      "90days": "90 days"
+      "90days": "90 days",
+      "realtime": "Realtime"
     }
   },
   "dialogs": {

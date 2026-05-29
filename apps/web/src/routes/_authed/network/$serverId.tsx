@@ -33,7 +33,6 @@ import {
   useClearTracerouteHistory,
   useDeleteTraceroute,
   useNetworkAnomalies,
-  useNetworkRecords,
   useNetworkServerSummary,
   useNetworkTargets,
   useSetServerTargets,
@@ -41,7 +40,7 @@ import {
   useTracerouteHistory,
   useTracerouteRecord
 } from '@/hooks/use-network-api'
-import { useNetworkRealtime } from '@/hooks/use-network-realtime'
+import { useNetworkChartRecords } from '@/hooks/use-network-chart-records'
 import { useTracerouteStream } from '@/hooks/use-traceroute-stream'
 import { CHART_COLORS } from '@/lib/chart-colors'
 import {
@@ -51,7 +50,6 @@ import {
   getNetworkTargetDisplayProvider
 } from '@/lib/network-i18n'
 import type {
-  NetworkProbeRecord,
   NetworkProbeTarget,
   NetworkTargetSummary,
   TracerouteHop,
@@ -646,11 +644,7 @@ export function NetworkDetailPage() {
 
   const { data: server, isLoading: serverLoading } = useServer(serverId)
   const { data: summary, isLoading: summaryLoading } = useNetworkServerSummary(serverId)
-  const { data: historicalRecords } = useNetworkRecords(serverId, hours, { enabled: !isRealtime })
-  // Fetch last 10 min of data as seed for realtime chart (immediate data on first load)
-  const { data: seedRecords } = useNetworkRecords(serverId, 1, { enabled: isRealtime })
   const { data: anomalies = [] } = useNetworkAnomalies(serverId, anomalyHours)
-  const { data: realtimeData } = useNetworkRealtime(serverId)
   const { data: allTargets = [] } = useNetworkTargets()
   const setServerTargets = useSetServerTargets(serverId)
   const language = i18n.resolvedLanguage ?? i18n.language
@@ -725,46 +719,7 @@ export function NetworkDetailPage() {
     [targets, targetColorMap, effectiveVisible, getSummaryTargetDisplayName]
   )
 
-  const records: NetworkProbeRecord[] = useMemo(() => {
-    if (!isRealtime) {
-      return historicalRecords ?? []
-    }
-    // Transform realtime data map into flat records array
-    const realtimeFlat: NetworkProbeRecord[] = []
-    for (const [targetId, points] of Object.entries(realtimeData)) {
-      for (const point of points) {
-        realtimeFlat.push({
-          id: 0,
-          server_id: serverId,
-          target_id: targetId,
-          timestamp: point.timestamp,
-          avg_latency: point.avg_latency,
-          min_latency: point.min_latency,
-          max_latency: point.max_latency,
-          packet_loss: point.packet_loss,
-          packet_sent: point.packet_sent,
-          packet_received: point.packet_received
-        })
-      }
-    }
-    // Merge seed (historical last 1h) with realtime data for immediate chart display.
-    // Realtime points override seed points at the same timestamp via the chart's bucketing.
-    const seed = seedRecords ?? []
-    const merged = [...seed, ...realtimeFlat]
-    // Deduplicate: keep latest entry per (target_id, timestamp_bucket)
-    const seen = new Set<string>()
-    const deduped: NetworkProbeRecord[] = []
-    for (let i = merged.length - 1; i >= 0; i--) {
-      const r = merged[i]
-      const key = `${r.target_id}:${r.timestamp}`
-      if (!seen.has(key)) {
-        seen.add(key)
-        deduped.push(r)
-      }
-    }
-    deduped.reverse()
-    return deduped
-  }, [isRealtime, historicalRecords, realtimeData, serverId, seedRecords])
+  const { records } = useNetworkChartRecords(serverId, isRealtime ? 0 : hours)
 
   // Stats computed from current records
   const stats = useMemo(() => {

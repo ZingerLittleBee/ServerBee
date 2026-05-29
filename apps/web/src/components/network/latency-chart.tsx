@@ -13,6 +13,10 @@ interface TargetInfo {
 }
 
 interface LatencyChartProps {
+  // When embedded in a dashboard widget, drop the standalone card chrome and
+  // title and fill the parent height instead of using a fixed height. The host
+  // widget already provides the card, header, and a sized flex container.
+  embedded?: boolean
   hours?: number
   isRealtime?: boolean
   records: NetworkProbeRecord[]
@@ -42,7 +46,7 @@ function formatDateTimeMDHM(timestamp: string): string {
   return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-export function LatencyChart({ records, targets, isRealtime = false, hours = 1 }: LatencyChartProps) {
+export function LatencyChart({ records, targets, isRealtime = false, hours = 1, embedded = false }: LatencyChartProps) {
   const { t } = useTranslation('network')
   // Build chartConfig for ALL targets (ChartContainer needs all color vars injected)
   const chartConfig = useMemo(() => {
@@ -132,6 +136,13 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1 }
   }, [isExtendedRange])
 
   if (chartData.length === 0) {
+    if (embedded) {
+      return (
+        <div className="flex h-full items-center justify-center">
+          <p className="text-muted-foreground text-sm">{t('latency_chart_no_data')}</p>
+        </div>
+      )
+    }
     return (
       <div className="flex h-[300px] items-center justify-center rounded-lg border bg-card">
         <p className="text-muted-foreground text-sm">{t('latency_chart_no_data')}</p>
@@ -139,42 +150,47 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1 }
     )
   }
 
+  const chart = (
+    <ChartContainer className={embedded ? 'h-full w-full' : 'h-[300px] w-full'} config={chartConfig}>
+      <AreaChart accessibilityLayer data={chartData}>
+        <CartesianGrid vertical={false} />
+        <XAxis
+          axisLine={false}
+          dataKey="timestamp"
+          interval={tickInterval}
+          tickFormatter={tickFormatter}
+          tickLine={false}
+        />
+        <YAxis axisLine={false} tickLine={false} unit=" ms" width={60} />
+        <ChartTooltip
+          content={
+            <ChartTooltipContent labelFormatter={tooltipLabelFormatter} valueFormatter={(v) => `${v.toFixed(1)} ms`} />
+          }
+        />
+        {visibleWithIndex.map(({ id, originalIndex }) => (
+          <Area
+            connectNulls={false}
+            dataKey={`target_${originalIndex}`}
+            fill="transparent"
+            fillOpacity={0}
+            key={id}
+            stroke={`var(--color-target_${originalIndex})`}
+            strokeWidth={2}
+            type="monotone"
+          />
+        ))}
+      </AreaChart>
+    </ChartContainer>
+  )
+
+  if (embedded) {
+    return chart
+  }
+
   return (
     <div className="rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{t('latency_title')}</h3>
-      <ChartContainer className="h-[300px] w-full" config={chartConfig}>
-        <AreaChart accessibilityLayer data={chartData}>
-          <CartesianGrid vertical={false} />
-          <XAxis
-            axisLine={false}
-            dataKey="timestamp"
-            interval={tickInterval}
-            tickFormatter={tickFormatter}
-            tickLine={false}
-          />
-          <YAxis axisLine={false} tickLine={false} unit=" ms" width={60} />
-          <ChartTooltip
-            content={
-              <ChartTooltipContent
-                labelFormatter={tooltipLabelFormatter}
-                valueFormatter={(v) => `${v.toFixed(1)} ms`}
-              />
-            }
-          />
-          {visibleWithIndex.map(({ id, originalIndex }) => (
-            <Area
-              connectNulls={false}
-              dataKey={`target_${originalIndex}`}
-              fill="transparent"
-              fillOpacity={0}
-              key={id}
-              stroke={`var(--color-target_${originalIndex})`}
-              strokeWidth={2}
-              type="monotone"
-            />
-          ))}
-        </AreaChart>
-      </ChartContainer>
+      {chart}
     </div>
   )
 }

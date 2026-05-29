@@ -20,6 +20,9 @@ import type {
   MetricCardConfig,
   MetricCardMetric,
   MultiLineConfig,
+  NetworkLatencyConfig,
+  NetworkOverviewConfig,
+  NetworkQualityConfig,
   ServerCardsConfig,
   StatNumberConfig,
   TopNConfig,
@@ -97,6 +100,16 @@ function useRangeOptions(t: (key: string) => string): { label: string; value: st
     { label: t('common.timeRange.12hours'), value: '12' },
     { label: t('common.timeRange.24hours'), value: '24' },
     { label: t('common.timeRange.3days'), value: '72' },
+    { label: t('common.timeRange.7days'), value: '168' }
+  ]
+}
+
+function useNetworkRangeOptions(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('common.timeRange.realtime'), value: '0' },
+    { label: t('common.timeRange.1hour'), value: '1' },
+    { label: t('common.timeRange.6hours'), value: '6' },
+    { label: t('common.timeRange.24hours'), value: '24' },
     { label: t('common.timeRange.7days'), value: '168' }
   ]
 }
@@ -709,6 +722,94 @@ function UptimeTimelineForm({
   )
 }
 
+function NetworkLatencyForm({
+  config,
+  servers,
+  onChange,
+  t
+}: {
+  config: Partial<NetworkLatencyConfig>
+  onChange: (c: Partial<NetworkLatencyConfig>) => void
+  servers: ServerMetrics[]
+  t: (key: string) => string
+}) {
+  const NETWORK_RANGE_OPTIONS = useNetworkRangeOptions(t)
+  return (
+    <>
+      <ServerSelect
+        label={t('widgets.common.labels.server')}
+        onChange={(v) => onChange({ ...config, server_id: v })}
+        placeholder={t('widgets.common.placeholders.selectServer')}
+        servers={servers}
+        value={config.server_id ?? ''}
+      />
+      <div className="space-y-1.5">
+        <Label>{t('widgets.common.labels.timeRange')}</Label>
+        <Select
+          items={NETWORK_RANGE_OPTIONS}
+          onValueChange={(v) => v !== null && onChange({ ...config, hours: Number(v) })}
+          value={String(config.hours ?? '24')}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder={t('widgets.common.placeholders.selectRange')} />
+          </SelectTrigger>
+          <SelectContent>
+            {NETWORK_RANGE_OPTIONS.map((r) => (
+              <SelectItem key={r.value} value={r.value}>
+                {r.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </>
+  )
+}
+
+function NetworkQualityForm({
+  config,
+  servers,
+  onChange,
+  t
+}: {
+  config: Partial<NetworkQualityConfig>
+  onChange: (c: Partial<NetworkQualityConfig>) => void
+  servers: ServerMetrics[]
+  t: (key: string) => string
+}) {
+  return (
+    <ServerSelect
+      label={t('widgets.common.labels.server')}
+      onChange={(v) => onChange({ ...config, server_id: v })}
+      placeholder={t('widgets.common.placeholders.selectServer')}
+      servers={servers}
+      value={config.server_id ?? ''}
+    />
+  )
+}
+
+function NetworkOverviewForm({
+  config,
+  servers,
+  onChange,
+  t
+}: {
+  config: Partial<NetworkOverviewConfig>
+  onChange: (c: Partial<NetworkOverviewConfig>) => void
+  servers: ServerMetrics[]
+  t: (key: string) => string
+}) {
+  return (
+    <ServerMultiSelect
+      emptyMessage={t('widgets.common.empty.noServers')}
+      label={t('widgets.common.labels.servers')}
+      onChange={(ids) => onChange({ ...config, server_ids: ids })}
+      selected={config.server_ids ?? []}
+      servers={servers}
+    />
+  )
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: dispatcher renders one form per widget_type; refactoring to a table is more work than the value
 export function WidgetConfigDialog({
   open,
@@ -808,6 +909,30 @@ export function WidgetConfigDialog({
           {widgetType === 'uptime-timeline' && (
             <UptimeTimelineForm
               config={config as Partial<UptimeTimelineConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
+          )}
+          {widgetType === 'network-latency' && (
+            <NetworkLatencyForm
+              config={config as Partial<NetworkLatencyConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
+          )}
+          {widgetType === 'network-quality' && (
+            <NetworkQualityForm
+              config={config as Partial<NetworkQualityConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
+          )}
+          {widgetType === 'network-overview' && (
+            <NetworkOverviewForm
+              config={config as Partial<NetworkOverviewConfig>}
               onChange={setConfig}
               servers={servers}
               t={t}
