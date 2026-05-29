@@ -41,14 +41,14 @@ and the third-party module system (app-internal network hooks aren't reachable f
 ### Config (`config_json`)
 
 ```ts
-interface NetworkLatencyConfig  { server_id: string; hours?: number; target_ids?: string[] } // hours === 0 means realtime
-interface NetworkQualityConfig  { server_id: string; target_ids?: string[] }
+interface NetworkLatencyConfig  { server_id: string; hours?: number } // hours === 0 means realtime
+interface NetworkQualityConfig  { server_id: string }
 interface NetworkOverviewConfig { server_ids?: string[] } // empty/undefined = all servers
 ```
 
-- Target selection: `target_ids` empty/undefined → show all targets; the config dialog
-  offers checkboxes to restrict to specific targets (reusing the detail page's
-  target-visibility idea).
+- Target selection (v1): widgets render **all** of the bound server's probe targets. Per-target
+  filtering is deliberately left out of the config UI so the config dialog stays a pure,
+  data-fetch-free form (its tests render without a QueryClient). Per-target selection is out of scope.
 - The latency widget's time-range dropdown gains a **Realtime** option alongside
   1h / 6h / 24h / 7d. Realtime uses `useNetworkRealtime`'s sliding window; other ranges
   use `useNetworkRecords`. Encode realtime as `hours === 0` in config to keep the field numeric.
@@ -88,4 +88,5 @@ detail page is refactored to use the hook with no behavior change.
 
 - New backend endpoints or aggregation.
 - Traceroute / anomaly widgets (latency + quality + overview only).
+- Per-target filtering in the widget config UI.
 - Changes to the existing network pages beyond the shared-hook extraction.
