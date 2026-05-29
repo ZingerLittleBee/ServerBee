@@ -6,8 +6,12 @@ Date: 2026-05-29
 
 Surface the existing network-probe (tri-network ping) data as dashboard widgets so
 users can compose latency/packet-loss views into their dashboards. The data layer
-already exists; this is a **frontend-only** feature — no backend, protocol, or
-migration changes.
+already exists, so this is **predominantly a frontend feature** — no protocol or
+migration changes. One backend touch point is required: each new widget type must be
+added to the `VALID_WIDGET_TYPES` whitelist in `crates/server/src/service/dashboard.rs`,
+otherwise the dashboard save endpoint rejects it with `400 Unknown widget_type`.
+Registering a new widget type therefore spans both the frontend registry and the
+backend whitelist.
 
 ## Background
 
@@ -82,7 +86,8 @@ detail page is refactored to use the hook with no behavior change.
 - Follow existing `gauge.test.tsx` / `widget-config-dialog.test.tsx` patterns.
 - Add cases for the 3 new config-form dispatches in the config-dialog test.
 - Add at least one render test per widget covering the no-data fallback.
-- No backend changes → no cargo tests required.
+- Add a Rust unit test in `dashboard.rs` asserting `DashboardService::update` accepts
+  the new widget types (guards the `VALID_WIDGET_TYPES` whitelist regression).
 
 ## Out of scope
 
