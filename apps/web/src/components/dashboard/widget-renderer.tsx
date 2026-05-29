@@ -11,6 +11,7 @@ import type {
   MetricCardConfig,
   MultiLineConfig,
   NetworkLatencyConfig,
+  NetworkOverviewConfig,
   NetworkQualityConfig,
   ServerCardsConfig,
   ServerMapConfig,
@@ -30,6 +31,7 @@ import { MarkdownWidget } from './widgets/markdown'
 import { MetricCardWidget } from './widgets/metric-card'
 import { MultiLineWidget } from './widgets/multi-line'
 import { NetworkLatencyWidget } from './widgets/network-latency-widget'
+import { NetworkOverviewWidget } from './widgets/network-overview-widget'
 import { NetworkQualityWidget } from './widgets/network-quality'
 import { ServerCardsWidget } from './widgets/server-cards'
 import { ServerMapWidget } from './widgets/server-map'
@@ -127,6 +129,8 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
       return <NetworkQualityWidget config={config as unknown as NetworkQualityConfig} servers={servers} />
     case 'network-latency':
       return <NetworkLatencyWidget config={config as unknown as NetworkLatencyConfig} servers={servers} />
+    case 'network-overview':
+      return <NetworkOverviewWidget config={config as unknown as NetworkOverviewConfig} servers={servers} />
     default:
       return (
         <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
