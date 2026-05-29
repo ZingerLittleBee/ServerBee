@@ -719,7 +719,7 @@ export function NetworkDetailPage() {
     [targets, targetColorMap, effectiveVisible, getSummaryTargetDisplayName]
   )
 
-  const records = useNetworkChartRecords(serverId, isRealtime ? 0 : hours)
+  const { records } = useNetworkChartRecords(serverId, isRealtime ? 0 : hours)
 
   // Stats computed from current records
   const stats = useMemo(() => {

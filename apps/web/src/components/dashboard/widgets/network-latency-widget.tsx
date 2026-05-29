@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LatencyChart } from '@/components/network/latency-chart'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkServerSummary } from '@/hooks/use-network-api'
 import { useNetworkChartRecords } from '@/hooks/use-network-chart-records'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -18,8 +19,8 @@ export function NetworkLatencyWidget({ config }: NetworkLatencyWidgetProps) {
   const hours = config.hours ?? 24
   const isRealtime = hours === 0
 
-  const records = useNetworkChartRecords(serverId, hours)
-  const { data: summary } = useNetworkServerSummary(serverId)
+  const { records, isLoading: recordsLoading } = useNetworkChartRecords(serverId, hours)
+  const { data: summary, isLoading: summaryLoading } = useNetworkServerSummary(serverId)
 
   const chartTargets = useMemo(
     () =>
@@ -31,6 +32,17 @@ export function NetworkLatencyWidget({ config }: NetworkLatencyWidgetProps) {
       })),
     [summary]
   )
+
+  // Wait for both the records and the summary (which supplies chart targets) so
+  // we render a skeleton instead of flashing the empty state or an axis-only chart.
+  if (recordsLoading || summaryLoading) {
+    return (
+      <div className="flex h-full flex-col gap-2 rounded-lg border bg-card p-4">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="flex-1" />
+      </div>
+    )
+  }
 
   if (records.length === 0) {
     return (
