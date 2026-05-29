@@ -100,6 +100,18 @@
       "uptime-timeline": {
         "label": "可用时间线",
         "description": "90 天可用性时间线"
+      },
+      "network-latency": {
+        "label": "网络延迟",
+        "description": "对探测目标的延迟随时间变化"
+      },
+      "network-quality": {
+        "label": "网络质量",
+        "description": "各目标的当前延迟与丢包"
+      },
+      "network-overview": {
+        "label": "网络总览",
+        "description": "跨服务器的网络质量"
       }
     }
   },
@@ -187,6 +199,24 @@
       "empty": {
         "noServers": "暂无可用服务器"
       }
+    },
+    "networkLatency": {
+      "title": "网络延迟",
+      "empty": {
+        "noData": "暂无网络探测数据"
+      }
+    },
+    "networkQuality": {
+      "title": "网络质量",
+      "empty": {
+        "noData": "暂无网络探测数据"
+      }
+    },
+    "networkOverview": {
+      "title": "网络总览",
+      "empty": {
+        "noData": "暂无网络探测数据"
+      }
     }
   },
   "common": {
@@ -218,7 +248,8 @@
       "7days": "7 天",
       "30days": "30 天",
       "60days": "60 天",
-      "90days": "90 天"
+      "90days": "90 天",
+      "realtime": "实时"
     }
   },
   "dialogs": {
