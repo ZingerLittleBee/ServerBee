@@ -21,6 +21,9 @@ const VALID_WIDGET_TYPES: &[&str] = &[
     "server-map",
     "markdown",
     "uptime-timeline",
+    "network-latency",
+    "network-quality",
+    "network-overview",
 ];
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -989,5 +992,75 @@ mod tests {
         assert_eq!(list[0].name, "C");
         assert_eq!(list[1].name, "A");
         assert_eq!(list[2].name, "B");
+    }
+
+    #[tokio::test]
+    async fn test_update_accepts_network_widget_types() {
+        let (db, _tmp) = setup_db_with_fk().await;
+
+        let dash = DashboardService::create(
+            &db,
+            CreateDashboardInput {
+                name: "Net".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Each network widget type must be accepted by the backend whitelist so
+        // the dashboard save (PUT /api/dashboards/:id) succeeds from the UI.
+        let widgets = vec![
+            WidgetInput {
+                id: None,
+                widget_type: "network-latency".to_string(),
+                module_id: None,
+                title: None,
+                config_json: serde_json::json!({"server_id": "srv-1", "hours": 24}),
+                grid_x: 0,
+                grid_y: 0,
+                grid_w: 6,
+                grid_h: 4,
+                sort_order: 0,
+            },
+            WidgetInput {
+                id: None,
+                widget_type: "network-quality".to_string(),
+                module_id: None,
+                title: None,
+                config_json: serde_json::json!({"server_id": "srv-1"}),
+                grid_x: 6,
+                grid_y: 0,
+                grid_w: 4,
+                grid_h: 4,
+                sort_order: 1,
+            },
+            WidgetInput {
+                id: None,
+                widget_type: "network-overview".to_string(),
+                module_id: None,
+                title: None,
+                config_json: serde_json::json!({}),
+                grid_x: 0,
+                grid_y: 4,
+                grid_w: 8,
+                grid_h: 5,
+                sort_order: 2,
+            },
+        ];
+
+        let result = DashboardService::update(
+            &db,
+            &dash.id,
+            UpdateDashboardInput {
+                name: None,
+                is_default: None,
+                sort_order: None,
+                widgets: Some(widgets),
+            },
+        )
+        .await
+        .expect("saving network widgets should succeed");
+
+        assert_eq!(result.widgets.len(), 3);
     }
 }
