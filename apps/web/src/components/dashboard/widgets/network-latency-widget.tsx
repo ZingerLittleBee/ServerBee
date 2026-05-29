@@ -50,7 +50,13 @@ export function NetworkLatencyWidget({ config }: NetworkLatencyWidgetProps) {
         <p className="text-muted-foreground text-xs">{summary?.server_name}</p>
       </div>
       <div className="min-h-0 flex-1">
-        <LatencyChart hours={isRealtime ? 1 : hours} isRealtime={isRealtime} records={records} targets={chartTargets} />
+        <LatencyChart
+          embedded
+          hours={isRealtime ? 1 : hours}
+          isRealtime={isRealtime}
+          records={records}
+          targets={chartTargets}
+        />
       </div>
     </div>
   )

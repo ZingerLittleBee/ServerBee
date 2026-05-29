@@ -22,8 +22,10 @@ vi.mock('react-i18next', () => ({
 
 // LatencyChart is exercised in its own context; stub it so this test focuses on the widget shell.
 vi.mock('@/components/network/latency-chart', () => ({
-  LatencyChart: ({ records }: { records: NetworkProbeRecord[] }) => (
-    <div data-testid="latency-chart">{records.length} points</div>
+  LatencyChart: ({ records, embedded }: { records: NetworkProbeRecord[]; embedded?: boolean }) => (
+    <div data-embedded={embedded ? 'true' : 'false'} data-testid="latency-chart">
+      {records.length} points
+    </div>
   )
 }))
 
@@ -68,6 +70,26 @@ describe('NetworkLatencyWidget', () => {
     ])
     render(<NetworkLatencyWidget config={{ server_id: 'srv-1', hours: 24 }} servers={[]} />)
     expect(screen.getByTestId('latency-chart')).toHaveTextContent('1 points')
+  })
+
+  it('renders the chart in embedded mode so it fills the widget cell without nested card chrome', () => {
+    summaryMock.mockReturnValue({ data: summary })
+    recordsMock.mockReturnValue([
+      {
+        id: 1,
+        server_id: 'srv-1',
+        target_id: 't-1',
+        timestamp: '2026-05-29T10:00:00.000Z',
+        avg_latency: 20,
+        min_latency: 18,
+        max_latency: 25,
+        packet_loss: 0,
+        packet_sent: 10,
+        packet_received: 10
+      }
+    ])
+    render(<NetworkLatencyWidget config={{ server_id: 'srv-1', hours: 24 }} servers={[]} />)
+    expect(screen.getByTestId('latency-chart')).toHaveAttribute('data-embedded', 'true')
   })
 
   it('renders empty state when there are no records', () => {
