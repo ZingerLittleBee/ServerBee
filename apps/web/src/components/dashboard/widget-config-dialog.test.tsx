@@ -24,7 +24,12 @@ const translations: Record<string, string> = {
   'common.metrics.health': 'Health',
   'common.metrics.cpu': 'CPU',
   'common.metrics.memory': 'Memory',
+  'widgets.common.placeholders.selectServer': 'Select server',
+  'widgets.common.empty.noServers': 'No servers',
+  'common.timeRange.realtime': 'Realtime',
   'common.timeRange.1hour': '1 hour',
+  'common.timeRange.6hours': '6 hours',
+  'common.timeRange.7days': '7 days',
   'common.timeRange.24hours': '24 hours',
   'common.timeRange.30days': '30 days',
   'common.timeRange.60days': '60 days',
@@ -289,6 +294,53 @@ describe('WidgetConfigDialog', () => {
     expect(screen.getByText('30 days')).toBeInTheDocument()
     expect(screen.getByText('60 days')).toBeInTheDocument()
     expect(screen.getByText('90 days')).toBeInTheDocument()
+  })
+
+  it('renders server + range (with realtime) for network-latency widget', () => {
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={noop}
+        open
+        servers={mockServers as never}
+        widgetType="network-latency"
+      />
+    )
+
+    expect(screen.getByText('Server')).toBeInTheDocument()
+    expect(screen.getByText('Time Range')).toBeInTheDocument()
+    expect(screen.getByText('Realtime')).toBeInTheDocument()
+    expect(screen.getByText('Server 1')).toBeInTheDocument()
+  })
+
+  it('renders a server select for network-quality widget', () => {
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={noop}
+        open
+        servers={mockServers as never}
+        widgetType="network-quality"
+      />
+    )
+
+    expect(screen.getByText('Server')).toBeInTheDocument()
+    expect(screen.getByText('Server 1')).toBeInTheDocument()
+  })
+
+  it('renders a server multi-select for network-overview widget', () => {
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={noop}
+        open
+        servers={mockServers as never}
+        widgetType="network-overview"
+      />
+    )
+
+    expect(screen.getByText('Servers')).toBeInTheDocument()
+    expect(screen.getByText('Server 1')).toBeInTheDocument()
   })
 
   describe('module widgets', () => {
