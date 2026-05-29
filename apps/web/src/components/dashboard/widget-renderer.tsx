@@ -10,6 +10,7 @@ import type {
   MarkdownConfig,
   MetricCardConfig,
   MultiLineConfig,
+  NetworkQualityConfig,
   ServerCardsConfig,
   ServerMapConfig,
   ServiceStatusConfig,
@@ -27,6 +28,7 @@ import { LineChartWidget } from './widgets/line-chart-widget'
 import { MarkdownWidget } from './widgets/markdown'
 import { MetricCardWidget } from './widgets/metric-card'
 import { MultiLineWidget } from './widgets/multi-line'
+import { NetworkQualityWidget } from './widgets/network-quality'
 import { ServerCardsWidget } from './widgets/server-cards'
 import { ServerMapWidget } from './widgets/server-map'
 import { ServiceStatusWidget } from './widgets/service-status'
@@ -119,6 +121,8 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
       return <MarkdownWidget config={config as unknown as MarkdownConfig} />
     case 'uptime-timeline':
       return <UptimeTimelineWidget config={config as unknown as UptimeTimelineConfig} servers={servers} />
+    case 'network-quality':
+      return <NetworkQualityWidget config={config as unknown as NetworkQualityConfig} servers={servers} />
     default:
       return (
         <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
