@@ -1,5 +1,5 @@
 import { getCoreRowModel, getSortedRowModel, type SortingState, useReactTable } from '@tanstack/react-table'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataTable } from '@/components/data-table/data-table'
 import { ServerCard } from '@/components/server/server-card'
@@ -15,6 +15,45 @@ interface ServerCardsWidgetProps {
   servers: ServerMetrics[]
 }
 
+// Soft cap on the first render. The widget grows to fit its content (no inner
+// scroll), so rendering hundreds of cards/rows up front would jank. Instead we
+// reveal the first batch and load the next as the user scrolls the dashboard
+// near the widget's bottom (page-scroll driven, compatible with content-height).
+const REVEAL_STEP = 50
+
+// Reveals `step` items at a time, loading the next batch when the sentinel
+// scrolls into view (page-scroll driven, no inner scroll container needed).
+function useIncrementalReveal(total: number, step = REVEAL_STEP) {
+  const [count, setCount] = useState(step)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const visibleCount = Math.min(count, total)
+  const hasMore = visibleCount < total
+
+  // Re-subscribe on every batch: re-observing re-fires the initial notification
+  // if the sentinel is still on-screen (IntersectionObserver won't re-notify a
+  // sentinel that stays intersecting), so short lists keep filling until the
+  // sentinel is pushed off-screen or everything is revealed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: visibleCount is an intentional re-subscribe trigger, not used in the body
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!hasMore || el === null || typeof IntersectionObserver === 'undefined') {
+      return
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setCount((c) => c + step)
+        }
+      },
+      { rootMargin: '300px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, step, visibleCount])
+
+  return { visibleCount, hasMore, sentinelRef }
+}
+
 // Columns the list layout hides relative to the full servers page: selection and
 // per-row edit actions are page-only interactions, and group/status-dot are
 // hidden on the servers page by default too. The remaining data columns render
@@ -23,7 +62,7 @@ const HIDDEN_LIST_COLUMNS = { select: false, 'status-dot': false, group: false, 
 
 // Reuses the exact servers-page table (DataTable + shared columns) so the list
 // layout is pixel-identical to /servers?view=table. State is kept local (no URL
-// sync) and pagination is omitted — the widget grows to fit all rows.
+// sync) and the pagination footer is hidden — the widget reveals rows on scroll.
 function ServerListTable({ servers }: { servers: ServerMetrics[] }) {
   const { t } = useTranslation(['servers'])
   const [sorting, setSorting] = useState<SortingState>([{ id: 'name', desc: false }])
@@ -60,11 +99,15 @@ function ServerListTable({ servers }: { servers: ServerMetrics[] }) {
     getRowId: (row) => row.id
   })
 
-  return <DataTable rowClassName={(row) => !row.original.online && 'opacity-45 grayscale'} table={table} />
+  return (
+    <DataTable hidePagination rowClassName={(row) => !row.original.online && 'opacity-45 grayscale'} table={table} />
+  )
 }
 
 export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
   const filtered = useMemo(() => filterByIds(servers, config.server_ids, (s) => s.id), [servers, config.server_ids])
+  const { visibleCount, hasMore, sentinelRef } = useIncrementalReveal(filtered.length)
+  const visible = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount])
 
   if (filtered.length === 0) {
     return (
@@ -78,28 +121,33 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
 
   if (config.layout === 'list') {
     return (
-      // data-measure: natural content height (grows with the number of rows),
+      // data-measure: natural content height (grows with the revealed rows),
       // measured by the grid to size the cell — never height-capped or scrolled.
       <div data-measure>
-        <ServerListTable servers={filtered} />
+        <ServerListTable servers={visible} />
+        {hasMore && <div aria-hidden="true" className="h-px" ref={sentinelRef} />}
       </div>
     )
   }
 
   return (
-    // data-measure: natural content height (grows with the number of cards),
+    // data-measure: natural content height (grows with the revealed cards),
     // measured by the grid to size the cell so the widget is never height-capped
     // or scrolled — it always hugs exactly as many rows of cards as it renders.
-    <div
-      className="grid content-start gap-4"
-      data-measure
-      style={{
-        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))'
-      }}
-    >
-      {filtered.map((server) => (
-        <ServerCard key={server.id} server={server} />
-      ))}
+    <div data-measure>
+      <div
+        className="grid content-start gap-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}
+      >
+        {visible.map((server) => (
+          // content-visibility:auto skips layout/paint for off-screen cards;
+          // contain-intrinsic-size reserves their height so scrolling stays smooth.
+          <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
+            <ServerCard server={server} />
+          </div>
+        ))}
+      </div>
+      {hasMore && <div aria-hidden="true" className="h-px" ref={sentinelRef} />}
     </div>
   )
 }
