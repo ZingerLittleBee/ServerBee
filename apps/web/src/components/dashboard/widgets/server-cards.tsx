@@ -1,5 +1,6 @@
 import { getCoreRowModel, getSortedRowModel, type SortingState, useReactTable } from '@tanstack/react-table'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2 } from 'lucide-react'
+import { type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DataTable } from '@/components/data-table/data-table'
 import { ServerCard } from '@/components/server/server-card'
@@ -104,6 +105,19 @@ function ServerListTable({ servers }: { servers: ServerMetrics[] }) {
   )
 }
 
+// The sentinel doubles as the load-more indicator: it sits at the bottom of the
+// table/grid, triggers the next batch when scrolled into view, and shows a
+// spinner while more rows remain. It unmounts once everything is revealed.
+function LoadMoreSentinel({ sentinelRef }: { sentinelRef: RefObject<HTMLDivElement | null> }) {
+  const { t } = useTranslation('common')
+  return (
+    <div className="flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm" ref={sentinelRef}>
+      <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+      {t('loading')}
+    </div>
+  )
+}
+
 export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
   const filtered = useMemo(() => filterByIds(servers, config.server_ids, (s) => s.id), [servers, config.server_ids])
   const { visibleCount, hasMore, sentinelRef } = useIncrementalReveal(filtered.length)
@@ -125,7 +139,7 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
       // measured by the grid to size the cell — never height-capped or scrolled.
       <div data-measure>
         <ServerListTable servers={visible} />
-        {hasMore && <div aria-hidden="true" className="h-px" ref={sentinelRef} />}
+        {hasMore && <LoadMoreSentinel sentinelRef={sentinelRef} />}
       </div>
     )
   }
@@ -147,7 +161,7 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
           </div>
         ))}
       </div>
-      {hasMore && <div aria-hidden="true" className="h-px" ref={sentinelRef} />}
+      {hasMore && <LoadMoreSentinel sentinelRef={sentinelRef} />}
     </div>
   )
 }
