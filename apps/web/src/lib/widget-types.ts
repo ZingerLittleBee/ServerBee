@@ -241,8 +241,11 @@ export interface MetricCardConfig {
   server_id: string
 }
 
+export type ServerCardsLayout = 'grid' | 'list'
+
 export interface ServerCardsConfig {
   columns?: number
+  layout?: ServerCardsLayout
   server_ids?: string[]
 }
 

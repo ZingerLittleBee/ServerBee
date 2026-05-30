@@ -185,7 +185,10 @@
         "markdownContent": "Markdown Content",
         "days": "Days",
         "titleOptional": "Title (optional)",
-        "labelOptional": "Label (optional)"
+        "labelOptional": "Label (optional)",
+        "layout": "Layout",
+        "layoutGrid": "Grid",
+        "layoutList": "List"
       },
       "placeholders": {
         "selectServer": "Select server",
