@@ -4,7 +4,7 @@ set -euo pipefail
 # Start server + web dev, and print agent startup command with a freshly minted one-time enrollment code.
 
 ADMIN_PASS="admin123"
-SERVER_URL="http://127.0.0.1:9527"
+SERVER_URL="http://localhost:9527"
 
 echo "Building web assets (required by rust-embed)..."
 (cd apps/web && bun install --silent && bun run build)

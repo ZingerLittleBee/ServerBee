@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SERVER_URL="http://127.0.0.1:9527"
+SERVER_URL="http://localhost:9527"
 ADMIN_USER="admin"
 ADMIN_PASS="admin123"
 SERVER_PID=""
@@ -38,7 +38,7 @@ fi
 echo ""
 echo "=========================================="
 echo "  Demo data is ready"
-echo "  Web:       http://127.0.0.1:5173"
+echo "  Web:       http://localhost:5173"
 echo "  API:       ${SERVER_URL}"
 echo "  Login:     ${ADMIN_USER} / ${ADMIN_PASS}"
 echo "  Database:  data/dev-demo.db"
