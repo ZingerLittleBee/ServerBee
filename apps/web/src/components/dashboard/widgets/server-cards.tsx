@@ -13,8 +13,12 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
   const filtered = useMemo(() => filterByIds(servers, config.server_ids, (s) => s.id), [servers, config.server_ids])
 
   return (
+    // data-measure: natural content height (grows with the number of cards),
+    // measured by the grid to size the cell so the widget is never height-capped
+    // or scrolled — it always hugs exactly as many rows of cards as it renders.
     <div
-      className="grid h-full content-start gap-4 overflow-auto"
+      className="grid content-start gap-4"
+      data-measure
       style={{
         gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))'
       }}

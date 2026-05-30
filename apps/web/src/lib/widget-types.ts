@@ -52,7 +52,7 @@ export const WIDGET_TYPES = [
     defaultH: 6,
     minW: 4,
     minH: 3,
-    sizing: { kind: 'free' }
+    sizing: { kind: 'content-height' }
   },
   {
     id: 'gauge',
