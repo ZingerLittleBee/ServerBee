@@ -1,4 +1,5 @@
 import { renderConfigForm } from '@serverbee/widget-sdk'
+import { LayoutGrid, List } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { renderMarkdown } from '@/lib/markdown'
 import { parseConfig } from '@/lib/widget-helpers'
@@ -24,6 +26,7 @@ import type {
   NetworkOverviewConfig,
   NetworkQualityConfig,
   ServerCardsConfig,
+  ServerCardsLayout,
   StatNumberConfig,
   TopNConfig,
   TrafficBarConfig,
@@ -483,14 +486,36 @@ function ServerCardsForm({
   servers: ServerMetrics[]
   t: (key: string) => string
 }) {
+  const layout: ServerCardsLayout = config.layout ?? 'grid'
   return (
-    <ServerMultiSelect
-      emptyMessage={t('widgets.common.empty.noServers')}
-      label={t('widgets.common.labels.servers')}
-      onChange={(ids) => onChange({ ...config, server_ids: ids })}
-      selected={config.server_ids ?? []}
-      servers={servers}
-    />
+    <>
+      <div className="space-y-1.5">
+        <Label>{t('widgets.common.labels.layout')}</Label>
+        <ToggleGroup
+          className="w-full"
+          multiple={false}
+          onValueChange={(value) => value.length > 0 && onChange({ ...config, layout: value[0] as ServerCardsLayout })}
+          value={[layout]}
+          variant="outline"
+        >
+          <ToggleGroupItem className="flex-1" value="grid">
+            <LayoutGrid className="size-4" />
+            {t('widgets.common.labels.layoutGrid')}
+          </ToggleGroupItem>
+          <ToggleGroupItem className="flex-1" value="list">
+            <List className="size-4" />
+            {t('widgets.common.labels.layoutList')}
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+      <ServerMultiSelect
+        emptyMessage={t('widgets.common.empty.noServers')}
+        label={t('widgets.common.labels.servers')}
+        onChange={(ids) => onChange({ ...config, server_ids: ids })}
+        selected={config.server_ids ?? []}
+        servers={servers}
+      />
+    </>
   )
 }
 

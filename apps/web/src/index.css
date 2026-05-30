@@ -144,6 +144,16 @@
   opacity: 0.15 !important;
 }
 
+/* Content-driven height changes (live data, scroll-loading more rows) must apply
+   instantly. RGL's default 0.2s transform/height transition animates the growing
+   content-height widget and the items below it on slightly different timelines,
+   so the growing widget briefly overlaps the widget beneath it. Keep the
+   transition only while editing, where it smooths the drag/resize reflow.
+   !important overrides react-grid-layout/css/styles.css loaded later. */
+.dashboard-grid:not(.dashboard-grid--editing) > .react-grid-item {
+  transition: none !important;
+}
+
 /* Dashboard resize handle overrides the library's hard-coded dark marker */
 .dashboard-grid .dashboard-resize-handle::after {
   content: none !important;

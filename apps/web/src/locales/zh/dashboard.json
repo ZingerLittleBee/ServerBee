@@ -185,7 +185,10 @@
         "markdownContent": "Markdown 内容",
         "days": "天数",
         "titleOptional": "标题（可选）",
-        "labelOptional": "标签（可选）"
+        "labelOptional": "标签（可选）",
+        "layout": "布局",
+        "layoutGrid": "网格",
+        "layoutList": "列表"
       },
       "placeholders": {
         "selectServer": "选择服务器",

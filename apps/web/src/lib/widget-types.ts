@@ -52,7 +52,7 @@ export const WIDGET_TYPES = [
     defaultH: 6,
     minW: 4,
     minH: 3,
-    sizing: { kind: 'free' }
+    sizing: { kind: 'content-height' }
   },
   {
     id: 'gauge',
@@ -241,8 +241,11 @@ export interface MetricCardConfig {
   server_id: string
 }
 
+export type ServerCardsLayout = 'grid' | 'list'
+
 export interface ServerCardsConfig {
   columns?: number
+  layout?: ServerCardsLayout
   server_ids?: string[]
 }
 

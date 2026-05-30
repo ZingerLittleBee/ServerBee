@@ -9,6 +9,9 @@ interface DataTableProps<TData> extends React.ComponentProps<'div'> {
   actionBar?: React.ReactNode
   /** Fill remaining vertical space with a sticky header and internally scrollable body. */
   fillHeight?: boolean
+  /** Hide the pagination/action-bar footer entirely. Use when the table renders
+   *  all rows (e.g. embedded in a content-sized dashboard widget). */
+  hidePagination?: boolean
   /** Optional per-row className, e.g. to dim disabled/offline rows. */
   rowClassName?: (row: Row<TData>) => string | false | undefined
   table: TanstackTable<TData>
@@ -20,6 +23,7 @@ export function DataTable<TData>({
   children,
   className,
   fillHeight = false,
+  hidePagination = false,
   rowClassName,
   ...props
 }: DataTableProps<TData>) {
@@ -86,10 +90,12 @@ export function DataTable<TData>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex flex-col gap-2.5">
-        <DataTablePagination table={table} />
-        {actionBar && table.getFilteredSelectedRowModel().rows.length > 0 && actionBar}
-      </div>
+      {!hidePagination && (
+        <div className="flex flex-col gap-2.5">
+          <DataTablePagination table={table} />
+          {actionBar && table.getFilteredSelectedRowModel().rows.length > 0 && actionBar}
+        </div>
+      )}
     </div>
   )
 }

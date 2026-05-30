@@ -402,7 +402,7 @@ const COMMANDS: CommandDefinition[] = [
     name: 'agent:dev',
     category: 'Rust',
     description: 'Run agent connecting to local server (set SERVERBEE_ENROLLMENT_CODE)',
-    command: 'SERVERBEE_SERVER_URL=http://127.0.0.1:9527 cargo run -p serverbee-agent',
+    command: 'SERVERBEE_SERVER_URL=http://localhost:9527 cargo run -p serverbee-agent',
     featured: true
   },
   {
