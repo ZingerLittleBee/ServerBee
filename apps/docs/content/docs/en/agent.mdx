@@ -4,7 +4,7 @@ description: Install and configure the ServerBee agent on your monitored servers
 icon: Cpu
 ---
 
-The ServerBee agent is a lightweight Rust binary that runs on each server you want to monitor. It collects system metrics (CPU, memory, disk, network, load, temperature, GPU, disk I/O) and reports them to the central ServerBee server over a persistent WebSocket connection.
+The ServerBee agent is a lightweight Rust binary that runs on each server you want to monitor. It collects system metrics (CPU, memory, disk, network, load, temperature, GPU, disk I/O) and reports them to the central ServerBee server over a persistent WebSocket connection. It also executes probe tasks and remote commands dispatched by the server.
 
 ## What the Agent Does
 
@@ -50,13 +50,25 @@ If the agent is already installed, re-running `install agent` errors out and tel
 
 Download the agent binary for your platform from the [releases page](https://github.com/ZingerLittleBee/ServerBee/releases):
 
+| Platform | File name |
+|----------|-----------|
+| Linux amd64 | `serverbee-agent-linux-amd64` |
+| Linux arm64 | `serverbee-agent-linux-arm64` |
+| macOS amd64 | `serverbee-agent-darwin-amd64` |
+| macOS arm64 | `serverbee-agent-darwin-arm64` |
+| Windows amd64 | `serverbee-agent-windows-amd64.exe` |
+
 ```bash
-chmod +x serverbee-agent
+wget https://github.com/ZingerLittleBee/ServerBee/releases/latest/download/serverbee-agent-linux-amd64
+chmod +x serverbee-agent-linux-amd64
+sudo mv serverbee-agent-linux-amd64 /usr/local/bin/serverbee-agent
 ```
 
 ### Build from Source
 
 ```bash
+git clone https://github.com/ZingerLittleBee/ServerBee.git
+cd ServerBee
 cargo build --release -p serverbee-agent
 
 # With NVIDIA GPU monitoring (optional)
@@ -103,23 +115,35 @@ Mount `/etc/machine-id` from the host to keep the agent fingerprint stable acros
 
 ## Registration Flow
 
-Agents authenticate with the server using a **token**. There are two ways to obtain a token:
+Agents authenticate with the server using a **token**. There are two ways to obtain a token: a one-time enrollment code (recommended) or a manually created token.
 
 ### Enrollment Code Registration (Recommended)
 
-1. Sign in to the web UI as an admin, open **Settings**, and generate a one-time **enrollment code** (also available via `POST /api/agent/enrollments`, admin-only). The code is **single-use** and **short-lived** (default 10 minute expiry).
-2. Configure the agent with the code:
+1. Sign in to the web UI as an admin, open **Settings**, and generate a one-time **enrollment code** (also available via `POST /api/agent/enrollments`, admin-only). The code is **single-use** and **short-lived** (default 10 minute expiry), and a fresh code is needed for each new agent.
+2. Configure the agent with the code, either via environment variables:
 
-```toml
-server_url = "http://your-server-ip:9527"
-enrollment_code = "<one-time code from Settings>"
+```bash
+SERVERBEE_SERVER_URL=http://your-server-ip:9527 \
+SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE \
+serverbee-agent
 ```
 
-3. Start the agent. It will:
+or in the config file:
+
+```toml title="/etc/serverbee/agent.toml"
+server_url = "http://your-server-ip:9527"
+enrollment_code = "<one-time code from Settings>"
+# Leave empty on first run; auto-populated after registration
+token = ""
+```
+
+3. Start the agent. On first run (no token), it will:
    - Send a registration request to `POST /api/agent/register` presenting the one-time enrollment code
    - Receive a `server_id` and per-server `token` from the server (the code is consumed on this first successful registration)
    - Save the token to the config file automatically
    - Connect via WebSocket using the token for all future sessions -- the enrollment code is no longer needed
+
+On subsequent runs (token present), the agent connects directly over WebSocket, sends its static system info, and reports metrics on the configured interval.
 
 When the agent can read a stable machine identifier, it also sends a fingerprint during registration. Repeated registration from the same machine reuses the existing server row instead of creating duplicate placeholders. If a code is lost, expired, or already used, the server responds with HTTP 401 and the agent logs `Registration failed: HTTP 401 ... enrollment code ... expired or already used`; mint a fresh code in Settings to retry.
 
@@ -179,7 +203,7 @@ token = ""
 enrollment_code = ""
 
 [collector]
-interval = 3                   # Metric collection interval in seconds
+interval = 3                   # Metric collection interval in seconds (can be overridden by the server's Welcome message)
 enable_gpu = false             # Enable NVIDIA GPU monitoring (requires nvidia-smi)
 enable_temperature = true      # Enable temperature sensor monitoring
 
@@ -188,9 +212,20 @@ level = "info"                 # Log level: trace, debug, info, warn, error
 file = ""                      # Log file path (empty = stdout only)
 ```
 
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `server_url` | string | required | URL of your ServerBee server |
+| `enrollment_code` | string | `""` | One-time enrollment code, needed only for first registration; consumed on success and unused once a token is present |
+| `token` | string | auto-generated | Agent token, written automatically after registration |
+| `collector.interval` | int | `3` | Metric collection interval in seconds; can be overridden by the server's Welcome message |
+| `collector.enable_gpu` | bool | `false` | Enable GPU metric collection |
+| `collector.enable_temperature` | bool | `true` | Enable temperature collection |
+| `log.level` | string | `"info"` | Log level |
+| `log.file` | string | `""` | Log file path (empty = stdout only) |
+
 ### Environment Variables
 
-Like the server, all options support `SERVERBEE_` prefixed environment variables:
+Like the server, all options support `SERVERBEE_` prefixed environment variables. Use `__` (double underscore) as the nested-field separator:
 
 ```bash
 export SERVERBEE_SERVER_URL="http://your-server-ip:9527"
@@ -247,11 +282,9 @@ Only NVIDIA GPUs are supported (via the `nvml-wrapper` library). AMD and Intel G
 
 ## Running as a Systemd Service
 
-For production deployments, run the agent as a systemd service so it starts automatically on boot.
+For production deployments, run the agent as a systemd service so it starts automatically on boot. The install script creates this service automatically; to configure it manually, create `/etc/systemd/system/serverbee-agent.service`:
 
-Create `/etc/systemd/system/serverbee-agent.service`:
-
-```ini
+```ini title="/etc/systemd/system/serverbee-agent.service"
 [Unit]
 Description=ServerBee Agent
 After=network-online.target
@@ -264,6 +297,7 @@ Restart=always
 RestartSec=5
 User=root
 WorkingDirectory=/etc/serverbee
+AmbientCapabilities=CAP_NET_RAW
 
 # Optional: limit resource usage
 MemoryMax=128M
@@ -273,6 +307,8 @@ CPUQuota=10%
 WantedBy=multi-user.target
 ```
 
+`AmbientCapabilities=CAP_NET_RAW` grants the privilege required for ICMP ping probes; remove the line if you do not need ICMP probing.
+
 Then enable and start the service:
 
 ```bash
@@ -281,7 +317,7 @@ sudo systemctl enable serverbee-agent
 sudo systemctl start serverbee-agent
 ```
 
-Check the status:
+Check the status and logs:
 
 ```bash
 sudo systemctl status serverbee-agent
@@ -344,23 +380,21 @@ During the initial connection:
 
 ## Collected Metrics
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `cpu` | float | CPU usage percentage (0-100) |
-| `mem_used` | int | Used memory in bytes |
-| `swap_used` | int | Used swap in bytes |
-| `disk_used` | int | Used disk space in bytes |
-| `net_in_speed` | int | Network inbound speed (bytes/sec) |
-| `net_out_speed` | int | Network outbound speed (bytes/sec) |
-| `net_in_transfer` | int | Cumulative inbound transfer (bytes) |
-| `net_out_transfer` | int | Cumulative outbound transfer (bytes) |
-| `load1` / `load5` / `load15` | float | System load averages |
-| `tcp_conn` | int | Active TCP connections |
-| `udp_conn` | int | Active UDP connections |
-| `process_count` | int | Running process count |
-| `uptime` | int | System uptime in seconds |
-| `temperature` | float | CPU temperature (optional) |
-| `gpu` | object | GPU metrics per device (optional) |
+The agent collects the following metrics (sourced from the `sysinfo` library, `/proc` on Linux, and `nvml-wrapper` for GPU) and reports them to the server:
+
+| Category | Reported fields | Source |
+|----------|-----------------|--------|
+| CPU | `cpu` (usage %), name, cores, arch | `sysinfo::System` |
+| Memory | `mem_used`, `swap_used` (bytes) | `sysinfo::System` |
+| Disk | `disk_used` (bytes) | `sysinfo::Disks` |
+| Network | `net_in_speed` / `net_out_speed`, `net_in_transfer` / `net_out_transfer` (bytes) | `sysinfo::Networks` + delta calc |
+| Load | `load1` / `load5` / `load15` | `sysinfo::System::load_average()` |
+| Connections | `tcp_conn` / `udp_conn` | `/proc/net/tcp` (Linux) |
+| Process | `process_count` | `sysinfo::System::processes()` |
+| Uptime | `uptime` (seconds) | `sysinfo::System` |
+| Temperature | `temperature` (°C, optional) | `sysinfo::Components` |
+| GPU | `gpu` (utilization, VRAM, temperature, optional) | `nvml-wrapper` |
+| Virtualization | virtualization type | `systemd-detect-virt` / DMI |
 
 ## Resource Footprint
 
