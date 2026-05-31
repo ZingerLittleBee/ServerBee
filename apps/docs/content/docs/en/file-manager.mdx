@@ -4,18 +4,18 @@ description: Browse, read, edit, upload, download, and manage remote files throu
 icon: FolderOpen
 ---
 
-File Manager provides controlled remote filesystem access through the ServerBee agent. It is intended for operational tasks such as checking logs, editing small configuration files, and transferring files without opening a full terminal.
+File Manager provides controlled remote filesystem access through the ServerBee agent. It is meant for operational tasks such as checking logs, editing small configuration files, and transferring files without opening a full terminal.
 
 <Callout type="warn">
-File Manager is a high-risk feature. Enable it only on trusted servers and restrict `root_paths` to the minimum directories needed.
+File Manager is a high-risk feature. Enable it only on trusted servers, and restrict `root_paths` to the minimum directories needed.
 </Callout>
 
 ## Requirements
 
 File Manager must be enabled at two layers:
 
-1. **Server-side capability:** enable `CAP_FILE` for the server in **Settings → Capabilities** or the server detail page.
-2. **Agent-side policy:** set `[file].enabled = true` and configure at least one allowed root path.
+1. **Server-side capability** -- enable `CAP_FILE` for the server in **Settings → Capabilities** or on the server detail page.
+2. **Agent-side policy** -- set `[file].enabled = true` and configure at least one allowed root path.
 
 Example `agent.toml`:
 
@@ -44,7 +44,7 @@ Open a server's action menu and click **Files**, or navigate directly to:
 /files/{serverId}
 ```
 
-The button is hidden when the server does not have `CAP_FILE` in its effective capabilities.
+The button is hidden when `CAP_FILE` is not in the server's effective capabilities.
 
 ## Permissions
 
@@ -53,7 +53,7 @@ The button is hidden when the server does not have `CAP_FILE` in its effective c
 | Admin | Browse, stat, read, write, upload, download, delete, move, create directories, cancel transfers |
 | Member | Browse, stat, read, download, list own transfers |
 
-All high-risk file operations are recorded in the audit log, including denied attempts when the capability is disabled.
+All high-risk file operations are recorded in the audit log, including attempts denied because the capability is disabled.
 
 ## Supported Operations
 
@@ -74,11 +74,11 @@ All high-risk file operations are recorded in the audit log, including denied at
 
 The agent enforces path safety before touching the filesystem:
 
-- `root_paths` is an allow-list. Empty `root_paths` rejects all file operations.
-- Paths must resolve inside one of the configured roots.
+- `root_paths` is an allow-list; an empty list rejects all file operations.
+- Every path must resolve inside one of the configured roots.
 - `deny_patterns` blocks sensitive names such as private keys, `.env*`, `shadow`, and `passwd`.
-- The agent also checks local capabilities, so server-side capability changes cannot override an agent-local deny.
-- The server checks `CAP_FILE` before dispatching file messages to the agent.
+- The agent also checks its local capabilities, so a server-side change cannot override an agent-local deny.
+- The server checks `CAP_FILE` before dispatching any file message to the agent.
 
 ## Limits
 
@@ -88,11 +88,11 @@ The agent enforces path safety before touching the filesystem:
 | Agent read/download max file size | 1 GB | Agent `[file].max_file_size` / `SERVERBEE_FILE__MAX_FILE_SIZE` |
 | Inline read chunk | 384 KB | Protocol limit to keep WebSocket frames below the configured max size |
 
-Uploads and downloads are chunked. Downloads create a temporary transfer on the server and can be cancelled while pending or in progress.
+Uploads and downloads are chunked. A download creates a temporary transfer on the server that can be cancelled while pending or in progress.
 
 ## API
 
-Read endpoints are available to Admin and Member users. Write endpoints require Admin.
+Read endpoints are available to both Admin and Member users. Write endpoints require Admin.
 
 | Method | Path | Description |
 |--------|------|-------------|

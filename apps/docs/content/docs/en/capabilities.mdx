@@ -4,11 +4,11 @@ description: Control which features each agent is allowed to use with per-server
 icon: ToggleRight
 ---
 
-ServerBee supports per-agent capability toggles that let administrators control exactly which operations each server is allowed to perform, enforcing the principle of least privilege.
+ServerBee provides per-agent capability toggles, letting administrators control exactly which operations each server is allowed to perform and enforcing the principle of least privilege.
 
 ## Capability List
 
-ServerBee defines 11 capability bits, divided into two risk levels. The valid mask is `2047` (bits 0..=10).
+ServerBee defines 11 capability bits across two risk levels. The valid mask is `2047` (bits 0..=10).
 
 ### High Risk (Disabled by Default)
 
@@ -20,7 +20,7 @@ ServerBee defines 11 capability bits, divided into two risk levels. The valid ma
 | **Docker Management** | `CAP_DOCKER` (128) | Allow Docker container monitoring, log streaming, and container actions |
 
 <Callout type="warn">
-These capabilities involve executing arbitrary code or accessing the filesystem on the target server. They are disabled by default. Only enable them on trusted servers.
+These capabilities allow executing arbitrary code or accessing the filesystem on the target server, so they are disabled by default. Enable them only on trusted servers.
 </Callout>
 
 <Callout type="info">
@@ -39,15 +39,15 @@ File Manager requires additional agent-side configuration (`root_paths`, `deny_p
 | **Firewall Blocklist** | `CAP_FIREWALL_BLOCK` (512) | Allow agent to apply the server-pushed nftables blocklist. Requires root or `CAP_NET_ADMIN` plus the `nft` CLI on the host. See [Firewall Blocklist](/en/docs/firewall) |
 | **IP Quality** | `CAP_IP_QUALITY` (1024) | Allow agent to query third-party IP quality APIs for outbound IP scoring |
 
-Newly registered agents default to a capabilities value of `1852` (auto upgrade + three ping capabilities + security events + firewall blocklist + IP quality).
+Newly registered agents default to a capabilities value of `1852` (auto upgrade + the three ping probes + security events + firewall blocklist + IP quality), which keeps the high-risk terminal, exec, file, and Docker capabilities off.
 
 ## Configuration
 
 ### Single Server
 
 1. Go to Dashboard → click a server → server detail page
-2. In the **Capabilities** section, use toggle switches to enable or disable features
-3. Changes take effect immediately — the server pushes a `CapabilitiesSync` message to the agent via WebSocket
+2. In the **Capabilities** section, use the toggle switches to enable or disable features
+3. Changes take effect immediately -- the server pushes a `CapabilitiesSync` message to the agent over WebSocket
 
 ### Batch Configuration
 
@@ -76,45 +76,45 @@ curl -X PUT https://your-server/api/servers/batch-capabilities \
   -d '{"server_ids": ["id1", "id2"], "capabilities": 63}'
 ```
 
-The capabilities value is a bitwise OR of individual capability bits. Examples:
+The capabilities value is a bitwise OR of the individual capability bits. Examples:
 - `1852` = Auto Upgrade + ICMP + TCP + HTTP + Security Events + Firewall Blocklist + IP Quality (default)
 - `2047` = all capabilities enabled (full valid mask, bits 0..=10)
 - `1980` = default + Docker
 - `1916` = default + File Manager
 - `316` = previous default (no firewall blocklist or IP quality)
-- `60` = legacy default (no Security Events / firewall / IP quality)
+- `60` = legacy default (no security events, firewall, or IP quality)
 - `0` = all capabilities disabled
 
 ## Defense in Depth
 
-ServerBee validates capabilities on both the server side and agent side:
+ServerBee validates capabilities on both the server side and the agent side. The effective capabilities are the intersection of the two -- if either side disables a bit, the operation is rejected.
 
 ### Server-Side Enforcement
 
-- **Terminal**: WebSocket upgrade rejected with 403
+- **Terminal**: the WebSocket upgrade is rejected with 403
 - **Exec**: `POST /api/tasks` and scheduled task runs filter out disabled servers and write synthetic results (`exit_code = -2`, message: "Capability 'exec' is disabled")
 - **Auto Upgrade**: `POST /api/servers/{id}/upgrade` returns 403 when `CAP_UPGRADE` is disabled
-- **Ping and Traceroute**: Probe tasks are filtered by capability; traceroute requires effective `CAP_PING_ICMP`
+- **Ping and Traceroute**: probe tasks are filtered by capability; traceroute requires effective `CAP_PING_ICMP`
 - **File Manager**: file endpoints reject requests before dispatch when `CAP_FILE` is disabled
-- **Docker**: Docker read/action endpoints and Docker log WebSocket routes require `CAP_DOCKER` and agent runtime Docker support
+- **Docker**: Docker read/action endpoints and the Docker log WebSocket routes require `CAP_DOCKER` and agent runtime Docker support
 
 ### Agent-Side Enforcement
 
-Even if a server-side message is bypassed, the agent checks capabilities locally:
+Even if a server-side message is bypassed, the agent re-checks capabilities locally:
 
-- Returns a `CapabilityDenied` message for unauthorized commands
-- The server writes a synthetic result (`exit_code = -1`) upon receiving `CapabilityDenied`
+- It returns a `CapabilityDenied` message for unauthorized commands
+- On receiving `CapabilityDenied`, the server writes a synthetic result (`exit_code = -1`)
 - Denial events are recorded in the audit log
 
 ### Real-Time Sync
 
 When an administrator changes capabilities:
 
-1. Server sends `CapabilitiesSync` to the target agent via WebSocket
-2. Agent atomically updates its local capabilities value using `AtomicU32`
-3. Server sends `CapabilitiesChanged` to all connected browsers via WebSocket
-4. Frontend updates the UI state in real time
-5. If ping-related capability bits change, the server automatically re-syncs ping tasks
+1. The server sends `CapabilitiesSync` to the target agent over WebSocket
+2. The agent atomically updates its local capabilities value via `AtomicU32`
+3. The server sends `CapabilitiesChanged` to all connected browsers over WebSocket
+4. The frontend updates its UI state in real time
+5. If ping-related bits change, the server automatically re-syncs ping tasks
 
 ## Frontend Behavior
 
@@ -125,15 +125,15 @@ When an administrator changes capabilities:
 - **Files button**: Hidden for servers without `CAP_FILE`; clicking opens the file manager at `/files/{serverId}`
 - **Docker link**: Hidden for servers without `CAP_DOCKER`; clicking navigates to `/servers/{serverId}/docker`
 
-## Server Config vs Client Lock
+## Server Config vs. Client Lock
 
-Runtime capability state now has three layers:
+Runtime capability state has three layers:
 
 - `capabilities`: the server-configured bitmap stored in the database
 - `agent_local_capabilities`: the bitmap allowed by the running agent process
-- `effective_capabilities`: the runtime intersection actually enforced by the system
+- `effective_capabilities`: the runtime intersection actually enforced (`capabilities & agent_local_capabilities`)
 
-When an agent locally disables a capability, the UI shows the toggle as disabled with the tooltip `客户端关闭`. This means the running agent has locked that capability off locally, and the server cannot turn it back on until the agent is restarted with a different local policy.
+When an agent disables a capability locally, the UI shows the toggle as disabled with the tooltip `客户端关闭` ("disabled by client"). The running agent has locked that capability off, and the server cannot turn it back on until the agent restarts with a different local policy.
 
 <Cards>
   <Card title="Web Terminal" href="/en/docs/terminal" />

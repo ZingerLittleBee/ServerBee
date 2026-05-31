@@ -4,13 +4,13 @@ description: Production deployment strategies for the ServerBee server and agent
 icon: Cloud
 ---
 
-This guide covers production deployment best practices for ServerBee, including Railway, Docker, systemd, reverse proxy configuration, TLS, and backup strategies.
+This guide covers production deployment best practices for ServerBee: Railway, Docker, systemd, reverse proxy configuration, TLS, and backup strategies.
 
 ## Railway (One-Click Deploy)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
 
-The fastest way to get ServerBee running. Click the button above and configure the environment variables:
+The fastest way to get ServerBee running. Click the button above, then configure the environment variables:
 
 ```bash
 SERVERBEE_LOG__LEVEL="info"                    # Log level (trace/debug/info/warn/error)
@@ -30,7 +30,7 @@ After deploying:
 
 1. Add a **Volume** mounted at `/data` to persist data across deploys
 2. Configure your agents to connect using the Railway-provided URL
-3. On first start the server auto-creates an admin account with a randomly generated password. Open the Railway deploy logs and look for the highlighted credentials banner to retrieve it. On first login you are required to change this password and may optionally choose a different username.
+3. On first start, the server auto-creates an admin account with a randomly generated password. Open the Railway deploy logs and look for the highlighted credentials banner to retrieve it. On first login you must change this password and may optionally choose a different username.
 
 <Callout type="info">
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
@@ -54,7 +54,7 @@ The Dockerfile exposes this switch via `ARG SERVERBEE_IMAGE_TAG=latest`. Railway
 
 ## Bootstrap Installer
 
-For Linux hosts, the quickest binary/systemd path is the bootstrap installer:
+On Linux hosts, the bootstrap installer is the quickest binary/systemd path:
 
 ```bash
 # Install the server
@@ -127,7 +127,7 @@ docker compose logs -f serverbee-server
 
 ## Build from Source
 
-For developers or users with customization needs, you can build ServerBee from source. Building requires Rust 1.85+ and Bun 1.x (or Node.js 22+).
+Developers and users with customization needs can build ServerBee from source. This requires Rust 1.85+ and Bun 1.x (or Node.js 22+).
 
 ```bash
 # Clone the repo
@@ -158,11 +158,11 @@ Start the server:
 ./target/release/serverbee-server
 ```
 
-Once you have deployed the compiled binaries to the target host, use the systemd service configuration below to manage the processes.
+After deploying the compiled binaries to the target host, use the systemd service configuration below to manage the processes.
 
 ## Systemd Services
 
-For deployments without Docker, use systemd to manage both the server and agent processes.
+For deployments without Docker, use systemd to manage the server and agent processes.
 
 <Callout type="info">
 If you do not need hand-written unit files, prefer the bootstrap installer above. It creates the config files and systemd units for you, then the `serverbee` CLI handles upgrades, restarts, and config edits.
@@ -248,11 +248,11 @@ See the [Agent Setup](/en/docs/agent) guide for a complete systemd service unit 
 
 ## Reverse Proxy
 
-Running ServerBee behind a reverse proxy is strongly recommended for production. It provides TLS termination, HTTP/2, and additional security headers.
+Running ServerBee behind a reverse proxy is strongly recommended in production. The proxy provides TLS termination, HTTP/2, and additional security headers.
 
 ### Access URL and Cookie Settings
 
-Choose one public access URL and keep the browser URL, agent `server_url`, and cookie setting aligned:
+Pick one public access URL and keep the browser URL, the agent's `server_url`, and the cookie setting aligned:
 
 | Scenario | Public URL | `auth.secure_cookie` | Docker Environment Variable | Agent URL |
 |----------|------------|----------------------|-----------------------------|-----------|
@@ -404,6 +404,10 @@ server_url = "https://monitor.example.com"
 
 The agent automatically handles WebSocket connections using the provided URL.
 
+<Callout type="info">
+ServerBee does not terminate TLS itself. All HTTPS/WSS encryption is handled by the reverse proxy in front of it (Nginx/Caddy/Traefik). This keeps the server implementation simple and lets you manage certificates in one place.
+</Callout>
+
 <Callout type="warn">
 When using HTTPS, keep `auth.secure_cookie = true` in your server configuration. Leaving it `false` may still allow login, but it removes the browser's Secure cookie protection and is not appropriate for production.
 </Callout>
@@ -497,13 +501,13 @@ The Docker Compose example above includes a health check configuration. Docker w
 
 ### External Monitoring
 
-If you are using an external uptime monitoring service, point it at:
+If you use an external uptime monitoring service, point it at:
 
 ```
 https://monitor.example.com/healthz
 ```
 
-This creates a "monitor the monitor" setup, so you know if ServerBee itself goes down.
+This creates a "monitor the monitor" setup, so you are alerted if ServerBee itself goes down.
 
 ## Resource Requirements
 
@@ -517,7 +521,7 @@ ServerBee is designed for lightweight VPS instances:
 | Agent CPU | Negligible | < 1% of 1 core |
 | Agent RAM | 10 MB | 20 MB |
 
-Database size depends on the number of monitored servers and retention settings. As a rough guide, expect about 1 MB per server per day of raw records. With 50 servers and default 7-day retention, the database will be approximately 350 MB.
+Database size depends on the number of monitored servers and your retention settings. As a rough guide, expect about 1 MB of raw records per server per day. With 50 servers and the default 7-day retention, the database is roughly 350 MB.
 
 ## Security Checklist
 
@@ -533,3 +537,33 @@ Before exposing ServerBee to the internet:
 - [ ] Keep the GeoIP database updated (if used)
 - [ ] Set up automated backups
 - [ ] Monitor the server itself with an external health check
+
+## Upgrading
+
+ServerBee runs database migrations automatically on startup, so no manual migration step is needed after an upgrade. Back up the database before upgrading.
+
+**Docker:**
+
+```bash
+docker compose pull
+docker compose up -d            # restarts and runs migrations automatically
+docker compose ps
+```
+
+**Binary:**
+
+```bash
+wget https://github.com/ZingerLittleBee/ServerBee/releases/latest/download/serverbee-server-linux-amd64
+sudo systemctl stop serverbee-server
+sudo mv serverbee-server-linux-amd64 /usr/local/bin/serverbee-server
+sudo chmod +x /usr/local/bin/serverbee-server
+sudo systemctl start serverbee-server
+```
+
+If you deployed with the install script, `sudo serverbee upgrade -y` handles the binary download, replacement, and restart for you.
+
+<Cards>
+  <Card title="Server Setup" href="/en/docs/server" />
+  <Card title="Agent Setup" href="/en/docs/agent" />
+  <Card title="Architecture" href="/en/docs/architecture" />
+</Cards>

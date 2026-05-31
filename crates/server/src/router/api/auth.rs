@@ -357,11 +357,19 @@ pub async fn change_password(
         return Err(AppError::Validation("New password is required".to_string()));
     }
 
+    // Preserve the caller's current session (cookie or bearer) while revoking
+    // any other sessions the user may have, so the change can't be undone by a
+    // previously stolen session. An API-key authenticated caller has no session
+    // token here, so `current_token` is None and all of the user's sessions are
+    // revoked — the API key itself is unaffected.
+    let current_token = extract_session_cookie_token(&req_headers)
+        .or_else(|| extract_bearer_token_value(&req_headers));
     AuthService::change_password(
         &state.db,
         &current_user.user_id,
         &body.old_password,
         &body.new_password,
+        current_token.as_deref(),
     )
     .await?;
 
@@ -627,4 +635,29 @@ fn extract_user_agent(headers: &HeaderMap) -> String {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("unknown")
         .to_string()
+}
+
+/// Extract the `session_token` value from the Cookie header, if present.
+fn extract_session_cookie_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("cookie")?
+        .to_str()
+        .ok()?
+        .split(';')
+        .find_map(|cookie| {
+            cookie
+                .trim()
+                .strip_prefix("session_token=")
+                .map(|v| v.to_string())
+        })
+}
+
+/// Extract the bearer token from the Authorization header, if present.
+fn extract_bearer_token_value(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(|s| s.to_string())
 }

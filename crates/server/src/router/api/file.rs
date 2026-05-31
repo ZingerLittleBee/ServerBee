@@ -105,17 +105,12 @@ pub struct TransfersResponse {
 // Routers
 // ---------------------------------------------------------------------------
 
-/// Read endpoints accessible to all authenticated users (admin + member).
-pub fn read_router() -> Router<Arc<AppState>> {
-    Router::new()
-        .route("/files/{server_id}/list", post(list_files))
-        .route("/files/{server_id}/stat", post(stat_file))
-        .route("/files/{server_id}/read", post(read_file))
-        .route("/files/download/{transfer_id}", get(download_file))
-        .route("/files/transfers", get(list_transfers))
-}
-
-/// Write endpoints (POST/DELETE) restricted to admin users only.
+/// All file endpoints are admin-only. File read/list/stat/download can pull
+/// arbitrary files off a managed host (e.g. `/etc/passwd`, application
+/// secrets), so they are not exposed to read-only members alongside ordinary
+/// monitoring data — the effective access is closer to terminal-level than
+/// read-only.
+///
 /// `max_upload_size` sets the Axum `DefaultBodyLimit` on the upload route
 /// so that the framework accepts bodies up to this size before the handler's
 /// streaming check kicks in.
@@ -123,6 +118,11 @@ pub fn write_router(max_upload_size: usize) -> Router<Arc<AppState>> {
     // Add overhead for multipart metadata (boundaries, headers, path field)
     let body_limit = max_upload_size.saturating_add(5 * 1024 * 1024); // +5 MB overhead
     Router::new()
+        .route("/files/{server_id}/list", post(list_files))
+        .route("/files/{server_id}/stat", post(stat_file))
+        .route("/files/{server_id}/read", post(read_file))
+        .route("/files/download/{transfer_id}", get(download_file))
+        .route("/files/transfers", get(list_transfers))
         .route("/files/{server_id}/write", post(write_file))
         .route("/files/{server_id}/delete", post(delete_file))
         .route("/files/{server_id}/mkdir", post(mkdir))

@@ -1,0 +1,78 @@
+---
+title: 资源开销
+description: ServerBee Agent 与 Server 的 CPU、内存、磁盘、网络运行时占用实测数据。
+icon: Gauge
+---
+
+本页记录 ServerBee **Agent** 与 **Server** 运行时的资源开销实测数据，涵盖 CPU、内存、磁盘和网络。磁盘（数据库）增长的详细容量规划见 [存储与容量规划](/zh/docs/storage-sizing)。
+
+<Callout type="info">
+以下数值为实测值，非估算。除非另有说明，均测于 2026-05-19，使用 v0.9.3。资源占用会随采集间隔、连接的 Agent 数量、是否启用 GPU/温度采集以及面板查询负载浮动，这里给出的是稳定的数量级参考。
+</Callout>
+
+## Agent
+
+Agent 是轻量探针，CPU 开销可忽略，内存稳态在数十 MB 级别。
+
+| 资源 | 冷启动（~90s） | 稳态（运行 8h） | 说明 |
+|------|--------------|----------------|------|
+| 内存（systemd cgroup，真实私有内存） | ~4.3 MB，峰值 ~5.1 MB | **~27 MB，峰值 ~28 MB** | 最准确的内存口径 |
+| 内存（`ps` RSS，含共享库映射） | ~10 MB | **~34 MB** | 偏高估，含共享库 |
+| CPU | ~0.7%（单核） | ~0.5%（单核） | 稳定，含每 3s 采集的瞬时尖峰 |
+| 线程数 | 10 | 9–10 | tokio runtime |
+| 二进制大小 | ~11 MB | — | linux-amd64 release |
+| 网络 | 每个采集间隔（默认 3s）一条 `SystemReport` JSON + 周期性 ping/pong；数量级 ≤ 1–2 KB/s | — | 随采集间隔与启用指标项变化 |
+
+测量环境：4 核 AMD EPYC 7B13 / 8 GB / Ubuntu 24.04（KVM），Agent v0.9.3，采集间隔 3s，启用温度采集，经 HTTPS WebSocket 上报至远端 Server。
+
+<Callout type="warn">
+内存从冷启动 ~5 MB 在 8 小时内升至 ~27 MB（8h 时当前值 ≈ 峰值，**疑似已接近平台，待 24h 数据确认**）。与 Server 同源：Agent 也是 Rust + tokio，glibc 默认的多 arena 分配器会把已释放内存攒在进程内不归还 OS（sysinfo 每 3s 采集产生大量小分配）。这不是代码层泄漏。若需进一步压低稳态内存，可给 Agent 的 systemd 服务设置 `MALLOC_ARENA_MAX=2`。
+</Callout>
+
+对比参考：同类常驻监控 Agent 中，Netdata 常达数十至上百 MB，Telegraf ~30–50 MB，node_exporter ~15–20 MB。ServerBee Agent 稳态 ~27 MB 内存 + &lt;1% CPU，仍属轻量一档。
+
+## Server
+
+Server 内存开销主要受连接的 Agent 数量、面板/API 查询负载和数据保留策略影响。
+
+### 生产参考（Railway，真实负载）
+
+接入少量 Agent 的生产实例，在配置 `MALLOC_ARENA_MAX=2`（抑制 glibc 多 arena 内存驻留）后：
+
+| 资源 | 实测值 | 说明 |
+|------|--------|------|
+| 内存 | 稳态 ~140–170 MB，长时间平稳无持续爬升 | 健康水位 |
+
+<Callout type="warn">
+未设置 `MALLOC_ARENA_MAX=2`（或未改用 jemalloc）时，glibc 默认的多 arena 分配器会把已释放内存攒在进程内不归还 OS，长期运行 RSS 会持续爬升（观测到 2–3 天涨至 ~800 MB–1 GB）。这并非代码层内存泄漏，但部署 Server 时建议设置该环境变量。
+</Callout>
+
+### 自托管空载参考
+
+同一 VPS 上近乎空载（无活跃 Agent 连接）的 Server 实例：
+
+| 资源 | 实测值 | 说明 |
+|------|--------|------|
+| 内存（systemd cgroup） | ~15 MB，峰值 ~23.8 MB | 空载下限参考 |
+| 线程数 | 7 | tokio runtime |
+| CPU | 空载近乎为 0 | 随 Agent 数与查询负载上升 |
+| 二进制大小 | ~47 MB | linux-amd64 release，内嵌前端 SPA |
+
+### 磁盘
+
+Server 磁盘占用来自 SQLite 数据库，随服务器数量、启用功能和保留策略增长。完整的 30 天容量公式与场景目录见 [存储与容量规划](/zh/docs/storage-sizing)。生产环境请在数据库基础大小上额外预留 10%–20% 作为 WAL 与突发写入的缓冲。
+
+## 注意事项
+
+- Railway 内存数值依赖已设置 `MALLOC_ARENA_MAX=2`，未设置时不适用。
+- 自托管 Server 数值测于近乎空载状态，**不代表**大量 Agent 或高查询负载下的占用，仅作下限参考。
+- Agent 网络用量为按协议行为估算的数量级，实际值随采集间隔与启用的指标项变化。
+- 所有数值均为数量级参考，用于容量规划与异常判断（关注**趋势**而非绝对值：稳态平稳 = 健康，持续爬升不回落 = 需排查）。
+
+## 相关文档
+
+<Cards>
+  <Card title="存储与容量规划" href="/zh/docs/storage-sizing" />
+  <Card title="Agent 安装配置" href="/zh/docs/agent" />
+  <Card title="部署指南" href="/zh/docs/deployment" />
+</Cards>

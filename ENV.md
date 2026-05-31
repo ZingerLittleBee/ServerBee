@@ -6,7 +6,7 @@ Example: TOML `server.listen` → env var `SERVERBEE_SERVER__LISTEN`
 
 > **First-run admin account**: There is no admin username/password env var. On first start (when no users exist) the server auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner — capture it from the logs. You must change this password on first login, and may optionally choose a different username at that time.
 
-> **Maintainer Note**: When adding or modifying environment variables, update both this file and `apps/docs/content/docs/{en,cn}/configuration.mdx`.
+> **Maintainer Note**: When adding or modifying environment variables, update both this file and `apps/docs/content/docs/{en,zh}/configuration.mdx`.
 
 ## Developer Workflow Env Vars
 
@@ -36,7 +36,6 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_SERVER__DATA_DIR` | `server.data_dir` | string | `./data` | Data directory for SQLite and backups |
 | `SERVERBEE_AUTH__MAX_SERVERS` | `auth.max_servers` | u32 | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation and cron scheduling (e.g. `Asia/Shanghai`) |
-| `SERVERBEE_FEATURE__CUSTOM_THEMES` | `feature.custom_themes` | bool | `true` | Disable user-defined themes when false. Custom refs are read-coerced to `preset:default` |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |
 
@@ -122,7 +121,7 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `ip_quality.risk_provider` | string | `"ipapi_is"` | Primary risk provider. One of: `none`, `ipapi_is`, `ip-api`. |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `ip_quality.risk_provider_fallback` | string | `"ip-api"` | Fallback provider triggered on primary failure. Set to `none` to disable. |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | `ip_quality.ipapi_is.api_key` | string | - | Optional. Configure for higher per-account rate limits. |
-| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `ip_quality.ipapi_is.endpoint` | string | `https://api.ipapi.is` | Override for self-hosted mirrors or testing. |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `ip_quality.ipapi_is.endpoint` | string | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
 **Migration from older versions:** Earlier releases supported four paid providers (Scamalytics, IPQualityScore, ProxyCheck, AbuseIPDB) configured via `SERVERBEE_IP_QUALITY__{SCAMALYTICS,IPQS,PROXYCHECK,ABUSEIPDB}__*`. These env vars are silently ignored. To restore equivalent functionality, fork or vendor the provider implementation from a tag prior to 2026-05-25.
 

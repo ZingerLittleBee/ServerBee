@@ -63,7 +63,9 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(ping::read_router())
                 .merge(network_probe::read_router())
                 .merge(ip_quality::read_router())
-                .merge(file::read_router())
+                // Note: file endpoints (incl. read/list/stat/download) are
+                // admin-only via file::write_router() in the admin block below,
+                // since they can read arbitrary files off a managed host.
                 .merge(docker::read_router())
                 .merge(traffic::read_router())
                 .merge(cost::read_router())

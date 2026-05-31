@@ -73,7 +73,7 @@ The widget shows an installation prompt when GeoIP data is missing.
 
 ## Performance & Widget Capacity
 
-The dashboard uses viewport-gated lazy mounting (IntersectionObserver): widgets off-screen do not mount their charts at first paint, so the cold-load cost barely grows with widget count. **While scrolling**, however, charts (built on recharts) measure SVG text synchronously (`getBBox` / text size). When many widgets enter the viewport at once, those forced reflows accumulate and the scroll noticeably stutters.
+The dashboard uses viewport-gated lazy mounting (IntersectionObserver): off-screen widgets do not mount their charts at first paint, so cold-load cost barely grows with widget count. **While scrolling**, however, charts (built on recharts) measure SVG text synchronously (`getBBox` / text size). When many widgets enter the viewport at once, those forced reflows accumulate and the scroll noticeably stutters.
 
 Measured (desktop Chrome, no CPU/network throttling, widgets mixed across line-chart / gauge / multi-line / disk-io):
 

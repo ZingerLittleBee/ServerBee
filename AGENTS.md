@@ -63,7 +63,7 @@ Agent → WebSocket (JSON) → Server → SQLite (sea-orm)
 - **Agent→Server**: `AgentMessage` variants (SystemInfo, Report, PingResult, TaskResult, SecurityEvent, CapabilityDenied, file/terminal/network results)
 - **Server→Agent**: `ServerMessage` variants (Welcome, Ack, Exec, TerminalOpen, PingTasksSync, NetworkProbeSync, file ops)
 - **Server→Browser**: `BrowserMessage` variants (FullSync, Update, ServerOnline/Offline, CapabilitiesChanged, SecurityEvent)
-- Terminal data uses Binary WebSocket frames (session_id prefix + payload)
+- Terminal data is carried in JSON text messages (`Message::Text`); the raw PTY byte stream rides in a base64-encoded `data` field. The protocol uses no binary WebSocket frames.
 
 ### AppState
 
@@ -90,7 +90,7 @@ RBAC: Admin (full access) vs Member (read-only). `require_admin` middleware on w
 - **Errors**: `AppError` enum → automatic HTTP status code mapping via `IntoResponse`
 - **API responses**: All endpoints return `Json<ApiResponse<T>>` wrapping data in `{ data: T }`
 - **OpenAPI**: Every endpoint annotated with `#[utoipa::path]`, every DTO with `#[derive(ToSchema)]`. Swagger UI at `/swagger-ui/`
-- **Config**: Figment loads TOML then env vars. Prefix `SERVERBEE_`, nested separator `__` (double underscore). Example: `SERVERBEE_ADMIN__PASSWORD` → `admin.password`. **When adding/changing env vars, update `ENV.md` and `apps/docs/content/docs/{en,cn}/configuration.mdx` simultaneously.**
+- **Config**: Figment loads TOML then env vars. Prefix `SERVERBEE_`, nested separator `__` (double underscore). Example: `SERVERBEE_ADMIN__PASSWORD` → `admin.password`. **When adding/changing env vars, update `ENV.md` and `apps/docs/content/docs/{en,zh}/configuration.mdx` simultaneously.**
 - **Capabilities**: u32 bitmask per server, defined in `crates/common/src/constants.rs` — `CAP_TERMINAL=1, CAP_EXEC=2, CAP_UPGRADE=4, CAP_PING_ICMP=8, CAP_PING_TCP=16, CAP_PING_HTTP=32, CAP_FILE=64, CAP_DOCKER=128, CAP_SECURITY_EVENTS=256, CAP_FIREWALL_BLOCK=512, CAP_IP_QUALITY=1024`. Default `CAP_DEFAULT=1852` (upgrade + ICMP/TCP/HTTP ping + security events + firewall blocklist + IP quality). Effective caps = `server_caps & agent_local_caps`; defense-in-depth validated on both sides.
 - **Migrations**: sea-orm migrations in `crates/server/src/migration/`. Run automatically on startup. **Only implement `up()` — leave `down()` as a no-op (`Ok(())`).** Migrations are not reversible to avoid accidental data loss.
 
@@ -119,7 +119,7 @@ E2E manual verification checklists are in `tests/` directory, organized by featu
 
 ## Documentation
 
-- **Fumadocs site**: `apps/docs/content/docs/{cn,en}/` — 16 MDX pages per language
+- **Fumadocs site**: `apps/docs/content/docs/{en,zh}/` — 16 MDX pages per language
 - **OpenAPI**: Auto-generated at `/swagger-ui/` and `/api-docs/openapi.json`
 - **Architecture spec**: `docs/superpowers/specs/2026-03-12-serverbee-architecture-design.md`
 - **Progress tracking**: `docs/superpowers/plans/PROGRESS.md`

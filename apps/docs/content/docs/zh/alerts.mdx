@@ -1,0 +1,342 @@
+---
+title: 告警与通知
+description: 配置告警规则和通知渠道，及时发现和响应服务器异常。
+icon: Bell
+---
+
+ServerBee 提供灵活的告警系统，支持阈值监控、安全事件驱动告警、多种通知渠道以及精细的触发控制。
+
+## 告警概述
+
+后台任务每 60 秒评估一次所有启用的告警规则：
+
+1. 解析每条规则覆盖的服务器范围。
+2. 逐台检查规则条件是否满足。
+3. 触发时通过通知组发送通知（受去抖限制）。
+4. 之前触发的规则恢复后，清除告警状态。
+
+告警状态会持久化到数据库，Server 重启后依然有效。事件驱动规则（IP 变化、SSH 登录、爆破、端口扫描）在 Agent 上报事件时评估，不参与 60 秒轮询。
+
+## 创建告警规则
+
+每条告警规则包含以下要素：
+
+- **规则名称**：用于标识和展示。
+- **告警条件**：一条或多条指标条件，所有条件必须同时满足（AND 逻辑）。
+- **触发模式**：`always`（持续通知，带去抖）或 `once`（仅首次触发通知）。
+- **覆盖范围**：规则适用的服务器范围。
+- **通知组**：通知发送目标。
+- **触发 / 恢复任务**：可选。规则触发或恢复时自动执行的远程命令。
+- **阻断源 IP**：可选。对安全事件类规则，触发时自动指示 Agent 防火墙阻断攻击源 IP。
+
+## 支持的指标类型
+
+### 资源阈值类
+
+| 指标类型 | 判定依据 | `min` 阈值含义 |
+|----------|----------|----------------|
+| `cpu` | CPU 使用率 (%) | 使用率大于等于阈值时触发 |
+| `memory` | 内存已用（字节） | 已用量大于等于阈值时触发 |
+| `swap` | Swap 已用（字节） | 已用量大于等于阈值时触发 |
+| `disk` | 磁盘已用（字节） | 已用量大于等于阈值时触发 |
+| `load1` | 1 分钟负载 | 负载大于等于阈值时触发 |
+| `load5` | 5 分钟负载 | 负载大于等于阈值时触发 |
+| `load15` | 15 分钟负载 | 负载大于等于阈值时触发 |
+| `temperature` | CPU 温度 (C) | 温度大于等于阈值时触发 |
+| `gpu` | GPU 使用率 (%) | 使用率大于等于阈值时触发 |
+| `tcp_conn` | TCP 连接数 | 连接数大于等于阈值时触发 |
+| `udp_conn` | UDP 连接数 | 连接数大于等于阈值时触发 |
+| `process` | 进程数 | 进程数大于等于阈值时触发 |
+| `net_in_speed` | 入站网络速率（bytes/s） | 速率大于等于阈值时触发 |
+| `net_out_speed` | 出站网络速率（bytes/s） | 速率大于等于阈值时触发 |
+
+### 流量周期类
+
+用于监控一段时间内的累计流量：
+
+| 指标类型 | 说明 |
+|----------|------|
+| `transfer_in_cycle` | 周期内入站累计流量 |
+| `transfer_out_cycle` | 周期内出站累计流量 |
+| `transfer_all_cycle` | 周期内双向累计流量 |
+
+周期选项：`hour` / `day` / `week` / `month` / `year`
+
+### 网络质量
+
+| 指标类型 | 说明 |
+|----------|------|
+| `network_latency` | 平均探测延迟（ms）超过阈值时触发 |
+| `network_packet_loss` | 丢包率超过阈值时触发 |
+
+### 离线、到期和事件
+
+| 指标类型 | 说明 |
+|----------|------|
+| `offline` | 服务器持续离线超过 `duration` 秒后触发 |
+| `expiration` | 服务器 `expired_at` 距今小于等于 `duration` 天时触发 |
+| `ip_changed` | 事件驱动；Agent 上报 IP 变化事件时触发（不参与 60 秒轮询） |
+| `ssh_login_detected` | 事件驱动；成功 SSH 登录事件触发，支持 `first_seen_only` 过滤。详见 [安全事件检测](/zh/docs/security-events) |
+| `ssh_brute_force_detected` | 事件驱动；SSH 爆破事件触发，支持 `severity_min`（medium/high/critical）和 `exclude_cidrs` 过滤 |
+| `port_scan_detected` | 事件驱动；单一源 IP 的端口扫描事件触发，支持 `severity_min` 和 `exclude_cidrs` 过滤 |
+
+## 阈值配置
+
+每个告警条件支持以下字段：
+
+```json
+{
+  "rule_type": "cpu",
+  "min": 90.0,
+  "max": null,
+  "duration": null,
+  "cycle_interval": null,
+  "cycle_limit": null
+}
+```
+
+- **`min`**：下界。对大多数资源指标，指标值大于等于该值时触发。
+- **`max`**：上界。当同时设置 `min` 和 `max` 时，指标值落在该范围内才触发。
+- **`duration`**：用于 `offline`（离线秒数）和 `expiration`（到期天数）。
+- **`cycle_interval`**：流量周期类型：`hour`、`day`、`week`、`month`、`year`。
+- **`cycle_limit`**：流量周期规则的字节阈值。
+
+### 示例
+
+**CPU 超过 90%：**
+```json
+{ "rule_type": "cpu", "min": 90.0 }
+```
+
+**内存超过 8 GB：**
+```json
+{ "rule_type": "memory", "min": 8589934592 }
+```
+
+**服务器离线超过 2 分钟：**
+```json
+{ "rule_type": "offline", "duration": 120 }
+```
+
+**每月出站流量超过 1 TB：**
+```json
+{
+  "rule_type": "transfer_out_cycle",
+  "cycle_interval": "month",
+  "cycle_limit": 1099511627776
+}
+```
+
+**服务器 7 天内到期：**
+```json
+{ "rule_type": "expiration", "duration": 7 }
+```
+
+**多条件（AND 逻辑）：** 一条规则可以包含多个条件，所有条件同时满足才触发。下面的规则在 CPU 使用率 ≥ 90% **且**内存已用 ≥ 8 GB 时才触发：
+
+```json
+[
+  { "rule_type": "cpu", "min": 90.0 },
+  { "rule_type": "memory", "min": 8589934592 }
+]
+```
+
+## 采样与触发逻辑
+
+对于资源阈值类告警（CPU、内存、磁盘、负载等），ServerBee 不会因单点瞬时波动就触发：
+
+1. 评估器读取**最近 10 分钟**的全部原始指标记录（每分钟一个采样点，最多 10 个）。
+2. 统计其中超过阈值的采样点数量。
+3. 仅当 **70% 及以上**的采样点超过阈值（10 个中至少 7 个）时才触发。
+
+这样可以避免短暂、瞬时的尖峰造成误报。
+
+## 覆盖类型
+
+每条告警规则指定其适用的服务器范围：
+
+| 覆盖类型 | 说明 |
+|----------|------|
+| `all` | 适用于系统内所有服务器 |
+| `include` | 仅适用于指定的服务器 ID 列表 |
+| `exclude` | 适用于除指定服务器外的所有服务器 |
+
+## 触发模式与去抖
+
+### `always` 模式（默认）
+
+- 每次评估满足条件时都发送通知。
+- **5 分钟去抖**防止通知刷屏：对同一（规则 + 服务器）组合，发送一次通知后，即使条件持续满足，接下来 5 分钟内也不会再次发送。
+
+### `once` 模式
+
+- 仅在**首次触发**时发送通知。
+- 在条件恢复并再次触发之前，不会发送后续通知。
+
+### 状态持久化
+
+告警触发状态会持久化到 SQLite 的 `alert_states` 表，并在启动时加载到热缓存。因此：
+
+- 已触发的 `once` 规则在 Server 重启后不会重复触发。
+- 已触发未恢复的告警在重启后自动恢复。
+
+### 恢复机制
+
+当一条之前触发的告警不再满足触发条件时：
+
+1. 标记为已恢复，并清除内存缓存和数据库中的告警状态。
+2. 如果配置了恢复任务（`recover_trigger_tasks`），自动执行对应的远程命令。
+3. 之后若再次满足条件，则按触发模式重新发送通知。
+
+## 维护窗口抑制
+
+当受影响服务器处于活动维护窗口时，ServerBee 会抑制该服务器的告警通知。规则评估仍会执行，但维护结束前不会发送通知。事件驱动规则与轮询规则遵循同样的覆盖范围和维护窗口抑制逻辑。
+
+## 阻断源 IP
+
+安全事件类规则（`ssh_brute_force_detected`、`port_scan_detected`）可以开启**阻断源 IP**。触发时，ServerBee 会指示受影响 Agent 的防火墙阻断攻击源 IP，把检测变为自动处置。该能力需要服务器具备 `CAP_FIREWALL_BLOCK` 权限。详见 [安全事件检测](/zh/docs/security-events) 和 [防火墙管理](/zh/docs/firewall)。
+
+## 通知渠道
+
+ServerBee 支持五种通知渠道类型。每个渠道是独立实体，可在多个通知组间复用。
+
+### Webhook
+
+向任意 URL 发送 HTTP 请求，支持自定义方法、请求头和请求体模板。
+
+```json
+{
+  "url": "https://hooks.slack.com/services/xxx",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body_template": "{\"text\": \"{{server_name}} {{event}}: {{message}}\"}"
+}
+```
+
+未提供 `body_template` 时使用默认模板；未设置 `Content-Type` 时默认为 `application/json`。
+
+### Telegram
+
+通过 Telegram Bot API 向聊天发送消息，使用 HTML 解析模式。
+
+```json
+{
+  "bot_token": "123456:ABC-DEF",
+  "chat_id": "-1001234567890"
+}
+```
+
+### Bark
+
+通过 [Bark](https://github.com/Finb/Bark) 向 iOS 设备推送通知。
+
+```json
+{
+  "server_url": "https://api.day.app",
+  "device_key": "your-device-key"
+}
+```
+
+### 邮件（通过 Resend）
+
+邮件通知通过 [Resend](https://resend.com/) 发送。使用前两步准备：
+
+1. 在服务器设置 `SERVERBEE_RESEND__API_KEY`（参考[配置](/zh/docs/configuration)页面）。
+2. 在 [resend.com/domains](https://resend.com/domains) 添加并验证发件域名。各通道的 `from` 必须属于已验证的域名。
+
+通道配置：
+
+```json
+{
+  "from": "alerts@yourdomain.com",
+  "to": ["ops@example.com", "oncall@example.com"]
+}
+```
+
+`to` 是数组——单个通道可以一次投递给多个收件人。主题格式为 `[ServerBee] {server_name} {event}`，正文使用 HTML 并附纯文本兜底。
+
+### APNs
+
+通过 Apple Push Notification service 向已注册的移动端设备发送原生推送。
+
+```json
+{
+  "key_id": "ABC123DEFG",
+  "team_id": "TEAM999888",
+  "private_key": "-----BEGIN PRIVATE KEY-----...",
+  "bundle_id": "com.example.serverbee",
+  "sandbox": false
+}
+```
+
+APNs 需要 Apple Developer key、Team ID、Bundle ID 和私钥。只有开发构建才应设置 `sandbox: true`。
+
+### 模板变量
+
+通知内容支持以下模板变量：
+
+| 变量 | 说明 |
+|------|------|
+| `{{server_name}}` | 受影响服务器名称 |
+| `{{server_id}}` | 受影响服务器的唯一 ID |
+| `{{rule_name}}` | 触发的告警规则名称 |
+| `{{event}}` | 事件类型（如「triggered」） |
+| `{{message}}` | 可读的告警详细信息 |
+| `{{time}}` | 事件发生时间（UTC） |
+| `{{cpu}}` | 当前 CPU 使用率字符串 |
+| `{{memory}}` | 当前内存使用字符串 |
+
+默认通知模板：
+
+```
+[ServerBee] {{server_name}} {{event}}
+{{message}}
+Time: {{time}}
+```
+
+### 发送测试
+
+创建通知渠道后，可以通过测试接口验证配置是否正确：
+
+```
+POST /api/notifications/:id/test
+```
+
+## 通知组
+
+通知渠道按**通知组**组织。一条告警规则关联一个通知组，触发时会同时分发到组内所有启用的渠道。借此可以：
+
+- 把同一条告警同时发到多个渠道（例如 Telegram + Email）。
+- 在多条告警规则间复用渠道配置。
+- 单独启用 / 禁用某个渠道，无需改动告警规则。
+
+## 离线检测
+
+离线状态由独立的后台任务判定，并配合 `offline` 类型规则发送通知：
+
+- 每 10 秒扫描一次 Agent 连接状态。
+- Agent 最后一次上报超过 30 秒即判定为离线。
+- `offline` 规则的 `duration` 指定离线持续多少秒后触发告警。例如 `{ "rule_type": "offline", "duration": 60 }` 表示离线超过 60 秒触发。
+
+## 完整示例
+
+用 Telegram 监控所有服务器 CPU 的典型配置：
+
+1. **创建 Telegram 通知渠道**，填入 bot token 和 chat ID。
+2. **创建通知组**，加入该 Telegram 渠道。
+3. **创建告警规则：**
+   - 名称：「High CPU Usage」
+   - 条件：`[{"rule_type": "cpu", "min": 90.0}]`
+   - 触发模式：`always`
+   - 覆盖类型：`all`
+   - 通知组：上一步创建的组
+
+此后，任意服务器在 10 分钟采样窗口内有 ≥ 70% 的采样点 CPU 超过 90% 时，你都会收到 Telegram 消息。条件持续期间，后续通知按 5 分钟去抖。
+
+<Cards>
+  <Card title="安全事件检测" href="/zh/docs/security-events" />
+  <Card title="防火墙管理" href="/zh/docs/firewall" />
+  <Card title="通知渠道配置" href="/zh/docs/configuration" />
+</Cards>

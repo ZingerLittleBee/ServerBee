@@ -6,7 +6,7 @@ import { source } from '@/lib/source'
 const server = createFromSource(source, {
   localeMap: {
     en: { language: 'english' },
-    cn: { language: 'english' }
+    zh: { language: 'english' }
   }
 })
 

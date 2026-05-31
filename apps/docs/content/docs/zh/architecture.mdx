@@ -1,0 +1,410 @@
+---
+title: 架构
+description: ServerBee 的系统架构、组件设计、通信协议和安全模型。
+icon: Boxes
+---
+
+本文介绍 ServerBee 的内部架构，帮助希望深入了解系统工作原理的开发者和运维人员。ServerBee 采用 hub-and-spoke（中心辐射）设计：中央 **Server** 通过 WebSocket 接收来自分布式 **Agent** 的指标，存入 SQLite，并对外提供 React SPA 仪表盘。
+
+## 系统概览
+
+```
++--------------------------------------------------+
+|              ServerBee Dashboard                  |
+|                                                   |
+|  +---------------------------------------------+ |
+|  | 前端 (React SPA, rust-embed 嵌入)            | |
+|  | React 19, TanStack Router/Query             | |
+|  | shadcn/ui, Tailwind CSS v4, Recharts        | |
+|  +---------------------------------------------+ |
+|  +---------------------------------------------+ |
+|  | 服务端 (Rust)                                | |
+|  | Axum Router                                  | |
+|  |  +-- REST API handlers                      | |
+|  |  +-- WebSocket: Agent + Browser + Terminal   | |
+|  |  +-- 静态文件 (rust-embed)                   | |
+|  | Service Layer                                | |
+|  |  +-- AgentManager (连接/状态)                | |
+|  |  +-- AlertService (告警评估)                 | |
+|  |  +-- RecordService (指标/聚合)               | |
+|  |  +-- NotificationService (通知分发)          | |
+|  | Entity Layer (sea-orm)                       | |
+|  |  +-- SQLite                                  | |
+|  +---------------------------------------------+ |
++--------------------------+-----------------------+
+                           | WebSocket (JSON)
++--------------------------v-----------------------+
+|              ServerBee Agent (Rust)               |
+|  common crate (共享类型/协议)                     |
+|  +-- Collector (系统指标采集)                     |
+|  +-- Reporter (WebSocket + 重连)                  |
+|  +-- Pinger (ICMP/TCP/HTTP 探测)                  |
+|  +-- TerminalManager (PTY 终端会话)               |
++---------------------------------------------------+
+```
+
+## 组件职责
+
+### Server（服务端，`crates/server`）
+
+整个系统的中枢，承担以下职责：
+
+- 提供 Web 仪表盘（React SPA 通过 `rust-embed` 嵌入）
+- 暴露 REST API 进行 CRUD 操作
+- 管理来自 Agent 和浏览器的 WebSocket 连接
+- 将全部数据存入 SQLite
+- 运行后台任务（指标写入、聚合、清理、告警、离线检测）
+- 分发通知
+
+其主要服务模块：
+
+| 模块 | 职责 |
+|------|------|
+| Axum Router | HTTP/WebSocket 请求路由和处理 |
+| AgentManager | 管理 Agent WebSocket 连接、维护实时指标缓存、广播更新 |
+| AuthService | 用户登录验证（argon2）、Session 管理、API Key 校验 |
+| ServerService | 服务器 CRUD、分组、标签、排序管理 |
+| RecordService | 指标写入、历史查询、小时聚合、过期清理 |
+| AlertService | 告警规则 CRUD、周期性规则评估、触发通知 |
+| NotificationService | 通知渠道管理、消息分发（Webhook/Telegram/Email/Bark） |
+| PingService | Ping 探测任务 CRUD、任务下发、结果存储 |
+| TaskService | 远程命令下发、执行结果查询 |
+| ConfigService | 系统配置读写（K-V 存储） |
+| GeoIpService | IP 地理位置查询（MaxMind MMDB） |
+| UserService | 用户 CRUD、角色管理 |
+
+### Agent（采集端，`crates/agent`）
+
+部署在被监控服务器上的轻量级守护进程，负责：
+
+- 使用 `sysinfo` crate 采集系统指标
+- 每 N 秒通过 WebSocket 向 Server 上报指标
+- 执行 Server 下发的 Ping 探测任务
+- 提供 PTY 终端会话以实现远程 Shell 访问
+- 执行 Server 下发的远程命令
+- 支持按指令自升级
+
+其主要模块：
+
+| 模块 | 职责 |
+|------|------|
+| Collector | 使用 `sysinfo` 库周期性采集 CPU、内存、磁盘、网络等系统指标 |
+| Reporter | 管理 WebSocket 连接、上报指标、处理 Server 下发的指令、断线重连 |
+| ProbeManager | 执行 Server 下发的 ICMP/TCP/HTTP 探测任务 |
+| Executor | 执行 Server 下发的远程 Shell 命令 |
+| Terminal | 管理 PTY 终端会话，转发终端输入输出 |
+
+### Common（共享 crate，`crates/common`）
+
+定义 Agent 和 Server 之间共享的类型和协议：
+
+- **协议定义** —— `AgentMessage`、`ServerMessage`、`BrowserMessage` 枚举
+- **数据类型** —— `SystemInfo`、`SystemReport`、`GpuReport`、`PingResult`、`ServerStatus` 等
+- **常量定义** —— 协议版本号、默认端口、超时、保留周期、告警参数
+
+### Frontend（前端，`apps/web`）
+
+基于 React 19 的单页应用，构建后通过 `rust-embed` 嵌入到 Server 二进制中：
+
+- **路由** —— TanStack Router（文件式路由）
+- **数据获取** —— TanStack Query 处理 REST，原生 WebSocket 处理实时更新（共享同一 cache）
+- **UI 组件** —— shadcn/ui（base-nova 主题）
+- **样式** —— Tailwind CSS v4
+- **图表** —— 通过 shadcn Chart 封装的 Recharts
+- **终端** —— xterm.js Web 终端模拟器
+- **构建** —— Vite 7
+
+构建后的前端在编译期嵌入 Server 二进制，因此无需单独部署。
+
+## 通信协议
+
+所有通信都使用 WebSocket。所有消息均为 JSON 文本帧；终端 I/O 数据放在消息的 `data` 字段中，以 base64 编码。当前协议版本为 `4`，连接时通过 `Welcome` 消息下发给 Agent。
+
+Agent 的连接地址为 `ws://<server>/api/agent/ws?token=<agent_token>`。
+
+### Agent -> Server（`AgentMessage`）
+
+| 消息类型 | 说明 | 需要 ACK |
+|----------|------|----------|
+| `SystemInfo` | 静态系统信息，连接/重连后上报一次 | 是 |
+| `Report` | 周期性指标上报（每 N 秒） | 否 |
+| `PingResult` | Ping 探测结果 | 否 |
+| `TaskResult` | 远程命令执行结果 | 是 |
+| `TerminalOutput` | PTY 输出数据（base64 编码） | 否 |
+| `TerminalStarted` | PTY 会话创建成功确认 | 否 |
+| `TerminalError` | 终端会话错误 | 否 |
+| `Pong` | 协议层心跳响应 | 否 |
+| `DockerInfo` | Docker 系统信息和功能上报 | 否 |
+| `DockerContainers` | 当前容器列表及状态 | 否 |
+| `DockerStats` | 容器资源使用统计 | 否 |
+| `DockerLog` | 容器日志条目（批量） | 否 |
+| `DockerEvent` | 容器生命周期事件 | 否 |
+
+### Server -> Agent（`ServerMessage`）
+
+| 消息类型 | 说明 |
+|----------|------|
+| `Welcome` | 连接确认，包含 server_id、protocol_version、report_interval |
+| `Ack` | 确认收到的消息（按 msg_id） |
+| `PingTasksSync` | 下发全部分配的探测任务 |
+| `Exec` | 在 Agent 上执行 Shell 命令 |
+| `TerminalOpen` | 请求打开新的 PTY 会话 |
+| `TerminalInput` | 向 PTY 会话转发键盘输入 |
+| `TerminalResize` | 调整 PTY 会话尺寸 |
+| `TerminalClose` | 关闭 PTY 会话 |
+| `Ping` | 协议层心跳（每 30 秒） |
+| `Upgrade` | 指示 Agent 自升级 |
+| `DockerLogsStart` | 开始为容器流式传输日志 |
+| `DockerLogsStop` | 停止流式传输日志 |
+| `DockerAction` | 执行容器操作（start/stop/restart/remove） |
+
+### Server -> Browser（`BrowserMessage`）
+
+浏览器通过两种方式获取数据：REST API 用于初始加载和历史查询，WebSocket（地址 `ws://<server>/api/ws/servers`）用于实时推送。该 WebSocket 为单向推送（Server -> 浏览器）。二者共享 TanStack Query 的 cache key `['servers']`，实现无缝更新。
+
+| 消息类型 | 说明 |
+|----------|------|
+| `FullSync` | 所有服务器的完整状态（浏览器连接时下发） |
+| `Update` | 变更服务器最新指标的增量更新 |
+| `ServerOnline` | 服务器上线通知 |
+| `ServerOffline` | 服务器离线通知 |
+| `DockerUpdate` | Docker 容器和统计更新 |
+| `DockerEvent` | Docker 容器生命周期事件 |
+| `DockerAvailabilityChanged` | Docker daemon 可用性变化 |
+
+### 握手流程
+
+```
+Agent                              Server
+  |                                  |
+  |--- WebSocket 连接 + token ------>|
+  |                                  | 验证 token，查找 server
+  |<-- Welcome { server_id,         |
+  |     protocol_version: 4,        |
+  |     report_interval: 3 } -------|
+  |                                  |
+  |--- SystemInfo { cpu_name,       |  连接/重连后上报静态信息
+  |     os, mem_total, ... } ------>|
+  |<-- Ack { msg_id } -------------|
+  |                                  |
+  |--- Report (每 3 秒) ----------->|  周期性指标上报
+```
+
+### 消息大小限制
+
+| 限制项 | 最大大小 |
+|--------|----------|
+| WebSocket 消息大小 | 1 MB |
+| 命令输出 | 512 KB |
+| 命令长度 | 8 KB |
+
+### 终端数据传输
+
+终端流量与系统其余部分使用同一套 JSON 文本协议，经 Server 中转：
+
+```
+浏览器 <--JSON WebSocket--> Server <--JSON WebSocket--> Agent (PTY)
+```
+
+PTY 原始字节流以 base64 编码放入 JSON 消息的 `data` 字段，因为终端输出并非 UTF-8 安全。
+
+浏览器 <-> Server 消息（均为 JSON 文本）：
+
+- 浏览器 -> Server：`{ "type": "input", "data": <base64> }`、`{ "type": "resize", "rows": <n>, "cols": <n> }`
+- Server -> 浏览器：`{ "type": "session", "session_id": <id> }`、`{ "type": "started" }`、`{ "type": "output", "data": <base64> }`、`{ "type": "error", "error": <message> }`
+
+Server <-> Agent 消息复用 Agent 协议：
+
+- Server -> Agent：`ServerMessage::TerminalOpen`、`TerminalInput`（`data` base64）、`TerminalResize`、`TerminalClose`
+- Agent -> Server：`AgentMessage::TerminalStarted`、`TerminalOutput`（`data` base64）、`TerminalError`
+
+## 数据库设计
+
+ServerBee 使用 SQLite 数据库（WAL 模式），通过 sea-orm 管理。下面按类别列出核心数据表。
+
+### 用户与认证
+
+| 表名 | 说明 |
+|------|------|
+| `users` | 用户账户（id、用户名、argon2 密码哈希、角色、TOTP 密钥） |
+| `sessions` | 登录会话（Token、IP、User-Agent、过期时间） |
+| `api_keys` | API 密钥（argon2 哈希、前缀、最后使用时间） |
+| `oauth_accounts` | 已关联的 OAuth 提供商账户 |
+
+### 服务器管理
+
+| 表名 | 说明 |
+|------|------|
+| `servers` | 已注册服务器（Token 哈希、静态信息、元数据、计费、分组） |
+| `server_groups` | 用于组织服务器的逻辑分组 |
+| `server_tags` | 附加到服务器的标签（多对多） |
+| `configs` | 键值配置存储（运行时设置等） |
+
+### 指标记录
+
+| 表名 | 说明 |
+|------|------|
+| `records` | 分钟级原始指标记录，每服务器每分钟一行（复合索引 server_id + time） |
+| `records_hourly` | 小时级聚合记录（结构同 `records`，值为平均值） |
+| `gpu_records` | GPU 每卡详细指标（设备索引、名称、显存、利用率、温度） |
+| `ping_records` | Ping 探测结果（延迟、成功、错误；复合索引 task_id + server_id + time） |
+| `ping_tasks` | Ping 任务定义（探测类型、目标、间隔、分配的服务器） |
+| `traffic_hourly` | 每服务器每小时流量字节数（入站/出站） |
+| `traffic_daily` | 每服务器每日流量字节数（入站/出站） |
+| `traffic_state` | 最新累计流量计数器（用于增量计算） |
+| `docker_events` | Docker 容器生命周期事件（start/stop/die/create） |
+
+### 告警与通知
+
+| 表名 | 说明 |
+|------|------|
+| `alert_rules` | 告警规则定义（条件、覆盖类型、触发模式） |
+| `alert_states` | 各规则/服务器对的当前告警状态（复合唯一索引 rule_id + server_id） |
+| `notifications` | 通知渠道配置（webhook、telegram、bark、email） |
+| `notification_groups` | 通知组 |
+| `tasks` | 远程命令任务（命令、目标服务器、创建者） |
+| `task_results` | 命令执行结果（输出、退出码） |
+| `audit_logs` | 用户操作审计日志（操作、详情、IP） |
+
+所有表均使用 UTC 时间戳。多数实体的 ID 为 UUID（字符串类型），高写入量记录使用自增整型。
+
+### SQLite 配置
+
+- **WAL 模式** —— 启动时执行 `PRAGMA journal_mode=WAL`，提高并发读性能。
+- **Busy Timeout** —— 5000ms，写冲突时自动等待。
+- **同步模式** —— `PRAGMA synchronous=NORMAL`。
+- **连接池** —— 最大 10 个连接，主要用于并发读。
+
+## 后台任务
+
+Server 启动时通过 `tokio::spawn` 创建多个长期运行的后台任务：
+
+| 任务 | 频率 | 职责 |
+|------|------|------|
+| **指标写入 (RecordWriter)** | 每 60 秒 | 从内存缓存把最新的 Agent 上报刷入 `records` 表 |
+| **告警评估 (AlertEvaluator)** | 每 60 秒（指标写入后） | 评估所有启用的告警规则并分发通知 |
+| **离线检测 (OfflineChecker)** | 每 10 秒 | 扫描 Agent 连接状态，对 30 秒无心跳的 Agent 触发离线事件/告警 |
+| **小时聚合 (Aggregator)** | 每 1 小时 | 将 `records` 原始数据聚合为 `records_hourly`，用于长期存储 |
+| **数据清理 (Cleanup)** | 每 1 小时（聚合后） | 删除超过保留周期的 records、GPU 数据、ping 记录和审计日志 |
+| **Ping 任务同步 (PingTasksSync)** | 配置变更时 | 向相关 Agent 推送 `PingTasksSync` |
+| **Session 清理 (SessionCleaner)** | 每 1 小时 | 删除过期的用户登录 Session |
+
+**执行顺序保证：**
+
+- 每小时任务：小时聚合 -> 数据清理（先聚合再清理，避免丢失长期数据）。
+- 每分钟任务：指标写入 -> 告警评估（确保评估读到刚写入的数据）。
+
+## 安全模型
+
+### 三条认证路径
+
+ServerBee 支持三种认证机制，均在认证中间件中校验：
+
+```
+请求进入
+  +-- Cookie: session_token=xxx         --> Session 认证（浏览器）
+  +-- Header: X-API-Key: serverbee_xxx  --> API Key 认证（自动化）
+  +-- Query: ?token=xxx                 --> Agent Token 认证（Agent WebSocket）
+```
+
+#### Session 认证（浏览器）
+
+- 登录时通过 argon2 验证用户名/密码。
+- 生成 32 字节随机 token（base64url 编码）。
+- 存入 `sessions` 表，设置 HttpOnly + SameSite=Strict Cookie。
+- 滑动过期：每次有效请求自动延长 `expires_at`（默认 TTL 24 小时）。
+
+#### API Key 认证（自动化）
+
+- 用户可创建具名 API 密钥用于程序化访问。
+- Key 格式：`serverbee_` + 32 字节随机 base64url。
+- 以 argon2 哈希存储，并保存 8 位明文前缀用于标识。
+- 校验时先用前缀缩小查询范围，再用 argon2 验证。
+
+#### Agent Token 认证（Agent）
+
+- 注册时通过一次性注册码（Enrollment Code）认证，注册码单次使用且短时有效。
+- 返回的 Token 用于后续 WebSocket 连接。
+- Token 以 argon2 哈希存储在 `servers` 表。
+- Agent 在 WebSocket 连接的查询参数中提供原始 Token 进行认证。
+
+### 基于角色的访问控制（RBAC）
+
+存在两种角色：`admin`（完全访问）和 `member`（只读仪表盘访问）。
+
+| 资源 | Admin | Member | API Key | Agent |
+|------|-------|--------|---------|-------|
+| 服务器列表/详情 | 允许 | 允许（受限） | 允许 | - |
+| 服务器增删改 | 允许 | 禁止 | 允许 | - |
+| 告警规则管理 | 允许 | 禁止 | 允许 | - |
+| 通知配置 | 允许 | 禁止 | 禁止 | - |
+| 用户管理 | 允许 | 禁止 | 禁止 | - |
+| 系统设置 | 允许 | 禁止 | 禁止 | - |
+| 实时 WebSocket | 允许 | 允许 | 允许 | - |
+| Web 终端 | 允许 | 禁止 | 禁止 | - |
+| 远程命令 | 允许 | 禁止 | 允许 | - |
+| 指标上报 | - | - | - | 允许 |
+
+### OAuth
+
+支持 GitHub、Google 和通用 OIDC 提供商的 OAuth 登录。`allow_registration` 开关控制首次 OAuth 登录时是否自动创建新用户。
+
+### 速率限制
+
+基于 `tower` middleware 实现，内存中维护 IP 到计数器的映射。登录和 Agent 注册接口按 IP 限流，以防止暴力破解。
+
+| 接口 | 限制 |
+|------|------|
+| `POST /api/auth/login` | 每 IP 15 分钟内 5 次 |
+| `POST /api/agent/register` | 每 IP 15 分钟内 10 次 |
+
+超限返回 `429 Too Many Requests`。管理员可在「设置 → 速率限制」中清除活跃窗口。
+
+### TOTP
+
+用户可启用基于 TOTP 的两步验证以增强安全性。
+
+## Workspace 结构
+
+Rust crate 采用 Cargo workspace 管理；前端是 `apps/web/` 下独立的 Bun/Node 项目。
+
+```
+ServerBee/
+  Cargo.toml                    # workspace 根
+  crates/
+    common/                     # 共享：协议、数据类型、常量
+      src/
+        lib.rs
+        protocol.rs             # Agent <-> Server 消息类型
+        types.rs                # SystemReport、GpuInfo 等
+        constants.rs            # 协议版本、默认值
+    server/                     # 服务端二进制（Axum、sea-orm、后台任务）
+      src/
+        main.rs
+        config.rs
+        state.rs                # AppState
+        router/                 # REST API + WebSocket handlers
+        service/                # 业务逻辑层
+        entity/                 # sea-orm Entity（每表一个模块）
+        migration/              # 数据库迁移
+        middleware/             # 认证、日志中间件
+    agent/                      # Agent 二进制（collector、reporter、terminal）
+      src/
+        main.rs
+        config.rs
+        collector/              # 各指标采集器
+        reporter.rs             # WebSocket 上报 + 重连
+        probe/                  # ICMP/TCP/HTTP 探测
+        executor.rs             # 远程命令执行
+        terminal.rs             # PTY 终端
+  apps/
+    web/                        # React SPA 前端（Vite、TanStack、shadcn/ui）
+    docs/                       # 文档站点（TanStack Start + Fumadocs）
+  docs/                         # 设计文档与计划
+```
+
+<Cards>
+  <Card title="部署指南" href="/zh/docs/deployment" />
+  <Card title="配置参考" href="/zh/docs/configuration" />
+  <Card title="监控功能" href="/zh/docs/monitoring" />
+</Cards>

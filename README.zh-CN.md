@@ -1,316 +1,140 @@
+<div align="center">
+
+<img src="assets/logo/logo.svg" width="96" alt="ServerBee logo" />
+
 # ServerBee
 
-语言: [English](./README.md) | 简体中文
+**轻量、自托管的 VPS 监控系统 —— 一个 Rust 二进制,实时掌控一切。**
 
-轻量级、自托管的 VPS 监控探针系统，基于 Rust 和 React 构建。
+[![CI](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml/badge.svg)](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ZingerLittleBee/ServerBee?include_prereleases&sort=semver)](https://github.com/ZingerLittleBee/ServerBee/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/ZingerLittleBee/ServerBee?style=flat)](https://github.com/ZingerLittleBee/ServerBee/stargazers)
+[![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 
-## 功能特性
+[English](./README.md) | 简体中文
 
-- **实时仪表盘** -- 服务器状态、CPU/内存/磁盘/网络指标，WebSocket 实时推送
-- **服务器卡片环形网格** -- 每张卡片展示 CPU、内存、磁盘、流量配额四个环形图表，并行显示磁盘 I/O 吞吐、负载趋势和计费周期剩余天数
-- **服务器分组** -- 按组管理服务器，显示国旗标识
-- **iOS 移动端** -- 原生 iOS 应用，支持二维码配对、推送通知和实时指标查看
-- **详细指标** -- 实时流式图表 + 历史视图 (1h/6h/24h/7d/30d)，涵盖 CPU、内存、磁盘、网络、负载、温度、GPU、磁盘 I/O
-- **告警系统** -- 14+ 指标类型，阈值/离线/流量/到期规则，AND 逻辑，70% 采样
-- **通知渠道** -- Webhook、Telegram、Bark、邮件 (通过 Resend)，支持通知组
-- **网络质量监控** -- 多目标网络探测 (96 个预设中国三网 + 国际节点)，实时/历史延迟图表，异常检测，每服务器独立目标配置
-- **Ping 探测** -- ICMP、TCP、HTTP 探测，延迟图表和成功率统计
-- **安全的 Agent 注册** -- 由管理员铸造的一次性、短时效 enrollment code（单次使用，默认 10 分钟过期），基于稳定机器指纹复用既有服务器记录，`auth.max_servers` 软限制注册规模，运行 token 可轮换/吊销，并可清理未连接占位服务器
-- **Web 终端** -- 基于 WebSocket 代理的浏览器 PTY 终端
-- **GPU 监控** -- NVIDIA GPU 使用率/温度/显存 (nvml-wrapper，可选功能)
-- **磁盘 I/O 监控** -- 每块磁盘读写吞吐量图表，支持合并和分盘视图。Linux 通过 `/proc/diskstats`，macOS/Windows 通过 sysinfo
-- **GeoIP** -- 根据 Agent IP 自动检测地区/国家，支持应用内下载/更新 GeoIP 数据库
-- **自定义仪表盘** -- 拖拽式仪表盘布局，13 种 widget 类型，多仪表盘切换，编辑模式
-- **自定义主题** -- 内置预设主题，管理员还可创建完整自定义主题（OKLCH 明暗变量），仪表盘与公共状态页统一生效
-- **OAuth & 2FA** -- GitHub/Google/OIDC 登录，TOTP 两步验证
-- **多用户** -- Admin/Member 角色，审计日志，速率限制
-- **文件管理** -- 远程文件浏览器，Monaco 编辑器，上传/下载带进度显示，路径沙箱安全机制 (`root_paths` + `deny_patterns`)
-- **Docker 监控** -- 实时 Docker 容器监控，CPU/内存/网络/块 I/O 统计，容器日志流（stdout/stderr 彩色区分），事件时间线，网络和卷概览
-- **安全事件** -- 逐 Agent 检测 SSH 登录、SSH 暴力破解尝试和端口扫描，按严重性分级，提供聚合事件时间线并可联动告警
-- **防火墙封禁** -- 通过 nftables 在一个或多个 Agent 上封禁来自指定 IP/CIDR 的入站流量，支持一键封禁、预设规则和操作日志
-- **IP 质量检测** -- 逐 Agent 出口 IP 评估：检测流媒体/AI/社交服务解锁状态（Netflix、Disney+、YouTube Premium、Amazon Prime、HBO Max、ChatGPT、Gemini、Spotify、TikTok），GeoIP 元数据，以及可选的第三方欺诈风险评分（Scamalytics、IPQualityScore、proxycheck.io、AbuseIPDB）。支持自定义服务、状态页展示（访客 IP 遮盖），双重 opt-in 能力门控
-- **能力开关** -- 每台服务器独立的功能控制（终端、执行、升级、探测、文件管理、Docker、安全事件、防火墙、IP 质量），服务端+Agent 双重校验
-- **可用性时间线** -- 90 天可用性可视化，按天展示彩色状态条，支持服务器详情页、公共状态页和自定义仪表盘组件
-- **公共状态页** -- 无需登录的服务器状态展示，含 90 天可用性时间线和可配置阈值
-- **月度流量统计** -- 按计费周期统计流量，日/小时维度图表，用量进度条，周期末预测
-- **服务监控 (SSL/WHOIS/HTTP/Ping/TCP)** -- 定时服务检查，自动规范化 WHOIS 主机名，对不支持的 TLD (如 `.app`/`.dev`) 给出友好提示，编辑表单可靠回填
-- **计费追踪** -- 价格、计费周期、到期提醒、流量限制
-- **备份恢复** -- SQLite 数据库备份/恢复 API
-- **Agent 自动更新** -- 远程二进制升级，SHA-256 校验
-- **一体化部署管理** -- `serverbee` CLI 支持以交互式或无人值守方式安装、升级、查看状态、修改配置和卸载 Server/Agent
-- **OpenAPI 文档** -- Swagger UI (`/swagger-ui`)，50+ 完整注释端点
+</div>
 
-## 技术栈
+---
 
-| 组件 | 技术 |
-|------|------|
-| 服务端 | Rust, Axum 0.8, sea-orm, SQLite (WAL) |
-| Agent | Rust, sysinfo 0.33, tokio-tungstenite |
-| 前端 | React 19, Vite 7, TanStack Router/Query, Recharts, shadcn/ui, Tailwind CSS v4 |
-| 认证 | argon2 密码哈希, Session Cookie, API Key, OAuth2, TOTP |
-| 文档 | Fumadocs MDX, TanStack Start, 中英双语 |
+ServerBee 让你在一处掌控所有服务器。中心 **Server** 通过 WebSocket 接收来自轻量 **Agent** 的指标,存入内嵌 SQLite,并提供实时 React 仪表盘 —— 无外部数据库,无沉重运行时。
+
+- 🪶 **极致轻量** —— Agent 通常仅占用约 5–15 MB 内存,Server 即便管理大量节点也保持精简。
+- ⚡ **实时刷新** —— WebSocket 实时仪表盘,涵盖 CPU、内存、磁盘、网络、负载、温度、GPU、磁盘 I/O。
+- 📦 **单一二进制** —— Server 与内嵌 Web UI 打包成一个文件,支持 Docker、一行脚本、Railway 部署。
+- 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、状态页等一应俱全。
+- 🔒 **默认安全** —— OAuth + 2FA、RBAC、审计日志、一次性 Agent 注册、逐服务器能力门控。
+
+> [!NOTE]
+> ServerBee 正在活跃开发中(`v1.0.0-alpha`),迭代频繁。
 
 ## 快速开始
 
-### 前置条件
-
-- Rust 1.85+ (含 cargo)
-- Bun 1.x (用于前端构建)
-
-### 从源码构建
+### 1. 安装 Server
 
 ```bash
-# 克隆
-git clone https://github.com/ZingerLittleBee/ServerBee.git
-cd ServerBee
-
-# 构建前端
-cd apps/web && bun install && bun run build && cd ../..
-
-# 构建服务端和 Agent
-cargo build --release
-
-# 二进制文件位于:
-# target/release/serverbee-server
-# target/release/serverbee-agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server --method docker
 ```
 
-### 启动服务端
+打开 `http://your-server:9527`。管理员密码会自动生成并打印在启动日志中 —— 首次登录后请修改。
+
+> 安装脚本通过 `--method docker|binary` 同时支持 **Docker** 与 **二进制** 两种安装方式。**Server 推荐 Docker 安装**;省略该参数则进入交互式选择。偏好云端?使用下方的 [Railway 一键部署](#railway一键部署)。
+
+### 2. 接入 Agent
+
+以管理员登录 → **设置** → 生成一个一次性 **enrollment code**(单次使用,约 10 分钟后过期)。然后在每个节点上:
 
 ```bash
-./serverbee-server
-# 默认地址: http://localhost:9527
-# 管理员密码在启动日志中自动生成并打印
-```
-
-### 启动 Agent
-
-首先以管理员身份登录服务端 Web UI，打开 **设置** 页，生成一个一次性
-enrollment code（单次使用，默认约 10 分钟后过期）。
-
-```bash
-# 通过环境变量设置服务端地址和一次性 enrollment code
-SERVERBEE_SERVER_URL=http://your-server:9527 \
-SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE \
-./serverbee-agent
-
-# 或创建配置文件 /etc/serverbee/agent.toml:
-# server_url = "http://your-server:9527"
-# enrollment_code = "YOUR_ONE_TIME_CODE"
-```
-
-enrollment code 在 Agent 首次注册成功时被消费。之后 Agent 会将每个服务器的
-token 保存到配置文件，重启后自动重连 —— 不再需要该 code。要接入另一个 Agent
-（或为丢失 token 的 Agent 重新注册），在设置页铸造一个新的 code。
-
-### Docker
-
-```bash
-docker compose up -d
-```
-
-### 开发模式 (Make)
-
-```bash
-# 同时启动服务端 (端口 9527) + Vite 开发服务器 (端口 5173)
-make dev-full
-# 访问 http://localhost:5173，使用 admin / admin123 登录
-
-# 或分步启动:
-make server-dev                                           # 终端 1: 服务端 :9527
-SERVERBEE_ENROLLMENT_CODE="<一次性 code>" make agent-dev   # 终端 2: Agent
-
-# 测试与代码质量:
-make cargo-test        # 运行全部 Rust 测试
-make test              # 运行前端测试
-make cargo-clippy      # Rust 代码检查
-make                   # 交互式菜单 (需要 fzf)
-```
-
-手动浏览器验证清单索引见 `tests/README.md`。
-
-在服务端 Web UI **设置** 页生成一个一次性 enrollment code，并将其传给 Agent。该 code 单次使用，约 10 分钟后过期；每次需要接入新的 Agent 时铸造一个新的 code。
-
-> **说明**: `make dev-full` 启动带 HMR 的 Vite 开发服务器 (`http://localhost:5173`)，自动代理 `/api/*` 到 Rust 服务端 (`:9527`)。生产构建请使用 `make build` 然后 `make server-run`。
-
-## 配置
-
-所有配置项均可通过 TOML 文件或环境变量设置，环境变量使用 `SERVERBEE_` 前缀，`__` (双下划线) 作为嵌套分隔符。完整环境变量列表见 [ENV.md](ENV.md)。
-
-### 服务端 (`/etc/serverbee/server.toml`)
-
-```toml
-[server]
-listen = "0.0.0.0:9527"
-data_dir = "/var/lib/serverbee"
-trusted_proxies = []              # 默认信任私有/回环 CIDR；设为 [] 禁用
-
-[database]
-path = "serverbee.db"
-max_connections = 10
-
-[auth]
-session_ttl = 86400           # 24 小时
-secure_cookie = true          # 开发环境设为 false
-max_servers = 0               # 新注册服务器的软上限
-
-[admin]
-username = "admin"
-password = ""                 # 留空自动生成
-
-[rate_limit]
-login_max = 5                 # 15 分钟内最大登录尝试次数
-register_max = 3              # 15 分钟内最大 Agent 注册次数
-
-[retention]
-records_days = 7              # 原始指标保留天数
-records_hourly_days = 90      # 小时聚合保留天数
-audit_logs_days = 180         # 审计日志保留天数
-network_probe_days = 7        # 网络探测原始记录保留天数
-network_probe_hourly_days = 90 # 网络探测小时聚合保留天数
-traffic_hourly_days = 7        # 流量小时记录保留天数
-traffic_daily_days = 400       # 流量日记录保留天数
-
-[scheduler]
-timezone = "UTC"               # 流量日聚合时区（如 Asia/Shanghai）
-
-[geoip]
-mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"  # 路径非空即启用 GeoIP
-
-[upgrade]
-release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
-```
-
-环境变量示例:
-```bash
-export SERVERBEE_AUTH__MAX_SERVERS="50"
-export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
-export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
-```
-
-### Agent (`/etc/serverbee/agent.toml`)
-
-```toml
-server_url = "http://your-server:9527"
-token = ""                    # 注册后自动填充
-enrollment_code = ""          # 来自设置页的一次性 code；仅用于首次注册
-
-[collector]
-interval = 3                  # 指标上报间隔 (秒)
-enable_temperature = true
-enable_gpu = false            # 需要 NVIDIA GPU + nvml
-
-[log]
-level = "info"
-```
-
-Agent 环境变量使用 `SERVERBEE_` 前缀，顶层键无需嵌套:
-```bash
-export SERVERBEE_SERVER_URL="http://your-server:9527"
-export SERVERBEE_ENROLLMENT_CODE="YOUR_ONE_TIME_CODE"
-```
-
-### OAuth 配置
-
-```toml
-[oauth]
-base_url = "https://monitor.example.com"
-allow_registration = false    # 首次 OAuth 登录时自动创建用户
-
-[oauth.github]
-client_id = "..."
-client_secret = "..."
-
-[oauth.google]
-client_id = "..."
-client_secret = "..."
-```
-
-回调 URL 格式: `https://your-domain/api/auth/oauth/{provider}/callback`
-
-## 部署
-
-### Railway（一键部署）
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
-
-1. 点击上方按钮，然后部署
-2. 添加 Volume 挂载到 `/data` 以持久化数据
-3. 将 Agent 配置连接到 Railway 提供的 URL
-4. 首次启动时，Server 会自动创建管理员账号并随机生成密码。在 Railway 部署日志中查找醒目的凭据横幅获取该密码；首次登录时你必须修改此密码，并可选择一个新的用户名。
-
-### 安装脚本
-
-通过 curl 一键安装：
-
-```bash
-# 服务端
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
-
-# Agent（替换为你的服务端地址和来自设置页的一次性 enrollment code）
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --method binary \
   --server-url http://YOUR_SERVER:9527 --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-安装脚本会自动将 `serverbee` 管理 CLI 安装到 `/usr/local/bin/serverbee`。
+> **Agent 推荐二进制安装** —— 占用最小,且能采集完整的宿主机指标。如需在容器中运行 Agent,改用 `--method docker`。
 
-> **说明**：重复执行 `install agent` 时，如果 `/usr/local/bin/serverbee-agent` 已存在，脚本会直接沿用现有二进制而不会覆盖。需要刷新已安装版本时，请使用 `sudo serverbee upgrade agent -y`，或手动替换该二进制文件。
+Agent 首次连接时会保存每服务器 token 并自动重连 —— code 只需用一次。搞定。🎉
 
-### 管理命令
+## 功能特性
+
+| | |
+|---|---|
+| **📊 监控** | 实时指标(CPU/内存/磁盘/网络/负载/温度/GPU/磁盘 I/O)· 历史图表(1h–30d)· Docker 容器统计、日志与事件 · 按计费周期统计月度流量并预测 |
+| **🔔 告警** | 14+ 指标类型 · 阈值 / 离线 / 流量 / 到期规则 · Webhook、Telegram、Bark、邮件渠道,支持通知组 |
+| **🌐 网络** | Ping 探测(ICMP/TCP/HTTP)· 网络质量监控(96 个中国三网 + 国际预设)· 服务监控(SSL/WHOIS/HTTP/Ping/TCP)· IP 质量与流媒体解锁检测,含欺诈风险评分 |
+| **🛠️ 远程管理** | 浏览器 Web 终端(WS 上的 PTY)· 沙箱化文件管理 + Monaco 编辑器 · 基于 nftables 的防火墙封禁 · 逐服务器能力开关 · Agent 自动更新 |
+| **🔐 安全与访问** | SSH 登录 / 暴力破解 / 端口扫描检测 · OAuth(GitHub/Google/OIDC)+ TOTP 两步验证 · Admin/Member 角色 · 审计日志 · 一次性 Agent 注册码 |
+| **🖥️ 仪表盘与分享** | 拖拽式自定义仪表盘(13 种 widget)· 含 90 天可用性时间线的公共状态页 · OKLCH 自定义主题 · 带国旗的服务器分组 · 原生 iOS 移动端 |
+| **⚙️ 运维** | `serverbee` 管理 CLI · 备份与恢复 · GeoIP 地区检测 · OpenAPI/Swagger 文档(50+ 端点) |
+
+## 配置
+
+通过 TOML 文件或 `SERVERBEE_` 前缀的环境变量配置(`__` 为嵌套分隔符,如 `SERVERBEE_AUTH__MAX_SERVERS`)。最小可运行配置:
+
+```toml
+# /etc/serverbee/server.toml
+[server]
+listen = "0.0.0.0:9527"
+data_dir = "/var/lib/serverbee"
+
+[admin]
+password = ""   # 留空自动生成
+```
+
+```toml
+# /etc/serverbee/agent.toml
+server_url = "http://your-server:9527"
+enrollment_code = ""   # 来自设置页的一次性 code,仅用于首次注册
+
+[collector]
+interval = 3           # 上报间隔(秒)
+```
+
+📖 完整参考:**[ENV.md](ENV.md)** · OAuth、数据保留、速率限制、GeoIP 等详见[文档](https://docs.serverbee.app/zh/docs/configuration)。
+
+## 部署
+
+### Railway(一键部署)
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
+
+添加挂载到 `/data` 的 Volume 以持久化数据。Server 首次启动会自动创建管理员账号 —— 在部署日志中查找凭据横幅。
+
+### 管理 CLI
+
+安装脚本会在 `/usr/local/bin/serverbee` 放置一个 `serverbee` CLI:
 
 ```bash
-sudo serverbee status              # 查看所有组件状态
-sudo serverbee upgrade -y           # 升级到最新版
-sudo serverbee restart              # 重启所有服务
-sudo serverbee config               # 查看当前配置
-sudo serverbee config set <key> <value>  # 修改配置
-sudo serverbee uninstall agent -y   # 卸载 Agent
-sudo serverbee uninstall server --purge  # 卸载服务端并清除数据
+sudo serverbee status         # 查看所有组件状态
+sudo serverbee upgrade -y     # 升级到最新版
+sudo serverbee restart        # 重启服务
+sudo serverbee config         # 查看 / 修改配置
+sudo serverbee uninstall agent -y
 ```
 
-### 反向代理 (Nginx)
+### 反向代理
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name monitor.example.com;
+在 Nginx/Caddy 之后,将 `/` 代理到 `127.0.0.1:9527`,并确保 WebSocket 路由 `/api/ws/` 和 `/api/agent/ws` 透传 `Upgrade`/`Connection` 头且设置较长读超时。完整可用的 Nginx 配置见[部署文档](https://docs.serverbee.app/zh/docs/deployment)。
 
-    location / {
-        proxy_pass http://127.0.0.1:9527;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+## 开发
 
-    # WebSocket (浏览器 + Agent + 终端)
-    location /api/ws/ {
-        proxy_pass http://127.0.0.1:9527;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
+```bash
+git clone https://github.com/ZingerLittleBee/ServerBee.git
+cd ServerBee
 
-    location /api/agent/ws {
-        proxy_pass http://127.0.0.1:9527;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
-}
+make dev-full         # Server(:9527)+ Vite 开发服务器(:5173)—— 使用 admin / admin123 登录
+make cargo-test       # Rust 测试
+make test             # 前端测试
+make cargo-clippy     # Rust 代码检查
 ```
+
+> `make dev-full` 启动带 HMR 的 Vite(`http://localhost:5173`),并代理 `/api/*` 到 `:9527` 的 Rust 服务端。在 **设置** 页生成一次性 enrollment code 即可接入开发用 Agent。
+
+**技术栈:** Rust(Axum 0.8 · sea-orm · SQLite WAL)· React 19(Vite 7 · TanStack Router/Query · Recharts · shadcn/ui · Tailwind CSS v4)· Rust Agent(sysinfo · tokio-tungstenite)。
 
 ## API
 
-服务端运行时可通过 `/swagger-ui` 访问交互式 API 文档。
+服务端运行时,可在 `/swagger-ui` 访问交互式 OpenAPI 文档。
 
 ## 许可证
 

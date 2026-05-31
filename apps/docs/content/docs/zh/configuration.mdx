@@ -1,0 +1,545 @@
+---
+title: 配置参考
+description: ServerBee Server 和 Agent 的完整配置参考文档。
+icon: Settings
+---
+
+ServerBee 使用 [Figment](https://github.com/SergioBenitez/Figment) 加载配置，按层级从多个来源合并配置值。本文是所有配置项的完整参考。
+
+## 配置加载优先级
+
+配置值从以下来源合并，后者覆盖前者，因此环境变量始终具有最高优先级：
+
+1. 内置默认值
+2. `/etc/serverbee/server.toml` 或 `/etc/serverbee/agent.toml`
+3. `/opt/serverbee/etc/server.toml` 或 `/opt/serverbee/etc/agent.toml`（安装脚本使用的路径）
+4. 工作目录下的 `server.toml` 或 `agent.toml`
+5. 以 `SERVERBEE_` 为前缀的环境变量
+
+这样无需修改 TOML 文件即可在运行时覆盖任意单个配置项。
+
+## 环境变量映射规则
+
+每个 TOML 键都直接对应一个环境变量：加 `SERVERBEE_` 前缀、键名全大写、每层嵌套用 `__`（双下划线）分隔。例如 `auth.secure_cookie` 对应 `SERVERBEE_AUTH__SECURE_COOKIE`。
+
+## 开发工作流环境变量
+
+这些变量用于仓库本地工具和开发工作流，不属于 ServerBee Server / Agent 二进制通过 Figment 加载的运行时配置。
+
+| 环境变量 | 用途 | 说明 |
+|----------|------|------|
+| `SERVERBEE_PROD_URL` | `make db-pull`、`make web-dev-prod` | 生产环境基础 URL，供数据库拉取脚本和前端 prod-proxy 工作流共用 |
+| `SERVERBEE_PROD_API_KEY` | `make db-pull` | 生产备份 API 使用的管理员 API Key。不要把它复用到 `make web-dev-prod` |
+| `SERVERBEE_PROD_READONLY_API_KEY` | `make web-dev-prod` | 前端 dev proxy 注入的 member 角色 API Key，用于浏览生产实时数据 |
+| `ALLOW_WRITES` | `make web-dev-prod` | 本地显式覆盖开关。设为 `1` 后，代理不再拦截非只读 HTTP 方法；设置后 UI 横幅也会从普通的只读提示切换为更强的可写警告 |
+
+这些变量刻意只服务于本地工具链。`ALLOW_WRITES` 不是服务端功能开关，它只是前端 prod-proxy 工作流的一个显式本地覆盖。
+
+### Server 环境变量
+
+#### 快速开始（Quick Start）
+
+<Callout type="info">
+没有管理员用户名 / 密码环境变量。首次启动（数据库中没有任何用户）时，Server 会自动创建管理员账号，随机生成密码，并以醒目的凭据横幅在 Server / 容器日志中打印一次。请从日志中获取该密码，首次登录时你将被要求修改它，并可在此时选择一个新的用户名。
+</Callout>
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_SERVER__LISTEN` | `0.0.0.0:9527` | 监听地址和端口 |
+
+#### 常用配置（Common）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_SERVER__DATA_DIR` | `./data` | 数据目录（存放数据库和备份） |
+| `SERVERBEE_AUTH__MAX_SERVERS` | `0` | 通过注册码接入的最大服务器数（0 = 不限制）。尽力软限制 |
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | 私有 / 回环 CIDR | 受信任的反向代理 CIDR 列表，默认信任 RFC 1918 + 回环地址。设为 `[]` 禁用 |
+| `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | 流量日聚合时区（如 `Asia/Shanghai`） |
+| `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
+| `SERVERBEE_LOG__FILE` | `""` | 日志文件路径，留空仅输出到 stdout |
+
+#### 仅本地开发
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_DEV__DEMO_DATA` | `false` | 重置并写入本地合成 demo 数据集。仅允许与 `SERVERBEE_DATABASE__PATH=dev-demo.db` 一起使用；会创建 `admin` / `admin123` 并启动内存中的 demo agents，用于本地开发 |
+
+#### OAuth（按需配置）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_OAUTH__BASE_URL` | `""` | 服务器公网地址（用于构造 OAuth 回调 URL） |
+| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | 首次 OAuth 登录时是否自动创建用户 |
+| `SERVERBEE_OAUTH__GITHUB__CLIENT_ID` | -- | GitHub OAuth App Client ID |
+| `SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET` | -- | GitHub OAuth App Client Secret |
+| `SERVERBEE_OAUTH__GOOGLE__CLIENT_ID` | -- | Google OAuth Client ID |
+| `SERVERBEE_OAUTH__GOOGLE__CLIENT_SECRET` | -- | Google OAuth Client Secret |
+| `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | -- | OIDC Issuer URL |
+| `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | -- | OIDC Client ID |
+| `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | -- | OIDC Client Secret |
+| `SERVERBEE_OAUTH__OIDC__SCOPES` | `["openid", "email", "profile"]` | OAuth 请求的 scope |
+
+#### GeoIP（按需配置）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | MaxMind 兼容 MMDB 文件路径。路径非空时启用该自定义 GeoIP 数据库；否则管理员可在「设置 → GeoIP Database」下载 DB-IP Lite 数据库 |
+| `SERVERBEE_ASN__MMDB_PATH` | `""` | DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB 文件路径。路径非空时启用路由追踪 ASN 富化；否则管理员可在「设置 → ASN Database」下载 DB-IP Lite ASN |
+
+#### Resend（邮件通知）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_RESEND__API_KEY` | `""` | Resend API Key，使用邮件通知时必填。发件域名必须在 resend.com/domains 验证 |
+
+#### 数据保留（可选调优）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_RETENTION__RECORDS_DAYS` | `7` | 原始指标记录保留天数 |
+| `SERVERBEE_RETENTION__RECORDS_HOURLY_DAYS` | `90` | 小时聚合记录保留天数 |
+| `SERVERBEE_RETENTION__GPU_RECORDS_DAYS` | `7` | GPU 指标记录保留天数 |
+| `SERVERBEE_RETENTION__PING_RECORDS_DAYS` | `7` | Ping 探测记录保留天数 |
+| `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS` | `7` | 原始网络质量探测记录保留天数 |
+| `SERVERBEE_RETENTION__NETWORK_PROBE_HOURLY_DAYS` | `90` | 小时聚合网络质量探测记录保留天数 |
+| `SERVERBEE_RETENTION__AUDIT_LOGS_DAYS` | `180` | 审计日志保留天数 |
+| `SERVERBEE_RETENTION__TRAFFIC_HOURLY_DAYS` | `7` | 流量小时记录保留天数 |
+| `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `400` | 流量日记录保留天数 |
+| `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `7` | 任务执行结果保留天数 |
+| `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `7` | Docker 事件记录保留天数 |
+| `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `30` | 服务监控记录保留天数 |
+| `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS` | `30` | 安全事件记录保留天数 |
+| `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS` | `90` | IP 质量状态变更事件记录保留天数 |
+
+#### 移动端（Mobile，可选）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_MOBILE__ACCESS_TTL` | `900` | 移动端 Access Token 有效期（秒），默认 15 分钟 |
+| `SERVERBEE_MOBILE__REFRESH_TTL` | `2592000` | 移动端 Refresh Token 有效期（秒），默认 30 天 |
+
+#### 防火墙（Firewall，可选）
+
+[防火墙黑名单](/zh/docs/firewall) 功能的第二道护栏（Tier-2）。即使管理员主动尝试，`POST /api/firewall/blocks` 也会拒绝插入此列表中的 CIDR / IP。第一道护栏（硬编码的保留段：回环、RFC 1918、链路本地、组播、未指定地址）始终生效。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_FIREWALL__ALLOW_LIST` | `[]` | 服务端拒绝写入 `block_list` 的 CIDR / IP 列表。叠加在硬编码 Tier-1 保留段之上的 Tier-2 护栏 |
+
+#### IP 质量检测（IP Quality）
+
+默认开箱即用，通过 [ipapi.is](https://ipapi.is)（无需 API Key，按源 IP 限约 1000 次 / 天）获取风险评分。主 Provider 失败时自动回退到 [ip-api.com](https://ip-api.com)（提供地理 + 代理 / 托管标志，无风险评分）。功能详情见 [IP 质量检测](/zh/docs/ip-quality)。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`。 |
+| `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `"ip-api"` | 主 Provider 失败时的兜底。设为 `none` 关闭。 |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | 可选。配置后享受更高的账户级速率限制。 |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `""` | 自建镜像或测试时覆盖。留空则回退到内置默认 `https://api.ipapi.is`。 |
+
+<Callout type="info">
+**老版本升级说明：** 早期版本支持 4 个付费 Provider（Scamalytics、IPQualityScore、ProxyCheck、AbuseIPDB），通过 `SERVERBEE_IP_QUALITY__{SCAMALYTICS,IPQS,PROXYCHECK,ABUSEIPDB}__*` 配置。这些环境变量会被静默忽略。如需恢复对应能力，请从 2026-05-25 之前的 tag 中 fork 或 vendor 对应实现。
+</Callout>
+
+#### 网络探测异常阈值（Network Probe Anomaly Thresholds）
+
+用于将 `/api/servers/{id}/network-probes/anomalies` 与网络探测概览 `anomaly_count` 字段中的探测记录分类的平均延迟阈值。`avg_latency` 严格大于 `very_high_latency_ms` 的记录标为 `very_high_latency`；大于 `high_latency_ms` 且不超过 very-high 阈值的记录标为 `high_latency`。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_NETWORK_PROBE__HIGH_LATENCY_MS` | `500` | `high_latency` 分类的平均延迟阈值（毫秒） |
+| `SERVERBEE_NETWORK_PROBE__VERY_HIGH_LATENCY_MS` | `800` | `very_high_latency` 分类的平均延迟阈值（毫秒） |
+
+#### 内部配置（Internal）
+
+> 以下变量有合理默认值，绝大多数场景无需修改。仅在有明确需求时调整。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_DATABASE__PATH` | `serverbee.db` | SQLite 数据库文件路径（相对于 data_dir） |
+| `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `10` | 数据库连接池最大连接数 |
+| `SERVERBEE_AUTH__SESSION_TTL` | `86400` | Session Token 有效期（秒），默认 24 小时 |
+| `SERVERBEE_AUTH__SECURE_COOKIE` | `true` | 为 Session Cookie 设置 Secure 标记。仅当浏览器通过普通 HTTP 访问 ServerBee 时设为 `false`，例如 IP 直连的快速开始安装 |
+| `SERVERBEE_RATE_LIMIT__LOGIN_MAX` | `5` | 15 分钟窗口内每 IP 最大登录尝试次数 |
+| `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `10` | 15 分钟窗口内每 IP 最大 Agent 注册次数。管理员可在「设置 → 速率限制」中清除活跃窗口 |
+| `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Agent 升级 Release 资产的基础 URL |
+| `SERVERBEE_UPGRADE__LATEST_VERSION_URL` | `""` | 可选的自定义最新版本 API URL，留空则使用 GitHub API |
+| `SERVERBEE_FILE__MAX_UPLOAD_SIZE` | `104857600` | 文件上传最大大小（字节），默认 100 MB |
+
+### Agent 环境变量
+
+Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
+
+#### 快速开始（Quick Start）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_SERVER_URL` | --（必填） | Server 的 HTTP 基础地址（如 `http://your-server:9527`），Agent 自动拼接 API 路径 |
+| `SERVERBEE_ENROLLMENT_CODE` | `""` | 一次性注册码，由管理员在设置页生成；单次使用、短时有效（默认 10 分钟），仅在 Token 为空时使用 |
+
+#### 常用配置（Common）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_COLLECTOR__INTERVAL` | `3` | 指标上报间隔（秒） |
+| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | 启用 NVIDIA GPU 监控（需要 NVIDIA 驱动 / NVML） |
+| `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | 启用 CPU 温度监控 |
+| `SERVERBEE_FILE__ENABLED` | `false` | 在该 Agent 上启用文件管理 |
+| `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许的根路径（逗号分隔，如 `/home,/var/log`）。留空则拒绝所有文件操作 |
+| `SERVERBEE_IP_CHANGE__ENABLED` | `true` | 启用周期性 IP 变更检测 |
+| `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
+| `SERVERBEE_LOG__FILE` | `""` | 日志文件路径，留空仅输出到 stdout |
+
+#### 内部配置（Internal）
+
+> 以下变量有合理默认值，绝大多数场景无需修改。仅在有明确需求时调整。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_TOKEN` | 注册后自动填充 | Agent 认证 Token。注册后自动填充，无需手动设置 |
+| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | 文件读取 / 下载的最大字节数（默认 1GB） |
+| `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Agent 拒绝访问的文件名 glob 模式 |
+| `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | 公网 IP 查询服务的有序列表，Agent 启动和每次 IP 变更检测时按顺序逐个尝试，首个成功即采用。在 NAT、容器或网卡看不到可路由 IP 的环境下是必需的。完全离线部署可设为 `[]` 跳过外部查询 |
+| `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP 检测间隔（秒），默认 5 分钟 |
+
+#### 升级配置（Upgrade，Agent）
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Agent 下载升级包时使用的固定发布源基础 URL。任何镜像 HTTPS 主机只要复现 GitHub Releases 的路径布局 `{base}/download/v{version}/{asset}` 和 `{base}/download/v{version}/checksums.txt` 即可。编译时默认值可通过构建期环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
+| `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `""` | 可选的发布源 TLS 证书 SPKI Pin。64 位小写十六进制字符 = 叶证书 SubjectPublicKeyInfo DER 的 SHA-256。留空则禁用。设置后，Agent 在标准证书链验证通过后额外校验叶证书 SPKI。格式非法（非 64 位或含非十六进制字符）时启动即报错 |
+
+#### 安全事件检测（Security，Agent）
+
+调优 Agent 端的安全事件检测器（SSH 登录 / 爆破、端口扫描）。检测完全在 Agent 上完成，Server 仅负责存储事件与评估告警规则。由于各主机的流量特征不同，建议按机器单独配置。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_SECURITY__ENABLED` | `true` | 安全事件检测器总开关。设为 `false` 时 Agent 不再上报任何 `security_event` 消息 |
+| `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | SSH 爆破检测的滑动窗口长度（秒） |
+| `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `10` | 窗口内累计失败次数达到该值即触发 `ssh_brute_force` 事件。触发后队列清空 |
+| `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | 启用端口扫描检测。需要系统安装 `conntrack` CLI（仅 Linux） |
+| `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `30` | 端口扫描检测的滑动窗口长度（秒） |
+| `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `20` | 同一源 IP 在窗口内命中的不同目标端口数达到该值即触发 `port_scan` 事件 |
+| `SERVERBEE_SECURITY__DATA_DIR` | `/var/lib/serverbee/security` | 用于持久化 `first_seen` 存储的目录，用来将 `ssh_login` 事件标记为新的 (user, IP) 组合 |
+
+## Server 配置（server.toml）
+
+### `[server]` —— 核心服务器设置
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `listen` | string | `"0.0.0.0:9527"` | Server 监听的 IP 地址和端口 |
+| `data_dir` | string | `"./data"` | 数据库文件和其他持久化数据的目录 |
+| `trusted_proxies` | string[] | 私有 / 回环 CIDR | 受信任的反向代理 CIDR 段。默认信任 RFC 1918 + 回环段。设为 `[]` 禁用 X-Forwarded-For 解析 |
+
+### `[database]` —— 数据库设置
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `path` | string | `"serverbee.db"` | 数据库文件名（相对于 `data_dir`） |
+| `max_connections` | u32 | `10` | SQLite 连接池最大连接数 |
+
+### `[auth]` —— 认证设置
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `session_ttl` | i64 | `86400` | Session Cookie 有效期（秒），24 小时 |
+| `max_servers` | u32 | `0` | 通过注册码接入的最大服务器数（0 = 不限制）。尽力软限制 |
+| `secure_cookie` | bool | `true` | 为 Session Cookie 设置 `Secure` 标记。仅当浏览器通过普通 HTTP 访问 ServerBee 时设为 `false` |
+
+### `[dev]` —— 本地开发
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `demo_data` | bool | `false` | 重置并写入本地合成开发数据集。被限制为 `database.path = "dev-demo.db"`，因此不会误跑在正常本地或生产副本数据库上 |
+
+### `[retention]` —— 数据保留
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `records_days` | u32 | `7` | 原始指标记录保留天数 |
+| `records_hourly_days` | u32 | `90` | 小时聚合记录保留天数 |
+| `gpu_records_days` | u32 | `7` | 单 GPU 指标记录保留天数 |
+| `ping_records_days` | u32 | `7` | Ping 探测记录保留天数 |
+| `network_probe_days` | u32 | `7` | 原始网络质量探测记录保留天数 |
+| `network_probe_hourly_days` | u32 | `90` | 小时聚合网络质量探测记录保留天数 |
+| `audit_logs_days` | u32 | `180` | 审计日志保留天数 |
+| `traffic_hourly_days` | u32 | `7` | 流量小时记录保留天数 |
+| `traffic_daily_days` | u32 | `400` | 流量日记录保留天数 |
+| `task_results_days` | u32 | `7` | 任务执行结果保留天数 |
+| `docker_events_days` | u32 | `7` | Docker 事件记录保留天数 |
+| `service_monitor_days` | u32 | `30` | 服务监控检查记录保留天数 |
+| `security_event_days` | u32 | `30` | 安全事件记录保留天数（SSH 登录 / 爆破、端口扫描） |
+| `ip_quality_event_days` | u32 | `90` | IP 质量状态变更事件记录保留天数 |
+
+<Callout type="info">
+原始指标记录每 60 秒写入一次，默认保留 7 天。小时聚合器计算平均值，让你无需占用过多存储即可保留 90 天的长期趋势。请根据磁盘空间和监控需求调整这些值。
+</Callout>
+
+### `[scheduler]` —— 调度器
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `timezone` | string | `"UTC"` | 流量日聚合和计费周期计算使用的时区。使用 IANA 时区名称（如 `Asia/Shanghai`、`US/Eastern`） |
+
+### `[rate_limit]` —— 速率限制
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `login_max` | u32 | `5` | 每个速率限制窗口内的最大登录尝试次数 |
+| `register_max` | u32 | `10` | 每个速率限制窗口内的最大 Agent 注册尝试次数。管理员可在「设置 → 速率限制」中清除活跃窗口 |
+
+### `[log]` —— 日志
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `level` | string | `"info"` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
+| `file` | string | `""` | 日志文件路径。留空则仅输出到 stdout |
+
+日志级别也可通过 `RUST_LOG` 环境变量设置，且该变量优先级更高。
+
+### `[geoip]` —— GeoIP 地理位置查询
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `mmdb_path` | string | `""` | MaxMind 兼容 MMDB 文件路径。路径非空时启用该自定义 GeoIP 数据库；为空时可在 UI 中将 DB-IP Lite 下载到 Server 数据目录 |
+
+### `[asn]` —— ASN 查询（路由追踪）
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `mmdb_path` | string | `""` | DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB 文件路径。路径非空时启用该自定义 ASN 数据库；为空时可在 UI 中将 DB-IP Lite ASN 下载到 Server 数据目录。用于为每个路由追踪跳点标注其自治系统 |
+
+### `[resend]` —— 邮件通知
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `api_key` | string | `""` | Resend API Key（[resend.com/api-keys](https://resend.com/api-keys)）。使用邮件通知通道时必填。各邮件通道的 `from` 发件地址必须属于你在 [resend.com/domains](https://resend.com/domains) 已验证的域名 |
+
+### `[oauth]` —— OAuth / SSO
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `base_url` | string | `""` | ServerBee 实例的公网 URL（用于回调 URL） |
+| `allow_registration` | bool | `false` | 首次 OAuth 登录时创建新用户账号 |
+
+### `[oauth.github]` —— GitHub OAuth
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `client_id` | string | -- | GitHub OAuth App Client ID |
+| `client_secret` | string | -- | GitHub OAuth App Client Secret |
+
+### `[oauth.google]` —— Google OAuth
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `client_id` | string | -- | Google OAuth Client ID |
+| `client_secret` | string | -- | Google OAuth Client Secret |
+
+### `[oauth.oidc]` —— OpenID Connect
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `issuer_url` | string | -- | OIDC Issuer URL（如 `https://auth.example.com/realms/main`） |
+| `client_id` | string | -- | OIDC Client ID |
+| `client_secret` | string | -- | OIDC Client Secret |
+| `scopes` | string[] | `["openid", "email", "profile"]` | OAuth 请求的 scope |
+
+### `[upgrade]` —— Agent 升级
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `release_base_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Agent 升级 Release 资产的基础 URL。Server 会在此 URL 后拼接 `/download/v{version}/` 构造资产下载地址 |
+| `latest_version_url` | string | `""` | 可选的自定义最新版本 API URL。留空则由 Server 查询 GitHub API 确定最新版本。可用此项覆盖为自定义版本接口 |
+
+### `[file]` —— 文件上传（Server 端）
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `max_upload_size` | u64 | `104857600` | 文件上传最大大小（字节），默认 100 MB |
+
+### `[mobile]` —— 移动端认证
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `access_ttl` | i64 | `900` | 移动端 Access Token 有效期（秒），默认 15 分钟 |
+| `refresh_ttl` | i64 | `2592000` | 移动端 Refresh Token 有效期（秒），默认 30 天 |
+
+### `[firewall]` —— 防火墙黑名单护栏
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `allow_list` | string[] | `[]` | 服务端拒绝写入 `block_list` 的 CIDR / IP 列表。叠加在硬编码 Tier-1 保留段（回环 + RFC 1918 + 链路本地 + 组播 + 未指定地址）之上的 Tier-2 护栏。见 [防火墙黑名单](/zh/docs/firewall) |
+
+### `[ip_quality]` —— IP 质量风险评分
+
+默认开箱即用，通过 [ipapi.is](https://ipapi.is)（无需 API Key，按源 IP 限约 1000 次 / 天）获取风险评分。主 Provider 失败时自动回退到 [ip-api.com](https://ip-api.com)。基础 IP 元数据（国家、ASN、IP 类型）始终来自本地 GeoIP MMDB。功能详情见 [IP 质量检测](/zh/docs/ip-quality)。
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `risk_provider` | string | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`。 |
+| `risk_provider_fallback` | string | `"ip-api"` | 主 Provider 失败时的兜底。设为 `none` 关闭。 |
+
+### `[ip_quality.ipapi_is]` —— ipapi.is
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `api_key` | string | -- | 可选。配置后享受更高的账户级速率限制。 |
+| `endpoint` | string | `""` | 自建镜像或测试时覆盖。留空则回退到内置默认 `https://api.ipapi.is`。 |
+
+---
+
+## Agent 配置（agent.toml）
+
+> **Docker Agent：** 挂载宿主机的 machine-id 以确保指纹识别正确：
+> ```
+> -v /etc/machine-id:/etc/machine-id:ro
+> ```
+
+### 顶层选项
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `server_url` | string | **必填** | ServerBee Server 的 URL（如 `http://10.0.0.1:9527`） |
+| `token` | string | `""` | Agent 认证 Token（注册后自动填充） |
+| `enrollment_code` | string | `""` | 一次性注册码，来自 Server 设置页（仅在 `token` 为空时使用；首次注册成功后即被消费） |
+
+### `[collector]` —— 指标采集
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `interval` | u32 | `3` | 采集间隔（秒） |
+| `enable_gpu` | bool | `false` | 启用 NVIDIA GPU 监控（需要 NVIDIA 驱动 / NVML） |
+| `enable_temperature` | bool | `true` | 启用 CPU 温度传感器监控 |
+
+### `[file]` —— 文件管理
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `enabled` | bool | `false` | 启用文件管理能力。Server 端还需为该 Agent 启用 `CAP_FILE` |
+| `root_paths` | string[] | `[]` | 将浏览限制在这些目录内。空数组拒绝所有文件操作 |
+| `max_file_size` | u64 | `1073741824` | 文件读取和下载操作的最大大小（字节），默认 1 GB |
+| `deny_patterns` | string[] | `["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]` | Agent 拒绝访问的文件名 glob 模式 |
+
+### `[ip_change]` —— IP 变更检测
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `enabled` | bool | `true` | 启用周期性 IP 变更检测。Agent 枚举网卡地址并上报变更 |
+| `external_ip_urls` | string[] | `["https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com", "https://checkip.amazonaws.com"]` | 返回 Agent 公网 IP 的服务有序列表。在启动和每次检测时按顺序尝试，首个成功即采用。在 NAT 或容器中运行的 Agent 需要它。设为 `[]` 可禁用外部查询（离线部署） |
+| `interval_secs` | u64 | `300` | IP 检测间隔（秒），默认 5 分钟 |
+
+### `[log]` —— 日志
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `level` | string | `"info"` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
+| `file` | string | `""` | 日志文件路径。留空则仅输出到 stdout |
+
+### `[upgrade]` —— 升级源（Agent）
+
+Agent 从本地固定的发布源下载升级包，而不信任 Server 下发的 URL。
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `release_repo_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Agent 升级 Release 资产的基础 URL。必须复现 GitHub Releases 目录布局：二进制为 `{base}/download/v{version}/{asset}`，校验文件为 `{base}/download/v{version}/checksums.txt`。编译时默认值可通过构建期环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
+| `release_cert_spki_sha256` | string | `""` | 可选的发布源 TLS SPKI Pin。设为 64 位小写十六进制字符（叶证书 SubjectPublicKeyInfo DER 编码的 SHA-256）。留空则禁用 Pin。设置后，Agent 在标准证书链验证通过后额外校验叶证书 SPKI。格式非法（非 64 位或含非十六进制字符）时启动即报错 |
+
+**配置优先级**（越靠前越高）：
+
+1. `--release-repo` CLI 参数
+2. `SERVERBEE_UPGRADE__RELEASE_REPO_URL` 环境变量
+3. `/etc/serverbee/agent.toml` 或 `agent.toml` 的 `[upgrade]` 节
+4. 编译时默认值（官方 GitHub Releases URL）
+
+<Callout type="info">
+控制台的「最新版本」检测使用 Server 端配置的发布源（`upgrade.release_base_url` / `upgrade.latest_version_url`）。这两项是独立的 Server 端设置，仅用于控制台的「最新版本」查询，与决定 Agent 实际下载内容的 Agent 端 `[upgrade] release_repo_url` 是不同的配置。为保持一致的升级行为，请将 Server 和 Agent 指向同一个发布仓库，除非有意让两者追踪不同的发布源。
+</Callout>
+
+**获取发布源证书 SPKI Pin** 的方法：
+
+```bash
+openssl x509 -in cert.pem -pubkey -noout \
+  | openssl pkey -pubin -outform der \
+  | openssl dgst -sha256 -r | awk '{print $1}'
+```
+
+---
+
+## 示例：最小 Server 配置
+
+```toml
+[server]
+data_dir = "./data"
+```
+
+其余一切使用合理默认值。首次启动时，ServerBee 会创建 `admin` 用户并随机生成密码，将其在 Server 日志中打印一次。
+
+## 示例：生产 Server 配置
+
+```toml
+[server]
+listen = "127.0.0.1:9527"
+data_dir = "/var/lib/serverbee"
+
+[auth]
+secure_cookie = true
+
+[retention]
+records_days = 14
+records_hourly_days = 180
+
+[geoip]
+mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"
+
+[asn]
+mmdb_path = "/var/lib/serverbee/GeoLite2-ASN.mmdb"
+
+[log]
+level = "info"
+file = "/var/log/serverbee/server.log"
+
+[oauth]
+base_url = "https://monitor.example.com"
+allow_registration = false
+
+[oauth.github]
+client_id = "Iv1.abc123"
+client_secret = "secret123"
+```
+
+## 示例：最小 Agent 配置
+
+```toml
+server_url = "http://your-server-ip:9527"
+enrollment_code = "<来自设置页的一次性注册码>"
+```
+
+## 示例：生产 Agent 配置
+
+```toml
+server_url = "https://monitor.example.com"
+token = "previously-obtained-token"
+
+[collector]
+interval = 3
+enable_gpu = true
+enable_temperature = true
+
+[file]
+enabled = true
+root_paths = ["/home", "/var/log", "/etc"]
+max_file_size = 1073741824
+deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
+
+[ip_change]
+enabled = true
+# external_ip_urls 默认为一组精选的公网 IP 服务。
+# 仅在需要指向内部镜像或禁用（设为 []）时覆盖。
+
+[log]
+level = "info"
+file = "/var/log/serverbee/agent.log"
+```

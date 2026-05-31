@@ -1,0 +1,569 @@
+---
+title: 部署指南
+description: 生产环境下 ServerBee 服务端和 Agent 的部署策略。
+icon: Cloud
+---
+
+本文介绍在生产环境部署 ServerBee 的最佳实践：Railway、Docker、systemd、反向代理配置、TLS 和备份策略。
+
+## Railway（一键部署）
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
+
+最快的部署方式。点击上方按钮，然后配置以下环境变量：
+
+```bash
+SERVERBEE_LOG__LEVEL="info"                    # 日志级别（trace/debug/info/warn/error）
+
+SERVERBEE_RETENTION__RECORDS_DAYS="7"          # 原始指标保留天数
+SERVERBEE_RETENTION__RECORDS_HOURLY_DAYS="90"  # 小时聚合保留天数
+SERVERBEE_RETENTION__AUDIT_LOGS_DAYS="180"     # 审计日志保留天数
+SERVERBEE_SCHEDULER__TIMEZONE="UTC"            # 时区，影响流量按天聚合（如 Asia/Shanghai）
+
+SERVERBEE_OAUTH__BASE_URL=""                   # OAuth 回调公网地址（如 https://xxx.up.railway.app）
+SERVERBEE_OAUTH__GITHUB__CLIENT_ID=""          # GitHub OAuth Client ID
+SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET=""      # GitHub OAuth Client Secret
+SERVERBEE_OAUTH__ALLOW_REGISTRATION="false"    # 首次 OAuth 登录自动创建账号（true=开放注册，false=仅已绑定用户可登录）
+```
+
+部署后：
+
+1. 添加 **Volume** 挂载到 `/data`，以在多次部署间持久化数据
+2. 将 Agent 配置为使用 Railway 提供的 URL 进行连接
+3. 首次启动时，服务端会自动创建管理员账号并随机生成密码。打开 Railway 部署日志，查找醒目的凭据横幅即可获取该密码。首次登录时你必须修改此密码，并可选择一个新的用户名。
+
+<Callout type="info">
+Railway 会自动分配端口并提供 HTTPS，无需配置 `SERVERBEE_SERVER__LISTEN` 或 TLS 证书。
+</Callout>
+
+### 部署预发版本
+
+模板默认拉取 `ghcr.io/zingerlittlebee/serverbee-server:latest`，该 tag 只跟随稳定版。预发版（例如 `1.0.0-alpha.1`）会推送到 GHCR，但**不会**更新 `:latest`。
+
+要锁定到指定版本（稳定版或预发版），在 Railway 服务的 **Variables** 里新增一条变量：
+
+```env
+SERVERBEE_IMAGE_TAG=1.0.0-alpha.1
+```
+
+保存后触发 Redeploy 即可。回到稳定通道时删除该变量（或改回 `latest`）。
+
+<Callout type="info">
+Dockerfile 通过 `ARG SERVERBEE_IMAGE_TAG=latest` 暴露这个开关。Railway 会自动把 Service Variables 同时作为构建参数和运行时环境变量注入；该变量不在 `SERVERBEE_*` 配置体系中，因此对运行时无副作用。
+</Callout>
+
+## 引导安装
+
+在 Linux 主机上，最快的二进制 + systemd 部署方式是使用引导安装脚本：
+
+```bash
+# 安装服务端
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+
+# 安装 Agent
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+  --server-url http://your-server-ip:9527 \
+  --enrollment-code YOUR_ONE_TIME_CODE
+```
+
+安装完成后，使用 `serverbee` CLI 管理你的部署（安装时会自动部署到 `/usr/local/bin/serverbee`）：
+
+```bash
+sudo serverbee status
+sudo serverbee upgrade -y
+sudo serverbee restart
+sudo serverbee config
+sudo serverbee env
+sudo serverbee uninstall agent -y
+```
+
+<Callout type="info">
+`install server` / `install agent` 是引导命令。如果 `/usr/local/bin` 中已经存在对应二进制，安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 二进制时，请改用 `upgrade`（或手动替换二进制）。
+</Callout>
+
+## Docker Compose（推荐）
+
+Docker Compose 是在生产环境部署 ServerBee 最简单的方式。创建一个 `docker-compose.yml`：
+
+```yaml
+services:
+  serverbee-server:
+    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    container_name: serverbee-server
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9527:9527"
+    volumes:
+      - serverbee-data:/data
+      - ./server.toml:/app/server.toml:ro
+    environment:
+      - SERVERBEE_AUTH__SECURE_COOKIE=true
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  serverbee-data:
+```
+
+<Callout type="info">
+将端口绑定到 `127.0.0.1:9527` 而非 `0.0.0.0:9527`，可确保服务端只能通过反向代理访问，而无法从公网直接访问。
+</Callout>
+
+启动服务：
+
+```bash
+docker compose up -d
+```
+
+查看日志：
+
+```bash
+docker compose logs -f serverbee-server
+```
+
+## 源码编译
+
+开发者或有定制需求的用户可以从源码编译 ServerBee。源码编译需要 Rust 1.85+ 和 Bun 1.x（或 Node.js 22+）。
+
+```bash
+# 克隆仓库
+git clone https://github.com/ZingerLittleBee/ServerBee.git
+cd ServerBee
+
+# 构建前端
+cd apps/web
+bun install
+bun run build
+cd ../..
+
+# 构建服务端（通过 rust-embed 内嵌前端静态资源）
+cargo build --release -p serverbee-server
+
+# 构建 Agent
+cargo build --release -p serverbee-agent
+```
+
+编译产物位于 `target/release/` 目录下：
+
+- `serverbee-server` — 服务端，内嵌前端静态资源
+- `serverbee-agent` — 指标采集 Agent
+
+启动服务端：
+
+```bash
+./target/release/serverbee-server
+```
+
+将编译好的二进制部署到目标主机后，可以参考下文的 systemd 服务配置进行进程管理。
+
+## systemd 服务
+
+对于不使用 Docker 的部署，可以用 systemd 管理服务端和 Agent 进程。
+
+<Callout type="info">
+如果你不需要手写 unit 文件，更推荐上面的引导安装方式。它会为你自动生成配置文件和 systemd unit，后续通过 `serverbee` CLI 统一完成升级、重启和配置修改。
+
+注意：下面的 unit 示例采用自定义路径（`/usr/local/bin`、`/var/lib/serverbee`、`/etc/serverbee`）演示手动部署。引导脚本安装的实际布局不同——二进制在 `/opt/serverbee/bin/`、配置在 `/opt/serverbee/etc/`、数据在 `/opt/serverbee/data/`，且由 `serverbee` CLI 托管，无需手写 unit。
+</Callout>
+
+### Server 服务
+
+创建 `/etc/systemd/system/serverbee-server.service`：
+
+```ini
+[Unit]
+Description=ServerBee Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/serverbee-server
+Restart=always
+RestartSec=5
+User=serverbee
+Group=serverbee
+WorkingDirectory=/var/lib/serverbee
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/serverbee /var/log/serverbee
+PrivateTmp=true
+
+# 资源限制
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
+```
+
+创建服务用户和目录：
+
+```bash
+# 创建系统用户
+sudo useradd -r -s /sbin/nologin -d /var/lib/serverbee serverbee
+
+# 创建目录
+sudo mkdir -p /var/lib/serverbee /var/log/serverbee /etc/serverbee
+sudo chown serverbee:serverbee /var/lib/serverbee /var/log/serverbee
+
+# 放置配置文件
+sudo cp server.toml /etc/serverbee/server.toml
+
+# 放置二进制
+sudo cp serverbee-server /usr/local/bin/
+sudo chmod +x /usr/local/bin/serverbee-server
+```
+
+systemd 部署使用的生产 `server.toml`：
+
+```toml
+[server]
+listen = "127.0.0.1:9527"
+data_dir = "/var/lib/serverbee"
+
+[log]
+level = "info"
+file = "/var/log/serverbee/server.log"
+```
+
+启用并启动：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable serverbee-server
+sudo systemctl start serverbee-server
+sudo systemctl status serverbee-server
+```
+
+### Agent 服务
+
+完整的 Agent systemd 服务 unit 文件请参见 [Agent 配置](/zh/docs/agent) 指南。
+
+## 反向代理
+
+强烈建议在生产环境中将 ServerBee 部署在反向代理之后。反向代理可以提供 TLS 终止、HTTP/2 以及额外的安全响应头。
+
+### 访问地址和 Cookie 配置
+
+先确定一个对外访问地址，并让浏览器地址、Agent 的 `server_url` 和 Cookie 配置保持一致：
+
+| 场景 | 对外地址 | `auth.secure_cookie` | Docker 环境变量 | Agent 地址 |
+|------|----------|----------------------|-----------------|------------|
+| IP 直连，普通 HTTP | `http://203.0.113.10:9527` | `false` | `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://203.0.113.10:9527` |
+| 域名 + HTTPS 反向代理 | `https://monitor.example.com` | `true` | `SERVERBEE_AUTH__SECURE_COOKIE=true` 或不设置该变量 | `https://monitor.example.com` |
+
+使用域名访问时，需要先添加 DNS `A` 或 `AAAA` 记录指向服务器，再用 Nginx、Caddy 或 Traefik 终止 HTTPS，并把请求反向代理到 ServerBee 的 `127.0.0.1:9527`。
+
+如果你是通过快速开始脚本安装的，脚本会为了 HTTP 直连写入 `auth.secure_cookie = false`。在把同一套安装切换到 HTTPS 前，请修改 `/opt/serverbee/etc/server.toml`：
+
+```toml
+[auth]
+secure_cookie = true
+```
+
+然后重启服务端：
+
+```bash
+sudo systemctl restart serverbee-server
+```
+
+如果 ServerBee 已经通过安装脚本部署，也可以让 CLI 自动完成 Caddy HTTPS 配置：
+
+```bash
+sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
+```
+
+该命令会校验域名是否解析到当前服务器，安装并配置 Caddy，把 ServerBee 改为只监听 `127.0.0.1:9527`，并把 `auth.secure_cookie` 设置为 `true`。如果 DNS 还没生效，命令会停止并打印你需要添加的 `A`/`AAAA` 记录。
+
+### Nginx
+
+```nginx
+upstream serverbee {
+    server 127.0.0.1:9527;
+}
+
+server {
+    listen 80;
+    server_name monitor.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name monitor.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/monitor.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/monitor.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    # 安全响应头
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        proxy_pass http://serverbee;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket 支持（Agent、浏览器实时更新和终端均需要）
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # 为长连接 WebSocket 设置较长的超时
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+
+        # 关闭缓冲以支持实时数据
+        proxy_buffering off;
+    }
+}
+```
+
+### Caddy
+
+Caddy 会自动使用 Let's Encrypt 处理 TLS：
+
+```
+monitor.example.com {
+    reverse_proxy 127.0.0.1:9527 {
+        # Caddy 默认支持 WebSocket
+    }
+}
+```
+
+这就是所需的全部 Caddy 配置。Caddy 默认处理 HTTPS 证书、HTTP/2、WebSocket 升级和安全响应头。
+
+### Traefik
+
+Traefik 通过 Docker labels 集成，无需单独的配置文件。Traefik 会自动检测 WebSocket 连接，无需额外配置。
+
+```yaml
+services:
+  serverbee-server:
+    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    volumes:
+      - serverbee-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.serverbee.rule=Host(`monitor.example.com`)"
+      - "traefik.http.routers.serverbee.entrypoints=websecure"
+      - "traefik.http.routers.serverbee.tls.certresolver=letsencrypt"
+      - "traefik.http.services.serverbee.loadbalancer.server.port=9527"
+    restart: unless-stopped
+    networks:
+      - traefik
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  serverbee-data:
+```
+
+## TLS / HTTPS
+
+生产环境部署请始终使用 HTTPS。推荐的方式如下：
+
+### Let's Encrypt + Certbot（Nginx）
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d monitor.example.com
+```
+
+Certbot 会自动配置 nginx 并设置证书续期。
+
+### Let's Encrypt + Caddy
+
+Caddy 会自动申请和续期证书，无需额外设置。
+
+### 手动证书
+
+如果你有自己的证书，请把它们放在一个安全目录中，并在反向代理配置里引用。确保证书文件可被代理进程读取，并且你已经准备好续期机制。
+
+## Agent HTTPS 连接配置
+
+当服务端部署在 HTTPS 之后时，需要相应地更新 Agent 的 `server_url`：
+
+```toml
+server_url = "https://monitor.example.com"
+```
+
+Agent 会自动根据提供的 URL 处理 WebSocket 连接。
+
+<Callout type="info">
+ServerBee 自身不处理 TLS 终止。所有 HTTPS/WSS 加密都由前置的反向代理（Nginx/Caddy/Traefik）处理。这种架构简化了服务端的实现，也便于统一管理证书。
+</Callout>
+
+<Callout type="warn">
+使用 HTTPS 时，请在服务端配置中保持 `auth.secure_cookie = true`。设为 `false` 可能仍然可以登录，但会去掉浏览器的 Secure Cookie 保护，不适合生产环境。
+</Callout>
+
+## 备份与恢复
+
+### 备份哪些内容
+
+ServerBee 把所有数据都存储在单个 SQLite 数据库文件和配置文件中：
+
+| 项目 | 位置 | 说明 |
+|------|------|------|
+| 数据库 | `{data_dir}/serverbee.db` | 所有监控数据、用户、告警和设置 |
+| WAL 文件 | `{data_dir}/serverbee.db-wal` | 预写日志（运行时备份需一并包含） |
+| SHM 文件 | `{data_dir}/serverbee.db-shm` | 共享内存文件（运行时备份需一并包含） |
+| 服务端配置 | `/opt/serverbee/etc/server.toml` | 服务端配置（安装脚本默认路径） |
+| Agent 配置 | `/opt/serverbee/etc/agent.toml` | Agent 配置（位于每台被监控的服务器上） |
+| GeoIP 数据库 | 视情况而定 | MaxMind MMDB 文件（如启用） |
+
+### 备份策略
+
+安装脚本默认的数据目录是 `/opt/serverbee/data`（数据库为 `/opt/serverbee/data/serverbee.db`）。若你是手写 systemd unit 的自定义部署，请替换为你配置的 `data_dir`。
+
+**方式一：SQLite 备份命令（推荐，适用于运行中的服务端）**
+
+```bash
+sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +%Y%m%d).db'"
+```
+
+无需停机即可生成一致的时间点备份。
+
+**方式二：文件复制（需要停止服务端）**
+
+```bash
+sudo systemctl stop serverbee-server
+cp /opt/serverbee/data/serverbee.db /backups/serverbee-$(date +%Y%m%d).db
+sudo systemctl start serverbee-server
+```
+
+**方式三：Docker volume 备份**
+
+```bash
+docker compose stop
+docker run --rm \
+  -v serverbee-data:/data \
+  -v $(pwd)/backups:/backups \
+  alpine tar czf /backups/serverbee-$(date +%Y%m%d).tar.gz -C /data .
+docker compose start
+```
+
+### 恢复
+
+从备份恢复：
+
+1. 停止服务端
+2. 用备份替换数据库文件
+3. 启动服务端（如有需要，迁移会自动运行）
+
+```bash
+sudo systemctl stop serverbee-server
+cp /backups/serverbee-20260314.db /opt/serverbee/data/serverbee.db
+# 以独立用户运行的自定义加固部署：还需重新设置属主，例如
+# sudo chown serverbee:serverbee /opt/serverbee/data/serverbee.db
+sudo systemctl start serverbee-server
+```
+
+### 自动备份
+
+设置一个 cron 任务来执行每日备份：
+
+```bash
+# /etc/cron.d/serverbee-backup
+0 2 * * * root sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
+```
+
+它会在每天凌晨 2:00 运行，并删除超过 30 天的备份。
+
+## 健康检查
+
+ServerBee 提供一个健康检查端点：
+
+```
+GET /healthz
+```
+
+用它来确认服务端是否正在运行且响应正常。可以在你的监控系统、Docker 健康检查或负载均衡器中配置它。
+
+### Docker 健康检查
+
+上面的 Docker Compose 示例已包含健康检查配置。当健康检查连续 3 次失败时，Docker 会自动重启容器。
+
+### 外部监控
+
+如果你使用外部的可用性监控服务，请把它指向：
+
+```
+https://monitor.example.com/healthz
+```
+
+这样就形成了「监控监控系统」的配置，当 ServerBee 自身宕机时你也会收到告警。
+
+## 资源需求
+
+ServerBee 面向轻量级 VPS 实例设计：
+
+| 组件 | 最低配置 | 推荐配置 |
+|------|---------|---------|
+| 服务端 CPU | 1 vCPU | 2 vCPU |
+| 服务端内存 | 128 MB | 256 MB |
+| 服务端磁盘 | 100 MB + 数据 | 1 GB+（取决于保留策略） |
+| Agent CPU | 可忽略 | < 单核的 1% |
+| Agent 内存 | 10 MB | 20 MB |
+
+数据库大小取决于被监控服务器的数量和你的保留设置。粗略估计，每台服务器每天约产生 1 MB 原始记录。以 50 台服务器、默认 7 天保留为例，数据库约为 350 MB。
+
+## 安全检查清单
+
+将 ServerBee 暴露到公网前，请逐项确认：
+
+- [ ] 修改默认管理员密码
+- [ ] 使用 HTTPS 和有效的 TLS 证书
+- [ ] 设置 `auth.secure_cookie = true`（默认值）
+- [ ] 将服务端绑定到 localhost，并通过反向代理对外暴露
+- [ ] 为登录尝试设置严格的速率限制
+- [ ] 为管理员账号启用 TOTP 两步验证
+- [ ] 仅在接入 Agent 时签发注册码，并保持其短时有效
+- [ ] 保持 GeoIP 数据库更新（如启用）
+- [ ] 配置自动备份
+- [ ] 用外部健康检查监控服务端自身
+
+## 升级指南
+
+ServerBee 在启动时会自动运行数据库迁移，升级后无需手动执行任何迁移步骤。升级前请先备份数据库。
+
+**Docker：**
+
+```bash
+docker compose pull
+docker compose up -d            # 重启并自动运行迁移
+docker compose ps
+```
+
+**二进制：**
+
+```bash
+wget https://github.com/ZingerLittleBee/ServerBee/releases/latest/download/serverbee-server-linux-amd64
+sudo systemctl stop serverbee-server
+sudo mv serverbee-server-linux-amd64 /usr/local/bin/serverbee-server
+sudo chmod +x /usr/local/bin/serverbee-server
+sudo systemctl start serverbee-server
+```
+
+如果你使用安装脚本部署，`sudo serverbee upgrade -y` 会自动完成二进制下载、替换和重启。
+
+<Cards>
+  <Card title="Server 配置" href="/zh/docs/server" />
+  <Card title="Agent 配置" href="/zh/docs/agent" />
+  <Card title="架构设计" href="/zh/docs/architecture" />
+</Cards>

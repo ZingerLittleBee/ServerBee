@@ -4,7 +4,7 @@ description: Configure two-factor authentication, OAuth login, password manageme
 icon: Shield
 ---
 
-ServerBee provides multiple layers of security including two-factor authentication (2FA), OAuth social login, password policies, and login rate limiting.
+ServerBee layers several security controls: two-factor authentication (2FA), OAuth social login, password policies, and login rate limiting.
 
 ## Two-Factor Authentication (2FA)
 
@@ -13,10 +13,10 @@ ServerBee supports TOTP (Time-based One-Time Password) based two-factor authenti
 ### Enabling 2FA
 
 1. Log in and go to Settings → Security
-2. In the "Two-Factor Authentication" section, click **Setup**
-3. Scan the QR code (or manually enter the Base32 secret)
-4. Generate a 6-digit verification code in your authenticator app
-5. Enter the code and click **Enable** to complete setup
+2. In the **Two-Factor Authentication** section, click **Setup**
+3. Scan the QR code (or enter the Base32 secret manually)
+4. Enter the 6-digit code from your authenticator app
+5. Click **Enable** to finish setup
 
 <Callout type="info">
 Once enabled, a 6-digit TOTP code is required for every login. Codes refresh every 30 seconds.
@@ -89,7 +89,7 @@ Passwords are hashed with argon2, following OWASP recommendations.
 
 ### First-Run Admin Credentials
 
-On first start (when no users exist) ServerBee auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner. There is no way to preset the username or password via environment variables. On first login you are required to change this password, and may optionally choose a different username at that time.
+On first start (when no users exist), ServerBee auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner. The username and password cannot be preset via environment variables. On first login you must change this password, and may optionally choose a different username.
 
 ## Login Security
 

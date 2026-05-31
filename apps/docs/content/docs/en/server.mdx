@@ -78,7 +78,7 @@ max_connections = 10           # Maximum SQLite connection pool size
 
 [auth]
 session_ttl = 86400            # Session lifetime in seconds (default: 24 hours)
-max_servers = 0                # Soft limit for newly enrolled servers
+max_servers = 0                # Soft limit for newly enrolled servers (0 = unlimited)
 secure_cookie = true           # Set Secure flag on session cookies (disable for HTTP-only dev)
 
 [retention]
@@ -280,7 +280,9 @@ scopes = ["openid", "email", "profile"]
 If you don't want to configure a reverse proxy by hand, the install script can do it for you: add `--domain monitor.example.com --email admin@example.com` at install time, or run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com` on an already-installed server. The script verifies DNS, installs Caddy, writes the Caddyfile, issues an HTTPS certificate, and sets `auth.secure_cookie` to `true`. The manual configuration below is only needed if you want to manage the reverse proxy yourself.
 </Callout>
 
-When running behind a reverse proxy, you must forward WebSocket connections correctly. Here is an nginx example:
+When running behind a reverse proxy, you must forward WebSocket connections correctly.
+
+### Nginx
 
 ```nginx
 server {
@@ -311,6 +313,22 @@ server {
 The long `proxy_read_timeout` and `proxy_send_timeout` values are important for WebSocket connections. Without them, nginx may close idle connections prematurely, causing agents and terminal sessions to disconnect.
 </Callout>
 
+### Caddy
+
+Caddy handles HTTPS certificates and WebSocket proxying automatically, so the config is minimal:
+
+```txt title="Caddyfile"
+monitor.example.com {
+    reverse_proxy 127.0.0.1:9527
+}
+```
+
+Behind a reverse proxy, point agents at the `https://` address:
+
+```toml title="agent.toml"
+server_url = "https://monitor.example.com"
+```
+
 For more reverse proxy configurations including Traefik, see the [Deployment Guide](/en/docs/deployment).
 
 ## Background Tasks
@@ -327,3 +345,9 @@ The server runs several background tasks automatically:
 | AlertEvaluator | 60s | Evaluates all enabled alert rules |
 
 All tasks start automatically and require no manual configuration.
+
+<Cards>
+  <Card title="Agent Setup" href="/en/docs/agent" />
+  <Card title="Configuration Reference" href="/en/docs/configuration" />
+  <Card title="Deployment Guide" href="/en/docs/deployment" />
+</Cards>

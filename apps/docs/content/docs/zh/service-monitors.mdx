@@ -4,9 +4,9 @@ description: 从 ServerBee 服务端监控 SSL 证书、DNS 记录、HTTP 关键
 icon: Radar
 ---
 
-服务监控（Service Monitors）是一类由 ServerBee 服务端主动执行的合成检查。它适合监控公开服务，即使这些服务并不运行在安装了 ServerBee Agent 的主机上也可以使用。
+服务监控（Service Monitors）是一类由 ServerBee 服务端主动执行的合成检查。即使目标服务没有运行在安装了 ServerBee Agent 的主机上，也能用它来监控公开服务。
 
-与 Ping 监控不同，Ping 监控由 Agent 从各节点发起探测；服务监控由中心 Server 进程执行。检查结果会写入 SQLite，在仪表盘中展示，也可以通过通知组发送告警。
+与 Ping 监控不同：Ping 监控由各节点的 Agent 发起探测，而服务监控由中心 Server 进程执行。检查结果会写入 SQLite、在仪表盘中展示，并可通过通知组触发告警。
 
 ## 支持的监控类型
 
@@ -165,7 +165,7 @@ icon: Radar
 </Callout>
 
 <Cards>
-  <Card title="告警与通知" href="/cn/docs/alerts" />
-  <Card title="公开状态页" href="/cn/docs/status-page" />
-  <Card title="API 参考" href="/cn/docs/api-reference" />
+  <Card title="告警与通知" href="/zh/docs/alerts" />
+  <Card title="公开状态页" href="/zh/docs/status-page" />
+  <Card title="API 参考" href="/zh/docs/api-reference" />
 </Cards>

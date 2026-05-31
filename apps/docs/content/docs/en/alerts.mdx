@@ -4,67 +4,90 @@ description: Configure alert rules with threshold monitoring and multi-channel n
 icon: Bell
 ---
 
-ServerBee includes a flexible alerting system that evaluates metric thresholds and sends notifications through multiple channels when conditions are met.
+ServerBee includes a flexible alerting system that evaluates metric thresholds and security events, then sends notifications through multiple channels when conditions are met.
 
 ## How Alerts Work
 
-The alert system runs as a background task that evaluates all enabled rules every 60 seconds:
+A background task evaluates all enabled rules every 60 seconds:
 
-1. For each enabled alert rule, the server resolves which servers are covered
-2. For each covered server, it checks whether the rule's conditions are met
-3. If a rule triggers, a notification is sent (subject to debounce logic)
-4. If a previously triggered rule recovers, the alert state is cleared
+1. Resolve which servers each rule covers.
+2. Check whether the rule's conditions are met for each covered server.
+3. Send a notification when a rule triggers (subject to debounce).
+4. Clear the alert state when a previously triggered rule recovers.
 
-All alert state is persisted in the database and survives server restarts.
+Alert state is persisted in the database and survives server restarts. Event-driven rules (IP change, SSH login, brute-force, port scan) are evaluated when an agent reports the event, not on the 60-second cycle.
 
 ## Creating Alert Rules
 
 An alert rule consists of:
 
-- **Name** -- A descriptive label for the rule
-- **Rules** -- One or more metric conditions (all must be true simultaneously -- AND logic)
-- **Trigger mode** -- `always` (repeat with debounce) or `once` (notify only on first trigger)
-- **Cover type** -- Which servers this rule applies to
-- **Notification group** -- Where to send notifications
+- **Name** -- A descriptive label.
+- **Rules** -- One or more metric conditions. All conditions must be true simultaneously (AND logic).
+- **Trigger mode** -- `always` (repeat with debounce) or `once` (notify only on the first trigger).
+- **Cover type** -- Which servers the rule applies to.
+- **Notification group** -- Where notifications are sent.
+- **Trigger/recover tasks** -- Optional. Remote commands run automatically when the rule triggers or recovers.
+- **Block source IP** -- Optional. For security-event rules, automatically instructs the agent's firewall to block the offending source IP when the rule triggers.
 
-### Supported Metric Types
+## Supported Metric Types
 
-| Rule Type | Description | Threshold Meaning |
-|-----------|-------------|-------------------|
-| `cpu` | CPU usage percentage | `min`: triggers when CPU >= value |
-| `memory` | Memory used (bytes) | `min`: triggers when usage >= value |
-| `swap` | Swap used (bytes) | `min`: triggers when usage >= value |
-| `disk` | Disk used (bytes) | `min`: triggers when usage >= value |
-| `load1` | 1-minute load average | `min`: triggers when load >= value |
-| `load5` | 5-minute load average | `min`: triggers when load >= value |
-| `load15` | 15-minute load average | `min`: triggers when load >= value |
-| `net_in_speed` | Download speed (bytes/s) | `min`: triggers when speed >= value |
-| `net_out_speed` | Upload speed (bytes/s) | `min`: triggers when speed >= value |
-| `tcp_conn` | TCP connections | `min`: triggers when count >= value |
-| `udp_conn` | UDP connections | `min`: triggers when count >= value |
-| `process` | Process count | `min`: triggers when count >= value |
-| `temperature` | CPU temperature (C) | `min`: triggers when temp >= value |
-| `gpu` | GPU utilization (%) | `min`: triggers when usage >= value |
-| `network_latency` | Network latency (ms) | `min`: triggers when average probe latency >= value |
-| `network_packet_loss` | Network packet loss (%) | `min`: triggers when packet loss percentage >= value |
-| `offline` | Server offline | Triggers when server has been offline for `duration` seconds |
-| `transfer_in_cycle` | Inbound traffic per cycle | Triggers when cumulative transfer >= `cycle_limit` bytes |
-| `transfer_out_cycle` | Outbound traffic per cycle | Triggers when cumulative transfer >= `cycle_limit` bytes |
-| `transfer_all_cycle` | Total traffic per cycle | Triggers when combined transfer >= `cycle_limit` bytes |
-| `expiration` | Server expiration date | Triggers when expired_at is within `duration` days |
-| `ip_changed` | Agent IP address changed | Event-driven rule; triggers when the agent reports an IP change event |
-| `ssh_login_detected` | Successful SSH login | Event-driven; supports `first_seen_only` filter. See [Security Events](/en/docs/security-events) |
-| `ssh_brute_force_detected` | SSH brute-force burst | Event-driven; supports `severity_min` (medium/high/critical) and `exclude_cidrs` |
-| `port_scan_detected` | Port scan from a single IP | Event-driven; supports `severity_min` and `exclude_cidrs` |
+### Resource Thresholds
 
-### Threshold Configuration
+| Rule Type | Description | `min` Threshold Meaning |
+|-----------|-------------|-------------------------|
+| `cpu` | CPU usage percentage | Triggers when usage >= value |
+| `memory` | Memory used (bytes) | Triggers when usage >= value |
+| `swap` | Swap used (bytes) | Triggers when usage >= value |
+| `disk` | Disk used (bytes) | Triggers when usage >= value |
+| `load1` | 1-minute load average | Triggers when load >= value |
+| `load5` | 5-minute load average | Triggers when load >= value |
+| `load15` | 15-minute load average | Triggers when load >= value |
+| `temperature` | CPU temperature (C) | Triggers when temp >= value |
+| `gpu` | GPU utilization (%) | Triggers when usage >= value |
+| `tcp_conn` | TCP connections | Triggers when count >= value |
+| `udp_conn` | UDP connections | Triggers when count >= value |
+| `process` | Process count | Triggers when count >= value |
+| `net_in_speed` | Download speed (bytes/s) | Triggers when speed >= value |
+| `net_out_speed` | Upload speed (bytes/s) | Triggers when speed >= value |
+
+### Traffic Cycle
+
+Used to monitor cumulative traffic over a time window:
+
+| Rule Type | Description |
+|-----------|-------------|
+| `transfer_in_cycle` | Inbound traffic accumulated per cycle |
+| `transfer_out_cycle` | Outbound traffic accumulated per cycle |
+| `transfer_all_cycle` | Combined inbound + outbound traffic per cycle |
+
+Cycle options: `hour` / `day` / `week` / `month` / `year`
+
+### Network Quality
+
+| Rule Type | Description |
+|-----------|-------------|
+| `network_latency` | Triggers when average probe latency (ms) exceeds the threshold |
+| `network_packet_loss` | Triggers when the packet loss percentage exceeds the threshold |
+
+### Offline, Expiration & Events
+
+| Rule Type | Description |
+|-----------|-------------|
+| `offline` | Triggers when the server has been offline for `duration` seconds |
+| `expiration` | Triggers when `expired_at` is within `duration` days |
+| `ip_changed` | Event-driven; triggers when the agent reports an IP change event (not part of the 60-second cycle) |
+| `ssh_login_detected` | Event-driven; successful SSH login. Supports `first_seen_only` filter. See [Security Events](/en/docs/security-events) |
+| `ssh_brute_force_detected` | Event-driven; SSH brute-force burst. Supports `severity_min` (medium/high/critical) and `exclude_cidrs` |
+| `port_scan_detected` | Event-driven; port scan from a single source IP. Supports `severity_min` and `exclude_cidrs` |
+
+## Threshold Configuration
 
 Each rule item supports these fields:
 
 ```json
 {
   "rule_type": "cpu",
-  "min": 80.0,
+  "min": 90.0,
   "max": null,
   "duration": null,
   "cycle_interval": null,
@@ -109,13 +132,21 @@ Each rule item supports these fields:
 { "rule_type": "expiration", "duration": 7 }
 ```
 
+**Multiple conditions (AND logic):** a rule with several conditions triggers only when all of them hold. The following fires when CPU usage is at or above 90% *and* memory usage is at or above 8 GB:
+```json
+[
+  { "rule_type": "cpu", "min": 90.0 },
+  { "rule_type": "memory", "min": 8589934592 }
+]
+```
+
 ## Sampling and Trigger Logic
 
-For resource threshold alerts (CPU, memory, disk, load, etc.), ServerBee does not trigger on a single spike. Instead:
+For resource threshold alerts (CPU, memory, disk, load, etc.), ServerBee does not trigger on a single spike:
 
-1. The evaluator looks at all raw metric records from the **last 10 minutes**
-2. It counts how many records exceed the threshold
-3. The alert triggers only if **70% or more** of the samples exceed the threshold
+1. The evaluator reads all raw metric records from the **last 10 minutes** (one sample per minute, so up to 10 samples).
+2. It counts how many samples exceed the threshold.
+3. The alert triggers only if **70% or more** of the samples exceed the threshold (at least 7 of 10).
 
 This prevents false positives from brief, transient spikes.
 
@@ -133,27 +164,40 @@ Each alert rule specifies which servers it applies to:
 
 ### `always` Mode (Default)
 
-- Sends a notification every time the condition is evaluated as true
-- **5-minute debounce** prevents notification spam: after a notification is sent, the next one is suppressed for 5 minutes even if the condition persists
+- Sends a notification every time the condition is evaluated as true.
+- **5-minute debounce** prevents notification spam: for the same (rule + server) combination, after a notification is sent, the next one is suppressed for 5 minutes even if the condition persists.
 
 ### `once` Mode
 
-- Sends a notification only on the **first trigger**
-- No further notifications are sent until the condition recovers and triggers again
+- Sends a notification only on the **first trigger**.
+- No further notifications are sent until the condition recovers and triggers again.
+
+### State Persistence
+
+Trigger state is persisted to the `alert_states` table in SQLite and loaded into a hot cache on startup. As a result:
+
+- A `once` rule that is already triggered will not re-fire after a server restart.
+- Triggered-but-not-yet-recovered alerts are restored automatically after a restart.
 
 ### Recovery
 
-When a previously triggered alert recovers (the condition is no longer met), the alert state is cleared in both the in-memory cache and the database. If the condition triggers again later, notifications will fire according to the trigger mode.
+When a previously triggered alert recovers (the condition is no longer met):
+
+1. The alert is marked as recovered, and its state is cleared in both the in-memory cache and the database.
+2. If recover tasks (`recover_trigger_tasks`) are configured, the corresponding remote commands run.
+3. If the condition triggers again later, notifications fire according to the trigger mode.
 
 ## Maintenance Suppression
 
-Alert notifications are suppressed while the affected server is in an active maintenance window. The rule evaluation still runs, but ServerBee skips notification delivery for that server until the maintenance window ends.
+Alert notifications are suppressed while the affected server is in an active maintenance window. Rule evaluation still runs, but ServerBee skips notification delivery for that server until the window ends. Event-driven rules follow the same cover-type and maintenance suppression rules as polling-based rules.
 
-`ip_changed` is event-driven rather than polling-based. It is evaluated when an agent reports an IP change event, and it follows the same cover-type and maintenance suppression rules as other alerts.
+## Blocking Source IPs
+
+Security-event rules (`ssh_brute_force_detected`, `port_scan_detected`) can enable **Block source IP**. When the rule triggers, ServerBee tells the affected agent's firewall to block the offending IP, turning detection into automatic mitigation. This requires the `CAP_FIREWALL_BLOCK` capability on the server. See [Security Events](/en/docs/security-events) and [Firewall](/en/docs/firewall).
 
 ## Notification Channels
 
-ServerBee supports five notification channel types. Each channel is configured as a separate entity that can be reused across multiple notification groups.
+ServerBee supports five notification channel types. Each channel is a separate entity that can be reused across multiple notification groups.
 
 ### Webhook
 
@@ -174,7 +218,7 @@ If no `body_template` is provided, the default template is used. If no `Content-
 
 ### Telegram
 
-Send messages to a Telegram chat via the Bot API.
+Send messages to a Telegram chat via the Bot API. Messages are sent with HTML parse mode enabled.
 
 ```json
 {
@@ -182,8 +226,6 @@ Send messages to a Telegram chat via the Bot API.
   "chat_id": "-1001234567890"
 }
 ```
-
-Messages are sent with HTML parse mode enabled.
 
 ### Bark
 
@@ -230,17 +272,7 @@ Send native Apple Push Notification service pushes to registered mobile devices.
 
 APNs requires an Apple developer key, team ID, bundle ID, and private key. Set `sandbox: true` only for development builds.
 
-## Notification Groups
-
-Notification channels are organized into **groups**. An alert rule is linked to a notification group, and when the rule triggers, all enabled channels in the group are dispatched.
-
-This allows you to:
-
-- Send the same alert to multiple channels (e.g., Telegram + Email)
-- Reuse channel configurations across different alert rules
-- Enable/disable individual channels without modifying alert rules
-
-## Template Variables
+### Template Variables
 
 Notification messages support the following template variables:
 
@@ -263,12 +295,38 @@ The default notification template is:
 Time: {{time}}
 ```
 
+### Testing a Channel
+
+After creating a channel, verify its configuration with the test endpoint:
+
+```
+POST /api/notifications/:id/test
+```
+
+## Notification Groups
+
+Notification channels are organized into **groups**. An alert rule is linked to a notification group, and when the rule triggers, all enabled channels in the group are dispatched.
+
+This allows you to:
+
+- Send the same alert to multiple channels (e.g., Telegram + Email).
+- Reuse channel configurations across different alert rules.
+- Enable or disable individual channels without modifying alert rules.
+
+## Offline Detection
+
+Offline status is determined by a dedicated background task and works together with `offline` rules:
+
+- The task scans agent connection state every 10 seconds.
+- A server is marked offline when its last report is more than 30 seconds old.
+- The `offline` rule's `duration` sets how many seconds a server must stay offline before the alert fires. For example, `{ "rule_type": "offline", "duration": 60 }` triggers after 60 seconds offline.
+
 ## Example: Complete Alert Setup
 
 Here is a typical setup for monitoring CPU usage across all servers with Telegram notifications:
 
-1. **Create a Telegram notification channel** with your bot token and chat ID
-2. **Create a notification group** that includes the Telegram channel
+1. **Create a Telegram notification channel** with your bot token and chat ID.
+2. **Create a notification group** that includes the Telegram channel.
 3. **Create an alert rule:**
    - Name: "High CPU Usage"
    - Rules: `[{"rule_type": "cpu", "min": 90.0}]`
@@ -277,3 +335,9 @@ Here is a typical setup for monitoring CPU usage across all servers with Telegra
    - Notification group: (the group you created)
 
 Now, when any server's CPU stays above 90% for at least 70% of a 10-minute sampling window, you will receive a Telegram message. Subsequent notifications are debounced to once every 5 minutes while the condition persists.
+
+<Cards>
+  <Card title="Security Events" href="/en/docs/security-events" />
+  <Card title="Firewall" href="/en/docs/firewall" />
+  <Card title="Notification Configuration" href="/en/docs/configuration" />
+</Cards>

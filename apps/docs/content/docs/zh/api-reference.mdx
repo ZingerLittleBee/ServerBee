@@ -4,7 +4,7 @@ description: ServerBee REST API 概览、认证方式、WebSocket 端点和 Swag
 icon: FileCode
 ---
 
-ServerBee 将 Web 管理面板使用的能力同时通过 REST 和 WebSocket API 暴露。最权威的 schema 级参考由服务端二进制中的 OpenAPI 注解自动生成。
+ServerBee 把 Web 管理面板使用的能力同时通过 REST 和 WebSocket API 暴露。最权威的 schema 级参考由服务端二进制中的 OpenAPI 注解自动生成。
 
 ## Swagger UI
 
@@ -14,7 +14,7 @@ ServerBee 将 Web 管理面板使用的能力同时通过 REST 和 WebSocket API
 https://your-server/swagger-ui/
 ```
 
-你可以在 Swagger UI 中查看请求/响应模型、认证要求，并直接向自己的部署发送测试请求。原始 OpenAPI 文档地址：
+你可以在 Swagger UI 中查看请求/响应模型和认证要求，并直接向自己的部署发送测试请求。原始 OpenAPI 文档地址：
 
 ```text
 https://your-server/api-docs/openapi.json
@@ -196,7 +196,7 @@ curl https://your-server/api/auth/me \
 |------|------|------|
 | `/api/agent/ws?token=<agent_token>` | Agent token 查询参数 | Agent 指标、命令、Ping、文件、Docker、Traceroute |
 | `/api/ws/servers` | Session cookie、API Key 或 Bearer token | 浏览器/移动端实时服务器更新 |
-| `/api/ws/terminal/{server_id}` | 已认证 Admin + `CAP_TERMINAL` | Web 终端代理；终端数据使用二进制帧 |
+| `/api/ws/terminal/{server_id}` | 已认证 Admin + `CAP_TERMINAL` | Web 终端代理；JSON 文本消息，终端数据 base64 编码 |
 | `/api/ws/docker/logs/{server_id}` | 已认证 + `CAP_DOCKER` | 按容器流式传输 Docker 日志 |
 
 ## 常见状态码
@@ -213,7 +213,7 @@ curl https://your-server/api/auth/me \
 | 500 | 服务器内部错误 |
 
 <Cards>
-  <Card title="功能开关" href="/cn/docs/capabilities" />
-  <Card title="管理员指南" href="/cn/docs/admin" />
-  <Card title="架构设计" href="/cn/docs/architecture" />
+  <Card title="功能开关" href="/zh/docs/capabilities" />
+  <Card title="管理员指南" href="/zh/docs/admin" />
+  <Card title="架构设计" href="/zh/docs/architecture" />
 </Cards>
