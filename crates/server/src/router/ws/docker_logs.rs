@@ -38,7 +38,26 @@ async fn docker_logs_ws_handler(
     // Auth: session cookie or API key
     let user = validate_auth(&state, &headers).await;
     match user {
-        Some(user_id) => {
+        Some((user_id, role)) => {
+            // Docker log streaming exposes sensitive container output
+            // (env vars, connection strings, tokens), so it is admin-only,
+            // consistent with terminal access.
+            if role != "admin" {
+                let detail = serde_json::json!({
+                    "server_id": server_id,
+                    "deny_reason": "role_forbidden",
+                })
+                .to_string();
+                let _ = AuditService::log(
+                    &state.db,
+                    &user_id,
+                    "docker_logs_subscribe_denied",
+                    Some(&detail),
+                    &ip,
+                )
+                .await;
+                return axum::http::StatusCode::FORBIDDEN.into_response();
+            }
             // Check agent is online
             if !state.agent_manager.is_online(&server_id) {
                 return (axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response();
@@ -80,7 +99,7 @@ async fn docker_logs_ws_handler(
     }
 }
 
-async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<String> {
+async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<(String, String)> {
     use crate::service::auth::AuthService;
 
     // Try session cookie
@@ -89,7 +108,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
         && !user.must_change_password
     {
-        return Some(user.id);
+        return Some((user.id, user.role));
     }
 
     // Try API key header
@@ -97,7 +116,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
         && !user.must_change_password
     {
-        return Some(user.id);
+        return Some((user.id, user.role));
     }
 
     // Try Bearer token
@@ -106,7 +125,7 @@ async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<Str
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
         && !user.must_change_password
     {
-        return Some(user.id);
+        return Some((user.id, user.role));
     }
 
     None
