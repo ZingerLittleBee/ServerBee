@@ -4,50 +4,66 @@ description: Access a full shell on your servers directly from the browser.
 icon: SquareTerminal
 ---
 
-ServerBee includes a built-in web terminal that gives you direct shell access to any connected server through your browser. No SSH client needed -- just click and type.
+ServerBee includes a built-in web terminal that gives administrators direct shell access to any connected server through the browser. No SSH client needed -- just click and type.
 
 ## How It Works
 
-The web terminal uses a three-hop WebSocket relay:
+The web terminal uses a three-hop WebSocket relay, with the server acting as a proxy between the browser and the agent:
 
 ```
-Browser  <--WebSocket-->  Server  <--WebSocket-->  Agent (PTY)
+Browser (xterm.js)  <--WebSocket-->  Server (proxy)  <--WebSocket-->  Agent (PTY)
 ```
 
-1. The browser opens a WebSocket connection to the server at `/ws/terminal/{server_id}`
-2. The server authenticates the user (session cookie or API key) and verifies admin role
-3. The server sends a `TerminalOpen` command to the agent via its existing WebSocket connection
-4. The agent spawns a PTY (pseudo-terminal) process with the system's default shell
-5. Input from the browser is forwarded to the agent's PTY, and output flows back the same path
+1. The browser opens a WebSocket connection to the server at `/api/ws/terminal/{server_id}`
+2. The server authenticates the user (session cookie or API key) and verifies the admin role
+3. The server sends a `TerminalOpen` command to the agent over its existing WebSocket connection
+4. The agent spawns a PTY (pseudo-terminal) process via the `portable-pty` library, running the system's default shell
+5. Input from the browser is forwarded through the server to the agent's PTY, and output flows back along the same path
 
-All terminal data is base64-encoded within JSON messages. The actual shell process runs entirely on the agent machine.
+The shell process runs entirely on the agent machine. Terminal payloads are relayed over WebSocket.
 
 ## Usage
 
-1. Navigate to a server's detail page in the dashboard
-2. Click the **Terminal** button (available only for online servers)
-3. A terminal panel opens with a full interactive shell session
+1. Sign in to the ServerBee dashboard
+2. Open the server list and select the target server
+3. On the server detail page, click the **Terminal** button (available only for online servers)
+4. Once the connection is established, you have a full interactive shell in the browser
 
-You can:
-- Run any command your shell supports
-- Use tab completion, history, and keyboard shortcuts
-- Resize the terminal window (the PTY automatically adjusts)
-- Open terminals to multiple servers simultaneously in different tabs
+<Callout type="warn">
+The web terminal is restricted to the **admin** role. Non-admin (member) users cannot access the terminal and receive a 403 Forbidden response when attempting to open a session.
+</Callout>
+
+## Features
+
+### Full Shell Experience
+
+- Supports standard shells (bash, zsh, etc., depending on the agent host's default shell)
+- Tab completion, command history, and keyboard shortcuts
+- Interactive programs such as `vim`, `top`, and `htop`
+- Color output and ANSI escape sequences
+
+### Automatic Resizing
+
+The terminal window adapts to the browser window automatically. When you resize the browser, the terminal's rows and columns are synced to the remote PTY so the display always renders correctly.
+
+### Tokyo Night Theme
+
+The web terminal uses the Tokyo Night color scheme to match ServerBee's dark theme.
+
+### Multiple Sessions
+
+You can open multiple terminal sessions to the same server simultaneously, making it easy to run different tasks in different tabs.
 
 ## Authentication and Access Control
 
 <Callout type="warn">
-Web terminal access is restricted to users with the **admin** role only. Non-admin users will receive a 403 Forbidden response when attempting to open a terminal session.
+The web terminal also requires the **terminal** capability (`CAP_TERMINAL`) to be enabled on the target server. If it is disabled, the WebSocket upgrade is rejected with 403 Forbidden. Administrators manage capabilities in Settings → Capabilities.
 </Callout>
 
-<Callout type="warn">
-Web terminal access also requires the **terminal** capability (CAP_TERMINAL) to be enabled on the target server. If disabled, the WebSocket upgrade will be rejected with 403 Forbidden. Administrators can manage capabilities in Settings → Capabilities.
-</Callout>
+Authentication uses the same mechanisms as the REST API:
 
-Authentication works through the same mechanisms as the REST API:
-
-- **Session cookie** -- Automatically sent by the browser after login
-- **API key** -- Sent via the `X-API-Key` header (useful for programmatic access)
+- **Session cookie** -- sent automatically by the browser after login
+- **API key** -- sent via the `X-API-Key` header (useful for programmatic access)
 
 The server validates the user's identity and role before upgrading the connection to a WebSocket.
 
@@ -59,18 +75,16 @@ To prevent resource exhaustion, the following limits are enforced:
 |-------|-------|
 | Maximum concurrent terminal sessions per server | 3 |
 | Idle timeout | 10 minutes |
-| Maximum WebSocket message size | 1 MB |
-| Maximum binary frame size | 64 KB |
+| Maximum message size | 1 MB |
+| Access | Admin only |
 
 ### Idle Timeout
 
-If no input is received from the browser for 10 minutes, the session is automatically closed. The browser receives an error message indicating the timeout, and the agent-side PTY process is terminated.
-
-The idle timer resets every time the user sends any input (including resize events).
+If no input is received from the browser for 10 minutes, the session is closed automatically: the browser receives a timeout error and the agent-side PTY process is terminated. Any input, including resize events, resets the idle timer.
 
 ## Terminal Protocol
 
-The browser and server communicate using JSON messages:
+The browser and server exchange JSON control messages.
 
 ### Browser to Server
 
@@ -118,18 +132,51 @@ The `data` field contains base64-encoded input.
    - Agent disconnects
    - Server sends `TerminalClose` to the agent
 
-On close, the server sends a `TerminalClose` message to the agent, which terminates the PTY process. The terminal session is unregistered from the agent manager.
+On close, the server sends a `TerminalClose` message to the agent, which terminates the PTY process, and the session is unregistered from the agent manager.
+
+## Security
+
+### PTY Run-As User
+
+The PTY process runs as the system user the agent runs as. The install script configures the agent as a systemd service running as `root` by default, so terminal sessions also run with root privileges.
+
+If this is a concern, run the agent under a dedicated, less-privileged user via the systemd `User=` directive:
+
+```ini title="serverbee-agent.service"
+[Service]
+User=serverbee
+Group=serverbee
+ExecStart=/usr/local/bin/serverbee-agent
+```
+
+<Callout type="warn">
+Running the agent as a non-root user limits the user's permissions in the terminal and may restrict some system-metric collection (such as TCP/UDP connection counts). ICMP ping probes additionally require the `CAP_NET_RAW` capability.
+</Callout>
+
+### Audit Logging
+
+Terminal connect and disconnect events are written to the audit log. Administrators can review all session access under Settings → Audit Logs, including the operator's username, target server, connect/disconnect times, and source IP address.
+
+### Transport Encryption
+
+In production, always serve the terminal behind an HTTPS reverse proxy. Unencrypted WebSocket connections can expose terminal input and output to eavesdropping.
 
 ## Troubleshooting
 
 ### "Agent is offline"
 
-The terminal requires the target server's agent to be connected. If the agent is offline, you will see an error message and the WebSocket upgrade will be rejected.
+The terminal requires the target server's agent to be connected. If the agent is offline, the WebSocket upgrade is rejected and an error is shown.
 
 ### Connection drops frequently
 
-If you are running behind a reverse proxy, ensure WebSocket connections are properly forwarded and that read/write timeouts are set to at least 86400 seconds (24 hours). See the [Server Setup](/en/docs/server) guide for an nginx configuration example.
+Behind a reverse proxy, ensure WebSocket connections are forwarded correctly and that read/write timeouts are set to at least 86400 seconds (24 hours). See the [Server Setup](/en/docs/server) guide for an nginx example.
 
 ### Terminal is slow or laggy
 
-Terminal data is relayed through the central server. If the server is geographically far from either the browser or the agent, you may experience latency. This is inherent to the relay architecture. For latency-sensitive work, consider using direct SSH access instead.
+Terminal data is relayed through the central server. If the server is geographically distant from the browser or the agent, you may notice latency -- this is inherent to the relay architecture. For latency-sensitive work, use direct SSH access instead.
+
+<Cards>
+  <Card title="Server Setup" href="/en/docs/server" />
+  <Card title="Architecture" href="/en/docs/architecture" />
+  <Card title="Deployment" href="/en/docs/deployment" />
+</Cards>
