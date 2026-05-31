@@ -1,7 +1,7 @@
 export const INSTALL_COMMAND =
   'curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server'
 
-export type LandingLang = 'en' | 'cn'
+export type LandingLang = 'en' | 'zh'
 
 export const translations = {
   en: {
@@ -86,7 +86,7 @@ export const translations = {
       star: 'Star on GitHub'
     }
   },
-  cn: {
+  zh: {
     hero: {
       eyebrow: '开源 · MIT · Rust 构建',
       headline1: '自托管的 VPS 监控，',

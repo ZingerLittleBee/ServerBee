@@ -11,7 +11,7 @@ export const Route = createFileRoute('/$lang/')({
 
 function Home() {
   const { lang } = useParams({ from: '/$lang/' })
-  const landingLang: LandingLang = lang === 'cn' ? 'cn' : 'en'
+  const landingLang: LandingLang = lang === 'zh' ? 'zh' : 'en'
 
   return (
     <HomeLayout {...baseOptions(lang)} themeSwitch={{ enabled: false }}>

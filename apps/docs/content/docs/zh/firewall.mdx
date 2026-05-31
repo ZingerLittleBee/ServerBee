@@ -45,7 +45,7 @@ allow_list = ["198.51.100.42", "203.0.113.0/29"]
 
 ## 告警触发自动封禁
 
-爆破和端口扫描类告警规则可以追加 `block_source_ip` 动作，把事件来源 IP 自动写入黑名单。详见 [安全事件检测 → 自动封禁来源 IP](/cn/docs/security-events)。
+爆破和端口扫描类告警规则可以追加 `block_source_ip` 动作，把事件来源 IP 自动写入黑名单。详见 [安全事件检测 → 自动封禁来源 IP](/zh/docs/security-events)。
 
 自动封禁按规范化目标做去重。如果已有记录覆盖了触发该事件的服务器，则静默跳过；如果存在但 **未** 覆盖该服务器，冲突会写入审计日志（`firewall_auto_block_skipped_conflict`），不会新建记录 —— 操作员可手工扩大已有记录的覆盖范围。
 
@@ -92,8 +92,8 @@ nft delete table inet serverbee
 - 仅 `input` 链，不过滤 `forward` / `output`
 
 <Cards>
-  <Card title="功能开关" href="/cn/docs/capabilities" />
-  <Card title="安全事件检测" href="/cn/docs/security-events" />
-  <Card title="告警与通知" href="/cn/docs/alerts" />
-  <Card title="配置参考" href="/cn/docs/configuration" />
+  <Card title="功能开关" href="/zh/docs/capabilities" />
+  <Card title="安全事件检测" href="/zh/docs/security-events" />
+  <Card title="告警与通知" href="/zh/docs/alerts" />
+  <Card title="配置参考" href="/zh/docs/configuration" />
 </Cards>

@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --domain monitor.example.com --email admin@example.com -y
 ```
 
-脚本安装后的目录布局：二进制在 `/opt/serverbee/bin/`，配置在 `/opt/serverbee/etc/server.toml`，数据在 `/opt/serverbee/data/`，管理 CLI 软链为 `/usr/local/bin/serverbee`。完整步骤见[快速安装](/cn/docs/quick-start)。
+脚本安装后的目录布局：二进制在 `/opt/serverbee/bin/`，配置在 `/opt/serverbee/etc/server.toml`，数据在 `/opt/serverbee/data/`，管理 CLI 软链为 `/usr/local/bin/serverbee`。完整步骤见[快速安装](/zh/docs/quick-start)。
 
 ### 二进制安装（手动）
 
@@ -70,7 +70,7 @@ Server 按以下顺序读取 TOML 配置，靠后的来源会覆盖靠前的：
 通过安装脚本部署时，配置文件位于 `/opt/serverbee/etc/server.toml`，数据目录为 `/opt/serverbee/data/`（脚本会显式写入这些路径，覆盖下方的内置默认值）。`/etc/serverbee`、`/var/lib/serverbee` 是旧版布局，仅在历史安装中出现，脚本会自动迁移。
 </Callout>
 
-下面的 `server.toml` 列出最常用的配置项及其默认值。完整选项见[配置参考](/cn/docs/configuration)。
+下面的 `server.toml` 列出最常用的配置项及其默认值。完整选项见[配置参考](/zh/docs/configuration)。
 
 ```toml
 [server]
@@ -354,7 +354,7 @@ monitor.example.com {
 server_url = "https://monitor.example.com"
 ```
 
-更多反向代理配置（含 Traefik）请参阅[部署指南](/cn/docs/deployment)。
+更多反向代理配置（含 Traefik）请参阅[部署指南](/zh/docs/deployment)。
 
 ## 后台任务
 
@@ -372,7 +372,7 @@ Server 会自动运行多个后台任务：
 所有任务自动启动，无需手动配置。
 
 <Cards>
-  <Card title="Agent 安装配置" href="/cn/docs/agent" />
-  <Card title="完整配置参考" href="/cn/docs/configuration" />
-  <Card title="部署指南" href="/cn/docs/deployment" />
+  <Card title="Agent 安装配置" href="/zh/docs/agent" />
+  <Card title="完整配置参考" href="/zh/docs/configuration" />
+  <Card title="部署指南" href="/zh/docs/deployment" />
 </Cards>

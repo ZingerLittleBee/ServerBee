@@ -61,5 +61,5 @@ function Card({ title, body, span, children }: { title: string; body: string; sp
 }
 
 function bentoTitle(lang: LandingLang): string {
-  return lang === 'cn' ? '一个探针，覆盖运维的方方面面。' : 'One probe. Every job your VPS needs.'
+  return lang === 'zh' ? '一个探针，覆盖运维的方方面面。' : 'One probe. Every job your VPS needs.'
 }

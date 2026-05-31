@@ -90,7 +90,7 @@ enrollment_code = ""   # one-time code from Settings; only used for first regist
 interval = 3           # seconds between reports
 ```
 
-📖 Full reference: **[ENV.md](ENV.md)** · OAuth, retention, rate limiting, GeoIP, and more in the [documentation](apps/docs).
+📖 Full reference: **[ENV.md](ENV.md)** · OAuth, retention, rate limiting, GeoIP, and more in the [documentation](https://docs.serverbee.app/en/docs/configuration).
 
 ## Deployment
 
@@ -114,7 +114,7 @@ sudo serverbee uninstall agent -y
 
 ### Reverse proxy
 
-Behind Nginx/Caddy, proxy `/` to `127.0.0.1:9527` and make sure the WebSocket routes `/api/ws/` and `/api/agent/ws` forward the `Upgrade`/`Connection` headers with a long read timeout. See the [deployment docs](apps/docs) for a ready-to-use Nginx config.
+Behind Nginx/Caddy, proxy `/` to `127.0.0.1:9527` and make sure the WebSocket routes `/api/ws/` and `/api/agent/ws` forward the `Upgrade`/`Connection` headers with a long read timeout. See the [deployment docs](https://docs.serverbee.app/en/docs/deployment) for a ready-to-use Nginx config.
 
 ## Development
 

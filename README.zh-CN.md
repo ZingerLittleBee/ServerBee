@@ -90,7 +90,7 @@ enrollment_code = ""   # 来自设置页的一次性 code,仅用于首次注册
 interval = 3           # 上报间隔(秒)
 ```
 
-📖 完整参考:**[ENV.md](ENV.md)** · OAuth、数据保留、速率限制、GeoIP 等详见[文档](apps/docs)。
+📖 完整参考:**[ENV.md](ENV.md)** · OAuth、数据保留、速率限制、GeoIP 等详见[文档](https://docs.serverbee.app/zh/docs/configuration)。
 
 ## 部署
 
@@ -114,7 +114,7 @@ sudo serverbee uninstall agent -y
 
 ### 反向代理
 
-在 Nginx/Caddy 之后,将 `/` 代理到 `127.0.0.1:9527`,并确保 WebSocket 路由 `/api/ws/` 和 `/api/agent/ws` 透传 `Upgrade`/`Connection` 头且设置较长读超时。完整可用的 Nginx 配置见[部署文档](apps/docs)。
+在 Nginx/Caddy 之后,将 `/` 代理到 `127.0.0.1:9527`,并确保 WebSocket 路由 `/api/ws/` 和 `/api/agent/ws` 透传 `Upgrade`/`Connection` 头且设置较长读超时。完整可用的 Nginx 配置见[部署文档](https://docs.serverbee.app/zh/docs/deployment)。
 
 ## 开发
 

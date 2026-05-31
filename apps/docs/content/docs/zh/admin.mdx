@@ -213,7 +213,7 @@ GET /api/audit-logs?limit=50&offset=0
 
 ### 流量告警
 
-使用 `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` 告警类型，可以监控当前计费周期内的累计流量是否超过设定阈值。详见 [告警与通知](/cn/docs/alerts)。
+使用 `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` 告警类型，可以监控当前计费周期内的累计流量是否超过设定阈值。详见 [告警与通知](/zh/docs/alerts)。
 
 ### 成本洞察
 
@@ -225,11 +225,11 @@ GET /api/audit-logs?limit=50&offset=0
 
 #### 价值评分
 
-每台已配置成本的服务器都会拿到 0-100 的 `score` 和对应的 `grade`（`excellent` / `good` / `okay` / `poor` / `waste`），由资源单价分位、利用率、可用性三部分加权而成。完整算法、各子项权重、reasons 含义、confidence 计算与输入校验规则见[成本洞察与价值评分](/cn/docs/cost-insights)。
+每台已配置成本的服务器都会拿到 0-100 的 `score` 和对应的 `grade`（`excellent` / `good` / `okay` / `poor` / `waste`），由资源单价分位、利用率、可用性三部分加权而成。完整算法、各子项权重、reasons 含义、confidence 计算与输入校验规则见[成本洞察与价值评分](/zh/docs/cost-insights)。
 
 #### API
 
-同样的数据通过只读 API 暴露：`GET /api/cost/overview`（按币种汇总的舰队总览 + 每台服务器摘要）和 `GET /api/servers/{id}/cost-insights`（单台服务器的完整明细）。认证细节见 [API 参考](/cn/docs/api-reference#已认证读取端点)。
+同样的数据通过只读 API 暴露：`GET /api/cost/overview`（按币种汇总的舰队总览 + 每台服务器摘要）和 `GET /api/servers/{id}/cost-insights`（单台服务器的完整明细）。认证细节见 [API 参考](/zh/docs/api-reference#已认证读取端点)。
 
 ## Agent 注册管理
 
@@ -244,7 +244,7 @@ GET /api/audit-logs?limit=50&offset=0
 如果失败的接入流程留下了离线的 `New Server` 占位条目，`/servers` 页面会显示 **Clean up unconnected** 操作。它只删除从未完成初始化的离线占位服务器，已经在线但尚未上报 `SystemInfo` 的节点会被保留。
 
 <Cards>
-  <Card title="功能开关" href="/cn/docs/capabilities" />
-  <Card title="安全设置" href="/cn/docs/security" />
-  <Card title="告警与通知" href="/cn/docs/alerts" />
+  <Card title="功能开关" href="/zh/docs/capabilities" />
+  <Card title="安全设置" href="/zh/docs/security" />
+  <Card title="告警与通知" href="/zh/docs/alerts" />
 </Cards>
