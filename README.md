@@ -21,7 +21,7 @@ English | [简体中文](./README.zh-CN.md)
 
 ServerBee watches all your servers from one place. A central **server** receives metrics from lightweight **agents** over WebSocket, stores them in embedded SQLite, and serves a real-time React dashboard — no external database, no heavy runtime.
 
-- 🪶 **Tiny footprint** — agents use ~5–15 MB RAM; the server handles 1000 nodes in ~50–100 MB.
+- 🪶 **Tiny footprint** — agents typically use only ~5–15 MB of RAM, and the server stays lightweight as your fleet grows.
 - ⚡ **Real-time** — live WebSocket dashboard for CPU, memory, disk, network, load, temperature, GPU, and disk I/O.
 - 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
 - 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, status pages, and more.
@@ -35,21 +35,23 @@ ServerBee watches all your servers from one place. A central **server** receives
 ### 1. Install the server
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server --method docker
 ```
 
 Open `http://your-server:9527`. The admin password is auto-generated and printed to the startup log — change it on first login.
 
-> Prefer Docker? Run `docker compose up -d`. Prefer the cloud? Use the [Railway one-click deploy](#railway-one-click) below.
+> The install script supports both **Docker** and **native binary** installs via `--method docker|binary`. **Docker is recommended for the server**; omit the flag to choose interactively. Prefer the cloud? Use the [Railway one-click deploy](#railway-one-click) below.
 
 ### 2. Enroll an agent
 
 Sign in as admin → **Settings** → generate a one-time **enrollment code** (single-use, expires in ~10 min). Then on each node:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --method binary \
   --server-url http://YOUR_SERVER:9527 --enrollment-code YOUR_ONE_TIME_CODE
 ```
+
+> A **native binary is recommended for agents** — smallest footprint and full host-level metrics. Pass `--method docker` to run the agent in a container instead.
 
 The agent saves a per-server token on first connect and reconnects automatically afterwards — the code is only needed once. That's it. 🎉
 

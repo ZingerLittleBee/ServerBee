@@ -21,7 +21,7 @@
 
 ServerBee 让你在一处掌控所有服务器。中心 **Server** 通过 WebSocket 接收来自轻量 **Agent** 的指标,存入内嵌 SQLite,并提供实时 React 仪表盘 —— 无外部数据库,无沉重运行时。
 
-- 🪶 **极致轻量** —— Agent 内存占用约 5–15 MB;Server 管理 1000 个节点仅需约 50–100 MB。
+- 🪶 **极致轻量** —— Agent 通常仅占用约 5–15 MB 内存,Server 即便管理大量节点也保持精简。
 - ⚡ **实时刷新** —— WebSocket 实时仪表盘,涵盖 CPU、内存、磁盘、网络、负载、温度、GPU、磁盘 I/O。
 - 📦 **单一二进制** —— Server 与内嵌 Web UI 打包成一个文件,支持 Docker、一行脚本、Railway 部署。
 - 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、状态页等一应俱全。
@@ -35,21 +35,23 @@ ServerBee 让你在一处掌控所有服务器。中心 **Server** 通过 WebSoc
 ### 1. 安装 Server
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server --method docker
 ```
 
 打开 `http://your-server:9527`。管理员密码会自动生成并打印在启动日志中 —— 首次登录后请修改。
 
-> 偏好 Docker?执行 `docker compose up -d`。偏好云端?使用下方的 [Railway 一键部署](#railway一键部署)。
+> 安装脚本通过 `--method docker|binary` 同时支持 **Docker** 与 **二进制** 两种安装方式。**Server 推荐 Docker 安装**;省略该参数则进入交互式选择。偏好云端?使用下方的 [Railway 一键部署](#railway一键部署)。
 
 ### 2. 接入 Agent
 
 以管理员登录 → **设置** → 生成一个一次性 **enrollment code**(单次使用,约 10 分钟后过期)。然后在每个节点上:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --method binary \
   --server-url http://YOUR_SERVER:9527 --enrollment-code YOUR_ONE_TIME_CODE
 ```
+
+> **Agent 推荐二进制安装** —— 占用最小,且能采集完整的宿主机指标。如需在容器中运行 Agent,改用 `--method docker`。
 
 Agent 首次连接时会保存每服务器 token 并自动重连 —— code 只需用一次。搞定。🎉
 
