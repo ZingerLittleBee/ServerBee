@@ -63,7 +63,7 @@ Agent → WebSocket (JSON) → Server → SQLite (sea-orm)
 - **Agent→Server**: `AgentMessage` variants (SystemInfo, Report, PingResult, TaskResult, SecurityEvent, CapabilityDenied, file/terminal/network results)
 - **Server→Agent**: `ServerMessage` variants (Welcome, Ack, Exec, TerminalOpen, PingTasksSync, NetworkProbeSync, file ops)
 - **Server→Browser**: `BrowserMessage` variants (FullSync, Update, ServerOnline/Offline, CapabilitiesChanged, SecurityEvent)
-- Terminal data uses Binary WebSocket frames (session_id prefix + payload)
+- Terminal data is carried in JSON text messages (`Message::Text`); the raw PTY byte stream rides in a base64-encoded `data` field. The protocol uses no binary WebSocket frames.
 
 ### AppState
 

@@ -4,7 +4,7 @@ description: ServerBee REST API overview, authentication, WebSocket endpoints, a
 icon: FileCode
 ---
 
-ServerBee exposes the same capabilities used by the web dashboard through REST and WebSocket APIs. The authoritative, schema-level reference is generated from OpenAPI annotations in the server binary.
+ServerBee exposes the same capabilities the web dashboard uses through REST and WebSocket APIs. The authoritative, schema-level reference is generated from OpenAPI annotations in the server binary.
 
 ## Swagger UI
 
@@ -14,7 +14,7 @@ Open the built-in interactive documentation at:
 https://your-server/swagger-ui/
 ```
 
-Swagger UI lets you inspect request/response schemas, authentication requirements, and test requests against your own deployment. The raw OpenAPI document is available at:
+Swagger UI lets you inspect request/response schemas and authentication requirements, and send test requests against your own deployment. The raw OpenAPI document is available at:
 
 ```text
 https://your-server/api-docs/openapi.json
@@ -196,7 +196,7 @@ Rotates (revokes) the agent run token for the given server. The old token is inv
 |------|------|-------------|
 | `/api/agent/ws?token=<agent_token>` | Agent token query parameter | Agent metrics, commands, pings, files, Docker, traceroute |
 | `/api/ws/servers` | Session cookie, API key, or Bearer token | Browser/mobile real-time server updates |
-| `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy; terminal payloads use binary frames |
+| `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy; JSON text messages with terminal data base64-encoded |
 | `/api/ws/docker/logs/{server_id}` | Authenticated + `CAP_DOCKER` | Per-container Docker log streaming |
 
 ## Common Status Codes
