@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.6] - 2026-05-31
+
+### Added
+
+- **Network quality dashboard widgets** -- New network overview, network latency chart, and network quality summary widgets, complete with per-widget config forms, i18n strings, picker icons, and registered widget types. Detail-page and widget chart records now share a single pure merge function and records hook. The dashboard save path whitelists the new network quality widget types on the backend
+- **Server-cards widget layout controls** -- The dashboard server-cards widget gains a grid/list layout toggle, sizes itself to its content height (applied instantly to avoid overlap), and reveals additional rows on scroll instead of paginating, with a load-more spinner while fetching
+
+### Changed
+
+- **Documentation overhaul** -- The Chinese docs locale was renamed from `cn` to `zh` and README links now point to the docs site. The configuration reference was restructured into tables, and the agent, deployment, monitoring, terminal, ping, alerts, architecture, and index guides were expanded and corrected (JSON terminal transport with base64 data field, single status page, retention tiers, reverse proxy and OAuth/mobile coverage). `ENV.md` and the config docs were synced with the code
+
+### Security
+
+- **RBAC hardening** -- The Docker container logs WebSocket and the file read/download endpoints are now restricted to admins. The password policy is unified across change flows, and all active sessions are revoked when a user changes their password
+
 ## [1.0.0-alpha.5] - 2026-05-28
 
 ### Added
