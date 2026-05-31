@@ -4,11 +4,11 @@ description: Complete reference for all ServerBee server and agent configuration
 icon: Settings
 ---
 
-ServerBee uses [Figment](https://github.com/SergioBenitez/Figment) for configuration loading, which supports layered configuration from multiple sources. This page provides a complete reference for every configuration option.
+ServerBee loads configuration with [Figment](https://github.com/SergioBenitez/Figment), which layers values from multiple sources. This page is a complete reference for every configuration option.
 
 ## Configuration Loading Priority
 
-Configuration values are merged from multiple sources. Later sources override earlier ones, so environment variables always win:
+Values are merged from the sources below. Later sources override earlier ones, so environment variables always win:
 
 1. Built-in defaults
 2. `/etc/serverbee/server.toml` or `/etc/serverbee/agent.toml`
@@ -20,11 +20,11 @@ This lets you override any single value at runtime without editing the TOML file
 
 ## Environment Variable Mapping
 
-Every TOML key maps directly to an environment variable: prefix with `SERVERBEE_`, uppercase the key, and replace each level of nesting with `__` (double underscore). For example, `auth.secure_cookie` becomes `SERVERBEE_AUTH__SECURE_COOKIE`.
+Every TOML key maps directly to an environment variable: add the `SERVERBEE_` prefix, uppercase the key, and replace each level of nesting with `__` (double underscore). For example, `auth.secure_cookie` becomes `SERVERBEE_AUTH__SECURE_COOKIE`.
 
 ## Developer Workflow Env Vars
 
-These variables are for local repo tooling and developer workflows. They are not Figment-backed runtime config for the ServerBee server or agent binaries.
+These variables drive local repo tooling and developer workflows. They are not Figment-backed runtime config for the server or agent binaries.
 
 | Environment Variable | Used By | Description |
 |---------------------|---------|-------------|
@@ -33,7 +33,7 @@ These variables are for local repo tooling and developer workflows. They are not
 | `SERVERBEE_PROD_READONLY_API_KEY` | `make web-dev-prod` | Member-scoped API key injected by the frontend dev proxy for live production browsing |
 | `ALLOW_WRITES` | `make web-dev-prod` | Local opt-in override. Set to `1` to disable the proxy's read-method-only block. When set, the UI banner changes from the normal read-only warning to a stronger write-enabled warning |
 
-These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not a server feature flag, it is an explicit local override for the frontend prod-proxy workflow only.
+These variables are intentionally scoped to local tooling. `ALLOW_WRITES` is not a server feature flag; it is an explicit local override for the frontend prod-proxy workflow only.
 
 ### Server Environment Variables
 
@@ -152,7 +152,7 @@ Average-latency cutoffs used to classify network-probe records returned by `/api
 
 #### Internal
 
-> The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.
+> These variables have sensible defaults and rarely need changing. Adjust them only when you have a specific requirement.
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
@@ -182,7 +182,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_COLLECTOR__INTERVAL` | `3` | Metric report interval in seconds |
-| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
+| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | Enable NVIDIA GPU monitoring (requires the NVIDIA driver / NVML) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | Enable CPU temperature monitoring |
 | `SERVERBEE_FILE__ENABLED` | `false` | Enable file management on this agent |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | Allowed root paths (comma-separated, e.g. `/home,/var/log`). Empty rejects all file operations |
@@ -192,7 +192,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 
 #### Internal
 
-> The following variables have sensible defaults and rarely need modification. Only adjust when you have a specific requirement.
+> These variables have sensible defaults and rarely need changing. Adjust them only when you have a specific requirement.
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
@@ -274,7 +274,7 @@ Tunes the agent-side security event detectors (SSH login / brute force, port sca
 | `ip_quality_event_days` | u32 | `90` | Days to keep IP quality status-change event records |
 
 <Callout type="info">
-Raw metric records are collected every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep long-term trends for 90 days without excessive storage. Adjust these values based on your disk space and monitoring needs.
+Raw metric records are written every 60 seconds and retained for 7 days by default. The hourly aggregator computes averages so you can keep 90 days of long-term trends without excessive storage. Tune these values to match your disk space and monitoring needs.
 </Callout>
 
 ### `[scheduler]` -- Scheduler
@@ -411,7 +411,7 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `interval` | u32 | `3` | Collection interval in seconds |
-| `enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires `nvidia-smi`) |
+| `enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires the NVIDIA driver / NVML) |
 | `enable_temperature` | bool | `true` | Enable CPU temperature sensor monitoring |
 
 ### `[file]` -- File Management
@@ -475,7 +475,7 @@ openssl x509 -in cert.pem -pubkey -noout \
 data_dir = "./data"
 ```
 
-Everything else uses sensible defaults. On first startup, ServerBee creates the `admin` user with a random password and prints it once in the server logs.
+Everything else uses sensible defaults. On first startup, ServerBee creates the `admin` user with a random password and prints it once to the server logs.
 
 ## Example: Production Server Configuration
 
