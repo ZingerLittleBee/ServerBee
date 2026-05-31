@@ -68,3 +68,18 @@ jobs:
 
       - name: Lint
         run: bun x ultracite check
+
+  install-script:
+    name: Install Script Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dash & shellcheck
+        run: sudo apt-get update && sudo apt-get install -y dash shellcheck
+
+      - name: POSIX syntax check (dash -n)
+        run: dash -n deploy/install.sh
+
+      - name: Portability lint (shellcheck --shell=dash)
+        run: shellcheck --shell=dash --severity=warning deploy/install.sh

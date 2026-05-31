@@ -241,7 +241,9 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum * > checksums.txt
+          # install.sh fetches this exact filename for binary verification.
+          # Hash only the binaries to avoid self-including the sums file.
+          sha256sum serverbee-* > sha256sums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
