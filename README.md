@@ -1,317 +1,138 @@
+<div align="center">
+
+<img src="assets/logo/logo.svg" width="96" alt="ServerBee logo" />
+
 # ServerBee
 
-Language: English | [简体中文](./README.zh-CN.md)
+**Lightweight, self-hosted VPS monitoring — one Rust binary, real-time everything.**
 
-A lightweight, self-hosted VPS monitoring system built with Rust and React.
+[![CI](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml/badge.svg)](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ZingerLittleBee/ServerBee?include_prereleases&sort=semver)](https://github.com/ZingerLittleBee/ServerBee/releases)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/ZingerLittleBee/ServerBee?style=flat)](https://github.com/ZingerLittleBee/ServerBee/stargazers)
+[![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 
-## Features
+English | [简体中文](./README.zh-CN.md)
 
-- **Real-time Dashboard** -- Server status, CPU/memory/disk/network metrics with live WebSocket updates
-- **Server Card Ring Grid** -- Four ring charts per server (CPU, Memory, Disk, Traffic quota) plus inline disk I/O throughput, load trend, and billing-cycle "days remaining" hint
-- **Server Groups** -- Organize servers by group with country flag display
-- **iOS Mobile Companion** -- Native iOS app with QR pairing, push notifications, and real-time metrics
-- **Detailed Metrics** -- Real-time streaming charts + historical views (1h/6h/24h/7d/30d) for CPU, memory, disk, network, load, temperature, GPU, disk I/O
-- **Alert System** -- 14+ metric types, threshold/offline/traffic/expiration rules, AND logic, 70% sampling
-- **Notifications** -- Webhook, Telegram, Bark, Email (via Resend) channels with notification groups
-- **Network Quality Monitoring** -- Multi-target network probing (96 preset China 3-ISP + international nodes), real-time/historical latency charts, anomaly detection, per-server target assignment
-- **Ping Monitoring** -- ICMP, TCP, HTTP probes with latency charts and success rate
-- **Safer Agent Registration** -- One-time, short-lived enrollment codes minted by an admin (single-use, default 10 min TTL), stable machine fingerprints reuse existing server records, `auth.max_servers` soft-caps enrollment growth, run tokens can be rotated/revoked, and unconnected placeholders can be cleaned up
-- **Web Terminal** -- Browser-based PTY terminal via WebSocket proxy
-- **GPU Monitoring** -- NVIDIA GPU usage/temperature/memory (via nvml-wrapper, feature-gated)
-- **Disk I/O Monitoring** -- Per-disk read/write throughput charts with merged and per-disk views. Linux via `/proc/diskstats`, macOS/Windows via sysinfo
-- **GeoIP** -- Automatic region/country detection from agent IP with in-app database download/update
-- **Custom Dashboard** -- Drag-and-drop dashboard with 13 widget types, multiple dashboards, editor mode
-- **Custom Themes** -- Preset themes plus admin-built custom themes with OKLCH light/dark variables, applied across the dashboard and public status pages
-- **OAuth & 2FA** -- GitHub/Google/OIDC login, TOTP two-factor authentication
-- **Multi-user** -- Admin/Member roles, audit logging, rate limiting
-- **File Management** -- Remote file browser with Monaco Editor, upload/download with progress, path sandbox security (`root_paths` + `deny_patterns`)
-- **Docker Monitoring** -- Real-time Docker container monitoring with stats (CPU/memory/network/block I/O), container log streaming (stdout/stderr color-coded), events timeline, networks and volumes overview
-- **Security Events** -- Per-agent detection of SSH logins, SSH brute-force attempts, and port scans, with severity grading, an aggregated event timeline, and alert integration
-- **Firewall Blocklist** -- Block inbound traffic from IPs and CIDRs across one or more agents via nftables, with one-click blocking, preset rules, and an activity log
-- **IP Quality** -- Per-agent egress IP assessment: streaming/AI/social service unlock detection (Netflix, Disney+, YouTube Premium, Amazon Prime, HBO Max, ChatGPT, Gemini, Spotify, TikTok), GeoIP metadata, and optional third-party fraud risk scoring (Scamalytics, IPQualityScore, proxycheck.io, AbuseIPDB). Custom services, status-page exposure with IP masking for guests, and a dual opt-in capability gate
-- **Capability Toggles** -- Per-server feature controls (terminal, exec, upgrade, ping, file manager, Docker, security events, firewall, ip quality) with defense-in-depth enforcement
-- **Uptime Timeline** -- 90-day uptime visualization with per-day color-coded bars on server detail, public status pages, and customizable dashboard widgets
-- **Public Status Page** -- Unauthenticated status page with server groups, live metrics, and 90-day uptime timelines with configurable thresholds
-- **Monthly Traffic Statistics** -- Billing cycle-aware traffic tracking with daily/hourly breakdowns, usage progress bars, and end-of-cycle prediction
-- **Service Monitors (SSL/WHOIS/HTTP/Ping/TCP)** -- Scheduled service checks with normalized WHOIS hostnames, unsupported-TLD hints (e.g. `.app` / `.dev` → use SSL monitor), and reliable edit-form prefill
-- **Billing Tracking** -- Price, billing cycle, expiration alerts, traffic limits per server
-- **Backup & Restore** -- SQLite database backup/restore via admin API
-- **Agent Auto-update** -- Remote binary upgrade with SHA-256 verification
-- **Guided Deployment Management** -- `serverbee` CLI installs, upgrades, inspects, reconfigures, and uninstalls server and agent deployments in interactive or unattended mode
-- **OpenAPI Documentation** -- Swagger UI at `/swagger-ui` with 50+ documented endpoints
+</div>
 
-## Tech Stack
+---
 
-| Component | Technology |
-|-----------|-----------|
-| Server | Rust, Axum 0.8, sea-orm, SQLite (WAL) |
-| Agent | Rust, sysinfo 0.33, tokio-tungstenite |
-| Frontend | React 19, Vite 7, TanStack Router/Query, Recharts, shadcn/ui, Tailwind CSS v4 |
-| Auth | argon2 password hashing, session cookies, API keys, OAuth2, TOTP |
-| Docs | Fumadocs MDX, TanStack Start, CN+EN bilingual |
+ServerBee watches all your servers from one place. A central **server** receives metrics from lightweight **agents** over WebSocket, stores them in embedded SQLite, and serves a real-time React dashboard — no external database, no heavy runtime.
+
+- 🪶 **Tiny footprint** — agents use ~5–15 MB RAM; the server handles 1000 nodes in ~50–100 MB.
+- ⚡ **Real-time** — live WebSocket dashboard for CPU, memory, disk, network, load, temperature, GPU, and disk I/O.
+- 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
+- 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, status pages, and more.
+- 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, per-server capability gates.
+
+> [!NOTE]
+> ServerBee is in active development (`v1.0.0-alpha`). Expect rapid iteration.
 
 ## Quick Start
 
-### Prerequisites
-
-- Rust 1.85+ (with cargo)
-- Bun 1.x (for frontend build)
-
-### Build from Source
+### 1. Install the server
 
 ```bash
-# Clone
-git clone https://github.com/ZingerLittleBee/ServerBee.git
-cd ServerBee
-
-# Build frontend
-cd apps/web && bun install && bun run build && cd ../..
-
-# Build server and agent
-cargo build --release
-
-# Binaries are at:
-# target/release/serverbee-server
-# target/release/serverbee-agent
-```
-
-### Run the Server
-
-```bash
-./serverbee-server
-# Default: http://localhost:9527
-# Admin password is auto-generated and printed to startup log
-```
-
-### Run the Agent
-
-First, sign in to the server web UI as an admin, open **Settings**, and generate a
-one-time enrollment code (single-use, expires after ~10 minutes by default).
-
-```bash
-# Set server URL and the one-time enrollment code via environment variables
-SERVERBEE_SERVER_URL=http://your-server:9527 \
-SERVERBEE_ENROLLMENT_CODE=YOUR_ONE_TIME_CODE \
-./serverbee-agent
-
-# Or create /etc/serverbee/agent.toml:
-# server_url = "http://your-server:9527"
-# enrollment_code = "YOUR_ONE_TIME_CODE"
-```
-
-The enrollment code is consumed on the agent's first successful registration. After
-that the agent saves its per-server token to config and reconnects automatically on
-restart -- the code is no longer needed. To onboard another agent (or re-enroll one
-that lost its token), mint a fresh code in Settings.
-
-### Docker
-
-```bash
-docker compose up -d
-```
-
-### Development (Make)
-
-```bash
-# Start server (port 9527) + Vite dev server (port 5173) concurrently
-make dev-full
-# Visit http://localhost:5173, login with admin / admin123
-
-# Or step by step:
-make server-dev                                                # Terminal 1: server on :9527
-SERVERBEE_ENROLLMENT_CODE="<one-time code>" make agent-dev     # Terminal 2: agent
-
-# Testing & code quality:
-make cargo-test        # Run all Rust tests
-make test              # Run frontend tests
-make cargo-clippy      # Lint Rust code
-make                   # Interactive menu (requires fzf)
-```
-
-Manual browser verification checklists are indexed in `tests/README.md`.
-
-Generate a one-time enrollment code from the server web UI **Settings** page and pass it to the agent. The code is single-use and expires after ~10 minutes; mint a fresh one whenever you need to enroll another agent.
-
-> **Note**: `make dev-full` starts a Vite dev server with HMR at `http://localhost:5173` (proxies `/api/*` to the Rust server at `:9527`). For production builds, use `make build` then `make server-run`.
-
-## Configuration
-
-All config options can be set via TOML files or environment variables with `SERVERBEE_` prefix and `__` (double underscore) as nested separator. See [ENV.md](ENV.md) for the complete environment variable reference.
-
-### Server (`/etc/serverbee/server.toml`)
-
-```toml
-[server]
-listen = "0.0.0.0:9527"
-data_dir = "/var/lib/serverbee"
-trusted_proxies = []              # Defaults to private/loopback CIDRs; set to [] to disable
-
-[database]
-path = "serverbee.db"
-max_connections = 10
-
-[auth]
-session_ttl = 86400           # 24 hours
-secure_cookie = true          # Set false for HTTP-only dev
-max_servers = 0               # Soft limit for newly enrolled servers
-
-[admin]
-username = "admin"
-password = ""                 # Leave empty to auto-generate
-
-[rate_limit]
-login_max = 5                 # Max login attempts per 15min window
-register_max = 3              # Max agent registrations per 15min window
-
-[retention]
-records_days = 7              # Raw metrics retention
-records_hourly_days = 90      # Hourly aggregates retention
-audit_logs_days = 180         # Audit log retention
-network_probe_days = 7        # Network probe raw records retention
-network_probe_hourly_days = 90 # Network probe hourly aggregates retention
-traffic_hourly_days = 7        # Traffic hourly records retention
-traffic_daily_days = 400       # Traffic daily records retention
-
-[scheduler]
-timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)
-
-[geoip]
-mmdb_path = "/var/lib/serverbee/GeoLite2-City.mmdb"  # Non-empty path enables GeoIP
-
-[upgrade]
-release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"
-```
-
-Environment variable examples:
-```bash
-export SERVERBEE_AUTH__MAX_SERVERS="50"
-export SERVERBEE_GEOIP__MMDB_PATH="/path/to/GeoLite2-City.mmdb"
-export SERVERBEE_OAUTH__GITHUB__CLIENT_ID="..."
-```
-
-### Agent (`/etc/serverbee/agent.toml`)
-
-```toml
-server_url = "http://your-server:9527"
-token = ""                    # Auto-populated after registration
-enrollment_code = ""          # One-time code from Settings; used only for first registration
-
-[collector]
-interval = 3                  # Seconds between metric reports
-enable_temperature = true
-enable_gpu = false            # Requires NVIDIA GPU + nvml
-
-[log]
-level = "info"
-```
-
-Agent environment variables use the `SERVERBEE_` prefix without nesting (top-level keys):
-```bash
-export SERVERBEE_SERVER_URL="http://your-server:9527"
-export SERVERBEE_ENROLLMENT_CODE="YOUR_ONE_TIME_CODE"
-```
-
-### OAuth Setup
-
-```toml
-[oauth]
-base_url = "https://monitor.example.com"
-allow_registration = false    # Auto-create users on first OAuth login
-
-[oauth.github]
-client_id = "..."
-client_secret = "..."
-
-[oauth.google]
-client_id = "..."
-client_secret = "..."
-```
-
-Callback URL format: `https://your-domain/api/auth/oauth/{provider}/callback`
-
-## Deployment
-
-### Railway (One-Click)
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
-
-1. Click the button above and deploy
-2. Add a volume mounted at `/data` to persist data across deploys
-3. Configure your agents to connect to the Railway URL
-4. On first start the server auto-creates an admin account with a randomly generated password. Check the Railway deploy logs for the highlighted credentials banner; you must change this password on first login and may optionally pick a new username.
-
-### Install Script
-
-Install via curl (one-liner):
-
-```bash
-# Server
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+```
 
-# Agent (replace with your server URL and a one-time enrollment code from Settings)
+Open `http://your-server:9527`. The admin password is auto-generated and printed to the startup log — change it on first login.
+
+> Prefer Docker? Run `docker compose up -d`. Prefer the cloud? Use the [Railway one-click deploy](#railway-one-click) below.
+
+### 2. Enroll an agent
+
+Sign in as admin → **Settings** → generate a one-time **enrollment code** (single-use, expires in ~10 min). Then on each node:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
   --server-url http://YOUR_SERVER:9527 --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-The installer automatically places a `serverbee` management CLI at `/usr/local/bin/serverbee`.
+The agent saves a per-server token on first connect and reconnects automatically afterwards — the code is only needed once. That's it. 🎉
 
-> **Note**: Re-running `install agent` adopts an existing `/usr/local/bin/serverbee-agent` instead of replacing it. Use `sudo serverbee upgrade agent -y` (or replace the binary manually) when you need to refresh an existing installation.
+## Features
 
-### Management
+| | |
+|---|---|
+| **📊 Monitoring** | Real-time metrics (CPU/mem/disk/network/load/temp/GPU/disk I/O) · historical charts (1h–30d) · Docker container stats, logs & events · monthly traffic statistics with billing-cycle prediction |
+| **🔔 Alerts** | 14+ metric types · threshold / offline / traffic / expiration rules · Webhook, Telegram, Bark & Email channels with notification groups |
+| **🌐 Network** | Ping monitoring (ICMP/TCP/HTTP) · network-quality probing (96 China 3-ISP + international presets) · service monitors (SSL/WHOIS/HTTP/Ping/TCP) · IP-quality & streaming-unlock detection with fraud scoring |
+| **🛠️ Remote management** | Browser web terminal (PTY over WS) · sandboxed file manager with Monaco editor · firewall blocklist via nftables · per-server capability toggles · agent auto-update |
+| **🔐 Security & access** | SSH login / brute-force / port-scan detection · OAuth (GitHub/Google/OIDC) + TOTP 2FA · Admin/Member RBAC · audit logs · one-time agent enrollment codes |
+| **🖥️ Dashboards & sharing** | Drag-and-drop custom dashboards (13 widget types) · public status pages with 90-day uptime timelines · custom OKLCH themes · server groups with country flags · native iOS companion app |
+| **⚙️ Ops** | `serverbee` management CLI · backup & restore · GeoIP region detection · OpenAPI/Swagger docs (50+ endpoints) |
+
+## Configuration
+
+Configure via TOML files or `SERVERBEE_`-prefixed environment variables (`__` is the nested separator, e.g. `SERVERBEE_AUTH__MAX_SERVERS`). The minimum to get going:
+
+```toml
+# /etc/serverbee/server.toml
+[server]
+listen = "0.0.0.0:9527"
+data_dir = "/var/lib/serverbee"
+
+[admin]
+password = ""   # leave empty to auto-generate
+```
+
+```toml
+# /etc/serverbee/agent.toml
+server_url = "http://your-server:9527"
+enrollment_code = ""   # one-time code from Settings; only used for first registration
+
+[collector]
+interval = 3           # seconds between reports
+```
+
+📖 Full reference: **[ENV.md](ENV.md)** · OAuth, retention, rate limiting, GeoIP, and more in the [documentation](apps/docs).
+
+## Deployment
+
+### Railway (one-click)
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)
+
+Add a volume mounted at `/data` to persist data. The server auto-creates an admin account on first start — check the deploy logs for the credentials banner.
+
+### Management CLI
+
+The installer drops a `serverbee` CLI at `/usr/local/bin/serverbee`:
 
 ```bash
-sudo serverbee status              # View status of all components
-sudo serverbee upgrade -y           # Upgrade all to latest version
-sudo serverbee restart              # Restart all services
-sudo serverbee config               # View current config
-sudo serverbee config set <key> <value>  # Update config
-sudo serverbee uninstall agent -y   # Uninstall agent
-sudo serverbee uninstall server --purge  # Uninstall server + remove data
+sudo serverbee status         # status of all components
+sudo serverbee upgrade -y     # upgrade to latest
+sudo serverbee restart        # restart services
+sudo serverbee config         # view / set config
+sudo serverbee uninstall agent -y
 ```
 
-### Reverse Proxy (Nginx)
+### Reverse proxy
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name monitor.example.com;
+Behind Nginx/Caddy, proxy `/` to `127.0.0.1:9527` and make sure the WebSocket routes `/api/ws/` and `/api/agent/ws` forward the `Upgrade`/`Connection` headers with a long read timeout. See the [deployment docs](apps/docs) for a ready-to-use Nginx config.
 
-    location / {
-        proxy_pass http://127.0.0.1:9527;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+## Development
 
-    # WebSocket (browser + agent + terminal)
-    location /api/ws/ {
-        proxy_pass http://127.0.0.1:9527;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
+```bash
+git clone https://github.com/ZingerLittleBee/ServerBee.git
+cd ServerBee
 
-    location /api/agent/ws {
-        proxy_pass http://127.0.0.1:9527;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
-}
+make dev-full         # server (:9527) + Vite dev server (:5173) — login admin / admin123
+make cargo-test       # Rust tests
+make test             # frontend tests
+make cargo-clippy     # Rust lint
 ```
+
+> `make dev-full` runs Vite with HMR at `http://localhost:5173` and proxies `/api/*` to the Rust server at `:9527`. Generate a one-time enrollment code in **Settings** to connect a dev agent.
+
+**Stack:** Rust (Axum 0.8 · sea-orm · SQLite WAL) · React 19 (Vite 7 · TanStack Router/Query · Recharts · shadcn/ui · Tailwind CSS v4) · Rust agents (sysinfo · tokio-tungstenite).
 
 ## API
 
-Interactive API documentation is available at `/swagger-ui` when the server is running.
+Interactive OpenAPI docs are served at `/swagger-ui` while the server runs.
 
 ## License
 
