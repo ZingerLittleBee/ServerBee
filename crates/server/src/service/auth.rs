@@ -483,6 +483,7 @@ impl AuthService {
         user_id: &str,
         old_password: &str,
         new_password: &str,
+        keep_session_token: Option<&str>,
     ) -> Result<(), AppError> {
         let user = user::Entity::find_by_id(user_id)
             .one(db)
@@ -503,6 +504,17 @@ impl AuthService {
         active.password_hash = Set(new_hash);
         active.updated_at = Set(Utc::now());
         active.update(db).await?;
+
+        // Revoke the user's other sessions so a previously issued (possibly
+        // stolen) session can't outlive the password change. Keep the caller's
+        // current session when its token is known (web cookie / bearer flow),
+        // otherwise revoke all of them.
+        let mut revoke =
+            session::Entity::delete_many().filter(session::Column::UserId.eq(user_id));
+        if let Some(token) = keep_session_token {
+            revoke = revoke.filter(session::Column::Token.ne(token));
+        }
+        revoke.exec(db).await?;
 
         Ok(())
     }
@@ -819,7 +831,8 @@ mod tests {
             .await
             .expect("create_user should succeed");
         let result =
-            AuthService::change_password(&db, &user.id, "wrong_old_pass", "new_pass123").await;
+            AuthService::change_password(&db, &user.id, "wrong_old_pass", "new_pass123", None)
+                .await;
         assert!(result.is_err(), "wrong old password should return an error");
     }
 
@@ -829,7 +842,7 @@ mod tests {
         let user = AuthService::create_user(&db, "grace", "old_pass1", "member")
             .await
             .expect("create_user should succeed");
-        AuthService::change_password(&db, &user.id, "old_pass1", "new_pass99")
+        AuthService::change_password(&db, &user.id, "old_pass1", "new_pass99", None)
             .await
             .expect("change_password should succeed");
         // Login with new password should succeed
@@ -838,6 +851,72 @@ mod tests {
         // Login with old password should fail
         let result2 = AuthService::login(&db, login_params("grace", "old_pass1")).await;
         assert!(result2.is_err(), "login with old password should fail");
+    }
+
+    #[tokio::test]
+    async fn test_change_password_revokes_other_sessions() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "heidi", "old_pass1", "member")
+            .await
+            .expect("create_user should succeed");
+        // Two active sessions (e.g. two browsers logged in).
+        let (keep, _u) = AuthService::login(&db, login_params("heidi", "old_pass1"))
+            .await
+            .expect("login should succeed");
+        let (other, _u) = AuthService::login(&db, login_params("heidi", "old_pass1"))
+            .await
+            .expect("login should succeed");
+
+        AuthService::change_password(
+            &db,
+            &keep.user_id,
+            "old_pass1",
+            "new_pass123",
+            Some(&keep.token),
+        )
+        .await
+        .expect("change_password should succeed");
+
+        // The caller's own session is preserved...
+        let kept = AuthService::validate_session(&db, &keep.token, 3600)
+            .await
+            .expect("validate_session should not error");
+        assert!(
+            kept.is_some(),
+            "the kept session must survive the password change"
+        );
+        // ...while every other session is revoked.
+        let revoked = AuthService::validate_session(&db, &other.token, 3600)
+            .await
+            .expect("validate_session should not error");
+        assert!(
+            revoked.is_none(),
+            "other sessions must be revoked after a password change"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_change_password_without_keep_token_revokes_all_sessions() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "ivan", "old_pass1", "member")
+            .await
+            .expect("create_user should succeed");
+        let (sess, _u) = AuthService::login(&db, login_params("ivan", "old_pass1"))
+            .await
+            .expect("login should succeed");
+
+        // No keep token (e.g. API-key authenticated caller) -> revoke all.
+        AuthService::change_password(&db, &sess.user_id, "old_pass1", "new_pass123", None)
+            .await
+            .expect("change_password should succeed");
+
+        let validated = AuthService::validate_session(&db, &sess.token, 3600)
+            .await
+            .expect("validate_session should not error");
+        assert!(
+            validated.is_none(),
+            "with no keep token, all sessions must be revoked"
+        );
     }
 
     #[tokio::test]
@@ -949,7 +1028,7 @@ mod tests {
         let user = AuthService::create_user(&db, "weakp", "old_pass1", "member")
             .await
             .expect("create user");
-        let r = AuthService::change_password(&db, &user.id, "old_pass1", "123").await;
+        let r = AuthService::change_password(&db, &user.id, "old_pass1", "123", None).await;
         assert!(
             matches!(r, Err(AppError::Validation(_))),
             "weak new password must be rejected, got {r:?}"

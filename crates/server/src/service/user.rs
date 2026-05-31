@@ -87,11 +87,7 @@ impl UserService {
         role: &str,
     ) -> Result<user::Model, AppError> {
         Self::validate_role(role)?;
-        if password.len() < 6 {
-            return Err(AppError::Validation(
-                "Password must be at least 6 characters".to_string(),
-            ));
-        }
+        AuthService::validate_password_strength(password)?;
         AuthService::create_user(db, username, password, role).await
     }
 
@@ -125,18 +121,26 @@ impl UserService {
             active.role = Set(role.clone());
         }
 
+        let password_reset = input.password.is_some();
         if let Some(ref password) = input.password {
-            if password.len() < 6 {
-                return Err(AppError::Validation(
-                    "Password must be at least 6 characters".to_string(),
-                ));
-            }
+            AuthService::validate_password_strength(password)?;
             let new_hash = AuthService::hash_password(password)?;
             active.password_hash = Set(new_hash);
         }
 
         active.updated_at = Set(Utc::now());
         let updated = active.update(db).await?;
+
+        // If an admin reset this user's password, revoke all their existing
+        // sessions so a previously issued (possibly stolen) session cannot
+        // outlive the reset.
+        if password_reset {
+            session::Entity::delete_many()
+                .filter(session::Column::UserId.eq(id))
+                .exec(db)
+                .await?;
+        }
+
         Ok(updated)
     }
 
@@ -276,5 +280,50 @@ mod tests {
         .expect("update_user should succeed");
 
         assert_eq!(updated.role, "admin", "member should now have admin role");
+    }
+
+    #[tokio::test]
+    async fn test_update_user_password_reset_revokes_sessions() {
+        use crate::service::auth::{AuthService, LoginParams};
+
+        let (db, _tmp) = setup_test_db().await;
+        let user = UserService::create_user(&db, "reset_target", "old_pass1", "member")
+            .await
+            .expect("create user should succeed");
+        // An active session for the user.
+        let (sess, _u) = AuthService::login(
+            &db,
+            LoginParams {
+                username: "reset_target",
+                password: "old_pass1",
+                totp_code: None,
+                ip: "127.0.0.1",
+                user_agent: "test",
+                session_ttl: 3600,
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        // Admin resets the password.
+        UserService::update_user(
+            &db,
+            &user.id,
+            UpdateUserInput {
+                role: None,
+                password: Some("new_pass123".to_string()),
+            },
+        )
+        .await
+        .expect("update_user should succeed");
+
+        // The pre-existing session must be revoked by the reset.
+        let validated = AuthService::validate_session(&db, &sess.token, 3600)
+            .await
+            .expect("validate_session should not error");
+        assert!(
+            validated.is_none(),
+            "an admin password reset must revoke the user's existing sessions"
+        );
     }
 }
