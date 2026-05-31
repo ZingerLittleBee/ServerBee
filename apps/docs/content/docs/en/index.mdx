@@ -37,13 +37,13 @@ Run ICMP, TCP, and HTTP probes from multiple agents to measure target reachabili
 
 When the Docker capability is enabled, view the container list, live stats, lifecycle events, log streams, networks, and volumes, and perform container actions.
 
-### Public status pages, themes, and branding
+### Public status page, themes, and branding
 
-Create multiple public status pages with their own slug, server scope, incidents, maintenance windows, uptime timelines, availability thresholds, themes, and custom CSS. Appearance settings support preset and custom OKLCH themes plus white-label title, logo, favicon, and footer text.
+Publish a single public status page at `/status`—no authentication required—covering a selected server scope, live metrics, 90-day uptime timelines, availability thresholds, incidents, and maintenance windows. Appearance settings support preset and custom OKLCH themes plus white-label title, logo, favicon, and footer text.
 
 ### VPS cost insights
 
-After you record each server's price and billing cycle, ServerBee computes a value score per VPS (excellent / good / okay / poor / waste) from resources, utilization, and uptime, and surfaces monthly-equivalent cost, burn rate, and remaining days in the servers list, the dashboard server card, and a per-server insights panel.
+After you record each server's price and billing cycle, ServerBee computes a per-VPS value score (excellent / good / okay / poor / waste) from resources, utilization, and uptime. It surfaces the monthly-equivalent cost, burn rate, and remaining days in the servers list, the dashboard server card, and a per-server insights panel.
 
 ### OAuth and mobile support
 
@@ -56,7 +56,7 @@ Sign in via GitHub, Google, or any generic OIDC provider. Mobile sessions, devic
 | Server | Rust (Axum 0.8, sea-orm, tokio, SQLite) |
 | Agent | Rust (sysinfo, tokio-tungstenite) |
 | Frontend | React 19, Vite 7, TanStack Router, TanStack Query, Recharts, shadcn/ui, Tailwind CSS v4 |
-| Protocol | WebSocket (JSON frames, binary for terminal data) |
+| Protocol | WebSocket (JSON text messages; terminal data base64-encoded) |
 | Database | SQLite (WAL mode) |
 | Deployment | Single binary / Docker / install script |
 
@@ -75,7 +75,7 @@ ServerBee follows a hub-and-spoke architecture:
 2. **Agents** run on each monitored VPS, collecting metrics and reporting back every few seconds.
 3. The **Frontend** is a React SPA embedded into the server binary, so there is nothing extra to deploy.
 
-All agent-to-server communication uses WebSocket with JSON-encoded messages. Terminal sessions and some streaming features use dedicated WebSocket routes with binary frames.
+All agent-to-server communication uses WebSocket with JSON-encoded messages. Terminal sessions reuse the same JSON text protocol, with the raw PTY byte stream carried in a base64-encoded `data` field.
 
 ## Next Steps
 
@@ -91,7 +91,7 @@ All agent-to-server communication uses WebSocket with JSON-encoded messages. Ter
   <Card title="File Manager" href="/en/docs/file-manager" />
   <Card title="Ping Monitoring" href="/en/docs/ping" />
   <Card title="Capabilities" href="/en/docs/capabilities" />
-  <Card title="Status Pages" href="/en/docs/status-page" />
+  <Card title="Status Page" href="/en/docs/status-page" />
   <Card title="Custom Widgets" href="/en/docs/custom-widgets" />
   <Card title="iOS Mobile" href="/en/docs/mobile" />
   <Card title="Security" href="/en/docs/security" />
