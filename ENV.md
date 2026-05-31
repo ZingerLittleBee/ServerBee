@@ -6,7 +6,7 @@ Example: TOML `server.listen` → env var `SERVERBEE_SERVER__LISTEN`
 
 > **First-run admin account**: There is no admin username/password env var. On first start (when no users exist) the server auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner — capture it from the logs. You must change this password on first login, and may optionally choose a different username at that time.
 
-> **Maintainer Note**: When adding or modifying environment variables, update both this file and `apps/docs/content/docs/{en,cn}/configuration.mdx`.
+> **Maintainer Note**: When adding or modifying environment variables, update both this file and `apps/docs/content/docs/{en,zh}/configuration.mdx`.
 
 ## Developer Workflow Env Vars
 
@@ -121,7 +121,7 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `ip_quality.risk_provider` | string | `"ipapi_is"` | Primary risk provider. One of: `none`, `ipapi_is`, `ip-api`. |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `ip_quality.risk_provider_fallback` | string | `"ip-api"` | Fallback provider triggered on primary failure. Set to `none` to disable. |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | `ip_quality.ipapi_is.api_key` | string | - | Optional. Configure for higher per-account rate limits. |
-| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `ip_quality.ipapi_is.endpoint` | string | `https://api.ipapi.is` | Override for self-hosted mirrors or testing. |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `ip_quality.ipapi_is.endpoint` | string | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
 **Migration from older versions:** Earlier releases supported four paid providers (Scamalytics, IPQualityScore, ProxyCheck, AbuseIPDB) configured via `SERVERBEE_IP_QUALITY__{SCAMALYTICS,IPQS,PROXYCHECK,ABUSEIPDB}__*`. These env vars are silently ignored. To restore equivalent functionality, fork or vendor the provider implementation from a tag prior to 2026-05-25.
 

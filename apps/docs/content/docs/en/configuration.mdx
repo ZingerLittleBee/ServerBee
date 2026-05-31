@@ -135,7 +135,7 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `"ipapi_is"` | Primary risk provider. One of: `none`, `ipapi_is`, `ip-api`. |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `"ip-api"` | Fallback provider triggered on primary failure. Set to `none` to disable. |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | Optional. Configure for higher per-account rate limits. |
-| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `https://api.ipapi.is` | Override for self-hosted mirrors or testing. |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
 <Callout type="info">
 **Migration from older versions:** Earlier releases supported four paid providers (Scamalytics, IPQualityScore, ProxyCheck, AbuseIPDB) configured via `SERVERBEE_IP_QUALITY__{SCAMALYTICS,IPQS,PROXYCHECK,ABUSEIPDB}__*`. These env vars are silently ignored. To restore equivalent functionality, fork or vendor the provider implementation from a tag prior to 2026-05-25.
@@ -387,7 +387,7 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `api_key` | string | -- | Optional. Configure for higher per-account rate limits. |
-| `endpoint` | string | `"https://api.ipapi.is"` | Override for self-hosted mirrors or testing. |
+| `endpoint` | string | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
 ---
 
