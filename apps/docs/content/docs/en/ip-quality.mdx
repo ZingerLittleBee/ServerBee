@@ -4,7 +4,7 @@ description: Check each agent's egress IP against streaming and AI services, and
 icon: Globe
 ---
 
-IP Quality lets each agent assess the quality of its VPS egress IP and report the results back to the server. It does two things:
+IP Quality lets each agent assess its VPS egress IP and report the results back to the server. It does two things:
 
 1. **Service unlock detection** — the agent issues HTTP requests from its egress IP to determine the unlock status of popular streaming, AI, and social services.
 2. **IP metadata and risk scoring** — the server derives country, ASN, and IP type from its local GeoIP database and, when a third-party provider is configured, computes a fraud risk score.
@@ -37,7 +37,7 @@ sudo serverbee restart agent
 
 ## Built-In Services
 
-Nine services are seeded at startup. Each has a hardcoded detector that issues an HTTP request from the agent's egress IP and interprets the response to determine unlock status.
+Nine services are seeded at startup. Each ships with a hardcoded detector that issues an HTTP request from the agent's egress IP and interprets the response to determine unlock status.
 
 | Service | Category | Notes |
 |---------|----------|-------|

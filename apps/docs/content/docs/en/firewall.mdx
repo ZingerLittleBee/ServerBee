@@ -4,7 +4,7 @@ description: Block inbound traffic from IPs and CIDRs across one or more agents 
 icon: Shield
 ---
 
-ServerBee can centrally manage an inbound-traffic blocklist. The server holds the canonical list; each opted-in agent applies it via `nftables`.
+ServerBee can centrally manage an inbound-traffic blocklist. The server holds the canonical list, and each opted-in agent applies it via `nftables`.
 
 ## Requirements
 
@@ -68,7 +68,7 @@ table inet serverbee {
 }
 ```
 
-The server pushes incremental adds/removes over WebSocket. On agent reconnect or capability transition, the server sends a `Reset` followed by a full `Sync`. The agent acks the result of each entry; failures keep the row eligible for retry on the next sync.
+The server pushes incremental adds/removes over WebSocket. On agent reconnect or capability transition, it sends a `Reset` followed by a full `Sync`. The agent acks the result of each entry; failed entries stay eligible for retry on the next sync.
 
 ## Removing the cleanup
 
@@ -85,7 +85,7 @@ nft delete table inet serverbee
 
 ## Audit log
 
-Every action — `firewall_block_created`, `firewall_block_deleted`, `firewall_block_applied_agent`, `firewall_block_removed_agent`, `firewall_block_rejected_server`, `firewall_block_rejected_agent`, `firewall_auto_block_skipped_conflict`, `firewall_reset_acked` — is recorded in the audit log and visible in the Firewall page's Activity tab.
+Every action is recorded in the audit log and shown on the Firewall page's Activity tab: `firewall_block_created`, `firewall_block_deleted`, `firewall_block_applied_agent`, `firewall_block_removed_agent`, `firewall_block_rejected_server`, `firewall_block_rejected_agent`, `firewall_auto_block_skipped_conflict`, `firewall_reset_acked`.
 
 ## Limitations
 

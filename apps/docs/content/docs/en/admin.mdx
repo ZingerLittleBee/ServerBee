@@ -8,7 +8,7 @@ This page covers features available only to administrators (Admin role).
 
 ## User Management
 
-ServerBee supports multiple users with two roles:
+ServerBee supports multiple users across two roles:
 
 | Role | Permissions |
 |------|-------------|
@@ -35,7 +35,7 @@ Go to Settings → Users:
 
 ## Audit Logs
 
-ServerBee automatically records audit logs for critical operations, helping administrators track security events.
+ServerBee automatically records audit logs for critical operations so administrators can track security events.
 
 ### Recorded Events
 
@@ -58,7 +58,7 @@ Go to Settings → Audit Logs:
 GET /api/audit-logs?limit=50&offset=0
 ```
 
-Returns a paginated audit log list. Each entry contains:
+Returns a paginated list of audit records. Each entry contains:
 
 ```json
 {
@@ -217,10 +217,10 @@ Use `transfer_in_cycle` / `transfer_out_cycle` / `transfer_all_cycle` alert type
 
 ### Cost Insights
 
-Once `price` and `billing_cycle` are filled in, ServerBee derives cost-aware signals from the recorded billing inputs and the agent's reported resources, utilization, and uptime. Insights are surfaced in three places:
+Once `price` and `billing_cycle` are set, ServerBee derives cost-aware signals from the recorded billing inputs and the agent's reported resources, utilization, and uptime. Insights are surfaced in three places:
 
-- **Servers list cost cell** -- The `/servers` table shows the monthly-equivalent cost and a value grade chip per server, so cost lives next to CPU/memory/disk/traffic instead of being hidden in the edit dialog
-- **Dashboard server card** -- Each server card shows a compact cost signal with a footnote summarizing burn rate and value grade. The signal is hidden when cost config is missing or invalid
+- **Servers list cost cell** -- The `/servers` table shows each server's monthly-equivalent cost and a value-grade chip, so cost sits next to CPU/memory/disk/traffic instead of being hidden in the edit dialog
+- **Dashboard server card** -- Each card shows a compact cost signal with a footnote summarizing burn rate and value grade. The signal is hidden when cost config is missing or invalid
 - **Per-server cost insights panel** -- The server detail page renders the full breakdown: monthly-equivalent cost, billing-cycle elapsed/remaining cost and burn percent, days remaining, normalized resource unit costs (per CPU core, per GB memory, per GB disk, per TB traffic limit), and the value score with reasons and confidence
 
 #### Value Score
@@ -233,15 +233,15 @@ For automation, the same data is exposed read-only at `GET /api/cost/overview` (
 
 ## Agent Registration Management
 
-Admins can manage first-time agent onboarding directly from the UI:
+Admins can manage first-time agent onboarding directly from the UI.
 
 ### Enrollment Codes
 
-Go to **Settings** to mint a one-time enrollment code for a new agent. Each code is single-use and short-lived (default 10 minute expiry); it is consumed on the agent's first successful registration. You can list previously issued codes (the plaintext is never shown again, only an 8-character prefix and metadata) and delete unused ones. Already connected agents are unaffected because they use their own stored per-server tokens; a specific agent's run token can be rotated/revoked from the server detail actions, which forces that agent to reconnect.
+Go to **Settings** to mint a one-time enrollment code for a new agent. Each code is single-use and short-lived (default 10-minute expiry) and is consumed on the agent's first successful registration. You can list previously issued codes (the plaintext is never shown again -- only an 8-character prefix and metadata) and delete unused ones. Already-connected agents are unaffected because they use their own stored per-server tokens; to revoke a specific agent, rotate its run token from the server detail actions, which forces that agent to reconnect.
 
 ### Clean Up Unconnected Placeholders
 
-When failed onboarding leaves behind offline `New Server` placeholders, the Servers page shows a **Clean up unconnected** action. It removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
+Failed onboarding can leave behind offline `New Server` placeholders. The Servers page then shows a **Clean up unconnected** action that removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
 
 <Cards>
   <Card title="Capabilities" href="/en/docs/capabilities" />

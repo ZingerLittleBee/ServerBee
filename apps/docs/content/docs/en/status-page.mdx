@@ -4,7 +4,7 @@ description: Publish a public server health page with live metrics, incidents, m
 icon: Globe
 ---
 
-ServerBee serves a single public status page at `https://your-server/status`. It is publicly accessible and requires no authentication, so you can share it with users or stakeholders to communicate service health.
+ServerBee serves a single public status page at `https://your-server/status`. It requires no authentication, so you can share it with users or stakeholders to communicate service health.
 
 The page shows the servers and sections an administrator selects, backed by the public `GET /api/status/config` and `GET /api/status` endpoints.
 
@@ -108,7 +108,7 @@ Incidents are public announcements for outages or degraded service. They can opt
 | `server_ids_json` | Optional affected servers |
 | `is_public` | Whether the incident is shown on the public status page |
 
-An incident can carry multiple updates. Each update has its own `status` and `message`. Adding an update records the message and moves the incident to the update's status. Setting status to `resolved` also sets `resolved_at`.
+An incident can carry multiple updates, each with its own `status` and `message`. Adding an update records the message and moves the incident to that update's status. Setting the status to `resolved` also sets `resolved_at`.
 
 ### API
 

@@ -4,11 +4,11 @@ description: 为每台服务器独立控制 Agent 的功能权限，实现最小
 icon: ToggleRight
 ---
 
-ServerBee 支持为每台 Agent 独立控制可用功能。通过功能开关（Capability Toggles），管理员可以精确控制每台服务器允许执行的操作，实现最小权限原则。
+ServerBee 支持为每台 Agent 独立控制可用功能。通过功能开关（Capability Toggles），管理员可以精确控制每台服务器允许执行的操作，落实最小权限原则。
 
 ## 功能列表
 
-ServerBee 定义了 11 个功能位，分为两个风险等级。有效掩码为 `2047`（bits 0..=10）。
+ServerBee 定义了 11 个功能位，分为两个风险等级，有效掩码为 `2047`（bits 0..=10）。
 
 ### 高风险功能（默认关闭）
 
@@ -20,7 +20,7 @@ ServerBee 定义了 11 个功能位，分为两个风险等级。有效掩码为
 | **Docker Management** | `CAP_DOCKER` (128) | 允许 Docker 容器监控、日志流、容器操作 |
 
 <Callout type="warn">
-这些功能涉及在目标服务器上执行任意代码或访问文件系统，因此默认关闭。请仅在信任的服务器上启用。
+这些功能涉及在目标服务器上执行任意代码或访问文件系统，因此默认关闭。请仅在可信服务器上启用。
 </Callout>
 
 <Callout type="info">
@@ -39,7 +39,7 @@ ServerBee 定义了 11 个功能位，分为两个风险等级。有效掩码为
 | **Firewall Blocklist** | `CAP_FIREWALL_BLOCK` (512) | 允许 Agent 应用 Server 下发的 nftables 黑名单。需要 root 或 `CAP_NET_ADMIN`，并在主机安装 `nft` CLI。详见 [防火墙黑名单](/zh/docs/firewall) |
 | **IP Quality** | `CAP_IP_QUALITY` (1024) | 允许 Agent 调用第三方 IP 质量 API 给出口 IP 评分 |
 
-新注册的 Agent 默认 capabilities 值为 `1852`（自动升级 + 三个 Ping 功能 + 安全事件检测 + 防火墙黑名单 + IP 质量）。
+新注册的 Agent 默认 capabilities 值为 `1852`（自动升级 + 三个 Ping 探测 + 安全事件检测 + 防火墙黑名单 + IP 质量），并保持高风险的终端、Exec、文件和 Docker 功能关闭。
 
 ## 配置方式
 
@@ -47,7 +47,7 @@ ServerBee 定义了 11 个功能位，分为两个风险等级。有效掩码为
 
 1. 进入 Dashboard → 点击目标服务器 → 服务器详情页
 2. 在 **Capabilities** 区域，使用 toggle 开关启用或禁用各项功能
-3. 更改立即生效，Server 会通过 WebSocket 实时推送 `CapabilitiesSync` 消息到 Agent
+3. 更改立即生效，Server 通过 WebSocket 实时推送 `CapabilitiesSync` 消息到 Agent
 
 ### 批量配置
 
@@ -82,25 +82,25 @@ capabilities 值是各功能位的按位或（OR）结果。例如：
 - `1980` = 默认值 + Docker
 - `1916` = 默认值 + 文件管理
 - `316` = 上一版默认值（不含防火墙黑名单和 IP 质量）
-- `60` = 旧版默认值（无安全事件检测 / 防火墙 / IP 质量）
+- `60` = 旧版默认值（无安全事件检测、防火墙、IP 质量）
 - `0` = 全部功能禁用
 
 ## 双重验证机制
 
-ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Agent 端同时验证功能权限：
+ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Agent 端同时验证功能权限。有效能力是两者的交集，任一端禁用某个功能位，对应操作即被拒绝。
 
 ### Server 端拦截
 
 - **Terminal**：WebSocket 升级请求被 403 拦截
 - **Exec**：`POST /api/tasks` 和计划任务运行会过滤无权限服务器，写入合成结果（`exit_code = -2`，提示 "Capability 'exec' is disabled"）
-- **Auto Upgrade**：`POST /api/servers/{id}/upgrade` 在未启用 `CAP_UPGRADE` 时返回 403
+- **Auto Upgrade**：未启用 `CAP_UPGRADE` 时，`POST /api/servers/{id}/upgrade` 返回 403
 - **Ping 和 Traceroute**：按 capability 过滤探测任务；Traceroute 需要 effective `CAP_PING_ICMP`
 - **File Manager**：文件端点在下发前检查 `CAP_FILE`，未启用时直接拒绝
 - **Docker**：Docker 读取/操作端点和 Docker 日志 WebSocket 需要 `CAP_DOCKER`，并要求 Agent 运行时支持 Docker
 
 ### Agent 端拒绝
 
-即使 Server 端消息被绕过，Agent 本地也会检查 capabilities：
+即使 Server 端消息被绕过，Agent 本地也会再次检查 capabilities：
 
 - 收到不允许的命令时返回 `CapabilityDenied` 消息
 - Server 收到 `CapabilityDenied` 后写入合成结果（`exit_code = -1`）
@@ -114,7 +114,7 @@ ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Age
 2. Agent 使用 `AtomicU32` 原子更新本地 capabilities 值
 3. Server 通过 WebSocket 发送 `CapabilitiesChanged` 到所有连接的浏览器
 4. 前端实时更新 UI 状态
-5. 如果 Ping 相关 capability 发生变化，Server 自动触发 Ping 任务重同步
+5. 若 Ping 相关功能位发生变化，Server 自动触发 Ping 任务重同步
 
 ## 前端表现
 
@@ -127,13 +127,13 @@ ServerBee 采用纵深防御（defense in depth）策略，在 Server 端和 Age
 
 ## Server 配置位与客户端锁定
 
-运行时的 capability 现在分成三层：
+运行时的 capability 分为三层：
 
 - `capabilities`：Server 数据库中配置的功能位
 - `agent_local_capabilities`：当前运行中的 Agent 本地允许位
-- `effective_capabilities`：系统实际执行时使用的交集结果
+- `effective_capabilities`：系统实际执行时使用的交集（`capabilities & agent_local_capabilities`）
 
-当 Agent 本地策略关闭某个能力时，UI 会把对应开关直接禁用，并显示 tooltip `客户端关闭`。这表示当前运行中的 Agent 已经在本地把它锁死，Server 端不能强行重新打开，除非 Agent 以新的本地策略重新启动。
+当 Agent 本地策略关闭某个功能时，UI 会把对应开关直接禁用，并显示 tooltip `客户端关闭`。这表示当前运行中的 Agent 已在本地把它锁死，Server 端无法强行重新打开，除非 Agent 以新的本地策略重新启动。
 
 <Cards>
   <Card title="Web 终端" href="/zh/docs/terminal" />
