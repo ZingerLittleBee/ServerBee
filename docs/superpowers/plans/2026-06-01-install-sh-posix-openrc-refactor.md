@@ -598,12 +598,15 @@ SERVERBEE_NO_MAIN=1 dash -c '. ./deploy/install.sh
 
 **Files:** Create/modify `.github/workflows/*` (find the lint workflow).
 
-- [ ] **Step 1:** Add a job step running `shellcheck --shell=dash deploy/install.sh`
-  and `dash -n deploy/install.sh` (install `dash` + `shellcheck` via apt in CI).
-- [ ] **Step 2:** In the release workflow, after building binaries, add
-  `( cd <artifacts> && sha256sum serverbee-* > sha256sums.txt )` and upload
-  `sha256sums.txt` as a release asset alongside the binaries.
-- [ ] **Step 3: Commit.** `git commit -am "ci(deploy): shellcheck/dash gate + release sha256sums"`
+- [x] **Step 1:** Added `install-script` job to `.github/workflows/ci.yml` running
+  `dash -n deploy/install.sh` + `shellcheck --shell=dash --severity=warning
+  deploy/install.sh` (installs `dash` + `shellcheck` via apt).
+- [x] **Step 2:** `.github/workflows/release.yml` now generates `sha256sums.txt`
+  (was `checksums.txt` — install.sh fetches the `sha256sums.txt` name, so the
+  old name meant verification could never find the file). Switched to
+  `sha256sum serverbee-*` to avoid self-including the sums file. Uploaded via the
+  existing `files: artifacts/*`.
+- [x] **Step 3: Commit.**
 
 ---
 
@@ -612,28 +615,35 @@ SERVERBEE_NO_MAIN=1 dash -c '. ./deploy/install.sh
 Test host provided: `38.64.56.236:2222` root. Determine its init with
 `ssh … 'cat /etc/os-release; ls /run/systemd/system 2>/dev/null && echo SYSTEMD; command -v rc-service && echo OPENRC'`.
 
-- [ ] **Step 1: syntax on target sh.** scp the script; run
-  `sh -n /root/install.sh` (dash on Ubuntu, ash on Alpine) — clean.
-- [ ] **Step 2: server install (binary).**
-  `sh /root/install.sh server --method binary -y` → service created under the
-  host's init (`systemctl status serverbee-server` or
-  `rc-service serverbee-server status`), dashboard reachable on :9527, capture
-  first-run password.
-- [ ] **Step 3: agent install (binary).** Generate an enrollment code via the
-  server, then `sh /root/install.sh agent --server-url http://127.0.0.1:9527
-  --enrollment-code <code> -y` → agent service running, agent appears online in
-  the server.
-- [ ] **Step 4: lifecycle.** `serverbee status`, `serverbee restart`,
-  `serverbee config set collector.interval 5 -y`,
-  `serverbee env set COLLECTOR__INTERVAL 5 -y` (init-aware), `serverbee upgrade`.
-- [ ] **Step 5: uninstall.** `serverbee uninstall agent -y` then `server -y`;
-  confirm units/init scripts/logs/env files removed.
-- [ ] **Step 6: second init.** If the provided host is systemd, spin an Alpine
-  OpenRC target (or an Alpine LXC/VM) and repeat Steps 1-5; if it is Alpine,
-  also validate on an Ubuntu host. Record results in
-  `tests/manual/agent-recover-e2e.md` (add the Alpine/OpenRC path).
-- [ ] **Step 7:** Fix any failures, re-run from Step 1 on the affected host.
-- [ ] **Step 8: Commit** test-doc updates.
+- [x] **Step 1: syntax on target sh.** Ran on both systemd (dash, Debian 13) and
+  OpenRC (busybox ash, Alpine 3.20) — clean.
+- [x] **Step 2: server install (binary).** systemd: ALL_PASS earlier. OpenRC:
+  `INIT=openrc` auto-detected, musl binary downloaded, `Starting
+  serverbee-server ... [ ok ]`, `rc-update add` to default, `/healthz` → ok.
+- [x] **Step 3: agent install (binary).** OpenRC: default caps (1852) written to
+  agent.toml, agent enrolled (token persisted) and appears online in the server
+  (`/api/servers` shows `os":"Alpine Linux 3.20.10"`, `capabilities":1852`,
+  `has_token":true`, `protocol_version":4`).
+- [x] **Step 4: lifecycle.** OpenRC: `serverbee status` (both active), `restart`
+  (stop+start clean, healthz 200, non-flaky over repeated runs), `config set`
+  (agent.toml + diff), `env set` (writes `serverbee-agent.env` with `SERVERBEE_`
+  prefix, init-aware restart).
+- [x] **Step 5: uninstall.** OpenRC: `uninstall agent -y` (non-purge) removes
+  init script / logrotate / log / env, `rc-update del`, preserves agent.toml;
+  `uninstall server --purge -y` removes everything and the `/opt/serverbee` base
+  dir (4b1b2b0c fix confirmed under OpenRC too).
+- [x] **Step 6: second init.** Host was systemd (Debian 13), so spun a privileged
+  Alpine OpenRC docker container (PID 1 = `/sbin/init`, full `default` runlevel)
+  and ran Steps 1-5. Results recorded in `tests/manual/agent-recover-e2e.md`
+  §11 (Alpine/OpenRC path).
+- [x] **Step 7: Fix + re-run.** Found a real OpenRC gap: no
+  `RestartPreventExitStatus=78` equivalent, so a permanent enrollment failure
+  (exit 78) would respawn-loop forever under `supervise-daemon`. Added
+  `respawn_max=5` + `respawn_period=300` to the OpenRC agent init script
+  (mirrors systemd `StartLimitBurst=5`/`StartLimitIntervalSec=300`). Verified
+  end-to-end: bogus code → exactly 5 `Permanent registration failure` log lines
+  → `supervise-daemon` gives up → `status: stopped` (no infinite loop).
+- [x] **Step 8: Commit** test-doc + fix.
 
 ---
 

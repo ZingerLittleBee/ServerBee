@@ -445,3 +445,93 @@ REMOTE
 | 7.4 token 没清空 | `deploy/install.sh` HEAD 不含 fix `01b6fcd9`；或你 install.sh 的 else 分支被某个 patch 改回 `warn ... not overwriting` |
 | 7.4 enrollment_code 没换 | 同上；或者 `toml_set` 自身坏了，看 `deploy/install.sh:2747` 附近 |
 | outstanding_enrollment 没刷新到前端列表 | server router/recover 没落库 / 前端缓存补丁没生效；查 `apps/web/src/components/server/recover-agent-dialog.tsx` 是否用 `setQueryData` 补丁 `['servers']` 而不是 invalidate |
+
+---
+
+## 11. POSIX sh + OpenRC 安装路径回归（Alpine）
+
+> 改了 `deploy/install.sh` 的 init 抽象（`svc_*` 分发、`create_openrc_service_*`、
+> `create_systemd_unit_*`）、sha256 校验、doas/sudo re-exec、logrotate、i18n 之后，
+> 必须在 **真正的 OpenRC** 上跑一遍——静态 `shellcheck --shell=dash` / `dash -n`
+> 只能保证可移植语法，证明不了 `rc-service` / `supervise-daemon` / `rc-update`
+> 的运行时行为。给的测试机若是 systemd（如 Debian/Ubuntu），用 **VPS 上的
+> privileged Alpine docker 容器** 起一个 OpenRC PID 1 即可，不必单独开 Alpine VM。
+
+### 11.1 在 systemd 测试机上起一个 OpenRC 容器
+
+```bash
+# VPS 上（需要 docker）。Dockerfile 见下。
+cat > /root/Dockerfile.alpine-openrc <<'EOF'
+FROM alpine:3.20
+RUN apk add --no-cache openrc curl ca-certificates procps
+RUN echo 'rc_sys="docker"' >> /etc/rc.conf \
+ && sed -i 's/^tty/# tty/g' /etc/inittab \
+ && rm -f /etc/init.d/hwdrivers /etc/init.d/machine-id 2>/dev/null || true
+CMD ["/sbin/init"]
+EOF
+docker build -t sb-alpine-openrc -f /root/Dockerfile.alpine-openrc /root
+
+docker rm -f sb-alpine 2>/dev/null
+docker run -d --name sb-alpine --privileged \
+  --tmpfs /run --tmpfs /run/lock \
+  -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+  sb-alpine-openrc
+sleep 6
+
+# OpenRC 真起来了的判据：default runlevel + softlevel + 三个二进制就位
+docker exec sb-alpine rc-status            # → Runlevel: default
+docker exec sb-alpine sh -c 'cat /run/openrc/softlevel'   # → default
+docker exec sb-alpine sh -c 'command -v rc-service supervise-daemon rc-update; ls /sbin/openrc-run'
+```
+
+把当前分支的 install.sh 拷进容器：`docker cp deploy/install.sh sb-alpine:/root/install.sh`。
+
+### 11.2 逐项验证（实测全过，Alpine 3.20 / x86_64 / busybox ash）
+
+| # | 命令 | 期望 |
+| --- | --- | --- |
+| 1 | `docker exec sb-alpine sh -n /root/install.sh` | ash 语法干净（无输出） |
+| 2 | `sh /root/install.sh server --method binary -y` | `INIT=openrc` 自动命中；下载 musl 二进制；`Starting serverbee-server ... [ ok ]`；`rc-update` 加进 default |
+| 3 | `rc-service serverbee-server status` / `curl /healthz` | `status: started` / `ok` |
+| 4 | `cat /etc/init.d/serverbee-server` | `#!/sbin/openrc-run`、`supervisor=supervise-daemon`、`depend(){ need net }`、`start_pre()` source env、`output_log`/`error_log` 指向 `/var/log/serverbee-server.log` |
+| 5 | `cat /etc/logrotate.d/serverbee-server` | weekly / rotate 4 / copytruncate |
+| 6 | 装 agent（先 onboarding 建 server 拿 code，见第 5 节，但 BASE 用 `http://127.0.0.1:9527`）| `Capabilities: ...(default)`、`Created agent.toml`、`Starting serverbee-agent ... [ ok ]` |
+| 7 | `curl -b cj /api/servers` | agent 上线：`os":"Alpine Linux ..."`、`capabilities":1852`、`has_token":true`、`protocol_version":4` |
+| 8 | `cat /etc/init.d/serverbee-agent` | 含 **`respawn_max=5`** + **`respawn_period=300`**（systemd `StartLimitBurst/IntervalSec` 的 OpenRC 等价物） |
+| 9 | `ps aux \| grep supervise-daemon` | 实际带 `--respawn-delay 5 --respawn-max 5 --respawn-period 300` |
+| 10 | `serverbee status` | agent + server 都 `active (running)` |
+| 11 | `serverbee restart` | server / agent 都干净 stop+start，healthz 回 200（连跑数次不偶发） |
+| 12 | `serverbee config set collector.interval 5 -y` | 改 `agent.toml`，打印 diff |
+| 13 | `serverbee env set COLLECTOR__INTERVAL 5 -y` | 写 `/opt/serverbee/etc/serverbee-agent.env`（`SERVERBEE_` 前缀），并自动重启 agent |
+| 14 | `serverbee uninstall agent -y`（非 purge） | 删 init 脚本 / logrotate / log / env，`rc-update del`，**保留 agent.toml** |
+| 15 | `serverbee uninstall server --purge -y` | 全清，且 `/opt/serverbee` base dir 消失（commit 4b1b2b0c 的修复在 OpenRC 同样生效） |
+
+### 11.3 ⭐ exit-78（永久 enrollment 失败）的 respawn 上限验证
+
+OpenRC 没有 systemd `RestartPreventExitStatus=78` 的等价物。为避免坏 enrollment code
+导致 `supervise-daemon` 每 5s 无限重启，agent init 脚本带 `respawn_max=5` /
+`respawn_period=300`——300s 内超过 5 次 respawn 就放弃，逼近 systemd 行为。验证：
+
+```bash
+# server 在线 + agent.toml 是 bogus code（uninstall 后重装带假 code，token 会被清空）
+sh /root/install.sh agent --server-url http://127.0.0.1:9527 \
+  --enrollment-code BOGUS-INVALID-xxxxxxxxxxxxxxxxxxxxxxxxxxxx -y
+rc-service serverbee-agent restart
+# 轮询 supervise-daemon 进程数；约 25-30s（≈5×respawn_delay）后应归 0
+while sleep 5; do pgrep -f 'supervise-daemon serverbee-agent' | wc -l; done
+```
+
+预期：`supervise-daemon` 在约 5 次后退出（进程数 0），`rc-service serverbee-agent
+status` → `stopped`，`/var/log/serverbee-agent.log` 里正好 **5 条**
+`Permanent registration failure: HTTP 401`。**不是** 无限循环。
+
+> 顺带说明：healthy agent 在默认日志级别下不往 stdout 写，所以 `output_log` 平时是
+> 空文件（systemd 下 `journalctl` 同样为空）——这是 agent 二进制行为，不是 OpenRC
+> 日志管道坏了；exit-78 这条恰好证明了 stderr 重定向是通的（错误被捕获进日志）。
+
+### 11.4 在 systemd 上的对照
+
+同样的 1-15 项在 systemd 测试机（Debian 13 / dash）上已全过（ALL_PASS）；
+`serverbee env set` 写 systemd drop-in override，`od -c` 字节级确认；
+`svc_logs` 走 `journalctl -u serverbee-*`。两套 init 共用同一份 `svc_*` 分发，
+唯一差异是上面 11.2 #4/#8 的 unit 文件格式。

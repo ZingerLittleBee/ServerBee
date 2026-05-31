@@ -1434,6 +1434,12 @@ command_args="$1"
 directory="${CONFIG_DIR}"
 supervisor=supervise-daemon
 respawn_delay=5
+# OpenRC has no RestartPreventExitStatus=78 equivalent, so a permanent
+# enrollment failure would otherwise respawn-loop forever. Bound it the same
+# way the systemd unit does (StartLimitBurst=5 / StartLimitIntervalSec=300):
+# more than 5 respawns within 300s and supervise-daemon gives up.
+respawn_max=5
+respawn_period=300
 pidfile="/run/serverbee-agent.pid"
 output_log="$(svc_log_path agent)"
 error_log="$(svc_log_path agent)"
