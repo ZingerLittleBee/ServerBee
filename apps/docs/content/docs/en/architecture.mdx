@@ -90,7 +90,7 @@ The built frontend is embedded into the server binary at compile time, so there 
 
 ## Communication Protocol
 
-All communication uses WebSocket with JSON-encoded messages. Terminal data uses base64 encoding within the JSON frames.
+All communication uses WebSocket. Control and metric messages are JSON text frames; terminal data uses dedicated binary frames to minimize latency. The current protocol version is `4`, sent to the agent in the `Welcome` message on connect.
 
 ### Agent to Server (`AgentMessage`)
 
@@ -142,7 +142,7 @@ All communication uses WebSocket with JSON-encoded messages. Terminal data uses 
 
 ## Database Design
 
-ServerBee uses SQLite with 25 tables across 5 categories:
+ServerBee uses SQLite (WAL mode), with tables grouped into the following categories. The representative tables below cover the core schema:
 
 ### Authentication (4 tables)
 
@@ -220,7 +220,7 @@ Two roles exist:
 | Role | Capabilities |
 |------|-------------|
 | `admin` | Full access: manage users, servers, alerts, notifications, terminal, settings |
-| `user` | Read-only dashboard access (no terminal, no administrative actions) |
+| `member` | Read-only dashboard access (no terminal, no administrative actions) |
 
 ### OAuth
 
@@ -228,7 +228,7 @@ OAuth login is supported for GitHub, Google, and generic OIDC providers. The `al
 
 ### Rate Limiting
 
-Login and agent registration endpoints are rate-limited to prevent brute-force attacks (default: 5 login attempts, 3 registration attempts per window).
+Login and agent registration endpoints are rate-limited per IP to prevent brute-force attacks. Defaults are 5 login attempts and 10 agent registrations within a 15-minute window. Admins can clear an active window from Settings → Rate limits.
 
 ### TOTP
 
@@ -244,7 +244,7 @@ ServerBee/
     agent/           # Agent binary (collector, reporter, terminal)
   apps/
     web/             # React frontend (Vite, TanStack, shadcn/ui)
-    fumadocs/        # Documentation site
+    docs/            # Documentation site (TanStack Start + Fumadocs)
   docs/              # Design documents and plans
   Cargo.toml         # Workspace root
 ```

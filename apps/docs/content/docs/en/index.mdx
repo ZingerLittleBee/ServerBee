@@ -4,23 +4,50 @@ description: ServerBee is a lightweight, modern VPS monitoring system built with
 icon: Rocket
 ---
 
-ServerBee is a lightweight, self-hosted VPS monitoring probe system built from the ground up with a modern Rust backend and React frontend. It is designed to be fast, resource-efficient, and easy to deploy on small VPS instances.
+ServerBee is a lightweight, self-hosted VPS monitoring probe system designed for individuals and small teams. Built with a full Rust stack and a React frontend, it pairs high performance with a very small resource footprint.
+
+## What Is ServerBee
+
+ServerBee has two core components:
+
+- **Server** -- the control center you run on a management host. It serves the web dashboard, stores data, evaluates alerts, runs background jobs, and exposes the REST API.
+- **Agent** -- a lightweight collector you install on each monitored host. It gathers system metrics and reports them in real time, and (when authorized) runs probes, terminal, file, and Docker operations.
+
+Agents keep a persistent WebSocket connection to the server for real-time push. All data is stored in SQLite, so there is no external database to install.
 
 ## Key Features
 
-- **Real-time monitoring** -- CPU, memory, disk, network, load average, temperature, GPU, disk I/O, and traffic metrics streamed over WebSocket
-- **Custom dashboards** -- Build multiple dashboard layouts with server cards, charts, maps, uptime timelines, Markdown notes, and service status widgets
-- **Alert rules** -- Flexible threshold and event-based alerts with debounce logic, maintenance suppression, and multiple notification channels
-- **Service monitors** -- SSL certificate, DNS, HTTP keyword, TCP, and WHOIS checks with history and notifications
-- **Web terminal and remote tasks** -- Browser-based PTY sessions, one-shot commands, and scheduled cron tasks with retries
-- **File manager** -- Controlled remote browse/read/write/upload/download operations with path sandboxing and audit logs
-- **Ping and network quality monitoring** -- ICMP, TCP, HTTP probes, preset network targets, packet loss/latency charts, CSV export, and traceroute
-- **Docker management** -- Container list, stats, events, logs, networks, volumes, and container actions when enabled
-- **Public status pages** -- Share service health with custom slugs, incidents, maintenance windows, uptime timelines, themes, and custom CSS
-- **Branding and themes** -- Preset/custom OKLCH themes plus white-label title, logo, favicon, and footer text
-- **Lightweight footprint** -- Single binary server and agent, SQLite database, no external database required
-- **OAuth and mobile support** -- GitHub, Google, generic OIDC login, mobile sessions, pairing, and push notification support
-- **VPS cost insights** -- Score price-to-resource value with normalized cost metrics, surfaced in the servers list, the dashboard server card, and a per-server insights panel
+### Real-time monitoring and custom dashboards
+
+View the live status of every server through a WebSocket-driven dashboard. Metrics include CPU, memory, disk, network, load average, temperature, GPU, disk I/O, and traffic, arranged across multiple dashboards and widget layouts.
+
+### Alerts and service monitors
+
+A flexible alert engine supports resource thresholds, traffic cycles, network quality, offline, expiry, and IP-change events, with debounce logic and maintenance suppression. Service monitors cover SSL certificate, DNS, HTTP keyword, TCP, and WHOIS checks, and deliver notifications through Webhook, Telegram, Bark, Email, APNs, and other channels.
+
+### Web terminal, remote tasks, and file manager
+
+Open a browser-based PTY shell on any server, run one-shot commands, or schedule cron tasks with retries. The file manager provides controlled remote browse, read, edit, upload, and download operations with path sandboxing and audit logs.
+
+### Ping, network quality, and traceroute
+
+Run ICMP, TCP, and HTTP probes from multiple agents to measure target reachability, latency, and packet loss, with charts, CSV export, and preset network targets. The network detail page also offers traceroute for troubleshooting.
+
+### Docker management
+
+When the Docker capability is enabled, view the container list, live stats, lifecycle events, log streams, networks, and volumes, and perform container actions.
+
+### Public status pages, themes, and branding
+
+Create multiple public status pages with their own slug, server scope, incidents, maintenance windows, uptime timelines, availability thresholds, themes, and custom CSS. Appearance settings support preset and custom OKLCH themes plus white-label title, logo, favicon, and footer text.
+
+### VPS cost insights
+
+After you record each server's price and billing cycle, ServerBee computes a value score per VPS (excellent / good / okay / poor / waste) from resources, utilization, and uptime, and surfaces monthly-equivalent cost, burn rate, and remaining days in the servers list, the dashboard server card, and a per-server insights panel.
+
+### OAuth and mobile support
+
+Sign in via GitHub, Google, or any generic OIDC provider. Mobile sessions, device pairing, and push notifications are supported for the iOS client.
 
 ## Tech Stack
 
@@ -30,22 +57,30 @@ ServerBee is a lightweight, self-hosted VPS monitoring probe system built from t
 | Agent | Rust (sysinfo, tokio-tungstenite) |
 | Frontend | React 19, Vite 7, TanStack Router, TanStack Query, Recharts, shadcn/ui, Tailwind CSS v4 |
 | Protocol | WebSocket (JSON frames, binary for terminal data) |
-| Database | SQLite with WAL mode |
+| Database | SQLite (WAL mode) |
+| Deployment | Single binary / Docker / install script |
+
+### Why Rust
+
+- **High performance** -- the agent uses only 5-15 MB of memory; the server uses roughly 50-100 MB when managing 1000 nodes.
+- **Reliability** -- Rust's memory safety eliminates a whole class of common runtime errors.
+- **Single-binary deployment** -- the server embeds the frontend assets via `rust-embed`, so you ship one executable.
+- **Zero dependencies** -- no MySQL or Redis to install; SQLite is embedded in the binary.
 
 ## How It Works
 
 ServerBee follows a hub-and-spoke architecture:
 
-1. The **Server** is the central dashboard that runs the web UI, REST API, background jobs, and manages all WebSocket connections
-2. **Agents** are installed on each VPS you want to monitor -- they collect system metrics and report back to the server every few seconds
-3. The **Frontend** is a React SPA embedded into the server binary, so there is nothing extra to deploy
+1. The **Server** is the central node: it serves the web UI and REST API, manages all WebSocket connections, and runs background jobs.
+2. **Agents** run on each monitored VPS, collecting metrics and reporting back every few seconds.
+3. The **Frontend** is a React SPA embedded into the server binary, so there is nothing extra to deploy.
 
-All communication between agents and the server happens over WebSocket with JSON-encoded messages. Terminal sessions and some streaming features use dedicated WebSocket routes with binary or structured frames.
+All agent-to-server communication uses WebSocket with JSON-encoded messages. Terminal sessions and some streaming features use dedicated WebSocket routes with binary frames.
 
 ## Next Steps
 
 <Cards>
-  <Card title="Quick Start" href="/en/docs/quick-start" />
+  <Card title="Quick Install" href="/en/docs/quick-start" />
   <Card title="Server Setup" href="/en/docs/server" />
   <Card title="Agent Setup" href="/en/docs/agent" />
   <Card title="Monitoring" href="/en/docs/monitoring" />

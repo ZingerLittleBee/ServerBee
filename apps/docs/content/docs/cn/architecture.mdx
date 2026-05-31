@@ -139,7 +139,7 @@ Agent                              Server
   |--- WebSocket 连接 + token ------>|
   |                                  | 验证 token，查找 server
   |<-- Welcome { server_id,         |
-  |     protocol_version: 1,        |
+  |     protocol_version: 4,        |
   |     report_interval: 3 } -------|
   |                                  |
   |--- SystemInfo { cpu_name,       |  首次/重连后上报静态信息
@@ -181,7 +181,7 @@ Binary 帧格式：`[1 byte session_id 长度][session_id bytes][payload bytes]`
 
 ## 数据库设计
 
-ServerBee 使用 SQLite 数据库，通过 sea-orm ORM 管理。共有 25 个实体（表）：
+ServerBee 使用 SQLite 数据库（WAL 模式），通过 sea-orm 管理。下面按类别列出核心数据表：
 
 ### 用户与认证
 
@@ -313,10 +313,10 @@ Server 启动时通过 `tokio::spawn` 创建多个后台任务：
 
 | 接口 | 限制 |
 |------|------|
-| `POST /api/auth/login` | 每 IP 每分钟 5 次 |
-| `POST /api/agent/register` | 每 IP 每分钟 3 次 |
+| `POST /api/auth/login` | 每 IP 15 分钟内 5 次 |
+| `POST /api/agent/register` | 每 IP 15 分钟内 10 次 |
 
-超限返回 `429 Too Many Requests`。
+超限返回 `429 Too Many Requests`。管理员可在「设置 → 速率限制」中清除活跃窗口。
 
 ## Cargo Workspace 结构
 
@@ -337,7 +337,7 @@ ServerBee/
 |   |       +-- state.rs          # AppState
 |   |       +-- router/           # REST API + WebSocket handlers
 |   |       +-- service/          # 业务逻辑层
-|   |       +-- entity/           # sea-orm Entity (21 表)
+|   |       +-- entity/           # sea-orm Entity (每表一个模块)
 |   |       +-- migration/        # 数据库迁移
 |   |       +-- middleware/       # 认证、日志中间件
 |   +-- agent/                    # Agent 采集端

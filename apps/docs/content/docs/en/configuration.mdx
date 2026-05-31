@@ -8,15 +8,19 @@ ServerBee uses [Figment](https://github.com/SergioBenitez/Figment) for configura
 
 ## Configuration Loading Priority
 
-Configuration values are merged in the following order. Later sources override earlier ones:
+Configuration values are merged from multiple sources. Later sources override earlier ones, so environment variables always win:
 
-1. **TOML file (system):** `/etc/serverbee/server.toml` or `/etc/serverbee/agent.toml`
-2. **TOML file (local):** `server.toml` or `agent.toml` in the working directory
-3. **Runtime environment variables:** Prefixed with `SERVERBEE_`, using `__` (double underscore) as the nested key separator
+1. Built-in defaults
+2. `/etc/serverbee/server.toml` or `/etc/serverbee/agent.toml`
+3. `/opt/serverbee/etc/server.toml` or `/opt/serverbee/etc/agent.toml` (the path used by the install script)
+4. `server.toml` or `agent.toml` in the working directory
+5. Environment variables prefixed with `SERVERBEE_`
+
+This lets you override any single value at runtime without editing the TOML file.
 
 ## Environment Variable Mapping
 
-Every TOML runtime configuration key maps directly to an environment variable. Replace dots with `__` and prefix with `SERVERBEE_`:
+Every TOML key maps directly to an environment variable: prefix with `SERVERBEE_`, uppercase the key, and replace each level of nesting with `__` (double underscore). For example, `auth.secure_cookie` becomes `SERVERBEE_AUTH__SECURE_COOKIE`.
 
 ## Developer Workflow Env Vars
 
