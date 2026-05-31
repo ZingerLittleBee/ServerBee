@@ -4,40 +4,40 @@ description: Monitor endpoint availability and latency with ICMP, TCP, and HTTP 
 icon: Radar
 ---
 
-ServerBee includes built-in ping monitoring that lets you track the availability and latency of external endpoints from the perspective of your monitored servers. This is useful for verifying network connectivity, measuring latency between regions, and detecting outages.
+ServerBee includes built-in ping monitoring that tracks the availability and latency of external endpoints from the perspective of your monitored servers. Use it to verify network connectivity, measure latency between regions, and detect outages.
 
 ## Probe Types
 
-Three types of probes are available:
+Three probe types are available. Each measures round-trip latency and reports a success/failure status.
 
-| Type | Description | Target Format |
-|------|-------------|---------------|
-| **ICMP** | Standard ping (ICMP echo request/reply) | IP address or hostname (e.g., `8.8.8.8`, `google.com`) |
-| **TCP** | TCP connection test (SYN-ACK handshake) | Host and port (e.g., `google.com:443`) |
-| **HTTP** | HTTP(S) request and response time | Full URL (e.g., `https://example.com/health`) |
-
-Each probe type measures round-trip latency and reports success/failure status.
+| Type | What it does | Target format | Timeout | Privileges |
+|------|--------------|---------------|---------|------------|
+| **ICMP** | Standard ICMP echo request/reply | IP or hostname (e.g., `8.8.8.8`, `google.com`) | 5 s | `CAP_NET_RAW` on Linux |
+| **TCP** | TCP connection test (handshake) | `host:port` (e.g., `google.com:443`) | 5 s | None |
+| **HTTP** | HTTP(S) GET request and response time | Full URL (e.g., `https://example.com/health`) | 10 s | None |
 
 ## Creating Ping Tasks
 
-Ping tasks are created through the dashboard or API. Each task requires:
+Create probe tasks from the **Ping** page in the dashboard, or via the API. Each task requires:
 
-- **Name** -- A descriptive label for the task
-- **Probe type** -- `icmp`, `tcp`, or `http`
-- **Target** -- The endpoint to probe (format depends on probe type)
-- **Interval** -- How often to run the probe, in seconds
-- **Server IDs** -- Which agents should run this probe (as a JSON array of server IDs)
-- **Enabled** -- Whether the task is active
+| Field | Description |
+|-------|-------------|
+| Name | A descriptive label, e.g., "Cloudflare DNS" |
+| Probe type | `icmp`, `tcp`, or `http` |
+| Target | The endpoint to probe (format depends on probe type) |
+| Interval | How often to run the probe, in seconds |
+| Server IDs | Which agents should run this probe |
+| Enabled | Whether the task is active |
 
 ### Example: ICMP Ping
 
-Monitor basic connectivity to Google DNS:
+Monitor basic connectivity to Cloudflare DNS:
 
 | Field | Value |
 |-------|-------|
-| Name | Google DNS |
+| Name | Cloudflare DNS |
 | Probe Type | icmp |
-| Target | 8.8.8.8 |
+| Target | 1.1.1.1 |
 | Interval | 60 |
 
 ### Example: TCP Port Check
@@ -62,6 +62,30 @@ Monitor a web service endpoint:
 | Target | https://api.example.com/health |
 | Interval | 60 |
 
+## Target Format
+
+The target format depends on the probe type:
+
+| Probe type | Target format | Example |
+|------------|---------------|---------|
+| ICMP | IP address or hostname | `1.1.1.1`, `google.com` |
+| TCP | host:port | `example.com:443`, `10.0.0.1:3306` |
+| HTTP | Full URL | `https://example.com`, `http://10.0.0.1:8080/health` |
+
+## Choosing an Interval
+
+The interval is in seconds. Tune it to the target's importance and probe type:
+
+| Scenario | Suggested interval |
+|----------|--------------------|
+| Critical service | 15--30 s |
+| Regular website | 60 s |
+| Infrastructure check | 120--300 s |
+
+<Callout type="info">
+Very short intervals increase agent load and network overhead, and may trip the target's firewall or rate limits. Set an interval that matches your actual needs.
+</Callout>
+
 ## How Tasks Are Distributed
 
 When you create or update a ping task, the server syncs it to the appropriate agents:
@@ -70,6 +94,11 @@ When you create or update a ping task, the server syncs it to the appropriate ag
 2. A `PingTasksSync` message is sent to each assigned agent containing all their active tasks
 3. Each agent starts (or updates) its local probe scheduler
 4. Probe results are sent back to the server as `PingResult` messages
+
+The server syncs probe tasks to agents at these moments:
+
+- When an agent first connects or reconnects
+- When an admin creates, updates, or deletes a probe task
 
 If an agent disconnects and reconnects, the server automatically re-syncs all assigned ping tasks.
 
@@ -84,9 +113,15 @@ The `server_ids_json` field controls which agents execute the probe:
 - **Specific servers** -- Provide an array of server IDs: `["srv-1", "srv-2"]`
 - **All servers** -- Use an empty array `[]` or the special value `["*"]` to assign to all connected agents
 
-This lets you measure latency from multiple geographic locations simultaneously and compare results.
+Running the same probe from multiple agents lets you:
+
+- Probe one target from different regions simultaneously and compare network quality
+- Rule out single-point network issues for a more accurate availability verdict
+- Localize a fault to the probing node when one agent fails while others succeed
 
 ## Viewing Results
+
+### Probe Records
 
 Ping results are stored in the database with the following data:
 
@@ -99,11 +134,19 @@ Ping results are stored in the database with the following data:
 | `error` | Error message if the probe failed |
 | `time` | Timestamp of the measurement |
 
-Results can be viewed in the dashboard as:
+### Latency Charts
 
-- **Latency charts** showing trends over time
-- **Success rate** percentages
-- **Per-agent breakdown** when multiple servers probe the same target
+The ping task detail page shows latency trend charts per agent. Charts support filtering by time range to help you analyze how network quality changes over time. When multiple servers probe the same target, results are broken down per agent, and a success-rate percentage is shown.
+
+### API Query
+
+Query probe records through the REST API:
+
+```
+GET /api/ping-tasks/:id/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&server_id=xxx
+```
+
+Filtering by time range and agent is supported.
 
 ## Data Retention
 
@@ -118,4 +161,10 @@ The cleanup task runs hourly and removes records older than the configured reten
 
 ## Integration with Alerts
 
-You can combine ping monitoring with alert rules. For example, to alert when a critical endpoint becomes unreachable, you could create an alert rule that watches for failed ping probes. The ping data is stored alongside regular monitoring data, making it available for the same alerting infrastructure.
+Ping monitoring works with alert rules. The `network_latency` and `network_packet_loss` rule types let you alert on probe latency or packet loss, so you're notified when a critical endpoint degrades or becomes unreachable. Ping data is stored alongside regular monitoring data and reuses the same alerting infrastructure. See [Alerts & Notifications](/en/docs/alerts).
+
+<Cards>
+  <Card title="Monitoring" href="/en/docs/monitoring" />
+  <Card title="Alerts & Notifications" href="/en/docs/alerts" />
+  <Card title="Agent Configuration" href="/en/docs/agent" />
+</Cards>
