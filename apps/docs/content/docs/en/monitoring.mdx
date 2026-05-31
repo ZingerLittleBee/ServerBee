@@ -1,15 +1,16 @@
 ---
 title: Monitoring
-description: Real-time system monitoring, dashboards, and historical data.
+description: Real-time system monitoring, dashboards, historical data, and data retention.
 icon: Activity
 ---
 
-ServerBee provides real-time monitoring of all your connected servers through a unified web dashboard. Metrics are streamed over WebSocket for instant updates without polling.
+ServerBee monitors all your connected servers in real time through a unified web dashboard. Metrics are streamed over WebSocket for instant updates without polling, with historical data available for querying and trend analysis.
 
 ## Dashboard Overview
 
 The main dashboard shows all registered servers with their current status at a glance:
 
+- **Top summary cards** -- Online / Offline / Total counts, average CPU usage, average memory usage, and total bandwidth
 - **Online/Offline status** with color indicators
 - **Ring grid** of four donut charts per card: CPU, Memory, Disk, and monthly **Traffic quota** utilization. When no quota is configured the traffic ring falls back to cumulative bytes transferred, and when a billing cycle is active a "days remaining" hint is shown under the footer
 - **Disk I/O throughput** (read / write bytes per second, aggregated across devices) streamed live alongside network speed
@@ -17,7 +18,7 @@ The main dashboard shows all registered servers with their current status at a g
 - **Load trend** (`load5 · load15` next to `load1`) and **uptime / swap / process / TCP / UDP** summary row
 - **Region and country** flags (when GeoIP is enabled)
 
-Servers are organized by groups and sorted by weight. You can filter, search, and batch-operate on servers from this view.
+All data is driven over WebSocket, so the view refreshes in real time without a manual reload. Servers are organized by groups and sorted by weight. You can filter, search, and batch-operate on servers from this view.
 
 For custom operations views, use [Dashboards & Widgets](/en/docs/dashboards) to create additional dashboard layouts with charts, maps, service status widgets, Markdown notes, and uptime timelines.
 
@@ -27,17 +28,20 @@ Region/country labels and the Server Map widget require GeoIP data. You can conf
 
 ## Real-Time Updates
 
-The browser connects to the server via WebSocket at `/api/ws/servers`. The communication flow works as follows:
+The browser connects to the server via WebSocket at `/api/ws/servers`, then receives:
 
-1. On initial connection, the server sends a `FullSync` message containing the current state of all servers
-2. As agents report new metrics, the server broadcasts `Update` messages to all connected browsers
-3. When an agent connects or disconnects, `ServerOnline` / `ServerOffline` events are sent
+| Message | When | Description |
+|---------|------|-------------|
+| `FullSync` | On connection | Current state of all servers |
+| `Update` | When an agent reports | Broadcast of changed server status |
+| `ServerOnline` | When an agent connects | A server has come online |
+| `ServerOffline` | When an agent disconnects | A server has gone offline |
 
-This means the dashboard updates in real time -- there is no need to refresh the page or wait for polling intervals.
+The dashboard therefore updates in real time -- no page refresh or polling interval required.
 
 ## Metric Types
 
-The agent collects the following metrics at a configurable interval (default: every 3 seconds):
+The agent collects the following metrics at a configurable interval (default: every 3 seconds, set via `collector.interval`; the server can dynamically adjust it through the `Welcome` message):
 
 ### System Resources
 
@@ -143,30 +147,46 @@ The dashboard charts automatically switch between raw and hourly data depending 
 
 ### GPU Records
 
-GPU metrics are stored separately in a dedicated table with per-device granularity. Each record includes the device index, name, memory, utilization, and temperature. These are retained for **7 days** by default.
+GPU metrics are stored separately in a dedicated table with per-device granularity. Each record includes the device index, name, memory, utilization, and temperature. These are retained for **7 days** by default (configurable via `retention.gpu_records_days`).
 
-## Server Groups
+### Query Strategy
 
-Organize your servers into logical groups for easier management:
+Historical metrics are queried via the REST API:
 
-- Create groups with custom names and sort weights
-- Assign servers to groups
-- Groups appear as sections in the dashboard
-- Sort weight controls the display order (lower weight = higher position)
+```
+GET /api/servers/:id/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&interval=auto
+```
 
-Groups can represent environments (production, staging), regions (US-East, EU-West), providers (AWS, Hetzner), or any other organizational structure that makes sense for your setup.
+The `interval` parameter controls data granularity:
+
+| Value | Description |
+|-------|-------------|
+| `raw` | Returns raw minute-level records |
+| `hourly` | Returns hourly aggregated records |
+| `auto` | Chooses automatically: `raw` for ranges within 24 hours, `hourly` beyond 24 hours |
+
+### Storage Tiers
+
+```
+Agent report (every 3s)
+  --> In-memory cache: keeps only the latest sample per server (for real-time push)
+  --> Every 1 minute: written to the records table (minute-level records)
+  --> Every 1 hour: aggregated into the records_hourly table (averages)
+```
 
 ## Server Details
 
 Each server has a detail page showing:
 
-- Real-time streaming charts (default mode)
-- System information (hardware, OS, network)
-- Historical trend charts with time range selection
-- Disk I/O charts with merged and per-disk views (all platforms, historical mode)
-- 90-day uptime timeline with daily availability breakdown
-- Server metadata (group, tags, remarks, pricing)
-- Actions (terminal access, edit, delete)
+- **Basic info** -- OS, CPU model, total memory, IP addresses, region, agent version
+- **Real-time streaming charts** (default mode) -- live data streamed from WebSocket updates
+- **Historical trend charts** -- switch to 1h / 6h / 24h / 7d / 30d to query records from the database
+- **Disk I/O charts** -- merged and per-disk views (all platforms, historical mode)
+- **90-day uptime timeline** -- daily availability breakdown as a colored bar chart
+- **GPU panel** -- per-GPU utilization and VRAM charts, if the server reports GPU data (historical mode only)
+- **Traffic statistics** -- cumulative network traffic summary
+- **Server metadata** -- group, tags, remarks, pricing
+- **Actions** -- terminal access, edit, delete
 
 ### Real-Time Charts
 
@@ -201,28 +221,74 @@ The server detail page includes an uptime card with a 90-day timeline. Each day 
 
 Uptime data is queried via `GET /api/servers/{server_id}/uptime-daily?days=90`. The endpoint returns a `UptimeDailyEntry` per day with `date`, `online_minutes`, `total_minutes`, and `uptime_percent` fields. Missing dates are gap-filled with zero values.
 
-## Network Quality Views
+## Data Retention
 
-The `/network` overview and `/network/{server_id}` detail pages summarize configured probe targets for each server.
+ServerBee automatically cleans up expired data via a background task that runs once per hour:
 
-- Newly assigned targets appear immediately, even before the first probe result is written
-- Targets without probe data render a no-data state instead of disappearing from the summary
-- The overview search box follows the active UI language
+| Data Type | Default Retention | Config Key |
+|-----------|------------------|------------|
+| Minute-level metrics (records) | 7 days | `retention.records_days` |
+| Hourly metrics (records_hourly) | 90 days | `retention.records_hourly_days` |
+| GPU metrics (gpu_records) | 7 days | `retention.gpu_records_days` |
+| Ping probe records | 7 days | `retention.ping_records_days` |
+| Traffic hourly (traffic_hourly) | 7 days | `retention.traffic_hourly_days` |
+| Traffic daily (traffic_daily) | 400 days | `retention.traffic_daily_days` |
+| Task results (task_results) | 7 days | `retention.task_results_days` |
+| Audit logs | 180 days | `retention.audit_logs_days` |
 
-### Time Range Selector
+<Callout type="info">
+The hourly task runs in a fixed order: hourly aggregation first, then cleanup. This guarantees that minute-level data is rolled up into hourly summaries before it is deleted, so long-term trend data is never lost.
+</Callout>
 
-The time range bar offers these options:
+Example of overriding the retention policy:
 
-| Mode | Data Source | Description |
-|------|-------------|-------------|
-| **Real-time** | WebSocket ring buffer | Live streaming data (default) |
-| **1h** | REST API (raw records) | Last 1 hour from database |
-| **6h** | REST API (raw records) | Last 6 hours |
-| **24h** | REST API (raw records) | Last 24 hours |
-| **7d** | REST API (hourly records) | Last 7 days (aggregated) |
-| **30d** | REST API (hourly records) | Last 30 days (aggregated) |
+```toml title="server.toml"
+[retention]
+records_days = 14          # keep minute-level data for 14 days
+records_hourly_days = 365  # keep hourly data for 1 year
+```
 
-When switching from Real-time to a historical view, the REST API queries are enabled and chart data loads from the database. When switching back to Real-time, the accumulated buffer data is displayed immediately (data continues to accumulate in the background even while viewing historical data).
+### Disk Space Estimate
+
+Estimated disk usage for 1000 agents:
+
+| Data Type | Estimate |
+|-----------|----------|
+| Minute-level records (7 days) | ~5 GB |
+| Hourly records (90 days) | ~3 GB |
+| Total (30 days) | ~8 GB |
+
+Actual usage depends on the number of servers and the configured retention periods.
+
+## Server Groups and Management
+
+### Server Groups
+
+Organize your servers into logical groups by purpose, region, or any other dimension:
+
+- Create groups with custom names and sort weights
+- Assign servers to different groups
+- The dashboard lists servers grouped by section
+- Sort weight controls the display order (lower weight = higher position)
+- Ungrouped servers appear in the default section
+
+Groups can represent environments (production, staging), regions (US-East, EU-West), providers (AWS, Hetzner), or any other organizational structure that makes sense for your setup.
+
+### Server Tags
+
+In addition to groups, you can attach multiple tags to a server for more flexible classification and filtering. Tags are a many-to-many relationship -- a single server can carry multiple tags.
+
+### Server Management Actions
+
+| Action | Description |
+|--------|-------------|
+| Edit name and remarks | Change the server's display name and remarks |
+| Set group | Assign the server to a specific group |
+| Manage tags | Add or remove server tags |
+| Adjust sorting | Control display order via the weight value |
+| Hide server | Hide a specific server on the dashboard |
+| Delete server | Remove the server and all of its historical data |
+| Batch operations | Delete multiple servers at once |
 
 ## Data Flow
 
@@ -247,9 +313,32 @@ Agent                  Server                    Browser
 
 The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Every hour, raw records are aggregated into hourly summaries, and expired data is cleaned up based on retention settings.
 
+## Network Quality Views
+
+The `/network` overview and `/network/{server_id}` detail pages summarize configured probe targets for each server.
+
+- Newly assigned targets appear immediately, even before the first probe result is written
+- Targets without probe data render a no-data state instead of disappearing from the summary
+- The overview search box follows the active UI language
+
+### Time Range Selector
+
+The time range bar offers these options:
+
+| Mode | Data Source | Description |
+|------|-------------|-------------|
+| **Real-time** | WebSocket ring buffer | Live streaming data (default) |
+| **1h** | REST API (raw records) | Last 1 hour from database |
+| **6h** | REST API (raw records) | Last 6 hours |
+| **24h** | REST API (raw records) | Last 24 hours |
+| **7d** | REST API (hourly records) | Last 7 days (aggregated) |
+| **30d** | REST API (hourly records) | Last 30 days (aggregated) |
+
+When switching from Real-time to a historical view, the REST API queries are enabled and chart data loads from the database. When switching back to Real-time, the accumulated buffer data is displayed immediately (data continues to accumulate in the background even while viewing historical data).
+
 ## Traffic Statistics
 
-ServerBee tracks network traffic at hourly and daily granularity, enabling billing cycle-aware usage monitoring with prediction capabilities.
+ServerBee tracks network traffic at hourly and daily granularity, with billing cycle-aware usage and end-of-cycle prediction.
 
 ### How It Works
 
@@ -439,3 +528,9 @@ Two alert rule types are available for network quality:
 
 - `network_latency` -- Triggers when average latency exceeds a threshold
 - `network_packet_loss` -- Triggers when packet loss exceeds a threshold
+
+<Cards>
+  <Card title="Alerts & Notifications" href="/en/docs/alerts" />
+  <Card title="Architecture" href="/en/docs/architecture" />
+  <Card title="Configuration" href="/en/docs/configuration" />
+</Cards>
