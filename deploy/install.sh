@@ -2451,7 +2451,18 @@ cmd_uninstall() {
             rm -f "$CLI_PATH"
             rm -f "$META_FILE"
             rm -f "$LANG_CACHE_FILE"
-            rmdir "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DOCKER_DIR" "$BASE_DIR" 2>/dev/null || true
+            if [ "$PURGE" = true ]; then
+                # Purge requested and nothing left to manage: remove the whole
+                # base directory, including any orphaned files left behind by a
+                # prior non-purge uninstall of the other component. A plain
+                # rmdir would fail here because those leftovers keep the tree
+                # non-empty.
+                rm -rf "$BASE_DIR"
+            else
+                # Non-purge: only drop directories that are already empty so any
+                # config or data the user chose to keep stays in place.
+                rmdir "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$DOCKER_DIR" "$BASE_DIR" 2>/dev/null || true
+            fi
             info "All components removed. CLI uninstalled."
         fi
     fi
