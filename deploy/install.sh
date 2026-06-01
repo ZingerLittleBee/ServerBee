@@ -485,12 +485,27 @@ conf_file_for() {
 # assumes root throughout, so we elevate the whole process rather than prefix
 # every privileged command.
 require_root() {
+    local _v
     [ "$(id -u)" -eq 0 ] && return 0
     if [ -n "$SELF_SCRIPT" ] && [ -r "$SELF_SCRIPT" ]; then
         if command -v sudo >/dev/null 2>&1; then
             exec sudo -E sh "$SELF_SCRIPT" "$@"
         elif command -v doas >/dev/null 2>&1; then
-            exec doas sh "$SELF_SCRIPT" "$@"
+            # doas has no `sudo -E`; it resets the environment. Forward the vars
+            # the script reads via `env` as separate argv pairs (no re-quoting),
+            # so SERVERBEE_*/LANG_CODE survive elevation. env assignments go
+            # right after `env`; the original CLI args stay after the script.
+            set -- sh "$SELF_SCRIPT" "$@"
+            for _v in LANG_CODE SERVERBEE_LANG SERVERBEE_NO_MAIN \
+                      SERVERBEE_ADMIN__USERNAME SERVERBEE_AUTH__SECURE_COOKIE \
+                      SERVERBEE_SERVER__DATA_DIR SERVERBEE_TEST_DNS_A \
+                      SERVERBEE_TEST_DNS_AAAA SERVERBEE_TEST_PUBLIC_IPV4 \
+                      SERVERBEE_TEST_PUBLIC_IPV6; do
+                if eval "[ -n \"\${$_v+x}\" ]"; then
+                    eval "set -- \"$_v=\${$_v}\" \"\$@\""
+                fi
+            done
+            exec doas env "$@"
         fi
     fi
     error "This script must run as root.\n  Re-run as root, or pipe to a privileged shell, e.g.:\n    curl -fsSL ... | sudo sh\n    curl -fsSL ... | doas sh"
