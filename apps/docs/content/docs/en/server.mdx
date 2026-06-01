@@ -14,10 +14,10 @@ The easiest path is the one-line install script. It detects the architecture, do
 
 ```bash
 # Option A: install with an IP (plain HTTP), reachable at http://<server-ip>:9527
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server -y
 
 # Option B: install with a domain (automatic Caddy + HTTPS), reachable at https://your-domain
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server \
   --domain monitor.example.com --email admin@example.com -y
 ```
 

@@ -25,7 +25,7 @@ The ServerBee agent is a lightweight Rust binary that runs on each server you wa
 The install script detects the architecture, downloads the binary, generates the config, and registers a systemd service automatically:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent \
   --server-url http://your-server-ip:9527 \
   --enrollment-code YOUR_ONE_TIME_CODE
 ```

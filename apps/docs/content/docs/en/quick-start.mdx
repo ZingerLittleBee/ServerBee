@@ -36,7 +36,7 @@ There are two quick ways to install the server — pick one based on whether you
 Fastest to get going; use this when you don't have a domain. You'll reach it at `http://<server-ip>:9527`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server -y
 ```
 
 The script writes `auth.secure_cookie = false` so browser login works over plain HTTP.
@@ -46,7 +46,7 @@ The script writes `auth.secure_cookie = false` so browser login works over plain
 If you already have a domain whose DNS `A` record points to this server, add `--domain` and the script sets up Caddy and issues an HTTPS certificate for you. You'll reach it at `https://your-domain`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server \
   --domain monitor.example.com \
   --email admin@example.com \
   -y
@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 The script first checks that the domain resolves to this server; if it doesn't resolve or points to a different IP, installation stops and tells you which DNS record to add. `--email` is for Let's Encrypt notices and can be omitted. To add a domain to an already-installed server, run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com`.
 
 <Callout type="info">
-You can also run it with no arguments for an interactive wizard that prompts for language, binary vs Docker, and whether to configure a domain: `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash`.
+You can also run it with no arguments for an interactive wizard that prompts for language, binary vs Docker, and whether to configure a domain: `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh`.
 </Callout>
 
 Either way, the script automatically:
@@ -68,7 +68,7 @@ Either way, the script automatically:
 6. Starts the service and enables it on boot
 
 <Callout type="info">
-If Docker is available, running the server in Docker is recommended — upgrades and isolation are easier. Just add `--method docker`: `... | sudo bash -s -- server --method docker -y`.
+If Docker is available, running the server in Docker is recommended — upgrades and isolation are easier. Just add `--method docker`: `... | sudo sh -s -- server --method docker -y`.
 </Callout>
 
 ### Step 2: Get the first-run admin password
@@ -125,7 +125,7 @@ The code is **single-use** and **short-lived** (10 minute default expiry), and i
 On the machine you want to monitor, run the install script and pass the server URL and enrollment code as arguments:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent \
   --server-url http://your-server-ip:9527 \
   --enrollment-code YOUR_ONE_TIME_CODE
 ```

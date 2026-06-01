@@ -58,10 +58,10 @@ Dockerfile 通过 `ARG SERVERBEE_IMAGE_TAG=latest` 暴露这个开关。Railway 
 
 ```bash
 # 安装服务端
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server
 
 # 安装 Agent
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent \
   --server-url http://your-server-ip:9527 \
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
