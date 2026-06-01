@@ -2596,7 +2596,7 @@ cmd_upgrade() {
 
 # ─── Status command ───────────────────────────────────────────────────────────
 status_component() {
-    local component method version service status_line since srv ip container_status image_tag ports
+    local component method version service status_line since srv ip container_status image_tag ports logs_out
     component="$1"; method="$2"
     version=$(meta_read "$component" "version")
     service="serverbee-${component}"
@@ -2620,7 +2620,13 @@ status_component() {
                 cecho "$(tr_text st_service) ${RED}${status_line}${NC}"
             fi
             tr_text st_recent_logs
-            svc_logs_tail "$component" 5 | sed 's/^/    /' || tr_text st_no_logs
+            # sed exits 0 on empty input, so capture first to detect "no logs".
+            logs_out=$(svc_logs_tail "$component" 5 2>/dev/null || true)
+            if [ -n "$logs_out" ]; then
+                printf '%s\n' "$logs_out" | sed 's/^/    /'
+            else
+                tr_text st_no_logs
+            fi
         fi
 
         if [ "$component" = "agent" ] && [ -f "${CONFIG_DIR}/agent.toml" ]; then
@@ -2654,7 +2660,12 @@ status_component() {
         fi
 
         tr_text st_recent_logs
-        docker logs "${service}" --tail 5 2>/dev/null | sed 's/^/    /' || tr_text st_no_logs
+        logs_out=$(docker logs "${service}" --tail 5 2>/dev/null || true)
+        if [ -n "$logs_out" ]; then
+            printf '%s\n' "$logs_out" | sed 's/^/    /'
+        else
+            tr_text st_no_logs
+        fi
     fi
 }
 
