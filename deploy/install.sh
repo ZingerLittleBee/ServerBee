@@ -1437,9 +1437,13 @@ directory="${CONFIG_DIR}"
 supervisor=supervise-daemon
 respawn_delay=5
 # OpenRC has no RestartPreventExitStatus=78 equivalent, so a permanent
-# enrollment failure would otherwise respawn-loop forever. Bound it the same
-# way the systemd unit does (StartLimitBurst=5 / StartLimitIntervalSec=300):
-# more than 5 respawns within 300s and supervise-daemon gives up.
+# enrollment failure would otherwise respawn-loop forever. We bound the
+# respawn *burst*: more than 5 respawns within 300s and supervise-daemon
+# gives up. NOTE this is weaker than systemd's RestartPreventExitStatus=78
+# (which never auto-restarts on 78 again): the counter resets after a
+# successful run, and a reboot or manual `rc-service restart` starts fresh,
+# so a stale enrollment code can still burn up to 5 registration attempts
+# per restart. Acceptable — it kills the infinite loop, which is the goal.
 respawn_max=5
 respawn_period=300
 pidfile="/run/serverbee-agent.pid"
