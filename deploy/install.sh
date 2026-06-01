@@ -1268,7 +1268,9 @@ download_verified() {
         warn "No sha256sums.txt for ${version}; skipping checksum verification (older release)."
         return 0
     fi
-    want=$(printf '%s\n' "$sums" | grep "  *${filename}\$" | awk '{print $1}' | head -n1)
+    # Match on the exact filename field (coreutils `sha256sum` emits "<hash>  <name>"),
+    # not a substring/regex, so a line like "<hash>  evil-${filename}" can't match.
+    want=$(printf '%s\n' "$sums" | awk -v f="$filename" '$2 == f { print $1; exit }')
     if [ -z "$want" ]; then
         warn "sha256sums.txt has no entry for ${filename}; skipping checksum verification."
         return 0
