@@ -2826,14 +2826,29 @@ toml_set() {
                 mv "$tmp" "$file"
             else
                 tmp=$(mktemp)
+                # Append the key to the end of the section's content. Trailing
+                # blank lines (the separator before the next section) are buffered
+                # and re-emitted *after* the inserted key so the section break is
+                # preserved instead of leaving the key glued to the next header.
                 awk -v sect="[${section}]" -v line="${key} = ${quoted_value}" '
-                    BEGIN { in_section=0; added=0 }
-                    /^\[/ {
-                        if (in_section && !added) { print line; added=1 }
-                        in_section=($0 == sect)
+                    BEGIN { in_section=0; added=0; blanks="" }
+                    {
+                        is_blank = ($0 ~ /^[ \t]*$/)
+                        is_header = ($0 ~ /^\[/)
+                        if (in_section && !added && is_header) {
+                            print line; added=1
+                            printf "%s", blanks; blanks=""
+                            in_section=($0 == sect)
+                            print; next
+                        }
+                        if (in_section && !added && is_blank) {
+                            blanks = blanks $0 "\n"; next
+                        }
+                        printf "%s", blanks; blanks=""
+                        if (is_header) in_section=($0 == sect)
+                        print
                     }
-                    { print }
-                    END { if (in_section && !added) print line }
+                    END { if (in_section && !added) { print line; printf "%s", blanks } }
                 ' "$file" > "$tmp"
                 mv "$tmp" "$file"
             fi
