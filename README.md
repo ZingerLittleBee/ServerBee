@@ -35,7 +35,7 @@ ServerBee watches all your servers from one place. A central **server** receives
 ### 1. Install the server
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server --method docker
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server --method docker
 ```
 
 Open `http://your-server:9527`. The admin password is auto-generated and printed to the startup log — change it on first login.
@@ -47,7 +47,7 @@ Open `http://your-server:9527`. The admin password is auto-generated and printed
 Sign in as admin → **Settings** → generate a one-time **enrollment code** (single-use, expires in ~10 min). Then on each node:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --method binary \
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent --method binary \
   --server-url http://YOUR_SERVER:9527 --enrollment-code YOUR_ONE_TIME_CODE
 ```
 

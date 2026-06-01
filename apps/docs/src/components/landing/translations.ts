@@ -1,5 +1,5 @@
 export const INSTALL_COMMAND =
-  'curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- server'
+  'curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server'
 
 export type LandingLang = 'en' | 'zh'
 
