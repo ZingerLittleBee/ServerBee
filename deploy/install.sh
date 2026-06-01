@@ -2485,6 +2485,9 @@ cmd_uninstall() {
                 # rmdir would fail here because those leftovers keep the tree
                 # non-empty.
                 rm -rf "$BASE_DIR"
+                # snap Docker keeps config under its own tree (not $BASE_DIR);
+                # drop the whole ServerBee-specific dir so no empty husk lingers.
+                rm -rf "$SNAP_DOCKER_DIR"
             else
                 # Non-purge: only drop directories that are already empty so any
                 # config or data the user chose to keep stays in place.
