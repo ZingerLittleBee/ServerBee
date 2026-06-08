@@ -6,7 +6,9 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, header};
 use axum::routing::{get, post, put};
 use axum::{Extension, Json, Router};
+use sea_orm::SqlxSqliteConnector;
 use serde::{Deserialize, Serialize};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
@@ -199,20 +201,46 @@ pub async fn restore_backup(
 
     // Audit: replacing the live DB with an uploaded file can backdoor the whole
     // instance — record it before the operator restarts.
+    //
+    // `state.db`'s pooled connections still hold the pre-restore inode (the file
+    // we just renamed to `.pre-restore`), so a row written through `state.db`
+    // would land in the now-discarded database and be lost after the mandatory
+    // restart. Open a short-lived connection to the freshly restored file so the
+    // forensic record persists into the DB the server will reopen. A tracing
+    // line is emitted unconditionally as a durable fallback.
     let caller_ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
         &state.config.server.trusted_proxies,
     )
     .to_string();
-    let _ = AuditService::log(
-        &state.db,
-        &actor.user_id,
-        "settings.restore",
-        Some(&format!("bytes={}", body.len())),
-        &caller_ip,
-    )
-    .await;
+    tracing::warn!(
+        user_id = %actor.user_id,
+        ip = %caller_ip,
+        bytes = body.len(),
+        "audit: settings.restore — live database replaced via restore endpoint"
+    );
+    match SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(SqliteConnectOptions::new().filename(&db_path))
+        .await
+    {
+        Ok(pool) => {
+            let restored_db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+            let _ = AuditService::log(
+                &restored_db,
+                &actor.user_id,
+                "settings.restore",
+                Some(&format!("bytes={}", body.len())),
+                &caller_ip,
+            )
+            .await;
+            let _ = restored_db.close().await;
+        }
+        Err(e) => {
+            tracing::error!("failed to open restored DB to persist restore audit log: {e}");
+        }
+    }
 
     ok("Database restored. Please restart the server.")
 }
