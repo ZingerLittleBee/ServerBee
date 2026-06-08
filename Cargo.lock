@@ -4017,9 +4017,11 @@ dependencies = [
 name = "serverbee-common"
 version = "1.0.0-alpha.6"
 dependencies = [
+ "anyhow",
  "chrono",
  "serde",
  "serde_json",
+ "url",
  "utoipa",
  "uuid",
 ]

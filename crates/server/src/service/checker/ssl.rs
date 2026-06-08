@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use serde_json::{Value, json};
+use serverbee_common::ssrf;
 use sha2::{Digest, Sha256};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -79,8 +80,25 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
     let addr = format!("{host}:{port}");
 
+    // SSRF guard: reject hosts resolving to blocked (loopback/link-local/
+    // metadata) addresses, and connect only to the validated addresses (the TLS
+    // handshake still uses `server_name` for SNI / certificate validation).
+    let validated_addrs = match ssrf::resolve_and_check_monitor(&host, port) {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            return CheckResult {
+                success: false,
+                latency: Some(latency),
+                detail: Value::Null,
+                error: Some(e.to_string()),
+            };
+        }
+    };
+
     // Connect TCP
-    let tcp_stream = match tokio::time::timeout(timeout, TcpStream::connect(&addr)).await {
+    let tcp_stream = match tokio::time::timeout(timeout, TcpStream::connect(&validated_addrs[..])).await
+    {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;

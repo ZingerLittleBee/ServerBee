@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
+use serverbee_common::ssrf;
 
 use super::CheckResult;
 
@@ -58,10 +59,53 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
         }
     };
 
+    // SSRF guard: validate the URL (scheme/port/credentials), reject hosts that
+    // resolve to blocked (loopback/link-local/metadata) addresses, and pin the
+    // client to the validated addresses so the host cannot DNS-rebind to a
+    // different IP between the check and the request.
+    let url = match ssrf::validate_url(target) {
+        Ok(u) => u,
+        Err(e) => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            return CheckResult {
+                success: false,
+                latency: Some(latency),
+                detail: Value::Null,
+                error: Some(e.to_string()),
+            };
+        }
+    };
+    let host = match url.host_str() {
+        Some(h) => h.to_string(),
+        None => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            return CheckResult {
+                success: false,
+                latency: Some(latency),
+                detail: Value::Null,
+                error: Some("URL has no host".to_string()),
+            };
+        }
+    };
+    let port = url.port_or_known_default().unwrap_or(80);
+    let validated_addrs = match ssrf::resolve_and_check_monitor(&host, port) {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            let latency = start.elapsed().as_secs_f64() * 1000.0;
+            return CheckResult {
+                success: false,
+                latency: Some(latency),
+                detail: Value::Null,
+                error: Some(e.to_string()),
+            };
+        }
+    };
+
     // Build the HTTP client
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
         .danger_accept_invalid_certs(false)
+        .resolve_to_addrs(&host, &validated_addrs)
         .build()
     {
         Ok(c) => c,

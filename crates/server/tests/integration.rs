@@ -2669,7 +2669,7 @@ async fn test_service_monitor_crud_and_check() {
         "Created monitor should appear in list"
     );
 
-    // ── Step 3: Trigger check — the test server is listening on the target port ──
+    // ── Step 3: Trigger check — loopback is rejected by the SSRF guard ──
     let check_resp = client
         .post(format!(
             "{}/api/service-monitors/{}/check",
@@ -2684,10 +2684,20 @@ async fn test_service_monitor_crud_and_check() {
     let record = &check_body["data"];
     assert!(record["id"].is_number(), "record should have a numeric id");
     assert_eq!(record["monitor_id"], monitor_id);
-    // TCP connection to our own test server should succeed
+    // The test server listens on loopback (127.0.0.1), which the SSRF guard
+    // blocks. The check is therefore recorded as a failure with a guard error,
+    // proving the guard is wired into the live check endpoint.
     assert_eq!(
-        record["success"], true,
-        "TCP check to localhost test server should succeed"
+        record["success"], false,
+        "loopback target must be rejected by the SSRF guard"
+    );
+    assert!(
+        record["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("SSRF guard"),
+        "check error should be an SSRF-guard rejection, got: {:?}",
+        record["error"]
     );
 
     // ── Step 4: Get records — verify the check created a record ──
@@ -2706,7 +2716,7 @@ async fn test_service_monitor_crud_and_check() {
         .as_array()
         .expect("data should be array");
     assert_eq!(records.len(), 1, "should have 1 record after one check");
-    assert_eq!(records[0]["success"], true);
+    assert_eq!(records[0]["success"], false);
 
     // ── Step 5: Delete monitor ──
     let delete_resp = client

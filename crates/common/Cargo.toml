@@ -8,4 +8,6 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 uuid.workspace = true
+anyhow.workspace = true
+url = "2"
 utoipa = { version = "5", optional = true }
