@@ -233,7 +233,8 @@ pub async fn oauth_callback(
     let client = OAuthService::build_client(&provider, &state.config.oauth)?;
 
     // Exchange authorization code for access token, supplying the PKCE verifier
-    // to prove this request originates from the same party that initiated the flow.
+    // so the provider only honors a code bound to the verifier we generated at
+    // authorize time (defends against authorization-code interception/injection).
     let token_result = client
         .exchange_code(AuthorizationCode::new(query.code))
         .set_pkce_verifier(PkceCodeVerifier::new(flow.pkce_verifier))
