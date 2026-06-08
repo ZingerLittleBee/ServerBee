@@ -1,9 +1,22 @@
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use serverbee_common::ssrf;
 use tokio::net::TcpStream;
 
 use super::CheckResult;
+
+/// Parse a "host:port" (or "[ipv6]:port") target into its components.
+fn split_host_port(target: &str) -> Option<(String, u16)> {
+    if let Some(rest) = target.strip_prefix('[') {
+        // [ipv6]:port
+        let (host, after) = rest.split_once(']')?;
+        let port = after.strip_prefix(':')?.parse().ok()?;
+        return Some((host.to_string(), port));
+    }
+    let (host, port) = target.rsplit_once(':')?;
+    Some((host.to_string(), port.parse().ok()?))
+}
 
 /// Check TCP connectivity to `target` (expected format: "host:port").
 ///
@@ -15,7 +28,33 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
     let start = Instant::now();
 
-    match tokio::time::timeout(timeout, TcpStream::connect(target)).await {
+    // SSRF guard: parse host:port, reject targets resolving to blocked
+    // (loopback/link-local/metadata) addresses, and connect only to the
+    // validated addresses so the host cannot rebind to a different IP.
+    let (host, port) = match split_host_port(target) {
+        Some(hp) => hp,
+        None => {
+            return CheckResult {
+                success: false,
+                latency: None,
+                detail: json!({ "connected": false }),
+                error: Some(format!("Invalid TCP target '{target}' (expected host:port)")),
+            };
+        }
+    };
+    let addrs = match ssrf::resolve_and_check_monitor(&host, port) {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            return CheckResult {
+                success: false,
+                latency: None,
+                detail: json!({ "connected": false }),
+                error: Some(e.to_string()),
+            };
+        }
+    };
+
+    match tokio::time::timeout(timeout, TcpStream::connect(&addrs[..])).await {
         Ok(Ok(_stream)) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             CheckResult {
@@ -49,39 +88,63 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::net::TcpListener;
 
-    #[tokio::test]
-    async fn test_tcp_connect_success() {
-        // Bind a listener on a random port
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    #[test]
+    fn test_split_host_port_ipv4() {
+        assert_eq!(
+            split_host_port("10.0.0.5:6379"),
+            Some(("10.0.0.5".to_string(), 6379))
+        );
+    }
 
-        let config = json!({ "timeout": 5 });
-        let result = check(&addr.to_string(), &config).await;
+    #[test]
+    fn test_split_host_port_ipv6_bracketed() {
+        assert_eq!(
+            split_host_port("[fd00::1]:443"),
+            Some(("fd00::1".to_string(), 443))
+        );
+    }
 
-        assert!(result.success);
-        assert!(result.latency.is_some());
-        assert!(result.error.is_none());
-        assert_eq!(result.detail["connected"], true);
+    #[test]
+    fn test_split_host_port_invalid() {
+        assert_eq!(split_host_port("no-port"), None);
+        assert_eq!(split_host_port("host:notaport"), None);
     }
 
     #[tokio::test]
-    async fn test_tcp_connect_refused() {
-        // Use a port that is almost certainly not listening
-        let config = json!({ "timeout": 2 });
-        let result = check("127.0.0.1:1", &config).await;
-
+    async fn test_tcp_blocks_loopback() {
+        // SSRF guard: loopback is never a valid monitoring target.
+        let result = check("127.0.0.1:80", &json!({ "timeout": 2 })).await;
         assert!(!result.success);
-        assert!(result.error.is_some());
-        assert_eq!(result.detail["connected"], false);
+        assert!(
+            result.error.unwrap_or_default().contains("SSRF guard"),
+            "loopback should be rejected by the SSRF guard"
+        );
     }
 
     #[tokio::test]
-    async fn test_tcp_default_timeout() {
-        let config = json!({});
-        // Just verify it doesn't panic with default config
-        let result = check("127.0.0.1:1", &config).await;
+    async fn test_tcp_blocks_cloud_metadata() {
+        let result = check("169.254.169.254:80", &json!({ "timeout": 2 })).await;
         assert!(!result.success);
+        assert!(result.error.unwrap_or_default().contains("SSRF guard"));
+    }
+
+    #[tokio::test]
+    async fn test_tcp_allows_private_target_through_guard() {
+        // Private RFC1918 is allowed past the guard (internal monitoring).
+        // Whether the connection itself succeeds or fails is environment-
+        // dependent; the invariant is that the guard does NOT reject it.
+        let result = check("10.255.255.1:1", &json!({ "timeout": 1 })).await;
+        assert!(
+            !result.error.unwrap_or_default().contains("SSRF guard"),
+            "private targets must be allowed past the SSRF guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tcp_invalid_target() {
+        let result = check("no-port-here", &json!({})).await;
+        assert!(!result.success);
+        assert!(result.error.unwrap_or_default().contains("Invalid TCP target"));
     }
 }

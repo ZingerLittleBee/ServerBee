@@ -7,6 +7,7 @@ use hickory_resolver::config::{NameServerConfig, ResolverConfig};
 use hickory_resolver::proto::rr::RecordType;
 use hickory_resolver::proto::xfer::Protocol;
 use serde_json::{Value, json};
+use serverbee_common::ssrf;
 
 use super::CheckResult;
 
@@ -113,6 +114,14 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 fn build_resolver(nameserver: Option<&str>) -> Result<TokioResolver, String> {
     if let Some(ns) = nameserver {
         let ip = IpAddr::from_str(ns).map_err(|e| format!("Invalid nameserver IP '{ns}': {e}"))?;
+        // SSRF guard: an attacker-supplied nameserver must not point the server
+        // at loopback/link-local/metadata resolvers (private resolvers are
+        // allowed for internal monitoring).
+        if !ssrf::is_monitor_safe_addr(ip) {
+            return Err(format!(
+                "nameserver '{ns}' is a blocked address (loopback/link-local/metadata)"
+            ));
+        }
         let ns_config = NameServerConfig::new(SocketAddr::new(ip, 53), Protocol::Udp);
         let mut resolver_config = ResolverConfig::new();
         resolver_config.add_name_server(ns_config);
@@ -196,5 +205,18 @@ mod tests {
     fn test_build_resolver_invalid_nameserver() {
         let result = build_resolver(Some("not-an-ip"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_resolver_rejects_loopback_nameserver() {
+        // SSRF guard: cannot point the resolver at loopback or cloud metadata.
+        assert!(build_resolver(Some("127.0.0.1")).is_err());
+        assert!(build_resolver(Some("169.254.169.254")).is_err());
+    }
+
+    #[test]
+    fn test_build_resolver_allows_private_nameserver() {
+        // Internal resolvers (RFC1918) are a legitimate monitoring setup.
+        assert!(build_resolver(Some("10.0.0.53")).is_ok());
     }
 }

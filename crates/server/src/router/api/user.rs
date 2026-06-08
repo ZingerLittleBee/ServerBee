@@ -1,10 +1,15 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{ConnectInfo, Path, State};
+use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 
 use crate::error::{ApiResponse, AppError, ok};
+use crate::middleware::auth::CurrentUser;
+use crate::router::utils::extract_client_ip;
+use crate::service::audit::AuditService;
 use crate::service::user::{CreateUserInput, UpdateUserInput, UserResponse, UserService};
 use crate::state::AppState;
 
@@ -70,10 +75,33 @@ pub async fn get_user(
 )]
 pub async fn create_user(
     State(state): State<Arc<AppState>>,
+    Extension(actor): Extension<CurrentUser>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(body): Json<CreateUserInput>,
 ) -> Result<Json<ApiResponse<UserResponse>>, AppError> {
     let user =
         UserService::create_user(&state.db, &body.username, &body.password, &body.role).await?;
+
+    // Audit: account creation (a member or a stealth admin) is privilege-sensitive.
+    let caller_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &actor.user_id,
+        "user.create",
+        Some(&format!(
+            "id={} username={} role={}",
+            user.id, user.username, user.role
+        )),
+        &caller_ip,
+    )
+    .await;
+
     ok(UserResponse::from(user))
 }
 
@@ -92,10 +120,40 @@ pub async fn create_user(
 )]
 pub async fn update_user(
     State(state): State<Arc<AppState>>,
+    Extension(actor): Extension<CurrentUser>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Json(body): Json<UpdateUserInput>,
 ) -> Result<Json<ApiResponse<UserResponse>>, AppError> {
+    let password_reset = body.password.is_some();
+    let old_role = UserService::get_user(&state.db, &id).await?.role;
     let user = UserService::update_user(&state.db, &id, body).await?;
+
+    // Audit: role promotion/demotion and password resets are privilege-sensitive.
+    let role_change = if old_role == user.role {
+        format!("role={}", user.role)
+    } else {
+        format!("role {old_role}->{}", user.role)
+    };
+    let caller_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &actor.user_id,
+        "user.update",
+        Some(&format!(
+            "id={} username={} {role_change} password_reset={password_reset}",
+            user.id, user.username
+        )),
+        &caller_ip,
+    )
+    .await;
+
     ok(UserResponse::from(user))
 }
 
@@ -114,8 +172,32 @@ pub async fn update_user(
 )]
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
+    Extension(actor): Extension<CurrentUser>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    // Capture the target's identity before deletion so the audit entry is meaningful.
+    let target = UserService::get_user(&state.db, &id).await?;
     UserService::delete_user(&state.db, &id).await?;
+
+    let caller_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &actor.user_id,
+        "user.delete",
+        Some(&format!(
+            "id={} username={} role={}",
+            target.id, target.username, target.role
+        )),
+        &caller_ip,
+    )
+    .await;
+
     ok("ok")
 }

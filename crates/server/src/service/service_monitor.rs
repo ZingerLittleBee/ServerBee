@@ -23,6 +23,63 @@ fn default_true() -> bool {
     true
 }
 
+/// Extract the host portion of a "host", "host:port", or "[ipv6]:port" target.
+fn host_of(target: &str) -> &str {
+    if let Some(rest) = target.strip_prefix('[')
+        && let Some((host, _)) = rest.split_once(']')
+    {
+        return host;
+    }
+    if let Some((host, port)) = target.rsplit_once(':')
+        && port.parse::<u16>().is_ok()
+    {
+        return host;
+    }
+    target
+}
+
+/// Reject monitor targets whose literal host is a loopback / link-local /
+/// cloud-metadata address (or "localhost") at create/update time, so the SSRF
+/// guard's rejection surfaces as a clear 4xx at configuration time instead of
+/// as silent runtime check failures (and false alerts) on existing monitors.
+///
+/// Only the connect-based types are SSRF-guarded at runtime (tcp/ssl/
+/// http_keyword); the dns checker guards only its nameserver and whois targets
+/// a registry, so both are skipped here. This is a literal-host check with no
+/// DNS resolution — hostnames that resolve to blocked addresses are still
+/// caught by the runtime guard.
+fn validate_target_addr(monitor_type: &str, target: &str) -> Result<(), AppError> {
+    let host = match monitor_type {
+        "http_keyword" => match serverbee_common::ssrf::validate_monitor_url(target) {
+            Ok(url) => url.host_str().map(str::to_string),
+            // A malformed URL is left for the runtime checker to report.
+            Err(_) => None,
+        },
+        "tcp" | "ssl" => Some(host_of(target).to_string()),
+        _ => None,
+    };
+
+    let Some(host) = host else { return Ok(()) };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+
+    if host.eq_ignore_ascii_case("localhost") {
+        return Err(AppError::Validation(
+            "target 'localhost' is not allowed: loopback/link-local/cloud-metadata \
+             addresses are blocked for monitoring"
+                .to_string(),
+        ));
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>()
+        && !serverbee_common::ssrf::is_monitor_safe_addr(ip)
+    {
+        return Err(AppError::Validation(format!(
+            "target address '{host}' is not allowed: loopback/link-local/cloud-metadata \
+             addresses are blocked for monitoring"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct CreateServiceMonitor {
     pub name: String,
@@ -90,6 +147,7 @@ impl ServiceMonitorService {
                 VALID_TYPES.join(", ")
             )));
         }
+        validate_target_addr(&input.monitor_type, &input.target)?;
 
         let config_json = serde_json::to_string(&input.config_json)
             .map_err(|e| AppError::Validation(format!("Invalid config_json: {e}")))?;
@@ -131,12 +189,14 @@ impl ServiceMonitorService {
         input: UpdateServiceMonitor,
     ) -> Result<service_monitor::Model, AppError> {
         let existing = Self::get(db, id).await?;
+        let monitor_type = existing.monitor_type.clone();
         let mut model: service_monitor::ActiveModel = existing.into();
 
         if let Some(name) = input.name {
             model.name = Set(name);
         }
         if let Some(target) = input.target {
+            validate_target_addr(&monitor_type, &target)?;
             model.target = Set(target);
         }
         if let Some(interval) = input.interval {
@@ -302,6 +362,47 @@ impl ServiceMonitorService {
 mod tests {
     use super::*;
     use crate::test_utils::setup_test_db;
+
+    #[test]
+    fn host_of_extracts_host() {
+        assert_eq!(host_of("example.com:443"), "example.com");
+        assert_eq!(host_of("example.com"), "example.com");
+        assert_eq!(host_of("[fd00::1]:6379"), "fd00::1");
+        assert_eq!(host_of("[::1]"), "::1");
+        // a non-numeric ":suffix" is not a port, so the whole string is the host
+        assert_eq!(host_of("host:notaport"), "host:notaport");
+    }
+
+    #[test]
+    fn validate_target_addr_rejects_loopback_and_metadata() {
+        // localhost literal
+        assert!(validate_target_addr("tcp", "localhost:9527").is_err());
+        assert!(validate_target_addr("http_keyword", "http://localhost/health").is_err());
+        // loopback / metadata / unspecified literals across connect-based types
+        assert!(validate_target_addr("tcp", "127.0.0.1:80").is_err());
+        assert!(validate_target_addr("ssl", "169.254.169.254").is_err());
+        assert!(validate_target_addr("ssl", "[::1]:443").is_err());
+        assert!(validate_target_addr("http_keyword", "http://127.0.0.1:8080/").is_err());
+        assert!(validate_target_addr("http_keyword", "http://169.254.169.254/").is_err());
+    }
+
+    #[test]
+    fn validate_target_addr_allows_public_and_private() {
+        // public
+        assert!(validate_target_addr("tcp", "8.8.8.8:53").is_ok());
+        assert!(validate_target_addr("http_keyword", "https://example.com:8443/").is_ok());
+        // RFC1918 private is a legitimate internal-monitoring target
+        assert!(validate_target_addr("tcp", "10.0.0.5:6379").is_ok());
+        assert!(validate_target_addr("ssl", "192.168.1.10:443").is_ok());
+    }
+
+    #[test]
+    fn validate_target_addr_skips_unguarded_types() {
+        // dns guards only the nameserver, whois targets a registry — the literal
+        // query target is not address-checked here.
+        assert!(validate_target_addr("dns", "localhost").is_ok());
+        assert!(validate_target_addr("whois", "127.0.0.1").is_ok());
+    }
 
     fn sample_create() -> CreateServiceMonitor {
         CreateServiceMonitor {

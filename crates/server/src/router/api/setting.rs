@@ -1,13 +1,19 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::State;
-use axum::http::header;
+use axum::extract::{ConnectInfo, State};
+use axum::http::{HeaderMap, header};
 use axum::routing::{get, post, put};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
+use sea_orm::SqlxSqliteConnector;
 use serde::{Deserialize, Serialize};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 
 use crate::error::{ApiResponse, AppError, ok};
+use crate::middleware::auth::CurrentUser;
+use crate::router::utils::extract_client_ip;
+use crate::service::audit::AuditService;
 use crate::service::config::ConfigService;
 use crate::state::AppState;
 
@@ -77,6 +83,9 @@ async fn update_settings(
 )]
 pub async fn create_backup(
     State(state): State<Arc<AppState>>,
+    Extension(actor): Extension<CurrentUser>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
 ) -> Result<axum::response::Response, AppError> {
     let db_path = resolve_db_path(&state.config);
 
@@ -99,6 +108,23 @@ pub async fn create_backup(
 
     // Clean up backup file
     let _ = tokio::fs::remove_file(&backup_path).await;
+
+    // Audit: exporting the full DB (password hashes, 2FA secrets, tokens) is a
+    // high-risk admin action and must leave a forensic trail.
+    let caller_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &actor.user_id,
+        "settings.backup",
+        Some(&format!("bytes={}", bytes.len())),
+        &caller_ip,
+    )
+    .await;
 
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let filename = format!("serverbee_backup_{timestamp}.db");
@@ -129,6 +155,9 @@ pub async fn create_backup(
 )]
 pub async fn restore_backup(
     State(state): State<Arc<AppState>>,
+    Extension(actor): Extension<CurrentUser>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     if body.len() < 16 {
@@ -169,6 +198,49 @@ pub async fn restore_backup(
     tokio::fs::rename(&staging_path, &db_path)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to restore DB: {e}")))?;
+
+    // Audit: replacing the live DB with an uploaded file can backdoor the whole
+    // instance — record it before the operator restarts.
+    //
+    // `state.db`'s pooled connections still hold the pre-restore inode (the file
+    // we just renamed to `.pre-restore`), so a row written through `state.db`
+    // would land in the now-discarded database and be lost after the mandatory
+    // restart. Open a short-lived connection to the freshly restored file so the
+    // forensic record persists into the DB the server will reopen. A tracing
+    // line is emitted unconditionally as a durable fallback.
+    let caller_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    tracing::warn!(
+        user_id = %actor.user_id,
+        ip = %caller_ip,
+        bytes = body.len(),
+        "audit: settings.restore — live database replaced via restore endpoint"
+    );
+    match SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(SqliteConnectOptions::new().filename(&db_path))
+        .await
+    {
+        Ok(pool) => {
+            let restored_db = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+            let _ = AuditService::log(
+                &restored_db,
+                &actor.user_id,
+                "settings.restore",
+                Some(&format!("bytes={}", body.len())),
+                &caller_ip,
+            )
+            .await;
+            let _ = restored_db.close().await;
+        }
+        Err(e) => {
+            tracing::error!("failed to open restored DB to persist restore audit log: {e}");
+        }
+    }
 
     ok("Database restored. Please restart the server.")
 }
