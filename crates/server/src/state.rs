@@ -39,6 +39,7 @@ pub struct OAuthFlowState {
     pub provider: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub nonce: String,
+    pub pkce_verifier: String,
 }
 
 /// Pending mobile pairing code, keyed by code string.

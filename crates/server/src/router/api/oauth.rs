@@ -11,7 +11,7 @@ use axum::routing::get;
 use crate::router::utils::extract_client_ip;
 use chrono::Utc;
 use oauth2::reqwest::async_http_client;
-use oauth2::{AuthorizationCode, CsrfToken, Scope, TokenResponse};
+use oauth2::{AuthorizationCode, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse};
 use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -145,7 +145,10 @@ pub async fn oauth_authorize(
 
     let client = OAuthService::build_client(&provider, &state.config.oauth)?;
 
-    let mut auth_request = client.authorize_url(CsrfToken::new_random);
+    let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+    let mut auth_request = client
+        .authorize_url(CsrfToken::new_random)
+        .set_pkce_challenge(pkce_challenge);
 
     // Add scopes based on provider
     let scopes = match provider.as_str() {
@@ -169,6 +172,7 @@ pub async fn oauth_authorize(
             provider,
             created_at: Utc::now(),
             nonce: nonce.clone(),
+            pkce_verifier: pkce_verifier.secret().clone(),
         },
     );
 
@@ -195,82 +199,6 @@ pub async fn oauth_authorize(
     Ok((response_headers, Redirect::temporary(auth_url.as_str())))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::state::OAuthFlowState;
-    use dashmap::DashMap;
-
-    fn make_states(
-        state: &str,
-        provider: &str,
-        nonce: &str,
-        age_min: i64,
-    ) -> DashMap<String, OAuthFlowState> {
-        let states = DashMap::new();
-        states.insert(
-            state.to_string(),
-            OAuthFlowState {
-                provider: provider.to_string(),
-                created_at: Utc::now() - chrono::Duration::minutes(age_min),
-                nonce: nonce.to_string(),
-            },
-        );
-        states
-    }
-
-    #[test]
-    fn rejects_unknown_state() {
-        let states: DashMap<String, OAuthFlowState> = DashMap::new();
-        let err =
-            validate_and_consume_state(&states, "missing", "github", Some("n")).unwrap_err();
-        assert!(matches!(err, AppError::BadRequest(_)));
-    }
-
-    #[test]
-    fn rejects_provider_mismatch() {
-        let states = make_states("s1", "github", "nonce1", 0);
-        let err =
-            validate_and_consume_state(&states, "s1", "google", Some("nonce1")).unwrap_err();
-        assert!(matches!(err, AppError::BadRequest(_)));
-    }
-
-    #[test]
-    fn rejects_expired_state() {
-        let states = make_states("s1", "github", "nonce1", 11);
-        let err =
-            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
-        assert!(matches!(err, AppError::BadRequest(_)));
-    }
-
-    #[test]
-    fn rejects_missing_nonce_cookie() {
-        let states = make_states("s1", "github", "nonce1", 0);
-        let err = validate_and_consume_state(&states, "s1", "github", None).unwrap_err();
-        assert!(matches!(err, AppError::BadRequest(_)));
-    }
-
-    #[test]
-    fn rejects_mismatched_nonce_cookie() {
-        let states = make_states("s1", "github", "nonce1", 0);
-        let err =
-            validate_and_consume_state(&states, "s1", "github", Some("wrong")).unwrap_err();
-        assert!(matches!(err, AppError::BadRequest(_)));
-    }
-
-    #[test]
-    fn accepts_valid_state_and_is_single_use() {
-        let states = make_states("s1", "github", "nonce1", 0);
-        let flow =
-            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap();
-        assert_eq!(flow.provider, "github");
-        // second use must fail: state was consumed (replay protection)
-        let err =
-            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
-        assert!(matches!(err, AppError::BadRequest(_)));
-    }
-}
-
 /// Handle the OAuth callback from the provider.
 #[utoipa::path(
     get,
@@ -295,7 +223,7 @@ pub async fn oauth_callback(
 ) -> Result<(HeaderMap, Redirect), AppError> {
     // Validate CSRF state + browser-binding nonce, atomically consuming the state.
     let nonce_cookie = extract_oauth_nonce(&headers);
-    validate_and_consume_state(
+    let flow = validate_and_consume_state(
         &state.oauth_states,
         &query.state,
         &provider,
@@ -304,9 +232,11 @@ pub async fn oauth_callback(
 
     let client = OAuthService::build_client(&provider, &state.config.oauth)?;
 
-    // Exchange authorization code for access token
+    // Exchange authorization code for access token, supplying the PKCE verifier
+    // to prove this request originates from the same party that initiated the flow.
     let token_result = client
         .exchange_code(AuthorizationCode::new(query.code))
+        .set_pkce_verifier(PkceCodeVerifier::new(flow.pkce_verifier))
         .request_async(async_http_client)
         .await
         .map_err(|e| AppError::Internal(format!("OAuth token exchange failed: {e}")))?;
@@ -392,4 +322,81 @@ pub async fn oauth_callback(
     );
 
     Ok((response_headers, Redirect::temporary("/")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::OAuthFlowState;
+    use dashmap::DashMap;
+
+    fn make_states(
+        state: &str,
+        provider: &str,
+        nonce: &str,
+        age_min: i64,
+    ) -> DashMap<String, OAuthFlowState> {
+        let states = DashMap::new();
+        states.insert(
+            state.to_string(),
+            OAuthFlowState {
+                provider: provider.to_string(),
+                created_at: Utc::now() - chrono::Duration::minutes(age_min),
+                nonce: nonce.to_string(),
+                pkce_verifier: "verifier1".to_string(),
+            },
+        );
+        states
+    }
+
+    #[test]
+    fn rejects_unknown_state() {
+        let states: DashMap<String, OAuthFlowState> = DashMap::new();
+        let err =
+            validate_and_consume_state(&states, "missing", "github", Some("n")).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_provider_mismatch() {
+        let states = make_states("s1", "github", "nonce1", 0);
+        let err =
+            validate_and_consume_state(&states, "s1", "google", Some("nonce1")).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_expired_state() {
+        let states = make_states("s1", "github", "nonce1", 11);
+        let err =
+            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_missing_nonce_cookie() {
+        let states = make_states("s1", "github", "nonce1", 0);
+        let err = validate_and_consume_state(&states, "s1", "github", None).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn rejects_mismatched_nonce_cookie() {
+        let states = make_states("s1", "github", "nonce1", 0);
+        let err =
+            validate_and_consume_state(&states, "s1", "github", Some("wrong")).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn accepts_valid_state_and_is_single_use() {
+        let states = make_states("s1", "github", "nonce1", 0);
+        let flow =
+            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap();
+        assert_eq!(flow.provider, "github");
+        // second use must fail: state was consumed (replay protection)
+        let err =
+            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
 }
