@@ -394,6 +394,8 @@ mod tests {
         let flow =
             validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap();
         assert_eq!(flow.provider, "github");
+        // the PKCE verifier must round-trip back to the caller for token exchange
+        assert_eq!(flow.pkce_verifier, "verifier1");
         // second use must fail: state was consumed (replay protection)
         let err =
             validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
