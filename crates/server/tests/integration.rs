@@ -2624,16 +2624,40 @@ async fn test_service_monitor_crud_and_check() {
     let client = http_client();
     login_admin(&client, &base_url).await;
 
-    // ── Step 1: Create a TCP monitor targeting the test server's own address ──
+    // ── Step 1a: loopback targets are rejected at create time (SSRF guard) ──
     let addr = base_url.trim_start_matches("http://");
-    let create_resp = client
+    let loopback_resp = client
         .post(format!("{}/api/service-monitors", base_url))
         .json(&json!({
-            "name": "Localhost TCP Check",
+            "name": "Loopback TCP Check",
             "monitor_type": "tcp",
             "target": addr,
             "interval": 300,
             "config_json": {},
+            "enabled": true
+        }))
+        .send()
+        .await
+        .expect("POST /api/service-monitors failed");
+    assert_eq!(
+        loopback_resp.status(),
+        422,
+        "creating a loopback-target monitor must be rejected at config time"
+    );
+
+    // ── Step 1b: create a monitor with a safe, non-routable target ──
+    // 192.0.2.1 is TEST-NET-1 (RFC 5737): it passes the monitor SSRF guard (not
+    // loopback/link-local/metadata) but is non-routable, so the live check below
+    // fails to connect rather than being blocked — exercising the full CRUD +
+    // check lifecycle without depending on an external host.
+    let create_resp = client
+        .post(format!("{}/api/service-monitors", base_url))
+        .json(&json!({
+            "name": "TCP Check",
+            "monitor_type": "tcp",
+            "target": "192.0.2.1:9",
+            "interval": 300,
+            "config_json": { "timeout": 2 },
             "enabled": true
         }))
         .send()
@@ -2649,7 +2673,7 @@ async fn test_service_monitor_crud_and_check() {
     let monitor_id = create_body["data"]["id"]
         .as_str()
         .expect("monitor id missing");
-    assert_eq!(create_body["data"]["name"], "Localhost TCP Check");
+    assert_eq!(create_body["data"]["name"], "TCP Check");
     assert_eq!(create_body["data"]["monitor_type"], "tcp");
 
     // ── Step 2: List monitors — verify it appears ──
@@ -2669,7 +2693,7 @@ async fn test_service_monitor_crud_and_check() {
         "Created monitor should appear in list"
     );
 
-    // ── Step 3: Trigger check — loopback is rejected by the SSRF guard ──
+    // ── Step 3: Trigger check — non-routable target fails to connect ──
     let check_resp = client
         .post(format!(
             "{}/api/service-monitors/{}/check",
@@ -2684,20 +2708,15 @@ async fn test_service_monitor_crud_and_check() {
     let record = &check_body["data"];
     assert!(record["id"].is_number(), "record should have a numeric id");
     assert_eq!(record["monitor_id"], monitor_id);
-    // The test server listens on loopback (127.0.0.1), which the SSRF guard
-    // blocks. The check is therefore recorded as a failure with a guard error,
-    // proving the guard is wired into the live check endpoint.
-    assert_eq!(
-        record["success"], false,
-        "loopback target must be rejected by the SSRF guard"
-    );
+    // Whether the TCP connect to a non-routable address succeeds, is refused,
+    // or times out is environment-dependent; the invariant here is that the
+    // check endpoint runs the checker and persists a record with a real boolean
+    // success field. (Loopback/metadata rejection is covered by the checker unit
+    // tests and the Step 1a create-time guard above.)
     assert!(
-        record["error"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("SSRF guard"),
-        "check error should be an SSRF-guard rejection, got: {:?}",
-        record["error"]
+        record["success"].is_boolean(),
+        "check should persist a boolean success, got: {:?}",
+        record["success"]
     );
 
     // ── Step 4: Get records — verify the check created a record ──
@@ -2716,7 +2735,7 @@ async fn test_service_monitor_crud_and_check() {
         .as_array()
         .expect("data should be array");
     assert_eq!(records.len(), 1, "should have 1 record after one check");
-    assert_eq!(records[0]["success"], false);
+    assert!(records[0]["success"].is_boolean());
 
     // ── Step 5: Delete monitor ──
     let delete_resp = client

@@ -30,6 +30,10 @@ Unlike Ping Monitoring, which asks agents to probe network targets, Service Moni
 
 The background checker wakes every 10 seconds, schedules due monitors based on their `interval`, and runs up to 20 checks concurrently.
 
+<Callout type="warn">
+As an SSRF safeguard, targets that resolve to loopback (`127.0.0.0/8`, `::1`, `localhost`), link-local, the cloud metadata endpoint (`169.254.169.254`), or other non-routable addresses are blocked. SSL, TCP, and HTTP Keyword monitors reject such targets when you save the monitor, and the guard is re-applied on every HTTP redirect hop. Private LAN ranges (`10/8`, `172.16/12`, `192.168/16`, and IPv6 ULA) remain allowed so you can monitor internal hosts.
+</Callout>
+
 ## Type-Specific Configuration
 
 ### SSL Certificate
