@@ -29,6 +29,18 @@ pub struct PendingTotp {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// In-flight OAuth login flow state, keyed by the CSRF `state` token.
+///
+/// `nonce` is mirrored into a short-lived HttpOnly pre-auth cookie set on the
+/// authorize redirect and re-checked on the callback, binding the flow to the
+/// browser that initiated it (defends against login CSRF / session fixation).
+#[derive(Debug)]
+pub struct OAuthFlowState {
+    pub provider: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub nonce: String,
+}
+
 /// Pending mobile pairing code, keyed by code string.
 pub struct PendingPair {
     pub user_id: String,
@@ -52,8 +64,8 @@ pub struct AppState {
     pub geoip_downloading: AtomicBool,
     pub asn: Arc<std::sync::RwLock<Option<AsnService>>>,
     pub asn_downloading: AtomicBool,
-    /// CSRF state tokens for OAuth flow, keyed by state string → provider.
-    pub oauth_states: DashMap<String, (String, chrono::DateTime<chrono::Utc>)>,
+    /// In-flight OAuth login flows, keyed by the CSRF `state` token.
+    pub oauth_states: DashMap<String, OAuthFlowState>,
     /// Pending TOTP secrets for 2FA setup, keyed by user_id.
     pub pending_totp: DashMap<String, PendingTotp>,
     /// Rate limiter for login attempts, keyed by IP.
