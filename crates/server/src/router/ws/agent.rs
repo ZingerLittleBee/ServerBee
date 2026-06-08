@@ -37,16 +37,19 @@ pub struct OptionalWsQuery {
 }
 
 fn extract_agent_token(headers: &HeaderMap, query: &OptionalWsQuery) -> Option<String> {
-    // Prefer query param (reliable through reverse proxies / cloud load balancers)
-    if let Some(ref token) = query.token {
-        return Some(token.clone());
-    }
-    // Fallback to Authorization header (direct connections)
+    // Prefer the Authorization header. Unlike the query string, it is not
+    // captured in reverse-proxy access logs, browser history, or Referer headers
+    // (CWE-598). The agent always sends this header alongside the query param.
     if let Some(auth) = headers.get("authorization")
         && let Ok(val) = auth.to_str()
         && let Some(token) = val.strip_prefix("Bearer ")
     {
         return Some(token.to_string());
+    }
+    // Fall back to the query param for proxies/load balancers that strip the
+    // Authorization header.
+    if let Some(ref token) = query.token {
+        return Some(token.clone());
     }
     None
 }
@@ -1616,6 +1619,39 @@ mod tests {
 
     fn test_addr() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    #[test]
+    fn extract_agent_token_prefers_authorization_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", "Bearer header-token".parse().unwrap());
+        let query = OptionalWsQuery {
+            token: Some("query-token".to_string()),
+        };
+        // Header wins so the secret stays out of proxy access logs.
+        assert_eq!(
+            extract_agent_token(&headers, &query),
+            Some("header-token".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_agent_token_falls_back_to_query() {
+        let headers = HeaderMap::new();
+        let query = OptionalWsQuery {
+            token: Some("query-token".to_string()),
+        };
+        assert_eq!(
+            extract_agent_token(&headers, &query),
+            Some("query-token".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_agent_token_none_when_absent() {
+        let headers = HeaderMap::new();
+        let query = OptionalWsQuery { token: None };
+        assert_eq!(extract_agent_token(&headers, &query), None);
     }
 
     #[tokio::test]
