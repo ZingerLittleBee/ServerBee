@@ -59,11 +59,12 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
         }
     };
 
-    // SSRF guard: validate the URL (scheme/port/credentials), reject hosts that
+    // SSRF guard: validate the URL (scheme/credentials; any port is allowed so
+    // operators can monitor services on non-standard ports), reject hosts that
     // resolve to blocked (loopback/link-local/metadata) addresses, and pin the
     // client to the validated addresses so the host cannot DNS-rebind to a
     // different IP between the check and the request.
-    let url = match ssrf::validate_url(target) {
+    let url = match ssrf::validate_monitor_url(target) {
         Ok(u) => u,
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;

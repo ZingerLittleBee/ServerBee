@@ -9,13 +9,10 @@ const ALLOWED_SCHEMES: &[&str] = &["http", "https"];
 /// Allowed explicit ports (absent means scheme default — 80/443).
 const ALLOWED_PORTS: &[u16] = &[80, 443];
 
-/// Validate that a URL is safe to fetch:
-///   - scheme must be `http` or `https`
-///   - port must be 80, 443, or absent (scheme default)
-///   - no embedded credentials (`user:pass@host`)
-///
-/// Returns the parsed `Url` on success.
-pub fn validate_url(raw: &str) -> Result<Url> {
+/// Shared URL validation: scheme must be `http`/`https`, no embedded
+/// credentials, and—when `restrict_ports` is set—the port must be 80/443 or the
+/// scheme default. Returns the parsed `Url` on success.
+fn validate_url_inner(raw: &str, restrict_ports: bool) -> Result<Url> {
     let url = Url::parse(raw)?;
 
     if !ALLOWED_SCHEMES.contains(&url.scheme()) {
@@ -25,7 +22,7 @@ pub fn validate_url(raw: &str) -> Result<Url> {
         );
     }
 
-    if url.port().is_some_and(|port| !ALLOWED_PORTS.contains(&port)) {
+    if restrict_ports && url.port().is_some_and(|port| !ALLOWED_PORTS.contains(&port)) {
         bail!(
             "SSRF guard: port {} is not allowed (only 80/443 or scheme default)",
             url.port().unwrap()
@@ -40,6 +37,25 @@ pub fn validate_url(raw: &str) -> Result<Url> {
     }
 
     Ok(url)
+}
+
+/// Validate that a URL is safe to fetch on the strict (global-only) path:
+///   - scheme must be `http` or `https`
+///   - port must be 80, 443, or absent (scheme default)
+///   - no embedded credentials (`user:pass@host`)
+///
+/// Returns the parsed `Url` on success.
+pub fn validate_url(raw: &str) -> Result<Url> {
+    validate_url_inner(raw, true)
+}
+
+/// Like [`validate_url`] but allows any port, for the service-monitor checkers
+/// where operators legitimately monitor HTTP services on non-standard ports
+/// (e.g. `:8080`, `:3000`). The scheme and embedded-credentials checks still
+/// apply, and the address-level guard ([`is_monitor_safe_addr`]) still blocks
+/// loopback/link-local/metadata regardless of port.
+pub fn validate_monitor_url(raw: &str) -> Result<Url> {
+    validate_url_inner(raw, false)
 }
 
 /// Returns `true` if `addr` is globally routable (safe to connect to).
@@ -323,6 +339,37 @@ mod tests {
     #[test]
     fn validate_url_rejects_embedded_user_and_password() {
         let err = validate_url("http://user:pass@example.com/").unwrap_err();
+        assert!(
+            err.to_string().contains("credentials"),
+            "expected credentials error, got: {err}"
+        );
+    }
+
+    // ── validate_monitor_url (any port; scheme/credentials still enforced) ────
+
+    #[test]
+    fn validate_monitor_url_allows_custom_port() {
+        // The whole point of the relaxed validator: non-standard ports work.
+        assert!(validate_monitor_url("http://example.com:8080/health").is_ok());
+        assert!(validate_monitor_url("https://example.com:3000/").is_ok());
+        assert!(validate_monitor_url("http://example.com:9000/").is_ok());
+    }
+
+    #[test]
+    fn validate_monitor_url_still_allows_standard_ports() {
+        assert!(validate_monitor_url("http://example.com/").is_ok());
+        assert!(validate_monitor_url("https://example.com:443/").is_ok());
+    }
+
+    #[test]
+    fn validate_monitor_url_still_rejects_non_http_scheme() {
+        assert!(validate_monitor_url("file:///etc/passwd").is_err());
+        assert!(validate_monitor_url("gopher://example.com:8080/").is_err());
+    }
+
+    #[test]
+    fn validate_monitor_url_still_rejects_embedded_credentials() {
+        let err = validate_monitor_url("http://user:pass@example.com:8080/").unwrap_err();
         assert!(
             err.to_string().contains("credentials"),
             "expected credentials error, got: {err}"
