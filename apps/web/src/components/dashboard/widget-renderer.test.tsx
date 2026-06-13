@@ -1,5 +1,5 @@
 import type { WidgetManifest, WidgetModule } from '@serverbee/widget-sdk'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { DashboardWidget } from '@/lib/widget-types'
@@ -242,6 +242,40 @@ describe('WidgetRenderer', () => {
         fakeManifest
       )
       render(<WidgetRenderer servers={[]} widget={makeWidget('module', {}, { module_id: 'com.test.fake' })} />)
+      expect(screen.getByTestId('fake-module')).toBeInTheDocument()
+    })
+
+    it('renders registered modules inside the standard widget chrome', () => {
+      registryActions.register(
+        'com.test.fake',
+        makeFakeModule(() => <div data-testid="fake-module">hello from module</div>),
+        fakeManifest
+      )
+
+      render(
+        <WidgetRenderer
+          servers={[]}
+          widget={makeWidget('module', {}, { module_id: 'com.test.fake', title: 'Module Widget' })}
+        />
+      )
+
+      expect(screen.getByText('Module Widget')).toBeInTheDocument()
+      expect(screen.getByTestId('fake-module')).toBeInTheDocument()
+    })
+
+    it('renders a module that registers after the widget first rendered', () => {
+      render(<WidgetRenderer servers={[]} widget={makeWidget('module', {}, { module_id: 'com.test.fake' })} />)
+
+      expect(screen.getByText(NOT_INSTALLED_RE)).toBeInTheDocument()
+
+      act(() => {
+        registryActions.register(
+          'com.test.fake',
+          makeFakeModule(() => <div data-testid="fake-module">hello from module</div>),
+          fakeManifest
+        )
+      })
+
       expect(screen.getByTestId('fake-module')).toBeInTheDocument()
     })
 

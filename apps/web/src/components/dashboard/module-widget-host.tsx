@@ -1,10 +1,11 @@
 import type { ActionsHelper } from '@serverbee/widget-sdk'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { parseConfig } from '@/lib/widget-helpers'
 import type { DashboardWidget } from '@/lib/widget-types'
-import { registryActions } from '@/widgets-runtime/registry'
+import { useWidgetRegistry } from '@/widgets-runtime/registry'
 
 interface ModuleWidgetHostProps {
   servers: ServerMetrics[]
@@ -26,7 +27,7 @@ function Placeholder({ message }: { message: string }) {
 export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHostProps) {
   const { t } = useTranslation('dashboard')
   const moduleId = widget.module_id ?? ''
-  const entry = useMemo(() => (moduleId ? registryActions.get(moduleId) : undefined), [moduleId])
+  const entry = useWidgetRegistry((state) => (moduleId ? state.modules.get(moduleId) : undefined))
 
   const parsed = useMemo(() => {
     if (!entry) {
@@ -59,12 +60,18 @@ export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHost
   }
 
   const Component = entry.module.component
+  const title = widget.title || entry.manifest.name
   return (
-    <Component
-      actions={NOOP_ACTIONS}
-      config={parsed.config}
-      isEditing={false}
-      size={{ w: widget.grid_w, h: widget.grid_h }}
-    />
+    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4 shadow-sm">
+      <div className="mb-3 min-w-0 truncate font-semibold text-sm">{title}</div>
+      <ScrollArea className="min-h-0 flex-1">
+        <Component
+          actions={NOOP_ACTIONS}
+          config={parsed.config}
+          isEditing={false}
+          size={{ w: widget.grid_w, h: widget.grid_h }}
+        />
+      </ScrollArea>
+    </div>
   )
 }

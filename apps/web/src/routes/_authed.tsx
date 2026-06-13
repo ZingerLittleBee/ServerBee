@@ -18,6 +18,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/s
 import { ServersWsContext } from '@/contexts/servers-ws-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useServersWs } from '@/hooks/use-servers-ws'
+import { useWidgetModuleBootstrap } from '@/hooks/use-widget-module-bootstrap'
 import type { ConnectionState } from '@/lib/ws-client'
 
 const ROUTE_LABELS: Record<string, string> = {
@@ -130,6 +131,8 @@ function AuthedLayout() {
   const shouldConnectWs = isAuthenticated && !isLoading && user?.must_change_password !== true
   const wsRef = useServersWs(shouldConnectWs)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
+
+  useWidgetModuleBootstrap(shouldConnectWs)
 
   useEffect(() => {
     if (!shouldConnectWs) {

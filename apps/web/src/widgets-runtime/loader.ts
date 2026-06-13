@@ -16,6 +16,11 @@ export interface BootstrapOptions {
   importer?: (url: string) => Promise<{ default: WidgetModule }>
 }
 
+function entryAssetPath(entryPath: string): string {
+  const parts = entryPath.split('/').filter(Boolean)
+  return parts.at(-1) ?? entryPath
+}
+
 export async function bootstrapLoader(opts: BootstrapOptions = {}): Promise<void> {
   const base = opts.baseUrl ?? '/api/widget-modules'
   const importer = opts.importer ?? ((url: string) => import(/* @vite-ignore */ url))
@@ -36,7 +41,7 @@ export async function bootstrapLoader(opts: BootstrapOptions = {}): Promise<void
             `sdk version mismatch: host ${hostVersion} does not satisfy manifest range ${entry.manifest.sdkVersion}`
           )
         }
-        const url = `${base}/${entry.id}/${entry.entry_path}`
+        const url = `${base}/${entry.id}/${entryAssetPath(entry.entry_path)}`
         const mod = await importer(url)
         if (!mod.default || mod.default.__brand !== 'WidgetModule') {
           throw new Error(`module ${entry.id} did not export a WidgetModule via default`)
