@@ -149,7 +149,7 @@ function ServerNetworkCard({ summary, variant }: { summary: NetworkOverviewSumma
   }
 
   return (
-    <Link params={{ serverId: summary.server_id }} search={{ range: '1h' }} to="/network/$serverId">
+    <Link params={{ serverId: summary.server_id }} search={{ range: '1' }} to="/network/$serverId">
       {body}
     </Link>
   )
