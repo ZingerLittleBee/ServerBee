@@ -62,7 +62,7 @@ function AdminBody({ overview, services, servers, isLoading }: AdminProps) {
   const hasData = serversWithData.length > 0
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea className="h-full w-full" contentClassName="min-w-0!">
       <div className="space-y-6 pr-1 pb-4">
         <div>
           <h1 className="font-bold text-2xl">{t('page_title')}</h1>
