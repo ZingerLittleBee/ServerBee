@@ -60,11 +60,12 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
     return config
   }, [targets])
 
-  // Only render Area series for visible targets
-  const visibleWithIndex = useMemo(
-    () => targets.map((t, i) => ({ ...t, originalIndex: i })).filter((t) => t.visible),
-    [targets]
-  )
+  // Render an Area for EVERY target and toggle visibility via the `hide` prop
+  // rather than unmounting hidden series. Changing the set of <Area> children
+  // makes Recharts re-run the enter animation on the survivors, which blanks the
+  // whole chart for a frame (and can stick until the next re-render). Keeping the
+  // child set stable avoids that flash entirely.
+  const targetsWithIndex = useMemo(() => targets.map((t, i) => ({ ...t, originalIndex: i })), [targets])
 
   const chartData = useMemo(() => {
     const bucketMs = 60_000
@@ -167,12 +168,13 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
             <ChartTooltipContent labelFormatter={tooltipLabelFormatter} valueFormatter={(v) => `${v.toFixed(1)} ms`} />
           }
         />
-        {visibleWithIndex.map(({ id, originalIndex }) => (
+        {targetsWithIndex.map(({ id, originalIndex, visible }) => (
           <Area
             connectNulls={false}
             dataKey={`target_${originalIndex}`}
             fill="transparent"
             fillOpacity={0}
+            hide={!visible}
             key={id}
             stroke={`var(--color-target_${originalIndex})`}
             strokeWidth={2}
