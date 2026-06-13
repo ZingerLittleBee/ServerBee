@@ -244,7 +244,7 @@ function AuthedLayout() {
               <ThemeToggle />
             </div>
           </header>
-          <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+          <ScrollArea className="min-h-0 flex-1 overflow-hidden" contentClassName="min-w-0!">
             <main className="flex min-h-full min-w-0 flex-col p-3 pt-0 sm:p-4 sm:pt-0">
               <Outlet />
             </main>
