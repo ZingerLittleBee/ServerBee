@@ -268,6 +268,8 @@ pub async fn me(
 pub async fn create_api_key(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req_headers: HeaderMap,
     Json(body): Json<CreateApiKeyRequest>,
 ) -> Result<Json<ApiResponse<ApiKeyResponse>>, AppError> {
     if body.name.is_empty() {
@@ -276,6 +278,22 @@ pub async fn create_api_key(
 
     let (model, plaintext_key) =
         AuthService::create_api_key(&state.db, &current_user.user_id, &body.name).await?;
+
+    // Audit: API keys are full credentials, so their lifecycle is security-sensitive.
+    let caller_ip =
+        extract_client_ip(&ConnectInfo(addr), &req_headers, &state.config.server.trusted_proxies)
+            .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "api_key.create",
+        Some(&format!(
+            "id={} name={} prefix={}",
+            model.id, model.name, model.key_prefix
+        )),
+        &caller_ip,
+    )
+    .await;
 
     ok(ApiKeyResponse {
         id: model.id,
@@ -329,9 +347,25 @@ pub async fn list_api_keys(
 pub async fn delete_api_key(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req_headers: HeaderMap,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     AuthService::delete_api_key(&state.db, &id, &current_user.user_id).await?;
+
+    // Audit: revoking an API key is security-sensitive.
+    let caller_ip =
+        extract_client_ip(&ConnectInfo(addr), &req_headers, &state.config.server.trusted_proxies)
+            .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "api_key.delete",
+        Some(&format!("id={id}")),
+        &caller_ip,
+    )
+    .await;
+
     ok("ok")
 }
 
