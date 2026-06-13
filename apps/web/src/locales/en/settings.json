@@ -119,6 +119,8 @@
   "alerts.title": "Alert Rules",
   "alerts.rules": "Rules",
   "alerts.rule_name": "Rule name",
+  "alerts.name_required": "Please enter a rule name",
+  "alerts.rules_required": "Add at least one condition",
   "alerts.trigger_always": "Always (5min debounce)",
   "alerts.trigger_once": "Once (until resolved)",
   "alerts.no_notification": "No notification",
@@ -210,7 +212,7 @@
   "audit.clear_failed": "Failed to clear audit logs",
 
   "ping.title": "Ping Tasks",
-  "ping.probe_tasks": "Probe Tasks",
+  "ping.probe_tasks": "Ping Tasks",
   "ping.add_title": "New Ping Task",
   "ping.add_description": "Configure probe type, target, and interval to monitor network reachability.",
   "ping.task_name": "Task name",

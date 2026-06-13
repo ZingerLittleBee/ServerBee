@@ -119,6 +119,8 @@
   "alerts.title": "告警规则",
   "alerts.rules": "规则",
   "alerts.rule_name": "规则名称",
+  "alerts.name_required": "请输入规则名称",
+  "alerts.rules_required": "请至少添加一个触发条件",
   "alerts.trigger_always": "持续触发（5 分钟防抖）",
   "alerts.trigger_once": "触发一次（直到恢复）",
   "alerts.no_notification": "不通知",
@@ -210,7 +212,7 @@
   "audit.clear_failed": "清空审计日志失败",
 
   "ping.title": "Ping 任务",
-  "ping.probe_tasks": "探测任务",
+  "ping.probe_tasks": "Ping 任务",
   "ping.add_title": "新建 Ping 任务",
   "ping.add_description": "配置探测类型、目标和间隔，监控网络可达性。",
   "ping.task_name": "任务名称",
