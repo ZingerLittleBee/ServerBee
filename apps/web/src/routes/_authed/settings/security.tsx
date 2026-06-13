@@ -230,12 +230,14 @@ function ChangePasswordSection() {
   const { t } = useTranslation(['settings', 'common'])
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
   const mutation = useMutation({
     mutationFn: (payload: { new_password: string; old_password: string }) => api.put('/api/auth/password', payload),
     onSuccess: () => {
       setOldPassword('')
       setNewPassword('')
+      setConfirmPassword('')
       toast.success(t('security.toast_password_changed'))
     },
     onError: (err) => {
@@ -243,8 +245,16 @@ function ChangePasswordSection() {
     }
   })
 
+  const passwordsMatch = newPassword === confirmPassword
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
+    // Guard against a mistyped new password locking the user out — both fields
+    // must match before we send the change.
+    if (!passwordsMatch) {
+      toast.error(t('security.password_mismatch'))
+      return
+    }
     mutation.mutate({ old_password: oldPassword, new_password: newPassword })
   }
 
@@ -280,12 +290,29 @@ function ChangePasswordSection() {
             value={newPassword}
           />
         </div>
+        <div className="space-y-1">
+          <label className="font-medium text-sm" htmlFor="confirm-pw">
+            {t('security.confirm_password')}
+          </label>
+          <Input
+            autoComplete="new-password"
+            id="confirm-pw"
+            minLength={8}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            type="password"
+            value={confirmPassword}
+          />
+          {confirmPassword.length > 0 && !passwordsMatch && (
+            <p className="text-destructive text-sm">{t('security.password_mismatch')}</p>
+          )}
+        </div>
 
         {mutation.error && (
           <p className="text-destructive text-sm">{mutation.error.message || t('security.change_failed')}</p>
         )}
 
-        <Button disabled={mutation.isPending} type="submit">
+        <Button disabled={mutation.isPending || !passwordsMatch || newPassword.length === 0} type="submit">
           {mutation.isPending ? t('security.changing') : t('security.change_password')}
         </Button>
       </form>
