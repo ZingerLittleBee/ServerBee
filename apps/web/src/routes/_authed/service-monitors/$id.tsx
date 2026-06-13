@@ -314,11 +314,43 @@ function formatKeywordFound(value: unknown, t: (key: string) => string): string 
   return value ? t('detail.http.yes') : t('detail.http.no')
 }
 
-function DetailItem({ label, value }: { label: string; value: string | undefined }) {
+// Detail fields come from a free-form JSON blob, so a value can occasionally be
+// something other than a string (e.g. a legacy record that stored a Rust
+// Result as `{ Ok: "..." }`). Coerce defensively so a single bad field renders
+// as text instead of throwing "Objects are not valid as a React child" and
+// blanking the whole page.
+function toDisplayValue(value: unknown): string {
+  if (value == null) {
+    return '--'
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    if ('Ok' in obj) {
+      return toDisplayValue(obj.Ok)
+    }
+    if ('Err' in obj) {
+      return toDisplayValue(obj.Err)
+    }
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return '--'
+    }
+  }
+  return String(value)
+}
+
+function DetailItem({ label, value }: { label: string; value: unknown }) {
   return (
     <div>
       <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="break-all font-mono text-sm">{value ?? '--'}</dd>
+      <dd className="break-all font-mono text-sm">{toDisplayValue(value)}</dd>
     </div>
   )
 }
