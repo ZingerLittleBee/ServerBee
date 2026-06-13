@@ -50,6 +50,7 @@ function isWidgetStatic(configJson: string): boolean {
 // Legacy coarse row pixel height, used only for the mobile single-column min-height.
 const MOBILE_ROW_PX = 80
 const MOBILE_BREAKPOINT = 768
+const SINGLE_COLUMN_CONTENT_WIDTH = 900
 
 const WIDGET_TYPE_MAP = new Map<string, WidgetTypeDefinition>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
 
@@ -354,11 +355,14 @@ export function DashboardGrid({
     return [...widgets].sort((a, b) => a.sort_order - b.sort_order)
   }, [widgets])
 
-  if (isMobile) {
+  const useSingleColumn = isMobile || (mounted && width < SINGLE_COLUMN_CONTENT_WIDTH)
+
+  if (useSingleColumn) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" ref={containerRef}>
         {sortedWidgets.map((widget) => {
           const isAuto = getStrategy(widget.id).kind === 'content-height'
+          const mobileHeight = widget.grid_h * MOBILE_ROW_PX
           return (
             <div className="relative" key={widget.id}>
               {isEditing && (
@@ -372,7 +376,7 @@ export function DashboardGrid({
               )}
               <div
                 className={isEditing ? 'pointer-events-none' : undefined}
-                style={{ minHeight: widget.grid_h * MOBILE_ROW_PX }}
+                style={isAuto ? { minHeight: mobileHeight } : { height: mobileHeight }}
               >
                 <VisibilityGate disabled={isEditing || isAuto}>
                   <WidgetRenderer servers={widgetServers} widget={widget} />
@@ -452,6 +456,8 @@ function EditOverlay({
   onEdit: () => void
   onToggleStatic?: () => void
 }) {
+  const toggleStaticLabel = isStatic ? 'Unlock widget position' : 'Lock widget position'
+
   return (
     <div
       className={cn(
@@ -461,35 +467,41 @@ function EditOverlay({
     >
       {onToggleStatic && (
         <Button
+          aria-label={toggleStaticLabel}
           className="size-7"
           onClick={(e) => {
             e.stopPropagation()
             onToggleStatic()
           }}
           size="icon-sm"
+          title={toggleStaticLabel}
           variant="outline"
         >
           {isStatic ? <LockIcon className="size-3.5" /> : <UnlockIcon className="size-3.5" />}
         </Button>
       )}
       <Button
+        aria-label="Configure widget"
         className="size-7"
         onClick={(e) => {
           e.stopPropagation()
           onEdit()
         }}
         size="icon-sm"
+        title="Configure widget"
         variant="outline"
       >
         <PencilIcon className="size-3.5" />
       </Button>
       <Button
+        aria-label="Delete widget"
         className="size-7"
         onClick={(e) => {
           e.stopPropagation()
           onDelete()
         }}
         size="icon-sm"
+        title="Delete widget"
         variant="destructive"
       >
         <TrashIcon className="size-3.5" />

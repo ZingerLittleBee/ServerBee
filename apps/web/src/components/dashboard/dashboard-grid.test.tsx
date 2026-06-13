@@ -23,6 +23,7 @@ interface MockGridLayoutProps {
 }
 
 let latestGridLayoutProps: MockGridLayoutProps | undefined
+let mockContainerWidth = 1200
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -41,7 +42,7 @@ vi.mock('react-grid-layout', () => ({
     latestGridLayoutProps = props
     return <div data-testid="grid-layout">{props.children}</div>
   },
-  useContainerWidth: () => ({ width: 1200, containerRef: { current: null }, mounted: true }),
+  useContainerWidth: () => ({ width: mockContainerWidth, containerRef: { current: null }, mounted: true }),
   noCompactor: (layout: unknown) => layout,
   getCompactor: () => ({ type: null, allowOverlap: false, preventCollision: true, compact: (l: unknown) => l })
 }))
@@ -91,6 +92,7 @@ describe('DashboardGrid', () => {
 
   beforeEach(() => {
     latestGridLayoutProps = undefined
+    mockContainerWidth = 1200
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1200 })
   })
 
@@ -131,6 +133,24 @@ describe('DashboardGrid', () => {
     expect(screen.queryByText('Add Widget')).not.toBeInTheDocument()
   })
 
+  it('labels edit overlay icon buttons', () => {
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        onWidgetToggleStatic={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    expect(screen.getAllByLabelText('Lock widget position')).toHaveLength(2)
+    expect(screen.getAllByLabelText('Configure widget')).toHaveLength(2)
+    expect(screen.getAllByLabelText('Delete widget')).toHaveLength(2)
+  })
+
   it('renders single-column list on mobile (width < 768)', () => {
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 600 })
 
@@ -148,6 +168,45 @@ describe('DashboardGrid', () => {
     // Mobile renders without GridLayout
     expect(screen.queryByTestId('grid-layout')).not.toBeInTheDocument()
     // Widgets still render
+    expect(screen.getByTestId('widget-w-1')).toBeInTheDocument()
+    expect(screen.getByTestId('widget-w-2')).toBeInTheDocument()
+  })
+
+  it('uses fixed mobile heights for non-auto widgets so h-full content can render', () => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 600 })
+
+    render(
+      <DashboardGrid
+        isEditing={false}
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const widgetShell = screen.getByTestId('widget-w-2').parentElement?.parentElement
+
+    expect(widgetShell).toHaveStyle({ height: '240px' })
+  })
+
+  it('renders single-column list when the measured dashboard content width is narrow', () => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 768 })
+    mockContainerWidth = 520
+
+    render(
+      <DashboardGrid
+        isEditing={false}
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    expect(screen.queryByTestId('grid-layout')).not.toBeInTheDocument()
     expect(screen.getByTestId('widget-w-1')).toBeInTheDocument()
     expect(screen.getByTestId('widget-w-2')).toBeInTheDocument()
   })
