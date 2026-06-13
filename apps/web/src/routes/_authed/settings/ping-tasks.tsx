@@ -5,6 +5,17 @@ import { type FormEvent, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -119,6 +130,7 @@ function PingTasksPage() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [probeType, setProbeType] = useState<ProbeType>('icmp')
   const [target, setTarget] = useState('')
@@ -414,28 +426,57 @@ function PingTasksPage() {
                       >
                         {task.enabled ? t('common:disable') : t('common:enable')}
                       </Button>
-                      <Button
-                        aria-label={`Delete task ${task.name}`}
-                        disabled={deleteMutation.isPending}
-                        onClick={() =>
-                          deleteMutation.mutate(task.id, {
-                            onSuccess: () => {
-                              toast.success(t('ping.task_deleted', { defaultValue: 'Ping task deleted' }))
-                            },
-                            onError: (err) => {
-                              toast.error(
-                                err instanceof Error
-                                  ? err.message
-                                  : t('ping.task_delete_failed', { defaultValue: 'Failed to delete ping task' })
-                              )
-                            }
-                          })
-                        }
-                        size="sm"
-                        variant="destructive"
+                      <AlertDialog
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setDeleteId(null)
+                          }
+                        }}
+                        open={deleteId === task.id}
                       >
-                        <Trash2 className="size-3.5" />
-                      </Button>
+                        <AlertDialogTrigger
+                          onClick={() => setDeleteId(task.id)}
+                          render={
+                            <Button
+                              aria-label={`Delete task ${task.name}`}
+                              disabled={deleteMutation.isPending}
+                              size="sm"
+                              variant="destructive"
+                            />
+                          }
+                        >
+                          <Trash2 className="size-3.5" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteMutation.mutate(task.id, {
+                                  onSuccess: () => {
+                                    toast.success(t('ping.task_deleted', { defaultValue: 'Ping task deleted' }))
+                                  },
+                                  onError: (err) => {
+                                    toast.error(
+                                      err instanceof Error
+                                        ? err.message
+                                        : t('ping.task_delete_failed', { defaultValue: 'Failed to delete ping task' })
+                                    )
+                                  }
+                                })
+                                setDeleteId(null)
+                              }}
+                              variant="destructive"
+                            >
+                              {t('common:delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </div>
                   {isExpanded && (

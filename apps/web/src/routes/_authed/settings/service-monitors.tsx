@@ -4,6 +4,17 @@ import { Eye, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -644,6 +655,7 @@ export function ServiceMonitorsPage() {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ServiceMonitor | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data: monitors, isLoading } = useQuery<ServiceMonitor[]>({
     queryKey: ['service-monitors'],
@@ -818,15 +830,46 @@ export function ServiceMonitorsPage() {
                         <Button aria-label={t('aria.edit')} onClick={() => openEdit(monitor)} size="sm" variant="ghost">
                           <Pencil className="size-3.5" />
                         </Button>
-                        <Button
-                          aria-label={`${t('aria.deleteMonitor')} ${monitor.name}`}
-                          disabled={deleteMutation.isPending}
-                          onClick={() => deleteMutation.mutate(monitor.id)}
-                          size="sm"
-                          variant="ghost"
+                        <AlertDialog
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setDeleteId(null)
+                            }
+                          }}
+                          open={deleteId === monitor.id}
                         >
-                          <Trash2 className="size-3.5 text-destructive" />
-                        </Button>
+                          <AlertDialogTrigger
+                            onClick={() => setDeleteId(monitor.id)}
+                            render={
+                              <Button
+                                aria-label={`${t('aria.deleteMonitor')} ${monitor.name}`}
+                                disabled={deleteMutation.isPending}
+                                size="sm"
+                                variant="ghost"
+                              />
+                            }
+                          >
+                            <Trash2 className="size-3.5 text-destructive" />
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>{tCommon('confirm_title')}</AlertDialogTitle>
+                              <AlertDialogDescription>{tCommon('confirm_delete_message')}</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => {
+                                  deleteMutation.mutate(monitor.id)
+                                  setDeleteId(null)
+                                }}
+                                variant="destructive"
+                              >
+                                {tCommon('delete')}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     </TableCell>
                   </TableRow>
