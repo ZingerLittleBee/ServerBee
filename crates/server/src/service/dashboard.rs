@@ -9,6 +9,7 @@ use crate::error::AppError;
 
 const VALID_WIDGET_TYPES: &[&str] = &[
     "stat-number",
+    "metric-card",
     "server-cards",
     "gauge",
     "line-chart",
@@ -670,6 +671,47 @@ mod tests {
             }
             other => panic!("Expected BadRequest, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn test_update_metric_card_widget_type_accepted() {
+        let (db, _tmp) = setup_db_with_fk().await;
+
+        let dash = DashboardService::create(
+            &db,
+            CreateDashboardInput {
+                name: "Test".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = DashboardService::update(
+            &db,
+            &dash.id,
+            UpdateDashboardInput {
+                name: None,
+                is_default: None,
+                sort_order: None,
+                widgets: Some(vec![WidgetInput {
+                    id: None,
+                    widget_type: "metric-card".to_string(),
+                    module_id: None,
+                    title: Some("CPU".to_string()),
+                    config_json: serde_json::json!({"server_id": "s1", "metric": "cpu"}),
+                    grid_x: 0,
+                    grid_y: 0,
+                    grid_w: 4,
+                    grid_h: 4,
+                    sort_order: 0,
+                }]),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.widgets.len(), 1);
+        assert_eq!(result.widgets[0].widget_type, "metric-card");
     }
 
     #[tokio::test]
