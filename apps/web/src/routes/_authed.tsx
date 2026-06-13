@@ -29,6 +29,8 @@ const ROUTE_LABELS: Record<string, string> = {
   '/terminal': 'nav_terminal',
   '/files': 'nav_files',
   '/service-monitors': 'nav_service_monitors',
+  '/security': 'nav_security_events',
+  '/ip-quality': 'nav_ip_quality',
   '/settings': 'nav_settings',
   '/settings/users': 'nav_users',
   '/settings/notifications': 'nav_notifications',
@@ -37,11 +39,16 @@ const ROUTE_LABELS: Record<string, string> = {
   '/settings/service-monitors': 'nav_service_monitors',
   '/settings/status-pages': 'nav_status_pages',
   '/settings/network-probes': 'nav_network_probes',
+  '/settings/firewall': 'nav_firewall',
+  '/settings/ip-quality': 'nav_ip_quality_settings',
   '/settings/tasks': 'nav_commands',
   '/settings/capabilities': 'nav_capabilities',
   '/settings/api-keys': 'nav_api_keys',
+  '/settings/mobile-devices': 'nav_mobile_devices',
+  '/settings/rate-limits': 'nav_rate_limits',
   '/settings/security': 'nav_security',
   '/settings/appearance': 'nav_appearance',
+  '/settings/widgets': 'nav_widgets',
   '/settings/audit-logs': 'nav_audit_logs'
 }
 
