@@ -11,6 +11,7 @@
   "disable": "禁用",
   "online": "在线",
   "offline": "离线",
+  "connection_lost": "与服务器的连接已断开，正在重连…",
   "log_out": "退出登录",
   "nav_dashboard": "仪表盘",
   "nav_servers": "服务器",

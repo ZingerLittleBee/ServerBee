@@ -164,6 +164,19 @@ function AuthedLayout() {
 
   const wsContextValue = useMemo(() => ({ send, connectionState }), [send, connectionState])
 
+  // Surface a persistent disconnect to the user. Delay showing it so the initial
+  // connect handshake and brief blips don't flash a banner; clear immediately on
+  // reconnect.
+  const [showOffline, setShowOffline] = useState(false)
+  useEffect(() => {
+    if (!shouldConnectWs || connectionState === 'connected') {
+      setShowOffline(false)
+      return
+    }
+    const timer = setTimeout(() => setShowOffline(true), 3000)
+    return () => clearTimeout(timer)
+  }, [shouldConnectWs, connectionState])
+
   useEffect(() => {
     if (!(isLoading || isAuthenticated)) {
       navigate({ to: '/login' }).catch(() => {
@@ -249,6 +262,12 @@ function AuthedLayout() {
               <ThemeToggle />
             </div>
           </header>
+          {showOffline && (
+            <output className="flex shrink-0 items-center justify-center gap-2 bg-amber-500/15 px-3 py-1.5 text-amber-700 text-xs dark:text-amber-400">
+              <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              {t('connection_lost')}
+            </output>
+          )}
           <ScrollArea className="min-h-0 flex-1 overflow-hidden" contentClassName="min-w-0!">
             <main className="flex min-h-full min-w-0 flex-col p-3 pt-0 sm:p-4 sm:pt-0">
               <Outlet />

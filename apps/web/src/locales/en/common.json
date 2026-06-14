@@ -11,6 +11,7 @@
   "disable": "Disable",
   "online": "Online",
   "offline": "Offline",
+  "connection_lost": "Connection to the server was lost. Reconnecting…",
   "log_out": "Log out",
   "nav_dashboard": "Dashboard",
   "nav_servers": "Servers",
