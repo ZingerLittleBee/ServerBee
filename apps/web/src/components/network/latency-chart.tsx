@@ -72,6 +72,9 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
     const now = Date.now()
     const bucketMap = new Map<number, Record<string, unknown>>()
 
+    // Index targets by id once; this memo recomputes on every realtime tick, so a
+    // findIndex per record was O(records * targets).
+    const targetIndexById = new Map(targets.map((t, i) => [t.id, i]))
     for (const record of records) {
       const ts = new Date(record.timestamp).getTime()
       if (ts > now + 30_000) {
@@ -85,8 +88,8 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
       const entry = bucketMap.get(bucketKey)
       if (entry) {
         // Use target_${index} as dataKey instead of record.target_id
-        const targetIndex = targets.findIndex((t) => t.id === record.target_id)
-        if (targetIndex >= 0) {
+        const targetIndex = targetIndexById.get(record.target_id)
+        if (targetIndex !== undefined) {
           entry[`target_${targetIndex}`] = record.avg_latency
         }
       }
