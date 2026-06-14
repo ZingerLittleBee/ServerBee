@@ -264,7 +264,7 @@ function PendingActionMenu({ serverId, serverName }: PendingActionMenuProps) {
         >
           <MoreHorizontal aria-hidden="true" className="size-3.5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-fit">
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
@@ -335,7 +335,7 @@ function RecoverActionMenu({ server }: RecoverActionMenuProps) {
         >
           <MoreHorizontal aria-hidden="true" className="size-3.5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-fit">
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
