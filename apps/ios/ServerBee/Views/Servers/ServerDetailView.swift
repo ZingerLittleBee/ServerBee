@@ -69,6 +69,14 @@ struct ServerDetailView: View {
         }
         if sectionCaps.isConfigured(.securityEvents) { result.append(.security) }
         if sectionCaps.isConfigured(.ipQuality) { result.append(.ipQuality) }
+        if sectionCaps.isConfigured(.docker) { result.append(.docker) }
+        #if DEBUG
+        // Visual-verification hook: the shared demo has no Docker-enabled server,
+        // so allow forcing the Docker section into view for screenshots.
+        if UITestSupport.autoPresent?.hasPrefix("docker") == true, !result.contains(.docker) {
+            result.append(.docker)
+        }
+        #endif
         return result
     }
 
@@ -128,6 +136,8 @@ struct ServerDetailView: View {
             ServerSecuritySection(serverId: serverId)
         case .ipQuality:
             ServerIpQualitySection(serverId: serverId, isAdmin: isAdmin)
+        case .docker:
+            ServerDockerSection(serverId: serverId, isAdmin: isAdmin)
         }
     }
 }
@@ -140,6 +150,7 @@ enum DetailSection: String, Identifiable, CaseIterable {
     case network
     case security
     case ipQuality
+    case docker
 
     var id: String { rawValue }
 
@@ -151,6 +162,7 @@ enum DetailSection: String, Identifiable, CaseIterable {
         case .network: String(localized: "Network")
         case .security: String(localized: "Security")
         case .ipQuality: String(localized: "IP")
+        case .docker: String(localized: "Docker")
         }
     }
 }
