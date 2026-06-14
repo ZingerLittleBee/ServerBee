@@ -208,7 +208,7 @@ function PendingEnrollmentSummary({ enrollment }: PendingSummaryProps) {
 
   if (expiresAt != null && expiresAt > now) {
     return (
-      <p className="text-amber-700 text-xs tabular-nums dark:text-amber-400">
+      <p className="text-muted-foreground text-xs tabular-nums">
         {t('card_pending.code_expires_in', {
           prefix: enrollment.code_prefix,
           countdown: formatCountdown(expiresAt - now)
@@ -412,7 +412,7 @@ const ServerCardInner = ({
         isPending && 'h-full'
       )}
     >
-      {!(server.online || isPending) && (
+      {!server.online && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-grayscale"
@@ -449,8 +449,8 @@ const ServerCardInner = ({
       </div>
 
       {isPending ? (
-        <div className="flex min-h-24 flex-1 flex-col justify-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3">
-          <p className="font-medium text-amber-700 text-sm dark:text-amber-400">{t('card_pending.waiting')}</p>
+        <div className="flex min-h-24 flex-1 flex-col justify-center gap-1 rounded-md bg-muted/40 px-3 py-3">
+          <p className="font-medium text-foreground text-sm">{t('card_pending.waiting')}</p>
           <PendingEnrollmentSummary enrollment={server.outstanding_enrollment} />
         </div>
       ) : (
