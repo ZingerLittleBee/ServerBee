@@ -76,7 +76,9 @@ export function TerminalPage() {
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
           <span className={`inline-block size-2 rounded-full ${statusColor(status)}`} />
           <span className="text-muted-foreground text-xs">{statusLabel(status, t)}</span>
-          {error && <span className="text-red-500 text-xs">{error}</span>}
+          {error && status !== 'connected' && status !== 'connecting' && (
+            <span className="text-red-500 text-xs">{error}</span>
+          )}
           {status === 'closed' && (
             <Button onClick={connect} size="sm" variant="outline">
               {t('reconnect')}
