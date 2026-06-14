@@ -15,6 +15,8 @@ enum Formatters {
         let f = ByteCountFormatter()
         f.countStyle = .binary
         f.allowedUnits = [.useBytes, .useKB, .useMB, .useGB, .useTB]
+        // Render 0 as "0 bytes" rather than the locale word "Zero bytes".
+        f.allowsNonnumericFormatting = false
         return f
     }()
 

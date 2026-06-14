@@ -115,6 +115,11 @@ struct ContentView: View {
                 handleDeepLink(link)
                 pushRouter.pendingDeepLink = nil
             }
+
+            #if DEBUG
+            if let tab = UITestSupport.initialTab { selectedTab = tab }
+            if let link = UITestSupport.deepLink { handleDeepLink(link) }
+            #endif
         }
         .onChange(of: scenePhase) { old, new in
             if old == .background && new == .active {
@@ -158,23 +163,15 @@ enum ServerNavigationTarget: Hashable {
     case detailById(String)
 }
 
-/// Loads a `ServerStatus` by id from the in-memory `ServersViewModel` and
-/// displays `ServerDetailView`. Shows a fallback if the server is unknown
-/// (e.g. push arrived before WS list refreshed).
+/// Displays `ServerDetailView` for a server id. The detail view reads live
+/// state from `ServersViewModel` and fetches REST config itself, so it works
+/// for both list navigation and deep links that arrive before the WS list
+/// has loaded.
 private struct ServerDetailLoaderView: View {
     let serverId: String
-    @Environment(ServersViewModel.self) private var serversViewModel
 
     var body: some View {
-        if let server = serversViewModel.servers.first(where: { $0.id == serverId }) {
-            ServerDetailView(server: server)
-        } else {
-            ContentUnavailableView(
-                String(localized: "Server unavailable"),
-                systemImage: "exclamationmark.triangle",
-                description: Text(String(localized: "This server is no longer reporting."))
-            )
-        }
+        ServerDetailView(serverId: serverId)
     }
 }
 

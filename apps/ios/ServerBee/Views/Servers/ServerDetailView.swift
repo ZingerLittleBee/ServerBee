@@ -1,230 +1,151 @@
 import SwiftUI
 
-/// Detailed view for a single server showing status, metrics, and a link to history charts.
+/// Native, segmented detail screen for a single server.
+///
+/// Live runtime state (status, metrics) comes from the WebSocket-backed
+/// `ServersViewModel` so the screen updates in real time; static configuration
+/// (capabilities, billing, kernel, agent version, enrollment) comes from a REST
+/// fetch. Sections are gated on the server's *effective* capabilities and the
+/// caller's role.
 struct ServerDetailView: View {
-    let server: ServerStatus
+    let serverId: String
 
-    private let columns = [
-        GridItem(.flexible()),
-        GridItem(.flexible())
-    ]
+    @Environment(ServersViewModel.self) private var serversViewModel
+    @Environment(\.apiClient) private var apiClient
+    @Environment(AuthManager.self) private var authManager
+    @State private var viewModel = ServerDetailViewModel()
+    @State private var section: DetailSection = .overview
+
+    /// Allow constructing from a known live status (list navigation) or just an
+    /// id (deep link / push).
+    init(server: ServerStatus) {
+        self.serverId = server.id
+    }
+
+    init(serverId: String) {
+        self.serverId = serverId
+    }
+
+    private var live: ServerStatus? {
+        serversViewModel.servers.first { $0.id == serverId }
+    }
+
+    private var isAdmin: Bool {
+        authManager.user?.role.lowercased() == "admin"
+    }
+
+    /// Capability set, preferring live WS data, falling back to REST config.
+    private var capabilities: CapabilitySet {
+        live?.capabilitySet ?? viewModel.config?.capabilitySet ?? CapabilitySet()
+    }
+
+    private var displayName: String {
+        live?.name ?? viewModel.config?.name ?? String(localized: "Server")
+    }
+
+    private var groupName: String? {
+        if let live { return serversViewModel.resolvedGroupName(for: live) }
+        if let gid = viewModel.config?.groupId { return serversViewModel.groupsByID[gid] }
+        return nil
+    }
+
+    /// Which segmented sections to show. Traffic shows only when billing/limit
+    /// is configured; Security shows only when the capability is effective.
+    private var availableSections: [DetailSection] {
+        var result: [DetailSection] = [.overview, .metrics]
+        if hasTrafficConfig { result.append(.traffic) }
+        if capabilities.isEnabled(.pingICMP) || capabilities.isEnabled(.pingTCP) || capabilities.isEnabled(.pingHTTP) {
+            result.append(.network)
+        }
+        if capabilities.isEnabled(.securityEvents) { result.append(.security) }
+        return result
+    }
+
+    private var hasTrafficConfig: Bool {
+        let c = viewModel.config
+        return (c?.trafficLimit != nil) || (c?.price != nil) || (c?.billingCycle != nil)
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                headerSection
-                metricsGrid
-                historyButton
+        VStack(spacing: 0) {
+            if availableSections.count > 1 {
+                sectionPicker
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemGroupedBackground))
             }
-            .padding()
+            sectionContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle(server.name)
+        .navigationTitle(displayName)
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    // MARK: - Header Section
-
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Status badge and name
-            HStack(spacing: 8) {
-                statusBadge
-                Spacer()
-                if let uptime = server.uptime {
-                    Label(Formatters.formatUptime(uptime), systemImage: "clock")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+        .task {
+            await viewModel.fetchConfig(serverId: serverId, apiClient: apiClient)
+            #if DEBUG
+            if let raw = UITestSupport.detailSection,
+               let target = DetailSection(rawValue: raw),
+               availableSections.contains(target) {
+                section = target
             }
-
-            // IP Address
-            if let ip = server.primaryIP {
-                Label(ip, systemImage: "network")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            // OS and CPU
-            HStack(spacing: 16) {
-                if let os = server.os {
-                    Label(os, systemImage: "desktopcomputer")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let cpuName = server.cpuName {
-                    Label(cpuName, systemImage: "cpu")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-
-            // Location
-            if let location = server.location {
-                Label(location, systemImage: "location")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            #endif
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-    }
-
-    private var statusBadge: some View {
-        let label = server.isOnline
-            ? String(localized: "Online")
-            : String(localized: "Offline")
-        return HStack(spacing: 6) {
-            Circle()
-                .fill(server.isOnline ? Color.serverOnline : Color.serverOffline)
-                .frame(width: 10, height: 10)
-                .accessibilityHidden(true)
-            Text(label)
-                .font(.subheadline.bold())
-                .foregroundStyle(server.isOnline ? Color.serverOnline : Color.serverOffline)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(
-            (server.isOnline ? Color.serverOnline : Color.serverOffline).opacity(0.1)
-        )
-        .clipShape(Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(String(localized: "Status")))
-        .accessibilityValue(Text(label))
-    }
-
-    // MARK: - Metrics Grid
-
-    private var metricsGrid: some View {
-        LazyVGrid(columns: columns, spacing: 12) {
-            // CPU
-            MetricCardView(
-                label: String(localized: "CPU"),
-                value: Formatters.formatPercentage(server.cpuUsage),
-                subtitle: server.cpuName,
-                valueColor: server.cpuUsage.map { Formatters.cpuColor(for: $0) } ?? .primary
-            )
-
-            // Memory
-            MetricCardView(
-                label: String(localized: "Memory"),
-                value: Formatters.formatPercentage(server.memoryPercent),
-                subtitle: Formatters.formatBytesRatio(used: server.memoryUsed, total: server.memoryTotal),
-                valueColor: server.memoryPercent.map { Formatters.usageColor(for: $0) } ?? .primary
-            )
-
-            // Disk
-            MetricCardView(
-                label: String(localized: "Disk"),
-                value: Formatters.formatPercentage(server.diskPercent),
-                subtitle: Formatters.formatBytesRatio(used: server.diskUsed, total: server.diskTotal),
-                valueColor: server.diskPercent.map { Formatters.usageColor(for: $0) } ?? .primary
-            )
-
-            // Network In
-            MetricCardView(
-                label: String(localized: "Network In"),
-                value: Formatters.formatSpeed(server.networkIn),
-                valueColor: .networkColor
-            )
-
-            // Network Out
-            MetricCardView(
-                label: String(localized: "Network Out"),
-                value: Formatters.formatSpeed(server.networkOut),
-                valueColor: .networkColor
-            )
-
-            // Load
-            MetricCardView(
-                label: String(localized: "Load"),
-                value: server.load1.map { String(format: "%.2f", $0) } ?? "-",
-                subtitle: loadSubtitle
-            )
-
-            // Processes
-            MetricCardView(
-                label: String(localized: "Processes"),
-                value: server.processCount.map { "\($0)" } ?? "-"
-            )
-
-            // TCP / UDP
-            MetricCardView(
-                label: String(localized: "TCP / UDP"),
-                value: tcpUdpValue
-            )
+        .onChange(of: availableSections) { _, sections in
+            // If the active section disappears (caps changed), fall back.
+            if !sections.contains(section) { section = .overview }
         }
     }
 
-    private var loadSubtitle: String? {
-        guard let l5 = server.load5, let l15 = server.load15 else { return nil }
-        return String(format: "%.2f / %.2f", l5, l15)
-    }
-
-    private var tcpUdpValue: String {
-        let tcp = server.tcpCount.map { "\($0)" } ?? "-"
-        let udp = server.udpCount.map { "\($0)" } ?? "-"
-        return "\(tcp) / \(udp)"
-    }
-
-    // MARK: - History Button
-
-    private var historyButton: some View {
-        NavigationLink {
-            MetricsHistoryView(serverId: server.id)
-        } label: {
-            HStack {
-                Label(String(localized: "View History"), systemImage: "chart.xyaxis.line")
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
+    private var sectionPicker: some View {
+        Picker(String(localized: "Section"), selection: $section) {
+            ForEach(availableSections) { s in
+                Text(s.title).tag(s)
             }
-            .padding()
-            .background(Color(.systemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(String(localized: "View History")))
-            .accessibilityAddTraits(.isButton)
         }
-        .buttonStyle(.plain)
+        .pickerStyle(.segmented)
+    }
+
+    @ViewBuilder
+    private var sectionContent: some View {
+        switch section {
+        case .overview:
+            ServerOverviewSection(
+                serverId: serverId,
+                live: live,
+                config: viewModel.config,
+                groupName: groupName,
+                capabilities: capabilities,
+                isAdmin: isAdmin
+            )
+        case .metrics:
+            MetricsContentView(serverId: serverId)
+        case .traffic:
+            ServerTrafficSection(serverId: serverId, config: viewModel.config)
+        case .network:
+            ServerNetworkSection(serverId: serverId, isAdmin: isAdmin)
+        case .security:
+            ServerSecuritySection(serverId: serverId)
+        }
     }
 }
 
-#Preview {
-    NavigationStack {
-        ServerDetailView(
-            server: ServerStatus(
-                id: "1",
-                name: "Production Server",
-                online: true,
-                cpuUsage: 45.2,
-                memoryTotal: 17_179_869_184,
-                memoryUsed: 12_516_925_440,
-                diskTotal: 512_110_190_592,
-                diskUsed: 307_266_114_355,
-                networkIn: 1_048_576,
-                networkOut: 524_288,
-                load1: 1.25,
-                load5: 1.10,
-                load15: 0.95,
-                processCount: 312,
-                tcpCount: 45,
-                udpCount: 12,
-                uptime: 345_600,
-                os: "Ubuntu 22.04",
-                cpuName: "Intel i7-12700K",
-                ipv4: "192.168.1.100",
-                region: "Virginia",
-                country: "US"
-            )
-        )
+/// Detail sections rendered as a segmented control.
+enum DetailSection: String, Identifiable, CaseIterable {
+    case overview
+    case metrics
+    case traffic
+    case network
+    case security
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .overview: String(localized: "Overview")
+        case .metrics: String(localized: "Metrics")
+        case .traffic: String(localized: "Traffic")
+        case .network: String(localized: "Network")
+        case .security: String(localized: "Security")
+        }
     }
 }

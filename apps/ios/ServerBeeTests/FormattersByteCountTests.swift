@@ -3,8 +3,10 @@ import XCTest
 
 final class FormattersByteCountTests: XCTestCase {
     func test_formatBytes_zero() {
-        // With `useBytes` allowed, ByteCountFormatter expresses 0 as "Zero bytes".
-        XCTAssertEqual(Formatters.formatBytes(0), "Zero bytes")
+        // We set `allowsNonnumericFormatting = false` so a true 0 reads as the
+        // numeric "0 bytes" rather than the locale word "Zero bytes" — clearer
+        // in dense metric grids (e.g. "Disk I/O 0 bytes/s").
+        XCTAssertEqual(Formatters.formatBytes(0), "0 bytes")
     }
 
     func test_formatBytes_oneKibibyte() {

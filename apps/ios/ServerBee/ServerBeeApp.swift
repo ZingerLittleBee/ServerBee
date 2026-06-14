@@ -28,7 +28,14 @@ struct ServerBeeApp: App {
 
                     await authManager.initialize()
                     if authManager.isAuthenticated {
-                        await pushManager.requestPermission()
+                        #if DEBUG
+                        let isUITest = UITestSupport.seed != nil
+                        #else
+                        let isUITest = false
+                        #endif
+                        if !isUITest {
+                            await pushManager.requestPermission()
+                        }
                     }
                 }
         }

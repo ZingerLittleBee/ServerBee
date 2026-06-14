@@ -4,8 +4,12 @@ import SwiftUI
 @Observable
 final class ServerDetailViewModel {
     var server: ServerStatus?
+    /// Full REST configuration (capabilities, billing, kernel, agent version,
+    /// enrollment state) — fields the live WebSocket frame never carries.
+    var config: ServerConfig?
     var records: [MetricRecord] = []
     var isLoading = false
+    var isLoadingConfig = false
 
     /// Set the server from the parent list (avoids a separate network fetch).
     func setServer(_ server: ServerStatus) {
@@ -19,6 +23,17 @@ final class ServerDetailViewModel {
             server = try await apiClient.get("/api/servers/\(serverId)")
         } catch {
             AppLog.viewModel.error("ServerDetail fetch failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Fetch the authoritative REST configuration for the detail screen.
+    func fetchConfig(serverId: String, apiClient: APIClient) async {
+        isLoadingConfig = true
+        defer { isLoadingConfig = false }
+        do {
+            config = try await apiClient.get("/api/servers/\(serverId)")
+        } catch {
+            AppLog.viewModel.error("ServerConfig fetch failed: \(String(describing: error), privacy: .public)")
         }
     }
 
