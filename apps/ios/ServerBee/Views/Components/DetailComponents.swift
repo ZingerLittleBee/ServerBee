@@ -144,6 +144,43 @@ struct Chip: View {
     }
 }
 
+/// A horizontal usage/progress bar with a value-driven fill colour.
+///
+/// `value` is a fraction in `0...` (values > 1 clamp the fill but the caller is
+/// expected to surface the overage in an adjacent label). Colour shifts from
+/// green → amber → red as usage climbs, matching the web traffic bar thresholds.
+struct UsageBar: View {
+    let value: Double
+    var height: CGFloat = 10
+    var tint: Color?
+
+    private var clamped: Double { min(max(value, 0), 1) }
+
+    private var fillColor: Color {
+        if let tint { return tint }
+        switch value {
+        case ..<0.7: return .serverOnline
+        case ..<0.9: return .warningAmber
+        default: return .serverOffline
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color(.systemGray5))
+                Capsule()
+                    .fill(fillColor)
+                    .frame(width: geo.size.width * clamped)
+            }
+        }
+        .frame(height: height)
+        .accessibilityElement()
+        .accessibilityValue(Text(String(format: "%.0f%%", value * 100)))
+    }
+}
+
 /// Wraps chips into rows that flow onto multiple lines.
 struct FlowChips<Item: Hashable, ChipView: View>: View {
     let items: [Item]

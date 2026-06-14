@@ -49,21 +49,16 @@ struct ServerDetailView: View {
         return nil
     }
 
-    /// Which segmented sections to show. Traffic shows only when billing/limit
-    /// is configured; Security shows only when the capability is effective.
+    /// Which segmented sections to show. Traffic (usage / cost / uptime) is
+    /// always available since uptime applies to every enrolled server. Network
+    /// and Security are gated on the server's effective capabilities.
     private var availableSections: [DetailSection] {
-        var result: [DetailSection] = [.overview, .metrics]
-        if hasTrafficConfig { result.append(.traffic) }
+        var result: [DetailSection] = [.overview, .metrics, .traffic]
         if capabilities.isEnabled(.pingICMP) || capabilities.isEnabled(.pingTCP) || capabilities.isEnabled(.pingHTTP) {
             result.append(.network)
         }
         if capabilities.isEnabled(.securityEvents) { result.append(.security) }
         return result
-    }
-
-    private var hasTrafficConfig: Bool {
-        let c = viewModel.config
-        return (c?.trafficLimit != nil) || (c?.price != nil) || (c?.billingCycle != nil)
     }
 
     var body: some View {

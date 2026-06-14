@@ -28,6 +28,24 @@ enum Formatters {
         return f
     }()
 
+    /// Parses the server's `"yyyy-MM-dd"` calendar-day strings (traffic/uptime).
+    /// Fixed to UTC so the day boundary matches the server's accounting.
+    nonisolated(unsafe) private static let dayParser: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// Short "M/d" label for daily-bucket chart axes.
+    private static let dayAxisFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "M/d"
+        return f
+    }()
+
     /// Cached `RelativeDateTimeFormatter` for human-readable elapsed time
     /// (e.g. "5 minutes ago" / "5 分钟前"). Locale-aware.
     nonisolated(unsafe) private static let relativeFormatter: RelativeDateTimeFormatter = {
@@ -99,5 +117,39 @@ enum Formatters {
             return isoString
         }
         return relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Parse a server `"yyyy-MM-dd"` day string into a UTC `Date`.
+    static func parseDay(_ string: String) -> Date? {
+        dayParser.date(from: string)
+    }
+
+    /// Short "M/d" label for a daily-bucket date.
+    static func formatDayAxis(_ date: Date) -> String {
+        dayAxisFormatter.string(from: date)
+    }
+
+    /// Currency amount, e.g. "$12.50". Falls back to a plain number + code for
+    /// non-ISO currency strings.
+    static func formatCurrency(_ amount: Double?, code: String) -> String {
+        guard let amount else { return "—" }
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = code
+        f.maximumFractionDigits = amount < 1 ? 3 : 2
+        if let s = f.string(from: NSNumber(value: amount)) { return s }
+        return String(format: "%.2f %@", amount, code)
+    }
+
+    /// Fine-grained rate (e.g. cost-per-second) with more precision for tiny
+    /// values so they don't collapse to "$0.00".
+    static func formatCurrencyRate(_ amount: Double?, code: String) -> String {
+        guard let amount else { return "—" }
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = code
+        f.maximumFractionDigits = amount < 0.01 ? 6 : (amount < 1 ? 4 : 2)
+        if let s = f.string(from: NSNumber(value: amount)) { return s }
+        return String(format: "%.4f %@", amount, code)
     }
 }
