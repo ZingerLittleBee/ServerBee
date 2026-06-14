@@ -11,6 +11,8 @@ struct ServerOverviewSection: View {
     let capabilities: CapabilitySet
     let isAdmin: Bool
 
+    @Environment(\.dismiss) private var dismiss
+
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
@@ -27,6 +29,16 @@ struct ServerOverviewSection: View {
                 capabilitiesCard
                 if hasBilling {
                     billingCard
+                }
+                if isAdmin {
+                    ServerLifecycleCard(
+                        serverId: serverId,
+                        config: config,
+                        capabilities: capabilities,
+                        isOnline: isOnline,
+                        isPending: isPending,
+                        onDeleted: { dismiss() }
+                    )
                 }
             }
             .padding()
@@ -129,15 +141,19 @@ struct ServerOverviewSection: View {
         }
     }
 
-    private struct Tile: Identifiable {
+    fileprivate struct Tile: Identifiable {
         let id: String
         let label: String
         let value: String
         var subtitle: String?
         var color: Color = .primary
     }
+}
 
-    private var metricTiles: [Tile] {
+// MARK: - Metric tiles
+
+private extension ServerOverviewSection {
+    var metricTiles: [Tile] {
         guard let s = live else { return [] }
         var tiles: [Tile] = []
 
