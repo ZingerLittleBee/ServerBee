@@ -350,7 +350,10 @@ function DetailTabs({
 }) {
   const { t } = useTranslation('servers')
   return (
-    <Tabs className="mt-6" defaultValue="metrics" onValueChange={onTabChange} value={activeTab}>
+    <Tabs
+      className="mt-6"
+      {...(activeTab === undefined ? { defaultValue: 'metrics' } : { onValueChange: onTabChange, value: activeTab })}
+    >
       <TabsList>
         <TabsTrigger value="metrics">{t('metrics_tab')}</TabsTrigger>
         {isAdminVariant && billingCycle && (
