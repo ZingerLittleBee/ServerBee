@@ -28,7 +28,7 @@ ServerBee watches all your servers from one place. A central **server** receives
 - 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, per-server capability gates.
 
 > [!NOTE]
-> ServerBee is in active development (`v1.0.0-alpha.6`). Expect rapid iteration.
+> ServerBee is in active development (`v1.0.0-alpha.7`). Expect rapid iteration.
 
 ## Quick Start
 

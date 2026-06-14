@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.7] - 2026-06-14
+
 ### Added
 
+- **POSIX install script with OpenRC support** -- `deploy/install.sh` was rewritten in portable POSIX sh and now manages services under both systemd and OpenRC, making Alpine and other non-systemd hosts first-class. Releases publish `sha256sums` and the installer verifies every download against them, and a CI job gates the script with shellcheck and dash
 - **Connection-lost banner** -- The layout shows a persistent banner when the browser loses its WebSocket link to the server (after a short grace period to ignore brief blips) and clears it automatically on reconnect, so a dropped connection no longer leaves the dashboard silently stale
-- **Shareable tab state in the URL** -- The server detail tabs (metrics / traffic / security / IP quality) and the status-page settings tabs (config / incidents / maintenance) are persisted in the URL, so reload, browser back/forward, and shared links keep the selected tab instead of resetting to the first one. An invalid tab value falls back to the default
+- **Shareable tab state in the URL** -- The server detail tabs (metrics / traffic / security / IP quality) and the status-page settings tabs (config / incidents / maintenance) are persisted in the URL, so reload, browser back/forward, and shared links keep the selected tab instead of resetting to the first one; an invalid tab value falls back to the default
 
 ### Changed
 
@@ -18,14 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Silent data-load failures** -- Failed data queries and dashboard create/update errors now surface a toast instead of leaving an empty view with no explanation
-- **Unconfirmed destructive actions** -- Deleting an incident or a maintenance window, and unlinking an OAuth provider, now require confirmation
-- **Public server traffic bar** -- The public server-detail network bar uses cumulative transfer totals so the figures match the rest of the UI
-- **Untranslated table empty states** -- Data-table "no results" text is now localized
+- **Custom dashboard widgets** -- The backend accepts `metric-card` widgets, module widgets load reliably, the grid is more responsive, and the default layout no longer leaves an empty band
+- **Service monitors** -- HTTP-keyword checks accept custom ports, and the service-monitor detail page no longer crashes on SSL certificate dates
+- **Installer robustness** -- `purge` removes the base directory even with orphaned files and the snap Docker config directory; `toml_set` preserves the section separator when appending a key; `SERVERBEE_*` env is forwarded across `doas` elevation; `sha256sums` are matched on the exact filename; OpenRC agent respawn is bounded on permanent enrollment failure; and status/log commands print a clear message instead of nothing when there is no output
+- **Web reliability** -- Failed data queries and dashboard create/update errors surface a toast instead of an empty view; destructive actions (monitors, ping tasks, notifications, incidents, maintenance windows, OAuth unlink, password change) require confirmation; the terminal clears its stale WS error on reconnect; capability toggles reflect immediately; `localStorage` access is guarded against unavailable storage; realtime state is no longer mutated in place; numeric `&&` guards no longer render a literal `0`; and alert-rule and scheduled-task validation is surfaced
+- **Web layout & accessibility** -- Wide tables scroll instead of overflowing the viewport, modal dialogs stay centered on narrow screens, the main scroll area is constrained to the viewport width, the traffic table scrolls on narrow screens with a clamped usage label, latency chart series stay mounted when toggling targets, network overview cards deep-link to a valid time range, settings breadcrumbs are complete, terminal and file breadcrumb labels resolve, the security and IP-quality pages get a11y and narrow-screen fixes, data-table empty states are localized, the public traffic bar uses cumulative totals, and the API-key dialog gains a copy button
+- **Agent** -- SSH security events are detected on OpenSSH 9.8+, which logs authentication through the new `sshd-session` process
 
 ### Security
 
-- **Fail-closed admin route gating** -- Every `/settings/*` route is admin-only by default; members can only reach the self-service mobile-devices, API-keys, and security pages and are redirected away from any other settings route, so a new settings page is admin-only unless explicitly allow-listed
+- **OAuth login hardening** -- The OAuth sign-in flow adopts PKCE (S256), binds the login state to the initiating browser via a pre-auth cookie (closing a CSRF / session-fixation gap), and redacts OAuth secrets from `Debug` output
+- **SSRF guards for service monitors** -- HTTP-keyword and other checkers route through a shared SSRF guard that rejects loopback, cloud-metadata, and private targets at create time and re-validates on every HTTP redirect hop
+- **Agent token transport** -- The agent WebSocket prefers the `Authorization` header over the query string when sending its token
+- **Expanded audit logging** -- Database backup/restore, user-management actions, and API-key creation/deletion now emit audit-log entries, and restore audit entries persist into the restored database
+- **Fail-closed admin route gating** -- Every `/settings/*` route is admin-only by default; members reach only the self-service mobile-devices, API-keys, and security pages and are redirected away from any other settings route, so a new settings page is admin-only unless explicitly allow-listed
+
+### Performance
+
+- **Smaller initial bundle** -- Routes and vendor libraries are code-split into separate chunks
+- **Hot-path cleanups** -- Linear scans were removed from the data-transform hot paths, and several components derive state during render instead of in effects
 
 ## [1.0.0-alpha.6] - 2026-05-31
 

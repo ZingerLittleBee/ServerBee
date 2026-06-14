@@ -28,7 +28,7 @@ ServerBee 在一处统一监控你的所有服务器。中心 **Server** 通过 
 - 🔒 **默认安全** —— OAuth + 2FA、RBAC、审计日志、一次性 Agent 注册、逐服务器能力门控。
 
 > [!NOTE]
-> ServerBee 正在活跃开发中(`v1.0.0-alpha.6`),迭代频繁。
+> ServerBee 正在活跃开发中(`v1.0.0-alpha.7`),迭代频繁。
 
 ## 快速开始
 
