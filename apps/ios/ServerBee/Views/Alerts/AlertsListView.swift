@@ -2,7 +2,14 @@ import SwiftUI
 
 struct AlertsListView: View {
     @Environment(AlertsViewModel.self) private var viewModel
+    @Environment(AuthManager.self) private var authManager
     @Environment(\.apiClient) private var apiClient
+
+    private var isAdmin: Bool { authManager.user?.role.lowercased() == "admin" }
+
+    #if DEBUG
+    @State private var debugShowConfig = false
+    #endif
 
     var body: some View {
         Group {
@@ -28,6 +35,17 @@ struct AlertsListView: View {
             }
         }
         .navigationTitle(String(localized: "Alerts"))
+        .toolbar {
+            if isAdmin {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        AlertConfigView()
+                    } label: {
+                        Label(String(localized: "Alert config"), systemImage: "slider.horizontal.3")
+                    }
+                }
+            }
+        }
         .navigationDestination(for: String.self) { alertKey in
             AlertDetailView(alertKey: alertKey)
         }
@@ -38,7 +56,15 @@ struct AlertsListView: View {
             if viewModel.events.isEmpty {
                 await viewModel.fetchEvents(apiClient: apiClient)
             }
+            #if DEBUG
+            if isAdmin, UITestSupport.autoPresent == "alert-config" { debugShowConfig = true }
+            #endif
         }
+        #if DEBUG
+        .navigationDestination(isPresented: $debugShowConfig) {
+            AlertConfigView()
+        }
+        #endif
     }
 
     private func errorView(message: String) -> some View {
