@@ -10,6 +10,8 @@ struct SettingsView: View {
     /// close it before clearing auth and triggering the server logout.
     let wsClient: WebSocketClient
 
+    private var isAdmin: Bool { authManager.user?.role.lowercased() == "admin" }
+
     var body: some View {
         NavigationStack {
             List {
@@ -22,6 +24,8 @@ struct SettingsView: View {
                 }
                 accountSection
                 securitySection
+                accessSection
+                if isAdmin { adminSection }
                 preferencesSection
                 aboutSection
                 logoutSection
@@ -67,9 +71,59 @@ struct SettingsView: View {
     private var securitySection: some View {
         Section(String(localized: "Security")) {
             NavigationLink {
+                PasswordChangeView()
+            } label: {
+                Label(String(localized: "Change Password"), systemImage: "key")
+            }
+            NavigationLink {
+                TwoFactorView()
+            } label: {
+                Label(String(localized: "Two-Factor Auth"), systemImage: "lock.shield")
+            }
+            NavigationLink {
                 FirewallBlocklistView()
             } label: {
                 Label(String(localized: "Firewall Blocklist"), systemImage: "hand.raised")
+            }
+        }
+    }
+
+    private var accessSection: some View {
+        Section(String(localized: "Access")) {
+            NavigationLink {
+                ApiKeysView()
+            } label: {
+                Label(String(localized: "API Keys"), systemImage: "key.horizontal")
+            }
+            NavigationLink {
+                DevicesView()
+            } label: {
+                Label(String(localized: "Devices"), systemImage: "iphone")
+            }
+        }
+    }
+
+    private var adminSection: some View {
+        Section(String(localized: "Admin")) {
+            NavigationLink {
+                UsersView()
+            } label: {
+                Label(String(localized: "Users"), systemImage: "person.2")
+            }
+            NavigationLink {
+                AuditLogView()
+            } label: {
+                Label(String(localized: "Audit Log"), systemImage: "list.bullet.rectangle")
+            }
+            NavigationLink {
+                RateLimitView()
+            } label: {
+                Label(String(localized: "Rate Limits"), systemImage: "speedometer")
+            }
+            NavigationLink {
+                DatabasesView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "GeoIP & ASN"), systemImage: "globe")
             }
         }
     }
