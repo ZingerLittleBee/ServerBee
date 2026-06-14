@@ -15,8 +15,10 @@ struct ContentView: View {
     private static let serversTabTag = 0
     /// Index of the Alerts tab.
     private static let alertsTabTag = 1
+    /// Index of the Insights tab.
+    private static let insightsTabTag = 2
     /// Index of the Settings tab.
-    private static let settingsTabTag = 2
+    private static let settingsTabTag = 3
 
     @State private var selectedTab: Int = ContentView.serversTabTag
     @State private var serversPath: [ServerNavigationTarget] = []
@@ -66,6 +68,14 @@ struct ContentView: View {
                     Label("Alerts", systemImage: "bell.badge")
                 }
                 .tag(ContentView.alertsTabTag)
+
+                NavigationStack {
+                    InsightsView()
+                }
+                .tabItem {
+                    Label("Insights", systemImage: "chart.bar.xaxis")
+                }
+                .tag(ContentView.insightsTabTag)
 
                 SettingsView(wsClient: wsClient)
                     .tabItem {
