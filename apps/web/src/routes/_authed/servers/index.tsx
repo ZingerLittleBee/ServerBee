@@ -45,7 +45,10 @@ export const Route = createFileRoute('/_authed/servers/')({
   component: ServersListPage,
   validateSearch: (search: Record<string, unknown>) => ({
     ...search,
-    q: (search.q as string) || '',
+    // Coerce at runtime, not just via a type assertion: the router parses a
+    // numeric URL param (e.g. ?q=1) into a number, and `as string` would let it
+    // through, crashing the filter's `search.toLowerCase()`.
+    q: String(search.q ?? ''),
     view: search.view === 'grid' || search.view === 'table' ? search.view : undefined
   })
 })
