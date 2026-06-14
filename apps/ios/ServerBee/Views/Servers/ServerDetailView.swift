@@ -35,8 +35,17 @@ struct ServerDetailView: View {
     }
 
     /// Capability set, preferring live WS data, falling back to REST config.
+    /// Used for *effective* checks (what the agent can do right now).
     private var capabilities: CapabilitySet {
         live?.capabilitySet ?? viewModel.config?.capabilitySet ?? CapabilitySet()
+    }
+
+    /// Capability set used for *section visibility*. Prefers the REST config,
+    /// which carries the admin-configured mask (the live WS frame may omit it),
+    /// so historical data (security / IP quality / network / traffic) stays
+    /// viewable even while the agent is offline.
+    private var sectionCaps: CapabilitySet {
+        viewModel.config?.capabilitySet ?? live?.capabilitySet ?? CapabilitySet()
     }
 
     private var displayName: String {
@@ -49,15 +58,17 @@ struct ServerDetailView: View {
         return nil
     }
 
-    /// Which segmented sections to show. Traffic (usage / cost / uptime) is
-    /// always available since uptime applies to every enrolled server. Network
-    /// and Security are gated on the server's effective capabilities.
+    /// Which sections to show. Traffic (usage / cost / uptime) is always
+    /// available since uptime applies to every enrolled server. Network,
+    /// Security and IP quality appear when the server is *configured* for them
+    /// (so their historical data is viewable even while the agent is offline).
     private var availableSections: [DetailSection] {
         var result: [DetailSection] = [.overview, .metrics, .traffic]
-        if capabilities.isEnabled(.pingICMP) || capabilities.isEnabled(.pingTCP) || capabilities.isEnabled(.pingHTTP) {
+        if sectionCaps.isConfigured(.pingICMP) || sectionCaps.isConfigured(.pingTCP) || sectionCaps.isConfigured(.pingHTTP) {
             result.append(.network)
         }
-        if capabilities.isEnabled(.securityEvents) { result.append(.security) }
+        if sectionCaps.isConfigured(.securityEvents) { result.append(.security) }
+        if sectionCaps.isConfigured(.ipQuality) { result.append(.ipQuality) }
         return result
     }
 
@@ -92,12 +103,7 @@ struct ServerDetailView: View {
     }
 
     private var sectionPicker: some View {
-        Picker(String(localized: "Section"), selection: $section) {
-            ForEach(availableSections) { s in
-                Text(s.title).tag(s)
-            }
-        }
-        .pickerStyle(.segmented)
+        SegmentedScrollBar(tabs: availableSections, selection: $section) { $0.title }
     }
 
     @ViewBuilder
@@ -120,6 +126,8 @@ struct ServerDetailView: View {
             ServerNetworkSection(serverId: serverId, isAdmin: isAdmin)
         case .security:
             ServerSecuritySection(serverId: serverId)
+        case .ipQuality:
+            ServerIpQualitySection(serverId: serverId, isAdmin: isAdmin)
         }
     }
 }
@@ -131,6 +139,7 @@ enum DetailSection: String, Identifiable, CaseIterable {
     case traffic
     case network
     case security
+    case ipQuality
 
     var id: String { rawValue }
 
@@ -141,6 +150,7 @@ enum DetailSection: String, Identifiable, CaseIterable {
         case .traffic: String(localized: "Traffic")
         case .network: String(localized: "Network")
         case .security: String(localized: "Security")
+        case .ipQuality: String(localized: "IP")
         }
     }
 }

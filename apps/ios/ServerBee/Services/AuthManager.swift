@@ -33,6 +33,9 @@ final class AuthManager {
             try? KeychainService.saveString(seed.serverUrl, for: KeychainService.serverUrlKey)
             try? KeychainService.saveString(seed.accessToken, for: KeychainService.accessTokenKey)
             try? KeychainService.saveString(seed.refreshToken, for: KeychainService.refreshTokenKey)
+            if let installationId = seed.installationId {
+                try? KeychainService.saveString(installationId, for: KeychainService.installationIdKey)
+            }
             let seededUser = MobileUser(id: seed.userId, username: seed.username, role: seed.role)
             try? KeychainService.saveCodable(seededUser, for: KeychainService.userKey)
             user = seededUser

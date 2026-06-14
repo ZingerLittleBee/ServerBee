@@ -2,12 +2,26 @@ import SwiftUI
 
 /// Full detail for a single security event, presented as a sheet. Shows the
 /// classification, source, detector, evidence breakdown, and a threat-intel
-/// lookup link for the source IP. Blocking the IP is a firewall action handled
-/// in the Management area, so this view stays read-only.
+/// lookup link for the source IP. Admins can also jump straight to a firewall
+/// block prefilled with the source IP (a high-risk action gated behind an
+/// explicit confirmation sheet).
 struct SecurityEventDetailView: View {
     let event: SecurityEvent
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(AuthManager.self) private var authManager
+    @Environment(\.apiClient) private var apiClient
+    @State private var firewallViewModel = FirewallViewModel()
+    @State private var showBlockSheet = false
+
+    private var isAdmin: Bool { authManager.user?.role.lowercased() == "admin" }
+
+    /// A source IP we can actually act on (non-empty, not a placeholder).
+    private var blockableIp: String? {
+        let ip = event.sourceIp.trimmingCharacters(in: .whitespaces)
+        guard !ip.isEmpty, ip != "-", ip.lowercased() != "unknown" else { return nil }
+        return ip
+    }
 
     private var virusTotalURL: URL? {
         URL(string: "https://www.virustotal.com/gui/ip-address/\(event.sourceIp)")
@@ -22,6 +36,9 @@ struct SecurityEventDetailView: View {
                     if let evidence = event.evidence, !evidence.detailRows.isEmpty {
                         evidenceCard(evidence)
                     }
+                    if isAdmin, let ip = blockableIp {
+                        blockActionCard(ip: ip)
+                    }
                 }
                 .padding(16)
             }
@@ -32,6 +49,32 @@ struct SecurityEventDetailView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(String(localized: "Done")) { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showBlockSheet) {
+                if let ip = blockableIp {
+                    AddBlockSheet(prefillTarget: ip) { request in
+                        let ok = await firewallViewModel.create(request, apiClient: apiClient)
+                        return ok ? nil : firewallViewModel.actionError
+                    }
+                }
+            }
+        }
+    }
+
+    private func blockActionCard(ip: String) -> some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    showBlockSheet = true
+                } label: {
+                    Label(String(localized: "Block \(ip) in firewall"), systemImage: "hand.raised.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.serverOffline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Text(String(localized: "Adds a firewall blocklist rule. You'll choose the scope before it applies."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

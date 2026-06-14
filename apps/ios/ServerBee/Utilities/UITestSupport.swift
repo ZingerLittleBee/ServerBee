@@ -17,6 +17,11 @@ enum UITestSupport {
         let userId: String
         let username: String
         let role: String
+        /// Installation ID the tokens were minted against. Seeding it ensures
+        /// the in-app refresh (which sends `InstallationID.getOrCreate()`) uses
+        /// the SAME id, so a seeded session survives access-token expiry instead
+        /// of bouncing to the login screen.
+        let installationId: String?
     }
 
     static var seed: Seed? {
@@ -33,7 +38,8 @@ enum UITestSupport {
             refreshToken: refresh,
             userId: env["SB_UITEST_USER_ID"] ?? "uitest",
             username: env["SB_UITEST_USERNAME"] ?? "admin",
-            role: env["SB_UITEST_ROLE"] ?? "admin"
+            role: env["SB_UITEST_ROLE"] ?? "admin",
+            installationId: env["SB_UITEST_INSTALLATION_ID"]
         )
     }
 
@@ -57,6 +63,15 @@ enum UITestSupport {
     /// Optional initial tab index for the root TabView.
     static var initialTab: Int? {
         ProcessInfo.processInfo.environment["SB_UITEST_TAB"].flatMap(Int.init)
+    }
+
+    /// Optional auto-presentation hint for a screen that would otherwise require
+    /// a navigation-bar tap (which the headless cliclick harness can't reliably
+    /// hit because the Simulator's translucent title bar overlays the top of the
+    /// device screen). Screens opt in by checking for a known token, e.g.
+    /// `"addblock"` to auto-open the firewall "Block Target" sheet.
+    static var autoPresent: String? {
+        ProcessInfo.processInfo.environment["SB_UITEST_PRESENT"]
     }
 }
 #endif

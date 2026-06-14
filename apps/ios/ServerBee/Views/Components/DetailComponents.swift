@@ -93,6 +93,44 @@ struct DetailRow: View {
     }
 }
 
+/// Horizontally-scrollable pill selector. Scales past the ~4-item limit of a
+/// native segmented control, so a server with many capability sections still
+/// gets a tidy, swipeable section bar.
+struct SegmentedScrollBar<Tab: Hashable & Identifiable>: View {
+    let tabs: [Tab]
+    @Binding var selection: Tab
+    let title: (Tab) -> String
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tabs) { tab in
+                        let isSelected = tab == selection
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) { selection = tab }
+                        } label: {
+                            Text(title(tab))
+                                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(isSelected ? Color.accentColor : Color(.systemGray5))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .id(tab.id)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .onChange(of: selection) { _, newValue in
+                withAnimation { proxy.scrollTo(newValue.id, anchor: .center) }
+            }
+        }
+    }
+}
+
 /// Online/offline status badge with a colored dot.
 struct StatusPill: View {
     let isOnline: Bool

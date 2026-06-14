@@ -21,6 +21,7 @@ struct SettingsView: View {
                     }
                 }
                 accountSection
+                securitySection
                 preferencesSection
                 aboutSection
                 logoutSection
@@ -60,6 +61,16 @@ struct SettingsView: View {
                     .truncationMode(.middle)
             }
             DeviceNameRow()
+        }
+    }
+
+    private var securitySection: some View {
+        Section(String(localized: "Security")) {
+            NavigationLink {
+                FirewallBlocklistView()
+            } label: {
+                Label(String(localized: "Firewall Blocklist"), systemImage: "hand.raised")
+            }
         }
     }
 
