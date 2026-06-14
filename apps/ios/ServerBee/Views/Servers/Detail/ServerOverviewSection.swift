@@ -31,6 +31,7 @@ struct ServerOverviewSection: View {
                     billingCard
                 }
                 if isAdmin {
+                    AdvancedToolsCard(capabilities: capabilities)
                     ServerLifecycleCard(
                         serverId: serverId,
                         config: config,
