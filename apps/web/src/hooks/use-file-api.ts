@@ -66,14 +66,14 @@ interface TransfersResponse {
 // Query hooks (read operations)
 // ---------------------------------------------------------------------------
 
-export function useFileList(serverId: string, path: string) {
+export function useFileList(serverId: string, path: string, enabled?: boolean) {
   return useQuery<FileEntry[]>({
     queryKey: ['files', serverId, 'list', path],
     queryFn: async () => {
       const res = await api.post<ListFilesResponse>(`/api/files/${serverId}/list`, { path })
       return res.entries
     },
-    enabled: serverId.length > 0
+    enabled: serverId.length > 0 && (enabled ?? true)
   })
 }
 

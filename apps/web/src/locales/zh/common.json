@@ -68,6 +68,8 @@
     "failed": "失败",
     "data_load_failed": "数据加载失败，请重试。"
   },
+  "capability_disabled_title": "功能不可用",
+  "capability_disabled_desc": "该服务器未启用此能力。管理员可在 设置 → 能力 中开启。",
   "a11y": {
     "toggle_theme": "切换主题",
     "breadcrumb": "面包屑导航",

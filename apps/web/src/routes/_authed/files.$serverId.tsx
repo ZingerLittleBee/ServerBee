@@ -12,11 +12,14 @@ import { FileUploadDialog } from '@/components/file/file-upload-dialog'
 import { MkdirDialog } from '@/components/file/mkdir-dialog'
 import { RenameDialog } from '@/components/file/rename-dialog'
 import { TransferBar } from '@/components/file/transfer-bar'
+import { CapabilityDisabledNotice } from '@/components/server/capability-disabled-notice'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import type { FileEntry } from '@/hooks/use-file-api'
 import { useFileDeleteMutation, useFileList, useStartDownloadMutation } from '@/hooks/use-file-api'
+import { CAP_FILE, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 
 function getErrorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback
@@ -49,7 +52,10 @@ function FilesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<FileEntry | null>(null)
   const [renameEntry, setRenameEntry] = useState<FileEntry | null>(null)
 
-  const { data: entries, isLoading, isError, error: listError } = useFileList(serverId, currentPath)
+  const { data: server } = useServer(serverId)
+  const fileDisabled =
+    !!server && !getEffectiveCapabilityEnabled(server.effective_capabilities, server.capabilities, CAP_FILE)
+  const { data: entries, isLoading, isError, error: listError } = useFileList(serverId, currentPath, !fileDisabled)
   const deleteMutation = useFileDeleteMutation(serverId)
   const downloadMutation = useStartDownloadMutation(serverId)
 
@@ -144,48 +150,60 @@ function FilesPage() {
         <span className="text-muted-foreground text-xs sm:text-sm">{serverId.slice(0, 8)}...</span>
       </div>
 
-      {/* Breadcrumb + Actions */}
-      <div className="flex flex-col gap-2 border-b px-3 py-2 sm:flex-row sm:items-center sm:px-4 sm:py-1.5">
-        <FileBreadcrumb onNavigate={handleNavigate} path={currentPath} />
-        <div className="flex flex-wrap gap-1 sm:ml-auto">
-          {isAdmin && (
-            <Button aria-label={t('upload')} onClick={() => setUploadOpen(true)} size="sm" variant="outline">
-              <Upload className="size-3.5" />
-              <span className="hidden sm:inline">{t('upload')}</span>
-            </Button>
-          )}
-          {isAdmin && (
-            <Button aria-label={t('new_folder')} onClick={() => setMkdirOpen(true)} size="sm" variant="outline">
-              <FolderPlus className="size-3.5" />
-              <span className="hidden sm:inline">{t('new_folder')}</span>
-            </Button>
-          )}
-          <Button aria-label={t('refresh')} onClick={handleRefresh} size="icon-sm" title={t('refresh')} variant="ghost">
-            <RefreshCw className="size-3.5" />
-          </Button>
-        </div>
-      </div>
+      {fileDisabled ? (
+        <CapabilityDisabledNotice />
+      ) : (
+        <>
+          {/* Breadcrumb + Actions */}
+          <div className="flex flex-col gap-2 border-b px-3 py-2 sm:flex-row sm:items-center sm:px-4 sm:py-1.5">
+            <FileBreadcrumb onNavigate={handleNavigate} path={currentPath} />
+            <div className="flex flex-wrap gap-1 sm:ml-auto">
+              {isAdmin && (
+                <Button aria-label={t('upload')} onClick={() => setUploadOpen(true)} size="sm" variant="outline">
+                  <Upload className="size-3.5" />
+                  <span className="hidden sm:inline">{t('upload')}</span>
+                </Button>
+              )}
+              {isAdmin && (
+                <Button aria-label={t('new_folder')} onClick={() => setMkdirOpen(true)} size="sm" variant="outline">
+                  <FolderPlus className="size-3.5" />
+                  <span className="hidden sm:inline">{t('new_folder')}</span>
+                </Button>
+              )}
+              <Button
+                aria-label={t('refresh')}
+                onClick={handleRefresh}
+                size="icon-sm"
+                title={t('refresh')}
+                variant="ghost"
+              >
+                <RefreshCw className="size-3.5" />
+              </Button>
+            </div>
+          </div>
 
-      {/* Main content: file list + preview */}
-      <div className="flex min-h-0 flex-1">
-        {/* File list panel */}
-        <div className="w-full min-w-0 border-r md:w-[45%]">
-          <FileBrowser
-            entries={entries}
-            error={isError ? getErrorMessage(listError, t('load_error')) : undefined}
-            isLoading={isLoading}
-            onContextMenu={handleContextMenu}
-            onFileSelect={handleFileSelect}
-            onNavigate={handleNavigate}
-            parentPath={parentPath}
-          />
-        </div>
+          {/* Main content: file list + preview */}
+          <div className="flex min-h-0 flex-1">
+            {/* File list panel */}
+            <div className="w-full min-w-0 border-r md:w-[45%]">
+              <FileBrowser
+                entries={entries}
+                error={isError ? getErrorMessage(listError, t('load_error')) : undefined}
+                isLoading={isLoading}
+                onContextMenu={handleContextMenu}
+                onFileSelect={handleFileSelect}
+                onNavigate={handleNavigate}
+                parentPath={parentPath}
+              />
+            </div>
 
-        {/* Preview/Editor panel - hidden on small screens */}
-        <div className="hidden min-w-0 flex-1 md:block">
-          <FilePreview entry={selectedFile} readOnly={!isAdmin} serverId={serverId} />
-        </div>
-      </div>
+            {/* Preview/Editor panel - hidden on small screens */}
+            <div className="hidden min-w-0 flex-1 md:block">
+              <FilePreview entry={selectedFile} readOnly={!isAdmin} serverId={serverId} />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Mobile preview overlay */}
       {selectedFile && (

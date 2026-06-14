@@ -92,6 +92,8 @@
     "failed": "Failed",
     "data_load_failed": "Failed to load data. Please try again."
   },
+  "capability_disabled_title": "Feature not available",
+  "capability_disabled_desc": "This capability is disabled for this server. An administrator can enable it under Settings → Capabilities.",
   "table": {
     "view_options": "View",
     "toggle_columns": "Toggle columns",
