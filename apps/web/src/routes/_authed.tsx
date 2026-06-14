@@ -97,20 +97,18 @@ function useBreadcrumbs(): BreadcrumbEntry[] {
   }, [pathname, t])
 }
 
-const ADMIN_ONLY_ROUTES = [
-  '/settings/notifications',
-  '/settings/alerts',
-  '/settings/tasks',
-  '/settings/audit-logs',
-  '/settings/users',
-  '/settings/capabilities'
-]
+// Fail-closed admin gating: every route under /settings (and the /settings index)
+// is admin-only EXCEPT the self-service pages members manage for themselves. A new
+// settings page is admin-only by default unless explicitly added here. Keep this in
+// sync with the `adminOnly` flags in app-sidebar.tsx — entries listed here must be
+// the ones NOT marked adminOnly there.
+const MEMBER_SETTINGS_ROUTES = ['/settings/mobile-devices', '/settings/api-keys', '/settings/security']
 
 function isAdminRoute(pathname: string): boolean {
-  if (pathname === '/settings' || pathname === '/settings/') {
-    return true
+  if (!pathname.startsWith('/settings')) {
+    return false
   }
-  return ADMIN_ONLY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
+  return !MEMBER_SETTINGS_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
 }
 
 function LanguageSwitcher() {
