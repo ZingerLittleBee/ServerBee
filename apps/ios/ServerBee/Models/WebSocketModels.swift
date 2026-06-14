@@ -5,7 +5,7 @@ enum BrowserMessage: Sendable {
     case update(servers: [ServerStatus])
     case serverOnline(serverId: String)
     case serverOffline(serverId: String)
-    case capabilitiesChanged(serverId: String, capabilities: Int)
+    case capabilitiesChanged(serverId: String, capabilities: Int, agentLocal: Int?, effective: Int?)
     case agentInfoUpdated(serverId: String, protocolVersion: Int)
     case alertEvent(alertKey: String, status: AlertStatus)
 }
@@ -26,6 +26,8 @@ extension BrowserMessage: Decodable {
         case servers
         case serverId = "server_id"
         case capabilities
+        case agentLocalCapabilities = "agent_local_capabilities"
+        case effectiveCapabilities = "effective_capabilities"
         case protocolVersion = "protocol_version"
         case alertKey = "alert_key"
         case status
@@ -51,7 +53,14 @@ extension BrowserMessage: Decodable {
         case .capabilitiesChanged:
             let serverId = try container.decode(String.self, forKey: .serverId)
             let capabilities = try container.decode(Int.self, forKey: .capabilities)
-            self = .capabilitiesChanged(serverId: serverId, capabilities: capabilities)
+            let agentLocal = try container.decodeIfPresent(Int.self, forKey: .agentLocalCapabilities)
+            let effective = try container.decodeIfPresent(Int.self, forKey: .effectiveCapabilities)
+            self = .capabilitiesChanged(
+                serverId: serverId,
+                capabilities: capabilities,
+                agentLocal: agentLocal,
+                effective: effective
+            )
         case .agentInfoUpdated:
             let serverId = try container.decode(String.self, forKey: .serverId)
             let protocolVersion = try container.decode(Int.self, forKey: .protocolVersion)

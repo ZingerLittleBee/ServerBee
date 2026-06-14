@@ -93,6 +93,64 @@ final class BrowserMessageDecodingTests: XCTestCase {
         XCTAssertEqual(servers[0].country, "US")
     }
 
+    /// Regression: the live browser WS frame sends `last_active` as a Unix epoch
+    /// **integer** (and includes swap/transfer/disk-io/tags/has_token). The old
+    /// decoder typed `last_active` as String, which threw `typeMismatch` and
+    /// silently dropped EVERY full_sync/update frame — live metrics never showed.
+    func test_decode_fullSync_acceptsRealBrowserWebSocketPayload() throws {
+        let json = """
+        {
+          "type": "full_sync",
+          "servers": [
+            {
+              "id": "s1",
+              "name": "BWG",
+              "online": true,
+              "last_active": 1779834851,
+              "uptime": 123456,
+              "cpu": 3.34,
+              "cpu_cores": 2,
+              "mem_used": 1000,
+              "mem_total": 2000,
+              "swap_used": 0,
+              "swap_total": 0,
+              "disk_used": 5000,
+              "disk_total": 10000,
+              "net_in_speed": 12,
+              "net_out_speed": 34,
+              "net_in_transfer": 999,
+              "net_out_transfer": 888,
+              "load1": 0.1, "load5": 0.2, "load15": 0.3,
+              "tcp_conn": 7, "udp_conn": 3, "process_count": 90,
+              "disk_read_bytes_per_sec": 111,
+              "disk_write_bytes_per_sec": 222,
+              "tags": ["edge", "jp"],
+              "has_token": true,
+              "country_code": "JP"
+            }
+          ],
+          "upgrades": []
+        }
+        """
+        let msg = try decode(json)
+        guard case .fullSync(let servers) = msg else {
+            return XCTFail("Expected .fullSync, got \(msg)")
+        }
+        XCTAssertEqual(servers.count, 1)
+        let s = servers[0]
+        XCTAssertEqual(s.online, true)
+        XCTAssertEqual(s.cpuUsage, 3.34)
+        XCTAssertEqual(s.cpuCores, 2)
+        XCTAssertEqual(s.netInTransfer, 999)
+        XCTAssertEqual(s.diskReadPerSec, 111)
+        XCTAssertEqual(s.tags, ["edge", "jp"])
+        XCTAssertEqual(s.hasToken, true)
+        XCTAssertEqual(s.country, "JP")
+        // last_active integer is normalised to a parseable ISO string.
+        XCTAssertNotNil(s.lastActiveAt)
+        XCTAssertNotNil(s.lastActiveDate)
+    }
+
     func test_decode_serverOnline() throws {
         let json = #"{"type":"server_online","server_id":"abc-123"}"#
         let msg = try decode(json)
@@ -118,13 +176,36 @@ final class BrowserMessageDecodingTests: XCTestCase {
         {
           "type": "capabilities_changed",
           "server_id": "abc",
+          "capabilities": 56,
+          "agent_local_capabilities": 2047,
+          "effective_capabilities": 56
+        }
+        """
+        let msg = try decode(json)
+        if case let .capabilitiesChanged(serverId, caps, agentLocal, effective) = msg {
+            XCTAssertEqual(serverId, "abc")
+            XCTAssertEqual(caps, 56)
+            XCTAssertEqual(agentLocal, 2047)
+            XCTAssertEqual(effective, 56)
+        } else {
+            XCTFail("Expected .capabilitiesChanged, got \(msg)")
+        }
+    }
+
+    func test_decode_capabilitiesChanged_withoutOptionalMasks() throws {
+        let json = """
+        {
+          "type": "capabilities_changed",
+          "server_id": "abc",
           "capabilities": 56
         }
         """
         let msg = try decode(json)
-        if case .capabilitiesChanged(let serverId, let caps) = msg {
+        if case let .capabilitiesChanged(serverId, caps, agentLocal, effective) = msg {
             XCTAssertEqual(serverId, "abc")
             XCTAssertEqual(caps, 56)
+            XCTAssertNil(agentLocal)
+            XCTAssertNil(effective)
         } else {
             XCTFail("Expected .capabilitiesChanged, got \(msg)")
         }
