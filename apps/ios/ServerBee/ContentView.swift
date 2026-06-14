@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(PushNotificationRouter.self) private var pushRouter
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(AlertsViewModel.self) private var alertsViewModel
+    @Environment(SecurityFeedStore.self) private var securityFeed
     @Environment(\.scenePhase) private var scenePhase
     @State private var apiClient: APIClient
     @State private var serversViewModel = ServersViewModel()
@@ -91,7 +92,7 @@ struct ContentView: View {
                 return try? await authManager.refreshAccessToken()
             }
             await wsClient.setOnMessage {
-                [weak serversViewModel, weak alertsViewModel, apiClient] message in
+                [weak serversViewModel, weak alertsViewModel, weak securityFeed, apiClient] message in
                 Task { @MainActor in
                     guard let serversViewModel else { return }
                     let router = WebSocketRouter(
@@ -99,7 +100,8 @@ struct ContentView: View {
                         alerts: { msg in
                             guard case .alertEvent = msg, let alertsViewModel else { return }
                             Task { await alertsViewModel.handleWSAlertEvent(apiClient: apiClient) }
-                        }
+                        },
+                        security: { broadcast in securityFeed?.ingest(broadcast) }
                     )
                     router.dispatch(message)
                 }
@@ -181,4 +183,5 @@ private struct ServerDetailLoaderView: View {
         .environment(PushNotificationManager())
         .environment(PushNotificationRouter())
         .environment(NetworkMonitor())
+        .environment(SecurityFeedStore())
 }

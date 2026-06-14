@@ -8,6 +8,11 @@ enum BrowserMessage: Sendable {
     case capabilitiesChanged(serverId: String, capabilities: Int, agentLocal: Int?, effective: Int?)
     case agentInfoUpdated(serverId: String, protocolVersion: Int)
     case alertEvent(alertKey: String, status: AlertStatus)
+    case securityEvent(SecurityEventBroadcast)
+    /// Any server message type this client doesn't consume yet (docker, ip
+    /// quality, blocklist, upgrade progress, …). Decoded so the receive loop
+    /// doesn't log a spurious error for every such frame.
+    case unknown
 }
 
 extension BrowserMessage: Decodable {
@@ -19,6 +24,7 @@ extension BrowserMessage: Decodable {
         case capabilitiesChanged = "capabilities_changed"
         case agentInfoUpdated = "agent_info_updated"
         case alertEvent = "alert_event"
+        case securityEvent = "security_event"
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -35,7 +41,12 @@ extension BrowserMessage: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(MessageType.self, forKey: .type)
+        // Unknown / not-yet-handled message types decode to `.unknown` instead
+        // of throwing, so the WS receive loop stays quiet.
+        guard let type = try? container.decode(MessageType.self, forKey: .type) else {
+            self = .unknown
+            return
+        }
 
         switch type {
         case .fullSync:
@@ -69,6 +80,8 @@ extension BrowserMessage: Decodable {
             let alertKey = try container.decode(String.self, forKey: .alertKey)
             let status = try container.decode(AlertStatus.self, forKey: .status)
             self = .alertEvent(alertKey: alertKey, status: status)
+        case .securityEvent:
+            self = .securityEvent(try SecurityEventBroadcast(from: decoder))
         }
     }
 }

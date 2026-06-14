@@ -261,14 +261,21 @@ final class BrowserMessageDecodingTests: XCTestCase {
         }
     }
 
-    func test_decode_unknownType_throws() {
+    func test_decode_unknownType_decodesToUnknown() throws {
+        // Not-yet-handled server message types (docker, ip quality, blocklist,
+        // …) decode to `.unknown` rather than throwing, so the WS receive loop
+        // doesn't log an error for every such frame.
         let json = #"{"type":"definitely_not_a_real_case","server_id":"x"}"#
-        XCTAssertThrowsError(try decode(json))
+        guard case .unknown = try decode(json) else {
+            return XCTFail("Expected .unknown")
+        }
     }
 
-    func test_decode_missingType_throws() {
+    func test_decode_missingType_decodesToUnknown() throws {
         let json = #"{"server_id":"x"}"#
-        XCTAssertThrowsError(try decode(json))
+        guard case .unknown = try decode(json) else {
+            return XCTFail("Expected .unknown")
+        }
     }
 
     func test_decode_metricRecord_acceptsServerRecordPayload() throws {
