@@ -81,13 +81,22 @@ fn spawn_journalctl_sshd() -> io::Result<Child> {
             "--output=json",
             "-n",
             "0",
+            // OpenSSH ≥9.8 logs auth events from the per-connection
+            // "sshd-session" helper, not "sshd". Match both identifiers/comms so
+            // detection keeps working on Debian 13 / Ubuntu 24.10+ / Fedora 40+,
+            // including socket-activated setups where _SYSTEMD_UNIT is a
+            // per-connection transient unit rather than ssh.service.
             "SYSLOG_IDENTIFIER=sshd",
+            "+",
+            "SYSLOG_IDENTIFIER=sshd-session",
             "+",
             "_SYSTEMD_UNIT=ssh.service",
             "+",
             "_SYSTEMD_UNIT=sshd.service",
             "+",
             "_COMM=sshd",
+            "+",
+            "_COMM=sshd-session",
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -161,8 +170,12 @@ pub async fn drain_auth_log<R: AsyncBufRead + Unpin>(
 }
 
 fn strip_syslog_prefix(line: &str) -> Option<&str> {
-    // We look for "sshd[" then ":" then space.
-    let idx = line.find("sshd[")?;
+    // OpenSSH ≥9.8 logs auth lines from the per-connection "sshd-session"
+    // process (`sshd-session[PID]: ...`); older releases use `sshd[PID]: ...`.
+    // Match the longer name first so we don't accidentally split inside it.
+    let idx = line
+        .find("sshd-session[")
+        .or_else(|| line.find("sshd["))?;
     let rest = &line[idx..];
     let bracket = rest.find("]: ")?;
     Some(&rest[bracket + 3..])
@@ -410,5 +423,16 @@ mod tests {
             Some("Failed password for root from 1.2.3.4 port 22 ssh2")
         );
         assert_eq!(strip_syslog_prefix("Mar 12 13:14:15 host kernel: foo"), None);
+    }
+
+    #[test]
+    fn strip_syslog_prefix_handles_sshd_session() {
+        // OpenSSH ≥9.8 emits auth lines from the "sshd-session" helper.
+        let l =
+            "Jun 14 01:23:18 host sshd-session[957410]: Failed password for invalid user qa from 127.0.0.1 port 2850 ssh2";
+        assert_eq!(
+            strip_syslog_prefix(l),
+            Some("Failed password for invalid user qa from 127.0.0.1 port 2850 ssh2")
+        );
     }
 }
