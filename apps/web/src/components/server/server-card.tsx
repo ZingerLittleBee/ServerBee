@@ -439,7 +439,9 @@ const ServerCardInner = ({
         </Link>
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
-          <StatusBadge status={status} />
+          {/* Lift the pending pill above the dim overlay so it keeps its amber
+              tone as the one bright "needs attention" cue on a muted card. */}
+          <StatusBadge className={isPending ? 'relative z-20' : undefined} status={status} />
           {isPending ? (
             <PendingActionMenu serverId={server.id} serverName={server.name} />
           ) : (
@@ -449,7 +451,7 @@ const ServerCardInner = ({
       </div>
 
       {isPending ? (
-        <div className="flex min-h-24 flex-1 flex-col justify-center gap-1 rounded-md bg-muted/40 px-3 py-3">
+        <div className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-muted/40 px-3 py-3 text-center">
           <p className="font-medium text-foreground text-sm">{t('card_pending.waiting')}</p>
           <PendingEnrollmentSummary enrollment={server.outstanding_enrollment} />
         </div>
