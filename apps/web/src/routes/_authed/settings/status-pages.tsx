@@ -49,8 +49,16 @@ import type {
   UpdateStatusPageRequest
 } from '@/lib/api-schema'
 
+const STATUS_PAGE_TABS = ['config', 'incidents', 'maintenance'] as const
+type StatusPageTab = (typeof STATUS_PAGE_TABS)[number]
+
 export const Route = createFileRoute('/_authed/settings/status-pages')({
-  component: StatusPagesManagement
+  component: StatusPagesManagement,
+  // Keep the active tab in the URL so a reload / shared link / browser back lands
+  // on the same tab instead of resetting to Config.
+  validateSearch: (search: Record<string, unknown>): { tab: StatusPageTab } => ({
+    tab: STATUS_PAGE_TABS.includes(search.tab as StatusPageTab) ? (search.tab as StatusPageTab) : 'config'
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1217,6 +1225,8 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
 
 function StatusPagesManagement() {
   const { t } = useTranslation('settings')
+  const { tab } = Route.useSearch()
+  const navigate = Route.useNavigate()
 
   const { data: servers } = useQuery<ServerResponse[]>({
     queryKey: ['servers-list'],
@@ -1225,7 +1235,11 @@ function StatusPagesManagement() {
 
   return (
     <div>
-      <Tabs className="max-w-5xl" defaultValue="config">
+      <Tabs
+        className="max-w-5xl"
+        onValueChange={(value) => navigate({ search: { tab: value as StatusPageTab } })}
+        value={tab}
+      >
         <TabsList>
           <TabsTrigger value="config">{t('status_pages.tab_config')}</TabsTrigger>
           <TabsTrigger value="incidents">{t('status_pages.tab_incidents')}</TabsTrigger>

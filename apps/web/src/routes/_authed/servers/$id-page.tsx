@@ -20,7 +20,7 @@ import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { countryCodeToFlag, formatBytes } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { Route } from './$id'
+import { Route, type ServerDetailTab } from './$id'
 
 interface ServerWithCaps {
   agent_local_capabilities?: number | null
@@ -146,7 +146,7 @@ function ServerActionButtons({
 export function ServerDetailPage() {
   const { t } = useTranslation('servers')
   const { id } = Route.useParams()
-  const { range: rangeParam } = Route.useSearch()
+  const { range: rangeParam, tab: tabParam } = Route.useSearch()
   const navigate = Route.useNavigate()
   const [editOpen, setEditOpen] = useState(false)
   const [recoverOpen, setRecoverOpen] = useState(false)
@@ -259,7 +259,9 @@ export function ServerDetailPage() {
       </div>
 
       <ServerDetailContent
+        activeTab={tabParam ?? 'metrics'}
         onRangeChange={(rangeKey) => navigate({ search: (prev) => ({ ...prev, range: rangeKey }) })}
+        onTabChange={(tab) => navigate({ search: (prev) => ({ ...prev, tab: tab as ServerDetailTab }) })}
         rangeKey={rangeParam}
         server={server}
         serverId={id}

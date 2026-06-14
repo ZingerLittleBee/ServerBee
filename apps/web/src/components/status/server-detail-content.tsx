@@ -59,8 +59,13 @@ const ADMIN_TIME_RANGES: TimeRange[] = [
 const PUBLIC_TIME_RANGES: TimeRange[] = ADMIN_TIME_RANGES.filter((r) => r.key !== 'realtime')
 
 export interface ServerDetailContentProps {
+  /** Currently selected detail tab. When provided (admin), the tabs become
+   *  URL-controlled; the public surface omits it and stays uncontrolled. */
+  activeTab?: string
   /** Called by range buttons when the viewer picks a new historical window. */
   onRangeChange?: (rangeKey: string) => void
+  /** Called when the viewer switches detail tabs. */
+  onTabChange?: (tab: string) => void
   /** Currently selected range key from the URL or local state. */
   rangeKey?: string
   /** Server detail payload — full admin shape, or redacted public shape. */
@@ -214,7 +219,7 @@ function deriveNetworkLabels(
 }
 
 export function ServerDetailContent(props: ServerDetailContentProps) {
-  const { rangeKey, server, serverId, onRangeChange, variant } = props
+  const { activeTab, rangeKey, server, serverId, onRangeChange, onTabChange, variant } = props
   const { t } = useTranslation('servers')
   const isPublic = variant === 'public'
   const isAdminVariant = !isPublic
@@ -296,6 +301,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
       <UptimeCard isPublic={isPublic} serverId={serverId} />
 
       <DetailTabs
+        activeTab={activeTab}
         adminServer={adminServer}
         billingCycle={billingCycle}
         isAdminVariant={isAdminVariant}
@@ -318,6 +324,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
             xAxisInterval={xAxisInterval}
           />
         }
+        onTabChange={onTabChange}
         serverId={serverId}
       />
     </>
@@ -325,21 +332,25 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
 }
 
 function DetailTabs({
+  activeTab,
   adminServer,
   billingCycle,
   isAdminVariant,
   metricsTab,
+  onTabChange,
   serverId
 }: {
+  activeTab?: string
   adminServer: ServerResponse | null
   billingCycle: string | null
   isAdminVariant: boolean
   metricsTab: React.ReactNode
+  onTabChange?: (tab: string) => void
   serverId: string
 }) {
   const { t } = useTranslation('servers')
   return (
-    <Tabs className="mt-6" defaultValue="metrics">
+    <Tabs className="mt-6" defaultValue="metrics" onValueChange={onTabChange} value={activeTab}>
       <TabsList>
         <TabsTrigger value="metrics">{t('metrics_tab')}</TabsTrigger>
         {isAdminVariant && billingCycle && (
