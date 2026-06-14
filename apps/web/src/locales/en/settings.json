@@ -249,6 +249,7 @@
   "ping.task_toggle_failed": "Failed to update ping task",
 
   "tasks.title": "Remote Commands",
+  "tasks.fill_required": "Enter a name, cron expression and command, and select at least one server",
   "tasks.execute": "Execute Command",
   "tasks.command": "Command",
   "tasks.command_placeholder": "e.g. uptime, df -h, free -m",

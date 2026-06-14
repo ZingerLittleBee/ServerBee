@@ -249,6 +249,7 @@
   "ping.task_toggle_failed": "更新 Ping 任务失败",
 
   "tasks.title": "远程命令",
+  "tasks.fill_required": "请填写名称、Cron 表达式和命令，并至少选择一台服务器",
   "tasks.execute": "执行命令",
   "tasks.command": "命令",
   "tasks.command_placeholder": "如 uptime、df -h、free -m",

@@ -174,8 +174,8 @@ function OneshotTaskPanel() {
                   return (
                     // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                     <label
-                      className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 ${
-                        execEnabled ? '' : 'cursor-not-allowed opacity-50'
+                      className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 ${
+                        execEnabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
                       }`}
                       key={srv.id}
                       title={execEnabled ? undefined : t('tasks.exec_disabled')}

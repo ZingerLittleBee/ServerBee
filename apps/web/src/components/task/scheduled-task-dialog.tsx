@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -52,16 +53,8 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!name.trim()) {
-      return
-    }
-    if (!cronExpression.trim()) {
-      return
-    }
-    if (!command.trim()) {
-      return
-    }
-    if (selectedServerIds.length === 0) {
+    if (!(name.trim() && cronExpression.trim() && command.trim()) || selectedServerIds.length === 0) {
+      toast.error(t('tasks.fill_required'))
       return
     }
 
