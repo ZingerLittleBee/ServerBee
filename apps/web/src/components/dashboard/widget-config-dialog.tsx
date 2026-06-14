@@ -1,6 +1,6 @@
 import { renderConfigForm } from '@serverbee/widget-sdk'
 import { LayoutGrid, List } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -851,10 +851,15 @@ export function WidgetConfigDialog({
     () => (parseExistingConfig(widget) as Record<string, unknown>) ?? {}
   )
 
-  useEffect(() => {
+  // Reset the form when the edited widget changes, during render rather than in an
+  // effect: this avoids the extra commit and stops a parent re-creating the widget
+  // object (same id, new reference) from clobbering in-progress edits.
+  const [prevWidget, setPrevWidget] = useState(widget)
+  if (widget !== prevWidget) {
+    setPrevWidget(widget)
     setTitle(widget?.title ?? '')
     setConfig((parseExistingConfig(widget) as Record<string, unknown>) ?? {})
-  }, [widget])
+  }
 
   const needsNoConfig = widgetType === 'service-status' || widgetType === 'server-map'
   const isModule = widgetType === 'module'

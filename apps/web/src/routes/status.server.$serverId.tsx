@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/server/status-badge'
 import { ServerDetailContent } from '@/components/status/server-detail-content'
@@ -29,12 +29,9 @@ function PublicServerDetailPage() {
   const { t } = useTranslation('status')
   const { data: config } = usePublicStatusConfig()
 
-  // Pull URL state out of TanStack Router instead of keeping it locally so a
-  // refresh or shared link lands on the same window.
-  const [range, setRange] = useState(rangeParam)
-  useEffect(() => {
-    setRange(rangeParam)
-  }, [rangeParam])
+  // Derive the active window straight from the URL search param so a refresh or
+  // shared link lands on the same window without an extra state-sync render.
+  const range = rangeParam
 
   const detailEnabled = config?.show_server_detail !== false
   const { data, isLoading, error } = useQuery({
@@ -100,7 +97,6 @@ function PublicServerDetailPage() {
 
       <ServerDetailContent
         onRangeChange={(rangeKey) => {
-          setRange(rangeKey)
           navigate({
             to: '/status/server/$serverId',
             params: { serverId },
