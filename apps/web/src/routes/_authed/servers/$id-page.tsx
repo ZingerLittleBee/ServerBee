@@ -42,7 +42,7 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
       {server.cpu_name && (
         <span>
           {t('detail_cpu')} {server.cpu_name}
-          {server.cpu_cores && ` (${t('detail_cores', { count: server.cpu_cores })})`}
+          {server.cpu_cores != null && ` (${t('detail_cores', { count: server.cpu_cores })})`}
           {server.cpu_arch && ` ${server.cpu_arch}`}
         </span>
       )}
