@@ -23,13 +23,11 @@ export function useNetworkRealtime(serverId: string) {
       const newData = { ...dataRef.current }
 
       for (const result of results) {
-        const existing = newData[result.target_id] || []
-        existing.push(result)
-        if (existing.length > TRIM_AT) {
-          newData[result.target_id] = existing.slice(-MAX_POINTS)
-        } else {
-          newData[result.target_id] = existing
-        }
+        // Rebuild the array immutably: `newData` is only a shallow copy of the
+        // previous state, so pushing in place would mutate the array still held by
+        // the last committed React state. This runs on every probe tick.
+        const next = [...(newData[result.target_id] ?? []), result]
+        newData[result.target_id] = next.length > TRIM_AT ? next.slice(-MAX_POINTS) : next
       }
 
       dataRef.current = newData
