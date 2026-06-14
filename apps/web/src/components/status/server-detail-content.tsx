@@ -200,10 +200,16 @@ function deriveNetworkLabels(
   if (!publicMetricsSnapshot) {
     return { netInLabel: '—', netOutLabel: '—', netTotalLabel: null }
   }
+  // Use cumulative transfer (not the instantaneous *_speed rate) so the public
+  // bar matches the admin bar: the `detail_network_in/out/total` labels describe a
+  // total amount transferred, and formatBytes renders bytes — feeding a rate here
+  // mislabelled "1.2 MB/s" as a cumulative "1.2 MB".
+  const inBytes = publicMetricsSnapshot.net_in_transfer
+  const outBytes = publicMetricsSnapshot.net_out_transfer
   return {
-    netInLabel: formatBytes(publicMetricsSnapshot.net_in_speed),
-    netOutLabel: formatBytes(publicMetricsSnapshot.net_out_speed),
-    netTotalLabel: null
+    netInLabel: formatBytes(inBytes),
+    netOutLabel: formatBytes(outBytes),
+    netTotalLabel: formatBytes(inBytes + outBytes)
   }
 }
 

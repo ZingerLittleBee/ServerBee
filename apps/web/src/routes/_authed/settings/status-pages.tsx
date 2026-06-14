@@ -4,6 +4,17 @@ import { AlertTriangle, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -654,6 +665,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<IncidentItem | null>(null)
   const [updateDialogIncidentId, setUpdateDialogIncidentId] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data: incidents, isLoading } = useQuery<IncidentItem[]>({
     queryKey: ['incidents'],
@@ -785,14 +797,39 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
                       >
                         <Pencil className="size-3.5" />
                       </Button>
-                      <Button
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(incident.id)}
-                        size="sm"
-                        variant="ghost"
+                      <AlertDialog
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setDeleteId(null)
+                          }
+                        }}
+                        open={deleteId === incident.id}
                       >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
+                        <AlertDialogTrigger
+                          onClick={() => setDeleteId(incident.id)}
+                          render={<Button disabled={deleteMutation.isPending} size="sm" variant="ghost" />}
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteMutation.mutate(incident.id)
+                                setDeleteId(null)
+                              }}
+                              variant="destructive"
+                            >
+                              {t('common:delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -994,6 +1031,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<MaintenanceItem | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data: maintenances, isLoading } = useQuery<MaintenanceItem[]>({
     queryKey: ['maintenances'],
@@ -1116,14 +1154,39 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
                       >
                         <Pencil className="size-3.5" />
                       </Button>
-                      <Button
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(m.id)}
-                        size="sm"
-                        variant="ghost"
+                      <AlertDialog
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setDeleteId(null)
+                          }
+                        }}
+                        open={deleteId === m.id}
                       >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
+                        <AlertDialogTrigger
+                          onClick={() => setDeleteId(m.id)}
+                          render={<Button disabled={deleteMutation.isPending} size="sm" variant="ghost" />}
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteMutation.mutate(m.id)
+                                setDeleteId(null)
+                              }}
+                              variant="destructive"
+                            >
+                              {t('common:delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>

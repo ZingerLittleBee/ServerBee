@@ -64,7 +64,8 @@
   },
   "errors": {
     "operation_failed": "操作失败",
-    "failed": "失败"
+    "failed": "失败",
+    "data_load_failed": "数据加载失败，请重试。"
   },
   "a11y": {
     "toggle_theme": "切换主题",
@@ -94,6 +95,8 @@
     "toggle_columns": "切换列显示",
     "search_columns": "搜索列\u2026",
     "no_columns_found": "未找到列。",
+    "no_results": "暂无数据。",
+    "no_results_found": "未找到结果。",
     "sort_asc": "升序",
     "sort_desc": "降序",
     "sort_reset": "重置排序",

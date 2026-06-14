@@ -1,5 +1,6 @@
 import { flexRender, type Row, type Table as TanstackTable } from '@tanstack/react-table'
 import type * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { DataTablePagination } from '@/components/data-table/data-table-pagination'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { getColumnPinningStyle } from '@/lib/data-table'
@@ -27,6 +28,7 @@ export function DataTable<TData>({
   rowClassName,
   ...props
 }: DataTableProps<TData>) {
+  const { t } = useTranslation('common')
   return (
     <div
       className={cn('flex w-full min-w-0 flex-col gap-2.5 overflow-hidden', fillHeight && 'min-h-0 flex-1', className)}
@@ -83,7 +85,7 @@ export function DataTable<TData>({
             ) : (
               <TableRow>
                 <TableCell className="h-24 text-center" colSpan={table.getAllColumns().length}>
-                  No results.
+                  {t('table.no_results')}
                 </TableCell>
               </TableRow>
             )}

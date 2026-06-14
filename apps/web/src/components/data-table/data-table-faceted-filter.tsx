@@ -3,6 +3,7 @@
 import type { Column } from '@tanstack/react-table'
 import { Check, PlusCircle, XCircle } from 'lucide-react'
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -32,6 +33,7 @@ export function DataTableFacetedFilter<TData, TValue>({
   options,
   multiple
 }: DataTableFacetedFilterProps<TData, TValue>) {
+  const { t } = useTranslation('common')
   const [open, setOpen] = React.useState(false)
 
   const columnFilterValue = column?.getFilterValue()
@@ -113,7 +115,7 @@ export function DataTableFacetedFilter<TData, TValue>({
         <Command>
           <CommandInput placeholder={title} />
           <CommandList className="max-h-full">
-            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandEmpty>{t('table.no_results_found')}</CommandEmpty>
             <CommandGroup className="max-h-[300px] scroll-py-1 overflow-y-auto overflow-x-hidden">
               {options.map((option) => {
                 const isSelected = selectedValues.has(option.value)

@@ -1,6 +1,7 @@
 import type { Column, ColumnDef, Table as TanstackTable } from '@tanstack/react-table'
 import { flexRender } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
@@ -17,6 +18,7 @@ interface DataTableProps<TData> {
 }
 
 function DataTable<TData>({ table, noResults, className }: DataTableProps<TData>) {
+  const { t } = useTranslation('common')
   return (
     <div className={cn('min-w-0 max-w-full overflow-hidden rounded-lg border', className)}>
       <Table>
@@ -45,7 +47,7 @@ function DataTable<TData>({ table, noResults, className }: DataTableProps<TData>
           ) : (
             <TableRow>
               <TableCell className="h-24 text-center" colSpan={table.getAllColumns().length}>
-                {noResults ?? 'No results.'}
+                {noResults ?? t('table.no_results')}
               </TableCell>
             </TableRow>
           )}

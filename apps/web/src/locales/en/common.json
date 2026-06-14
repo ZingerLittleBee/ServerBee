@@ -88,13 +88,16 @@
   },
   "errors": {
     "operation_failed": "Operation failed",
-    "failed": "Failed"
+    "failed": "Failed",
+    "data_load_failed": "Failed to load data. Please try again."
   },
   "table": {
     "view_options": "View",
     "toggle_columns": "Toggle columns",
     "search_columns": "Search columns\u2026",
     "no_columns_found": "No columns found.",
+    "no_results": "No results.",
+    "no_results_found": "No results found.",
     "sort_asc": "Asc",
     "sort_desc": "Desc",
     "sort_reset": "Reset",

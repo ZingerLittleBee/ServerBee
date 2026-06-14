@@ -66,6 +66,9 @@ export function useCreateDashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboards'] })
       toast.success('Dashboard created')
+    },
+    onError: () => {
+      toast.error('Failed to create dashboard')
     }
   })
 }
@@ -82,6 +85,9 @@ export function useUpdateDashboard() {
       }
       queryClient.invalidateQueries({ queryKey: ['dashboards'] })
       toast.success('Dashboard updated')
+    },
+    onError: () => {
+      toast.error('Failed to update dashboard')
     }
   })
 }
