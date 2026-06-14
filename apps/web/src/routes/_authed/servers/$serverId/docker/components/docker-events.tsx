@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { formatRelativeTime } from '@/lib/widget-helpers'
 import type { DockerEventInfo } from '../types'
 
@@ -40,7 +41,7 @@ export function DockerEvents({ events }: DockerEventsProps) {
   return (
     <div className="space-y-2">
       <h3 className="font-semibold text-lg">{t('events.title')}</h3>
-      <div className="max-h-[400px] space-y-1 overflow-y-auto rounded-lg border p-3">
+      <ScrollArea className="max-h-[400px] rounded-lg border" contentClassName="space-y-1 p-3">
         {sortedEvents.map((event, idx) => (
           <div
             className="flex items-start gap-3 rounded-md px-3 py-2 text-sm odd:bg-muted/30"
@@ -56,7 +57,7 @@ export function DockerEvents({ events }: DockerEventsProps) {
             <span className="truncate text-muted-foreground">{event.actor_name ?? event.actor_id.slice(0, 12)}</span>
           </div>
         ))}
-      </div>
+      </ScrollArea>
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { Calendar, ChevronDown, ChevronRight, Edit, Pause, Play, Plus, Trash2 } 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   type ScheduledTask,
   type ScheduledTaskResult,
@@ -209,7 +210,7 @@ export function ScheduledTaskList() {
                       {t('tasks.scheduled.no_runs', { defaultValue: 'No execution history' })}
                     </p>
                   ) : (
-                    <div className="max-h-80 divide-y overflow-auto">
+                    <ScrollArea className="max-h-80" contentClassName="divide-y">
                       {groupedResults.slice(0, 20).map(([runId, runResults]) => {
                         const allOk = runResults.every((r) => r.exit_code === 0)
                         const failCount = runResults.filter((r) => r.exit_code !== 0 && r.exit_code !== -2).length
@@ -248,7 +249,7 @@ export function ScheduledTaskList() {
                           </div>
                         )
                       })}
-                    </div>
+                    </ScrollArea>
                   )}
                 </div>
               )}

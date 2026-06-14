@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import { filterByIds, formatRelativeTime } from '@/lib/widget-helpers'
@@ -57,7 +58,7 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{t('widgets.alertList.title')}</h3>
-      <div className="flex flex-1 flex-col gap-1.5 overflow-auto">
+      <ScrollArea className="flex-1" contentClassName="flex flex-col gap-1.5">
         {filtered.map((event) => {
           const isFiring = event.status === 'firing'
           const serverName = serverNameMap.get(event.server_id) ?? event.server_name
@@ -82,7 +83,7 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
             {t('widgets.alertList.empty.noEvents')}
           </div>
         )}
-      </div>
+      </ScrollArea>
     </div>
   )
 }

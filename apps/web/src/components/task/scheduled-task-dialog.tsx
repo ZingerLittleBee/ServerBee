@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   type CreateScheduledTaskInput,
   type ScheduledTask,
@@ -222,7 +223,7 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
             {!servers || servers.length === 0 ? (
               <p className="text-muted-foreground text-sm">{t('tasks.no_servers')}</p>
             ) : (
-              <div className="max-h-40 overflow-auto">
+              <ScrollArea className="max-h-40">
                 <div className="grid grid-cols-2 gap-1">
                   {servers.map((srv) => {
                     const execEnabled = getEffectiveCapabilityEnabled(
@@ -248,7 +249,7 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
                     )
                   })}
                 </div>
-              </div>
+              </ScrollArea>
             )}
           </div>
 

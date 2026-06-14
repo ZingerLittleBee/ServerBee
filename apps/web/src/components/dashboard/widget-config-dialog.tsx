@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
@@ -251,7 +252,7 @@ function ServerMultiSelect({
   return (
     <div className="space-y-1.5">
       <Label>{label}</Label>
-      <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border p-2">
+      <ScrollArea className="max-h-40 rounded-lg border" contentClassName="space-y-1 p-2">
         {servers.map((s) => (
           <button
             className="flex w-full cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-muted/50"
@@ -264,7 +265,7 @@ function ServerMultiSelect({
           </button>
         ))}
         {servers.length === 0 && <p className="py-2 text-center text-muted-foreground text-xs">{emptyMessage}</p>}
-      </div>
+      </ScrollArea>
     </div>
   )
 }
@@ -665,11 +666,13 @@ function MarkdownForm({
       {(config.content ?? '').length > 0 && (
         <div className="rounded-lg border p-3">
           <p className="mb-1 font-medium text-muted-foreground text-xs">{t('dialogs.widgetConfig.labels.preview')}</p>
-          <div
-            className="prose prose-sm dark:prose-invert max-h-32 max-w-none overflow-auto text-sm"
-            // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown escapes all raw HTML and validates URLs
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
+          <ScrollArea className="max-h-32">
+            <div
+              className="prose prose-sm dark:prose-invert max-w-none text-sm"
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown escapes all raw HTML and validates URLs
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </ScrollArea>
         </div>
       )}
     </div>

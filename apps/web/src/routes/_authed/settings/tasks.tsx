@@ -8,6 +8,7 @@ import { ScheduledTaskList } from '@/components/task/scheduled-task-list'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
@@ -271,9 +272,11 @@ function OneshotTaskPanel() {
                         {isSkipped ? (
                           <p className="text-muted-foreground text-xs italic">{t('tasks.exec_disabled')}</p>
                         ) : (
-                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-xs">
-                            {result.output || t('tasks.no_output')}
-                          </pre>
+                          <ScrollArea className="max-h-40 rounded-md bg-muted/50">
+                            <pre className="whitespace-pre-wrap p-2 font-mono text-xs">
+                              {result.output || t('tasks.no_output')}
+                            </pre>
+                          </ScrollArea>
                         )}
                       </div>
                     )
