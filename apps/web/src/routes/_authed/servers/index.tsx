@@ -67,7 +67,11 @@ function ServersListPage() {
 
   const setViewMode = (value: 'table' | 'grid') => {
     setViewModeState(value)
-    localStorage.setItem('serverbee-servers-view-mode', value)
+    try {
+      localStorage.setItem('serverbee-servers-view-mode', value)
+    } catch {
+      // ignore storage failures (private mode / quota)
+    }
     navigate({ search: (prev) => ({ ...prev, view: value }) })
   }
 

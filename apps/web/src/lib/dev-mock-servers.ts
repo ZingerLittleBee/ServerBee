@@ -51,7 +51,12 @@ export function withMockServers(servers: ServerMetrics[]): ServerMetrics[] {
   if (!import.meta.env.DEV || typeof window === 'undefined') {
     return servers
   }
-  const raw = window.localStorage.getItem(STORAGE_KEY)
+  let raw: string | null = null
+  try {
+    raw = window.localStorage.getItem(STORAGE_KEY)
+  } catch {
+    // localStorage may be unavailable (private mode / disabled storage)
+  }
   const count = raw ? Number.parseInt(raw, 10) : 0
   if (!Number.isFinite(count) || count <= 0) {
     return servers
