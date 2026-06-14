@@ -80,7 +80,16 @@ function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
 
 function DialogBody({ className, children, ...props }: React.ComponentProps<'div'>) {
   return (
-    <ScrollArea className="-mx-4 max-h-[calc(100vh-14rem)] min-h-0 flex-1" data-slot="dialog-body">
+    <ScrollArea
+      className="-mx-4 max-h-[calc(100vh-14rem)] min-h-0 flex-1"
+      // base-ui's ScrollArea.Content sets an inline `min-width: fit-content` to
+      // enable horizontal scrolling; in a dialog that lets long unbreakable
+      // strings (e.g. a truncated enrollment code) push content past the edge.
+      // Override it (important beats the inline style) so the body stays within
+      // the dialog width and descendants with min-w-0/truncate can shrink.
+      contentClassName="min-w-0!"
+      data-slot="dialog-body"
+    >
       <div className={cn('px-4', className)} {...props}>
         {children}
       </div>

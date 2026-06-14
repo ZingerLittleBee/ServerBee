@@ -28,7 +28,7 @@ import { CAP_DEFAULT } from '@/lib/capabilities'
 import { isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CostFootnote } from './cost-footnote'
 import { NetworkSquareGrid } from './network-square-grid'
@@ -208,7 +208,7 @@ function PendingEnrollmentSummary({ enrollment }: PendingSummaryProps) {
 
   if (expiresAt != null && expiresAt > now) {
     return (
-      <p className="text-amber-700 text-xs tabular-nums dark:text-amber-400">
+      <p className="text-muted-foreground text-xs tabular-nums">
         {t('card_pending.code_expires_in', {
           prefix: enrollment.code_prefix,
           countdown: formatCountdown(expiresAt - now)
@@ -264,7 +264,7 @@ function PendingActionMenu({ serverId, serverName }: PendingActionMenuProps) {
         >
           <MoreHorizontal aria-hidden="true" className="size-3.5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-fit">
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
@@ -335,7 +335,7 @@ function RecoverActionMenu({ server }: RecoverActionMenuProps) {
         >
           <MoreHorizontal aria-hidden="true" className="size-3.5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-fit">
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
@@ -403,8 +403,16 @@ const ServerCardInner = ({
   const trafficDaysRemaining = trafficEntry?.days_remaining ?? null
 
   return (
-    <div className="relative flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm">
-      {!(server.online || isPending) && (
+    <div
+      className={cn(
+        'relative flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm',
+        // Pending cards have far less content than active ones; stretch them to
+        // fill the grid cell so a "Waiting for agent…" tile matches the height of
+        // its data-rich siblings instead of leaving a short, mismatched gap.
+        isPending && 'h-full'
+      )}
+    >
+      {!server.online && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-grayscale"
@@ -431,7 +439,9 @@ const ServerCardInner = ({
         </Link>
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
-          <StatusBadge status={status} />
+          {/* Lift the pending pill above the dim overlay so it keeps its amber
+              tone as the one bright "needs attention" cue on a muted card. */}
+          <StatusBadge className={isPending ? 'relative z-20' : undefined} status={status} />
           {isPending ? (
             <PendingActionMenu serverId={server.id} serverName={server.name} />
           ) : (
@@ -441,8 +451,8 @@ const ServerCardInner = ({
       </div>
 
       {isPending ? (
-        <div className="flex flex-col gap-1 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-3">
-          <p className="font-medium text-amber-700 text-sm dark:text-amber-400">{t('card_pending.waiting')}</p>
+        <div className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-muted/40 px-3 py-3 text-center">
+          <p className="font-medium text-foreground text-sm">{t('card_pending.waiting')}</p>
           <PendingEnrollmentSummary enrollment={server.outstanding_enrollment} />
         </div>
       ) : (
