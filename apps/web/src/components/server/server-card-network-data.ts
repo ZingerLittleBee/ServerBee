@@ -115,10 +115,16 @@ function buildRealtimeState(
   targetOrder: ReadonlyMap<string, number>
 ): ServerCardNetworkTrend {
   const timestamps = [...bucketMap.keys()].sort().slice(-MAX_TREND_POINTS)
+  // Sort each timestamp's targets once and reuse for both latency and loss points;
+  // this runs in every server card's memo on every realtime network tick.
+  const sortedByTimestamp = new Map(
+    timestamps.map((timestamp) => [
+      timestamp,
+      [...(bucketMap.get(timestamp) ?? [])].sort((left, right) => compareTargets(left, right, targetOrder))
+    ])
+  )
   const latencyPoints = timestamps.map((timestamp) => {
-    const targets = [...(bucketMap.get(timestamp) ?? [])].sort((left, right) =>
-      compareTargets(left, right, targetOrder)
-    )
+    const targets = sortedByTimestamp.get(timestamp) ?? []
     const avgLatency = average(targets.flatMap((target) => (target.latency == null ? [] : [target.latency])))
 
     return {
@@ -129,9 +135,7 @@ function buildRealtimeState(
     }
   })
   const lossPoints = timestamps.map((timestamp) => {
-    const targets = [...(bucketMap.get(timestamp) ?? [])].sort((left, right) =>
-      compareTargets(left, right, targetOrder)
-    )
+    const targets = sortedByTimestamp.get(timestamp) ?? []
     const avgLossRatio = average(targets.map((target) => target.lossRatio))
 
     return {

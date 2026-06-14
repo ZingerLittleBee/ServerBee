@@ -519,7 +519,7 @@ ServerBee is designed for lightweight VPS instances:
 | Server RAM | 128 MB | 256 MB |
 | Server Disk | 100 MB + data | 1 GB+ (depends on retention) |
 | Agent CPU | Negligible | < 1% of 1 core |
-| Agent RAM | 10 MB | 20 MB |
+| Agent RAM | 10 MB (cold) | 30–40 MB (steady, 8h+) |
 
 Database size depends on the number of monitored servers and your retention settings. As a rough guide, expect about 1 MB of raw records per server per day. With 50 servers and the default 7-day retention, the database is roughly 350 MB.
 

@@ -316,21 +316,25 @@ impl DashboardService {
         };
         let dash = dash.insert(db).await?;
 
+        // stat-number widgets use the content-height sizing strategy, so they
+        // render at ~1 coarse row regardless of the authored grid_h. Author them
+        // as h=1 and place server-cards directly beneath at y=1 so no empty band
+        // is left between the summary row and the server grid.
         let presets = vec![
-            ("stat-number", r#"{"metric":"server_count"}"#, 0, 0, 2, 2, 0),
-            ("stat-number", r#"{"metric":"avg_cpu"}"#, 2, 0, 2, 2, 1),
-            ("stat-number", r#"{"metric":"avg_memory"}"#, 4, 0, 2, 2, 2),
+            ("stat-number", r#"{"metric":"server_count"}"#, 0, 0, 2, 1, 0),
+            ("stat-number", r#"{"metric":"avg_cpu"}"#, 2, 0, 2, 1, 1),
+            ("stat-number", r#"{"metric":"avg_memory"}"#, 4, 0, 2, 1, 2),
             (
                 "stat-number",
                 r#"{"metric":"total_bandwidth"}"#,
                 6,
                 0,
                 2,
-                2,
+                1,
                 3,
             ),
-            ("stat-number", r#"{"metric":"health"}"#, 8, 0, 2, 2, 4),
-            ("server-cards", r#"{"scope":"all"}"#, 0, 2, 12, 6, 5),
+            ("stat-number", r#"{"metric":"health"}"#, 8, 0, 2, 1, 4),
+            ("server-cards", r#"{"scope":"all"}"#, 0, 1, 12, 6, 5),
         ];
 
         let mut widgets = Vec::new();

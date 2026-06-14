@@ -8,6 +8,7 @@ import { ScheduledTaskList } from '@/components/task/scheduled-task-list'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
@@ -174,8 +175,8 @@ function OneshotTaskPanel() {
                   return (
                     // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                     <label
-                      className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 ${
-                        execEnabled ? '' : 'cursor-not-allowed opacity-50'
+                      className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-primary/5 ${
+                        execEnabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
                       }`}
                       key={srv.id}
                       title={execEnabled ? undefined : t('tasks.exec_disabled')}
@@ -271,9 +272,11 @@ function OneshotTaskPanel() {
                         {isSkipped ? (
                           <p className="text-muted-foreground text-xs italic">{t('tasks.exec_disabled')}</p>
                         ) : (
-                          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-2 font-mono text-xs">
-                            {result.output || t('tasks.no_output')}
-                          </pre>
+                          <ScrollArea className="max-h-40 rounded-md bg-muted/50">
+                            <pre className="whitespace-pre-wrap p-2 font-mono text-xs">
+                              {result.output || t('tasks.no_output')}
+                            </pre>
+                          </ScrollArea>
                         )}
                       </div>
                     )

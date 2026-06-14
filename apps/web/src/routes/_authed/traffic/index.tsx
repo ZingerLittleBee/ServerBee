@@ -150,15 +150,19 @@ function UsageBar({ percent }: { percent: number | null }) {
     return ''
   })()
 
+  // Real servers can exceed their limit (e.g. 250%), but extreme values would
+  // blow out the column width, so clamp the label to a readable ceiling.
+  const percentLabel = percent >= 1000 ? '>999%' : `${percent.toFixed(1)}%`
+
   return (
     <div className="flex items-center gap-2">
-      <div className="h-2 w-24 overflow-hidden rounded-full bg-muted">
+      <div className="h-2 w-24 shrink-0 overflow-hidden rounded-full bg-muted">
         <div
           className={cn('h-full rounded-full transition-all', barColor)}
           style={{ width: `${Math.min(percent, 100)}%` }}
         />
       </div>
-      <span className={cn('text-xs tabular-nums', textColor)}>{percent.toFixed(1)}%</span>
+      <span className={cn('text-xs tabular-nums', textColor)}>{percentLabel}</span>
     </div>
   )
 }
@@ -283,7 +287,7 @@ export function TrafficPage() {
           </div>
 
           {/* Server traffic ranking table */}
-          <div className="mb-6 min-w-0 max-w-full overflow-hidden rounded-lg border">
+          <div className="mb-6 min-w-0 max-w-full overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>

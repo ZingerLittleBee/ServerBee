@@ -5,7 +5,11 @@ import { cn } from '@/lib/utils'
 
 function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
-    <ScrollArea className="min-h-0 w-full min-w-0 flex-1" data-slot="table-container">
+    // contentClassName overrides base-ui ScrollArea's inline `min-width:fit-content`
+    // (an inline style that beats stylesheet `min-w-0`). Without it a wide table
+    // expands its container past the viewport instead of scrolling horizontally
+    // inside the ScrollArea.
+    <ScrollArea className="min-h-0 w-full min-w-0 flex-1" contentClassName="min-w-0!" data-slot="table-container">
       <table className={cn('w-full min-w-max caption-bottom text-sm', className)} data-slot="table" {...props} />
     </ScrollArea>
   )

@@ -137,7 +137,7 @@ export function AgentVersionSection({
   const isAdmin = user?.role === 'admin'
   const upgradeEnabled = getEffectiveCapabilityEnabled(effectiveCapabilities, configuredCapabilities, CAP_UPGRADE)
 
-  const hasUpdate = latestVersion && agentVersion && latestVersion !== agentVersion
+  const hasUpdate = Boolean(latestVersion && agentVersion && latestVersion !== agentVersion)
   const canUpgrade = isAdmin && upgradeEnabled && hasUpdate && (!job || job.status !== 'running')
 
   const handleUpgrade = () => {

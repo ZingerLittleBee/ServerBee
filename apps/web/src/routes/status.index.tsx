@@ -41,13 +41,22 @@ function PublicStatusIndex() {
   const [layout, setLayout] = useState<'list' | 'grid'>('grid')
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY) as 'list' | 'grid' | null
+    let stored: 'list' | 'grid' | null = null
+    try {
+      stored = localStorage.getItem(STORAGE_KEY) as 'list' | 'grid' | null
+    } catch {
+      // localStorage may be unavailable (private mode / disabled storage)
+    }
     setLayout(stored ?? config?.default_layout ?? 'grid')
   }, [config?.default_layout])
 
   const onLayoutChange = (next: 'list' | 'grid') => {
     setLayout(next)
-    localStorage.setItem(STORAGE_KEY, next)
+    try {
+      localStorage.setItem(STORAGE_KEY, next)
+    } catch {
+      // ignore storage failures (private mode / quota)
+    }
   }
 
   if (config?.enabled === false) {

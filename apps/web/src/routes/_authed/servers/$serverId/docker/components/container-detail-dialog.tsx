@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { DockerContainer, DockerContainerStats } from '../types'
 import { ContainerLogs } from './container-logs'
 import { ContainerStats } from './container-stats'
@@ -43,49 +43,53 @@ export function ContainerDetailDialog({ container, serverId, stats, open, onOpen
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{container.name}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Container Meta Info */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <p className="text-muted-foreground text-xs">{t('detail.image')}</p>
-              <p className="mt-0.5 truncate font-mono text-sm" title={container.image}>
-                {container.image}
-              </p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">{t('detail.status')}</p>
-              <div className="mt-0.5 flex items-center gap-2">
-                <Badge variant={container.state === 'running' ? 'default' : 'secondary'}>{container.state}</Badge>
-                <span className="text-muted-foreground text-sm">{container.status}</span>
+        <DialogBody>
+          <div className="space-y-6">
+            {/* Container Meta Info */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-muted-foreground text-xs">{t('detail.image')}</p>
+                <p className="mt-0.5 truncate font-mono text-sm" title={container.image}>
+                  {container.image}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">{t('detail.status')}</p>
+                <div className="mt-0.5 flex items-center gap-2">
+                  <Badge variant={container.state === 'running' ? 'default' : 'secondary'}>{container.state}</Badge>
+                  <span className="text-muted-foreground text-sm">{container.status}</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">{t('detail.ports')}</p>
+                <p className="mt-0.5 font-mono text-sm">
+                  {portsDisplay === 'None' ? t('detail.noPorts') : portsDisplay}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground text-xs">{t('detail.created')}</p>
+                <p className="mt-0.5 text-sm">{formatCreatedDate(container.created)}</p>
+              </div>
+              <div className="sm:col-span-2">
+                <p className="text-muted-foreground text-xs">{t('detail.containerId')}</p>
+                <p className="mt-0.5 truncate font-mono text-sm" title={container.id}>
+                  {container.id}
+                </p>
               </div>
             </div>
-            <div>
-              <p className="text-muted-foreground text-xs">{t('detail.ports')}</p>
-              <p className="mt-0.5 font-mono text-sm">{portsDisplay === 'None' ? t('detail.noPorts') : portsDisplay}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground text-xs">{t('detail.created')}</p>
-              <p className="mt-0.5 text-sm">{formatCreatedDate(container.created)}</p>
-            </div>
-            <div className="sm:col-span-2">
-              <p className="text-muted-foreground text-xs">{t('detail.containerId')}</p>
-              <p className="mt-0.5 truncate font-mono text-sm" title={container.id}>
-                {container.id}
-              </p>
-            </div>
+
+            {/* Stats */}
+            <ContainerStats stats={containerStats} />
+
+            {/* Logs */}
+            <ContainerLogs containerId={container.id} serverId={serverId} />
           </div>
-
-          {/* Stats */}
-          <ContainerStats stats={containerStats} />
-
-          {/* Logs */}
-          <ContainerLogs containerId={container.id} serverId={serverId} />
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

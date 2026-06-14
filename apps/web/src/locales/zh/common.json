@@ -11,9 +11,12 @@
   "disable": "禁用",
   "online": "在线",
   "offline": "离线",
+  "connection_lost": "与服务器的连接已断开，正在重连…",
   "log_out": "退出登录",
   "nav_dashboard": "仪表盘",
   "nav_servers": "服务器",
+  "nav_terminal": "终端",
+  "nav_files": "文件管理",
   "nav_users": "用户管理",
   "nav_notifications": "通知",
   "nav_alerts": "告警",
@@ -62,8 +65,11 @@
   },
   "errors": {
     "operation_failed": "操作失败",
-    "failed": "失败"
+    "failed": "失败",
+    "data_load_failed": "数据加载失败，请重试。"
   },
+  "capability_disabled_title": "功能不可用",
+  "capability_disabled_desc": "该服务器未启用此能力。管理员可在 设置 → 能力 中开启。",
   "a11y": {
     "toggle_theme": "切换主题",
     "breadcrumb": "面包屑导航",
@@ -92,6 +98,8 @@
     "toggle_columns": "切换列显示",
     "search_columns": "搜索列\u2026",
     "no_columns_found": "未找到列。",
+    "no_results": "暂无数据。",
+    "no_results_found": "未找到结果。",
     "sort_asc": "升序",
     "sort_desc": "降序",
     "sort_reset": "重置排序",

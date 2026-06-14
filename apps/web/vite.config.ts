@@ -39,7 +39,8 @@ export default defineConfig(({ mode }) => {
     return {
       plugins: [
         TanStackRouterVite({
-          routeFileIgnorePattern
+          routeFileIgnorePattern,
+          autoCodeSplitting: true
         }),
         react(),
         tailwindcss(),
@@ -88,6 +89,7 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           output: {
             manualChunks: {
+              tanstack: ['@tanstack/react-router', '@tanstack/react-query', '@tanstack/react-table'],
               xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
               recharts: ['recharts']
             }
@@ -113,7 +115,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       TanStackRouterVite({
-        routeFileIgnorePattern
+        routeFileIgnorePattern,
+        autoCodeSplitting: true
       }),
       react(),
       builtinWidgetsPlugin(),
@@ -163,6 +166,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks: {
+            tanstack: ['@tanstack/react-router', '@tanstack/react-query', '@tanstack/react-table'],
             xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
             recharts: ['recharts']
           }

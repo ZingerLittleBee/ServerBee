@@ -4,7 +4,7 @@
 
 # ServerBee
 
-**轻量、自托管的 VPS 监控系统 —— 一个 Rust 二进制,实时掌控一切。**
+**轻量、自托管的 VPS 监控系统 —— 一个 Rust 二进制,实时掌握每台服务器。**
 
 [![CI](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml/badge.svg)](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ZingerLittleBee/ServerBee?include_prereleases&sort=semver)](https://github.com/ZingerLittleBee/ServerBee/releases)
@@ -19,16 +19,16 @@
 
 ---
 
-ServerBee 让你在一处掌控所有服务器。中心 **Server** 通过 WebSocket 接收来自轻量 **Agent** 的指标,存入内嵌 SQLite,并提供实时 React 仪表盘 —— 无外部数据库,无沉重运行时。
+ServerBee 在一处统一监控你的所有服务器。中心 **Server** 通过 WebSocket 接收来自轻量 **Agent** 的指标,存入内嵌 SQLite,并提供实时 React 仪表盘 —— 无外部数据库,无沉重运行时。
 
-- 🪶 **极致轻量** —— Agent 通常仅占用约 5–15 MB 内存,Server 即便管理大量节点也保持精简。
+- 🪶 **极致轻量** —— Agent 冷启动约 4.3 MB、稳态约 27 MB,Server 即便管理大量节点也保持精简。
 - ⚡ **实时刷新** —— WebSocket 实时仪表盘,涵盖 CPU、内存、磁盘、网络、负载、温度、GPU、磁盘 I/O。
 - 📦 **单一二进制** —— Server 与内嵌 Web UI 打包成一个文件,支持 Docker、一行脚本、Railway 部署。
-- 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、状态页等一应俱全。
+- 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、状态页等功能。
 - 🔒 **默认安全** —— OAuth + 2FA、RBAC、审计日志、一次性 Agent 注册、逐服务器能力门控。
 
 > [!NOTE]
-> ServerBee 正在活跃开发中(`v1.0.0-alpha`),迭代频繁。
+> ServerBee 正在活跃开发中(`v1.0.0-alpha.6`),迭代频繁。
 
 ## 快速开始
 
@@ -59,13 +59,13 @@ Agent 首次连接时会保存每服务器 token 并自动重连 —— code 只
 
 | | |
 |---|---|
-| **📊 监控** | 实时指标(CPU/内存/磁盘/网络/负载/温度/GPU/磁盘 I/O)· 历史图表(1h–30d)· Docker 容器统计、日志与事件 · 按计费周期统计月度流量并预测 |
-| **🔔 告警** | 14+ 指标类型 · 阈值 / 离线 / 流量 / 到期规则 · Webhook、Telegram、Bark、邮件渠道,支持通知组 |
-| **🌐 网络** | Ping 探测(ICMP/TCP/HTTP)· 网络质量监控(96 个中国三网 + 国际预设)· 服务监控(SSL/WHOIS/HTTP/Ping/TCP)· IP 质量与流媒体解锁检测,含欺诈风险评分 |
+| **📊 监控** | 实时指标(CPU/内存/磁盘/网络/负载/温度/GPU/磁盘 I/O)· 历史图表(1h–30d)· Docker 容器统计、日志与事件 · 按计费周期统计月度流量并预测 · 成本洞察(burn rate、资源单价、0–100 价值评分) |
+| **🔔 告警** | 14+ 指标类型 · 阈值 / 离线 / 流量 / 到期规则 · Webhook、Telegram、Bark、邮件、APNs 渠道,支持通知组 |
+| **🌐 网络** | Ping 探测(ICMP/TCP/HTTP)· 网络质量监控(96 个中国三网 + 国际预设)· 服务监控(SSL/DNS/HTTP 关键字/TCP/WHOIS)· IP 质量与流媒体解锁检测,含欺诈风险评分 |
 | **🛠️ 远程管理** | 浏览器 Web 终端(WS 上的 PTY)· 沙箱化文件管理 + Monaco 编辑器 · 基于 nftables 的防火墙封禁 · 逐服务器能力开关 · Agent 自动更新 |
 | **🔐 安全与访问** | SSH 登录 / 暴力破解 / 端口扫描检测 · OAuth(GitHub/Google/OIDC)+ TOTP 两步验证 · Admin/Member 角色 · 审计日志 · 一次性 Agent 注册码 |
-| **🖥️ 仪表盘与分享** | 拖拽式自定义仪表盘(13 种 widget)· 含 90 天可用性时间线的公共状态页 · OKLCH 自定义主题 · 带国旗的服务器分组 · 原生 iOS 移动端 |
-| **⚙️ 运维** | `serverbee` 管理 CLI · 备份与恢复 · GeoIP 地区检测 · OpenAPI/Swagger 文档(50+ 端点) |
+| **🖥️ 仪表盘与分享** | 拖拽式自定义仪表盘(17 种 widget)· 含 90 天可用性时间线的公共状态页 · OKLCH 自定义主题 · 带国旗的服务器分组 · 原生 iOS 移动端 |
+| **⚙️ 运维** | `serverbee` 管理 CLI · 备份与恢复 · GeoIP 地区检测 · OpenAPI/Swagger 文档(180+ 端点) |
 
 ## 配置
 

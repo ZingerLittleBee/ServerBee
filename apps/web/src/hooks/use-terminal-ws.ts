@@ -15,10 +15,22 @@ export function useTerminalWs(serverId: string) {
   const [error, setError] = useState<string | null>(null)
   const onDataRef = useRef<((data: string) => void) | null>(null)
 
-  const connect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close()
+  // Detach all handlers before closing so a stale socket's async onerror/onclose
+  // (common under StrictMode double-invoke or rapid reconnects) can no longer
+  // mutate state and clobber the live connection's status/error.
+  const teardown = useCallback((ws: WebSocket | null) => {
+    if (!ws) {
+      return
     }
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onerror = null
+    ws.onclose = null
+    ws.close()
+  }, [])
+
+  const connect = useCallback(() => {
+    teardown(wsRef.current)
 
     setStatus('connecting')
     setError(null)
@@ -29,6 +41,7 @@ export function useTerminalWs(serverId: string) {
 
     ws.onopen = () => {
       setStatus('connected')
+      setError(null)
     }
 
     ws.onmessage = (event) => {
@@ -72,15 +85,13 @@ export function useTerminalWs(serverId: string) {
     }
 
     wsRef.current = ws
-  }, [serverId])
+  }, [serverId, teardown])
 
   const disconnect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
+    teardown(wsRef.current)
+    wsRef.current = null
     setStatus('closed')
-  }, [])
+  }, [teardown])
 
   const sendInput = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -102,12 +113,10 @@ export function useTerminalWs(serverId: string) {
 
   useEffect(() => {
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
+      teardown(wsRef.current)
+      wsRef.current = null
     }
-  }, [])
+  }, [teardown])
 
   return { connect, disconnect, error, onData, sendInput, sendResize, status }
 }

@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   type CreateScheduledTaskInput,
   type ScheduledTask,
@@ -52,16 +54,8 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!name.trim()) {
-      return
-    }
-    if (!cronExpression.trim()) {
-      return
-    }
-    if (!command.trim()) {
-      return
-    }
-    if (selectedServerIds.length === 0) {
+    if (!(name.trim() && cronExpression.trim() && command.trim()) || selectedServerIds.length === 0) {
+      toast.error(t('tasks.fill_required'))
       return
     }
 
@@ -229,7 +223,7 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
             {!servers || servers.length === 0 ? (
               <p className="text-muted-foreground text-sm">{t('tasks.no_servers')}</p>
             ) : (
-              <div className="max-h-40 overflow-auto">
+              <ScrollArea className="max-h-40">
                 <div className="grid grid-cols-2 gap-1">
                   {servers.map((srv) => {
                     const execEnabled = getEffectiveCapabilityEnabled(
@@ -255,7 +249,7 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
                     )
                   })}
                 </div>
-              </div>
+              </ScrollArea>
             )}
           </div>
 

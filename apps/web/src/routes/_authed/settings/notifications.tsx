@@ -4,6 +4,17 @@ import { Bell, Pencil, Plus, Send, Trash2, Upload } from 'lucide-react'
 import { type FormEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -253,6 +264,7 @@ function NotificationsPage() {
   const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteChannelId, setDeleteChannelId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [notifyType, setNotifyType] = useState<NotifyType>('webhook')
   const [configFields, setConfigFields] = useState<Record<string, string>>({
@@ -348,6 +360,7 @@ function NotificationsPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [showGroupForm, setShowGroupForm] = useState(false)
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
+  const [deleteGroupId, setDeleteGroupId] = useState<string | null>(null)
 
   const createGroupMutation = useMutation({
     mutationFn: (input: { name: string; notification_ids: string[] }) =>
@@ -703,15 +716,46 @@ function NotificationsPage() {
                     >
                       <Pencil className="size-3.5" />
                     </Button>
-                    <Button
-                      aria-label={t('common:a11y.delete_notification', { name: n.name })}
-                      disabled={deleteMutation.isPending}
-                      onClick={() => deleteMutation.mutate(n.id)}
-                      size="sm"
-                      variant="destructive"
+                    <AlertDialog
+                      onOpenChange={(open) => {
+                        if (!open) {
+                          setDeleteChannelId(null)
+                        }
+                      }}
+                      open={deleteChannelId === n.id}
                     >
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                      <AlertDialogTrigger
+                        onClick={() => setDeleteChannelId(n.id)}
+                        render={
+                          <Button
+                            aria-label={t('common:a11y.delete_notification', { name: n.name })}
+                            disabled={deleteMutation.isPending}
+                            size="sm"
+                            variant="destructive"
+                          />
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                          <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => {
+                              deleteMutation.mutate(n.id)
+                              setDeleteChannelId(null)
+                            }}
+                            variant="destructive"
+                          >
+                            {t('common:delete')}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
               ))}
@@ -820,15 +864,46 @@ function NotificationsPage() {
                       >
                         <Pencil className="size-3.5" />
                       </Button>
-                      <Button
-                        aria-label={t('common:a11y.delete_group', { name: g.name })}
-                        disabled={deleteGroupMutation.isPending}
-                        onClick={() => deleteGroupMutation.mutate(g.id)}
-                        size="sm"
-                        variant="destructive"
+                      <AlertDialog
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setDeleteGroupId(null)
+                          }
+                        }}
+                        open={deleteGroupId === g.id}
                       >
-                        <Trash2 className="size-3.5" />
-                      </Button>
+                        <AlertDialogTrigger
+                          onClick={() => setDeleteGroupId(g.id)}
+                          render={
+                            <Button
+                              aria-label={t('common:a11y.delete_group', { name: g.name })}
+                              disabled={deleteGroupMutation.isPending}
+                              size="sm"
+                              variant="destructive"
+                            />
+                          }
+                        >
+                          <Trash2 className="size-3.5" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteGroupMutation.mutate(g.id)
+                                setDeleteGroupId(null)
+                              }}
+                              variant="destructive"
+                            >
+                              {t('common:delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </div>
                 )

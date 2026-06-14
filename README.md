@@ -21,14 +21,14 @@ English | [简体中文](./README.zh-CN.md)
 
 ServerBee watches all your servers from one place. A central **server** receives metrics from lightweight **agents** over WebSocket, stores them in embedded SQLite, and serves a real-time React dashboard — no external database, no heavy runtime.
 
-- 🪶 **Tiny footprint** — agents typically use only ~5–15 MB of RAM, and the server stays lightweight as your fleet grows.
+- 🪶 **Tiny footprint** — agents use ~4.3 MB at cold start and ~27 MB in steady state, and the server stays lightweight as your fleet grows.
 - ⚡ **Real-time** — live WebSocket dashboard for CPU, memory, disk, network, load, temperature, GPU, and disk I/O.
 - 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
 - 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, status pages, and more.
 - 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, per-server capability gates.
 
 > [!NOTE]
-> ServerBee is in active development (`v1.0.0-alpha`). Expect rapid iteration.
+> ServerBee is in active development (`v1.0.0-alpha.6`). Expect rapid iteration.
 
 ## Quick Start
 
@@ -59,13 +59,13 @@ The agent saves a per-server token on first connect and reconnects automatically
 
 | | |
 |---|---|
-| **📊 Monitoring** | Real-time metrics (CPU/mem/disk/network/load/temp/GPU/disk I/O) · historical charts (1h–30d) · Docker container stats, logs & events · monthly traffic statistics with billing-cycle prediction |
-| **🔔 Alerts** | 14+ metric types · threshold / offline / traffic / expiration rules · Webhook, Telegram, Bark & Email channels with notification groups |
-| **🌐 Network** | Ping monitoring (ICMP/TCP/HTTP) · network-quality probing (96 China 3-ISP + international presets) · service monitors (SSL/WHOIS/HTTP/Ping/TCP) · IP-quality & streaming-unlock detection with fraud scoring |
+| **📊 Monitoring** | Real-time metrics (CPU/mem/disk/network/load/temp/GPU/disk I/O) · historical charts (1h–30d) · Docker container stats, logs & events · monthly traffic statistics with billing-cycle prediction · cost insights (burn rate, per-resource unit cost, 0–100 value score) |
+| **🔔 Alerts** | 14+ metric types · threshold / offline / traffic / expiration rules · Webhook, Telegram, Bark, Email & APNs channels with notification groups |
+| **🌐 Network** | Ping monitoring (ICMP/TCP/HTTP) · network-quality probing (96 China 3-ISP + international presets) · service monitors (SSL/DNS/HTTP-keyword/TCP/WHOIS) · IP-quality & streaming-unlock detection with fraud scoring |
 | **🛠️ Remote management** | Browser web terminal (PTY over WS) · sandboxed file manager with Monaco editor · firewall blocklist via nftables · per-server capability toggles · agent auto-update |
 | **🔐 Security & access** | SSH login / brute-force / port-scan detection · OAuth (GitHub/Google/OIDC) + TOTP 2FA · Admin/Member RBAC · audit logs · one-time agent enrollment codes |
-| **🖥️ Dashboards & sharing** | Drag-and-drop custom dashboards (13 widget types) · public status pages with 90-day uptime timelines · custom OKLCH themes · server groups with country flags · native iOS companion app |
-| **⚙️ Ops** | `serverbee` management CLI · backup & restore · GeoIP region detection · OpenAPI/Swagger docs (50+ endpoints) |
+| **🖥️ Dashboards & sharing** | Drag-and-drop custom dashboards (17 widget types) · public status pages with 90-day uptime timelines · custom OKLCH themes · server groups with country flags · native iOS companion app |
+| **⚙️ Ops** | `serverbee` management CLI · backup & restore · GeoIP region detection · OpenAPI/Swagger docs (180+ endpoints) |
 
 ## Configuration
 

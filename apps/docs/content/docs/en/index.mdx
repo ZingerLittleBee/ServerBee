@@ -62,7 +62,7 @@ Sign in via GitHub, Google, or any generic OIDC provider. Mobile sessions, devic
 
 ### Why Rust
 
-- **High performance** -- the agent uses only 5-15 MB of memory; the server uses roughly 50-100 MB when managing 1000 nodes.
+- **High performance** -- the agent uses ~4.3 MB at cold start and ~27 MB in steady state (systemd cgroup); a production server typically runs 140–170 MB with `MALLOC_ARENA_MAX=2` set. See [Resource Usage](/en/docs/resource-usage).
 - **Reliability** -- Rust's memory safety eliminates a whole class of common runtime errors.
 - **Single-binary deployment** -- the server embeds the frontend assets via `rust-embed`, so you ship one executable.
 - **Zero dependencies** -- no MySQL or Redis to install; SQLite is embedded in the binary.

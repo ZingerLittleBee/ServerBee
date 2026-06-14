@@ -66,6 +66,9 @@ export function ContainerLogs({ serverId, containerId }: ContainerLogsProps) {
         </div>
       </div>
 
+      {/* Native scroll (not shadcn ScrollArea): this live log stream drives
+          auto-scroll-to-bottom via a direct ref on the scroll element, and the
+          ScrollArea wrapper does not expose its viewport ref. */}
       <div className="h-[300px] overflow-y-auto rounded-lg border bg-muted/30 p-3 font-mono text-xs" ref={scrollRef}>
         {logs.length === 0 ? (
           <p className="text-muted-foreground">{t('logs.empty')}</p>

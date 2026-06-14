@@ -1,6 +1,7 @@
 import { useQueries } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
@@ -75,7 +76,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
-      <div className="flex-1 space-y-3 overflow-y-auto overflow-x-hidden">
+      <ScrollArea className="flex-1" contentClassName="space-y-3">
         {serverIds.map((id, i) => {
           const uptimeData = queries[i]?.data ?? []
           const pct = computeAggregateUptime(uptimeData)
@@ -90,7 +91,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
             </div>
           )
         })}
-      </div>
+      </ScrollArea>
     </div>
   )
 }

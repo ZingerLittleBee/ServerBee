@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
@@ -26,49 +26,51 @@ export function DockerNetworksDialog({ serverId, open, onOpenChange }: DockerNet
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t('networks.title')}</DialogTitle>
         </DialogHeader>
 
-        {isLoading && (
-          <div className="space-y-3">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        )}
+        <DialogBody>
+          {isLoading && (
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          )}
 
-        {!isLoading && (!networks || networks.length === 0) && (
-          <div className="flex min-h-[120px] items-center justify-center">
-            <p className="text-muted-foreground text-sm">{t('networks.empty')}</p>
-          </div>
-        )}
+          {!isLoading && (!networks || networks.length === 0) && (
+            <div className="flex min-h-[120px] items-center justify-center">
+              <p className="text-muted-foreground text-sm">{t('networks.empty')}</p>
+            </div>
+          )}
 
-        {!isLoading && networks && networks.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('networks.table.name')}</TableHead>
-                <TableHead>{t('networks.table.driver')}</TableHead>
-                <TableHead>{t('networks.table.scope')}</TableHead>
-                <TableHead className="text-right">{t('networks.table.containers')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {networks.map((network) => (
-                <TableRow key={network.id}>
-                  <TableCell className="font-medium">{network.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{network.driver}</Badge>
-                  </TableCell>
-                  <TableCell>{network.scope}</TableCell>
-                  <TableCell className="text-right">{Object.keys(network.containers).length}</TableCell>
+          {!isLoading && networks && networks.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('networks.table.name')}</TableHead>
+                  <TableHead>{t('networks.table.driver')}</TableHead>
+                  <TableHead>{t('networks.table.scope')}</TableHead>
+                  <TableHead className="text-right">{t('networks.table.containers')}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+              </TableHeader>
+              <TableBody>
+                {networks.map((network) => (
+                  <TableRow key={network.id}>
+                    <TableCell className="font-medium">{network.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{network.driver}</Badge>
+                    </TableCell>
+                    <TableCell>{network.scope}</TableCell>
+                    <TableCell className="text-right">{Object.keys(network.containers).length}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

@@ -29,6 +29,8 @@ const ROUTE_LABELS: Record<string, string> = {
   '/terminal': 'nav_terminal',
   '/files': 'nav_files',
   '/service-monitors': 'nav_service_monitors',
+  '/security': 'nav_security_events',
+  '/ip-quality': 'nav_ip_quality',
   '/settings': 'nav_settings',
   '/settings/users': 'nav_users',
   '/settings/notifications': 'nav_notifications',
@@ -37,11 +39,16 @@ const ROUTE_LABELS: Record<string, string> = {
   '/settings/service-monitors': 'nav_service_monitors',
   '/settings/status-pages': 'nav_status_pages',
   '/settings/network-probes': 'nav_network_probes',
+  '/settings/firewall': 'nav_firewall',
+  '/settings/ip-quality': 'nav_ip_quality_settings',
   '/settings/tasks': 'nav_commands',
   '/settings/capabilities': 'nav_capabilities',
   '/settings/api-keys': 'nav_api_keys',
+  '/settings/mobile-devices': 'nav_mobile_devices',
+  '/settings/rate-limits': 'nav_rate_limits',
   '/settings/security': 'nav_security',
   '/settings/appearance': 'nav_appearance',
+  '/settings/widgets': 'nav_widgets',
   '/settings/audit-logs': 'nav_audit_logs'
 }
 
@@ -90,20 +97,18 @@ function useBreadcrumbs(): BreadcrumbEntry[] {
   }, [pathname, t])
 }
 
-const ADMIN_ONLY_ROUTES = [
-  '/settings/notifications',
-  '/settings/alerts',
-  '/settings/tasks',
-  '/settings/audit-logs',
-  '/settings/users',
-  '/settings/capabilities'
-]
+// Fail-closed admin gating: every route under /settings (and the /settings index)
+// is admin-only EXCEPT the self-service pages members manage for themselves. A new
+// settings page is admin-only by default unless explicitly added here. Keep this in
+// sync with the `adminOnly` flags in app-sidebar.tsx — entries listed here must be
+// the ones NOT marked adminOnly there.
+const MEMBER_SETTINGS_ROUTES = ['/settings/mobile-devices', '/settings/api-keys', '/settings/security']
 
 function isAdminRoute(pathname: string): boolean {
-  if (pathname === '/settings' || pathname === '/settings/') {
-    return true
+  if (!pathname.startsWith('/settings')) {
+    return false
   }
-  return ADMIN_ONLY_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
+  return !MEMBER_SETTINGS_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
 }
 
 function LanguageSwitcher() {
@@ -158,6 +163,19 @@ function AuthedLayout() {
   )
 
   const wsContextValue = useMemo(() => ({ send, connectionState }), [send, connectionState])
+
+  // Surface a persistent disconnect to the user. Delay showing it so the initial
+  // connect handshake and brief blips don't flash a banner; clear immediately on
+  // reconnect.
+  const [showOffline, setShowOffline] = useState(false)
+  useEffect(() => {
+    if (!shouldConnectWs || connectionState === 'connected') {
+      setShowOffline(false)
+      return
+    }
+    const timer = setTimeout(() => setShowOffline(true), 3000)
+    return () => clearTimeout(timer)
+  }, [shouldConnectWs, connectionState])
 
   useEffect(() => {
     if (!(isLoading || isAuthenticated)) {
@@ -244,7 +262,13 @@ function AuthedLayout() {
               <ThemeToggle />
             </div>
           </header>
-          <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+          {showOffline && (
+            <output className="flex shrink-0 items-center justify-center gap-2 bg-amber-500/15 px-3 py-1.5 text-amber-700 text-xs dark:text-amber-400">
+              <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+              {t('connection_lost')}
+            </output>
+          )}
+          <ScrollArea className="min-h-0 flex-1 overflow-hidden" contentClassName="min-w-0!">
             <main className="flex min-h-full min-w-0 flex-col p-3 pt-0 sm:p-4 sm:pt-0">
               <Outlet />
             </main>

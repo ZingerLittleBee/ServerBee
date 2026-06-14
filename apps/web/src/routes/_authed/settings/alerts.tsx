@@ -223,7 +223,12 @@ function AlertsPage() {
 
   const handleCreate = (e: FormEvent) => {
     e.preventDefault()
-    if (name.trim().length === 0 || ruleItems.length === 0) {
+    if (name.trim().length === 0) {
+      toast.error(t('alerts.name_required'))
+      return
+    }
+    if (ruleItems.length === 0) {
+      toast.error(t('alerts.rules_required'))
       return
     }
     const actions: BlockSourceIpAction[] =

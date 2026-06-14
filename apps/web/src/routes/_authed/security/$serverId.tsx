@@ -59,18 +59,22 @@ function SecurityServerPage() {
   return (
     <div className="space-y-4 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <Button className="mb-2 -ml-2" render={<Link to="/security" />} size="sm" variant="ghost">
+        <div className="min-w-0">
+          <Button
+            className="mb-2 -ml-2"
+            nativeButton={false}
+            render={<Link to="/security" />}
+            size="sm"
+            variant="ghost"
+          >
             {t('per_server.back', { defaultValue: '← Back to Security' })}
           </Button>
-          <h1 className="font-semibold text-2xl">
-            {server?.name ?? serverId}
-            <span className="ml-3 font-normal text-muted-foreground text-sm">
-              {t('per_server.subtitle', { defaultValue: 'Security events' })}
-            </span>
-          </h1>
+          <h1 className="truncate font-semibold text-2xl">{server?.name ?? serverId}</h1>
+          <p className="text-muted-foreground text-sm">
+            {t('per_server.subtitle', { defaultValue: 'Security events' })}
+          </p>
         </div>
-        <div className="flex gap-1 rounded-md border bg-card p-1">
+        <div className="flex shrink-0 gap-1 rounded-md border bg-card p-1">
           {(['24h', '7d', '30d'] as const).map((key) => (
             <Button key={key} onClick={() => setRange(key)} size="sm" variant={range === key ? 'default' : 'ghost'}>
               {t(`range.${key}`, { defaultValue: key })}

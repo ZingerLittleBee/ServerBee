@@ -11,9 +11,12 @@
   "disable": "Disable",
   "online": "Online",
   "offline": "Offline",
+  "connection_lost": "Connection to the server was lost. Reconnecting…",
   "log_out": "Log out",
   "nav_dashboard": "Dashboard",
   "nav_servers": "Servers",
+  "nav_terminal": "Terminal",
+  "nav_files": "File Manager",
   "nav_users": "Users",
   "nav_notifications": "Notifications",
   "nav_alerts": "Alerts",
@@ -86,13 +89,18 @@
   },
   "errors": {
     "operation_failed": "Operation failed",
-    "failed": "Failed"
+    "failed": "Failed",
+    "data_load_failed": "Failed to load data. Please try again."
   },
+  "capability_disabled_title": "Feature not available",
+  "capability_disabled_desc": "This capability is disabled for this server. An administrator can enable it under Settings → Capabilities.",
   "table": {
     "view_options": "View",
     "toggle_columns": "Toggle columns",
     "search_columns": "Search columns\u2026",
     "no_columns_found": "No columns found.",
+    "no_results": "No results.",
+    "no_results_found": "No results found.",
     "sort_asc": "Asc",
     "sort_desc": "Desc",
     "sort_reset": "Reset",

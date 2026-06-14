@@ -52,28 +52,45 @@ export function buildMergedDiskIoSeries(
   return records.map((record) => {
     const entries = parseDiskIoJson(record.disk_io_json)
 
+    // Single pass over entries instead of two reduce() passes; this runs over the
+    // full raw record set (a 24h admin window can be tens of thousands of rows).
+    let read = 0
+    let write = 0
+    for (const entry of entries) {
+      read += entry.read_bytes_per_sec
+      write += entry.write_bytes_per_sec
+    }
+
     return {
       timestamp: record.time,
-      read_bytes_per_sec: entries.reduce((total, entry) => total + entry.read_bytes_per_sec, 0),
-      write_bytes_per_sec: entries.reduce((total, entry) => total + entry.write_bytes_per_sec, 0)
+      read_bytes_per_sec: read,
+      write_bytes_per_sec: write
     }
   })
 }
 
 export function buildPerDiskIoSeries(records: Pick<ServerMetricRecord, 'disk_io_json' | 'time'>[]): DiskIoSeries[] {
-  const parsedRecords = records.map((record) => ({
-    timestamp: record.time,
-    entries: parseDiskIoJson(record.disk_io_json)
-  }))
+  // Index each record's samples by disk name once so the per-cell lookup below is
+  // a Map.get instead of a linear Array.find (O(diskNames * records) -> O(records)).
+  const parsedRecords = records.map((record) => {
+    const byName = new Map<string, DiskIoSample>()
+    for (const entry of parseDiskIoJson(record.disk_io_json)) {
+      // Keep the first occurrence to mirror the previous Array.find semantics.
+      if (!byName.has(entry.name)) {
+        byName.set(entry.name, entry)
+      }
+    }
+    return { timestamp: record.time, byName }
+  })
 
-  const diskNames = [...new Set(parsedRecords.flatMap((record) => record.entries.map((entry) => entry.name)))].sort(
-    (a, b) => a.localeCompare(b)
+  const diskNames = [...new Set(parsedRecords.flatMap((record) => [...record.byName.keys()]))].sort((a, b) =>
+    a.localeCompare(b)
   )
 
   return diskNames.map((name) => ({
     name,
     data: parsedRecords.map((record) => {
-      const entry = record.entries.find((sample) => sample.name === name)
+      const entry = record.byName.get(name)
 
       return {
         timestamp: record.timestamp,

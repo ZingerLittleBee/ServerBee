@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, type RowSelectionState, useReactTable } from '@tanstack/react-table'
 import { ChevronDown, RotateCcw, Search, ShieldAlert, X } from 'lucide-react'
@@ -43,6 +43,8 @@ export function CapabilitiesPage() {
   const navigate = Route.useNavigate()
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
+  const queryClient = useQueryClient()
+
   const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -51,10 +53,36 @@ export function CapabilitiesPage() {
     refetchOnWindowFocus: false
   })
 
+  // The ['servers'] cache is fed by the global WebSocket layer. For a real agent a
+  // CapabilitiesChanged push eventually refreshes it, but that round-trip leaves the
+  // switch looking unchanged after a successful save (and never arrives for servers
+  // without a live agent). Reflect the saved value immediately by patching the cache.
+  const applyCapsToCache = useCallback(
+    (ids: string[], capabilities: number) => {
+      const idSet = new Set(ids)
+      queryClient.setQueryData<ServerInfo[]>(['servers'], (old) =>
+        old?.map((s) => {
+          if (!idSet.has(s.id)) {
+            return s
+          }
+          const local = s.agent_local_capabilities
+          return {
+            ...s,
+            capabilities,
+            // biome-ignore lint/suspicious/noBitwiseOperators: effective = configured & agent-local caps
+            effective_capabilities: local == null ? capabilities : capabilities & local
+          }
+        })
+      )
+    },
+    [queryClient]
+  )
+
   const { mutate: mutateSingleCap, isPending: isSinglePending } = useMutation({
     mutationFn: ({ id, capabilities }: { capabilities: number; id: string }) =>
       api.put(`/api/servers/${id}`, { capabilities }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      applyCapsToCache([variables.id], variables.capabilities)
       toast.success(t('capabilities.toast_updated'))
     },
     onError: (err) => {
@@ -65,7 +93,8 @@ export function CapabilitiesPage() {
   const { mutate: mutateBatchCap, isPending: isBatchPending } = useMutation({
     mutationFn: ({ ids, capabilities }: { capabilities: number; ids: string[] }) =>
       api.put('/api/servers/batch-capabilities', { ids, capabilities }),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      applyCapsToCache(variables.ids, variables.capabilities)
       setRowSelection({})
       toast.success(t('capabilities.toast_batch_updated'))
     },

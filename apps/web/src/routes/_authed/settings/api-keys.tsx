@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { Plus, Trash2 } from 'lucide-react'
+import { Copy, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -85,6 +85,16 @@ function ApiKeysPage() {
     deleteMutation.mutate(id)
   }
 
+  const handleCopyKey = () => {
+    if (!createdKey) {
+      return
+    }
+    navigator.clipboard.writeText(createdKey).then(
+      () => toast.success(t('api_keys.toast_copied')),
+      () => toast.error(t('common:errors.operation_failed'))
+    )
+  }
+
   return (
     <div>
       <div className="max-w-2xl space-y-6">
@@ -94,7 +104,20 @@ function ApiKeysPage() {
           {createdKey && (
             <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
               <p className="mb-1 font-medium text-sm">{t('api_keys.new_key_warning')}</p>
-              <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-sm">{createdKey}</code>
+              <div className="flex items-center gap-2">
+                <code className="block min-w-0 flex-1 break-all rounded bg-muted px-2 py-1 font-mono text-sm">
+                  {createdKey}
+                </code>
+                <Button
+                  aria-label={t('api_keys.copy')}
+                  onClick={handleCopyKey}
+                  size="icon-sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Copy className="size-3.5" />
+                </Button>
+              </div>
             </div>
           )}
 

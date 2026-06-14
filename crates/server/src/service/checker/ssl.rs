@@ -176,8 +176,19 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
     let subject = cert.subject().to_string();
     let issuer = cert.issuer().to_string();
-    let not_before = cert.validity().not_before.to_rfc2822();
-    let not_after = cert.validity().not_after.to_rfc2822();
+    // `to_rfc2822()` returns a Result; serializing it directly would emit a
+    // `{"Ok": "..."}` object into detail_json (which then crashes the SPA when
+    // rendered). Unwrap to a plain string with a stable fallback.
+    let not_before = cert
+        .validity()
+        .not_before
+        .to_rfc2822()
+        .unwrap_or_else(|_| "unknown".to_string());
+    let not_after = cert
+        .validity()
+        .not_after
+        .to_rfc2822()
+        .unwrap_or_else(|_| "unknown".to_string());
 
     // Calculate days remaining
     let now = chrono::Utc::now();

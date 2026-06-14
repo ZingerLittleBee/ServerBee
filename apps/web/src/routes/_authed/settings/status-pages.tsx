@@ -4,6 +4,17 @@ import { AlertTriangle, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,8 +49,16 @@ import type {
   UpdateStatusPageRequest
 } from '@/lib/api-schema'
 
+const STATUS_PAGE_TABS = ['config', 'incidents', 'maintenance'] as const
+type StatusPageTab = (typeof STATUS_PAGE_TABS)[number]
+
 export const Route = createFileRoute('/_authed/settings/status-pages')({
-  component: StatusPagesManagement
+  component: StatusPagesManagement,
+  // Keep the active tab in the URL so a reload / shared link / browser back lands
+  // on the same tab instead of resetting to Config.
+  validateSearch: (search: Record<string, unknown>): { tab: StatusPageTab } => ({
+    tab: STATUS_PAGE_TABS.includes(search.tab as StatusPageTab) ? (search.tab as StatusPageTab) : 'config'
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -654,6 +673,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<IncidentItem | null>(null)
   const [updateDialogIncidentId, setUpdateDialogIncidentId] = useState<string | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data: incidents, isLoading } = useQuery<IncidentItem[]>({
     queryKey: ['incidents'],
@@ -785,14 +805,39 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
                       >
                         <Pencil className="size-3.5" />
                       </Button>
-                      <Button
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(incident.id)}
-                        size="sm"
-                        variant="ghost"
+                      <AlertDialog
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setDeleteId(null)
+                          }
+                        }}
+                        open={deleteId === incident.id}
                       >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
+                        <AlertDialogTrigger
+                          onClick={() => setDeleteId(incident.id)}
+                          render={<Button disabled={deleteMutation.isPending} size="sm" variant="ghost" />}
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteMutation.mutate(incident.id)
+                                setDeleteId(null)
+                              }}
+                              variant="destructive"
+                            >
+                              {t('common:delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -994,6 +1039,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<MaintenanceItem | null>(null)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
   const { data: maintenances, isLoading } = useQuery<MaintenanceItem[]>({
     queryKey: ['maintenances'],
@@ -1116,14 +1162,39 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
                       >
                         <Pencil className="size-3.5" />
                       </Button>
-                      <Button
-                        disabled={deleteMutation.isPending}
-                        onClick={() => deleteMutation.mutate(m.id)}
-                        size="sm"
-                        variant="ghost"
+                      <AlertDialog
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            setDeleteId(null)
+                          }
+                        }}
+                        open={deleteId === m.id}
                       >
-                        <Trash2 className="size-3.5 text-destructive" />
-                      </Button>
+                        <AlertDialogTrigger
+                          onClick={() => setDeleteId(m.id)}
+                          render={<Button disabled={deleteMutation.isPending} size="sm" variant="ghost" />}
+                        >
+                          <Trash2 className="size-3.5 text-destructive" />
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => {
+                                deleteMutation.mutate(m.id)
+                                setDeleteId(null)
+                              }}
+                              variant="destructive"
+                            >
+                              {t('common:delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -1154,6 +1225,8 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
 
 function StatusPagesManagement() {
   const { t } = useTranslation('settings')
+  const { tab } = Route.useSearch()
+  const navigate = Route.useNavigate()
 
   const { data: servers } = useQuery<ServerResponse[]>({
     queryKey: ['servers-list'],
@@ -1162,7 +1235,11 @@ function StatusPagesManagement() {
 
   return (
     <div>
-      <Tabs className="max-w-5xl" defaultValue="config">
+      <Tabs
+        className="max-w-5xl"
+        onValueChange={(value) => navigate({ search: { tab: value as StatusPageTab } })}
+        value={tab}
+      >
         <TabsList>
           <TabsTrigger value="config">{t('status_pages.tab_config')}</TabsTrigger>
           <TabsTrigger value="incidents">{t('status_pages.tab_incidents')}</TabsTrigger>

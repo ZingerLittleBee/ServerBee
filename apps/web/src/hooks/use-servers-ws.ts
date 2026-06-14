@@ -153,9 +153,13 @@ const STATIC_FIELDS = new Set([
 
 export function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics[]): ServerMetrics[] {
   const updated = [...prev]
+  // Index by id once (O(n)) instead of findIndex per incoming row: this runs on
+  // every WS `update`, which carries metrics for all servers, so the naive scan
+  // was O(n*m) each tick. The loop only updates rows in place, so indices stay valid.
+  const indexById = new Map(updated.map((s, i) => [s.id, i]))
   for (const server of incoming) {
-    const idx = updated.findIndex((s) => s.id === server.id)
-    if (idx >= 0) {
+    const idx = indexById.get(server.id)
+    if (idx !== undefined) {
       const merged = { ...updated[idx] }
       for (const [key, value] of Object.entries(server)) {
         const isStaticDefault =

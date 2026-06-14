@@ -75,7 +75,7 @@ export function TransferBar() {
                 {formatBytes(transfer.bytes_transferred)}
                 {transfer.file_size ? ` / ${formatBytes(transfer.file_size)}` : ''}
               </span>
-              {transfer.file_size && transfer.file_size > 0 && (
+              {(transfer.file_size ?? 0) > 0 && (
                 <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
                   <div
                     className="h-full rounded-full bg-primary transition-[width]"

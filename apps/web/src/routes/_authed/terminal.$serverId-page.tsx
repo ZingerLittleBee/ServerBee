@@ -2,9 +2,12 @@ import { Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CapabilityDisabledNotice } from '@/components/server/capability-disabled-notice'
 import { TerminalView } from '@/components/terminal/terminal-view'
 import { Button } from '@/components/ui/button'
+import { useServer } from '@/hooks/use-api'
 import { useTerminalWs } from '@/hooks/use-terminal-ws'
+import { CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { Route } from './terminal.$serverId'
 
 function statusColor(status: string): string {
@@ -30,6 +33,9 @@ function statusLabel(status: string, t: (key: string) => string): string {
 export function TerminalPage() {
   const { t } = useTranslation('terminal')
   const { serverId } = Route.useParams()
+  const { data: server } = useServer(serverId)
+  const terminalDisabled =
+    !!server && !getEffectiveCapabilityEnabled(server.effective_capabilities, server.capabilities, CAP_TERMINAL)
   const { connect, disconnect, error, onData, sendInput, sendResize, status } = useTerminalWs(serverId)
   const writeRef = useRef<((data: string) => void) | null>(null)
 
@@ -42,11 +48,16 @@ export function TerminalPage() {
   }, [onData])
 
   useEffect(() => {
+    // Don't open the PTY socket when the server has the terminal capability
+    // disabled — it would only be rejected server-side. Show the notice instead.
+    if (terminalDisabled) {
+      return
+    }
     connect()
     return () => {
       disconnect()
     }
-  }, [connect, disconnect])
+  }, [connect, disconnect, terminalDisabled])
 
   const handleData = useCallback(
     (data: string) => {
@@ -73,20 +84,28 @@ export function TerminalPage() {
         </Link>
         <h1 className="font-semibold text-base sm:text-lg">{t('title')}</h1>
         <span className="text-muted-foreground text-xs sm:text-sm">{serverId.slice(0, 8)}...</span>
-        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-          <span className={`inline-block size-2 rounded-full ${statusColor(status)}`} />
-          <span className="text-muted-foreground text-xs">{statusLabel(status, t)}</span>
-          {error && <span className="text-red-500 text-xs">{error}</span>}
-          {status === 'closed' && (
-            <Button onClick={connect} size="sm" variant="outline">
-              {t('reconnect')}
-            </Button>
-          )}
+        {!terminalDisabled && (
+          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <span className={`inline-block size-2 rounded-full ${statusColor(status)}`} />
+            <span className="text-muted-foreground text-xs">{statusLabel(status, t)}</span>
+            {error && status !== 'connected' && status !== 'connecting' && (
+              <span className="text-red-500 text-xs">{error}</span>
+            )}
+            {status === 'closed' && (
+              <Button onClick={connect} size="sm" variant="outline">
+                {t('reconnect')}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+      {terminalDisabled ? (
+        <CapabilityDisabledNotice />
+      ) : (
+        <div className="min-h-0 flex-1 p-1 sm:p-2">
+          <TerminalView onData={handleData} onResize={handleResize} writeRef={writeRef} />
         </div>
-      </div>
-      <div className="min-h-0 flex-1 p-1 sm:p-2">
-        <TerminalView onData={handleData} onResize={handleResize} writeRef={writeRef} />
-      </div>
+      )}
     </div>
   )
 }

@@ -60,17 +60,21 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
     return config
   }, [targets])
 
-  // Only render Area series for visible targets
-  const visibleWithIndex = useMemo(
-    () => targets.map((t, i) => ({ ...t, originalIndex: i })).filter((t) => t.visible),
-    [targets]
-  )
+  // Render an Area for EVERY target and toggle visibility via the `hide` prop
+  // rather than unmounting hidden series. Changing the set of <Area> children
+  // makes Recharts re-run the enter animation on the survivors, which blanks the
+  // whole chart for a frame (and can stick until the next re-render). Keeping the
+  // child set stable avoids that flash entirely.
+  const targetsWithIndex = useMemo(() => targets.map((t, i) => ({ ...t, originalIndex: i })), [targets])
 
   const chartData = useMemo(() => {
     const bucketMs = 60_000
     const now = Date.now()
     const bucketMap = new Map<number, Record<string, unknown>>()
 
+    // Index targets by id once; this memo recomputes on every realtime tick, so a
+    // findIndex per record was O(records * targets).
+    const targetIndexById = new Map(targets.map((t, i) => [t.id, i]))
     for (const record of records) {
       const ts = new Date(record.timestamp).getTime()
       if (ts > now + 30_000) {
@@ -84,8 +88,8 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
       const entry = bucketMap.get(bucketKey)
       if (entry) {
         // Use target_${index} as dataKey instead of record.target_id
-        const targetIndex = targets.findIndex((t) => t.id === record.target_id)
-        if (targetIndex >= 0) {
+        const targetIndex = targetIndexById.get(record.target_id)
+        if (targetIndex !== undefined) {
           entry[`target_${targetIndex}`] = record.avg_latency
         }
       }
@@ -167,12 +171,13 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
             <ChartTooltipContent labelFormatter={tooltipLabelFormatter} valueFormatter={(v) => `${v.toFixed(1)} ms`} />
           }
         />
-        {visibleWithIndex.map(({ id, originalIndex }) => (
+        {targetsWithIndex.map(({ id, originalIndex, visible }) => (
           <Area
             connectNulls={false}
             dataKey={`target_${originalIndex}`}
             fill="transparent"
             fillOpacity={0}
+            hide={!visible}
             key={id}
             stroke={`var(--color-target_${originalIndex})`}
             strokeWidth={2}

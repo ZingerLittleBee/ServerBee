@@ -23,9 +23,19 @@ function ServerDetailPageShell() {
   )
 }
 
+const SERVER_DETAIL_TABS = ['metrics', 'traffic', 'security', 'ip-quality'] as const
+export type ServerDetailTab = (typeof SERVER_DETAIL_TABS)[number]
+
 export const Route = createFileRoute('/_authed/servers/$id')({
   component: ServerDetailPageShell,
-  validateSearch: (search: Record<string, unknown>) => ({
-    range: (search.range as string) || 'realtime'
-  })
+  // Persist the active tab in the URL so reload / shared link / browser back keeps
+  // the same tab (e.g. Security) instead of resetting to Metrics. `tab` is optional
+  // so existing links to /servers/$id (range only) stay valid; the page defaults to
+  // the metrics tab when it is absent.
+  validateSearch: (search: Record<string, unknown>): { range: string; tab?: ServerDetailTab } => {
+    const range = (search.range as string) || 'realtime'
+    return SERVER_DETAIL_TABS.includes(search.tab as ServerDetailTab)
+      ? { range, tab: search.tab as ServerDetailTab }
+      : { range }
+  }
 })
