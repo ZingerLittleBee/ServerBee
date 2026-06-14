@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Connection-lost banner** -- The layout shows a persistent banner when the browser loses its WebSocket link to the server (after a short grace period to ignore brief blips) and clears it automatically on reconnect, so a dropped connection no longer leaves the dashboard silently stale
+- **Shareable tab state in the URL** -- The server detail tabs (metrics / traffic / security / IP quality) and the status-page settings tabs (config / incidents / maintenance) are persisted in the URL, so reload, browser back/forward, and shared links keep the selected tab instead of resetting to the first one. An invalid tab value falls back to the default
+
+### Changed
+
+- **Capability-gated terminal and file routes** -- Opening the web terminal or file manager for a server whose `CAP_TERMINAL` / `CAP_FILE` bit is disabled now renders an explanatory notice instead of a dead shell, and skips the doomed WebSocket connect and file-list request
+
+### Fixed
+
+- **Silent data-load failures** -- Failed data queries and dashboard create/update errors now surface a toast instead of leaving an empty view with no explanation
+- **Unconfirmed destructive actions** -- Deleting an incident or a maintenance window, and unlinking an OAuth provider, now require confirmation
+- **Public server traffic bar** -- The public server-detail network bar uses cumulative transfer totals so the figures match the rest of the UI
+- **Untranslated table empty states** -- Data-table "no results" text is now localized
+
+### Security
+
+- **Fail-closed admin route gating** -- Every `/settings/*` route is admin-only by default; members can only reach the self-service mobile-devices, API-keys, and security pages and are redirected away from any other settings route, so a new settings page is admin-only unless explicitly allow-listed
+
 ## [1.0.0-alpha.6] - 2026-05-31
 
 ### Added
