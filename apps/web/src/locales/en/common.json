@@ -14,6 +14,8 @@
   "log_out": "Log out",
   "nav_dashboard": "Dashboard",
   "nav_servers": "Servers",
+  "nav_terminal": "Terminal",
+  "nav_files": "File Manager",
   "nav_users": "Users",
   "nav_notifications": "Notifications",
   "nav_alerts": "Alerts",
