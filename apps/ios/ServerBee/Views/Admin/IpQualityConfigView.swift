@@ -116,6 +116,7 @@ private extension IpQualityConfigView {
                 set: { value in Task { await viewModel.setEnabled(service, enabled: value, apiClient: apiClient) } }
             ))
             .labelsHidden()
+            .accessibilityLabel(service.name)
             .disabled(!isAdmin)
         }
     }

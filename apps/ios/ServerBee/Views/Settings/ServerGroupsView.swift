@@ -44,6 +44,7 @@ struct ServerGroupsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCreate = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel(String(localized: "Add"))
             }
         }
         .task { await viewModel.load(apiClient: apiClient) }

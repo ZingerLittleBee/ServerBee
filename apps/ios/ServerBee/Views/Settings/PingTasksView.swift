@@ -36,6 +36,7 @@ struct PingTasksView: View {
             if isAdmin {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showCreate = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel(String(localized: "Add"))
                 }
             }
         }
@@ -87,6 +88,7 @@ struct PingTasksView: View {
                     set: { newValue in Task { await viewModel.setEnabled(task, enabled: newValue, apiClient: apiClient) } }
                 ))
                 .labelsHidden()
+                .accessibilityLabel(task.name)
             } else if task.enabled {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.serverOnline)
             }

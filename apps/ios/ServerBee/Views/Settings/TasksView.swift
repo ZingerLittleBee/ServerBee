@@ -40,6 +40,7 @@ struct TasksView: View {
             if isAdmin {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showCreate = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel(String(localized: "Add"))
                 }
             }
         }
@@ -78,6 +79,7 @@ struct TasksView: View {
                     set: { newValue in Task { await viewModel.setEnabled(task, enabled: newValue, apiClient: apiClient) } }
                 ))
                 .labelsHidden()
+                .accessibilityLabel(task.displayName)
             }
         }
     }

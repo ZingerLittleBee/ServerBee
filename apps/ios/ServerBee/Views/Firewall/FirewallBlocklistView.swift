@@ -24,6 +24,7 @@ struct FirewallBlocklistView: View {
             if isAdmin {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showAdd = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel(String(localized: "Add"))
                 }
             }
         }

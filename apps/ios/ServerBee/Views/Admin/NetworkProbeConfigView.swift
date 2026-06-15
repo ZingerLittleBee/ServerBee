@@ -180,6 +180,7 @@ private extension NetworkProbeConfigView {
         if isAdmin {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCreate = true } label: { Image(systemName: "plus") }
+                    .accessibilityLabel(String(localized: "Add"))
             }
         }
     }
