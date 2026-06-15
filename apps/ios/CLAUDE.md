@@ -148,8 +148,14 @@ credentials are compiled in. Pass via `simctl launch` using the
 
 ## Deferred by design (kept on web)
 
-Full terminal / file-browser / exec interaction, GPU metrics, custom-dashboard
-editing, and alert rule/channel **create-edit** (mobile is read-only + enable
-toggle + test). These show honest entry points / read-only views on mobile.
+Full **live** terminal / file-browser / exec interaction (the PTY/streaming
+surfaces), GPU metrics, custom-dashboard editing, alert rule/channel
+**create-edit** (mobile is read-only + enable toggle + test), plus network-probe
+global target config, public status-page config, and IP-quality service
+definitions. These show honest entry points / read-only views on mobile.
+
+Note: scheduled-command management (`/api/tasks`, list/create/run/results) and
+ping-task config (`/api/ping-tasks`, CRUD) ARE native (Settings → admin) — they
+are management surfaces, distinct from the deferred live-exec/terminal PTY.
 The temperature history chart is implemented and unit-tested but renders only
 when an agent reports temperature (the shared demo has none).

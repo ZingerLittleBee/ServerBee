@@ -1321,3 +1321,24 @@ DELETE /api/maintenances/:id           删除维护窗口
 - 模拟器实拍验证（连线上 demo）: Disk I/O 历史图、server edit 表单（预填）、维护窗口创建表单、升级 stepper（installing 阶段）四项最高风险新 UI
 
 **取舍 / 暂缓（留在 web）:** terminal / file / exec 完整交互、GPU 指标、自定义仪表盘编辑、alert 规则/渠道的创建-编辑阈值（移动端只读 + 开关 + 测试）。移动端显示诚实入口 / 只读视图。
+
+---
+
+## 2026-06-15 — iOS M13: 补 admin 配置缺口 (Ping tasks + Scheduled commands)
+
+**分支**: `main`
+**日期**: 2026-06-15
+**触发**: 「再次检查 goal」时,两个独立 agent 对抗式复核 —— 实现侧 7 项全部 CORRECT(0 bug);覆盖侧确认 M12 七项 PRESENT、deferred 项有诚实入口,但发现 5 个范围外的 admin 配置类缺口。用户选定「原生补高价值两项」。
+**状态**: **2/2 完成 + 验证 + 实拍**
+
+| # | 功能 | 实现 | Commit |
+|---|------|------|--------|
+| 1 | **Ping 任务管理** | Settings → Ping Tasks 全量 CRUD(此前 iOS 只读 per-server ping 结果)。`/api/ping-tasks` list/create/update/delete;表单含 name / probe type(icmp·tcp·http)/ target / interval / 服务器多选(空=所有);行内 enable 开关 + 滑动编辑/删除。`server_ids`(请求数组)vs `server_ids_json`(响应字符串);DELETE 返回 bare `"ok"` | `deea999c` |
+| 2 | **定时命令(Tasks)** | Settings → Scheduled Commands(此前 iOS 完全无入口)。`/api/tasks` list/create/update/delete/run/results;列表区分 oneshot/scheduled + enable 开关;详情含 per-server 结果历史(exit-code 哨兵:skipped/offline/timeout)+ scheduled 的 run-now;创建表单带**高危提示**(远程命令执行)+ oneshot/scheduled 选择 + cron 字段 + timeout/retry + 必选服务器。高危,全 admin-only。新增 `APIClient.deleteVoid` 处理 `{data:null}` 的 DELETE | `0085e7d0` |
+
+**验证:**
+- `xcodebuild test`: **225 测试 0 失败**(新增 10:5 ping + 5 task 解码/编码)
+- `xcodebuild build`: BUILD SUCCEEDED(== SwiftLint clean)
+- 模拟器实拍(连线上 demo):Ping Tasks 入口 + 创建表单(probe 分段/类型占位符/interval/服务器多选);Scheduled Commands 入口 + 创建表单(高危琥珀提示 / oneshot·scheduled 选择 / Advanced 重试 / 服务器多选 / oneshot 时按钮为 "Run")
+
+**仍留 web(本轮未选):** network-probe 全局 target/setting 配置、公开状态页配置、IP-quality service 定义 —— 移动端低频 admin 配置,按取舍留在 web。
