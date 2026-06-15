@@ -5,37 +5,41 @@ enum AlertStatus: String, Codable, Sendable {
     case resolved
 }
 
+/// One row of the alert-events list (`GET /api/alert-events`). Mirrors the
+/// server's `AlertEventResponse` exactly — the list DTO carries only the
+/// rule/server identity, a firing/resolved status, the relevant timestamp
+/// (`event_at`) and the trigger `count`. The richer fields (message, first/last
+/// timestamps, rule mode) live on the per-event detail DTO (`MobileAlertDetail`).
 struct MobileAlertEvent: Codable, Identifiable, Sendable {
-    /// Composite ID: `alertKey#status#updatedAt`. Required because the same
-    /// `alertKey` (e.g. "rule:server") is reused across firing→resolved
-    /// transitions, which would otherwise produce duplicate SwiftUI ForEach IDs.
-    var id: String { "\(alertKey)#\(status.rawValue)#\(updatedAt)" }
-    let alertKey: String
     let ruleId: String
     let ruleName: String
     let serverId: String
     let serverName: String
     let status: AlertStatus
-    let message: String
-    let triggerCount: Int
-    let firstTriggeredAt: String
-    let lastNotifiedAt: String
+    /// `first_triggered_at` for firing, `resolved_at` for resolved.
+    let eventAt: String
     let resolvedAt: String?
-    let updatedAt: String
+    let count: Int
+
+    /// Detail-endpoint key `rule_id:server_id` (the list DTO omits it; the
+    /// detail route is `/api/alert-events/{rule_id:server_id}`). Also drives
+    /// navigation from the list.
+    var alertKey: String { "\(ruleId):\(serverId)" }
+
+    /// Composite ID: the same `alertKey` is reused across firing→resolved
+    /// transitions, so disambiguate by status + `eventAt` to avoid duplicate
+    /// SwiftUI ForEach IDs.
+    var id: String { "\(alertKey)#\(status.rawValue)#\(eventAt)" }
 
     enum CodingKeys: String, CodingKey {
-        case alertKey = "alert_key"
         case ruleId = "rule_id"
         case ruleName = "rule_name"
         case serverId = "server_id"
         case serverName = "server_name"
         case status
-        case message
-        case triggerCount = "trigger_count"
-        case firstTriggeredAt = "first_triggered_at"
-        case lastNotifiedAt = "last_notified_at"
+        case eventAt = "event_at"
         case resolvedAt = "resolved_at"
-        case updatedAt = "updated_at"
+        case count
     }
 }
 
