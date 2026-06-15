@@ -14,6 +14,8 @@ struct ServerLifecycleCard: View {
     let capabilities: CapabilitySet
     let isOnline: Bool
     let isPending: Bool
+    /// Re-fetch the server config after an enrollment change (revoke/recover).
+    var onConfigChanged: () -> Void = {}
     /// Called after a successful delete so the caller can pop the detail screen.
     let onDeleted: () -> Void
 
@@ -101,11 +103,14 @@ struct ServerLifecycleCard: View {
         }
         #endif
     }
+}
+
+private extension ServerLifecycleCard {
 
     // MARK: - Pending
 
     @ViewBuilder
-    private var pendingContent: some View {
+    var pendingContent: some View {
         Text(String(localized: "This server has no connected agent yet. Generate a one-time code and run the install command on the host."))
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -143,11 +148,15 @@ struct ServerLifecycleCard: View {
                 .foregroundStyle(Color.brandAccent)
         }
 
-        actionButton(
-            title: String(localized: "Recover agent"),
-            systemImage: "arrow.triangle.2.circlepath",
-            tint: .brandAccent
-        ) { showRecover = true }
+        if let outstanding = config?.outstandingEnrollment {
+            outstandingNotice(outstanding)
+        } else {
+            actionButton(
+                title: String(localized: "Recover agent"),
+                systemImage: "arrow.triangle.2.circlepath",
+                tint: .brandAccent
+            ) { showRecover = true }
+        }
 
         if capabilities.isEnabled(.upgrade) {
             actionButton(
@@ -179,6 +188,41 @@ struct ServerLifecycleCard: View {
         if !isOnline { return String(localized: "Agent offline") }
         if !hasUpdate { return String(localized: "Up to date") }
         return nil
+    }
+
+    // MARK: - Outstanding enrollment (recover gate)
+
+    @ViewBuilder
+    func outstandingNotice(_ outstanding: OutstandingEnrollment) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(String(localized: "Pending enrollment code"), systemImage: "clock.badge.exclamationmark")
+                .font(.caption.bold())
+                .foregroundStyle(Color.warningAmber)
+            if let prefix = outstanding.codePrefix {
+                DetailRow(label: String(localized: "Code"), value: "\(prefix)…", monospaced: true)
+            }
+            if let expiry = outstanding.expiresAt {
+                DetailRow(label: String(localized: "Expires"), value: Formatters.formatRelativeTime(expiry))
+            }
+            Text(String(localized: "Revoke the pending code before generating a new one."))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            actionButton(
+                title: String(localized: "Revoke pending code"),
+                systemImage: "xmark.circle",
+                tint: .serverOffline
+            ) { Task { await runRevoke(outstanding) } }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.warningAmber.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    func runRevoke(_ outstanding: OutstandingEnrollment) async {
+        if await viewModel.revokeEnrollment(enrollmentId: outstanding.id, apiClient: apiClient) {
+            onConfigChanged()
+        }
     }
 
     // MARK: - Action row
@@ -230,7 +274,10 @@ struct ServerLifecycleCard: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Done")) { viewModel.issued = nil }
+                    Button(String(localized: "Done")) {
+                        viewModel.issued = nil
+                        onConfigChanged()
+                    }
                 }
             }
         }

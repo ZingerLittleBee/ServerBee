@@ -99,6 +99,24 @@ final class AgentLifecycleViewModel {
         }
     }
 
+    // MARK: - Revoke outstanding enrollment
+
+    /// Revoke an outstanding (unconsumed) enrollment so a fresh recover can mint
+    /// a new code. The `enrollmentId` is `ServerConfig.outstandingEnrollment.id`
+    /// — NOT the server id. Returns true on success.
+    func revokeEnrollment(enrollmentId: String, apiClient: APIClient) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let _: String = try await apiClient.delete("/api/agent/enrollments/\(enrollmentId)")
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
     // MARK: - Delete
 
     /// Delete a server. Returns true on success.
