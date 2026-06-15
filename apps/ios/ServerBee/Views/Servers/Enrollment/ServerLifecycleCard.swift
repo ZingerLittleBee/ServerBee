@@ -102,8 +102,11 @@ struct ServerLifecycleCard: View {
                 )
             }
             // Visual-verification hook: seed a fake live upgrade job so the
-            // stepper renders without a real upgrade on the shared demo.
+            // stepper renders without a real upgrade on the shared demo. Delay
+            // past the initial WS full_sync (which carries an empty upgrades
+            // snapshot and would otherwise wipe the seeded job).
             if let stage = debugUpgradeStage {
+                try? await Task.sleep(for: .seconds(3))
                 upgradeJobs.setJobs([
                     UpgradeJob(
                         serverId: serverId,

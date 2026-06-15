@@ -61,7 +61,20 @@ struct ServerOverviewSection: View {
                 EditServerSheet(serverId: serverId, config: config, onSaved: onReloadConfig)
             }
         }
+        #if DEBUG
+        // Visual-verification hook: auto-open the edit form (a plain Button the
+        // cliclick harness can't reliably activate). `config` loads async, so
+        // fire on first appear AND when it becomes available.
+        .task { debugPresentEditIfReady() }
+        .onChange(of: config != nil) { _, _ in debugPresentEditIfReady() }
+        #endif
     }
+
+    #if DEBUG
+    private func debugPresentEditIfReady() {
+        if UITestSupport.autoPresent == "edit-server", config != nil { showEdit = true }
+    }
+    #endif
 
     // MARK: - Derived
 
