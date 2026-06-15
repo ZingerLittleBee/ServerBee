@@ -5,10 +5,23 @@ struct ServerGroup: Decodable, Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     var weight: Int?
+    var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, weight
+        case createdAt = "created_at"
     }
+}
+
+/// Create body for `POST /api/server-groups` (weight is forced to 0 server-side).
+struct CreateGroupRequest: Encodable, Sendable {
+    let name: String
+}
+
+/// Partial update body for `PUT /api/server-groups/{id}` (omit to leave unchanged).
+struct UpdateGroupRequest: Encodable, Sendable {
+    var name: String?
+    var weight: Int?
 }
 
 /// A pending enrollment code summary attached to a server that has not yet been

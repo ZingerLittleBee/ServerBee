@@ -106,6 +106,11 @@ struct SettingsView: View {
     private var adminSection: some View {
         Section(String(localized: "Admin")) {
             NavigationLink {
+                ServerGroupsView()
+            } label: {
+                Label(String(localized: "Server Groups"), systemImage: "folder")
+            }
+            NavigationLink {
                 UsersView()
             } label: {
                 Label(String(localized: "Users"), systemImage: "person.2")
