@@ -8,8 +8,12 @@ struct IncidentsView: View {
 
     @Environment(\.apiClient) private var apiClient
     @State private var actions = IncidentActionsViewModel()
+    @State private var maintenanceActions = MaintenanceActionsViewModel()
     @State private var showCreate = false
     @State private var updateTarget: Incident?
+    @State private var showCreateMaintenance = false
+    @State private var maintenanceEditTarget: Maintenance?
+    @State private var maintenanceDeleteTarget: Maintenance?
 
     var body: some View {
         ScrollView {
@@ -47,8 +51,15 @@ struct IncidentsView: View {
         .toolbar {
             if isAdmin {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showCreate = true } label: {
-                        Label(String(localized: "New incident"), systemImage: "plus")
+                    Menu {
+                        Button { showCreate = true } label: {
+                            Label(String(localized: "New incident"), systemImage: "exclamationmark.triangle")
+                        }
+                        Button { showCreateMaintenance = true } label: {
+                            Label(String(localized: "New maintenance"), systemImage: "wrench.and.screwdriver")
+                        }
+                    } label: {
+                        Label(String(localized: "Add"), systemImage: "plus")
                     }
                 }
             }
@@ -59,9 +70,30 @@ struct IncidentsView: View {
         .sheet(item: $updateTarget, onDismiss: reload) { incident in
             IncidentUpdateSheet(incident: incident, actions: actions)
         }
+        .sheet(isPresented: $showCreateMaintenance, onDismiss: reload) {
+            MaintenanceFormSheet(editing: nil, actions: maintenanceActions, onSaved: reload)
+        }
+        .sheet(item: $maintenanceEditTarget, onDismiss: reload) { maintenance in
+            MaintenanceFormSheet(editing: maintenance, actions: maintenanceActions, onSaved: reload)
+        }
+        .confirmationDialog(
+            String(localized: "Delete this maintenance window?"),
+            isPresented: Binding(get: { maintenanceDeleteTarget != nil }, set: { if !$0 { maintenanceDeleteTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let target = maintenanceDeleteTarget {
+                Button(String(localized: "Delete"), role: .destructive) {
+                    Task {
+                        if await maintenanceActions.delete(id: target.id, apiClient: apiClient) { reload() }
+                    }
+                }
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        }
         #if DEBUG
         .task {
             if isAdmin, UITestSupport.autoPresent == "insights-incidents-create" { showCreate = true }
+            if isAdmin, UITestSupport.autoPresent == "insights-maintenance-create" { showCreateMaintenance = true }
         }
         #endif
     }
@@ -130,6 +162,22 @@ struct IncidentsView: View {
                             Formatters.formatRelativeTime(maintenance.startAt),
                             Formatters.formatRelativeTime(maintenance.endAt)))
                     .font(.caption2).foregroundStyle(.secondary)
+                if isAdmin {
+                    Divider()
+                    HStack {
+                        Button {
+                            maintenanceEditTarget = maintenance
+                        } label: {
+                            Label(String(localized: "Edit"), systemImage: "pencil").font(.caption)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            maintenanceDeleteTarget = maintenance
+                        } label: {
+                            Label(String(localized: "Delete"), systemImage: "trash").font(.caption)
+                        }
+                    }
+                }
             }
         }
     }

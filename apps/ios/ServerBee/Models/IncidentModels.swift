@@ -127,4 +127,61 @@ struct Maintenance: Decodable, Identifiable, Hashable, Sendable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
+
+    /// Server ids this window targets (decoded from the JSON-string column);
+    /// empty means it applies to all servers.
+    var serverIds: [String] {
+        guard let raw = serverIdsJson, let data = raw.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+}
+
+// MARK: - Maintenance requests
+
+/// Create body for `POST /api/maintenances`. `server_ids_json` is an ARRAY on
+/// the wire (not a JSON string); nil applies the window to all servers.
+struct CreateMaintenanceRequest: Encodable, Sendable {
+    let title: String
+    var description: String?
+    let startAt: String
+    let endAt: String
+    var serverIdsJson: [String]?
+    var isPublic: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case title, description
+        case startAt = "start_at"
+        case endAt = "end_at"
+        case serverIdsJson = "server_ids_json"
+        case isPublic = "is_public"
+    }
+}
+
+/// Partial update body for `PUT /api/maintenances/{id}`. The form sends the full
+/// set; `serverIdsJson` is an array on the wire, nil means "all servers".
+struct UpdateMaintenanceRequest: Encodable, Sendable {
+    var title: String?
+    var description: String?
+    var startAt: String?
+    var endAt: String?
+    var serverIdsJson: [String]?
+    var isPublic: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case title, description
+        case startAt = "start_at"
+        case endAt = "end_at"
+        case serverIdsJson = "server_ids_json"
+        case isPublic = "is_public"
+    }
+}
+
+/// RFC3339 wire-format helper. `ISO8601DateFormatter.shared` is a parse-only
+/// tolerant parser, so encoding must use a fresh formatter.
+enum WireDate {
+    static func string(from date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: date)
+    }
 }
