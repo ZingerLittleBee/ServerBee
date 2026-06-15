@@ -21,6 +21,7 @@ struct ServerLifecycleCard: View {
 
     @Environment(\.apiClient) private var apiClient
     @Environment(AuthManager.self) private var authManager
+    @Environment(UpgradeJobsStore.self) private var upgradeJobs
     @State private var viewModel = AgentLifecycleViewModel()
 
     @State private var showRecover = false
@@ -37,7 +38,7 @@ struct ServerLifecycleCard: View {
                     enrolledContent
                 }
 
-                if upgradeQueued {
+                if upgradeQueued, upgradeJobs.job(forServer: serverId) == nil {
                     Label(String(localized: "Upgrade requested — the agent will reconnect shortly."),
                           systemImage: "checkmark.circle.fill")
                         .font(.caption)
@@ -99,6 +100,23 @@ struct ServerLifecycleCard: View {
                         serverUrl: authManager.serverUrl
                     )
                 )
+            }
+            // Visual-verification hook: seed a fake live upgrade job so the
+            // stepper renders without a real upgrade on the shared demo.
+            if let stage = debugUpgradeStage {
+                upgradeJobs.setJobs([
+                    UpgradeJob(
+                        serverId: serverId,
+                        jobId: "preview-job",
+                        targetVersion: "1.9.0",
+                        stage: stage,
+                        status: .running,
+                        error: nil,
+                        backupPath: nil,
+                        startedAt: "2026-06-15T18:00:00Z",
+                        finishedAt: nil
+                    )
+                ])
             }
         }
         #endif
@@ -163,9 +181,13 @@ private extension ServerLifecycleCard {
                 title: String(localized: "Upgrade agent"),
                 systemImage: "arrow.up.circle",
                 tint: .brandAccent,
-                disabled: !isOnline || !hasUpdate,
-                disabledNote: upgradeNote
+                disabled: !isOnline || !hasUpdate || isUpgradeRunning,
+                disabledNote: isUpgradeRunning ? String(localized: "Upgrading…") : upgradeNote
             ) { showUpgrade = true }
+        }
+
+        if let job = upgradeJobs.job(forServer: serverId) {
+            UpgradeStepperView(job: job)
         }
 
         Divider()
@@ -188,6 +210,11 @@ private extension ServerLifecycleCard {
         if !isOnline { return String(localized: "Agent offline") }
         if !hasUpdate { return String(localized: "Up to date") }
         return nil
+    }
+
+    /// True while a live upgrade job for this server is still running.
+    private var isUpgradeRunning: Bool {
+        upgradeJobs.job(forServer: serverId)?.status == .running
     }
 
     // MARK: - Outstanding enrollment (recover gate)
@@ -295,4 +322,15 @@ private extension ServerLifecycleCard {
             onDeleted()
         }
     }
+
+    #if DEBUG
+    /// Parses the visual-verification hook `upgrade-progress[:<stage>]` into a
+    /// stage (defaults to `.installing`). Returns nil when the hook is absent.
+    private var debugUpgradeStage: UpgradeStage? {
+        guard let raw = UITestSupport.autoPresent, raw.hasPrefix("upgrade-progress") else { return nil }
+        let parts = raw.split(separator: ":", maxSplits: 1)
+        if parts.count == 2, let stage = UpgradeStage(rawValue: String(parts[1])) { return stage }
+        return .installing
+    }
+    #endif
 }

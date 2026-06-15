@@ -30,7 +30,7 @@ final class ServersViewModelMergeTests: XCTestCase {
         vm.applyConfig([config("1")])
         XCTAssertEqual(vm.servers.first?.ipv4, "1.2.3.4")
 
-        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 42)]))
+        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 42)], upgrades: []))
 
         let s = vm.servers.first
         XCTAssertEqual(s?.online, true, "live online applied")
@@ -43,7 +43,7 @@ final class ServersViewModelMergeTests: XCTestCase {
     func test_configOverlay_doesNotEraseLiveMetrics_whenWSArrivesFirst() {
         let vm = ServersViewModel()
         // WS full_sync first (no config fields yet).
-        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 42)]))
+        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 42)], upgrades: []))
         // Then the REST fetch overlays config.
         vm.applyConfig([config("1")])
 
@@ -59,7 +59,7 @@ final class ServersViewModelMergeTests: XCTestCase {
         vm.applyConfig([config("1"), config("2")])
         XCTAssertEqual(vm.servers.count, 2)
 
-        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 1)]))
+        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 1)], upgrades: []))
         XCTAssertEqual(vm.servers.map(\.id), ["1"], "server 2 removed by authoritative full_sync")
     }
 

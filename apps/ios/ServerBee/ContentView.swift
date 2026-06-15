@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(AlertsViewModel.self) private var alertsViewModel
     @Environment(SecurityFeedStore.self) private var securityFeed
+    @Environment(UpgradeJobsStore.self) private var upgradeJobs
     @Environment(\.scenePhase) private var scenePhase
     @State private var apiClient: APIClient
     @State private var serversViewModel = ServersViewModel()
@@ -102,7 +103,7 @@ struct ContentView: View {
                 return try? await authManager.refreshAccessToken()
             }
             await wsClient.setOnMessage {
-                [weak serversViewModel, weak alertsViewModel, weak securityFeed, apiClient] message in
+                [weak serversViewModel, weak alertsViewModel, weak securityFeed, weak upgradeJobs, apiClient] message in
                 Task { @MainActor in
                     guard let serversViewModel else { return }
                     let router = WebSocketRouter(
@@ -111,7 +112,8 @@ struct ContentView: View {
                             guard case .alertEvent = msg, let alertsViewModel else { return }
                             Task { await alertsViewModel.handleWSAlertEvent(apiClient: apiClient) }
                         },
-                        security: { broadcast in securityFeed?.ingest(broadcast) }
+                        security: { broadcast in securityFeed?.ingest(broadcast) },
+                        upgrades: { msg in ContentView.applyUpgrade(msg, to: upgradeJobs) }
                     )
                     router.dispatch(message)
                 }
@@ -137,6 +139,31 @@ struct ContentView: View {
             if old == .background && new == .active {
                 Task { await wsClient.reconnectIfNeeded() }
             }
+        }
+    }
+
+    /// Route the three upgrade-related frames into the live job store. Full sync
+    /// replaces the snapshot; progress merges; result upserts the terminal state.
+    @MainActor
+    private static func applyUpgrade(_ message: BrowserMessage, to store: UpgradeJobsStore?) {
+        guard let store else { return }
+        switch message {
+        case .fullSync(_, let upgrades):
+            store.setJobs(upgrades)
+        case let .upgradeProgress(serverId, jobId, targetVersion, stage):
+            store.applyProgress(serverId: serverId, jobId: jobId, targetVersion: targetVersion, stage: stage)
+        case let .upgradeResult(serverId, jobId, targetVersion, status, stage, error, backupPath):
+            store.applyResult(
+                serverId: serverId,
+                jobId: jobId,
+                targetVersion: targetVersion,
+                status: status,
+                stage: stage,
+                error: error,
+                backupPath: backupPath
+            )
+        default:
+            break
         }
     }
 
@@ -194,4 +221,5 @@ private struct ServerDetailLoaderView: View {
         .environment(PushNotificationRouter())
         .environment(NetworkMonitor())
         .environment(SecurityFeedStore())
+        .environment(UpgradeJobsStore())
 }

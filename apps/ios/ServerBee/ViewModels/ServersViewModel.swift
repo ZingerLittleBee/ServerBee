@@ -139,7 +139,7 @@ final class ServersViewModel {
     /// Handle WebSocket BrowserMessage -- port from use-servers-ws.ts.
     func handleWSMessage(_ message: BrowserMessage) {
         switch message {
-        case .fullSync(let incoming):
+        case .fullSync(let incoming, _):
             // Authoritative live set: overlay each live frame onto the existing
             // entry so REST-only config (ipv4, capabilities, billing) survives,
             // then drop any server no longer present.

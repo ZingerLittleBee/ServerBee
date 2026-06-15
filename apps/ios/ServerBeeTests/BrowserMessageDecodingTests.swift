@@ -19,11 +19,13 @@ final class BrowserMessageDecodingTests: XCTestCase {
         }
         """
         let msg = try decode(json)
-        if case .fullSync(let servers) = msg {
+        if case .fullSync(let servers, let upgrades) = msg {
             XCTAssertEqual(servers.count, 2)
             XCTAssertEqual(servers[0].id, "s1")
             XCTAssertEqual(servers[0].cpuUsage, 12.5)
             XCTAssertEqual(servers[1].online, false)
+            // No `upgrades` key present → defaults to empty.
+            XCTAssertTrue(upgrades.isEmpty)
         } else {
             XCTFail("Expected .fullSync, got \(msg)")
         }
@@ -133,7 +135,7 @@ final class BrowserMessageDecodingTests: XCTestCase {
         }
         """
         let msg = try decode(json)
-        guard case .fullSync(let servers) = msg else {
+        guard case .fullSync(let servers, _) = msg else {
             return XCTFail("Expected .fullSync, got \(msg)")
         }
         XCTAssertEqual(servers.count, 1)
@@ -298,5 +300,105 @@ final class BrowserMessageDecodingTests: XCTestCase {
         XCTAssertEqual(record.diskUsed, 10_737_418_240)
         XCTAssertEqual(record.networkIn, 12_345)
         XCTAssertEqual(record.networkOut, 67_890)
+    }
+
+    // MARK: - Upgrade frames
+
+    func test_decode_fullSync_carriesUpgradeJobs() throws {
+        let json = """
+        {
+          "type": "full_sync",
+          "servers": [{ "id": "s1", "name": "n1" }],
+          "upgrades": [
+            {
+              "server_id": "s1",
+              "job_id": "job-1",
+              "target_version": "1.9.0",
+              "stage": "installing",
+              "status": "running",
+              "started_at": "2026-06-15T18:00:00Z"
+            }
+          ]
+        }
+        """
+        guard case .fullSync(_, let upgrades) = try decode(json) else {
+            return XCTFail("Expected .fullSync")
+        }
+        XCTAssertEqual(upgrades.count, 1)
+        XCTAssertEqual(upgrades[0].serverId, "s1")
+        XCTAssertEqual(upgrades[0].jobId, "job-1")
+        XCTAssertEqual(upgrades[0].targetVersion, "1.9.0")
+        XCTAssertEqual(upgrades[0].stage, .installing)
+        XCTAssertEqual(upgrades[0].status, .running)
+        XCTAssertNil(upgrades[0].finishedAt)
+    }
+
+    func test_decode_upgradeProgress() throws {
+        let json = """
+        {
+          "type": "upgrade_progress",
+          "server_id": "s1",
+          "job_id": "job-1",
+          "target_version": "1.9.0",
+          "stage": "verifying"
+        }
+        """
+        guard case let .upgradeProgress(serverId, jobId, targetVersion, stage) = try decode(json) else {
+            return XCTFail("Expected .upgradeProgress")
+        }
+        XCTAssertEqual(serverId, "s1")
+        XCTAssertEqual(jobId, "job-1")
+        XCTAssertEqual(targetVersion, "1.9.0")
+        XCTAssertEqual(stage, .verifying)
+    }
+
+    func test_decode_upgradeProgress_preFlightStageMapsToSnakeCase() throws {
+        let json = #"{"type":"upgrade_progress","server_id":"s1","job_id":"j","target_version":"1.0.0","stage":"pre_flight"}"#
+        guard case let .upgradeProgress(_, _, _, stage) = try decode(json) else {
+            return XCTFail("Expected .upgradeProgress")
+        }
+        XCTAssertEqual(stage, .preFlight)
+    }
+
+    func test_decode_upgradeResult_failedWithErrorAndBackup() throws {
+        let json = """
+        {
+          "type": "upgrade_result",
+          "server_id": "s1",
+          "job_id": "job-1",
+          "target_version": "1.9.0",
+          "status": "failed",
+          "stage": "installing",
+          "error": "checksum mismatch",
+          "backup_path": "/var/lib/serverbee/backup"
+        }
+        """
+        guard case let .upgradeResult(serverId, _, _, status, stage, error, backupPath) = try decode(json) else {
+            return XCTFail("Expected .upgradeResult")
+        }
+        XCTAssertEqual(serverId, "s1")
+        XCTAssertEqual(status, .failed)
+        XCTAssertEqual(stage, .installing)
+        XCTAssertEqual(error, "checksum mismatch")
+        XCTAssertEqual(backupPath, "/var/lib/serverbee/backup")
+    }
+
+    func test_decode_upgradeResult_succeededOmitsOptionalFields() throws {
+        let json = """
+        {
+          "type": "upgrade_result",
+          "server_id": "s1",
+          "job_id": "job-1",
+          "target_version": "1.9.0",
+          "status": "succeeded"
+        }
+        """
+        guard case let .upgradeResult(_, _, _, status, stage, error, backupPath) = try decode(json) else {
+            return XCTFail("Expected .upgradeResult")
+        }
+        XCTAssertEqual(status, .succeeded)
+        XCTAssertNil(stage)
+        XCTAssertNil(error)
+        XCTAssertNil(backupPath)
     }
 }
