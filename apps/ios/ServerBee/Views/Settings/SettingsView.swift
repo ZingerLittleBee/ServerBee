@@ -111,6 +111,11 @@ struct SettingsView: View {
                 Label(String(localized: "Server Groups"), systemImage: "folder")
             }
             NavigationLink {
+                PingTasksView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Ping Tasks"), systemImage: "dot.radiowaves.left.and.right")
+            }
+            NavigationLink {
                 UsersView()
             } label: {
                 Label(String(localized: "Users"), systemImage: "person.2")
