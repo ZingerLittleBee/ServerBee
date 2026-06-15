@@ -104,6 +104,31 @@ nullable) optional fields just use `encodeIfPresent`.
   `UpgradeJobsStore`) — mirror the existing zustand-store semantics from the web
   when one exists.
 
+## Localization
+
+All user-facing copy lives in `ServerBee/Localizable.xcstrings` (a String Catalog),
+source language `en`, with `zh-Hans` translations. Two ways strings reach the
+catalog — **both** are auto-localized at runtime, so both need a catalog entry or
+they fall back to the source literal (English):
+
+- `String(localized: "…")` — the explicit, preferred form. Interpolations become
+  typed format specifiers in the lookup key: `\(intVal)` → `%lld`, `\(stringVal)`
+  → `%@`, `\(doubleVal)` → `%lf`. So `String(localized: "\(n) online")` looks up
+  the key `"%lld online"`; the zh value **must keep the same specifier**
+  (`"%lld 个在线"`).
+- Implicit `LocalizedStringKey` — a bare string literal passed to `Text("…")`,
+  `Button("…") {}`, `Label("…", systemImage:)`, `Section("…")`, `Toggle("…")`,
+  `TextField("…")`, `.navigationTitle("…")`, etc. SwiftUI localizes these too.
+  A `String(localized:)`-only grep will **miss** them — grep the SwiftUI APIs
+  separately. Use `Text(verbatim:)` for genuinely non-translatable literals
+  (URLs, code, symbols) so they're excluded.
+
+`SWIFT_EMIT_LOC_STRINGS: YES` (project.yml) makes the compiler emit `.stringsdata`
+so `xcodebuild -exportLocalizations` surfaces untranslated keys. Data/unit/symbol
+templates (`%@ ms`, `v%@`, `· %@`, `*`) intentionally have no zh value — they
+render correctly via source fallback. Verify in the simulator by launching with
+`-AppleLanguages "(zh-Hans)" -AppleLocale zh_CN`.
+
 ## Capability gating
 
 Sections and actions are gated on the server's **effective** capability bitmask
