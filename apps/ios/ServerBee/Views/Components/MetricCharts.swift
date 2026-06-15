@@ -88,35 +88,39 @@ struct MetricsCharts: View {
     }
 
     private func memoryChart(data: [ChartDataPoint]) -> some View {
-        ChartSection(title: String(localized: "Memory Usage")) {
+        // History records carry `mem_used` bytes but no total, so plot absolute
+        // used memory (bytes) rather than a percentage that would always be nil.
+        ChartSection(title: String(localized: "Memory Used")) {
             Chart(data, id: \.date) { point in
-                if let percent = point.record.memoryPercent {
-                    AreaMark(x: .value("Time", point.date), y: .value("Memory %", percent))
+                if let used = point.record.memoryUsed {
+                    AreaMark(x: .value("Time", point.date), y: .value("Bytes", used))
                         .foregroundStyle(gradient(.memoryColor))
                         .interpolationMethod(.catmullRom)
-                    LineMark(x: .value("Time", point.date), y: .value("Memory %", percent))
+                    LineMark(x: .value("Time", point.date), y: .value("Bytes", used))
                         .foregroundStyle(Color.memoryColor)
                         .interpolationMethod(.catmullRom)
                 }
             }
-            .percentageYAxis()
+            .storageBytesYAxis()
             .timeXAxis()
         }
     }
 
     private func diskChart(data: [ChartDataPoint]) -> some View {
-        ChartSection(title: String(localized: "Disk Usage")) {
+        // History records carry `disk_used` bytes but no total, so plot absolute
+        // used disk (bytes) rather than a percentage that would always be nil.
+        ChartSection(title: String(localized: "Disk Used")) {
             Chart(data, id: \.date) { point in
-                if let percent = point.record.diskPercent {
-                    AreaMark(x: .value("Time", point.date), y: .value("Disk %", percent))
+                if let used = point.record.diskUsed {
+                    AreaMark(x: .value("Time", point.date), y: .value("Bytes", used))
                         .foregroundStyle(gradient(.diskColor))
                         .interpolationMethod(.catmullRom)
-                    LineMark(x: .value("Time", point.date), y: .value("Disk %", percent))
+                    LineMark(x: .value("Time", point.date), y: .value("Bytes", used))
                         .foregroundStyle(Color.diskColor)
                         .interpolationMethod(.catmullRom)
                 }
             }
-            .percentageYAxis()
+            .storageBytesYAxis()
             .timeXAxis()
         }
     }
@@ -270,8 +274,26 @@ private struct BytesYAxisModifier: ViewModifier {
     }
 }
 
+/// Y axis for absolute storage sizes (memory/disk used), formatted as plain
+/// bytes (e.g. "1.5 GB") rather than the per-second rate used by `bytesYAxis`.
+private struct StorageBytesYAxisModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content.chartYAxis {
+            AxisMarks { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let bytes = value.as(Double.self) {
+                        Text(Formatters.formatBytes(Int64(bytes)))
+                    }
+                }
+            }
+        }
+    }
+}
+
 extension View {
     func percentageYAxis() -> some View { modifier(PercentageYAxisModifier()) }
     func timeXAxis() -> some View { modifier(TimeXAxisModifier()) }
     func bytesYAxis() -> some View { modifier(BytesYAxisModifier()) }
+    func storageBytesYAxis() -> some View { modifier(StorageBytesYAxisModifier()) }
 }
