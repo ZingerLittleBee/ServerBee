@@ -5,6 +5,13 @@ import SwiftUI
 struct ServersListView: View {
     @Environment(ServersViewModel.self) private var viewModel
     @Environment(\.apiClient) private var apiClient
+    @Environment(AuthManager.self) private var authManager
+
+    @State private var showAddServer = false
+
+    private var isAdmin: Bool {
+        authManager.user?.role.lowercased() == "admin"
+    }
 
     var body: some View {
         @Bindable var viewModel = viewModel
@@ -24,6 +31,22 @@ struct ServersListView: View {
             text: $viewModel.searchQuery,
             prompt: String(localized: "Search servers...")
         )
+        .toolbar {
+            if isAdmin {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showAddServer = true
+                    } label: {
+                        Label(String(localized: "Add Server"), systemImage: "plus")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showAddServer, onDismiss: {
+            Task { await viewModel.refresh(apiClient: apiClient) }
+        }, content: {
+            AddServerSheet()
+        })
         .refreshable {
             await viewModel.refresh(apiClient: apiClient)
         }
@@ -31,6 +54,11 @@ struct ServersListView: View {
             if viewModel.servers.isEmpty {
                 await viewModel.fetchServers(apiClient: apiClient)
             }
+            #if DEBUG
+            if isAdmin, UITestSupport.autoPresent == "addserver" {
+                showAddServer = true
+            }
+            #endif
         }
         .task(id: viewModel.searchQuery) {
             try? await Task.sleep(for: .milliseconds(250))
@@ -71,6 +99,11 @@ struct ServersListView: View {
             Label(String(localized: "No Servers"), systemImage: "server.rack")
         } description: {
             Text(String(localized: "Connect an agent to your server to start monitoring."))
+        } actions: {
+            if isAdmin {
+                Button(String(localized: "Add Server")) { showAddServer = true }
+                    .buttonStyle(.borderedProminent)
+            }
         }
     }
 

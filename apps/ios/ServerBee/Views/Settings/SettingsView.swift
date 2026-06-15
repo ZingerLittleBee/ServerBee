@@ -10,9 +10,51 @@ struct SettingsView: View {
     /// close it before clearing auth and triggering the server logout.
     let wsClient: WebSocketClient
 
+    private var isAdmin: Bool { authManager.user?.role.lowercased() == "admin" }
+
+    #if DEBUG
+    @State private var debugPath = NavigationPath()
+
+    /// DEBUG-only value-routed admin destinations, used by the launch hook to
+    /// push a sub-screen without the cliclick harness scrolling the list.
+    enum AdminRoute: Hashable { case networkProbes, ipQuality, statusPage }
+    #endif
+
     var body: some View {
-        NavigationStack {
-            List {
+        navigationStack
+    }
+
+    private var navigationStack: some View {
+        #if DEBUG
+        NavigationStack(path: $debugPath) { settingsList }
+        #else
+        NavigationStack { settingsList }
+        #endif
+    }
+
+    private var settingsList: some View {
+        list
+        #if DEBUG
+            .navigationDestination(for: AdminRoute.self) { route in
+                switch route {
+                case .networkProbes: NetworkProbeConfigView(isAdmin: isAdmin)
+                case .ipQuality: IpQualityConfigView(isAdmin: isAdmin)
+                case .statusPage: StatusPageConfigView(isAdmin: isAdmin)
+                }
+            }
+            .task {
+                switch UITestSupport.adminRoute {
+                case "network-probes": debugPath.append(AdminRoute.networkProbes)
+                case "ip-quality": debugPath.append(AdminRoute.ipQuality)
+                case "status-page": debugPath.append(AdminRoute.statusPage)
+                default: break
+                }
+            }
+        #endif
+    }
+
+    private var list: some View {
+        List {
                 if let url = authManager.serverUrl, !url.isEmpty {
                     Section {
                         InsecureURLBanner(serverUrl: url)
@@ -21,6 +63,9 @@ struct SettingsView: View {
                     }
                 }
                 accountSection
+                securitySection
+                accessSection
+                if isAdmin { adminSection }
                 preferencesSection
                 aboutSection
                 logoutSection
@@ -44,7 +89,6 @@ struct SettingsView: View {
                 Button(String(localized: "Cancel"), role: .cancel) {}
             }
         }
-    }
 
     private var accountSection: some View {
         Section(String(localized: "Account")) {
@@ -60,6 +104,96 @@ struct SettingsView: View {
                     .truncationMode(.middle)
             }
             DeviceNameRow()
+        }
+    }
+
+    private var securitySection: some View {
+        Section(String(localized: "Security")) {
+            NavigationLink {
+                PasswordChangeView()
+            } label: {
+                Label(String(localized: "Change Password"), systemImage: "key")
+            }
+            NavigationLink {
+                TwoFactorView()
+            } label: {
+                Label(String(localized: "Two-Factor Auth"), systemImage: "lock.shield")
+            }
+            NavigationLink {
+                FirewallBlocklistView()
+            } label: {
+                Label(String(localized: "Firewall Blocklist"), systemImage: "hand.raised")
+            }
+        }
+    }
+
+    private var accessSection: some View {
+        Section(String(localized: "Access")) {
+            NavigationLink {
+                ApiKeysView()
+            } label: {
+                Label(String(localized: "API Keys"), systemImage: "key.horizontal")
+            }
+            NavigationLink {
+                DevicesView()
+            } label: {
+                Label(String(localized: "Devices"), systemImage: "iphone")
+            }
+        }
+    }
+
+    private var adminSection: some View {
+        Section(String(localized: "Admin")) {
+            NavigationLink {
+                ServerGroupsView()
+            } label: {
+                Label(String(localized: "Server Groups"), systemImage: "folder")
+            }
+            NavigationLink {
+                PingTasksView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Ping Tasks"), systemImage: "dot.radiowaves.left.and.right")
+            }
+            NavigationLink {
+                TasksView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Scheduled Commands"), systemImage: "terminal")
+            }
+            NavigationLink {
+                NetworkProbeConfigView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Network Probes"), systemImage: "dot.radiowaves.up.forward")
+            }
+            NavigationLink {
+                IpQualityConfigView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "IP Quality"), systemImage: "shield.lefthalf.filled")
+            }
+            NavigationLink {
+                StatusPageConfigView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Status Page"), systemImage: "globe.americas")
+            }
+            NavigationLink {
+                UsersView()
+            } label: {
+                Label(String(localized: "Users"), systemImage: "person.2")
+            }
+            NavigationLink {
+                AuditLogView()
+            } label: {
+                Label(String(localized: "Audit Log"), systemImage: "list.bullet.rectangle")
+            }
+            NavigationLink {
+                RateLimitView()
+            } label: {
+                Label(String(localized: "Rate Limits"), systemImage: "speedometer")
+            }
+            NavigationLink {
+                DatabasesView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "GeoIP & ASN"), systemImage: "globe")
+            }
         }
     }
 

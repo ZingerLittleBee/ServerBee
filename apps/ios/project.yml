@@ -27,6 +27,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_STRICT_CONCURRENCY: complete
+        # Emit compiler-extracted localizable strings so future builds surface
+        # untranslated keys via `xcodebuild -exportLocalizations`. Catches the
+        # implicit-LocalizedStringKey literals (Text("…"), Button("…"), …) that a
+        # `String(localized:)`-only grep would miss.
+        SWIFT_EMIT_LOC_STRINGS: YES
         OTHER_LDFLAGS:
           - "$(inherited)"
           - "-framework"

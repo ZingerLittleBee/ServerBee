@@ -10,7 +10,7 @@ struct AlertEventCardView: View {
 
                 Spacer()
 
-                Text(Formatters.formatRelativeTime(event.updatedAt))
+                Text(Formatters.formatRelativeTime(event.eventAt))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -22,17 +22,10 @@ struct AlertEventCardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            if !event.message.isEmpty {
-                Text(event.message)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(2)
-            }
-
-            if event.triggerCount > 1 {
+            if event.count > 1 {
                 HStack {
                     Spacer()
-                    Text("\u{00D7}\(event.triggerCount)")
+                    Text("\u{00D7}\(event.count)")
                         .font(.caption2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -50,10 +43,10 @@ struct AlertEventCardView: View {
         let status = event.status == .firing
             ? String(localized: "Firing")
             : String(localized: "Resolved")
-        let relative = Formatters.formatRelativeTime(event.updatedAt)
+        let relative = Formatters.formatRelativeTime(event.eventAt)
         var parts = [status, event.ruleName, event.serverName, relative]
-        if event.triggerCount > 1 {
-            parts.append(String(format: String(localized: "Triggered %d times"), event.triggerCount))
+        if event.count > 1 {
+            parts.append(String(format: String(localized: "Triggered %d times"), event.count))
         }
         return parts.joined(separator: ", ")
     }

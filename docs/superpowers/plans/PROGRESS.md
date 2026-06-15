@@ -1275,3 +1275,94 @@ DELETE /api/maintenances/:id           删除维护窗口
 - 60 req / 60 s 每 IP 限流；admin rate-limit 端点新增 Public scope
 - 6 个集成测试覆盖 anonymous、redaction（含 authenticated）、IP-quality redaction、scope（hidden/out-of-list/nonexistent）、gating（5 个 toggle + enabled=false）
 - Workspace 测试 0 failure: cargo (R5) + vitest 564 pass + ultracite clean + clippy clean
+
+---
+
+## 2026-06-15 — iOS 原生客户端 (Native SwiftUI App, `apps/ios`)
+
+**分支**: `main`
+**日期**: 2026-06-15
+**目标**: 将 server/web 已实现的核心功能尽可能完整、原生、优雅地实现到 iOS App，以 iOS 用户视角重组信息架构（不照搬 Web UI），符合 Apple HIG
+**约定固化**: `apps/ios/CLAUDE.md`（英文）
+**状态**: **核心功能成体系完成（里程碑 M0–M12），4 项最高风险新 UI 已模拟器实拍验证**
+
+技术栈: SwiftUI + Swift 6（strict concurrency complete）+ @Observable + XcodeGen，iOS 17+，iPhone-only，SwiftLint build-tool plugin。认证 token 存 Keychain；走 `/api/mobile/auth/*`（per-installation token pair）。源码 133 文件 / 测试 44 文件（215 测试）。
+
+| 里程碑 | 名称 | 状态 |
+|------|------|------|
+| M0 | 登录 / 刷新 / 2FA（mobile auth + Keychain） | **done** |
+| M1 | 服务器列表（分组 / 标签 / 搜索 / 在线离线）+ 原生分段详情 | **done** |
+| M2 | 实时 WebSocket（FullSync/Update/Online/Offline/Capabilities） | **done** |
+| M3 | Metrics / Traffic / Cost / Uptime 图表（Swift Charts） | **done** |
+| M4 | Network（三网 Ping / traceroute） | **done** |
+| M5 | 安全事件（SecurityFeedStore 实时合并） | **done** |
+| M6 | Insights 跨服务器枢纽（fleet / cost / monitors / incidents / maintenance） | **done** |
+| M7 | Docker（查看 / 操作 / 日志流） | **done** |
+| M8 | Agent 生命周期（enroll / recover / regenerate / upgrade）+ Advanced 高危能力入口 | **done** |
+| M9 | Alert 配置（渠道 / 规则只读 + enable 开关 + test） | **done** |
+| M10 | Settings（API keys / devices / users / audit / rate limit / GeoIP-ASN / 分组管理） | **done** |
+| M11 | 推送通知 + 深链（server / alert） | **done** |
+| M12 | 复核补差: Disk I/O 历史图、温度图、server edit、分组 CRUD、维护窗口 CRUD、recover-409 撤销、实时升级进度 | **done** |
+
+**M12 复核与补差（本次）:**
+- 32-agent 审计 workflow 复核 goal 完成度，确认 22 个真实差距（修复 1 个解码 bug: `MobileAlertEvent` 按 list DTO 重写）
+- 用户选定范围「核心查看 + 高价值管理」，实现 7 项:
+  1. **Disk I/O 历史图** — records 无扁平字段，从 `disk_io_json` blob 解析并跨设备合并 `diskReadMerged`/`diskWriteMerged`
+  2. **温度历史图** — `hasTemperature` 条件渲染（demo 无温度数据，单测覆盖）
+  3. **server edit** — PUT `/api/servers/{id}` + `/tags`，tri-state 编码 nullable 字段（unchanged 省略 key / clear 发 null / set 发值）
+  4. **分组管理 CRUD** — Settings → Server Groups（create / rename / delete）
+  5. **维护窗口 CRUD** — Insights 创建 / 编辑 / 删除，`server_ids_json` 线上为数组，`WireDate` RFC3339 编码
+  6. **recover-409 撤销** — 409 时从 `ServerConfig.outstandingEnrollment` 读取，琥珀色提示 + DELETE `/api/agent/enrollments/{id}`
+  7. **实时升级进度** — 新增 `UpgradeJobsStore`（镜像 web zustand 语义: progress 只合并不创建 job、result upsert、succeeded/failed 5s 后按 job_id 守卫自动清除、timeout 不清除），五阶段 stepper + 终态横幅
+
+**验证:**
+- `xcodebuild ... test`: **215 测试 0 失败**（新增 12: 5 个升级帧解码 + 7 个 store 语义）
+- `xcodebuild ... build`: BUILD SUCCEEDED（== SwiftLint clean）
+- 模拟器实拍验证（连线上 demo）: Disk I/O 历史图、server edit 表单（预填）、维护窗口创建表单、升级 stepper（installing 阶段）四项最高风险新 UI
+
+**取舍 / 暂缓（留在 web）:** terminal / file / exec 完整交互、GPU 指标、自定义仪表盘编辑、alert 规则/渠道的创建-编辑阈值（移动端只读 + 开关 + 测试）。移动端显示诚实入口 / 只读视图。
+
+---
+
+## 2026-06-15 — iOS M13: 补 admin 配置缺口 (Ping tasks + Scheduled commands)
+
+**分支**: `main`
+**日期**: 2026-06-15
+**触发**: 「再次检查 goal」时,两个独立 agent 对抗式复核 —— 实现侧 7 项全部 CORRECT(0 bug);覆盖侧确认 M12 七项 PRESENT、deferred 项有诚实入口,但发现 5 个范围外的 admin 配置类缺口。用户选定「原生补高价值两项」。
+**状态**: **2/2 完成 + 验证 + 实拍**
+
+| # | 功能 | 实现 | Commit |
+|---|------|------|--------|
+| 1 | **Ping 任务管理** | Settings → Ping Tasks 全量 CRUD(此前 iOS 只读 per-server ping 结果)。`/api/ping-tasks` list/create/update/delete;表单含 name / probe type(icmp·tcp·http)/ target / interval / 服务器多选(空=所有);行内 enable 开关 + 滑动编辑/删除。`server_ids`(请求数组)vs `server_ids_json`(响应字符串);DELETE 返回 bare `"ok"` | `deea999c` |
+| 2 | **定时命令(Tasks)** | Settings → Scheduled Commands(此前 iOS 完全无入口)。`/api/tasks` list/create/update/delete/run/results;列表区分 oneshot/scheduled + enable 开关;详情含 per-server 结果历史(exit-code 哨兵:skipped/offline/timeout)+ scheduled 的 run-now;创建表单带**高危提示**(远程命令执行)+ oneshot/scheduled 选择 + cron 字段 + timeout/retry + 必选服务器。高危,全 admin-only。新增 `APIClient.deleteVoid` 处理 `{data:null}` 的 DELETE | `0085e7d0` |
+
+**验证:**
+- `xcodebuild test`: **225 测试 0 失败**(新增 10:5 ping + 5 task 解码/编码)
+- `xcodebuild build`: BUILD SUCCEEDED(== SwiftLint clean)
+- 模拟器实拍(连线上 demo):Ping Tasks 入口 + 创建表单(probe 分段/类型占位符/interval/服务器多选);Scheduled Commands 入口 + 创建表单(高危琥珀提示 / oneshot·scheduled 选择 / Advanced 重试 / 服务器多选 / oneshot 时按钮为 "Run")
+
+**仍留 web(本轮未选):** network-probe 全局 target/setting 配置、公开状态页配置、IP-quality service 定义 —— 移动端低频 admin 配置,按取舍留在 web。
+
+## 2026-06-15 — iOS M14: 全量中文本地化 + 补齐 admin 配置 + 发布工程化
+
+**分支**: `main`
+**日期**: 2026-06-15
+**触发**: 「还有什么推荐做的」调研发现两处真实缺陷(内存/磁盘历史图空、zh-Hans 仅 73/744 覆盖),用户选定四项全做。
+**状态**: **P0-1 / P0-2 / P1 / P2 全部完成 + 验证 + 实拍**
+
+| # | 功能 | 实现 | Commit |
+|---|------|------|--------|
+| P0-1 | **修内存/磁盘空历史图** | 历史 record 只带 `mem_used`/`disk_used` 字节(无 total),故按绝对字节绘制(原按恒为 nil 的百分比 → 空图);新增 `storageBytesYAxis`(plain bytes,区别于 `/s` 速率轴) | `5d3076b1` |
+| P0-2 | **全量简体中文本地化** | String Catalog 从 ~73 → 747 键覆盖全部界面。**关键**:除 `String(localized:)` 外,补齐 SwiftUI 隐式 `LocalizedStringKey` 字面量(`Text("…")`/`Button`/`Label`/`navigationTitle`,含登录页)。插值键保留类型化占位符(Int→`%lld`、String→`%@`),0 占位符不匹配;数据/单位/符号模板(`%@ ms`、`v%@`、`*`)按源回退。启用 `SWIFT_EMIT_LOC_STRINGS` 以便未来构建暴露未译键 | `c7133210` |
+| P1 | **补齐 3 个 admin 配置缺口(原生)** | Settings → admin 新增三页:**网络探测**(全局 interval/packet/默认目标 + 自定义 target CRUD;preset 只读)、**IP 质量**(unlock service 目录 enable/删除 + 检测间隔;自定义服务创建因需编辑 JSON 规则诚实留 web)、**状态页**(单 Form:可见性/标题/描述/布局/uptime 阈值/公开面板/公开服务器多选)。新增 Codable 模型(显式 snake_case)+ @Observable VM + 解码/编码测试 | `b2beb17e` |
+| P2 | **发布工程化** | App 图标(1024px 蓝色 server-rack,匹配登录品牌;原为空占位)、`PrivacyInfo.xcprivacy`(无追踪/无采集 + UserDefaults required-reason CA92.1,App Store 必需)、无障碍(图标-only `+` 按钮与 labelsHidden 开关补 VoiceOver 标签) | `10d3f0ad` |
+
+**验证:**
+- `xcodebuild test`: **235 测试 0 失败**(新增 10:status-page / network-probe / ip-quality 解码编码)
+- `xcodebuild build`: BUILD SUCCEEDED(== SwiftLint clean)
+- **对抗式契约核验**:3 个独立 verifier agent 逐字段比对 iOS 模型/请求 vs server DTO —— **全部 clean(0 bug / 0 risk / 0 nit)**
+- 模拟器实拍(zh-Hans locale,连线上 demo):登录/服务器/洞察/设置全中文;网络探测、IP 质量、状态页三新页加载真实数据且渲染正确;App 图标主屏显示正常
+
+**唯一剩余配置缺口(诚实留 web):** 创建**新的**自定义 IP-quality service 需编辑 URL + headers + JSON 匹配规则,属桌面任务(IP 质量页 footer 已注明);其余全部原生。
+
+**P2 说明性暂缓(及理由):** iPad 适配(与 iPhone-only 设计定位冲突)、独立 XCUITest snapshot target(现有 DEBUG `SB_UITEST_*` + cliclick rig 已满足实拍验证)、Dynamic Type 深度适配(SwiftUI 语义字体默认支持)。

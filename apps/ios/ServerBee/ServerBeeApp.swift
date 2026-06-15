@@ -9,6 +9,8 @@ struct ServerBeeApp: App {
     @State private var pushManager = PushNotificationManager()
     @State private var pushRouter = PushNotificationRouter()
     @State private var networkMonitor = NetworkMonitor()
+    @State private var securityFeed = SecurityFeedStore()
+    @State private var upgradeJobs = UpgradeJobsStore()
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +20,8 @@ struct ServerBeeApp: App {
                 .environment(pushManager)
                 .environment(pushRouter)
                 .environment(networkMonitor)
+                .environment(securityFeed)
+                .environment(upgradeJobs)
                 .task {
                     // Wire delegate BEFORE auth init so cold-launch taps that
                     // arrive while we are still restoring auth are not dropped.
@@ -28,7 +32,14 @@ struct ServerBeeApp: App {
 
                     await authManager.initialize()
                     if authManager.isAuthenticated {
-                        await pushManager.requestPermission()
+                        #if DEBUG
+                        let isUITest = UITestSupport.seed != nil
+                        #else
+                        let isUITest = false
+                        #endif
+                        if !isUITest {
+                            await pushManager.requestPermission()
+                        }
                     }
                 }
         }

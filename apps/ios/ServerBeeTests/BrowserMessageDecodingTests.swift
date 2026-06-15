@@ -19,11 +19,13 @@ final class BrowserMessageDecodingTests: XCTestCase {
         }
         """
         let msg = try decode(json)
-        if case .fullSync(let servers) = msg {
+        if case .fullSync(let servers, let upgrades) = msg {
             XCTAssertEqual(servers.count, 2)
             XCTAssertEqual(servers[0].id, "s1")
             XCTAssertEqual(servers[0].cpuUsage, 12.5)
             XCTAssertEqual(servers[1].online, false)
+            // No `upgrades` key present → defaults to empty.
+            XCTAssertTrue(upgrades.isEmpty)
         } else {
             XCTFail("Expected .fullSync, got \(msg)")
         }
@@ -93,6 +95,64 @@ final class BrowserMessageDecodingTests: XCTestCase {
         XCTAssertEqual(servers[0].country, "US")
     }
 
+    /// Regression: the live browser WS frame sends `last_active` as a Unix epoch
+    /// **integer** (and includes swap/transfer/disk-io/tags/has_token). The old
+    /// decoder typed `last_active` as String, which threw `typeMismatch` and
+    /// silently dropped EVERY full_sync/update frame — live metrics never showed.
+    func test_decode_fullSync_acceptsRealBrowserWebSocketPayload() throws {
+        let json = """
+        {
+          "type": "full_sync",
+          "servers": [
+            {
+              "id": "s1",
+              "name": "BWG",
+              "online": true,
+              "last_active": 1779834851,
+              "uptime": 123456,
+              "cpu": 3.34,
+              "cpu_cores": 2,
+              "mem_used": 1000,
+              "mem_total": 2000,
+              "swap_used": 0,
+              "swap_total": 0,
+              "disk_used": 5000,
+              "disk_total": 10000,
+              "net_in_speed": 12,
+              "net_out_speed": 34,
+              "net_in_transfer": 999,
+              "net_out_transfer": 888,
+              "load1": 0.1, "load5": 0.2, "load15": 0.3,
+              "tcp_conn": 7, "udp_conn": 3, "process_count": 90,
+              "disk_read_bytes_per_sec": 111,
+              "disk_write_bytes_per_sec": 222,
+              "tags": ["edge", "jp"],
+              "has_token": true,
+              "country_code": "JP"
+            }
+          ],
+          "upgrades": []
+        }
+        """
+        let msg = try decode(json)
+        guard case .fullSync(let servers, _) = msg else {
+            return XCTFail("Expected .fullSync, got \(msg)")
+        }
+        XCTAssertEqual(servers.count, 1)
+        let s = servers[0]
+        XCTAssertEqual(s.online, true)
+        XCTAssertEqual(s.cpuUsage, 3.34)
+        XCTAssertEqual(s.cpuCores, 2)
+        XCTAssertEqual(s.netInTransfer, 999)
+        XCTAssertEqual(s.diskReadPerSec, 111)
+        XCTAssertEqual(s.tags, ["edge", "jp"])
+        XCTAssertEqual(s.hasToken, true)
+        XCTAssertEqual(s.country, "JP")
+        // last_active integer is normalised to a parseable ISO string.
+        XCTAssertNotNil(s.lastActiveAt)
+        XCTAssertNotNil(s.lastActiveDate)
+    }
+
     func test_decode_serverOnline() throws {
         let json = #"{"type":"server_online","server_id":"abc-123"}"#
         let msg = try decode(json)
@@ -118,13 +178,36 @@ final class BrowserMessageDecodingTests: XCTestCase {
         {
           "type": "capabilities_changed",
           "server_id": "abc",
+          "capabilities": 56,
+          "agent_local_capabilities": 2047,
+          "effective_capabilities": 56
+        }
+        """
+        let msg = try decode(json)
+        if case let .capabilitiesChanged(serverId, caps, agentLocal, effective) = msg {
+            XCTAssertEqual(serverId, "abc")
+            XCTAssertEqual(caps, 56)
+            XCTAssertEqual(agentLocal, 2047)
+            XCTAssertEqual(effective, 56)
+        } else {
+            XCTFail("Expected .capabilitiesChanged, got \(msg)")
+        }
+    }
+
+    func test_decode_capabilitiesChanged_withoutOptionalMasks() throws {
+        let json = """
+        {
+          "type": "capabilities_changed",
+          "server_id": "abc",
           "capabilities": 56
         }
         """
         let msg = try decode(json)
-        if case .capabilitiesChanged(let serverId, let caps) = msg {
+        if case let .capabilitiesChanged(serverId, caps, agentLocal, effective) = msg {
             XCTAssertEqual(serverId, "abc")
             XCTAssertEqual(caps, 56)
+            XCTAssertNil(agentLocal)
+            XCTAssertNil(effective)
         } else {
             XCTFail("Expected .capabilitiesChanged, got \(msg)")
         }
@@ -180,14 +263,21 @@ final class BrowserMessageDecodingTests: XCTestCase {
         }
     }
 
-    func test_decode_unknownType_throws() {
+    func test_decode_unknownType_decodesToUnknown() throws {
+        // Not-yet-handled server message types (docker, ip quality, blocklist,
+        // …) decode to `.unknown` rather than throwing, so the WS receive loop
+        // doesn't log an error for every such frame.
         let json = #"{"type":"definitely_not_a_real_case","server_id":"x"}"#
-        XCTAssertThrowsError(try decode(json))
+        guard case .unknown = try decode(json) else {
+            return XCTFail("Expected .unknown")
+        }
     }
 
-    func test_decode_missingType_throws() {
+    func test_decode_missingType_decodesToUnknown() throws {
         let json = #"{"server_id":"x"}"#
-        XCTAssertThrowsError(try decode(json))
+        guard case .unknown = try decode(json) else {
+            return XCTFail("Expected .unknown")
+        }
     }
 
     func test_decode_metricRecord_acceptsServerRecordPayload() throws {
@@ -210,5 +300,105 @@ final class BrowserMessageDecodingTests: XCTestCase {
         XCTAssertEqual(record.diskUsed, 10_737_418_240)
         XCTAssertEqual(record.networkIn, 12_345)
         XCTAssertEqual(record.networkOut, 67_890)
+    }
+
+    // MARK: - Upgrade frames
+
+    func test_decode_fullSync_carriesUpgradeJobs() throws {
+        let json = """
+        {
+          "type": "full_sync",
+          "servers": [{ "id": "s1", "name": "n1" }],
+          "upgrades": [
+            {
+              "server_id": "s1",
+              "job_id": "job-1",
+              "target_version": "1.9.0",
+              "stage": "installing",
+              "status": "running",
+              "started_at": "2026-06-15T18:00:00Z"
+            }
+          ]
+        }
+        """
+        guard case .fullSync(_, let upgrades) = try decode(json) else {
+            return XCTFail("Expected .fullSync")
+        }
+        XCTAssertEqual(upgrades.count, 1)
+        XCTAssertEqual(upgrades[0].serverId, "s1")
+        XCTAssertEqual(upgrades[0].jobId, "job-1")
+        XCTAssertEqual(upgrades[0].targetVersion, "1.9.0")
+        XCTAssertEqual(upgrades[0].stage, .installing)
+        XCTAssertEqual(upgrades[0].status, .running)
+        XCTAssertNil(upgrades[0].finishedAt)
+    }
+
+    func test_decode_upgradeProgress() throws {
+        let json = """
+        {
+          "type": "upgrade_progress",
+          "server_id": "s1",
+          "job_id": "job-1",
+          "target_version": "1.9.0",
+          "stage": "verifying"
+        }
+        """
+        guard case let .upgradeProgress(serverId, jobId, targetVersion, stage) = try decode(json) else {
+            return XCTFail("Expected .upgradeProgress")
+        }
+        XCTAssertEqual(serverId, "s1")
+        XCTAssertEqual(jobId, "job-1")
+        XCTAssertEqual(targetVersion, "1.9.0")
+        XCTAssertEqual(stage, .verifying)
+    }
+
+    func test_decode_upgradeProgress_preFlightStageMapsToSnakeCase() throws {
+        let json = #"{"type":"upgrade_progress","server_id":"s1","job_id":"j","target_version":"1.0.0","stage":"pre_flight"}"#
+        guard case let .upgradeProgress(_, _, _, stage) = try decode(json) else {
+            return XCTFail("Expected .upgradeProgress")
+        }
+        XCTAssertEqual(stage, .preFlight)
+    }
+
+    func test_decode_upgradeResult_failedWithErrorAndBackup() throws {
+        let json = """
+        {
+          "type": "upgrade_result",
+          "server_id": "s1",
+          "job_id": "job-1",
+          "target_version": "1.9.0",
+          "status": "failed",
+          "stage": "installing",
+          "error": "checksum mismatch",
+          "backup_path": "/var/lib/serverbee/backup"
+        }
+        """
+        guard case let .upgradeResult(serverId, _, _, status, stage, error, backupPath) = try decode(json) else {
+            return XCTFail("Expected .upgradeResult")
+        }
+        XCTAssertEqual(serverId, "s1")
+        XCTAssertEqual(status, .failed)
+        XCTAssertEqual(stage, .installing)
+        XCTAssertEqual(error, "checksum mismatch")
+        XCTAssertEqual(backupPath, "/var/lib/serverbee/backup")
+    }
+
+    func test_decode_upgradeResult_succeededOmitsOptionalFields() throws {
+        let json = """
+        {
+          "type": "upgrade_result",
+          "server_id": "s1",
+          "job_id": "job-1",
+          "target_version": "1.9.0",
+          "status": "succeeded"
+        }
+        """
+        guard case let .upgradeResult(_, _, _, status, stage, error, backupPath) = try decode(json) else {
+            return XCTFail("Expected .upgradeResult")
+        }
+        XCTAssertEqual(status, .succeeded)
+        XCTAssertNil(stage)
+        XCTAssertNil(error)
+        XCTAssertNil(backupPath)
     }
 }

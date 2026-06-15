@@ -5,6 +5,8 @@ struct ContentView: View {
     @Environment(PushNotificationRouter.self) private var pushRouter
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(AlertsViewModel.self) private var alertsViewModel
+    @Environment(SecurityFeedStore.self) private var securityFeed
+    @Environment(UpgradeJobsStore.self) private var upgradeJobs
     @Environment(\.scenePhase) private var scenePhase
     @State private var apiClient: APIClient
     @State private var serversViewModel = ServersViewModel()
@@ -14,8 +16,10 @@ struct ContentView: View {
     private static let serversTabTag = 0
     /// Index of the Alerts tab.
     private static let alertsTabTag = 1
+    /// Index of the Insights tab.
+    private static let insightsTabTag = 2
     /// Index of the Settings tab.
-    private static let settingsTabTag = 2
+    private static let settingsTabTag = 3
 
     @State private var selectedTab: Int = ContentView.serversTabTag
     @State private var serversPath: [ServerNavigationTarget] = []
@@ -66,6 +70,14 @@ struct ContentView: View {
                 }
                 .tag(ContentView.alertsTabTag)
 
+                NavigationStack {
+                    InsightsView()
+                }
+                .tabItem {
+                    Label("Insights", systemImage: "chart.bar.xaxis")
+                }
+                .tag(ContentView.insightsTabTag)
+
                 SettingsView(wsClient: wsClient)
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
@@ -91,7 +103,7 @@ struct ContentView: View {
                 return try? await authManager.refreshAccessToken()
             }
             await wsClient.setOnMessage {
-                [weak serversViewModel, weak alertsViewModel, apiClient] message in
+                [weak serversViewModel, weak alertsViewModel, weak securityFeed, weak upgradeJobs, apiClient] message in
                 Task { @MainActor in
                     guard let serversViewModel else { return }
                     let router = WebSocketRouter(
@@ -99,7 +111,9 @@ struct ContentView: View {
                         alerts: { msg in
                             guard case .alertEvent = msg, let alertsViewModel else { return }
                             Task { await alertsViewModel.handleWSAlertEvent(apiClient: apiClient) }
-                        }
+                        },
+                        security: { broadcast in securityFeed?.ingest(broadcast) },
+                        upgrades: { msg in ContentView.applyUpgrade(msg, to: upgradeJobs) }
                     )
                     router.dispatch(message)
                 }
@@ -115,11 +129,41 @@ struct ContentView: View {
                 handleDeepLink(link)
                 pushRouter.pendingDeepLink = nil
             }
+
+            #if DEBUG
+            if let tab = UITestSupport.initialTab { selectedTab = tab }
+            if let link = UITestSupport.deepLink { handleDeepLink(link) }
+            #endif
         }
         .onChange(of: scenePhase) { old, new in
             if old == .background && new == .active {
                 Task { await wsClient.reconnectIfNeeded() }
             }
+        }
+    }
+
+    /// Route the three upgrade-related frames into the live job store. Full sync
+    /// replaces the snapshot; progress merges; result upserts the terminal state.
+    @MainActor
+    private static func applyUpgrade(_ message: BrowserMessage, to store: UpgradeJobsStore?) {
+        guard let store else { return }
+        switch message {
+        case .fullSync(_, let upgrades):
+            store.setJobs(upgrades)
+        case let .upgradeProgress(serverId, jobId, targetVersion, stage):
+            store.applyProgress(serverId: serverId, jobId: jobId, targetVersion: targetVersion, stage: stage)
+        case let .upgradeResult(serverId, jobId, targetVersion, status, stage, error, backupPath):
+            store.applyResult(
+                serverId: serverId,
+                jobId: jobId,
+                targetVersion: targetVersion,
+                status: status,
+                stage: stage,
+                error: error,
+                backupPath: backupPath
+            )
+        default:
+            break
         }
     }
 
@@ -158,23 +202,15 @@ enum ServerNavigationTarget: Hashable {
     case detailById(String)
 }
 
-/// Loads a `ServerStatus` by id from the in-memory `ServersViewModel` and
-/// displays `ServerDetailView`. Shows a fallback if the server is unknown
-/// (e.g. push arrived before WS list refreshed).
+/// Displays `ServerDetailView` for a server id. The detail view reads live
+/// state from `ServersViewModel` and fetches REST config itself, so it works
+/// for both list navigation and deep links that arrive before the WS list
+/// has loaded.
 private struct ServerDetailLoaderView: View {
     let serverId: String
-    @Environment(ServersViewModel.self) private var serversViewModel
 
     var body: some View {
-        if let server = serversViewModel.servers.first(where: { $0.id == serverId }) {
-            ServerDetailView(server: server)
-        } else {
-            ContentUnavailableView(
-                String(localized: "Server unavailable"),
-                systemImage: "exclamationmark.triangle",
-                description: Text(String(localized: "This server is no longer reporting."))
-            )
-        }
+        ServerDetailView(serverId: serverId)
     }
 }
 
@@ -184,4 +220,6 @@ private struct ServerDetailLoaderView: View {
         .environment(PushNotificationManager())
         .environment(PushNotificationRouter())
         .environment(NetworkMonitor())
+        .environment(SecurityFeedStore())
+        .environment(UpgradeJobsStore())
 }

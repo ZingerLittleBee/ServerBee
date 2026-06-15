@@ -27,6 +27,23 @@ final class AuthManager {
         isLoading = true
         defer { isLoading = false }
 
+        #if DEBUG
+        if let seed = UITestSupport.seed {
+            serverUrl = seed.serverUrl
+            try? KeychainService.saveString(seed.serverUrl, for: KeychainService.serverUrlKey)
+            try? KeychainService.saveString(seed.accessToken, for: KeychainService.accessTokenKey)
+            try? KeychainService.saveString(seed.refreshToken, for: KeychainService.refreshTokenKey)
+            if let installationId = seed.installationId {
+                try? KeychainService.saveString(installationId, for: KeychainService.installationIdKey)
+            }
+            let seededUser = MobileUser(id: seed.userId, username: seed.username, role: seed.role)
+            try? KeychainService.saveCodable(seededUser, for: KeychainService.userKey)
+            user = seededUser
+            isAuthenticated = true
+            return
+        }
+        #endif
+
         // Restore server URL
         serverUrl = KeychainService.loadString(for: KeychainService.serverUrlKey)
 
