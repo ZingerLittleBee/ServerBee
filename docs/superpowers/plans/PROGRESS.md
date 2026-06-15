@@ -1275,3 +1275,49 @@ DELETE /api/maintenances/:id           删除维护窗口
 - 60 req / 60 s 每 IP 限流；admin rate-limit 端点新增 Public scope
 - 6 个集成测试覆盖 anonymous、redaction（含 authenticated）、IP-quality redaction、scope（hidden/out-of-list/nonexistent）、gating（5 个 toggle + enabled=false）
 - Workspace 测试 0 failure: cargo (R5) + vitest 564 pass + ultracite clean + clippy clean
+
+---
+
+## 2026-06-15 — iOS 原生客户端 (Native SwiftUI App, `apps/ios`)
+
+**分支**: `main`
+**日期**: 2026-06-15
+**目标**: 将 server/web 已实现的核心功能尽可能完整、原生、优雅地实现到 iOS App，以 iOS 用户视角重组信息架构（不照搬 Web UI），符合 Apple HIG
+**约定固化**: `apps/ios/CLAUDE.md`（英文）
+**状态**: **核心功能成体系完成（里程碑 M0–M12），4 项最高风险新 UI 已模拟器实拍验证**
+
+技术栈: SwiftUI + Swift 6（strict concurrency complete）+ @Observable + XcodeGen，iOS 17+，iPhone-only，SwiftLint build-tool plugin。认证 token 存 Keychain；走 `/api/mobile/auth/*`（per-installation token pair）。源码 133 文件 / 测试 44 文件（215 测试）。
+
+| 里程碑 | 名称 | 状态 |
+|------|------|------|
+| M0 | 登录 / 刷新 / 2FA（mobile auth + Keychain） | **done** |
+| M1 | 服务器列表（分组 / 标签 / 搜索 / 在线离线）+ 原生分段详情 | **done** |
+| M2 | 实时 WebSocket（FullSync/Update/Online/Offline/Capabilities） | **done** |
+| M3 | Metrics / Traffic / Cost / Uptime 图表（Swift Charts） | **done** |
+| M4 | Network（三网 Ping / traceroute） | **done** |
+| M5 | 安全事件（SecurityFeedStore 实时合并） | **done** |
+| M6 | Insights 跨服务器枢纽（fleet / cost / monitors / incidents / maintenance） | **done** |
+| M7 | Docker（查看 / 操作 / 日志流） | **done** |
+| M8 | Agent 生命周期（enroll / recover / regenerate / upgrade）+ Advanced 高危能力入口 | **done** |
+| M9 | Alert 配置（渠道 / 规则只读 + enable 开关 + test） | **done** |
+| M10 | Settings（API keys / devices / users / audit / rate limit / GeoIP-ASN / 分组管理） | **done** |
+| M11 | 推送通知 + 深链（server / alert） | **done** |
+| M12 | 复核补差: Disk I/O 历史图、温度图、server edit、分组 CRUD、维护窗口 CRUD、recover-409 撤销、实时升级进度 | **done** |
+
+**M12 复核与补差（本次）:**
+- 32-agent 审计 workflow 复核 goal 完成度，确认 22 个真实差距（修复 1 个解码 bug: `MobileAlertEvent` 按 list DTO 重写）
+- 用户选定范围「核心查看 + 高价值管理」，实现 7 项:
+  1. **Disk I/O 历史图** — records 无扁平字段，从 `disk_io_json` blob 解析并跨设备合并 `diskReadMerged`/`diskWriteMerged`
+  2. **温度历史图** — `hasTemperature` 条件渲染（demo 无温度数据，单测覆盖）
+  3. **server edit** — PUT `/api/servers/{id}` + `/tags`，tri-state 编码 nullable 字段（unchanged 省略 key / clear 发 null / set 发值）
+  4. **分组管理 CRUD** — Settings → Server Groups（create / rename / delete）
+  5. **维护窗口 CRUD** — Insights 创建 / 编辑 / 删除，`server_ids_json` 线上为数组，`WireDate` RFC3339 编码
+  6. **recover-409 撤销** — 409 时从 `ServerConfig.outstandingEnrollment` 读取，琥珀色提示 + DELETE `/api/agent/enrollments/{id}`
+  7. **实时升级进度** — 新增 `UpgradeJobsStore`（镜像 web zustand 语义: progress 只合并不创建 job、result upsert、succeeded/failed 5s 后按 job_id 守卫自动清除、timeout 不清除），五阶段 stepper + 终态横幅
+
+**验证:**
+- `xcodebuild ... test`: **215 测试 0 失败**（新增 12: 5 个升级帧解码 + 7 个 store 语义）
+- `xcodebuild ... build`: BUILD SUCCEEDED（== SwiftLint clean）
+- 模拟器实拍验证（连线上 demo）: Disk I/O 历史图、server edit 表单（预填）、维护窗口创建表单、升级 stepper（installing 阶段）四项最高风险新 UI
+
+**取舍 / 暂缓（留在 web）:** terminal / file / exec 完整交互、GPU 指标、自定义仪表盘编辑、alert 规则/渠道的创建-编辑阈值（移动端只读 + 开关 + 测试）。移动端显示诚实入口 / 只读视图。
