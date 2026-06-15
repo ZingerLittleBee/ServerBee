@@ -10,8 +10,11 @@ struct ServerOverviewSection: View {
     let groupName: String?
     let capabilities: CapabilitySet
     let isAdmin: Bool
+    /// Re-fetch the server's REST config after an edit / enrollment change.
+    var onReloadConfig: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
+    @State private var showEdit = false
 
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -31,6 +34,13 @@ struct ServerOverviewSection: View {
                     billingCard
                 }
                 if isAdmin {
+                    if config != nil {
+                        Button { showEdit = true } label: {
+                            Label(String(localized: "Edit server"), systemImage: "pencil")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
                     AdvancedToolsCard(capabilities: capabilities)
                     ServerLifecycleCard(
                         serverId: serverId,
@@ -38,6 +48,7 @@ struct ServerOverviewSection: View {
                         capabilities: capabilities,
                         isOnline: isOnline,
                         isPending: isPending,
+                        onConfigChanged: onReloadConfig,
                         onDeleted: { dismiss() }
                     )
                 }
@@ -45,6 +56,11 @@ struct ServerOverviewSection: View {
             .padding()
         }
         .background(Color(.systemGroupedBackground))
+        .sheet(isPresented: $showEdit) {
+            if let config {
+                EditServerSheet(serverId: serverId, config: config, onSaved: onReloadConfig)
+            }
+        }
     }
 
     // MARK: - Derived

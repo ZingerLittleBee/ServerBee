@@ -124,7 +124,8 @@ struct ServerDetailView: View {
                 config: viewModel.config,
                 groupName: groupName,
                 capabilities: capabilities,
-                isAdmin: isAdmin
+                isAdmin: isAdmin,
+                onReloadConfig: { Task { await viewModel.fetchConfig(serverId: serverId, apiClient: apiClient) } }
             )
         case .metrics:
             MetricsContentView(serverId: serverId)
