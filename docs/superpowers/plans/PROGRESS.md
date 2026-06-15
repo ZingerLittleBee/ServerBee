@@ -1342,3 +1342,27 @@ DELETE /api/maintenances/:id           删除维护窗口
 - 模拟器实拍(连线上 demo):Ping Tasks 入口 + 创建表单(probe 分段/类型占位符/interval/服务器多选);Scheduled Commands 入口 + 创建表单(高危琥珀提示 / oneshot·scheduled 选择 / Advanced 重试 / 服务器多选 / oneshot 时按钮为 "Run")
 
 **仍留 web(本轮未选):** network-probe 全局 target/setting 配置、公开状态页配置、IP-quality service 定义 —— 移动端低频 admin 配置,按取舍留在 web。
+
+## 2026-06-15 — iOS M14: 全量中文本地化 + 补齐 admin 配置 + 发布工程化
+
+**分支**: `main`
+**日期**: 2026-06-15
+**触发**: 「还有什么推荐做的」调研发现两处真实缺陷(内存/磁盘历史图空、zh-Hans 仅 73/744 覆盖),用户选定四项全做。
+**状态**: **P0-1 / P0-2 / P1 / P2 全部完成 + 验证 + 实拍**
+
+| # | 功能 | 实现 | Commit |
+|---|------|------|--------|
+| P0-1 | **修内存/磁盘空历史图** | 历史 record 只带 `mem_used`/`disk_used` 字节(无 total),故按绝对字节绘制(原按恒为 nil 的百分比 → 空图);新增 `storageBytesYAxis`(plain bytes,区别于 `/s` 速率轴) | `5d3076b1` |
+| P0-2 | **全量简体中文本地化** | String Catalog 从 ~73 → 747 键覆盖全部界面。**关键**:除 `String(localized:)` 外,补齐 SwiftUI 隐式 `LocalizedStringKey` 字面量(`Text("…")`/`Button`/`Label`/`navigationTitle`,含登录页)。插值键保留类型化占位符(Int→`%lld`、String→`%@`),0 占位符不匹配;数据/单位/符号模板(`%@ ms`、`v%@`、`*`)按源回退。启用 `SWIFT_EMIT_LOC_STRINGS` 以便未来构建暴露未译键 | `c7133210` |
+| P1 | **补齐 3 个 admin 配置缺口(原生)** | Settings → admin 新增三页:**网络探测**(全局 interval/packet/默认目标 + 自定义 target CRUD;preset 只读)、**IP 质量**(unlock service 目录 enable/删除 + 检测间隔;自定义服务创建因需编辑 JSON 规则诚实留 web)、**状态页**(单 Form:可见性/标题/描述/布局/uptime 阈值/公开面板/公开服务器多选)。新增 Codable 模型(显式 snake_case)+ @Observable VM + 解码/编码测试 | `b2beb17e` |
+| P2 | **发布工程化** | App 图标(1024px 蓝色 server-rack,匹配登录品牌;原为空占位)、`PrivacyInfo.xcprivacy`(无追踪/无采集 + UserDefaults required-reason CA92.1,App Store 必需)、无障碍(图标-only `+` 按钮与 labelsHidden 开关补 VoiceOver 标签) | `10d3f0ad` |
+
+**验证:**
+- `xcodebuild test`: **235 测试 0 失败**(新增 10:status-page / network-probe / ip-quality 解码编码)
+- `xcodebuild build`: BUILD SUCCEEDED(== SwiftLint clean)
+- **对抗式契约核验**:3 个独立 verifier agent 逐字段比对 iOS 模型/请求 vs server DTO —— **全部 clean(0 bug / 0 risk / 0 nit)**
+- 模拟器实拍(zh-Hans locale,连线上 demo):登录/服务器/洞察/设置全中文;网络探测、IP 质量、状态页三新页加载真实数据且渲染正确;App 图标主屏显示正常
+
+**唯一剩余配置缺口(诚实留 web):** 创建**新的**自定义 IP-quality service 需编辑 URL + headers + JSON 匹配规则,属桌面任务(IP 质量页 footer 已注明);其余全部原生。
+
+**P2 说明性暂缓(及理由):** iPad 适配(与 iPhone-only 设计定位冲突)、独立 XCUITest snapshot target(现有 DEBUG `SB_UITEST_*` + cliclick rig 已满足实拍验证)、Dynamic Type 深度适配(SwiftUI 语义字体默认支持)。
