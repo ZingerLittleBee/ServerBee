@@ -1912,6 +1912,23 @@
         }
       }
     },
+    "Check interval": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check interval"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检测间隔"
+          }
+        }
+      }
+    },
     "Check now": {
       "extractionState": "manual",
       "localizations": {
@@ -2286,6 +2303,23 @@
         }
       }
     },
+    "Content": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内容"
+          }
+        }
+      }
+    },
     "Copied": {
       "extractionState": "manual",
       "localizations": {
@@ -2473,6 +2507,23 @@
         }
       }
     },
+    "Couldn't create target.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't create target."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法创建目标。"
+          }
+        }
+      }
+    },
     "Couldn't create task.": {
       "extractionState": "manual",
       "localizations": {
@@ -2537,6 +2588,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除 Ping 任务失败。"
+          }
+        }
+      }
+    },
+    "Couldn't delete service.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't delete service."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法删除服务。"
+          }
+        }
+      }
+    },
+    "Couldn't delete target.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't delete target."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法删除目标。"
           }
         }
       }
@@ -2915,6 +3000,40 @@
         }
       }
     },
+    "Couldn't save settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't save settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存设置。"
+          }
+        }
+      }
+    },
+    "Couldn't save status page settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't save status page settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存状态页设置。"
+          }
+        }
+      }
+    },
     "Couldn't sign out that device": {
       "extractionState": "manual",
       "localizations": {
@@ -3017,6 +3136,40 @@
         }
       }
     },
+    "Couldn't update service.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't update service."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更新服务。"
+          }
+        }
+      }
+    },
+    "Couldn't update target.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't update target."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法更新目标。"
+          }
+        }
+      }
+    },
     "Couldn't update task.": {
       "extractionState": "manual",
       "localizations": {
@@ -3047,6 +3200,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "创建"
+          }
+        }
+      }
+    },
+    "Create custom services (with match rules) in the web dashboard.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create custom services (with match rules) in the web dashboard."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在 Web 控制台创建自定义服务(含匹配规则)。"
           }
         }
       }
@@ -3098,6 +3268,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "严重"
+          }
+        }
+      }
+    },
+    "Critical below": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Critical below"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "严重低于"
           }
         }
       }
@@ -3204,6 +3391,40 @@
         }
       }
     },
+    "Custom": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义"
+          }
+        }
+      }
+    },
+    "Custom Targets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Custom Targets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义目标"
+          }
+        }
+      }
+    },
     "Cycle": {
       "extractionState": "manual",
       "localizations": {
@@ -3306,6 +3527,57 @@
         }
       }
     },
+    "Default Targets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Targets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认目标"
+          }
+        }
+      }
+    },
+    "Default targets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default targets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认目标"
+          }
+        }
+      }
+    },
+    "Default targets are assigned to newly enrolled servers. Interval is in seconds.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default targets are assigned to newly enrolled servers. Interval is in seconds."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认目标会分配给新注册的服务器。间隔单位为秒。"
+          }
+        }
+      }
+    },
     "Degraded": {
       "extractionState": "manual",
       "localizations": {
@@ -3336,6 +3608,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除"
+          }
+        }
+      }
+    },
+    "Delete \"%@\"?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete \"%@\"?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 “%@”?"
           }
         }
       }
@@ -3506,6 +3795,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "确定删除此任务？"
+          }
+        }
+      }
+    },
+    "Description": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述"
           }
         }
       }
@@ -3918,6 +4224,23 @@
         }
       }
     },
+    "Edit Target": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑目标"
+          }
+        }
+      }
+    },
     "Edit Task": {
       "extractionState": "manual",
       "localizations": {
@@ -4206,6 +4529,23 @@
         }
       }
     },
+    "Exposed Servers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exposed Servers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公开的服务器"
+          }
+        }
+      }
+    },
     "FIRING": {
       "extractionState": "manual",
       "localizations": {
@@ -4253,6 +4593,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "失败次数"
+          }
+        }
+      }
+    },
+    "Failed to load IP quality config.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to load IP quality config."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载 IP 质量配置失败。"
           }
         }
       }
@@ -4308,6 +4665,23 @@
         }
       }
     },
+    "Failed to load network probe config.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to load network probe config."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载网络探测配置失败。"
+          }
+        }
+      }
+    },
     "Failed to load ping tasks.": {
       "extractionState": "manual",
       "localizations": {
@@ -4338,6 +4712,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "加载服务器失败：%@"
+          }
+        }
+      }
+    },
+    "Failed to load status page settings.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to load status page settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载状态页设置失败。"
           }
         }
       }
@@ -4716,6 +5107,23 @@
         }
       }
     },
+    "Global Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Global Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局设置"
+          }
+        }
+      }
+    },
     "Good": {
       "extractionState": "manual",
       "localizations": {
@@ -4763,6 +5171,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "内存用量正常"
+          }
+        }
+      }
+    },
+    "Grid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grid"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网格"
           }
         }
       }
@@ -4971,6 +5396,23 @@
         }
       }
     },
+    "How often agents re-check egress IP quality, in hours (1–168).": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How often agents re-check egress IP quality, in hours (1–168)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 重新检测出口 IP 质量的频率,单位为小时(1–168)。"
+          }
+        }
+      }
+    },
     "ICMP pings a host, TCP needs host:port, HTTP needs a full URL.": {
       "extractionState": "manual",
       "localizations": {
@@ -5001,6 +5443,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "IP"
+          }
+        }
+      }
+    },
+    "IP Quality": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP Quality"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP 质量"
           }
         }
       }
@@ -5171,6 +5630,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "镜像"
+          }
+        }
+      }
+    },
+    "Incidents": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incidents"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "事件"
           }
         }
       }
@@ -5702,6 +6178,23 @@
         }
       }
     },
+    "Layout": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Layout"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "布局"
+          }
+        }
+      }
+    },
     "Light": {
       "extractionState": "manual",
       "localizations": {
@@ -5732,6 +6225,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "限制"
+          }
+        }
+      }
+    },
+    "List": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "List"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "列表"
           }
         }
       }
@@ -6534,6 +7044,23 @@
         }
       }
     },
+    "Network Probes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network Probes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络探测"
+          }
+        }
+      }
+    },
     "Network unavailable": {
       "extractionState": "manual",
       "localizations": {
@@ -6666,6 +7193,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "新建 Ping 任务"
+          }
+        }
+      }
+    },
+    "New Target": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建目标"
           }
         }
       }
@@ -7095,6 +7639,23 @@
         }
       }
     },
+    "No custom targets.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No custom targets."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无自定义目标。"
+          }
+        }
+      }
+    },
     "No data": {
       "extractionState": "manual",
       "localizations": {
@@ -7431,6 +7992,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "未选择服务器 — 将在所有具备能力的服务器上运行。"
+          }
+        }
+      }
+    },
+    "No servers selected — the public page lists nothing.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No servers selected — the public page lists nothing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未选择服务器 — 公开页面不会展示任何内容。"
           }
         }
       }
@@ -7894,6 +8472,23 @@
         }
       }
     },
+    "Other": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        }
+      }
+    },
     "Overview": {
       "extractionState": "manual",
       "localizations": {
@@ -7924,6 +8519,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "丢包率 %@"
+          }
+        }
+      }
+    },
+    "Packets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Packets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探测包数"
           }
         }
       }
@@ -8472,6 +9084,40 @@
         }
       }
     },
+    "Preset Targets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preset Targets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预设目标"
+          }
+        }
+      }
+    },
+    "Preset targets ship with the server and can't be edited here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preset targets ship with the server and can't be edited here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预设目标随服务器内置,无法在此编辑。"
+          }
+        }
+      }
+    },
     "Price": {
       "extractionState": "manual",
       "localizations": {
@@ -8540,6 +9186,40 @@
         }
       }
     },
+    "Provider": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provider"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运营商"
+          }
+        }
+      }
+    },
+    "Provider groups targets on the network screen (e.g. ct, cu, cm, international).": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provider groups targets on the network screen (e.g. ct, cu, cm, international)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运营商用于在网络页面对目标分组(如 ct、cu、cm、international)。"
+          }
+        }
+      }
+    },
     "Proxy": {
       "extractionState": "manual",
       "localizations": {
@@ -8587,6 +9267,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "公开/窗口"
+          }
+        }
+      }
+    },
+    "Public Panels": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Public Panels"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公开面板"
+          }
+        }
+      }
+    },
+    "Public page enabled": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Public page enabled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用公开页面"
           }
         }
       }
@@ -9781,6 +10495,23 @@
         }
       }
     },
+    "Save Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存设置"
+          }
+        }
+      }
+    },
     "Scan QR Code": {
       "localizations": {
         "en": {
@@ -10065,6 +10796,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器已创建"
+          }
+        }
+      }
+    },
+    "Server detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server detail"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器详情"
           }
         }
       }
@@ -10542,6 +11290,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "状态"
+          }
+        }
+      }
+    },
+    "Status Page": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status Page"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状态页"
           }
         }
       }
@@ -11086,6 +11851,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "这将永久删除该账号及其所有会话和密钥。"
+          }
+        }
+      }
+    },
+    "This removes the target and its history from every server it is assigned to.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This removes the target and its history from every server it is assigned to."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这将从分配该目标的所有服务器上移除它及其历史数据。"
           }
         }
       }
@@ -12007,6 +12789,40 @@
         }
       }
     },
+    "Uptime Thresholds": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uptime Thresholds"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线率阈值"
+          }
+        }
+      }
+    },
+    "Uptime at or above warning is healthy; below critical is shown as down.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uptime at or above warning is healthy; below critical is shown as down."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在线率达到或高于警告值为健康;低于严重值则显示为宕机。"
+          }
+        }
+      }
+    },
     "Username": {
       "extractionState": "manual",
       "localizations": {
@@ -12245,6 +13061,23 @@
         }
       }
     },
+    "Warning below": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Warning below"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "警告低于"
+          }
+        }
+      }
+    },
     "Waste": {
       "extractionState": "manual",
       "localizations": {
@@ -12292,6 +13125,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "权重:%d"
+          }
+        }
+      }
+    },
+    "When off, the public status page is not reachable.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When off, the public status page is not reachable."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭后,公开状态页将无法访问。"
           }
         }
       }

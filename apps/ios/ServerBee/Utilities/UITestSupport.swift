@@ -65,6 +65,13 @@ enum UITestSupport {
         ProcessInfo.processInfo.environment["SB_UITEST_TAB"].flatMap(Int.init)
     }
 
+    /// Optional admin sub-screen to push on launch from Settings, so the
+    /// cliclick harness needn't scroll the admin list and tap a row. Matches a
+    /// known token, e.g. "network-probes" / "ip-quality" / "status-page".
+    static var adminRoute: String? {
+        ProcessInfo.processInfo.environment["SB_UITEST_ADMIN"]
+    }
+
     /// Optional auto-presentation hint for a screen that would otherwise require
     /// a navigation-bar tap (which the headless cliclick harness can't reliably
     /// hit because the Simulator's translucent title bar overlays the top of the

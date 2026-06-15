@@ -12,9 +12,49 @@ struct SettingsView: View {
 
     private var isAdmin: Bool { authManager.user?.role.lowercased() == "admin" }
 
+    #if DEBUG
+    @State private var debugPath = NavigationPath()
+
+    /// DEBUG-only value-routed admin destinations, used by the launch hook to
+    /// push a sub-screen without the cliclick harness scrolling the list.
+    enum AdminRoute: Hashable { case networkProbes, ipQuality, statusPage }
+    #endif
+
     var body: some View {
-        NavigationStack {
-            List {
+        navigationStack
+    }
+
+    private var navigationStack: some View {
+        #if DEBUG
+        NavigationStack(path: $debugPath) { settingsList }
+        #else
+        NavigationStack { settingsList }
+        #endif
+    }
+
+    private var settingsList: some View {
+        list
+        #if DEBUG
+            .navigationDestination(for: AdminRoute.self) { route in
+                switch route {
+                case .networkProbes: NetworkProbeConfigView(isAdmin: isAdmin)
+                case .ipQuality: IpQualityConfigView(isAdmin: isAdmin)
+                case .statusPage: StatusPageConfigView(isAdmin: isAdmin)
+                }
+            }
+            .task {
+                switch UITestSupport.adminRoute {
+                case "network-probes": debugPath.append(AdminRoute.networkProbes)
+                case "ip-quality": debugPath.append(AdminRoute.ipQuality)
+                case "status-page": debugPath.append(AdminRoute.statusPage)
+                default: break
+                }
+            }
+        #endif
+    }
+
+    private var list: some View {
+        List {
                 if let url = authManager.serverUrl, !url.isEmpty {
                     Section {
                         InsecureURLBanner(serverUrl: url)
@@ -49,7 +89,6 @@ struct SettingsView: View {
                 Button(String(localized: "Cancel"), role: .cancel) {}
             }
         }
-    }
 
     private var accountSection: some View {
         Section(String(localized: "Account")) {
@@ -119,6 +158,21 @@ struct SettingsView: View {
                 TasksView(isAdmin: isAdmin)
             } label: {
                 Label(String(localized: "Scheduled Commands"), systemImage: "terminal")
+            }
+            NavigationLink {
+                NetworkProbeConfigView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Network Probes"), systemImage: "dot.radiowaves.up.forward")
+            }
+            NavigationLink {
+                IpQualityConfigView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "IP Quality"), systemImage: "shield.lefthalf.filled")
+            }
+            NavigationLink {
+                StatusPageConfigView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Status Page"), systemImage: "globe.americas")
             }
             NavigationLink {
                 UsersView()

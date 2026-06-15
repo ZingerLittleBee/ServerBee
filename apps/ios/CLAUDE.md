@@ -166,7 +166,9 @@ credentials are compiled in. Pass via `simctl launch` using the
   `SB_UITEST_DEEPLINK` (`server:<id>` / `alert:<key>`),
   `SB_UITEST_SECTION` (`DetailSection.rawValue`),
   `SB_UITEST_PRESENT` (per-view auto-present token, e.g. `edit-server`,
-  `upgrade-progress[:stage]`, `insights-maintenance-create`, `advanced-tools`).
+  `upgrade-progress[:stage]`, `insights-maintenance-create`, `advanced-tools`),
+  `SB_UITEST_ADMIN` (push a Settings admin sub-screen on launch:
+  `network-probes` / `ip-quality` / `status-page`).
 - Add a hook when a screen needs a navbar/plain-`Button` tap the headless
   cliclick harness can't reliably trigger, or a backend state the shared demo
   can't produce. See the verification-rig memory for the simulator commands.
@@ -174,13 +176,22 @@ credentials are compiled in. Pass via `simctl launch` using the
 ## Deferred by design (kept on web)
 
 Full **live** terminal / file-browser / exec interaction (the PTY/streaming
-surfaces), GPU metrics, custom-dashboard editing, alert rule/channel
-**create-edit** (mobile is read-only + enable toggle + test), plus network-probe
-global target config, public status-page config, and IP-quality service
-definitions. These show honest entry points / read-only views on mobile.
+surfaces), GPU metrics, custom-dashboard editing, and alert rule/channel
+**create-edit** (mobile is read-only + enable toggle + test). These show honest
+entry points / read-only views on mobile.
 
-Note: scheduled-command management (`/api/tasks`, list/create/run/results) and
-ping-task config (`/api/ping-tasks`, CRUD) ARE native (Settings → admin) — they
-are management surfaces, distinct from the deferred live-exec/terminal PTY.
+The one remaining config gap: authoring a **new custom IP-quality service**
+needs URL + headers + JSON match-rule editing, which stays on the web dashboard
+(the IP-quality admin screen surfaces enable/disable + delete + interval, and
+notes this in a footer). Everything else is native.
+
+Native admin/config surfaces (Settings → admin): server groups, ping-task config
+(`/api/ping-tasks`, CRUD), scheduled-command management (`/api/tasks`,
+list/create/run/results), network-probe global config (`/api/network-probes`,
+targets CRUD + settings), IP-quality config (`/api/ip-quality`, service
+enable/delete + interval), public status-page config (`/api/status-page`), users,
+audit log, rate limits, GeoIP/ASN. These are management surfaces, distinct from
+the deferred live-exec/terminal PTY.
+
 The temperature history chart is implemented and unit-tested but renders only
 when an agent reports temperature (the shared demo has none).

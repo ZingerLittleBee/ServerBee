@@ -94,17 +94,31 @@ struct ServerIpQualityData: Decodable, Sendable {
     }
 }
 
-/// One catalog entry (`GET /api/ip-quality/services`), used to resolve a
-/// `service_id` to a human name.
+/// One catalog entry (`GET /api/ip-quality/services`), used both to resolve a
+/// `service_id` to a human name and to drive the admin service catalog.
 struct UnlockService: Decodable, Identifiable, Sendable {
     let id: String
     let key: String
     let name: String
     var category: String?
     let enabled: Bool
+    var popularity: Int?
+    var isBuiltin: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, key, name, category, enabled
+        case id, key, name, category, enabled, popularity
+        case isBuiltin = "is_builtin"
+    }
+
+    /// Built-in services ship with the server: their definition can't be edited
+    /// or deleted (only their enabled flag is toggleable). Custom services can
+    /// be deleted.
+    var builtin: Bool { isBuiltin ?? false }
+
+    /// Category label, capitalized; "Other" when unset.
+    var categoryLabel: String {
+        guard let category, !category.isEmpty else { return String(localized: "Other") }
+        return category.capitalized
     }
 }
 
