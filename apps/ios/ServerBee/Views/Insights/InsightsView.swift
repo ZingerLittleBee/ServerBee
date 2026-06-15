@@ -21,6 +21,10 @@ struct InsightsView: View {
                 fleetCard
                 trafficCard
                 costCard
+                fleetTrafficCard
+                securityCard
+                ipQualityCard
+                networkProbesCard
                 monitorsCard
                 statusCard
             }
@@ -114,6 +118,62 @@ struct InsightsView: View {
                     .font(.subheadline).foregroundStyle(.secondary)
             }
         }
+    }
+
+    // MARK: - Cross-server overviews
+
+    private var fleetTrafficCard: some View {
+        navCard(
+            title: String(localized: "Traffic by server"),
+            subtitle: String(localized: "Billing-cycle usage & daily history"),
+            systemImage: "chart.bar.xaxis", tint: .networkColor
+        ) { FleetTrafficView() }
+    }
+
+    private var securityCard: some View {
+        navCard(
+            title: String(localized: "Security"),
+            subtitle: String(localized: "Events across all servers"),
+            systemImage: "shield.lefthalf.filled", tint: .serverOffline
+        ) { FleetSecurityView() }
+    }
+
+    private var ipQualityCard: some View {
+        navCard(
+            title: String(localized: "IP quality"),
+            subtitle: String(localized: "Egress IP reputation"),
+            systemImage: "shield.checkered", tint: .brandAccent
+        ) { FleetIpQualityView() }
+    }
+
+    private var networkProbesCard: some View {
+        navCard(
+            title: String(localized: "Network probes"),
+            subtitle: String(localized: "Latency & loss to targets"),
+            systemImage: "dot.radiowaves.left.and.right", tint: .cpuColor
+        ) { FleetNetworkProbeView() }
+    }
+
+    private func navCard<Destination: View>(
+        title: String, subtitle: String, systemImage: String, tint: Color,
+        @ViewBuilder destination: @escaping () -> Destination
+    ) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            SectionCard {
+                HStack(spacing: 12) {
+                    Image(systemName: systemImage).foregroundStyle(tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.subheadline.bold()).foregroundStyle(.primary)
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Monitors

@@ -62,6 +62,43 @@ struct NetworkProbeServerSummary: Decodable, Sendable {
     }
 }
 
+/// Fleet-wide probe roll-up for one server (`GET /api/network-probes/overview`).
+/// Carries per-target latest values plus 24h latency/loss sparklines (newest
+/// last; `nil` slots are gaps with no sample).
+struct NetworkProbeFleetOverview: Decodable, Identifiable, Sendable {
+    let serverId: String
+    let serverName: String
+    let online: Bool
+    var lastProbeAt: String?
+    var targets: [TargetSummary]
+    let anomalyCount: Int
+    var latencySparkline: [Double?]
+    var lossSparkline: [Double?]
+
+    var id: String { serverId }
+
+    enum CodingKeys: String, CodingKey {
+        case serverId = "server_id"
+        case serverName = "server_name"
+        case online
+        case lastProbeAt = "last_probe_at"
+        case targets
+        case anomalyCount = "anomaly_count"
+        case latencySparkline = "latency_sparkline"
+        case lossSparkline = "loss_sparkline"
+    }
+
+    /// Worst (highest) average latency across targets, for an at-a-glance value.
+    var worstLatency: Double? {
+        targets.compactMap(\.avgLatency).max()
+    }
+
+    /// Highest packet-loss ratio across targets.
+    var worstLoss: Double {
+        targets.map(\.packetLoss).max() ?? 0
+    }
+}
+
 /// One probe sample over time (`.../network-probes/records`). The server picks
 /// raw vs hourly aggregates automatically based on the requested window.
 struct ProbeRecordDto: Decodable, Sendable {

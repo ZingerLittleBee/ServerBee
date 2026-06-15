@@ -51,6 +51,34 @@ struct TrafficResponse: Decodable, Sendable {
     }
 }
 
+/// Per-server billing-cycle usage roll-up (`GET /api/traffic/overview`). Only
+/// servers with a billing cycle configured are returned. `percentUsed` and
+/// `trafficLimit` are present only when a traffic limit is set.
+struct ServerTrafficOverview: Decodable, Identifiable, Sendable {
+    let serverId: String
+    let name: String
+    let cycleIn: Int64
+    let cycleOut: Int64
+    var trafficLimit: Int64?
+    var billingCycle: String?
+    var percentUsed: Double?
+    let daysRemaining: Int
+
+    var id: String { serverId }
+    var cycleTotal: Int64 { cycleIn + cycleOut }
+
+    enum CodingKeys: String, CodingKey {
+        case serverId = "server_id"
+        case name
+        case cycleIn = "cycle_in"
+        case cycleOut = "cycle_out"
+        case trafficLimit = "traffic_limit"
+        case billingCycle = "billing_cycle"
+        case percentUsed = "percent_used"
+        case daysRemaining = "days_remaining"
+    }
+}
+
 /// One calendar day's in/out bytes within the billing cycle.
 struct DailyTraffic: Decodable, Identifiable, Sendable {
     let date: String                // "YYYY-MM-DD"

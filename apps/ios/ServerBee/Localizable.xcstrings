@@ -108,6 +108,23 @@
         }
       }
     },
+    "%d days left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d days left"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩 %d 天"
+          }
+        }
+      }
+    },
     "%d down": {
       "extractionState": "manual",
       "localizations": {
@@ -172,6 +189,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%d 台服务器"
+          }
+        }
+      }
+    },
+    "%d targets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d targets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d 个目标"
           }
         }
       }
@@ -257,6 +291,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld / %lld"
+          }
+        }
+      }
+    },
+    "%lld anomalies": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld anomalies"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个异常"
           }
         }
       }
@@ -1640,6 +1691,23 @@
         }
       }
     },
+    "Billing-cycle usage & daily history": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Billing-cycle usage & daily history"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计费周期用量与每日历史"
+          }
+        }
+      }
+    },
     "Block": {
       "extractionState": "manual",
       "localizations": {
@@ -1806,6 +1874,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "本周期已消耗"
+          }
+        }
+      }
+    },
+    "By server": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按服务器"
           }
         }
       }
@@ -4326,6 +4411,23 @@
         }
       }
     },
+    "Egress IP reputation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Egress IP reputation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出口 IP 信誉"
+          }
+        }
+      }
+    },
     "Email": {
       "extractionState": "manual",
       "localizations": {
@@ -4457,6 +4559,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "事件"
+          }
+        }
+      }
+    },
+    "Events across all servers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Events across all servers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有服务器的事件"
           }
         }
       }
@@ -6212,6 +6331,23 @@
         }
       }
     },
+    "Latency & loss to targets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latency & loss to targets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到目标的延迟与丢包"
+          }
+        }
+      }
+    },
     "Latest check": {
       "extractionState": "manual",
       "localizations": {
@@ -6649,6 +6785,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "在 VirusTotal 上查询 IP"
+          }
+        }
+      }
+    },
+    "Loss": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loss"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "丢包"
           }
         }
       }
@@ -7112,6 +7265,40 @@
         }
       }
     },
+    "Network probes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network probes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络探测"
+          }
+        }
+      }
+    },
+    "Network probes unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network probes unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络探测不可用"
+          }
+        }
+      }
+    },
     "Network unavailable": {
       "extractionState": "manual",
       "localizations": {
@@ -7465,6 +7652,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无数据"
+          }
+        }
+      }
+    },
+    "No IP quality data": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No IP quality data"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无 IP 质量数据"
           }
         }
       }
@@ -7996,6 +8200,57 @@
         }
       }
     },
+    "No server has a billing cycle configured.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No server has a billing cycle configured."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有服务器配置了计费周期。"
+          }
+        }
+      }
+    },
+    "No server has network probe targets assigned.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No server has network probe targets assigned."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有服务器分配了网络探测目标。"
+          }
+        }
+      }
+    },
+    "No server has reported egress IP quality yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No server has reported egress IP quality yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚无服务器上报出口 IP 质量。"
+          }
+        }
+      }
+    },
     "No servers available": {
       "extractionState": "manual",
       "localizations": {
@@ -8064,6 +8319,23 @@
         }
       }
     },
+    "No suspicious activity has been detected across your servers.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No suspicious activity has been detected across your servers."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未在你的服务器上检测到可疑活动。"
+          }
+        }
+      }
+    },
     "No suspicious activity has been detected on this server.": {
       "extractionState": "manual",
       "localizations": {
@@ -8094,6 +8366,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无任务。"
+          }
+        }
+      }
+    },
+    "No traffic data": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No traffic data"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无流量数据"
           }
         }
       }
@@ -8196,6 +8485,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "不可用"
+          }
+        }
+      }
+    },
+    "Not checked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not checked"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未检测"
           }
         }
       }
@@ -12280,6 +12586,23 @@
         }
       }
     },
+    "Traffic by server": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traffic by server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各服务器流量"
+          }
+        }
+      }
+    },
     "Traffic from this target will be allowed again on the covered servers.": {
       "extractionState": "manual",
       "localizations": {
@@ -13957,6 +14280,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "丢包 %@"
+          }
+        }
+      }
+    },
+    "of %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "of %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共 %@"
           }
         }
       }
