@@ -287,6 +287,9 @@ struct MetricRecord: Decodable, Identifiable, Sendable {
     var load1: Double?
     var diskReadPerSec: Int64?
     var diskWritePerSec: Int64?
+    var temperature: Double?
+    /// Double-encoded JSON array of per-device disk I/O (records endpoint only).
+    var diskIoJson: String?
 
     enum CodingKeys: String, CodingKey {
         case timestamp
@@ -306,6 +309,8 @@ struct MetricRecord: Decodable, Identifiable, Sendable {
         case load1
         case diskReadPerSec = "disk_read_bytes_per_sec"
         case diskWritePerSec = "disk_write_bytes_per_sec"
+        case temperature
+        case diskIoJson = "disk_io_json"
     }
 }
 
@@ -330,11 +335,35 @@ extension MetricRecord {
         load1 = try container.decodeIfPresent(Double.self, forKey: .load1)
         diskReadPerSec = try container.decodeIfPresent(Int64.self, forKey: .diskReadPerSec)
         diskWritePerSec = try container.decodeIfPresent(Int64.self, forKey: .diskWritePerSec)
+        temperature = try container.decodeIfPresent(Double.self, forKey: .temperature)
+        diskIoJson = try container.decodeIfPresent(String.self, forKey: .diskIoJson)
     }
 
     /// Parsed Date from the ISO 8601 timestamp string.
     var date: Date? {
         ISO8601DateFormatter.shared.date(from: timestamp)
+    }
+
+    /// Per-device disk I/O parsed from the `disk_io_json` blob (empty if absent
+    /// or unparsable). The records endpoint encodes this as a JSON *string*.
+    var diskIoSamples: [DiskIoSample] {
+        guard let raw = diskIoJson, let data = raw.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([DiskIoSample].self, from: data)) ?? []
+    }
+
+    /// Total read rate summed across devices (nil when no device data — keeps
+    /// the chart's `if let` gating identical to the live flat-field path).
+    var diskReadMerged: Int64? {
+        let samples = diskIoSamples
+        guard !samples.isEmpty else { return nil }
+        return samples.reduce(0) { $0 + $1.readBytesPerSec }
+    }
+
+    /// Total write rate summed across devices.
+    var diskWriteMerged: Int64? {
+        let samples = diskIoSamples
+        guard !samples.isEmpty else { return nil }
+        return samples.reduce(0) { $0 + $1.writeBytesPerSec }
     }
 
     /// Memory usage percentage (0-100).

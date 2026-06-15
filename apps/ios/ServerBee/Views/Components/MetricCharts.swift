@@ -51,11 +51,15 @@ struct MetricsCharts: View {
     }
 
     private var hasDiskIO: Bool {
-        records.contains { ($0.diskReadPerSec != nil) || ($0.diskWritePerSec != nil) }
+        records.contains { !$0.diskIoSamples.isEmpty || $0.diskReadPerSec != nil || $0.diskWritePerSec != nil }
     }
 
     private var hasLoad: Bool {
         records.contains { $0.load1 != nil }
+    }
+
+    private var hasTemperature: Bool {
+        records.contains { ($0.temperature ?? 0) > 0 }
     }
 
     var body: some View {
@@ -66,6 +70,7 @@ struct MetricsCharts: View {
         if hasLoad { loadChart(data: data) }
         networkChart(data: data)
         if hasDiskIO { diskIOChart(data: data) }
+        if hasTemperature { temperatureChart(data: data) }
     }
 
     private func cpuChart(data: [ChartDataPoint]) -> some View {
@@ -163,7 +168,9 @@ struct MetricsCharts: View {
     private func diskIOChart(data: [ChartDataPoint]) -> some View {
         ChartSection(title: String(localized: "Disk I/O")) {
             Chart(data, id: \.date) { point in
-                if let read = point.record.diskReadPerSec {
+                // History records expose disk I/O via the merged disk_io_json
+                // sum; the live flat fields are the fallback.
+                if let read = point.record.diskReadMerged ?? point.record.diskReadPerSec {
                     LineMark(
                         x: .value("Time", point.date),
                         y: .value("Bytes/s", read),
@@ -172,7 +179,7 @@ struct MetricsCharts: View {
                     .foregroundStyle(Color.diskColor)
                     .interpolationMethod(.catmullRom)
                 }
-                if let write = point.record.diskWritePerSec {
+                if let write = point.record.diskWriteMerged ?? point.record.diskWritePerSec {
                     LineMark(
                         x: .value("Time", point.date),
                         y: .value("Bytes/s", write),
@@ -187,6 +194,19 @@ struct MetricsCharts: View {
                 "Write": Color.warningAmber
             ])
             .bytesYAxis()
+            .timeXAxis()
+        }
+    }
+
+    private func temperatureChart(data: [ChartDataPoint]) -> some View {
+        ChartSection(title: String(localized: "Temperature")) {
+            Chart(data, id: \.date) { point in
+                if let temp = point.record.temperature, temp > 0 {
+                    LineMark(x: .value("Time", point.date), y: .value("°C", temp))
+                        .foregroundStyle(Color.warningAmber)
+                        .interpolationMethod(.catmullRom)
+                }
+            }
             .timeXAxis()
         }
     }
