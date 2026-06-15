@@ -11,6 +11,7 @@ struct IncidentsView: View {
     @State private var maintenanceActions = MaintenanceActionsViewModel()
     @State private var showCreate = false
     @State private var updateTarget: Incident?
+    @State private var incidentDeleteTarget: Incident?
     @State private var showCreateMaintenance = false
     @State private var maintenanceEditTarget: Maintenance?
     @State private var maintenanceDeleteTarget: Maintenance?
@@ -90,6 +91,22 @@ struct IncidentsView: View {
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
         }
+        .confirmationDialog(
+            incidentDeleteTarget.map { String(format: String(localized: "Delete \"%@\"?"), $0.title) } ?? "",
+            isPresented: Binding(get: { incidentDeleteTarget != nil }, set: { if !$0 { incidentDeleteTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let target = incidentDeleteTarget {
+                Button(String(localized: "Delete"), role: .destructive) {
+                    Task {
+                        if await actions.delete(incidentId: target.id, apiClient: apiClient) { reload() }
+                    }
+                }
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "This permanently deletes the incident and its update history."))
+        }
         #if DEBUG
         .task {
             if isAdmin, UITestSupport.autoPresent == "insights-incidents-create" { showCreate = true }
@@ -132,13 +149,23 @@ struct IncidentsView: View {
                     Text(Formatters.formatRelativeTime(incident.createdAt))
                         .font(.caption2).foregroundStyle(.secondary)
                 }
-                if isAdmin, !incident.isResolved {
+                if isAdmin {
                     Divider()
-                    Button {
-                        updateTarget = incident
-                    } label: {
-                        Label(String(localized: "Post update / resolve"), systemImage: "text.bubble")
-                            .font(.caption)
+                    HStack {
+                        if !incident.isResolved {
+                            Button {
+                                updateTarget = incident
+                            } label: {
+                                Label(String(localized: "Post update / resolve"), systemImage: "text.bubble")
+                                    .font(.caption)
+                            }
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            incidentDeleteTarget = incident
+                        } label: {
+                            Label(String(localized: "Delete"), systemImage: "trash").font(.caption)
+                        }
                     }
                 }
             }
@@ -191,12 +218,14 @@ struct IncidentsView: View {
 
 struct CreateIncidentSheet: View {
     @Bindable var actions: IncidentActionsViewModel
+    @Environment(ServersViewModel.self) private var serversViewModel
     @Environment(\.apiClient) private var apiClient
     @Environment(\.dismiss) private var dismiss
 
     @State private var title = ""
     @State private var severity: IncidentSeverity = .minor
     @State private var isPublic = false
+    @State private var selectedServerIds: Set<String> = []
 
     var body: some View {
         NavigationStack {
@@ -208,6 +237,7 @@ struct CreateIncidentSheet: View {
                     }
                     Toggle(String(localized: "Show on public status page"), isOn: $isPublic)
                 }
+                serversSection
                 if let error = actions.errorMessage {
                     Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.serverOffline) }
                 }
@@ -223,7 +253,8 @@ struct CreateIncidentSheet: View {
                         Button(String(localized: "Create")) {
                             Task {
                                 if await actions.create(title: title.trimmingCharacters(in: .whitespaces),
-                                                        severity: severity, isPublic: isPublic, apiClient: apiClient) {
+                                                        severity: severity, isPublic: isPublic,
+                                                        serverIds: Array(selectedServerIds), apiClient: apiClient) {
                                     dismiss()
                                 }
                             }
@@ -232,6 +263,34 @@ struct CreateIncidentSheet: View {
                     }
                 }
             }
+        }
+    }
+
+    private var serversSection: some View {
+        Section {
+            ForEach(serversViewModel.servers) { server in
+                Button {
+                    if selectedServerIds.contains(server.id) {
+                        selectedServerIds.remove(server.id)
+                    } else {
+                        selectedServerIds.insert(server.id)
+                    }
+                } label: {
+                    HStack {
+                        Text(server.name).foregroundStyle(.primary)
+                        Spacer()
+                        if selectedServerIds.contains(server.id) {
+                            Image(systemName: "checkmark").foregroundStyle(Color.brandAccent)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text(String(localized: "Affected servers"))
+        } footer: {
+            Text(selectedServerIds.isEmpty
+                ? String(localized: "No servers selected — applies to all servers.")
+                : String(format: String(localized: "%d selected"), selectedServerIds.count))
         }
     }
 }

@@ -8,15 +8,27 @@ final class IncidentActionsViewModel {
     var isWorking = false
     var errorMessage: String?
 
-    /// Create an incident. Returns true on success.
-    func create(title: String, severity: IncidentSeverity, isPublic: Bool, apiClient: APIClient) async -> Bool {
+    /// Create an incident. `serverIds` nil/empty applies it to all servers.
+    /// Returns true on success.
+    func create(
+        title: String,
+        severity: IncidentSeverity,
+        isPublic: Bool,
+        serverIds: [String]? = nil,
+        apiClient: APIClient
+    ) async -> Bool {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
             let _: Incident = try await apiClient.post(
                 "/api/incidents",
-                body: CreateIncidentRequest(title: title, severity: severity.rawValue, isPublic: isPublic)
+                body: CreateIncidentRequest(
+                    title: title,
+                    severity: severity.rawValue,
+                    isPublic: isPublic,
+                    serverIdsJson: (serverIds?.isEmpty ?? true) ? nil : serverIds
+                )
             )
             return true
         } catch {

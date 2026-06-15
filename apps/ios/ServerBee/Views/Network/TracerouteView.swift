@@ -12,6 +12,7 @@ struct TracerouteView: View {
     @Environment(\.apiClient) private var apiClient
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel = TracerouteViewModel()
+    @State private var showClearConfirm = false
     @FocusState private var targetFocused: Bool
 
     var body: some View {
@@ -46,6 +47,18 @@ struct TracerouteView: View {
             }
             .task {
                 await viewModel.loadHistory(serverId: serverId, apiClient: apiClient)
+            }
+            .confirmationDialog(
+                String(localized: "Clear traceroute history?"),
+                isPresented: $showClearConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: "Clear"), role: .destructive) {
+                    Task { await viewModel.clearHistory(serverId: serverId, apiClient: apiClient) }
+                }
+                Button(String(localized: "Cancel"), role: .cancel) {}
+            } message: {
+                Text(String(localized: "Removes all saved traceroute runs for this server."))
             }
         }
     }
@@ -158,11 +171,25 @@ struct TracerouteView: View {
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            Task {
+                                await viewModel.deleteRecord(
+                                    serverId: serverId, requestId: record.requestId, apiClient: apiClient
+                                )
+                            }
+                        } label: {
+                            Label(String(localized: "Delete"), systemImage: "trash")
+                        }
+                    }
                     if record.id != viewModel.history.last?.id {
                         Divider()
                     }
                 }
             }
+        } accessory: {
+            Button(String(localized: "Clear")) { showClearConfirm = true }
+                .font(.caption)
         }
     }
 }

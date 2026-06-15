@@ -91,10 +91,14 @@ struct CreateIncidentRequest: Encodable, Sendable {
     let title: String
     var severity: String?
     var isPublic: Bool?
+    /// Affected server ids — an ARRAY on the wire (not a JSON string); nil/empty
+    /// applies the incident to all servers.
+    var serverIdsJson: [String]?
 
     enum CodingKeys: String, CodingKey {
         case title, severity
         case isPublic = "is_public"
+        case serverIdsJson = "server_ids_json"
     }
 }
 

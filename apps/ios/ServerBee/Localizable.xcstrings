@@ -2048,6 +2048,23 @@
         }
       }
     },
+    "Clear traceroute history?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear traceroute history?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清空路由追踪历史？"
+          }
+        }
+      }
+    },
     "Clears every active login, register and public bucket.": {
       "extractionState": "manual",
       "localizations": {
@@ -3680,6 +3697,23 @@
         }
       }
     },
+    "Delete event": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete event"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除事件"
+          }
+        }
+      }
+    },
     "Delete server": {
       "extractionState": "manual",
       "localizations": {
@@ -3727,6 +3761,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除任务"
+          }
+        }
+      }
+    },
+    "Delete this event?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete this event?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除此事件？"
           }
         }
       }
@@ -9662,6 +9713,23 @@
         }
       }
     },
+    "Removes all saved traceroute runs for this server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removes all saved traceroute runs for this server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除该服务器保存的所有路由追踪记录。"
+          }
+        }
+      }
+    },
     "Removes the task and its result history. This cannot be undone.": {
       "extractionState": "manual",
       "localizations": {
@@ -11838,6 +11906,23 @@
         }
       }
     },
+    "This permanently deletes the incident and its update history.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This permanently deletes the incident and its update history."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将永久删除该故障及其更新记录。"
+          }
+        }
+      }
+    },
     "This permanently removes the account and all its sessions and keys.": {
       "extractionState": "manual",
       "localizations": {
@@ -11851,6 +11936,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "这将永久删除该账号及其所有会话和密钥。"
+          }
+        }
+      }
+    },
+    "This removes the event from history. It can't be undone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This removes the event from history. It can't be undone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将从历史记录中移除该事件，且无法撤销。"
           }
         }
       }

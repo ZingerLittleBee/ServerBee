@@ -34,7 +34,9 @@ struct ServerSecuritySection: View {
             await viewModel.loadIfNeeded(serverId: serverId, apiClient: apiClient)
         }
         .sheet(item: $selected) { event in
-            SecurityEventDetailView(event: event)
+            SecurityEventDetailView(event: event) {
+                Task { await viewModel.reload(serverId: serverId, apiClient: apiClient) }
+            }
         }
     }
 

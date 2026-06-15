@@ -68,6 +68,28 @@ final class TracerouteViewModel {
         isRunning = false
     }
 
+    /// Delete one history record. Removes it locally on success.
+    func deleteRecord(serverId: String, requestId: String, apiClient: APIClient) async {
+        do {
+            try await apiClient.deleteVoid("/api/servers/\(serverId)/traceroute/\(requestId)")
+            history.removeAll { $0.requestId == requestId }
+            if snapshot?.requestId == requestId { snapshot = nil }
+        } catch {
+            errorMessage = friendlyMessage(for: error)
+        }
+    }
+
+    /// Clear the entire history for this server.
+    func clearHistory(serverId: String, apiClient: APIClient) async {
+        do {
+            try await apiClient.deleteVoid("/api/servers/\(serverId)/traceroute")
+            history = []
+            snapshot = nil
+        } catch {
+            errorMessage = friendlyMessage(for: error)
+        }
+    }
+
     private func startPolling(serverId: String, requestId: String, apiClient: APIClient) {
         pollTask = Task { [weak self] in
             guard let self else { return }

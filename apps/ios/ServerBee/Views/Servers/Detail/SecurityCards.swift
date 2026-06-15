@@ -45,13 +45,16 @@ struct SecurityFeedCard: View {
     let canLoadMore: Bool
     let isLoadingMore: Bool
     let onLoadMore: () -> Void
+    /// Optional resolver showing which server an event came from — used in the
+    /// fleet-wide overview where events span multiple servers.
+    var serverName: (SecurityEvent) -> String? = { _ in nil }
 
     var body: some View {
         SectionCard(String(localized: "Events"), systemImage: "list.bullet.rectangle") {
             VStack(spacing: 0) {
                 ForEach(events) { event in
                     Button { onSelect(event) } label: {
-                        SecurityEventRow(event: event)
+                        SecurityEventRow(event: event, serverName: serverName(event))
                     }
                     .buttonStyle(.plain)
                     if event.id != events.last?.id {
@@ -78,8 +81,10 @@ struct SecurityFeedCard: View {
 }
 
 /// One event row: severity-tinted type icon, type/IP/time, first-seen badge.
+/// `serverName`, when set, renders a server chip (used in the fleet overview).
 struct SecurityEventRow: View {
     let event: SecurityEvent
+    var serverName: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -97,6 +102,12 @@ struct SecurityEventRow: View {
                     if event.firstSeen {
                         Chip(text: String(localized: "New"), color: .blue)
                     }
+                }
+                if let serverName {
+                    Label(serverName, systemImage: "server.rack")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 HStack(spacing: 6) {
                     Text(event.sourceIp)

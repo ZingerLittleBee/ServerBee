@@ -7,12 +7,19 @@ import SwiftUI
 /// explicit confirmation sheet).
 struct SecurityEventDetailView: View {
     let event: SecurityEvent
+    /// Optional server label, shown when the event is viewed outside a single
+    /// server's context (e.g. the fleet-wide security overview).
+    var serverName: String?
+    /// Called after a successful delete so the presenter can refresh its feed.
+    var onDeleted: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthManager.self) private var authManager
     @Environment(\.apiClient) private var apiClient
     @State private var firewallViewModel = FirewallViewModel()
+    @State private var actions = SecurityEventActionsViewModel()
     @State private var showBlockSheet = false
+    @State private var showDeleteConfirm = false
 
     private var isAdmin: Bool { authManager.user?.role.lowercased() == "admin" }
 
@@ -39,6 +46,9 @@ struct SecurityEventDetailView: View {
                     if isAdmin, let ip = blockableIp {
                         blockActionCard(ip: ip)
                     }
+                    if isAdmin {
+                        deleteActionCard
+                    }
                 }
                 .padding(16)
             }
@@ -57,6 +67,48 @@ struct SecurityEventDetailView: View {
                         return ok ? nil : firewallViewModel.actionError
                     }
                 }
+            }
+            .confirmationDialog(
+                String(localized: "Delete this event?"),
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: "Delete"), role: .destructive) {
+                    Task {
+                        if await actions.delete(id: event.id, apiClient: apiClient) {
+                            onDeleted?()
+                            dismiss()
+                        }
+                    }
+                }
+                Button(String(localized: "Cancel"), role: .cancel) {}
+            } message: {
+                Text(String(localized: "This removes the event from history. It can't be undone."))
+            }
+        }
+    }
+
+    private var deleteActionCard: some View {
+        SectionCard {
+            VStack(alignment: .leading, spacing: 10) {
+                if let error = actions.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.serverOffline)
+                }
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    HStack {
+                        if actions.isWorking {
+                            ProgressView().controlSize(.small)
+                        }
+                        Label(String(localized: "Delete event"), systemImage: "trash")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .disabled(actions.isWorking)
             }
         }
     }
@@ -89,6 +141,11 @@ struct SecurityEventDetailView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(SecurityEventKind.label(event.eventType))
                             .font(.headline)
+                        if let serverName {
+                            Label(serverName, systemImage: "server.rack")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         if let date = event.date {
                             Text(date, format: .dateTime.year().month().day().hour().minute().second())
                                 .font(.caption)
