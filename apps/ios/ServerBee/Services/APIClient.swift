@@ -56,6 +56,24 @@ actor APIClient {
         try await request(path, method: "DELETE")
     }
 
+    /// Perform a DELETE request for endpoints that return `{ "data": null }`
+    /// (which `delete<T>` can't decode). Preserves the response body in the
+    /// thrown error so callers can surface the server's message.
+    func deleteVoid(_ path: String) async throws {
+        var (data, httpResponse) = try await performRequest(path, method: "DELETE")
+        if httpResponse.statusCode == 401 {
+            try await refreshOrThrow()
+            (data, httpResponse) = try await performRequest(path, method: "DELETE")
+            if httpResponse.statusCode == 401 {
+                await authManager.clearAuth()
+                throw APIError.unauthorized
+            }
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode, data: data)
+        }
+    }
+
     // MARK: - Internal
 
     private func request<T: Decodable & Sendable>(

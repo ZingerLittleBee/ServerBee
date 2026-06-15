@@ -116,6 +116,11 @@ struct SettingsView: View {
                 Label(String(localized: "Ping Tasks"), systemImage: "dot.radiowaves.left.and.right")
             }
             NavigationLink {
+                TasksView(isAdmin: isAdmin)
+            } label: {
+                Label(String(localized: "Scheduled Commands"), systemImage: "terminal")
+            }
+            NavigationLink {
                 UsersView()
             } label: {
                 Label(String(localized: "Users"), systemImage: "person.2")
