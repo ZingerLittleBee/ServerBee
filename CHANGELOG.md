@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **SSRF guard on ping / network-probe targets** -- Probe targets are free-form strings pushed from the server to every agent and were executed after only a capability check, with no target validation -- a vector for turning the agent fleet into a distributed internal-network / cloud-metadata scanner driven by a compromised server or rogue admin. The agent now runs the monitor-grade SSRF guard on every ICMP/TCP/HTTP probe: RFC1918 internal monitoring stays allowed, but loopback, link-local (incl. the `169.254.169.254` cloud-metadata endpoint), NAT64, and broadcast are blocked. TCP probes connect to the validated address with no re-resolve, and HTTP probes disable redirect following (blocking a `302` bounce into metadata) and pin the host to the validated address. As defense-in-depth, `PingService` and `NetworkProbeService` also reject literal loopback/metadata targets at create/update time. Internal RFC1918 monitoring and domain-name targets are unaffected
+
 ## [1.0.0-alpha.7] - 2026-06-14
 
 ### Added
