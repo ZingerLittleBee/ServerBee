@@ -262,6 +262,8 @@ impl NetworkProbeService {
                 "probe_type must be icmp, tcp, or http".to_string(),
             ));
         }
+        serverbee_common::ssrf::reject_literal_unsafe_target(&input.target)
+            .map_err(|e| AppError::Validation(e.to_string()))?;
 
         let now = Utc::now();
         let model = network_probe_target::ActiveModel {
@@ -307,6 +309,8 @@ impl NetworkProbeService {
             active.location = Set(location);
         }
         if let Some(target) = input.target {
+            serverbee_common::ssrf::reject_literal_unsafe_target(&target)
+                .map_err(|e| AppError::Validation(e.to_string()))?;
             active.target = Set(target);
         }
         if let Some(probe_type) = input.probe_type {
@@ -1432,6 +1436,60 @@ mod tests {
 
         let result = NetworkProbeService::create_target(&db, input).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn create_target_rejects_literal_metadata() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let input = CreateNetworkProbeTarget {
+            name: "Bad".to_string(),
+            provider: "P".to_string(),
+            location: "L".to_string(),
+            target: "169.254.169.254".to_string(),
+            probe_type: "tcp".to_string(),
+        };
+
+        let result = NetworkProbeService::create_target(&db, input).await;
+        assert!(
+            result.is_err(),
+            "creating a probe target at cloud metadata must be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_target_rejects_literal_loopback() {
+        let (db, _tmp) = setup_test_db().await;
+
+        let created = NetworkProbeService::create_target(
+            &db,
+            CreateNetworkProbeTarget {
+                name: "Original".to_string(),
+                provider: "P".to_string(),
+                location: "L".to_string(),
+                target: "1.1.1.1".to_string(),
+                probe_type: "icmp".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let result = NetworkProbeService::update_target(
+            &db,
+            &created.id,
+            UpdateNetworkProbeTarget {
+                name: None,
+                provider: None,
+                location: None,
+                target: Some("127.0.0.1".to_string()),
+                probe_type: None,
+            },
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "updating a probe target to loopback must be rejected"
+        );
     }
 
     #[tokio::test]

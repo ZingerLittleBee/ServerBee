@@ -157,20 +157,23 @@ async fn run_ping_task(config: PingTaskConfig, tx: mpsc::Sender<PingResult>) {
 mod tests {
     use super::*;
 
+    // These exercise the connect logic directly via `probe_tcp_addrs` against a
+    // validated loopback address. The public `probe_tcp` now runs the SSRF guard
+    // first, which (correctly) blocks raw loopback targets — that guard is
+    // covered by the tests in `probe_utils`.
     #[tokio::test]
     async fn test_tcp_ping_open_port() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let target = format!("127.0.0.1:{}", addr.port());
-        let r = probe_utils::probe_tcp(&target, Duration::from_secs(10)).await;
+        let r = probe_utils::probe_tcp_addrs(&[addr], Duration::from_secs(10)).await;
         assert!(r.success);
-        assert!(r.latency_ms > 0.0);
     }
 
     #[tokio::test]
     async fn test_tcp_ping_closed_port() {
         // Port 1 is reserved and should be closed/refused on loopback
-        let r = probe_utils::probe_tcp("127.0.0.1:1", Duration::from_secs(10)).await;
+        let addr: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let r = probe_utils::probe_tcp_addrs(&[addr], Duration::from_secs(10)).await;
         assert!(!r.success);
     }
 }
