@@ -1241,6 +1241,40 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             results,
             checked_at,
         } => {
+            use serverbee_common::constants::CAP_IP_QUALITY;
+            // Re-check CAP_IP_QUALITY on the server before persisting/broadcasting,
+            // mirroring the SecurityEvent path: a capability revoked mid-run must
+            // not let a trailing batch of results be saved or fanned out to browsers.
+            let caps = match state.agent_manager.get_effective_capabilities(server_id) {
+                Some(c) => c,
+                None => {
+                    use crate::entity::server;
+                    use sea_orm::EntityTrait;
+                    server::Entity::find_by_id(server_id)
+                        .one(&state.db)
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|s| u32::try_from(s.capabilities).ok())
+                        .unwrap_or(0)
+                }
+            };
+            if !has_capability(caps, CAP_IP_QUALITY) {
+                let detail = serde_json::json!({ "server_id": server_id }).to_string();
+                if let Err(e) = AuditService::log(
+                    &state.db,
+                    "system",
+                    "ip_quality_results_denied",
+                    Some(&detail),
+                    "",
+                )
+                .await
+                {
+                    tracing::warn!(server_id, error = %e, "audit log for ip_quality_results_denied failed");
+                }
+                return;
+            }
+
             // Phase 1 (synchronous-ish): save unlock results + broadcast immediately
             // with ip_quality = None so the UI shows fresh unlock data right away.
             if let Err(e) =
@@ -1949,6 +1983,69 @@ mod tests {
         assert!(
             logs.iter().any(|l| l.action == "security_event_denied"),
             "expected security_event_denied audit row, got {logs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn unlock_results_denied_when_ip_quality_capability_missing() {
+        use crate::entity::{audit_log, unlock_result};
+        use crate::service::ip_quality::IpQualityService;
+        use serverbee_common::protocol::{UnlockResultData, UnlockStatus};
+
+        let (db, _tmp) = setup_test_db().await;
+        // capabilities = 0 → CAP_IP_QUALITY bit cleared (e.g. revoked mid-run).
+        insert_server_with_caps(&db, "srv-noiq", "No IQ", 0).await;
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
+        let mut browser_rx = state.browser_tx.subscribe();
+
+        let svc_id = IpQualityService::enabled_service_defs(&db).await.unwrap()[0]
+            .id
+            .clone();
+
+        handle_agent_message(
+            &state,
+            "srv-noiq",
+            AgentMessage::UnlockResults {
+                egress_ip: "203.0.113.10".to_string(),
+                results: vec![UnlockResultData {
+                    service_id: svc_id,
+                    status: UnlockStatus::Unlocked,
+                    region: Some("US".to_string()),
+                    latency_ms: Some(150),
+                    detail: None,
+                }],
+                checked_at: Utc::now(),
+            },
+        )
+        .await;
+
+        // No unlock_result rows persisted.
+        let rows: Vec<_> = unlock_result::Entity::find()
+            .all(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.server_id == "srv-noiq")
+            .collect();
+        assert!(
+            rows.is_empty(),
+            "unlock results must be dropped when CAP_IP_QUALITY is not effective"
+        );
+
+        // No IpQualityUpdate broadcast.
+        let recv = timeout(Duration::from_millis(200), browser_rx.recv()).await;
+        assert!(
+            recv.is_err(),
+            "no IpQualityUpdate should be broadcast when CAP_IP_QUALITY is revoked"
+        );
+
+        // The denial is audited.
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "ip_quality_results_denied"),
+            "expected ip_quality_results_denied audit row, got {logs:?}"
         );
     }
 }

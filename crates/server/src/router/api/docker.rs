@@ -587,10 +587,24 @@ async fn get_volumes(
 )]
 async fn container_action(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path((id, cid)): Path<(String, String)>,
     Json(body): Json<ContainerActionRequest>,
 ) -> Result<Json<ApiResponse<ActionResultResponse>>, AppError> {
     require_docker(&state, &id).await?;
+
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    // Capture the action/container for the audit detail before they are moved
+    // into the outbound agent message.
+    let action_label = format!("{:?}", body.action);
+    let container_id = cid.clone();
 
     let msg_id = uuid::Uuid::new_v4().to_string();
     let rx = state.agent_manager.register_pending_request(msg_id.clone());
@@ -607,6 +621,19 @@ async fn container_action(
         })
         .await
         .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+
+    // Audit the mutating container action (best-effort). Logged once the
+    // command was dispatched to the agent, regardless of execution result.
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "docker_container_action",
+        Some(&format!(
+            "server_id={id} container={container_id} action={action_label}"
+        )),
+        &ip,
+    )
+    .await;
 
     match tokio::time::timeout(Duration::from_secs(30), rx).await {
         Ok(Ok(AgentMessage::DockerActionResult { success, error, .. })) => {

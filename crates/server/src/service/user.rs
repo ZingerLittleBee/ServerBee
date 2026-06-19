@@ -133,12 +133,15 @@ impl UserService {
 
         // If an admin reset this user's password, revoke all their existing
         // sessions so a previously issued (possibly stolen) session cannot
-        // outlive the reset.
+        // outlive the reset. This includes the mobile auth path, whose refresh
+        // secret lives in `mobile_session` (a separate table); an admin reset
+        // unconditionally drops all of the target user's mobile sessions.
         if password_reset {
             session::Entity::delete_many()
                 .filter(session::Column::UserId.eq(id))
                 .exec(db)
                 .await?;
+            AuthService::revoke_user_mobile_sessions(db, id, None).await?;
         }
 
         Ok(updated)

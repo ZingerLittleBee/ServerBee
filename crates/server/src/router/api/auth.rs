@@ -146,12 +146,22 @@ pub async fn login(
 
     // Rate limiting
     if !state.check_login_rate(&ip) {
+        // Record the lockout so brute-force activity leaves a durable trail
+        // (the rate-limit counter itself is in-memory and lost on restart).
+        let _ = AuditService::log(
+            &state.db,
+            "anonymous",
+            "login_rate_limited",
+            Some(&format!("username={}", body.username)),
+            &ip,
+        )
+        .await;
         return Err(AppError::TooManyRequests(
             "Too many login attempts. Please try again later.".to_string(),
         ));
     }
 
-    let (session, user) = AuthService::login(
+    let (session, user) = match AuthService::login(
         &state.db,
         LoginParams {
             username: &body.username,
@@ -162,7 +172,23 @@ pub async fn login(
             session_ttl: state.config.auth.session_ttl,
         },
     )
-    .await?;
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            // Audit the failed attempt (best-effort). The attempted username
+            // and client IP are recorded; the submitted password never is.
+            let _ = AuditService::log(
+                &state.db,
+                "anonymous",
+                "login_failed",
+                Some(&format!("username={}", body.username)),
+                &ip,
+            )
+            .await;
+            return Err(e);
+        }
+    };
 
     let secure_flag = if state.config.auth.secure_cookie {
         "; Secure"
@@ -694,4 +720,84 @@ fn extract_bearer_token_value(headers: &HeaderMap) -> Option<String> {
         .ok()?
         .strip_prefix("Bearer ")
         .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::entity::audit_log;
+    use crate::service::auth::AuthService;
+    use crate::test_utils::setup_test_db;
+    use sea_orm::EntityTrait;
+
+    fn conn() -> ConnectInfo<SocketAddr> {
+        ConnectInfo("198.51.100.7:5555".parse().unwrap())
+    }
+
+    #[tokio::test]
+    async fn login_with_wrong_password_is_audited_without_leaking_password() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "alice", "correct-horse", "member")
+            .await
+            .unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+
+        let result = login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                username: "alice".to_string(),
+                password: "wrong-password".to_string(),
+                totp_code: None,
+            }),
+        )
+        .await;
+        assert!(result.is_err(), "login with a wrong password must fail");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "login_failed"
+                && l.detail.as_deref().is_some_and(|d| d.contains("alice"))),
+            "expected a login_failed audit row naming the username, got: {logs:?}"
+        );
+        assert!(
+            logs.iter().all(|l| !l
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("wrong-password")),
+            "audit detail must never contain the attempted password"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limited_login_is_audited() {
+        let (db, _tmp) = setup_test_db().await;
+        let mut config = AppConfig::default();
+        // Force the very first attempt from an IP to be rejected as rate-limited.
+        config.rate_limit.login_max = 0;
+        let state = AppState::new(db.clone(), config).await.unwrap();
+
+        let result = login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                username: "mallory".to_string(),
+                password: "whatever".to_string(),
+                totp_code: None,
+            }),
+        )
+        .await;
+        assert!(result.is_err(), "login must be rejected when rate-limited");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "login_rate_limited"
+                && l.detail.as_deref().is_some_and(|d| d.contains("mallory"))),
+            "expected a login_rate_limited audit row, got: {logs:?}"
+        );
+    }
 }

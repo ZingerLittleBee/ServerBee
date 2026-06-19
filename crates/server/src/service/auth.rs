@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use sea_orm::sea_query::Expr;
 
-use crate::entity::{api_key, mobile_session, server, session, user};
+use crate::entity::{api_key, device_token, mobile_session, server, session, user};
 use crate::error::AppError;
 
 /// Parameters for creating an authenticated session.
@@ -515,6 +515,61 @@ impl AuthService {
             revoke = revoke.filter(session::Column::Token.ne(token));
         }
         revoke.exec(db).await?;
+
+        // The mobile refresh secret lives in `mobile_session` (a separate table),
+        // so the session revocation above does NOT cover the mobile auth path.
+        // Revoke the user's mobile sessions too, preserving the caller's own when
+        // the kept session is itself a mobile one (so the active device isn't
+        // logged out by its own password change).
+        let keep_mobile_session_id = match keep_session_token {
+            Some(token) => session::Entity::find()
+                .filter(session::Column::Token.eq(token))
+                .one(db)
+                .await?
+                .and_then(|s| s.mobile_session_id),
+            None => None,
+        };
+        Self::revoke_user_mobile_sessions(db, user_id, keep_mobile_session_id.as_deref()).await?;
+
+        Ok(())
+    }
+
+    /// Revoke a user's mobile sessions (refresh tokens live in `mobile_session`,
+    /// which plain session revocation does not touch). Optionally preserve one
+    /// mobile session by id (the caller's own). `device_token` references
+    /// `mobile_session` with no ON DELETE cascade, so its rows are removed first.
+    pub async fn revoke_user_mobile_sessions(
+        db: &DatabaseConnection,
+        user_id: &str,
+        keep_mobile_session_id: Option<&str>,
+    ) -> Result<(), AppError> {
+        let mut query =
+            mobile_session::Entity::find().filter(mobile_session::Column::UserId.eq(user_id));
+        if let Some(keep) = keep_mobile_session_id {
+            query = query.filter(mobile_session::Column::Id.ne(keep));
+        }
+        let ids: Vec<String> = query
+            .select_only()
+            .column(mobile_session::Column::Id)
+            .into_tuple()
+            .all(db)
+            .await?;
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        device_token::Entity::delete_many()
+            .filter(device_token::Column::MobileSessionId.is_in(ids.clone()))
+            .exec(db)
+            .await?;
+        session::Entity::delete_many()
+            .filter(session::Column::MobileSessionId.is_in(ids.clone()))
+            .exec(db)
+            .await?;
+        mobile_session::Entity::delete_many()
+            .filter(mobile_session::Column::Id.is_in(ids))
+            .exec(db)
+            .await?;
 
         Ok(())
     }

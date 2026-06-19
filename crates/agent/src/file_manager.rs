@@ -433,6 +433,12 @@ impl FileManager {
         self.active_uploads.clear();
     }
 
+    /// Number of in-flight transfers (uploads + downloads). Lets callers observe
+    /// that `cancel_all_transfers` (e.g. on capability revocation) cleared them.
+    pub fn active_transfer_count(&self) -> usize {
+        self.active_uploads.len() + self.active_downloads.len()
+    }
+
     /// Start an upload: create the .sb-part temporary file.
     pub async fn start_upload(
         &self,
