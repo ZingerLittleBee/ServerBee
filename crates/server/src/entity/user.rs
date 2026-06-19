@@ -11,6 +11,9 @@ pub struct Model {
     pub role: String,
     pub totp_secret: Option<String>,
     pub must_change_password: bool,
+    /// When the password was last changed. Mobile refresh rejects tokens whose
+    /// session was issued before this. NULL = never changed (initial password).
+    pub password_changed_at: Option<DateTimeUtc>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

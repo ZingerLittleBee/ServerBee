@@ -257,6 +257,22 @@ pub async fn create_task(
         .await?;
     }
 
+    // Audit task creation (best-effort). One-shot dispatch audits exec
+    // separately; this records the task definition itself for both kinds.
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "task_created",
+        Some(&format!(
+            "task_id={task_id} type={} name={} command={}",
+            input.task_type,
+            input.name.as_deref().unwrap_or("?"),
+            input.command
+        )),
+        &ip,
+    )
+    .await;
+
     ok(task_model.into())
 }
 
@@ -296,6 +312,9 @@ pub async fn get_task(
 )]
 pub async fn update_task(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Json(input): Json<UpdateTaskRequest>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, AppError> {
@@ -389,6 +408,22 @@ pub async fn update_task(
         return Err(e);
     }
 
+    // Audit the update (best-effort) once the row and scheduler are in sync.
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "task_updated",
+        Some(&format!("task_id={id}")),
+        &ip,
+    )
+    .await;
+
     ok(updated.into())
 }
 
@@ -404,6 +439,9 @@ pub async fn update_task(
 )]
 pub async fn delete_task(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
     // Cancel active run and remove from scheduler first (idempotent, safe to call even if not registered)
@@ -415,6 +453,23 @@ pub async fn delete_task(
         .exec(&state.db)
         .await?;
     task::Entity::delete_by_id(&id).exec(&state.db).await?;
+
+    // Audit the deletion (best-effort) after the rows are gone.
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "task_deleted",
+        Some(&format!("task_id={id}")),
+        &ip,
+    )
+    .await;
+
     ok(())
 }
 
@@ -597,5 +652,106 @@ pub(crate) fn exec_capability_denied_output(reason: &str) -> &'static str {
         "agent_capability_disabled" => "Capability denied: exec blocked by agent local policy",
         "server_capability_disabled" => "Capability denied: exec disabled on server",
         _ => "Capability denied: exec disabled",
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::entity::audit_log;
+    use crate::test_utils::setup_test_db;
+
+    fn admin() -> CurrentUser {
+        CurrentUser {
+            user_id: "admin-1".to_string(),
+            username: "admin".to_string(),
+            role: "admin".to_string(),
+            must_change_password: false,
+        }
+    }
+
+    fn conn() -> ConnectInfo<std::net::SocketAddr> {
+        ConnectInfo("203.0.113.5:6666".parse().unwrap())
+    }
+
+    async fn insert_oneshot_task(db: &DatabaseConnection, id: &str) {
+        let now = Utc::now();
+        let model = task::ActiveModel {
+            id: Set(id.to_string()),
+            command: Set("echo hi".to_string()),
+            server_ids_json: Set("[]".to_string()),
+            created_by: Set("admin-1".to_string()),
+            task_type: Set("oneshot".to_string()),
+            name: Set(Some("Nightly".to_string())),
+            cron_expression: Set(None),
+            enabled: Set(true),
+            timeout: Set(None),
+            retry_count: Set(0),
+            retry_interval: Set(60),
+            last_run_at: NotSet,
+            next_run_at: Set(None),
+            created_at: Set(now),
+        };
+        model.insert(db).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_task_writes_audit_log() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_oneshot_task(&db, "task-del").await;
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+
+        let res = delete_task(
+            State(state.clone()),
+            conn(),
+            Extension(admin()),
+            HeaderMap::new(),
+            Path("task-del".to_string()),
+        )
+        .await;
+        assert!(res.is_ok(), "delete should succeed: {res:?}");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "task_deleted"
+                && l.user_id == "admin-1"
+                && l.detail.as_deref().is_some_and(|d| d.contains("task-del"))),
+            "expected a task_deleted audit row, got: {logs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn update_task_writes_audit_log() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_oneshot_task(&db, "task-upd").await;
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+
+        let res = update_task(
+            State(state.clone()),
+            conn(),
+            Extension(admin()),
+            HeaderMap::new(),
+            Path("task-upd".to_string()),
+            Json(UpdateTaskRequest {
+                name: Some("Renamed".to_string()),
+                command: None,
+                server_ids: None,
+                cron_expression: None,
+                enabled: None,
+                timeout: None,
+                retry_count: None,
+                retry_interval: None,
+            }),
+        )
+        .await;
+        assert!(res.is_ok(), "update should succeed: {res:?}");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "task_updated"
+                && l.detail.as_deref().is_some_and(|d| d.contains("task-upd"))),
+            "expected a task_updated audit row, got: {logs:?}"
+        );
     }
 }

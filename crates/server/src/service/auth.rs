@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use sea_orm::sea_query::Expr;
 
-use crate::entity::{api_key, mobile_session, server, session, user};
+use crate::entity::{api_key, device_token, mobile_session, server, session, user};
 use crate::error::AppError;
 
 /// Parameters for creating an authenticated session.
@@ -93,6 +93,7 @@ impl AuthService {
             role: Set(role.to_string()),
             totp_secret: Set(None),
             must_change_password: Set(false),
+            password_changed_at: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         };
@@ -500,21 +501,106 @@ impl AuthService {
         Self::validate_password_strength(new_password)?;
 
         let new_hash = Self::hash_password(new_password)?;
+        let now = Utc::now();
+
+        // Resolve the caller's own mobile session to preserve (when the kept
+        // session is itself a mobile one, so the active device isn't logged out
+        // by its own password change). Read-only lookup, done before the txn.
+        let keep_mobile_session_id = match keep_session_token {
+            Some(token) => session::Entity::find()
+                .filter(session::Column::Token.eq(token))
+                .one(db)
+                .await?
+                .and_then(|s| s.mobile_session_id),
+            None => None,
+        };
+
+        // Apply the password change and every revocation atomically, so a
+        // failure can't leave the password rotated while sessions stay live
+        // (and a concurrent push_register can't wedge a half-applied state).
+        let txn = db.begin().await?;
+
         let mut active: user::ActiveModel = user.into();
         active.password_hash = Set(new_hash);
-        active.updated_at = Set(Utc::now());
-        active.update(db).await?;
+        // Stamp the change so mobile refresh rejects refresh tokens whose
+        // session was issued earlier — the authoritative guard against a stolen
+        // refresh token surviving the change (see MobileAuthService::refresh).
+        active.password_changed_at = Set(Some(now));
+        active.updated_at = Set(now);
+        active.update(&txn).await?;
 
-        // Revoke the user's other sessions so a previously issued (possibly
-        // stolen) session can't outlive the password change. Keep the caller's
-        // current session when its token is known (web cookie / bearer flow),
-        // otherwise revoke all of them.
+        // Revoke the user's other web sessions. Keep the caller's current one
+        // when its token is known (web cookie / bearer flow), else revoke all.
         let mut revoke =
             session::Entity::delete_many().filter(session::Column::UserId.eq(user_id));
         if let Some(token) = keep_session_token {
             revoke = revoke.filter(session::Column::Token.ne(token));
         }
-        revoke.exec(db).await?;
+        revoke.exec(&txn).await?;
+
+        // The mobile refresh secret lives in `mobile_session` (a separate
+        // table), so the revocation above does NOT cover the mobile auth path.
+        Self::revoke_user_mobile_sessions(&txn, user_id, keep_mobile_session_id.as_deref()).await?;
+
+        // The caller's own mobile session is intentionally preserved (above).
+        // Bump its issuance time to the change instant so token versioning keeps
+        // accepting its refresh token — it predates the change, but it IS the
+        // caller's current, deliberately-kept session (the caller proved the old
+        // password and holds this session's token).
+        if let Some(keep) = keep_mobile_session_id.as_deref()
+            && let Some(ms) = mobile_session::Entity::find_by_id(keep).one(&txn).await?
+        {
+            let mut ms: mobile_session::ActiveModel = ms.into();
+            ms.created_at = Set(now);
+            ms.update(&txn).await?;
+        }
+
+        txn.commit().await?;
+        Ok(())
+    }
+
+    /// Revoke a user's mobile sessions (refresh tokens live in `mobile_session`,
+    /// which plain session revocation does not touch). Optionally preserve one
+    /// mobile session by id (the caller's own). `device_token` references
+    /// `mobile_session` with no ON DELETE cascade, so its rows are removed first.
+    pub async fn revoke_user_mobile_sessions<C: ConnectionTrait>(
+        conn: &C,
+        user_id: &str,
+        keep_mobile_session_id: Option<&str>,
+    ) -> Result<(), AppError> {
+        // Resolve the target set as a SUBQUERY by user_id, not a captured id
+        // snapshot: a mobile_session created concurrently (e.g. by a
+        // refresh-rotation race) is then still covered by these deletes rather
+        // than slipping past a stale id list.
+        let target_subquery = || {
+            let mut q = mobile_session::Entity::find()
+                .select_only()
+                .column(mobile_session::Column::Id)
+                .filter(mobile_session::Column::UserId.eq(user_id));
+            if let Some(keep) = keep_mobile_session_id {
+                q = q.filter(mobile_session::Column::Id.ne(keep));
+            }
+            q.into_query()
+        };
+
+        // device_token -> session -> mobile_session (FK order; device_token's
+        // FK to mobile_session has no ON DELETE cascade). Sessions/tokens are
+        // matched via the subquery; mobile_session is deleted directly by
+        // user_id so any concurrently inserted row is caught too.
+        device_token::Entity::delete_many()
+            .filter(device_token::Column::MobileSessionId.in_subquery(target_subquery()))
+            .exec(conn)
+            .await?;
+        session::Entity::delete_many()
+            .filter(session::Column::MobileSessionId.in_subquery(target_subquery()))
+            .exec(conn)
+            .await?;
+        let mut del =
+            mobile_session::Entity::delete_many().filter(mobile_session::Column::UserId.eq(user_id));
+        if let Some(keep) = keep_mobile_session_id {
+            del = del.filter(mobile_session::Column::Id.ne(keep));
+        }
+        del.exec(conn).await?;
 
         Ok(())
     }

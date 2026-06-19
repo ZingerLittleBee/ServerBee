@@ -226,6 +226,18 @@ impl MobileAuthService {
             ));
         }
 
+        // Token versioning: reject a refresh whose mobile_session was issued
+        // before the user's last password change, even if the row still exists
+        // (e.g. it survived a revocation race). This is the authoritative
+        // kill-switch ensuring a password change / admin reset invalidates a
+        // stolen refresh token, independent of the best-effort row deletion in
+        // change_password / update_user.
+        if let Some(changed_at) = user_model.password_changed_at
+            && old_session.created_at < changed_at
+        {
+            return Err(AppError::Unauthorized);
+        }
+
         // Delete the old mobile_session along with its linked sessions and
         // device tokens. device_tokens.mobile_session_id has no ON DELETE
         // cascade, so deleting the mobile_session without first removing a
@@ -828,5 +840,340 @@ mod tests {
             .await
             .expect("query sessions");
         assert_eq!(sessions.len(), 0, "mobile sessions should be cleaned up");
+    }
+
+    #[tokio::test]
+    async fn change_password_revokes_mobile_refresh_tokens() {
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+
+        let user = AuthService::create_user(&db, "heidi", "old-password-123", "member")
+            .await
+            .expect("create_user should succeed");
+
+        let tokens = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "heidi",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-H",
+                device_name: "iPhone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        // Web password change: the caller has no mobile session to preserve.
+        AuthService::change_password(&db, &user.id, "old-password-123", "new-password-456", None)
+            .await
+            .expect("change_password should succeed");
+
+        // The captured refresh token must no longer mint a fresh session.
+        let result = MobileAuthService::refresh(
+            &db,
+            &config,
+            &tokens.refresh_token,
+            "inst-H",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::Unauthorized)),
+            "refresh after password change must be rejected, got {result:?}"
+        );
+
+        let remaining = mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(&user.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            remaining, 0,
+            "mobile sessions must be revoked on password change"
+        );
+    }
+
+    #[tokio::test]
+    async fn change_password_keeps_callers_own_mobile_session() {
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+
+        let user = AuthService::create_user(&db, "ivan", "old-password-123", "member")
+            .await
+            .expect("create_user should succeed");
+
+        let device_a = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "ivan",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-A",
+                device_name: "iPhone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("device A login should succeed");
+
+        let device_b = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "ivan",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-B",
+                device_name: "iPad",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("device B login should succeed");
+
+        // Device A initiates the change, keeping its own access-token session.
+        AuthService::change_password(
+            &db,
+            &user.id,
+            "old-password-123",
+            "new-password-456",
+            Some(&device_a.access_token),
+        )
+        .await
+        .expect("change_password should succeed");
+
+        // Device A's own mobile session survives, so its refresh still works.
+        let refreshed_a = MobileAuthService::refresh(
+            &db,
+            &config,
+            &device_a.refresh_token,
+            "inst-A",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            refreshed_a.is_ok(),
+            "caller's own mobile session must be preserved, got {refreshed_a:?}"
+        );
+
+        // Device B's mobile session is revoked.
+        let refreshed_b = MobileAuthService::refresh(
+            &db,
+            &config,
+            &device_b.refresh_token,
+            "inst-B",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            matches!(refreshed_b, Err(AppError::Unauthorized)),
+            "other devices' mobile sessions must be revoked, got {refreshed_b:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn admin_password_reset_revokes_mobile_refresh_tokens() {
+        use crate::service::user::{UpdateUserInput, UserService};
+
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+
+        let user = AuthService::create_user(&db, "judy", "old-password-123", "member")
+            .await
+            .expect("create_user should succeed");
+
+        let tokens = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "judy",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-J",
+                device_name: "iPhone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        UserService::update_user(
+            &db,
+            &user.id,
+            UpdateUserInput {
+                role: None,
+                password: Some("new-password-456".to_string()),
+            },
+        )
+        .await
+        .expect("update_user should succeed");
+
+        let result = MobileAuthService::refresh(
+            &db,
+            &config,
+            &tokens.refresh_token,
+            "inst-J",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::Unauthorized)),
+            "refresh after admin password reset must be rejected, got {result:?}"
+        );
+
+        let remaining = mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(&user.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            remaining, 0,
+            "mobile sessions must be revoked on admin password reset"
+        );
+    }
+
+    #[tokio::test]
+    async fn change_password_deletes_device_tokens_in_fk_safe_order() {
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+
+        let user = AuthService::create_user(&db, "peggy", "old-password-123", "member")
+            .await
+            .expect("create_user should succeed");
+
+        let tokens = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "peggy",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-P",
+                device_name: "iPhone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        // Attach a device_token to the mobile session login created, as
+        // push_register would. device_token.mobile_session_id is an FK with NO
+        // ON DELETE cascade, so revocation MUST delete the device_token before
+        // the mobile_session — otherwise the final delete fails the FK.
+        let ms = mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(&user.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("login should have created a mobile session");
+        let now = Utc::now();
+        device_token::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            user_id: Set(user.id.clone()),
+            mobile_session_id: Set(ms.id.clone()),
+            installation_id: Set("inst-P".to_string()),
+            token: Set("apns-token-xyz".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .expect("seeding a device_token should succeed");
+
+        // If revoke deleted mobile_session before device_token, this would fail
+        // with an FK violation. It must succeed and tear the token down too.
+        AuthService::change_password(&db, &user.id, "old-password-123", "new-password-456", None)
+            .await
+            .expect("change_password must succeed and revoke device tokens first");
+
+        let remaining_tokens = device_token::Entity::find()
+            .filter(device_token::Column::UserId.eq(&user.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            remaining_tokens, 0,
+            "device tokens must be revoked alongside the mobile session"
+        );
+
+        let result = MobileAuthService::refresh(
+            &db,
+            &config,
+            &tokens.refresh_token,
+            "inst-P",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::Unauthorized)),
+            "refresh after password change must be rejected, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_rejected_when_session_predates_password_change() {
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+        let user = AuthService::create_user(&db, "trent", "old-password-123", "member")
+            .await
+            .expect("create_user should succeed");
+        let tokens = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "trent",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-T",
+                device_name: "iPhone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        // Simulate a revocation race: the mobile_session SURVIVES, but the
+        // user's password was changed AFTER it was issued. Token versioning must
+        // reject the refresh regardless of the row still existing — this is the
+        // guard that stops a stolen refresh token from being rotated back to
+        // life if it dodges the (best-effort) row deletion.
+        let ms = mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(&user.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("login should have created a mobile session");
+        let mut au: user::ActiveModel = user.clone().into();
+        au.password_changed_at = Set(Some(ms.created_at + chrono::Duration::seconds(1)));
+        au.update(&db).await.unwrap();
+
+        let result = MobileAuthService::refresh(
+            &db,
+            &config,
+            &tokens.refresh_token,
+            "inst-T",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::Unauthorized)),
+            "a refresh token issued before the last password change must be rejected, got {result:?}"
+        );
     }
 }
