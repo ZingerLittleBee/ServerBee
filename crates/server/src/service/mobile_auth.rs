@@ -226,6 +226,18 @@ impl MobileAuthService {
             ));
         }
 
+        // Token versioning: reject a refresh whose mobile_session was issued
+        // before the user's last password change, even if the row still exists
+        // (e.g. it survived a revocation race). This is the authoritative
+        // kill-switch ensuring a password change / admin reset invalidates a
+        // stolen refresh token, independent of the best-effort row deletion in
+        // change_password / update_user.
+        if let Some(changed_at) = user_model.password_changed_at
+            && old_session.created_at < changed_at
+        {
+            return Err(AppError::Unauthorized);
+        }
+
         // Delete the old mobile_session along with its linked sessions and
         // device tokens. device_tokens.mobile_session_id has no ON DELETE
         // cascade, so deleting the mobile_session without first removing a
@@ -1109,6 +1121,59 @@ mod tests {
         assert!(
             matches!(result, Err(AppError::Unauthorized)),
             "refresh after password change must be rejected, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_rejected_when_session_predates_password_change() {
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+        let user = AuthService::create_user(&db, "trent", "old-password-123", "member")
+            .await
+            .expect("create_user should succeed");
+        let tokens = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "trent",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-T",
+                device_name: "iPhone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        // Simulate a revocation race: the mobile_session SURVIVES, but the
+        // user's password was changed AFTER it was issued. Token versioning must
+        // reject the refresh regardless of the row still existing — this is the
+        // guard that stops a stolen refresh token from being rotated back to
+        // life if it dodges the (best-effort) row deletion.
+        let ms = mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(&user.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("login should have created a mobile session");
+        let mut au: user::ActiveModel = user.clone().into();
+        au.password_changed_at = Set(Some(ms.created_at + chrono::Duration::seconds(1)));
+        au.update(&db).await.unwrap();
+
+        let result = MobileAuthService::refresh(
+            &db,
+            &config,
+            &tokens.refresh_token,
+            "inst-T",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::Unauthorized)),
+            "a refresh token issued before the last password change must be rejected, got {result:?}"
         );
     }
 }

@@ -121,28 +121,38 @@ impl UserService {
             active.role = Set(role.clone());
         }
 
+        let now = Utc::now();
         let password_reset = input.password.is_some();
         if let Some(ref password) = input.password {
             AuthService::validate_password_strength(password)?;
             let new_hash = AuthService::hash_password(password)?;
             active.password_hash = Set(new_hash);
+            // Stamp the reset so mobile refresh rejects refresh tokens whose
+            // session was issued earlier (the authoritative kill-switch).
+            active.password_changed_at = Set(Some(now));
         }
-
-        active.updated_at = Set(Utc::now());
-        let updated = active.update(db).await?;
+        active.updated_at = Set(now);
 
         // If an admin reset this user's password, revoke all their existing
         // sessions so a previously issued (possibly stolen) session cannot
         // outlive the reset. This includes the mobile auth path, whose refresh
         // secret lives in `mobile_session` (a separate table); an admin reset
-        // unconditionally drops all of the target user's mobile sessions.
-        if password_reset {
+        // unconditionally drops all of the target user's mobile sessions. The
+        // update + revocation run in one transaction so the reset can't commit
+        // while sessions stay live.
+        let updated = if password_reset {
+            let txn = db.begin().await?;
+            let updated = active.update(&txn).await?;
             session::Entity::delete_many()
                 .filter(session::Column::UserId.eq(id))
-                .exec(db)
+                .exec(&txn)
                 .await?;
-            AuthService::revoke_user_mobile_sessions(db, id, None).await?;
-        }
+            AuthService::revoke_user_mobile_sessions(&txn, id, None).await?;
+            txn.commit().await?;
+            updated
+        } else {
+            active.update(db).await?
+        };
 
         Ok(updated)
     }

@@ -457,6 +457,7 @@ async fn seed_demo_admin(db: &DatabaseConnection) -> Result<(), AppError> {
         role: Set("admin".to_string()),
         totp_secret: Set(None),
         must_change_password: Set(false),
+        password_changed_at: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
