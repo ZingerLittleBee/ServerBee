@@ -268,6 +268,57 @@ pub fn resolve_and_check_monitor(host: &str, port: u16) -> Result<Vec<SocketAddr
     Ok(addrs)
 }
 
+/// Extract the host component from a probe/monitor target string. Handles
+/// `http(s)://host[:port]/path` URLs, `[ipv6]` / `[ipv6]:port`, `host:port`,
+/// bare IPv6 literals, and bare hosts. Returns the target unchanged if no host
+/// can be isolated.
+fn extract_target_host(target: &str) -> String {
+    if target.contains("://")
+        && let Ok(url) = Url::parse(target)
+        && let Some(h) = url.host_str()
+    {
+        // url returns bracketed IPv6 (`[::1]`); strip brackets so it parses as Ip.
+        return h.trim_start_matches('[').trim_end_matches(']').to_string();
+    }
+    if let Some(rest) = target.strip_prefix('[') {
+        if let Some((h, _)) = rest.split_once("]:") {
+            return h.to_string();
+        }
+        if let Some(h) = rest.strip_suffix(']') {
+            return h.to_string();
+        }
+    }
+    if let Some((h, port)) = target.rsplit_once(':')
+        && !h.contains(':')
+        && !port.is_empty()
+        && port.chars().all(|c| c.is_ascii_digit())
+    {
+        return h.to_string();
+    }
+    target.to_string()
+}
+
+/// Server-side, DNS-free guard for probe/monitor targets. Rejects targets whose
+/// host is a **literal** non-monitor-safe IP (loopback / link-local incl. cloud
+/// metadata / NAT64 / broadcast / this-network). Domain names are accepted here
+/// (they are validated at probe time on the agent, which resolves them) and
+/// RFC1918 private ranges are accepted so internal monitoring keeps working.
+/// This is defense-in-depth + immediate operator feedback, not the primary
+/// guard (which lives agent-side in `probe_utils`).
+pub fn reject_literal_unsafe_target(target: &str) -> Result<()> {
+    let host = extract_target_host(target);
+    if let Ok(ip) = host.parse::<IpAddr>()
+        && !is_monitor_safe_addr(ip)
+    {
+        bail!(
+            "SSRF guard: target '{}' points at a blocked address ({}) — loopback/link-local/metadata targets are not allowed",
+            target,
+            ip
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,5 +604,39 @@ mod tests {
         assert!(resolve_and_check_monitor("169.254.169.254", 80).is_err());
         assert!(resolve_and_check_monitor("127.0.0.1", 80).is_err());
         assert!(resolve_and_check_monitor("10.0.0.5", 80).is_ok());
+    }
+
+    // ── reject_literal_unsafe_target (server-side, DNS-free) ──────────────────
+
+    #[test]
+    fn reject_literal_unsafe_target_blocks_loopback() {
+        assert!(reject_literal_unsafe_target("127.0.0.1").is_err());
+        assert!(reject_literal_unsafe_target("127.0.0.1:8080").is_err());
+        assert!(reject_literal_unsafe_target("::1").is_err());
+    }
+
+    #[test]
+    fn reject_literal_unsafe_target_blocks_cloud_metadata() {
+        assert!(reject_literal_unsafe_target("169.254.169.254").is_err());
+        assert!(reject_literal_unsafe_target("169.254.169.254:80").is_err());
+        assert!(reject_literal_unsafe_target("http://169.254.169.254/latest/meta-data/").is_err());
+        assert!(reject_literal_unsafe_target("http://[::1]/").is_err());
+    }
+
+    #[test]
+    fn reject_literal_unsafe_target_allows_public_and_domains() {
+        // Public literals and domain names (resolved/validated agent-side) pass.
+        assert!(reject_literal_unsafe_target("8.8.8.8").is_ok());
+        assert!(reject_literal_unsafe_target("8.8.8.8:53").is_ok());
+        assert!(reject_literal_unsafe_target("example.com").is_ok());
+        assert!(reject_literal_unsafe_target("example.com:8080").is_ok());
+        assert!(reject_literal_unsafe_target("https://example.com:8443/health").is_ok());
+    }
+
+    #[test]
+    fn reject_literal_unsafe_target_allows_rfc1918_for_internal_monitoring() {
+        assert!(reject_literal_unsafe_target("10.0.0.1").is_ok());
+        assert!(reject_literal_unsafe_target("192.168.1.1:80").is_ok());
+        assert!(reject_literal_unsafe_target("172.16.5.5").is_ok());
     }
 }

@@ -65,6 +65,8 @@ impl PingService {
                 "probe_type must be icmp, tcp, or http".to_string(),
             ));
         }
+        serverbee_common::ssrf::reject_literal_unsafe_target(&input.target)
+            .map_err(|e| AppError::Validation(e.to_string()))?;
 
         let server_ids_json = serde_json::to_string(&input.server_ids)
             .map_err(|e| AppError::Validation(format!("Invalid server_ids: {e}")))?;
@@ -108,6 +110,8 @@ impl PingService {
             model.probe_type = Set(probe_type);
         }
         if let Some(target) = input.target {
+            serverbee_common::ssrf::reject_literal_unsafe_target(&target)
+                .map_err(|e| AppError::Validation(e.to_string()))?;
             model.target = Set(target);
         }
         if let Some(interval) = input.interval {
@@ -345,6 +349,52 @@ mod tests {
         assert_eq!(list[0].id, created.id);
         assert_eq!(list[0].name, "Test HTTP Ping");
         assert_eq!(list[0].probe_type, "http");
+    }
+
+    #[tokio::test]
+    async fn create_rejects_literal_metadata_target() {
+        let (db, _tmp) = setup_test_db().await;
+        let agent_manager = test_agent_manager();
+
+        let mut input = sample_create_ping_task();
+        input.probe_type = "http".to_string();
+        input.target = "http://169.254.169.254/latest/meta-data/".to_string();
+
+        let result = PingService::create(&db, &agent_manager, input).await;
+        assert!(
+            result.is_err(),
+            "creating a ping task targeting cloud metadata must be rejected"
+        );
+        assert!(PingService::list(&db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn update_rejects_literal_loopback_target() {
+        let (db, _tmp) = setup_test_db().await;
+        let agent_manager = test_agent_manager();
+
+        let created = PingService::create(&db, &agent_manager, sample_create_ping_task())
+            .await
+            .unwrap();
+
+        let result = PingService::update(
+            &db,
+            &agent_manager,
+            &created.id,
+            UpdatePingTask {
+                name: None,
+                probe_type: Some("tcp".to_string()),
+                target: Some("127.0.0.1:22".to_string()),
+                interval: None,
+                server_ids: None,
+                enabled: None,
+            },
+        )
+        .await;
+        assert!(
+            result.is_err(),
+            "updating a ping task to a loopback target must be rejected"
+        );
     }
 
     #[tokio::test]

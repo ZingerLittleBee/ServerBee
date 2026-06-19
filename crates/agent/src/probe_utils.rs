@@ -1,4 +1,48 @@
+use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+
+use serverbee_common::ssrf;
+
+/// Build a [`ProbeResult`] representing a target that the SSRF guard refused to
+/// probe. Keeps the guard's message so the operator sees why it was blocked.
+fn ssrf_blocked(error: String) -> ProbeResult {
+    ProbeResult {
+        success: false,
+        latency_ms: 0.0,
+        error: Some(error),
+    }
+}
+
+/// Split a probe target of the form `host`, `host:port`, `[::1]`, or `[::1]:443`
+/// into its host and port components, defaulting the port to `default_port`.
+/// A bare IPv6 literal (multiple colons, no brackets) is treated as host-only.
+fn split_host_port(target: &str, default_port: u16) -> (String, u16) {
+    if let Some(rest) = target.strip_prefix('[') {
+        if let Some((host, port)) = rest.split_once("]:") {
+            return (host.to_string(), port.parse().unwrap_or(default_port));
+        }
+        if let Some(host) = rest.strip_suffix(']') {
+            return (host.to_string(), default_port);
+        }
+    }
+    if let Some((host, port)) = target.rsplit_once(':')
+        && !host.contains(':')
+        && let Ok(parsed) = port.parse::<u16>()
+    {
+        return (host.to_string(), parsed);
+    }
+    (target.to_string(), default_port)
+}
+
+/// SSRF guard for server-pushed probe targets. Resolves `host` and rejects
+/// loopback / link-local (incl. the 169.254.169.254 cloud-metadata endpoint) /
+/// NAT64 / broadcast / this-network, while ALLOWING RFC1918 private ranges so
+/// operators can legitimately probe internal hosts (same policy the
+/// service-monitor checkers use). Returns the validated addresses so callers
+/// connect to them directly and close the DNS-rebinding window.
+fn guard_probe_target(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    ssrf::resolve_and_check_monitor(host, port).map_err(|e| e.to_string())
+}
 
 /// Result of a single probe attempt.
 pub struct ProbeResult {
@@ -19,6 +63,11 @@ pub struct BatchIcmpResult {
 
 /// Perform a single ICMP ping to `host` using the system `ping` command.
 pub async fn probe_icmp(host: &str, timeout: Duration) -> ProbeResult {
+    // SSRF guard: refuse loopback/link-local/metadata targets even for ICMP.
+    if let Err(e) = guard_probe_target(host, 0) {
+        return ssrf_blocked(e);
+    }
+
     let start = Instant::now();
 
     let output = tokio::time::timeout(
@@ -65,15 +114,25 @@ pub async fn probe_icmp(host: &str, timeout: Duration) -> ProbeResult {
 /// Perform a TCP connect probe to `host` (format `host:port`).
 /// If no port is specified, port 80 is used.
 pub async fn probe_tcp(host: &str, timeout: Duration) -> ProbeResult {
-    let start = Instant::now();
-
-    let addr = if host.contains(':') {
-        host.to_string()
-    } else {
-        format!("{host}:80")
+    let (h, port) = split_host_port(host, 80);
+    // SSRF guard: validate the resolved addresses before connecting, then
+    // connect to exactly those addresses (no re-resolve) so the validated and
+    // connected addresses are identical.
+    let addrs = match guard_probe_target(&h, port) {
+        Ok(addrs) => addrs,
+        Err(e) => return ssrf_blocked(e),
     };
 
-    let result = tokio::time::timeout(timeout, tokio::net::TcpStream::connect(&addr)).await;
+    probe_tcp_addrs(&addrs, timeout).await
+}
+
+/// Connect to one of `addrs` (already SSRF-validated) and report reachability.
+/// Split out so tests can exercise the connect logic directly against a
+/// validated loopback address without tripping the guard.
+pub(crate) async fn probe_tcp_addrs(addrs: &[SocketAddr], timeout: Duration) -> ProbeResult {
+    let start = Instant::now();
+
+    let result = tokio::time::timeout(timeout, tokio::net::TcpStream::connect(addrs)).await;
 
     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
 
@@ -106,9 +165,32 @@ pub async fn probe_http(url: &str, timeout: Duration) -> ProbeResult {
         format!("http://{url}")
     };
 
+    // SSRF guard: validate scheme/credentials, then resolve the host and reject
+    // loopback/link-local/metadata. RFC1918 stays allowed for internal monitoring.
+    let parsed = match ssrf::validate_monitor_url(&normalized_url) {
+        Ok(u) => u,
+        Err(e) => return ssrf_blocked(e.to_string()),
+    };
+    let host = match parsed.host_str() {
+        Some(h) => h.to_string(),
+        None => return ssrf_blocked("SSRF guard: URL has no host".to_string()),
+    };
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let addrs = match guard_probe_target(&host, port) {
+        Ok(addrs) => addrs,
+        Err(e) => return ssrf_blocked(e),
+    };
+
     let client = reqwest::Client::builder()
         .timeout(timeout)
         .danger_accept_invalid_certs(true)
+        // Do NOT follow redirects: a 302 into 169.254.169.254 would otherwise
+        // bypass the address guard. A redirection status still counts as
+        // "reachable" below.
+        .redirect(reqwest::redirect::Policy::none())
+        // Pin the host to the addresses we just validated so reqwest does not
+        // re-resolve (closes the DNS-rebinding window between check and connect).
+        .resolve_to_addrs(&host, &addrs)
         .build();
 
     let client = match client {
@@ -150,6 +232,18 @@ pub async fn probe_http(url: &str, timeout: Duration) -> ProbeResult {
 
 /// Run `ping -c N` once and parse the summary statistics.
 pub async fn probe_icmp_batch(host: &str, count: u32, timeout: Duration) -> BatchIcmpResult {
+    // SSRF guard: refuse loopback/link-local/metadata targets.
+    if guard_probe_target(host, 0).is_err() {
+        return BatchIcmpResult {
+            avg_latency: None,
+            min_latency: None,
+            max_latency: None,
+            packet_loss: 1.0,
+            packet_sent: count,
+            packet_received: 0,
+        };
+    }
+
     let count_str = count.to_string();
     let output = tokio::time::timeout(
         timeout,
@@ -310,5 +404,79 @@ mod tests {
                 < 0.001
         );
         assert!(parse_ping_time("no match here").is_none());
+    }
+
+    // ── SSRF guard on server-pushed probe targets ────────────────────────────
+    // Probe targets are free-form strings set on the server and pushed to the
+    // agent. A compromised server / rogue admin must not be able to turn the
+    // agent into an internal-network / cloud-metadata scanner. We reuse the
+    // monitor-grade guard: RFC1918 private ranges stay allowed (legitimate
+    // internal monitoring) but loopback / link-local (incl. 169.254.169.254
+    // cloud metadata) / NAT64 are blocked.
+
+    #[tokio::test]
+    async fn probe_tcp_blocks_loopback_with_ssrf_guard() {
+        let r = probe_tcp("127.0.0.1:1", std::time::Duration::from_millis(500)).await;
+        assert!(!r.success, "loopback probe must not succeed");
+        assert!(
+            r.error.unwrap_or_default().contains("SSRF guard"),
+            "loopback target must be rejected by the SSRF guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_tcp_blocks_cloud_metadata_ip() {
+        let r = probe_tcp("169.254.169.254:80", std::time::Duration::from_millis(500)).await;
+        assert!(!r.success, "cloud-metadata probe must not succeed");
+        assert!(
+            r.error.unwrap_or_default().contains("SSRF guard"),
+            "169.254.169.254 (cloud metadata) must be rejected by the SSRF guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_tcp_allows_private_rfc1918_target() {
+        // Guardrail for the GREEN impl: monitor policy ALLOWS RFC1918 so internal
+        // monitoring keeps working. The connect itself fails/times out, but it
+        // must NOT be blocked by the SSRF guard.
+        let r = probe_tcp("10.255.255.255:1", std::time::Duration::from_millis(300)).await;
+        assert!(
+            !r.error.unwrap_or_default().contains("SSRF guard"),
+            "RFC1918 private targets must remain probeable for internal monitoring"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_http_blocks_loopback_with_ssrf_guard() {
+        let r = probe_http("http://127.0.0.1:1", std::time::Duration::from_millis(500)).await;
+        assert!(!r.success, "loopback HTTP probe must not succeed");
+        assert!(
+            r.error.unwrap_or_default().contains("SSRF guard"),
+            "loopback HTTP target must be rejected by the SSRF guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_http_blocks_cloud_metadata() {
+        let r = probe_http(
+            "http://169.254.169.254/latest/meta-data/",
+            std::time::Duration::from_millis(500),
+        )
+        .await;
+        assert!(!r.success, "cloud-metadata HTTP probe must not succeed");
+        assert!(
+            r.error.unwrap_or_default().contains("SSRF guard"),
+            "169.254.169.254 HTTP target must be rejected by the SSRF guard"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_icmp_blocks_loopback_with_ssrf_guard() {
+        let r = probe_icmp("127.0.0.1", std::time::Duration::from_millis(500)).await;
+        assert!(!r.success, "loopback ICMP probe must not succeed");
+        assert!(
+            r.error.unwrap_or_default().contains("SSRF guard"),
+            "loopback ICMP target must be rejected by the SSRF guard"
+        );
     }
 }

@@ -1086,13 +1086,38 @@ async fn update_server(
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
-async fn delete_server(
+pub async fn delete_server(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    // Capture the name before deletion so the audit detail is meaningful.
+    let server_name = ServerService::get_server(&state.db, &id)
+        .await
+        .ok()
+        .map(|s| s.name);
     ServerService::delete_server(&state.db, &id).await?;
     // Close any live agent connection so it doesn't linger after the row is gone.
     state.agent_manager.remove_connection(&id);
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "server_deleted",
+        Some(&format!(
+            "server_id={id} name={}",
+            server_name.as_deref().unwrap_or("?")
+        )),
+        &ip,
+    )
+    .await;
     ok("ok")
 }
 
@@ -1106,10 +1131,19 @@ async fn delete_server(
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
-async fn batch_delete(
+pub async fn batch_delete(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Json(body): Json<BatchDeleteRequest>,
 ) -> Result<Json<ApiResponse<BatchDeleteResponse>>, AppError> {
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let deleted = ServerService::batch_delete(&state.db, &body.ids).await?;
     // Kick any live connections for the requested ids. `remove_connection` is
     // a no-op when nothing is connected, so it's safe to call for ids that
@@ -1117,6 +1151,14 @@ async fn batch_delete(
     for id in &body.ids {
         state.agent_manager.remove_connection(id);
     }
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "server_batch_deleted",
+        Some(&format!("ids={} deleted={}", body.ids.join(","), deleted)),
+        &ip,
+    )
+    .await;
     ok(BatchDeleteResponse { deleted })
 }
 
@@ -1200,6 +1242,9 @@ fn normalize_version(version: &str) -> &str {
 )]
 async fn trigger_upgrade(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Extension(current_user): Extension<CurrentUser>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Json(body): Json<UpgradeRequest>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
@@ -1250,6 +1295,23 @@ async fn trigger_upgrade(
         );
         return Err(AppError::Internal("Failed to send upgrade command".into()));
     }
+
+    // Audit the upgrade trigger (best-effort). Remote code is delivered to the
+    // agent here, so the actor and target version belong in the trail.
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "server_upgrade",
+        Some(&format!("server_id={id} version={version}")),
+        &ip,
+    )
+    .await;
 
     ok("ok")
 }
@@ -1807,5 +1869,131 @@ mod upgrade_tests {
         assert_eq!(normalize_version("v0.7.1"), "0.7.1");
         assert_eq!(normalize_version("0.7.1"), "0.7.1");
         assert_eq!(normalize_version("v1.0.0"), "1.0.0");
+    }
+}
+
+#[cfg(test)]
+mod delete_audit_tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::entity::audit_log;
+    use crate::middleware::auth::CurrentUser;
+    use crate::test_utils::setup_test_db;
+    use chrono::Utc;
+    use sea_orm::IntoActiveModel;
+    use serverbee_common::constants::CAP_DEFAULT;
+
+    fn admin() -> CurrentUser {
+        CurrentUser {
+            user_id: "admin-1".to_string(),
+            username: "admin".to_string(),
+            role: "admin".to_string(),
+            must_change_password: false,
+        }
+    }
+
+    fn conn() -> ConnectInfo<SocketAddr> {
+        ConnectInfo("203.0.113.9:4444".parse().unwrap())
+    }
+
+    async fn insert_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
+        let now = Utc::now();
+        let model = server::Model {
+            id: id.to_string(),
+            token_hash: Some("hash".to_string()),
+            token_prefix: Some("prefix".to_string()),
+            name: name.to_string(),
+            cpu_name: None,
+            cpu_cores: None,
+            cpu_arch: None,
+            os: None,
+            kernel_version: None,
+            mem_total: None,
+            swap_total: None,
+            disk_total: None,
+            ipv4: None,
+            ipv6: None,
+            region: None,
+            country_code: None,
+            virtualization: None,
+            agent_version: None,
+            group_id: None,
+            weight: 0,
+            hidden: false,
+            remark: None,
+            public_remark: None,
+            price: None,
+            billing_cycle: None,
+            currency: None,
+            expired_at: None,
+            traffic_limit: None,
+            traffic_limit_type: None,
+            billing_start_day: None,
+            capabilities: CAP_DEFAULT as i32,
+            protocol_version: 1,
+            features: "[]".to_string(),
+            last_remote_addr: None,
+            fingerprint: None,
+            created_at: now,
+            updated_at: now,
+        };
+        model.into_active_model().insert(db).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_server_writes_audit_log() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-del", "Doomed").await;
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+
+        let res = delete_server(
+            State(state.clone()),
+            conn(),
+            Extension(admin()),
+            HeaderMap::new(),
+            Path("srv-del".to_string()),
+        )
+        .await;
+        assert!(res.is_ok(), "delete should succeed: {res:?}");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "server_deleted"
+                && l.user_id == "admin-1"
+                && l
+                    .detail
+                    .as_deref()
+                    .is_some_and(|d| d.contains("srv-del") && d.contains("Doomed"))),
+            "expected a server_deleted audit row, got: {logs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_delete_writes_audit_log() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-a", "A").await;
+        insert_server(&db, "srv-b", "B").await;
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+
+        let res = batch_delete(
+            State(state.clone()),
+            conn(),
+            Extension(admin()),
+            HeaderMap::new(),
+            Json(BatchDeleteRequest {
+                ids: vec!["srv-a".to_string(), "srv-b".to_string()],
+            }),
+        )
+        .await;
+        assert!(res.is_ok(), "batch delete should succeed: {res:?}");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "server_batch_deleted"
+                && l.detail
+                    .as_deref()
+                    .is_some_and(|d| d.contains("srv-a") && d.contains("deleted=2"))),
+            "expected a server_batch_deleted audit row, got: {logs:?}"
+        );
     }
 }

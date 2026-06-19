@@ -244,12 +244,21 @@ impl TerminalManager {
         }
     }
 
-    /// Close all terminal sessions.
-    pub fn close_all(&mut self) {
+    /// Close all terminal sessions. Returns the ids that were open, so the
+    /// caller can notify the server/browser side that they ended (e.g. on
+    /// capability revocation, where the PTY is torn down locally rather than
+    /// exiting on its own).
+    pub fn close_all(&mut self) -> Vec<String> {
         let ids: Vec<String> = self.sessions.keys().cloned().collect();
-        for id in ids {
-            self.close(&id);
+        for id in &ids {
+            self.close(id);
         }
+        ids
+    }
+
+    /// Number of currently open terminal sessions.
+    pub fn session_count(&self) -> usize {
+        self.sessions.len()
     }
 }
 

@@ -146,12 +146,22 @@ pub async fn login(
 
     // Rate limiting
     if !state.check_login_rate(&ip) {
+        // Record the lockout so brute-force activity leaves a durable trail
+        // (the rate-limit counter itself is in-memory and lost on restart).
+        let _ = AuditService::log(
+            &state.db,
+            "anonymous",
+            "login_rate_limited",
+            Some(&login_audit_detail(&body.username)),
+            &ip,
+        )
+        .await;
         return Err(AppError::TooManyRequests(
             "Too many login attempts. Please try again later.".to_string(),
         ));
     }
 
-    let (session, user) = AuthService::login(
+    let (session, user) = match AuthService::login(
         &state.db,
         LoginParams {
             username: &body.username,
@@ -162,7 +172,28 @@ pub async fn login(
             session_ttl: state.config.auth.session_ttl,
         },
     )
-    .await?;
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            // Audit only genuine credential failures (best-effort). A
+            // 2FA-enabled user who supplied the correct password but no TOTP
+            // code gets Validation("2fa_required") — the normal first step of a
+            // two-step login — and DB/hashing errors are not failed attempts;
+            // match Unauthorized specifically. The password is never recorded.
+            if matches!(&e, AppError::Unauthorized) {
+                let _ = AuditService::log(
+                    &state.db,
+                    "anonymous",
+                    "login_failed",
+                    Some(&login_audit_detail(&body.username)),
+                    &ip,
+                )
+                .await;
+            }
+            return Err(e);
+        }
+    };
 
     let secure_flag = if state.config.auth.secure_cookie {
         "; Secure"
@@ -694,4 +725,148 @@ fn extract_bearer_token_value(headers: &HeaderMap) -> Option<String> {
         .ok()?
         .strip_prefix("Bearer ")
         .map(|s| s.to_string())
+}
+
+/// Build the `detail` string for login audit rows (failed / rate-limited).
+/// The username is attacker-controlled on the public login endpoints, so it is
+/// truncated to a sane bound before being persisted, keeping audit rows from
+/// growing without limit. The submitted password is never included. Shared by
+/// the web and mobile login handlers so both leave an identical trail.
+pub(crate) fn login_audit_detail(username: &str) -> String {
+    const MAX_USERNAME_CHARS: usize = 256;
+    format!(
+        "username={}",
+        username.chars().take(MAX_USERNAME_CHARS).collect::<String>()
+    )
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::entity::audit_log;
+    use crate::service::auth::AuthService;
+    use crate::test_utils::setup_test_db;
+    use sea_orm::EntityTrait;
+
+    fn conn() -> ConnectInfo<SocketAddr> {
+        ConnectInfo("198.51.100.7:5555".parse().unwrap())
+    }
+
+    #[tokio::test]
+    async fn login_with_wrong_password_is_audited_without_leaking_password() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "alice", "correct-horse", "member")
+            .await
+            .unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+
+        let result = login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                username: "alice".to_string(),
+                password: "wrong-password".to_string(),
+                totp_code: None,
+            }),
+        )
+        .await;
+        assert!(result.is_err(), "login with a wrong password must fail");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "login_failed"
+                && l.detail.as_deref().is_some_and(|d| d.contains("alice"))),
+            "expected a login_failed audit row naming the username, got: {logs:?}"
+        );
+        assert!(
+            logs.iter().all(|l| !l
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("wrong-password")),
+            "audit detail must never contain the attempted password"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limited_login_is_audited() {
+        let (db, _tmp) = setup_test_db().await;
+        let mut config = AppConfig::default();
+        // Force the very first attempt from an IP to be rejected as rate-limited.
+        config.rate_limit.login_max = 0;
+        let state = AppState::new(db.clone(), config).await.unwrap();
+
+        let result = login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                username: "mallory".to_string(),
+                password: "whatever".to_string(),
+                totp_code: None,
+            }),
+        )
+        .await;
+        assert!(result.is_err(), "login must be rejected when rate-limited");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "login_rate_limited"
+                && l.detail.as_deref().is_some_and(|d| d.contains("mallory"))),
+            "expected a login_rate_limited audit row, got: {logs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn login_requiring_2fa_is_not_audited_as_failure() {
+        use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+
+        let (db, _tmp) = setup_test_db().await;
+        let created = AuthService::create_user(&db, "carol", "correct-horse", "member")
+            .await
+            .unwrap();
+        // Enable 2FA by attaching a TOTP secret directly.
+        let mut am = created.into_active_model();
+        am.totp_secret = Set(Some("JBSWY3DPEHPK3PXP".to_string()));
+        am.update(&db).await.unwrap();
+
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let result = login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                username: "carol".to_string(),
+                password: "correct-horse".to_string(),
+                totp_code: None,
+            }),
+        )
+        .await;
+        // Correct password but no TOTP code → 2fa_required, the normal first
+        // step of a two-step login — NOT a credential failure.
+        assert!(
+            matches!(result, Err(AppError::Validation(ref m)) if m == "2fa_required"),
+            "expected 2fa_required validation error"
+        );
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().all(|l| l.action != "login_failed"),
+            "a 2FA-required first step must not be recorded as login_failed, got: {logs:?}"
+        );
+    }
+
+    #[test]
+    fn login_audit_detail_truncates_long_username() {
+        let long = "a".repeat(5000);
+        let detail = login_audit_detail(&long);
+        assert!(detail.starts_with("username="));
+        assert!(
+            detail.chars().count() <= "username=".chars().count() + 256,
+            "attacker-controlled username must be truncated, got {} chars",
+            detail.chars().count()
+        );
+    }
 }

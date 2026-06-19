@@ -585,15 +585,29 @@ impl Reporter {
                 tracing::info!("Capabilities updated: server={caps}, effective={effective_caps}");
                 network_prober.resync_capabilities();
 
-                // If Docker capability was removed, clean up
-                if has_capability(old_caps, CAP_DOCKER)
-                    && !has_capability(effective_caps, CAP_DOCKER)
-                {
-                    tracing::info!("Docker capability revoked, cleaning up");
-                    if let Some(dm) = docker_manager.as_mut() {
-                        dm.cleanup();
-                    }
-                    *docker_stats_interval = None;
+                // Tear down in-flight operations for any capability that was
+                // just revoked, so revocation is an immediate kill-switch for
+                // the operations it authorizes (open PTY, file transfers,
+                // Docker stats) — not merely a gate on future ones.
+                let closed_terminals = teardown_revoked_capabilities(
+                    old_caps,
+                    effective_caps,
+                    terminal_manager,
+                    file_manager,
+                    docker_manager,
+                    docker_stats_interval,
+                );
+                // The agent tore these PTYs down locally (rather than them
+                // exiting on their own), so the reader task won't emit an
+                // Exited event. Tell the server explicitly so the browser
+                // bridge closes instead of hanging until idle timeout.
+                for session_id in closed_terminals {
+                    let msg = AgentMessage::TerminalError {
+                        session_id,
+                        error: "Terminal capability revoked".to_string(),
+                    };
+                    let json = serde_json::to_string(&msg)?;
+                    write.send(Message::Text(json.into())).await?;
                 }
             }
             ServerMessage::Ping => {
@@ -1082,6 +1096,16 @@ impl Reporter {
                 offset,
                 data,
             } => {
+                let caps = capabilities.load(Ordering::SeqCst);
+                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
+                    let msg = AgentMessage::FileUploadError {
+                        transfer_id: transfer_id.clone(),
+                        error: "File capability disabled".into(),
+                    };
+                    let json = serde_json::to_string(&msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    return Ok(());
+                }
                 match file_manager
                     .receive_chunk(&transfer_id, offset, &data)
                     .await
@@ -1105,6 +1129,16 @@ impl Reporter {
                 }
             }
             ServerMessage::FileUploadEnd { transfer_id } => {
+                let caps = capabilities.load(Ordering::SeqCst);
+                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
+                    let msg = AgentMessage::FileUploadError {
+                        transfer_id: transfer_id.clone(),
+                        error: "File capability disabled".into(),
+                    };
+                    let json = serde_json::to_string(&msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    return Ok(());
+                }
                 match file_manager.finish_upload(&transfer_id).await {
                     Ok(()) => {
                         let msg = AgentMessage::FileUploadComplete { transfer_id };
@@ -1324,6 +1358,50 @@ fn build_ws_request(
         .headers_mut()
         .insert(AUTHORIZATION, format!("Bearer {}", config.token).parse()?);
     Ok(request)
+}
+
+/// Tear down in-flight operations for capabilities that just transitioned from
+/// granted to revoked, so a capability revocation is an immediate kill-switch
+/// for the operations it authorizes (an open PTY, in-flight file transfers,
+/// Docker stats polling) — not merely a gate on future operations. Mirrors the
+/// disconnect-time cleanup, scoped to the capability bits that flipped off.
+///
+/// Returns the ids of terminal sessions that were closed, so the caller can
+/// notify the server (and thus the browser bridge) that they ended.
+fn teardown_revoked_capabilities(
+    old_caps: u32,
+    effective_caps: u32,
+    terminal_manager: &mut TerminalManager,
+    file_manager: &FileManager,
+    docker_manager: &mut Option<DockerManager>,
+    docker_stats_interval: &mut Option<tokio::time::Interval>,
+) -> Vec<String> {
+    use serverbee_common::constants::*;
+    let revoked = |cap: u32| has_capability(old_caps, cap) && !has_capability(effective_caps, cap);
+
+    let mut closed_terminals = Vec::new();
+    if revoked(CAP_TERMINAL) {
+        tracing::info!(
+            "CAP_TERMINAL revoked, closing {} terminal session(s)",
+            terminal_manager.session_count()
+        );
+        closed_terminals = terminal_manager.close_all();
+    }
+    if revoked(CAP_FILE) {
+        tracing::info!(
+            "CAP_FILE revoked, cancelling {} in-flight file transfer(s)",
+            file_manager.active_transfer_count()
+        );
+        file_manager.cancel_all_transfers();
+    }
+    if revoked(CAP_DOCKER) {
+        tracing::info!("Docker capability revoked, cleaning up");
+        if let Some(dm) = docker_manager.as_mut() {
+            dm.cleanup();
+        }
+        *docker_stats_interval = None;
+    }
+    closed_terminals
 }
 
 fn server_capabilities_from_welcome(server_caps: Option<u32>) -> u32 {
@@ -1577,6 +1655,118 @@ mod tests {
         assert_eq!(old_caps, CAP_FILE);
         assert_eq!(capabilities.load(Ordering::SeqCst), 0);
         assert_eq!(server_capabilities.load(Ordering::SeqCst), CAP_EXEC);
+    }
+
+    fn upload_file_manager(root: &std::path::Path) -> FileManager {
+        let file_config = FileConfig {
+            enabled: true,
+            root_paths: vec![root.to_string_lossy().into_owned()],
+            max_file_size: 1_073_741_824,
+            deny_patterns: vec![],
+        };
+        FileManager::new(file_config, Arc::new(AtomicU32::new(CAP_FILE)))
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn revoking_terminal_and_file_caps_tears_down_in_flight_operations() {
+        use serverbee_common::constants::CAP_TERMINAL;
+        use tempfile::TempDir;
+
+        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL | CAP_FILE));
+
+        // An open PTY session.
+        let (term_tx, _term_rx) = mpsc::channel(64);
+        let mut terminal_manager = TerminalManager::new(term_tx, Arc::clone(&caps));
+        terminal_manager.open("sess-1".to_string(), 24, 80);
+        assert_eq!(terminal_manager.session_count(), 1);
+
+        // An in-flight upload.
+        let tmp = TempDir::new().unwrap();
+        let file_manager = upload_file_manager(tmp.path());
+        let target = tmp.path().join("upload.bin").to_string_lossy().into_owned();
+        file_manager
+            .start_upload("xfer-1".to_string(), target, 10)
+            .await
+            .expect("start_upload should succeed");
+        assert_eq!(file_manager.active_transfer_count(), 1);
+
+        // Revoke both capabilities.
+        let mut docker_manager: Option<DockerManager> = None;
+        let mut docker_stats_interval: Option<tokio::time::Interval> = None;
+        let closed = teardown_revoked_capabilities(
+            CAP_TERMINAL | CAP_FILE,
+            0,
+            &mut terminal_manager,
+            &file_manager,
+            &mut docker_manager,
+            &mut docker_stats_interval,
+        );
+
+        assert_eq!(
+            closed,
+            vec!["sess-1".to_string()],
+            "revoking CAP_TERMINAL must report closed session ids so the server can be notified"
+        );
+        assert_eq!(
+            terminal_manager.session_count(),
+            0,
+            "open PTY sessions must be closed when CAP_TERMINAL is revoked"
+        );
+        assert_eq!(
+            file_manager.active_transfer_count(),
+            0,
+            "in-flight transfers must be cancelled when CAP_FILE is revoked"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn unchanged_capabilities_preserve_in_flight_operations() {
+        use serverbee_common::constants::CAP_TERMINAL;
+        use tempfile::TempDir;
+
+        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL | CAP_FILE));
+
+        let (term_tx, _term_rx) = mpsc::channel(64);
+        let mut terminal_manager = TerminalManager::new(term_tx, Arc::clone(&caps));
+        terminal_manager.open("sess-1".to_string(), 24, 80);
+
+        let tmp = TempDir::new().unwrap();
+        let file_manager = upload_file_manager(tmp.path());
+        let target = tmp.path().join("upload.bin").to_string_lossy().into_owned();
+        file_manager
+            .start_upload("xfer-1".to_string(), target, 10)
+            .await
+            .unwrap();
+
+        // No capability transition: both still granted, nothing should be torn down.
+        let mut docker_manager: Option<DockerManager> = None;
+        let mut docker_stats_interval: Option<tokio::time::Interval> = None;
+        let closed = teardown_revoked_capabilities(
+            CAP_TERMINAL | CAP_FILE,
+            CAP_TERMINAL | CAP_FILE,
+            &mut terminal_manager,
+            &file_manager,
+            &mut docker_manager,
+            &mut docker_stats_interval,
+        );
+
+        assert!(
+            closed.is_empty(),
+            "no sessions should be reported closed when capabilities are unchanged"
+        );
+        assert_eq!(
+            terminal_manager.session_count(),
+            1,
+            "sessions must survive when capabilities are unchanged"
+        );
+        assert_eq!(
+            file_manager.active_transfer_count(),
+            1,
+            "transfers must survive when capabilities are unchanged"
+        );
+
+        // Reap the spawned shell.
+        terminal_manager.close_all();
     }
 
     #[test]
