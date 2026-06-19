@@ -15,7 +15,9 @@ use uuid::Uuid;
 
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
+use crate::router::api::auth::login_audit_detail;
 use crate::router::utils::extract_client_ip;
+use crate::service::audit::AuditService;
 use crate::service::mobile_auth::{MobileAuthService, MobileLoginParams, MobileTokenResponse};
 use crate::state::{AppState, PendingPair};
 
@@ -124,14 +126,22 @@ pub async fn mobile_login(
     .to_string();
     let user_agent = extract_user_agent(&req_headers);
 
-    // Rate limiting
+    // Rate limiting (shares the per-IP counter with the web login endpoint).
     if !state.check_login_rate(&ip) {
+        let _ = AuditService::log(
+            &state.db,
+            "anonymous",
+            "login_rate_limited",
+            Some(&login_audit_detail(&body.username)),
+            &ip,
+        )
+        .await;
         return Err(AppError::TooManyRequests(
             "Too many login attempts. Please try again later.".to_string(),
         ));
     }
 
-    let response = MobileAuthService::login(
+    let response = match MobileAuthService::login(
         &state.db,
         &state.config.mobile,
         MobileLoginParams {
@@ -144,7 +154,26 @@ pub async fn mobile_login(
             user_agent: &user_agent,
         },
     )
-    .await?;
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            // Mirror the web login audit so brute force cannot dodge the trail
+            // by targeting the mobile endpoint. Only genuine credential
+            // failures are recorded; the password is never included.
+            if matches!(&e, AppError::Unauthorized) {
+                let _ = AuditService::log(
+                    &state.db,
+                    "anonymous",
+                    "login_failed",
+                    Some(&login_audit_detail(&body.username)),
+                    &ip,
+                )
+                .await;
+            }
+            return Err(e);
+        }
+    };
 
     ok(response)
 }
@@ -540,4 +569,85 @@ fn extract_bearer(headers: &HeaderMap) -> Option<String> {
         .ok()?
         .strip_prefix("Bearer ")
         .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::entity::audit_log;
+    use crate::service::auth::AuthService;
+    use crate::test_utils::setup_test_db;
+    use sea_orm::EntityTrait;
+
+    fn conn() -> ConnectInfo<SocketAddr> {
+        ConnectInfo("198.51.100.9:7777".parse().unwrap())
+    }
+
+    fn req(username: &str, password: &str) -> MobileLoginRequest {
+        MobileLoginRequest {
+            username: username.to_string(),
+            password: password.to_string(),
+            installation_id: "inst-test".to_string(),
+            device_name: "Test Device".to_string(),
+            totp_code: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn mobile_login_wrong_password_is_audited() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "dave", "correct-horse", "member")
+            .await
+            .unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+
+        let result = mobile_login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(req("dave", "wrong-password")),
+        )
+        .await;
+        assert!(result.is_err(), "wrong password must fail");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "login_failed"
+                && l.detail.as_deref().is_some_and(|d| d.contains("dave"))),
+            "mobile login must leave a login_failed audit row, got: {logs:?}"
+        );
+        assert!(
+            logs.iter().all(|l| !l
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("wrong-password")),
+            "the submitted password must never be recorded"
+        );
+    }
+
+    #[tokio::test]
+    async fn mobile_login_rate_limited_is_audited() {
+        let (db, _tmp) = setup_test_db().await;
+        let mut config = AppConfig::default();
+        config.rate_limit.login_max = 0;
+        let state = AppState::new(db.clone(), config).await.unwrap();
+
+        let result = mobile_login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(req("eve", "whatever")),
+        )
+        .await;
+        assert!(result.is_err(), "must be rejected when rate-limited");
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().any(|l| l.action == "login_rate_limited"
+                && l.detail.as_deref().is_some_and(|d| d.contains("eve"))),
+            "mobile rate-limited login must be audited, got: {logs:?}"
+        );
+    }
 }

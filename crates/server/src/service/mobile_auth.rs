@@ -1031,4 +1031,84 @@ mod tests {
             "mobile sessions must be revoked on admin password reset"
         );
     }
+
+    #[tokio::test]
+    async fn change_password_deletes_device_tokens_in_fk_safe_order() {
+        let (db, _tmp) = setup_test_db().await;
+        let config = default_mobile_config();
+
+        let user = AuthService::create_user(&db, "peggy", "old-password-123", "member")
+            .await
+            .expect("create_user should succeed");
+
+        let tokens = MobileAuthService::login(
+            &db,
+            &config,
+            MobileLoginParams {
+                username: "peggy",
+                password: "old-password-123",
+                totp_code: None,
+                installation_id: "inst-P",
+                device_name: "iPhone",
+                ip: "127.0.0.1",
+                user_agent: "ServerBee-iOS/1.0",
+            },
+        )
+        .await
+        .expect("login should succeed");
+
+        // Attach a device_token to the mobile session login created, as
+        // push_register would. device_token.mobile_session_id is an FK with NO
+        // ON DELETE cascade, so revocation MUST delete the device_token before
+        // the mobile_session — otherwise the final delete fails the FK.
+        let ms = mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(&user.id))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("login should have created a mobile session");
+        let now = Utc::now();
+        device_token::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            user_id: Set(user.id.clone()),
+            mobile_session_id: Set(ms.id.clone()),
+            installation_id: Set("inst-P".to_string()),
+            token: Set("apns-token-xyz".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .expect("seeding a device_token should succeed");
+
+        // If revoke deleted mobile_session before device_token, this would fail
+        // with an FK violation. It must succeed and tear the token down too.
+        AuthService::change_password(&db, &user.id, "old-password-123", "new-password-456", None)
+            .await
+            .expect("change_password must succeed and revoke device tokens first");
+
+        let remaining_tokens = device_token::Entity::find()
+            .filter(device_token::Column::UserId.eq(&user.id))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(
+            remaining_tokens, 0,
+            "device tokens must be revoked alongside the mobile session"
+        );
+
+        let result = MobileAuthService::refresh(
+            &db,
+            &config,
+            &tokens.refresh_token,
+            "inst-P",
+            "127.0.0.1",
+            "ServerBee-iOS/1.0",
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AppError::Unauthorized)),
+            "refresh after password change must be rejected, got {result:?}"
+        );
+    }
 }

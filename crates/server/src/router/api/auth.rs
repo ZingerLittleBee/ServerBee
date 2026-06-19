@@ -152,7 +152,7 @@ pub async fn login(
             &state.db,
             "anonymous",
             "login_rate_limited",
-            Some(&format!("username={}", body.username)),
+            Some(&login_audit_detail(&body.username)),
             &ip,
         )
         .await;
@@ -176,16 +176,21 @@ pub async fn login(
     {
         Ok(v) => v,
         Err(e) => {
-            // Audit the failed attempt (best-effort). The attempted username
-            // and client IP are recorded; the submitted password never is.
-            let _ = AuditService::log(
-                &state.db,
-                "anonymous",
-                "login_failed",
-                Some(&format!("username={}", body.username)),
-                &ip,
-            )
-            .await;
+            // Audit only genuine credential failures (best-effort). A
+            // 2FA-enabled user who supplied the correct password but no TOTP
+            // code gets Validation("2fa_required") — the normal first step of a
+            // two-step login — and DB/hashing errors are not failed attempts;
+            // match Unauthorized specifically. The password is never recorded.
+            if matches!(&e, AppError::Unauthorized) {
+                let _ = AuditService::log(
+                    &state.db,
+                    "anonymous",
+                    "login_failed",
+                    Some(&login_audit_detail(&body.username)),
+                    &ip,
+                )
+                .await;
+            }
             return Err(e);
         }
     };
@@ -722,6 +727,19 @@ fn extract_bearer_token_value(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Build the `detail` string for login audit rows (failed / rate-limited).
+/// The username is attacker-controlled on the public login endpoints, so it is
+/// truncated to a sane bound before being persisted, keeping audit rows from
+/// growing without limit. The submitted password is never included. Shared by
+/// the web and mobile login handlers so both leave an identical trail.
+pub(crate) fn login_audit_detail(username: &str) -> String {
+    const MAX_USERNAME_CHARS: usize = 256;
+    format!(
+        "username={}",
+        username.chars().take(MAX_USERNAME_CHARS).collect::<String>()
+    )
+}
+
 #[cfg(test)]
 mod audit_tests {
     use super::*;
@@ -798,6 +816,57 @@ mod audit_tests {
             logs.iter().any(|l| l.action == "login_rate_limited"
                 && l.detail.as_deref().is_some_and(|d| d.contains("mallory"))),
             "expected a login_rate_limited audit row, got: {logs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn login_requiring_2fa_is_not_audited_as_failure() {
+        use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+
+        let (db, _tmp) = setup_test_db().await;
+        let created = AuthService::create_user(&db, "carol", "correct-horse", "member")
+            .await
+            .unwrap();
+        // Enable 2FA by attaching a TOTP secret directly.
+        let mut am = created.into_active_model();
+        am.totp_secret = Set(Some("JBSWY3DPEHPK3PXP".to_string()));
+        am.update(&db).await.unwrap();
+
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let result = login(
+            State(state.clone()),
+            conn(),
+            HeaderMap::new(),
+            Json(LoginRequest {
+                username: "carol".to_string(),
+                password: "correct-horse".to_string(),
+                totp_code: None,
+            }),
+        )
+        .await;
+        // Correct password but no TOTP code → 2fa_required, the normal first
+        // step of a two-step login — NOT a credential failure.
+        assert!(
+            matches!(result, Err(AppError::Validation(ref m)) if m == "2fa_required"),
+            "expected 2fa_required validation error"
+        );
+
+        let logs = audit_log::Entity::find().all(&db).await.unwrap();
+        assert!(
+            logs.iter().all(|l| l.action != "login_failed"),
+            "a 2FA-required first step must not be recorded as login_failed, got: {logs:?}"
+        );
+    }
+
+    #[test]
+    fn login_audit_detail_truncates_long_username() {
+        let long = "a".repeat(5000);
+        let detail = login_audit_detail(&long);
+        assert!(detail.starts_with("username="));
+        assert!(
+            detail.chars().count() <= "username=".chars().count() + 256,
+            "attacker-controlled username must be truncated, got {} chars",
+            detail.chars().count()
         );
     }
 }
