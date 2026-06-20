@@ -132,10 +132,19 @@ impl Reporter {
 
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
 
-        // Capabilities are owned by the agent host and never change at
-        // runtime. The server cannot push or override them, so this is the
-        // single, immutable enforcement value shared by every manager.
-        let capabilities = Arc::new(AtomicU32::new(self.agent_local_capabilities));
+        // Fold any active temporary grants into the initial effective caps so the
+        // first SystemInfo already reflects grants that survived a restart.
+        let base_caps = self.agent_local_capabilities;
+        let grants_path = self.config.capabilities.grants_path();
+        let now0 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let grant_store0 = crate::capability_grants::CapabilityGrantStore::load(&grants_path);
+        let effective_caps =
+            (base_caps | grant_store0.active_bits(now0, base_caps)) & serverbee_common::constants::CAP_VALID_MASK;
+        let initial_temporary = grant_store0.active_grants(now0);
+        let capabilities = Arc::new(AtomicU32::new(effective_caps));
 
         let request = build_ws_request(&self.config)?;
         let (ws_stream, _response) = connect_async(request).await?;
@@ -239,9 +248,8 @@ impl Reporter {
                 ipv6: initial_ipv6.clone(),
                 ..info
             },
-            agent_local_capabilities: Some(self.agent_local_capabilities),
-            // TODO(temporary-grants): filled in Task 7 (reporter wiring)
-            temporary: vec![],
+            agent_local_capabilities: Some(effective_caps),
+            temporary: initial_temporary.clone(),
         };
         let json = serde_json::to_string(&info_msg)?;
         write.send(Message::Text(json.into())).await?;
@@ -288,6 +296,25 @@ impl Reporter {
 
         // Channel for background command execution results.
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
+
+        // Capability grant supervisor: re-reads the grants file and pushes
+        // CapabilitiesChanged through `grant_tx` (forwarded onto the WS below).
+        let (grant_tx, mut grant_rx) = mpsc::channel::<AgentMessage>(8);
+        {
+            let grants_path = grants_path.clone();
+            let caps = Arc::clone(&capabilities);
+            let tx = grant_tx.clone();
+            tokio::spawn(async move {
+                crate::capability_grants::supervisor::run_grant_supervisor(
+                    grants_path,
+                    base_caps,
+                    caps,
+                    tx,
+                    std::time::Duration::from_secs(3),
+                )
+                .await;
+            });
+        }
 
         // Fire-and-forget: refine the just-sent SystemInfo IPs with an
         // externally-observed public IP. If discovery yields something
@@ -352,6 +379,11 @@ impl Reporter {
                     let json = serde_json::to_string(&cmd_msg)?;
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent background command result");
+                }
+                Some(grant_msg) = grant_rx.recv() => {
+                    let json = serde_json::to_string(&grant_msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent CapabilitiesChanged");
                 }
                 Some(run_result) = unlock_result_rx.recv() => {
                     let msg = AgentMessage::UnlockResults {
