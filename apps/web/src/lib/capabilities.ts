@@ -65,3 +65,37 @@ export function getEffectiveCapabilityEnabled(
   }
   return hasCap(configuredCapabilities ?? CAP_DEFAULT, bit)
 }
+
+export type CapabilityState = 'off' | 'enabled' | 'temporary'
+
+export interface TemporaryGrantView {
+  cap: string
+  expires_at: number
+  granted_at: number
+}
+
+interface CapabilityHost {
+  capabilities?: number | null
+  effective_capabilities?: number | null
+  temporary?: TemporaryGrantView[] | null
+}
+
+const CAP_BY_BIT = new Map<number, string>(CAPABILITIES.map((c) => [c.bit, c.key]))
+
+// Returns the active grant for a capability bit, if any (expiry checked client-side).
+export function temporaryGrantFor(host: CapabilityHost, bit: number): TemporaryGrantView | undefined {
+  const key = CAP_BY_BIT.get(bit)
+  if (!(key && host.temporary)) {
+    return undefined
+  }
+  const nowSecs = Math.floor(Date.now() / 1000)
+  return host.temporary.find((g) => g.cap === key && g.expires_at > nowSecs)
+}
+
+export function classifyCapability(host: CapabilityHost, bit: number): CapabilityState {
+  const enabled = getEffectiveCapabilityEnabled(host.effective_capabilities, host.capabilities, bit)
+  if (!enabled) {
+    return 'off'
+  }
+  return temporaryGrantFor(host, bit) ? 'temporary' : 'enabled'
+}

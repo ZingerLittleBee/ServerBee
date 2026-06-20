@@ -9,8 +9,10 @@ import {
   CAP_TERMINAL,
   CAP_UPGRADE,
   CAPABILITIES,
+  classifyCapability,
   getEffectiveCapabilityEnabled,
-  hasCap
+  hasCap,
+  temporaryGrantFor
 } from './capabilities'
 
 describe('capability toggles', () => {
@@ -57,5 +59,35 @@ describe('capability toggles', () => {
     // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     expect(getEffectiveCapabilityEnabled(undefined, CAP_DEFAULT | CAP_EXEC, CAP_EXEC)).toBe(true)
     expect(getEffectiveCapabilityEnabled(null, CAP_DEFAULT, CAP_EXEC)).toBe(false)
+  })
+})
+
+const base = { capabilities: CAP_DEFAULT, effective_capabilities: CAP_DEFAULT }
+
+describe('classifyCapability', () => {
+  it('returns off when the bit is not set', () => {
+    expect(classifyCapability(base, CAP_TERMINAL)).toBe('off')
+  })
+
+  it('returns temporary when a matching active grant exists', () => {
+    const server = {
+      // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
+      capabilities: CAP_DEFAULT | CAP_TERMINAL,
+      // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
+      effective_capabilities: CAP_DEFAULT | CAP_TERMINAL,
+      temporary: [{ cap: 'terminal', granted_at: 0, expires_at: 9_999_999_999 }]
+    }
+    expect(classifyCapability(server, CAP_TERMINAL)).toBe('temporary')
+    expect(temporaryGrantFor(server, CAP_TERMINAL)?.expires_at).toBe(9_999_999_999)
+  })
+
+  it('returns enabled when the bit is set but not via a grant', () => {
+    const server = {
+      // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
+      capabilities: CAP_DEFAULT | CAP_TERMINAL,
+      // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
+      effective_capabilities: CAP_DEFAULT | CAP_TERMINAL
+    }
+    expect(classifyCapability(server, CAP_TERMINAL)).toBe('enabled')
   })
 })
