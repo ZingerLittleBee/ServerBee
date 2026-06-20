@@ -9,7 +9,7 @@ ServerBee can centrally manage an inbound-traffic blocklist. The server holds th
 ## Requirements
 
 - **Linux only** — agent uses the `nft` CLI.
-- **`CAP_FIREWALL_BLOCK`** (bit `512`) must be enabled on each server. **Disabled by default.**
+- **`CAP_FIREWALL_BLOCK`** (bit `512`) must be enabled on the agent. It is **on by default**; capabilities are agent-owned, so to turn it off add `firewall_block` to the agent's `[capabilities]` deny list. See [Capabilities](/en/docs/capabilities).
 - Agent process needs root or `CAP_NET_ADMIN`.
 
 ## Manual blocking

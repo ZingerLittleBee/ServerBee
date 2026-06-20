@@ -122,7 +122,7 @@ curl https://your-server/api/auth/me \
 
 | 端点族 | 代表端点 |
 |--------|----------|
-| 服务器管理 | `POST/PUT/DELETE /api/servers/*`、`PUT /api/servers/batch-capabilities`、`POST /api/servers/{id}/upgrade` |
+| 服务器管理 | `POST/PUT/DELETE /api/servers/*`、`POST /api/servers/{id}/upgrade` |
 | Agent 注册码 | `POST /api/agent/enrollments`、`GET /api/agent/enrollments`、`DELETE /api/agent/enrollments/{id}`、`POST /api/agent/{id}/rotate-token` |
 | Agent 恢复 | `GET /api/servers/{target_id}/recovery-candidates`、`GET /api/servers/recovery-jobs/{job_id}`、`POST /api/servers/{target_id}/recover-merge` |
 | 分组和标签 | CRUD `/api/server-groups/*`、CRUD `/api/server-tags/*` |

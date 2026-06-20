@@ -45,7 +45,7 @@ pub struct UnlockChecker {
     run_now_tx: mpsc::Sender<()>,
     /// Watch channel sender for IP changes (watch: only the latest value matters).
     ip_changed_tx: watch::Sender<Option<String>>,
-    /// Effective capabilities bitmap (shared, updated by `CapabilitiesSync`).
+    /// Agent-local capabilities bitmap (shared, immutable at runtime).
     capabilities: Arc<AtomicU32>,
     /// Whether the post-connect initial run has been scheduled. The first
     /// `IpQualitySync` carrying services triggers one immediate run so probes

@@ -12,14 +12,18 @@ icon: FolderOpen
 
 ## 启用条件
 
-文件管理必须在两层同时启用：
+文件管理必须在两层同时启用，且**都在 Agent 主机上配置** —— 能力由 Agent 拥有，Server 无法开启：
 
-1. **Server 端 capability**：在 **Settings → Capabilities** 或服务器详情页启用 `CAP_FILE`。
-2. **Agent 本地策略**：设置 `[file].enabled = true`，并配置至少一个允许访问的根目录。
+1. **`file` 能力**：`file` 能力默认关闭。在 Agent 的 `[capabilities]` allow 列表中加入它（或传 `--allow-cap file`）。见 [功能开关](/zh/docs/capabilities)。
+2. **文件子系统策略**：设置 `[file].enabled = true`，并配置至少一个允许访问的根目录。
 
 示例 `agent.toml`：
 
 ```toml
+[capabilities]
+# 为该主机开启高风险的 file 能力。
+allow = ["file"]
+
 [file]
 enabled = true
 root_paths = ["/home", "/var/log", "/etc/serverbee"]
@@ -31,10 +35,13 @@ deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
 等价环境变量：
 
 ```bash
+SERVERBEE_CAPABILITIES__ALLOW=["file"]
 SERVERBEE_FILE__ENABLED=true
 SERVERBEE_FILE__ROOT_PATHS=/home,/var/log,/etc/serverbee
 SERVERBEE_FILE__MAX_FILE_SIZE=1073741824
 ```
+
+修改配置后需重启 Agent 才能使能力变更生效。
 
 ## 访问方式
 

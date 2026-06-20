@@ -169,8 +169,12 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_COLLECTOR__INTERVAL` | `collector.interval` | u32 | `3` | Metric report interval in seconds |
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `collector.enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `collector.enable_temperature` | bool | `true` | Enable CPU temperature monitoring |
-| `SERVERBEE_FILE__ENABLED` | `file.enabled` | bool | `false` | Enable file management capability on this agent |
+| `SERVERBEE_FILE__ENABLED` | `file.enabled` | bool | `false` | Enable the file-management subsystem (path sandbox). Also requires the `file` capability in `[capabilities]` |
 | `SERVERBEE_FILE__ROOT_PATHS` | `file.root_paths` | string[] | `[]` | Allowed root paths for file browsing (e.g. `/home,/var/log`). Empty rejects all file operations |
+| `SERVERBEE_CAPABILITIES__ALLOW` | `capabilities.allow` | string[] | `[]` | Capability keys to enable on top of the default set (`CAP_DEFAULT`), e.g. `["terminal","file"]`. Capabilities are agent-owned; the server cannot change them. Valid keys: `terminal`, `exec`, `upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`, `file`, `docker`, `security_events`, `firewall_block`, `ip_quality` |
+| `SERVERBEE_CAPABILITIES__DENY` | `capabilities.deny` | string[] | `[]` | Capability keys to strip from the default set. `deny` wins over `allow`. Unknown keys are rejected at startup |
+| `SERVERBEE_CAPABILITIES__TEMPORARY_MAX_DURATION` | `capabilities.temporary_max_duration` | string | `24h` | Max duration a single temporary capability grant can last (e.g. `30m`, `2h`, `1d`). Used by the host-local `serverbee-agent grant` CLI |
+| `SERVERBEE_CAPABILITIES__STATE_DIR` | `capabilities.state_dir` | string | `/var/lib/serverbee` | Directory where the agent persists `capability_grants.json` (the temporary-grants store). Must be writable by the agent |
 | `SERVERBEE_IP_CHANGE__ENABLED` | `ip_change.enabled` | bool | `true` | Enable periodic IP change detection |
 | `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |

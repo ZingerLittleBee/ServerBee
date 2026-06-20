@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use sea_orm::{ConnectOptions, ConnectionTrait, Database};
 use sea_orm_migration::MigratorTrait;
 use serde_json::json;
-use serverbee_common::constants::{CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_TCP};
+use serverbee_common::constants::{CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_TCP, CAP_TERMINAL};
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
@@ -543,12 +543,17 @@ async fn test_server_detail_returns_runtime_capability_fields() {
         .expect("Failed to parse server detail response");
 
     let server_data = &server_body["data"];
-    assert_eq!(server_data["capabilities"], CAP_DEFAULT);
+    // Capabilities are agent-owned: the `capabilities` column is now a mirror
+    // of what the agent reported, and effective == agent-local (no server mask).
+    assert_eq!(server_data["capabilities"], agent_local_capabilities);
     assert_eq!(
         server_data["agent_local_capabilities"],
         agent_local_capabilities
     );
-    assert_eq!(server_data["effective_capabilities"], CAP_PING_TCP);
+    assert_eq!(
+        server_data["effective_capabilities"],
+        agent_local_capabilities
+    );
 
     let _ = ws_sink.close().await;
 }
@@ -1061,21 +1066,12 @@ async fn test_terminal_open_and_close_are_audited() {
     let api_key = create_api_key(&client, &base_url).await;
 
     let (server_id, token) = register_agent(&client, &base_url).await;
-    let update_resp = client
-        .put(format!("{}/api/servers/batch-capabilities", base_url))
-        .json(&json!({
-            "server_ids": [server_id],
-            "set": 1,
-            "unset": 0
-        }))
-        .send()
-        .await
-        .expect("batch-capabilities update failed");
-    assert_eq!(update_resp.status(), 200);
 
     let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
     let welcome = recv_agent_text(&mut agent_reader).await;
     assert_eq!(welcome["type"], "welcome");
+    // Capabilities are agent-owned: the agent enabling CAP_TERMINAL in its
+    // reported caps is all that's needed for the terminal to be authorized.
     send_system_info(
         &mut agent_sink,
         &mut agent_reader,
@@ -1134,6 +1130,270 @@ async fn test_terminal_open_and_close_are_audited() {
     let _ = agent_sink.close().await;
 }
 
+/// Drive the full temporary-capability-grant path end to end:
+///
+/// 1. Agent reports `CAP_DEFAULT` (terminal OFF) — terminal control plane is denied.
+/// 2. Agent sends `CapabilitiesChanged` granting `terminal` temporarily — gate opens.
+/// 3. Server audits the grant (`capability_temporarily_granted`) and broadcasts a
+///    `capabilities_changed` event carrying the `temporary` grant to browsers.
+/// 4. Agent sends `CapabilitiesChanged` back to `CAP_DEFAULT` with an `expired`
+///    change — gate closes again and the expiry is audited
+///    (`capability_grant_expired`).
+///
+/// The terminal WS handshake is the observable control-plane gate: a denied
+/// capability fails the upgrade with an HTTP 403, while a granted one upgrades
+/// and immediately emits a `session` message. We synchronize on the browser
+/// broadcast (not a fixed sleep) so the assertions race-free against the
+/// server's async processing of each `CapabilitiesChanged` message.
+#[tokio::test]
+async fn test_temporary_capability_grant_gate_audit_and_expiry() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+
+    // Bring the agent online with CAP_DEFAULT (terminal OFF — see CAP_DEFAULT).
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut agent_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+    assert!(
+        !serverbee_common::constants::has_capability(CAP_DEFAULT, CAP_TERMINAL),
+        "precondition: CAP_DEFAULT must not include terminal"
+    );
+    send_system_info(
+        &mut agent_sink,
+        &mut agent_reader,
+        "grant-test-initial",
+        Some(CAP_DEFAULT),
+    )
+    .await;
+
+    // Connect a browser WS BEFORE issuing the grant so it catches the broadcast.
+    let mut browser_ws = connect_browser_ws(&base_url, &api_key).await;
+
+    // --- Step 2: terminal control plane is DENIED (no CAP_TERMINAL) ---
+    assert!(
+        terminal_gate_denied(&base_url, &server_id, &api_key).await,
+        "terminal WS should be denied before the grant"
+    );
+
+    // --- Step 3: agent grants `terminal` temporarily ---
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before epoch")
+        .as_secs() as i64;
+    let expires_at = now + 3600;
+    send_capabilities_changed(
+        &mut agent_sink,
+        json!({
+            "type": "capabilities_changed",
+            "msg_id": "grant-test-grant",
+            "capabilities": CAP_DEFAULT | CAP_TERMINAL,
+            "temporary": [{
+                "cap": "terminal",
+                "granted_at": now,
+                "expires_at": expires_at
+            }],
+            "changes": [{
+                "cap": "terminal",
+                "action": "granted",
+                "expires_at": expires_at,
+                "granted_by": "test"
+            }]
+        }),
+    )
+    .await;
+
+    // --- Step 6 (observed first): browser receives the `capabilities_changed`
+    // broadcast carrying the temporary grant. Awaiting this also synchronizes
+    // the rest of the assertions against the server's async processing. ---
+    let grant_broadcast =
+        wait_for_capabilities_changed(&mut browser_ws, &server_id, CAP_DEFAULT | CAP_TERMINAL).await;
+    let temporary = grant_broadcast["temporary"]
+        .as_array()
+        .expect("broadcast temporary should be an array");
+    assert!(
+        temporary
+            .iter()
+            .any(|g| g["cap"].as_str() == Some("terminal")
+                && g["expires_at"].as_i64() == Some(expires_at)),
+        "broadcast temporary grants should contain the terminal grant, got {temporary:?}"
+    );
+
+    // --- Step 4: the SAME terminal gate now PASSES ---
+    assert!(
+        !terminal_gate_denied(&base_url, &server_id, &api_key).await,
+        "terminal WS should be allowed after the temporary grant"
+    );
+
+    // --- Step 5: the grant is audited ---
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["action"].as_str() == Some("capability_temporarily_granted")),
+        "temporary grant should be audited as capability_temporarily_granted"
+    );
+
+    // --- Step 7: agent reports the grant expired ---
+    send_capabilities_changed(
+        &mut agent_sink,
+        json!({
+            "type": "capabilities_changed",
+            "msg_id": "grant-test-expire",
+            "capabilities": CAP_DEFAULT,
+            "temporary": [],
+            "changes": [{
+                "cap": "terminal",
+                "action": "expired"
+            }]
+        }),
+    )
+    .await;
+
+    let expire_broadcast =
+        wait_for_capabilities_changed(&mut browser_ws, &server_id, CAP_DEFAULT).await;
+    assert!(
+        expire_broadcast["temporary"]
+            .as_array()
+            .is_none_or(|t| t.is_empty()),
+        "expiry broadcast should carry no temporary grants, got {:?}",
+        expire_broadcast["temporary"]
+    );
+
+    // Gate is DENIED again now that the grant expired.
+    assert!(
+        terminal_gate_denied(&base_url, &server_id, &api_key).await,
+        "terminal WS should be denied again after the grant expires"
+    );
+
+    // Expiry is audited.
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["action"].as_str() == Some("capability_grant_expired")),
+        "grant expiry should be audited as capability_grant_expired"
+    );
+
+    let _ = browser_ws.close(None).await;
+    let _ = agent_sink.close().await;
+}
+
+/// Connect a browser WS (x-api-key auth) and drain the initial `full_sync`.
+async fn connect_browser_ws(
+    base_url: &str,
+    api_key: &str,
+) -> tokio_tungstenite::WebSocketStream<
+    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+> {
+    let ws_url = base_url.replace("http://", "ws://") + "/api/ws/servers";
+    let mut request = ws_url
+        .into_client_request()
+        .expect("browser ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(api_key).expect("api key header should be valid"),
+    );
+    let (mut browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("browser websocket should connect");
+    let full_sync = tokio::time::timeout(Duration::from_secs(5), browser_ws.next())
+        .await
+        .expect("full_sync timeout")
+        .expect("browser ws closed")
+        .expect("browser ws error");
+    let full_sync: serde_json::Value =
+        serde_json::from_str(full_sync.to_text().unwrap()).unwrap();
+    assert_eq!(full_sync["type"], "full_sync");
+    browser_ws
+}
+
+/// Send a raw `capabilities_changed` agent message. The server does not Ack this
+/// message (unlike SystemInfo), so callers synchronize on the browser broadcast.
+async fn send_capabilities_changed(
+    sink: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::Message,
+    >,
+    msg: serde_json::Value,
+) {
+    sink.send(tungstenite::Message::Text(msg.to_string().into()))
+        .await
+        .expect("Failed to send CapabilitiesChanged");
+}
+
+/// Wait for a `capabilities_changed` broadcast for `server_id` reporting the
+/// expected capability bitmask. Tolerates interleaved updates/online events.
+async fn wait_for_capabilities_changed(
+    browser_ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    server_id: &str,
+    expected_capabilities: u32,
+) -> serde_json::Value {
+    for _ in 0..40 {
+        let Ok(Some(Ok(msg))) =
+            tokio::time::timeout(Duration::from_secs(3), browser_ws.next()).await
+        else {
+            break;
+        };
+        let Ok(text) = msg.to_text() else { continue };
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) else {
+            continue;
+        };
+        if parsed["type"] == "capabilities_changed"
+            && parsed["server_id"] == server_id
+            && parsed["capabilities"].as_u64() == Some(expected_capabilities as u64)
+        {
+            return parsed;
+        }
+    }
+    panic!("did not observe capabilities_changed broadcast for {server_id} with caps {expected_capabilities}");
+}
+
+/// Probe the terminal control-plane gate by attempting the terminal WS upgrade.
+/// Returns `true` when the upgrade is denied (HTTP 403 handshake failure), and
+/// `false` when it succeeds and yields a `session` message. The agent must stay
+/// online for the allow path (the handler enforces `is_online`).
+async fn terminal_gate_denied(base_url: &str, server_id: &str, api_key: &str) -> bool {
+    let ws_url = format!(
+        "{}/api/ws/terminal/{}",
+        base_url.replace("http://", "ws://"),
+        server_id
+    );
+    let mut request = ws_url
+        .into_client_request()
+        .expect("terminal ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(api_key).expect("api key header should be valid"),
+    );
+
+    match tokio_tungstenite::connect_async(request).await {
+        Err(tungstenite::Error::Http(_)) => true,
+        Err(other) => panic!("unexpected terminal handshake error: {other:?}"),
+        Ok((mut terminal_ws, _)) => {
+            // Allowed: drain the leading `session` message, then close.
+            let session_msg = tokio::time::timeout(Duration::from_secs(5), terminal_ws.next())
+                .await
+                .expect("timeout waiting for terminal session message")
+                .expect("terminal ws ended")
+                .expect("terminal ws read error");
+            let session_text = session_msg.to_text().expect("session msg should be text");
+            let session_json: serde_json::Value =
+                serde_json::from_str(session_text).expect("session message should be json");
+            assert_eq!(session_json["type"], "session");
+            let _ = terminal_ws.close(None).await;
+            false
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_oneshot_exec_started_and_finished_are_audited() {
     let (base_url, _tmp) = start_test_server().await;
@@ -1141,22 +1401,12 @@ async fn test_oneshot_exec_started_and_finished_are_audited() {
     login_admin(&client, &base_url).await;
 
     let (server_id, token) = register_agent(&client, &base_url).await;
-    let update_resp = client
-        .put(format!("{}/api/servers/batch-capabilities", base_url))
-        .json(&json!({
-            "server_ids": [server_id],
-            "set": CAP_EXEC,
-            "unset": 0
-        }))
-        .send()
-        .await
-        .expect("batch-capabilities update failed");
-    assert_eq!(update_resp.status(), 200);
 
     let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
     let welcome = recv_agent_text(&mut ws_reader).await;
     assert_eq!(welcome["type"], "welcome");
 
+    // Agent-owned caps: reporting CAP_EXEC is sufficient to authorize exec.
     send_system_info(
         &mut ws_sink,
         &mut ws_reader,
@@ -1238,22 +1488,12 @@ async fn test_file_read_is_audited() {
     login_admin(&client, &base_url).await;
 
     let (server_id, token) = register_agent(&client, &base_url).await;
-    let update_resp = client
-        .put(format!("{}/api/servers/batch-capabilities", base_url))
-        .json(&json!({
-            "server_ids": [server_id],
-            "set": CAP_FILE,
-            "unset": 0
-        }))
-        .send()
-        .await
-        .expect("batch-capabilities update failed");
-    assert_eq!(update_resp.status(), 200);
 
     let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
     let welcome = recv_agent_text(&mut ws_reader).await;
     assert_eq!(welcome["type"], "welcome");
 
+    // Agent-owned caps: reporting CAP_FILE is sufficient to authorize file ops.
     send_system_info(
         &mut ws_sink,
         &mut ws_reader,
@@ -2129,36 +2369,69 @@ async fn test_file_list_server_offline() {
     let (base_url, _tmp) = start_test_server().await;
     let client = http_client();
     login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url).await;
 
-    // Register an agent to get a server_id
-    let enrollment_code = mint_enrollment_code(&client, &base_url).await;
-    let register_resp = client
-        .post(format!("{}/api/agent/register", base_url))
-        .header("Authorization", format!("Bearer {enrollment_code}"))
-        .send()
+    let (server_id, token) = register_agent(&client, &base_url).await;
+
+    // Bring the agent online and have it report CAP_FILE so the capability is
+    // persisted into the mirror column. Capabilities are agent-owned, so the
+    // mirror is the only way an offline server is "known" to be file-capable.
+    let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut ws_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+    send_system_info(
+        &mut ws_sink,
+        &mut ws_reader,
+        "offline-file-msg",
+        Some(CAP_DEFAULT | CAP_FILE),
+    )
+    .await;
+
+    // Connect a browser WS so we can observe the authoritative `server_offline`
+    // event (REST responses carry no online flag — it is a WS-only concept).
+    let ws_url = base_url.replace("http://", "ws://") + "/api/ws/servers";
+    let mut request = ws_url
+        .into_client_request()
+        .expect("browser ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(&api_key).expect("api key header should be valid"),
+    );
+    let (mut browser_ws, _) = tokio_tungstenite::connect_async(request)
         .await
-        .expect("Register request failed");
-
-    assert_eq!(register_resp.status(), 200);
-    let register_body: serde_json::Value = register_resp.json().await.unwrap();
-    let server_id = register_body["data"]["server_id"]
-        .as_str()
-        .expect("server_id missing");
-
-    // Enable CAP_FILE (64) on the server via batch-capabilities (set bitmask)
-    let update_resp = client
-        .put(format!("{}/api/servers/batch-capabilities", base_url))
-        .json(&json!({
-            "server_ids": [server_id],
-            "set": 64,
-            "unset": 0
-        }))
-        .send()
+        .expect("browser websocket should connect");
+    let full_sync = tokio::time::timeout(Duration::from_secs(5), browser_ws.next())
         .await
-        .expect("batch-capabilities update failed");
-    assert_eq!(update_resp.status(), 200);
+        .expect("full_sync timeout")
+        .expect("browser ws closed")
+        .expect("browser ws error");
+    let full_sync: serde_json::Value =
+        serde_json::from_str(full_sync.to_text().unwrap()).unwrap();
+    assert_eq!(full_sync["type"], "full_sync");
 
-    // POST /api/files/{server_id}/list — server is offline (no WS agent connected)
+    // Take the agent offline and wait for the broadcast.
+    let _ = ws_sink.close().await;
+    let mut saw_offline = false;
+    for _ in 0..40 {
+        let Ok(Some(Ok(msg))) =
+            tokio::time::timeout(Duration::from_secs(3), browser_ws.next()).await
+        else {
+            break;
+        };
+        let Ok(text) = msg.to_text() else { continue };
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) else {
+            continue;
+        };
+        if parsed["type"] == "server_offline" && parsed["server_id"] == server_id {
+            saw_offline = true;
+            break;
+        }
+    }
+    assert!(saw_offline, "agent should be observed offline after closing its WS");
+
+    // POST /api/files/{server_id}/list — file-capable (via mirror) but offline.
+    // The capability check passes (mirror has CAP_FILE), so the failure is the
+    // offline 404, not the 403 capability denial.
     let list_resp = client
         .post(format!("{}/api/files/{}/list", base_url, server_id))
         .json(&json!({ "path": "/" }))
@@ -2169,8 +2442,10 @@ async fn test_file_list_server_offline() {
     assert_eq!(
         list_resp.status(),
         404,
-        "File list should return 404 when server is offline"
+        "File list should return 404 when a file-capable server is offline"
     );
+
+    let _ = browser_ws.close(None).await;
 }
 
 #[tokio::test]
@@ -2213,8 +2488,8 @@ async fn test_file_capability_enforcement() {
         body["error"]["message"]
             .as_str()
             .unwrap_or("")
-            .contains("server_capability_disabled"),
-        "Error message should preserve the server-side capability denial reason"
+            .contains("agent_capability_disabled"),
+        "Capabilities are agent-owned, so the denial reason is always agent-side"
     );
 }
 
@@ -2226,22 +2501,12 @@ async fn test_file_capability_enforcement_uses_agent_local_policy_reason() {
 
     let (server_id, token) = register_agent(&client, &base_url).await;
 
-    let update_resp = client
-        .put(format!("{}/api/servers/batch-capabilities", base_url))
-        .json(&json!({
-            "server_ids": [server_id],
-            "set": CAP_FILE,
-            "unset": 0
-        }))
-        .send()
-        .await
-        .expect("batch-capabilities update failed");
-    assert_eq!(update_resp.status(), 200);
-
     let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
     let welcome = recv_agent_text(&mut ws_reader).await;
     assert_eq!(welcome["type"], "welcome");
 
+    // Agent reports default caps (no CAP_FILE), so file ops are denied with an
+    // agent-side reason — the server cannot grant what the agent didn't enable.
     send_system_info(
         &mut ws_sink,
         &mut ws_reader,
@@ -2278,22 +2543,11 @@ async fn test_oneshot_exec_capability_denial_uses_agent_local_policy_reason() {
 
     let (server_id, token) = register_agent(&client, &base_url).await;
 
-    let update_resp = client
-        .put(format!("{}/api/servers/batch-capabilities", base_url))
-        .json(&json!({
-            "server_ids": [server_id],
-            "set": CAP_EXEC,
-            "unset": 0
-        }))
-        .send()
-        .await
-        .expect("batch-capabilities update failed");
-    assert_eq!(update_resp.status(), 200);
-
     let (mut ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
     let welcome = recv_agent_text(&mut ws_reader).await;
     assert_eq!(welcome["type"], "welcome");
 
+    // Agent reports default caps (no CAP_EXEC), so exec is denied agent-side.
     send_system_info(
         &mut ws_sink,
         &mut ws_reader,
@@ -2340,7 +2594,7 @@ async fn test_oneshot_exec_capability_denial_uses_agent_local_policy_reason() {
         results[0]["output"]
             .as_str()
             .unwrap_or("")
-            .contains("Capability denied: exec blocked by agent local policy"),
+            .contains("exec is disabled in the agent's config"),
         "Task result should preserve the agent-local exec denial reason"
     );
 
@@ -4063,7 +4317,7 @@ mod firewall_tests {
     //! full REST + WS pipeline: guardrail, dedup, cap/proto gating, ack
     //! handling, and reset/sync on (re)connect & cap transition.
     use super::*;
-    use serverbee_common::constants::{CAP_FIREWALL_BLOCK, CAP_VALID_MASK};
+    use serverbee_common::constants::CAP_FIREWALL_BLOCK;
 
     /// Send a `SystemInfo` with a caller-chosen `protocol_version` so the
     /// "old agent" scenario can pin v1.
@@ -4172,29 +4426,6 @@ mod firewall_tests {
         }
     }
 
-    /// Update a server's configured capability bitmask via the admin REST API.
-    async fn set_caps(
-        admin: &reqwest::Client,
-        base_url: &str,
-        server_id: &str,
-        caps: u32,
-    ) {
-        // Use the batch endpoint so we can set bits unconditionally without
-        // depending on the current value. set = caps, unset = ~caps masked.
-        let unset = (!caps) & CAP_VALID_MASK;
-        let resp = admin
-            .put(format!("{}/api/servers/batch-capabilities", base_url))
-            .json(&json!({
-                "server_ids": [server_id],
-                "set": caps,
-                "unset": unset,
-            }))
-            .send()
-            .await
-            .expect("PUT /api/servers/batch-capabilities failed");
-        assert_eq!(resp.status(), 200, "set_caps should succeed");
-    }
-
     /// Register an agent and return (client cookied as admin, server_id, token).
     async fn register_for_admin(base_url: &str) -> (reqwest::Client, String, String) {
         let admin = http_client();
@@ -4206,17 +4437,10 @@ mod firewall_tests {
     #[tokio::test]
     async fn post_block_inserts_and_pushes() {
         let (base_url, _tmp) = start_test_server().await;
-        let (admin, server_id, token) = register_for_admin(&base_url).await;
-        // Grant CAP_FIREWALL_BLOCK on the server's configured caps.
-        set_caps(
-            &admin,
-            &base_url,
-            &server_id,
-            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
-        )
-        .await;
+        let (admin, _server_id, token) = register_for_admin(&base_url).await;
 
-        // Connect the agent and declare it locally supports CAP_FIREWALL_BLOCK.
+        // Capabilities are agent-owned: the agent declaring CAP_FIREWALL_BLOCK
+        // in its reported caps is all that's needed.
         let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
         // Read Welcome.
         let _welcome = recv_agent_text(&mut reader).await;
@@ -4325,7 +4549,7 @@ mod firewall_tests {
     #[tokio::test]
     async fn agent_connect_triggers_reset_then_sync() {
         let (base_url, _tmp) = start_test_server().await;
-        let (admin, server_id, token) = register_for_admin(&base_url).await;
+        let (admin, _server_id, token) = register_for_admin(&base_url).await;
 
         // Pre-insert a block before the agent connects.
         let resp = admin
@@ -4336,15 +4560,8 @@ mod firewall_tests {
             .unwrap();
         assert_eq!(resp.status(), 200);
 
-        // Grant CAP_FIREWALL_BLOCK before WS connect.
-        set_caps(
-            &admin,
-            &base_url,
-            &server_id,
-            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
-        )
-        .await;
-
+        // The agent declares CAP_FIREWALL_BLOCK in its reported caps below; the
+        // server no longer gates this from its side.
         let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
         let _welcome = recv_agent_text(&mut reader).await;
         send_system_info_pv(
@@ -4379,69 +4596,9 @@ mod firewall_tests {
     }
 
     #[tokio::test]
-    async fn cap_off_triggers_reset_no_sync() {
-        let (base_url, _tmp) = start_test_server().await;
-        let (admin, server_id, token) = register_for_admin(&base_url).await;
-        set_caps(
-            &admin,
-            &base_url,
-            &server_id,
-            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
-        )
-        .await;
-
-        let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
-        let _welcome = recv_agent_text(&mut reader).await;
-        send_system_info_pv(
-            &mut sink,
-            "off-1",
-            Some(serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK),
-            serverbee_common::constants::PROTOCOL_VERSION,
-        )
-        .await;
-        let _initial = drain_through_ack(&mut reader, "off-1", 2).await;
-
-        // Turn the firewall capability OFF and expect a BlocklistReset push.
-        // CAP_DEFAULT now includes CAP_FIREWALL_BLOCK, so we must mask it out
-        // explicitly to flip the firewall capability off.
-        set_caps(
-            &admin,
-            &base_url,
-            &server_id,
-            serverbee_common::constants::CAP_DEFAULT & !CAP_FIREWALL_BLOCK,
-        )
-        .await;
-
-        // Drain messages, looking for the reset. CapabilitiesSync also arrives.
-        let mut saw_reset = false;
-        let mut saw_sync = false;
-        for _ in 0..6 {
-            match try_recv_one(&mut reader, 1500).await {
-                Some(m) => {
-                    match m["type"].as_str().unwrap_or("") {
-                        "blocklist_reset" => saw_reset = true,
-                        "blocklist_sync" => saw_sync = true,
-                        _ => {}
-                    }
-                }
-                None => break,
-            }
-        }
-        assert!(saw_reset, "expected BlocklistReset on cap on→off");
-        assert!(!saw_sync, "no BlocklistSync should be sent when cap turned off");
-    }
-
-    #[tokio::test]
     async fn ack_failed_records_audit_and_keeps_row() {
         let (base_url, _tmp) = start_test_server().await;
-        let (admin, server_id, token) = register_for_admin(&base_url).await;
-        set_caps(
-            &admin,
-            &base_url,
-            &server_id,
-            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
-        )
-        .await;
+        let (admin, _server_id, token) = register_for_admin(&base_url).await;
 
         let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
         let _welcome = recv_agent_text(&mut reader).await;
@@ -4506,7 +4663,7 @@ mod firewall_tests {
     #[tokio::test]
     async fn old_agent_no_firewall_messages() {
         let (base_url, _tmp) = start_test_server().await;
-        let (admin, server_id, token) = register_for_admin(&base_url).await;
+        let (admin, _server_id, token) = register_for_admin(&base_url).await;
         // Pre-insert a block so a sync would otherwise have content.
         let resp = admin
             .post(format!("{}/api/firewall/blocks", base_url))
@@ -4515,13 +4672,6 @@ mod firewall_tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);
-        set_caps(
-            &admin,
-            &base_url,
-            &server_id,
-            serverbee_common::constants::CAP_DEFAULT | CAP_FIREWALL_BLOCK,
-        )
-        .await;
 
         let (mut sink, mut reader) = connect_agent(&base_url, &token).await;
         let _welcome = recv_agent_text(&mut reader).await;

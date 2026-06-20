@@ -1,17 +1,14 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Shield } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
+import { TemporaryBadge } from '@/components/server/temporary-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/hooks/use-auth'
-import { api } from '@/lib/api-client'
-import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled, isClientCapabilityLocked } from '@/lib/capabilities'
+import { CAPABILITIES, classifyCapability, temporaryGrantFor } from '@/lib/capabilities'
 
 interface ServerWithCaps {
   agent_local_capabilities?: number | null
@@ -19,20 +16,13 @@ interface ServerWithCaps {
   effective_capabilities?: number | null
   id: string
   protocol_version?: number | null
+  temporary?: Array<{ cap: string; expires_at: number; granted_at: number }> | null
 }
 
 export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
   const { t } = useTranslation('servers')
   const { user } = useAuth()
-  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
-
-  const mutation = useMutation({
-    mutationFn: (newCaps: number) => api.put(`/api/servers/${server.id}`, { capabilities: newCaps }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['servers', server.id] })
-    }
-  })
 
   const capabilityGroups = useMemo(
     () => [
@@ -60,21 +50,6 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
     return null
   }
 
-  const caps = server.capabilities ?? CAP_DEFAULT
-
-  const toggle = (bit: number) => {
-    // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
-    const newCaps = caps & bit ? caps & ~bit : caps | bit
-    mutation.mutate(newCaps, {
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
-      },
-      onSuccess: () => {
-        toast.success(t('settings:capabilities.toast_updated'))
-      }
-    })
-  }
-
   return (
     <>
       <Button onClick={() => setOpen(true)} size="sm" variant="outline">
@@ -89,12 +64,19 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
               <DialogTitle>{t('cap_toggles')}</DialogTitle>
               <DialogDescription>
                 {t('cap_dialog_description', {
-                  defaultValue: 'Control which agent capabilities are enabled for this server.'
+                  defaultValue: 'Capabilities are configured in the agent config file and cannot be changed here.'
                 })}
               </DialogDescription>
             </DialogHeader>
 
             <DialogBody className="space-y-4">
+              <div className="rounded-lg border border-border bg-muted/40 p-3 text-muted-foreground text-sm">
+                {t('cap_read_only_note', {
+                  defaultValue:
+                    'These capabilities are owned by the agent host. To change them, edit the [capabilities] section of the agent config file and restart the agent.'
+                })}
+              </div>
+
               {server.protocol_version != null && server.protocol_version < 2 && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-amber-900 text-sm dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
                   {t('cap_upgrade_warning')}
@@ -113,12 +95,7 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
                     </CardHeader>
                     <CardContent className="flex flex-col gap-3">
                       {group.items.map((capability, index) => {
-                        const isEnabled = getEffectiveCapabilityEnabled(
-                          server.effective_capabilities,
-                          caps,
-                          capability.bit
-                        )
-                        const isLocked = isClientCapabilityLocked(server.agent_local_capabilities, capability.bit)
+                        const state = classifyCapability(server, capability.bit)
 
                         return (
                           <div className="flex flex-col gap-3" key={capability.bit}>
@@ -131,18 +108,25 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
                                     {capability.risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
                                   </Badge>
                                 </div>
-                                <div className="mt-1 text-muted-foreground text-xs">
-                                  {isEnabled
-                                    ? t('cap_enabled', { defaultValue: 'Enabled' })
-                                    : t('cap_disabled', { defaultValue: 'Disabled' })}
-                                </div>
                               </div>
-                              <Switch
-                                checked={isEnabled}
-                                disabled={mutation.isPending || isLocked}
-                                onCheckedChange={() => toggle(capability.bit)}
-                                title={isLocked ? '客户端关闭' : undefined}
-                              />
+                              {(() => {
+                                if (state === 'temporary') {
+                                  const grant = temporaryGrantFor(server, capability.bit)
+                                  return <TemporaryBadge expiresAt={grant?.expires_at ?? null} />
+                                }
+                                if (state === 'enabled') {
+                                  return (
+                                    <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                      {t('cap_enabled', { defaultValue: 'Enabled' })}
+                                    </Badge>
+                                  )
+                                }
+                                return (
+                                  <Badge className="text-muted-foreground" variant="outline">
+                                    {t('cap_disabled', { defaultValue: 'Disabled' })}
+                                  </Badge>
+                                )
+                              })()}
                             </div>
                           </div>
                         )

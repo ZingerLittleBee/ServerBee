@@ -266,7 +266,10 @@ async fn send_docker_system_info(
         "virtualization": "kvm",
         "agent_version": "0.5.0",
         "protocol_version": 3,
-        "features": ["docker"]
+        "features": ["docker"],
+        // Capabilities are agent-owned: declaring CAP_DOCKER in the reported
+        // caps is the only way docker control is enabled.
+        "agent_local_capabilities": (CAP_DEFAULT | CAP_DOCKER)
     });
 
     sink.send(tungstenite::Message::Text(system_info.to_string().into()))
@@ -329,19 +332,6 @@ async fn send_docker_system_info_with_local_caps(
     }
 }
 
-async fn enable_docker_capability(client: &Client, base_url: &str, server_id: &str) {
-    let resp = client
-        .put(format!("{}/api/servers/{}", base_url, server_id))
-        .json(&json!({
-            "capabilities": (CAP_DEFAULT | CAP_DOCKER) as i32
-        }))
-        .send()
-        .await
-        .expect("PUT /api/servers/{id} failed");
-
-    assert_eq!(resp.status(), 200, "Server update should succeed");
-}
-
 async fn recv_until_types(
     reader: &mut futures_util::stream::SplitStream<
         tokio_tungstenite::WebSocketStream<
@@ -389,7 +379,6 @@ async fn test_docker_info_endpoint_requests_agent_when_cache_empty() {
     assert_eq!(welcome["type"], "welcome");
 
     send_docker_system_info(&mut agent_sink, &mut agent_reader).await;
-    enable_docker_capability(&client, &base_url, &server_id).await;
 
     let agent_task = tokio::spawn(async move {
         loop {
@@ -417,9 +406,15 @@ async fn test_docker_info_endpoint_requests_agent_when_cache_empty() {
                         .expect("Failed to send DockerInfo response");
                     return;
                 }
-                Some("capabilities_sync")
-                | Some("ping_tasks_sync")
-                | Some("network_probe_sync") => {}
+                // A default agent reports CAP_FIREWALL_BLOCK, so the first-connect
+                // path also pushes blocklist reset/sync. These are unrelated to the
+                // docker flow under test and are ignored.
+                Some("ping_tasks_sync")
+                | Some("network_probe_sync")
+                | Some("blocklist_reset")
+                | Some("blocklist_sync")
+                | Some("blocklist_add")
+                | Some("blocklist_remove") => {}
                 Some(other) => panic!("Unexpected agent command: {other}"),
                 None => {}
             }
@@ -463,7 +458,6 @@ async fn test_docker_streams_require_browser_resubscribe_after_agent_reconnect()
     assert_eq!(welcome["type"], "welcome");
 
     send_docker_system_info(&mut agent_sink, &mut agent_reader).await;
-    enable_docker_capability(&client, &base_url, &server_id).await;
 
     let mut request = format!("{}/api/ws/servers", base_url.replace("http://", "ws://"))
         .into_client_request()
@@ -565,7 +559,8 @@ async fn test_docker_subscribe_requires_capability_and_feature() {
     let welcome = recv_text(&mut agent_reader).await;
     assert_eq!(welcome["type"], "welcome");
 
-    send_docker_system_info(&mut agent_sink, &mut agent_reader).await;
+    // Agent reports caps WITHOUT CAP_DOCKER → docker control stays disabled.
+    send_docker_system_info_with_local_caps(&mut agent_sink, &mut agent_reader, CAP_DEFAULT).await;
 
     let mut request = format!("{}/api/ws/servers", base_url.replace("http://", "ws://"))
         .into_client_request()
@@ -625,7 +620,6 @@ async fn test_docker_info_requires_agent_local_capability_when_runtime_policy_bl
     let welcome = recv_text(&mut agent_reader).await;
     assert_eq!(welcome["type"], "welcome");
 
-    enable_docker_capability(&client, &base_url, &server_id).await;
     send_docker_system_info_with_local_caps(&mut agent_sink, &mut agent_reader, CAP_DEFAULT).await;
 
     let resp = client
@@ -674,7 +668,6 @@ async fn test_docker_view_and_logs_session_are_audited() {
     let welcome = recv_text(&mut agent_reader).await;
     assert_eq!(welcome["type"], "welcome");
 
-    enable_docker_capability(&client, &base_url, &server_id).await;
     send_docker_system_info_with_local_caps(
         &mut agent_sink,
         &mut agent_reader,
@@ -774,7 +767,6 @@ async fn test_docker_unavailable_fails_pending_request_and_clears_feature_state(
     assert_eq!(welcome["type"], "welcome");
 
     send_docker_system_info(&mut agent_sink, &mut agent_reader).await;
-    enable_docker_capability(&client, &base_url, &server_id).await;
 
     let agent_task = tokio::spawn(async move {
         loop {
@@ -791,9 +783,15 @@ async fn test_docker_unavailable_fails_pending_request_and_clears_feature_state(
                         .expect("Failed to send DockerUnavailable response");
                     return;
                 }
-                Some("capabilities_sync")
-                | Some("ping_tasks_sync")
-                | Some("network_probe_sync") => {}
+                // A default agent reports CAP_FIREWALL_BLOCK, so the first-connect
+                // path also pushes blocklist reset/sync. These are unrelated to the
+                // docker flow under test and are ignored.
+                Some("ping_tasks_sync")
+                | Some("network_probe_sync")
+                | Some("blocklist_reset")
+                | Some("blocklist_sync")
+                | Some("blocklist_add")
+                | Some("blocklist_remove") => {}
                 Some(other) => panic!("Unexpected agent command: {other}"),
                 None => {}
             }

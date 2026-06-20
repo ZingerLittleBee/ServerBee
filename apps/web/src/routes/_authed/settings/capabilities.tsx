@@ -1,27 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { type ColumnDef, getCoreRowModel, type RowSelectionState, useReactTable } from '@tanstack/react-table'
-import { ChevronDown, RotateCcw, Search, ShieldAlert, X } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { Check, Minus, Search, ShieldAlert } from 'lucide-react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { createSelectColumn, DataTable } from '@/components/ui/data-table'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
+import { TemporaryBadge } from '@/components/server/temporary-badge'
+import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { api } from '@/lib/api-client'
-import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled, isClientCapabilityLocked } from '@/lib/capabilities'
+import { CAPABILITIES, classifyCapability, temporaryGrantFor } from '@/lib/capabilities'
 
 export const Route = createFileRoute('/_authed/settings/capabilities')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -41,10 +29,10 @@ export function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
   const { q: search } = Route.useSearch()
   const navigate = Route.useNavigate()
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
-  const queryClient = useQueryClient()
-
+  // The ['servers'] cache is fed by the global WebSocket layer. Capabilities are
+  // agent-owned and reported by the agent over that channel, so this page is a
+  // read-only mirror of what each agent has enabled in its config file.
   const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
     queryKey: ['servers'],
     queryFn: () => [],
@@ -53,77 +41,15 @@ export function CapabilitiesPage() {
     refetchOnWindowFocus: false
   })
 
-  // The ['servers'] cache is fed by the global WebSocket layer. For a real agent a
-  // CapabilitiesChanged push eventually refreshes it, but that round-trip leaves the
-  // switch looking unchanged after a successful save (and never arrives for servers
-  // without a live agent). Reflect the saved value immediately by patching the cache.
-  const applyCapsToCache = useCallback(
-    (ids: string[], capabilities: number) => {
-      const idSet = new Set(ids)
-      queryClient.setQueryData<ServerInfo[]>(['servers'], (old) =>
-        old?.map((s) => {
-          if (!idSet.has(s.id)) {
-            return s
-          }
-          const local = s.agent_local_capabilities
-          return {
-            ...s,
-            capabilities,
-            // biome-ignore lint/suspicious/noBitwiseOperators: effective = configured & agent-local caps
-            effective_capabilities: local == null ? capabilities : capabilities & local
-          }
-        })
-      )
-    },
-    [queryClient]
-  )
-
-  const { mutate: mutateSingleCap, isPending: isSinglePending } = useMutation({
-    mutationFn: ({ id, capabilities }: { capabilities: number; id: string }) =>
-      api.put(`/api/servers/${id}`, { capabilities }),
-    onSuccess: (_data, variables) => {
-      applyCapsToCache([variables.id], variables.capabilities)
-      toast.success(t('capabilities.toast_updated'))
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
-    }
-  })
-
-  const { mutate: mutateBatchCap, isPending: isBatchPending } = useMutation({
-    mutationFn: ({ ids, capabilities }: { capabilities: number; ids: string[] }) =>
-      api.put('/api/servers/batch-capabilities', { ids, capabilities }),
-    onSuccess: (_data, variables) => {
-      applyCapsToCache(variables.ids, variables.capabilities)
-      setRowSelection({})
-      toast.success(t('capabilities.toast_batch_updated'))
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
-    }
-  })
-
   const filtered = useMemo(
     () => servers.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())),
     [servers, search]
   )
 
-  const toggleCap = useCallback(
-    (server: ServerInfo, bit: number) => {
-      const caps = server.capabilities ?? CAP_DEFAULT
-      // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask toggle
-      const newCaps = caps & bit ? caps & ~bit : caps | bit
-      mutateSingleCap({ id: server.id, capabilities: newCaps })
-    },
-    [mutateSingleCap]
-  )
-
-  const isPending = isSinglePending || isBatchPending
   const onlineCount = useMemo(() => servers.filter((s) => s.online).length, [servers])
 
   const columns = useMemo<ColumnDef<ServerInfo>[]>(
     () => [
-      createSelectColumn<ServerInfo>(),
       {
         accessorKey: 'name',
         header: () => t('capabilities.server'),
@@ -165,28 +91,29 @@ export function CapabilitiesPage() {
               </div>
             ),
             cell: ({ row }) => {
-              const isEnabled = getEffectiveCapabilityEnabled(
-                row.original.effective_capabilities,
-                row.original.capabilities,
-                bit
-              )
-              const isLocked = isClientCapabilityLocked(row.original.agent_local_capabilities, bit)
-              const isOffline = !row.original.online
-              let disabledReason: string | undefined
-              if (isOffline) {
-                disabledReason = t('capabilities.offline_disabled')
-              } else if (isLocked) {
-                disabledReason = t('capabilities.client_disabled')
-              }
+              const state = classifyCapability(row.original, bit)
+              const label = `${t(labelKey, { ns: 'servers' })} - ${row.original.name}`
               return (
-                <div className="text-center">
-                  <Switch
-                    aria-label={`${t(labelKey, { ns: 'servers' })} - ${row.original.name}`}
-                    checked={isEnabled}
-                    disabled={isPending || isLocked || isOffline}
-                    onCheckedChange={() => toggleCap(row.original, bit)}
-                    title={disabledReason}
-                  />
+                <div className="flex justify-center">
+                  {(() => {
+                    if (state === 'temporary') {
+                      return <TemporaryBadge expiresAt={temporaryGrantFor(row.original, bit)?.expires_at ?? null} />
+                    }
+                    if (state === 'enabled') {
+                      return (
+                        <Check
+                          aria-label={`${label}: ${t('cap_enabled', { ns: 'servers' })}`}
+                          className="size-4 text-emerald-500"
+                        />
+                      )
+                    }
+                    return (
+                      <Minus
+                        aria-label={`${label}: ${t('cap_disabled', { ns: 'servers' })}`}
+                        className="size-4 text-muted-foreground/40"
+                      />
+                    )
+                  })()}
                 </div>
               )
             },
@@ -195,37 +122,15 @@ export function CapabilitiesPage() {
           }) satisfies ColumnDef<ServerInfo>
       )
     ],
-    [isPending, toggleCap, t]
+    [t]
   )
 
   const table = useReactTable({
     data: filtered,
     columns,
-    state: { rowSelection },
-    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id
   })
-
-  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.id)
-
-  const batchEnable = (bit: number) => {
-    const firstServer = servers.find((s) => s.id === selectedIds[0])
-    const baseCaps = firstServer?.capabilities ?? CAP_DEFAULT
-    // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask enable
-    mutateBatchCap({ ids: selectedIds, capabilities: baseCaps | bit })
-  }
-
-  const batchDisable = (bit: number) => {
-    const firstServer = servers.find((s) => s.id === selectedIds[0])
-    const baseCaps = firstServer?.capabilities ?? CAP_DEFAULT
-    // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask disable
-    mutateBatchCap({ ids: selectedIds, capabilities: baseCaps & ~bit })
-  }
-
-  const batchReset = () => {
-    mutateBatchCap({ ids: selectedIds, capabilities: CAP_DEFAULT })
-  }
 
   const renderTableContent = () => {
     if (isLoading) {
@@ -272,55 +177,6 @@ export function CapabilitiesPage() {
           {t('capabilities.summary', { total: servers.length, online: onlineCount })}
         </p>
       </div>
-
-      {selectedIds.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-          <span className="font-medium text-sm">{t('capabilities.selected', { count: selectedIds.length })}</span>
-          <span className="text-muted-foreground text-xs">·</span>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button disabled={isPending} size="sm" variant="outline" />}>
-              {t('capabilities.batch_actions')}
-              <ChevronDown className="ml-1 size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              {ORDERED_CAPABILITIES.map(({ bit, key, labelKey, risk }) => (
-                <DropdownMenuSub key={key}>
-                  <DropdownMenuSubTrigger>
-                    <div className="flex flex-col">
-                      <span>{t(labelKey, { ns: 'servers' })}</span>
-                      <span className={`text-[10px] ${risk === 'high' ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {t(risk === 'high' ? 'cap_high_risk' : 'cap_low_risk', { ns: 'servers' })}
-                      </span>
-                    </div>
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuItem disabled={isPending} onClick={() => batchEnable(bit)}>
-                      {t('capabilities.enable')}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem disabled={isPending} onClick={() => batchDisable(bit)}>
-                      {t('capabilities.disable')}
-                    </DropdownMenuItem>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button disabled={isPending} onClick={batchReset} size="sm" variant="outline">
-            <RotateCcw className="mr-1 size-3.5" />
-            {t('capabilities.reset_default')}
-          </Button>
-          <Button
-            className="ml-auto"
-            disabled={isPending}
-            onClick={() => setRowSelection({})}
-            size="sm"
-            variant="ghost"
-          >
-            <X className="mr-1 size-3.5" />
-            {t('capabilities.clear_selection')}
-          </Button>
-        </div>
-      )}
 
       {renderTableContent()}
 

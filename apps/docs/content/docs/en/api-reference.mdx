@@ -122,7 +122,7 @@ Admin role is required for write operations and system management.
 
 | Family | Representative endpoints |
 |--------|--------------------------|
-| Server management | `POST/PUT/DELETE /api/servers/*`, `PUT /api/servers/batch-capabilities`, `POST /api/servers/{id}/upgrade` |
+| Server management | `POST/PUT/DELETE /api/servers/*`, `POST /api/servers/{id}/upgrade` |
 | Agent enrollment | `POST /api/agent/enrollments`, `GET /api/agent/enrollments`, `DELETE /api/agent/enrollments/{id}`, `POST /api/agent/{id}/rotate-token` |
 | Agent recovery | `GET /api/servers/{target_id}/recovery-candidates`, `GET /api/servers/recovery-jobs/{job_id}`, `POST /api/servers/{target_id}/recover-merge` |
 | Groups and tags | CRUD `/api/server-groups/*`, CRUD `/api/server-tags/*` |

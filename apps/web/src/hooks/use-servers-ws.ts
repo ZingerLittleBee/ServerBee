@@ -62,6 +62,7 @@ interface ServerMetrics {
   swap_used: number
   tags?: string[]
   tcp_conn: number
+  temporary?: Array<{ cap: string; granted_at: number; expires_at: number }>
   udp_conn: number
   uptime: number
 }
@@ -77,6 +78,7 @@ type WsMessage =
       capabilities: number
       agent_local_capabilities?: number | null
       effective_capabilities?: number | null
+      temporary?: Array<{ cap: string; granted_at: number; expires_at: number }>
     }
   | { type: 'agent_info_updated'; server_id: string; protocol_version: number; agent_version?: string | null }
   | { type: 'network_probe_update'; server_id: string; results: NetworkProbeResultData[] }
@@ -281,7 +283,8 @@ export function setServerCapabilities(
   serverId: string,
   capabilities: number,
   agentLocalCapabilities: number | null | undefined,
-  effectiveCapabilities: number | null | undefined
+  effectiveCapabilities: number | null | undefined,
+  temporary?: Array<{ cap: string; granted_at: number; expires_at: number }> | null
 ): ServerMetrics[] {
   return prev.map((server) =>
     server.id === serverId
@@ -289,7 +292,8 @@ export function setServerCapabilities(
           ...server,
           capabilities,
           agent_local_capabilities: agentLocalCapabilities ?? null,
-          effective_capabilities: effectiveCapabilities ?? null
+          effective_capabilities: effectiveCapabilities ?? null,
+          temporary: temporary ?? []
         }
       : server
   )
@@ -370,10 +374,17 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
       return
     }
     const msg = raw as WsMessage & { type: 'capabilities_changed' }
-    const { server_id, capabilities, agent_local_capabilities, effective_capabilities } = msg
+    const { server_id, capabilities, agent_local_capabilities, effective_capabilities, temporary } = msg
     queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
       prev
-        ? setServerCapabilities(prev, server_id, capabilities, agent_local_capabilities, effective_capabilities)
+        ? setServerCapabilities(
+            prev,
+            server_id,
+            capabilities,
+            agent_local_capabilities,
+            effective_capabilities,
+            temporary
+          )
         : prev
     )
     queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
@@ -382,7 +393,8 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
             ...prev,
             capabilities,
             agent_local_capabilities: agent_local_capabilities ?? null,
-            effective_capabilities: effective_capabilities ?? null
+            effective_capabilities: effective_capabilities ?? null,
+            temporary: temporary ?? []
           }
         : prev
     )
@@ -393,7 +405,8 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
               ...s,
               capabilities,
               agent_local_capabilities: agent_local_capabilities ?? null,
-              effective_capabilities: effective_capabilities ?? null
+              effective_capabilities: effective_capabilities ?? null,
+              temporary: temporary ?? []
             }
           : s
       )

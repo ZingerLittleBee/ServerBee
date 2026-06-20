@@ -6,9 +6,9 @@ use std::time::Instant;
 use dashmap::DashMap;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
-use serverbee_common::constants::{CAP_DOCKER, effective_capabilities, has_capability};
+use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
-use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage};
+use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant};
 use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
 
 use crate::state::AppState;
@@ -88,8 +88,13 @@ pub struct AgentManager {
     docker_stats: DashMap<String, Vec<DockerContainerStats>>,
     docker_info: DashMap<String, DockerSystemInfo>,
     features: DashMap<String, Vec<String>>,
-    server_capabilities: DashMap<String, u32>,
+    /// Capabilities the agent reports it supports (from `SystemInfo`). This is
+    /// the sole source of truth — capabilities are owned by the agent host and
+    /// the server cannot modify them, only mirror what the agent reports.
     agent_local_capabilities: DashMap<String, u32>,
+    /// Active temporary capability grants reported by each agent (in-memory,
+    /// transient — re-reported on reconnect). Drives the UI countdown.
+    temporary_grants: DashMap<String, Vec<TemporaryGrant>>,
     /// Maps server_id -> (session_id -> log entry sender)
     docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
     /// Maps request_id -> traceroute result entry (cached for polling)
@@ -130,8 +135,8 @@ impl AgentManager {
             docker_stats: DashMap::new(),
             docker_info: DashMap::new(),
             features: DashMap::new(),
-            server_capabilities: DashMap::new(),
             agent_local_capabilities: DashMap::new(),
+            temporary_grants: DashMap::new(),
             docker_log_sessions: DashMap::new(),
             traceroute_results: DashMap::new(),
             server_lifecycle_locks: DashMap::new(),
@@ -380,7 +385,6 @@ impl AgentManager {
     }
 
     fn finish_connection_removal(&self, server_id: &str) {
-        self.server_capabilities.remove(server_id);
         self.agent_local_capabilities.remove(server_id);
         self.remove_docker_log_sessions_for_server(server_id);
         self.clear_docker_caches(server_id);
@@ -505,18 +509,11 @@ impl AgentManager {
     }
 
     // --- Capabilities cache ---
-
-    pub fn update_server_capabilities(&self, server_id: &str, caps: u32) {
-        self.server_capabilities.insert(server_id.to_string(), caps);
-    }
-
-    pub fn update_capabilities(&self, server_id: &str, caps: u32) {
-        self.update_server_capabilities(server_id, caps);
-    }
-
-    pub fn get_server_capabilities(&self, server_id: &str) -> Option<u32> {
-        self.server_capabilities.get(server_id).map(|cap| *cap)
-    }
+    //
+    // Capabilities are owned by the agent host. The server keeps only the
+    // agent-reported value (live, from `SystemInfo`) plus a persisted mirror in
+    // `servers.capabilities`. There is no independent server-side capability —
+    // the server can never enable/disable a capability the agent did not.
 
     pub fn update_agent_local_capabilities(&self, server_id: &str, caps: u32) {
         self.agent_local_capabilities
@@ -527,35 +524,53 @@ impl AgentManager {
         self.agent_local_capabilities.get(server_id).map(|cap| *cap)
     }
 
+    /// Effective capabilities == the agent's reported capabilities. Kept as a
+    /// named accessor so call sites read intent clearly even though there is no
+    /// longer a server-side mask to intersect with.
     pub fn get_effective_capabilities(&self, server_id: &str) -> Option<u32> {
-        self.get_server_capabilities(server_id)
-            .zip(self.get_agent_local_capabilities(server_id))
-            .map(|(server_caps, agent_local_caps)| {
-                effective_capabilities(server_caps, agent_local_caps)
-            })
+        self.get_agent_local_capabilities(server_id)
     }
 
+    /// Returns `Some(reason)` when `cap_bit` is NOT available on the agent, or
+    /// `None` when it is allowed. `mirror_caps` is the persisted
+    /// `servers.capabilities` mirror, used as a fallback for the brief window
+    /// before the agent's first `SystemInfo` (or while it is offline). The
+    /// reason is always agent-side: the server has no say in capabilities.
     pub fn capability_denied_reason(
         &self,
         server_id: &str,
-        configured_caps: u32,
+        mirror_caps: u32,
         cap_bit: u32,
     ) -> Option<&'static str> {
-        if !has_capability(configured_caps, cap_bit) {
-            Some("server_capability_disabled")
-        } else if self
+        let caps = self
             .get_agent_local_capabilities(server_id)
-            .is_some_and(|caps| !has_capability(caps, cap_bit))
-        {
-            Some("agent_capability_disabled")
-        } else {
+            .unwrap_or(mirror_caps);
+        if has_capability(caps, cap_bit) {
             None
+        } else {
+            Some("agent_capability_disabled")
         }
     }
 
+    // --- Temporary grants cache ---
+
+    pub fn update_temporary_grants(&self, server_id: &str, grants: Vec<TemporaryGrant>) {
+        if grants.is_empty() {
+            self.temporary_grants.remove(server_id);
+        } else {
+            self.temporary_grants.insert(server_id.to_string(), grants);
+        }
+    }
+
+    pub fn get_temporary_grants(&self, server_id: &str) -> Vec<TemporaryGrant> {
+        self.temporary_grants
+            .get(server_id)
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+
     pub fn has_docker_capability(&self, server_id: &str) -> bool {
-        self.get_effective_capabilities(server_id)
-            .or_else(|| self.get_server_capabilities(server_id))
+        self.get_agent_local_capabilities(server_id)
             .is_some_and(|cap| has_capability(cap, CAP_DOCKER))
     }
 
@@ -575,7 +590,9 @@ impl AgentManager {
             .all(db)
             .await?;
         for (id, caps, features_json) in servers {
-            self.server_capabilities.insert(id.clone(), caps as u32);
+            // Seed the last-known agent capabilities from the persisted mirror
+            // so display/enforcement has a value before the agent reconnects.
+            self.agent_local_capabilities.insert(id.clone(), caps as u32);
             let features: Vec<String> = serde_json::from_str(&features_json).unwrap_or_default();
             self.features.insert(id, features);
         }
@@ -948,9 +965,10 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_capabilities_intersect_configured_and_local_caps() {
+    fn test_effective_capabilities_equal_agent_reported_caps() {
         let (mgr, _rx) = make_manager();
-        mgr.update_server_capabilities("s1", CAP_EXEC | CAP_FILE);
+        // The server has no independent capability value: effective caps are
+        // exactly what the agent reports.
         mgr.update_agent_local_capabilities("s1", CAP_FILE);
 
         assert_eq!(mgr.get_agent_local_capabilities("s1"), Some(CAP_FILE));
@@ -958,12 +976,32 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_capabilities_are_none_without_local_caps() {
+    fn test_effective_capabilities_are_none_without_agent_report() {
         let (mgr, _rx) = make_manager();
-        mgr.update_server_capabilities("s1", CAP_EXEC | CAP_FILE);
 
         assert_eq!(mgr.get_agent_local_capabilities("s1"), None);
         assert_eq!(mgr.get_effective_capabilities("s1"), None);
+    }
+
+    #[test]
+    fn test_capability_denied_reason_falls_back_to_mirror_then_agent_report() {
+        let (mgr, _rx) = make_manager();
+        // No agent report yet: the persisted mirror gates the decision.
+        assert_eq!(
+            mgr.capability_denied_reason("s1", CAP_FILE, CAP_FILE),
+            None
+        );
+        assert_eq!(
+            mgr.capability_denied_reason("s1", CAP_FILE, CAP_EXEC),
+            Some("agent_capability_disabled")
+        );
+        // Once the agent reports, its live value takes precedence over the
+        // mirror — the server cannot widen caps the agent disabled.
+        mgr.update_agent_local_capabilities("s1", 0);
+        assert_eq!(
+            mgr.capability_denied_reason("s1", CAP_FILE, CAP_FILE),
+            Some("agent_capability_disabled")
+        );
     }
 
     #[test]
@@ -971,7 +1009,6 @@ mod tests {
         let (mgr, _rx) = make_manager();
         let (tx, _) = mpsc::channel(1);
         mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
-        mgr.update_server_capabilities("s1", CAP_DOCKER);
         mgr.update_agent_local_capabilities("s1", CAP_DOCKER);
 
         assert!(mgr.has_docker_capability("s1"));
@@ -1116,5 +1153,23 @@ mod tests {
         mgr.cleanup_expired_requests();
         assert!(!mgr.has_pending_request("short"));
         assert!(mgr.has_pending_request("long"));
+    }
+
+    #[test]
+    fn temporary_grants_round_trip_and_clear() {
+        let mgr = make_manager_simple();
+        mgr.update_temporary_grants(
+            "s1",
+            vec![serverbee_common::protocol::TemporaryGrant {
+                cap: "terminal".into(),
+                granted_at: 1,
+                expires_at: 100,
+            }],
+        );
+        assert_eq!(mgr.get_temporary_grants("s1").len(), 1);
+        assert_eq!(mgr.get_temporary_grants("s1")[0].cap, "terminal");
+        assert_eq!(mgr.get_temporary_grants("missing").len(), 0);
+        mgr.update_temporary_grants("s1", vec![]);
+        assert!(mgr.get_temporary_grants("s1").is_empty());
     }
 }

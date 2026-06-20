@@ -4,7 +4,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub server_url: String,
     #[serde(default)]
@@ -23,6 +23,60 @@ pub struct AgentConfig {
     pub upgrade: UpgradeConfig,
     #[serde(default)]
     pub security: SecurityConfig,
+    #[serde(default)]
+    pub capabilities: CapabilitiesConfig,
+}
+
+/// Agent-local capability policy, authored exclusively on the agent host
+/// (config file or `SERVERBEE_CAPABILITIES__*` env). The server cannot
+/// modify these — it only mirrors what the agent reports.
+///
+/// `allow`/`deny` are capability keys (e.g. `terminal`, `exec`, `file`,
+/// `docker`) applied on top of the built-in default set (`CAP_DEFAULT`).
+/// `deny` wins over `allow`. CLI `--allow-cap` / `--deny-cap` flags layer
+/// on top of this config for ad-hoc overrides.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CapabilitiesConfig {
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
+    /// Footgun guard: max `--for` the grant CLI accepts. Not a security
+    /// boundary (host root can edit the file directly). Default `24h`.
+    #[serde(default = "default_temporary_max_duration")]
+    pub temporary_max_duration: String,
+    /// Directory holding `capability_grants.json`.
+    #[serde(default = "default_capability_state_dir")]
+    pub state_dir: String,
+}
+
+fn default_temporary_max_duration() -> String {
+    "24h".to_string()
+}
+
+fn default_capability_state_dir() -> String {
+    "/var/lib/serverbee".to_string()
+}
+
+impl Default for CapabilitiesConfig {
+    fn default() -> Self {
+        Self {
+            allow: Vec::new(),
+            deny: Vec::new(),
+            temporary_max_duration: default_temporary_max_duration(),
+            state_dir: default_capability_state_dir(),
+        }
+    }
+}
+
+impl CapabilitiesConfig {
+    pub fn grants_path(&self) -> std::path::PathBuf {
+        std::path::Path::new(&self.state_dir).join("capability_grants.json")
+    }
+
+    pub fn temporary_max_duration_secs(&self) -> anyhow::Result<i64> {
+        crate::capability_grants::parse_duration_secs(&self.temporary_max_duration)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -426,6 +480,16 @@ mod tests {
     }
 
     #[test]
+    fn defaults_resolve_grants_path_and_max_duration() {
+        let c = CapabilitiesConfig::default();
+        assert_eq!(
+            c.grants_path(),
+            std::path::Path::new("/var/lib/serverbee/capability_grants.json")
+        );
+        assert_eq!(c.temporary_max_duration_secs().unwrap(), 86_400);
+    }
+
+    #[test]
     fn security_config_overrides_from_toml() {
         let c: AgentConfig = figment::Figment::new()
             .merge(figment::providers::Toml::string(
@@ -450,5 +514,23 @@ distinct_port_threshold = 50
         assert_eq!(c.security.ssh.failed_threshold, 5);
         assert!(c.security.port_scan.enabled);
         assert_eq!(c.security.port_scan.distinct_port_threshold, 50);
+    }
+
+    #[test]
+    fn capabilities_config_overrides_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[capabilities]
+temporary_max_duration = "2h"
+state_dir = "/tmp/grants"
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with capabilities overrides");
+        assert_eq!(c.capabilities.temporary_max_duration, "2h");
+        assert_eq!(c.capabilities.state_dir, "/tmp/grants");
+        assert_eq!(c.capabilities.temporary_max_duration_secs().unwrap(), 7_200);
     }
 }

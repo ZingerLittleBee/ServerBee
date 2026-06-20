@@ -1,10 +1,14 @@
 ---
 title: Capabilities
-description: Control which features each agent is allowed to use with per-server capability toggles.
+description: How each agent decides which features it exposes, configured entirely on the agent host.
 icon: ToggleRight
 ---
 
-ServerBee provides per-agent capability toggles, letting administrators control exactly which operations each server is allowed to perform and enforcing the principle of least privilege.
+ServerBee enforces the principle of least privilege through per-agent capabilities. **Capabilities are owned by the agent host**: each agent computes its own capability set from its config file (and optional CLI flags) and reports it to the server. The server can read and display these capabilities, but it **cannot** change them — there is no server-side toggle.
+
+<Callout type="info">
+This is a deliberate trust-boundary decision. The machine that runs the agent is the only place that decides what that agent will do. A compromised or misconfigured server cannot silently turn on a remote shell, file access, or command execution on your hosts.
+</Callout>
 
 ## Capability List
 
@@ -12,15 +16,15 @@ ServerBee defines 11 capability bits across two risk levels. The valid mask is `
 
 ### High Risk (Disabled by Default)
 
-| Capability | Bit Value | Description |
-|------------|-----------|-------------|
-| **Web Terminal** | `CAP_TERMINAL` (1) | Allow opening a remote terminal via browser |
-| **Remote Exec** | `CAP_EXEC` (2) | Allow remote command execution |
-| **File Manager** | `CAP_FILE` (64) | Allow remote file browsing, editing, upload/download |
-| **Docker Management** | `CAP_DOCKER` (128) | Allow Docker container monitoring, log streaming, and container actions |
+| Capability | Key | Bit Value | Description |
+|------------|-----|-----------|-------------|
+| **Web Terminal** | `terminal` | `CAP_TERMINAL` (1) | Allow opening a remote terminal via browser |
+| **Remote Exec** | `exec` | `CAP_EXEC` (2) | Allow remote command execution |
+| **File Manager** | `file` | `CAP_FILE` (64) | Allow remote file browsing, editing, upload/download |
+| **Docker Management** | `docker` | `CAP_DOCKER` (128) | Allow Docker container monitoring, log streaming, and container actions |
 
 <Callout type="warn">
-These capabilities allow executing arbitrary code or accessing the filesystem on the target server, so they are disabled by default. Enable them only on trusted servers.
+These capabilities allow executing arbitrary code or accessing the filesystem on the target server, so they are disabled by default. Enable them only on trusted hosts by editing that host's agent config.
 </Callout>
 
 <Callout type="info">
@@ -29,111 +33,181 @@ File Manager requires additional agent-side configuration (`root_paths`, `deny_p
 
 ### Low Risk (Enabled by Default)
 
-| Capability | Bit Value | Description |
-|------------|-----------|-------------|
-| **Auto Upgrade** | `CAP_UPGRADE` (4) | Allow remote binary upgrades |
-| **ICMP Ping** | `CAP_PING_ICMP` (8) | Allow ICMP probe tasks |
-| **TCP Probe** | `CAP_PING_TCP` (16) | Allow TCP port probe tasks |
-| **HTTP Probe** | `CAP_PING_HTTP` (32) | Allow HTTP probe tasks |
-| **Security Events** | `CAP_SECURITY_EVENTS` (256) | Allow agent to report SSH login / brute-force / port-scan events (see [Security Events](/en/docs/security-events)) |
-| **Firewall Blocklist** | `CAP_FIREWALL_BLOCK` (512) | Allow agent to apply the server-pushed nftables blocklist. Requires root or `CAP_NET_ADMIN` plus the `nft` CLI on the host. See [Firewall Blocklist](/en/docs/firewall) |
-| **IP Quality** | `CAP_IP_QUALITY` (1024) | Allow agent to query third-party IP quality APIs for outbound IP scoring |
+| Capability | Key | Bit Value | Description |
+|------------|-----|-----------|-------------|
+| **Auto Upgrade** | `upgrade` | `CAP_UPGRADE` (4) | Allow remote binary upgrades |
+| **ICMP Ping** | `ping_icmp` | `CAP_PING_ICMP` (8) | Allow ICMP probe tasks |
+| **TCP Probe** | `ping_tcp` | `CAP_PING_TCP` (16) | Allow TCP port probe tasks |
+| **HTTP Probe** | `ping_http` | `CAP_PING_HTTP` (32) | Allow HTTP probe tasks |
+| **Security Events** | `security_events` | `CAP_SECURITY_EVENTS` (256) | Allow agent to report SSH login / brute-force / port-scan events (see [Security Events](/en/docs/security-events)) |
+| **Firewall Blocklist** | `firewall_block` | `CAP_FIREWALL_BLOCK` (512) | Allow agent to apply the server-pushed nftables blocklist. Requires root or `CAP_NET_ADMIN` plus the `nft` CLI on the host. See [Firewall Blocklist](/en/docs/firewall) |
+| **IP Quality** | `ip_quality` | `CAP_IP_QUALITY` (1024) | Allow agent to query third-party IP quality APIs for outbound IP scoring |
 
-Newly registered agents default to a capabilities value of `1852` (auto upgrade + the three ping probes + security events + firewall blocklist + IP quality), which keeps the high-risk terminal, exec, file, and Docker capabilities off.
+An agent with no `[capabilities]` overrides defaults to `1852` (auto upgrade + the three ping probes + security events + firewall blocklist + IP quality), which keeps the high-risk terminal, exec, file, and Docker capabilities off.
 
-## Configuration
+## Configuring Capabilities (on the agent host)
 
-### Single Server
+An agent computes its capability bitmask as:
 
-1. Go to Dashboard → click a server → server detail page
-2. In the **Capabilities** section, use the toggle switches to enable or disable features
-3. Changes take effect immediately -- the server pushes a `CapabilitiesSync` message to the agent over WebSocket
+1. Start from the built-in default set (`CAP_DEFAULT = 1852`).
+2. Apply the config file `[capabilities]` block — `allow` adds bits, `deny` removes bits. Within this layer, `deny` wins over `allow`.
+3. Apply CLI `--allow-cap` / `--deny-cap` flags on top, for ad-hoc overrides. The CLI layer wins over the config layer.
 
-### Batch Configuration
+Unknown capability keys are a hard error at startup, so a typo fails fast rather than silently dropping a capability.
 
-1. Go to Settings → Capabilities
-2. Search or multi-select servers
-3. Enable or disable specific capabilities in bulk
-4. Click save to update all selected servers at once
+### Config file
 
-### API Configuration
+Edit `/etc/serverbee/agent.toml` (or `agent.toml` in the working directory) on the agent host:
 
-Update a single server (via `PUT /api/servers/{id}`):
-
-```bash
-curl -X PUT https://your-server/api/servers/{id} \
-  -H "Cookie: session=..." \
-  -H "Content-Type: application/json" \
-  -d '{"capabilities": 63}'
+```toml
+[capabilities]
+# Turn on high-risk capabilities this host should expose.
+allow = ["terminal", "file"]
+# Strip default capabilities this host should not expose.
+deny = ["ip_quality"]
 ```
 
-Batch update:
+Restart the agent for changes to take effect:
 
 ```bash
-curl -X PUT https://your-server/api/servers/batch-capabilities \
-  -H "Cookie: session=..." \
-  -H "Content-Type: application/json" \
-  -d '{"server_ids": ["id1", "id2"], "capabilities": 63}'
+systemctl restart serverbee-agent
 ```
 
-The capabilities value is a bitwise OR of the individual capability bits. Examples:
-- `1852` = Auto Upgrade + ICMP + TCP + HTTP + Security Events + Firewall Blocklist + IP Quality (default)
-- `2047` = all capabilities enabled (full valid mask, bits 0..=10)
-- `1980` = default + Docker
-- `1916` = default + File Manager
-- `316` = previous default (no firewall blocklist or IP quality)
-- `60` = legacy default (no security events, firewall, or IP quality)
-- `0` = all capabilities disabled
+### Environment variables
 
-## Defense in Depth
+The same block can be supplied via environment variables (Figment, `SERVERBEE_` prefix, `__` nesting):
 
-ServerBee validates capabilities on both the server side and the agent side. The effective capabilities are the intersection of the two -- if either side disables a bit, the operation is rejected.
+```bash
+SERVERBEE_CAPABILITIES__ALLOW=["terminal","file"]
+SERVERBEE_CAPABILITIES__DENY=["ip_quality"]
+```
 
-### Server-Side Enforcement
+### CLI flags
+
+For one-off overrides, pass repeated flags when launching the agent:
+
+```bash
+serverbee-agent --allow-cap terminal --allow-cap file --deny-cap ip_quality
+```
+
+### At install time
+
+The install script accepts `--caps` to seed the agent's capability config during enrollment:
+
+```bash
+curl -fsSL https://your-server/install.sh | sh -s -- --caps terminal,file
+```
+
+Running the installer interactively also prompts for capabilities, with the defaults pre-checked.
+
+## Temporary grants
+
+Editing the config and restarting the agent is the right way to enable a capability permanently. For short-lived, ad-hoc needs — "give me a terminal on this box for the next 30 minutes" — the agent ships a host-local CLI that temporarily turns on an off-by-default capability, then automatically turns it back off when the window ends.
+
+<Callout type="info">
+Temporary grants are a **host-local** mechanism, fully consistent with the agent-owned trust model: only someone with a shell on the agent host can issue one. The server and the web/iOS UI remain read-only and **cannot** grant a capability. The server merely mirrors what the agent reports, gates control-plane requests on it, audits the change, and can fire an alert.
+</Callout>
+
+### CLI
+
+Run these subcommands on the **agent host** (typically with `sudo`, since they write under `state_dir` and the daemon usually runs as the agent user/root). They share the daemon's config (`agent.toml` / `/etc/serverbee/agent.toml`), so the grants file location and the maximum duration come from the same `[capabilities]` block.
+
+```bash
+# Temporarily enable an off-by-default capability for a bounded duration.
+serverbee-agent grant terminal --for 30m --reason "debugging a stuck deploy"
+serverbee-agent grant file --for 2h
+serverbee-agent grant docker --for 1d
+
+# Revoke an active grant early.
+serverbee-agent revoke terminal
+
+# List the currently active grants (cap, remaining seconds, who granted it, reason).
+serverbee-agent grants
+```
+
+- The duration passed to `--for` is `<number><unit>` where the unit is one of `s` (seconds), `m` (minutes), `h` (hours), or `d` (days) — e.g. `90s`, `30m`, `2h`, `1d`. `--reason` is optional free-form text recorded with the grant.
+- `grant` only **turns on** a capability that is currently **off**. Granting a capability that is already enabled in `agent.toml` is rejected (`'terminal' is already enabled in agent.toml; nothing to grant`).
+- A duration longer than `temporary_max_duration` (default `24h`, see [Configuration](/en/docs/configuration)) is refused.
+- The CLI is one-shot: it writes the grants file and exits. The running daemon picks the change up within a few seconds — there is no need to restart the agent.
+
+### Restart and expiry semantics
+
+Grants are persisted to `<state_dir>/capability_grants.json` (default `/var/lib/serverbee/capability_grants.json`, written `0600`) with an **absolute** `expires_at` (a Unix epoch timestamp), not a relative countdown. This makes the behavior robust:
+
+- **Survives restarts** — if the agent restarts mid-window, the grant is reloaded and remains active for the rest of its original window.
+- **Expires at the original deadline** — restarting does not extend a grant. A grant for `30m` expires 30 minutes after it was issued regardless of how many times the agent restarts in between.
+- **Fails safe to OFF** — if the grants file is missing, empty, corrupt, or written by an unknown schema version, the agent treats it as "no grants" and the capability stays off. A temporary grant can never *strengthen* the permanent set; it can only flip an otherwise-off bit on for its window.
+
+### What the server sees
+
+When a grant becomes active (or expires/is revoked), the agent re-reports its effective capability set, so the server opens or closes the gate **live**:
+
+- The change is mirrored into `servers.capabilities` and broadcast to browsers, so the UI updates in real time.
+- The transition is written to the [audit log](/en/docs/admin) as `capability_temporarily_granted`, `capability_grant_expired`, or `capability_grant_revoked`.
+- A temporary grant of a **high-risk** capability (`terminal`, `exec`, `file`, or `docker`) also evaluates the event-driven `capability_grant_detected` [alert rule](/en/docs/alerts). Expiry, revoke, and low-risk grants are audited but do not fire an alert.
+
+<Callout type="warn">
+A grant issued while the agent is **disconnected** from the server is applied locally and shows up on reconnect, but it does **not** produce a `granted` audit entry or alert. The server only sees the post-reconnect capability state, not the moment of transition, so it cannot distinguish a freshly-granted capability from one that was already active. Plan around this if you rely on the alert as a tripwire.
+</Callout>
+
+### In the web UI
+
+While a temporary grant is active, the affected capability is shown with an amber **Temporary** badge and a live countdown to expiry, in both the **Server Detail → Capabilities** dialog and the **Settings → Capabilities** fleet matrix. The badge disappears automatically when the grant expires or is revoked.
+
+## Enforcement model
+
+The agent host is the single source of truth, but enforcement happens at two boundaries for defense in depth.
+
+### Server-side gating (based on reported capabilities)
+
+The server records what each agent reports and rejects control-plane requests for capabilities the agent has not enabled:
 
 - **Terminal**: the WebSocket upgrade is rejected with 403
-- **Exec**: `POST /api/tasks` and scheduled task runs filter out disabled servers and write synthetic results (`exit_code = -2`, message: "Capability 'exec' is disabled")
-- **Auto Upgrade**: `POST /api/servers/{id}/upgrade` returns 403 when `CAP_UPGRADE` is disabled
-- **Ping and Traceroute**: probe tasks are filtered by capability; traceroute requires effective `CAP_PING_ICMP`
-- **File Manager**: file endpoints reject requests before dispatch when `CAP_FILE` is disabled
-- **Docker**: Docker read/action endpoints and the Docker log WebSocket routes require `CAP_DOCKER` and agent runtime Docker support
+- **Exec**: `POST /api/tasks` and scheduled task runs filter out servers whose agent lacks `exec` and write synthetic results (`exit_code = -2`)
+- **Auto Upgrade**: `POST /api/servers/{id}/upgrade` returns 403 when `upgrade` is not reported
+- **Ping and Traceroute**: probe tasks are filtered by capability; traceroute requires `ping_icmp`
+- **File Manager**: file endpoints reject requests before dispatch when `file` is not reported
+- **Docker**: Docker read/action endpoints and the Docker log WebSocket routes require `docker` and agent runtime Docker support
 
-### Agent-Side Enforcement
+Because capabilities are agent-owned, the denial reason is always `agent_capability_disabled`.
 
-Even if a server-side message is bypassed, the agent re-checks capabilities locally:
+### Agent-side enforcement
+
+Even if a server-side request slips through, the agent re-checks capabilities locally:
 
 - It returns a `CapabilityDenied` message for unauthorized commands
 - On receiving `CapabilityDenied`, the server writes a synthetic result (`exit_code = -1`)
 - Denial events are recorded in the audit log
 
-### Real-Time Sync
+### Reporting and display
 
-When an administrator changes capabilities:
+When an agent connects (or reconnects), it sends `SystemInfo` carrying `agent_local_capabilities`. The server:
 
-1. The server sends `CapabilitiesSync` to the target agent over WebSocket
-2. The agent atomically updates its local capabilities value via `AtomicU32`
-3. The server sends `CapabilitiesChanged` to all connected browsers over WebSocket
-4. The frontend updates its UI state in real time
-5. If ping-related bits change, the server automatically re-syncs ping tasks
+1. Persists that value into the `servers.capabilities` column as a display mirror (so the dashboard can show capabilities even while the agent is offline).
+2. Broadcasts `CapabilitiesChanged` to all connected browsers so the UI reflects the current set in real time.
 
-## Frontend Behavior
+If ping-related bits change between reconnects, the server automatically re-syncs ping tasks for the agent.
 
-- **Server Detail page**: Capabilities toggle section — online servers can be toggled in real time
-- **Settings → Capabilities**: Batch management page with search and multi-select
-- **Tasks page**: Servers without `CAP_EXEC` are greyed out, results marked as "skipped"
-- **Terminal button**: Hidden for servers without `CAP_TERMINAL`
-- **Files button**: Hidden for servers without `CAP_FILE`; clicking opens the file manager at `/files/{serverId}`
-- **Docker link**: Hidden for servers without `CAP_DOCKER`; clicking navigates to `/servers/{serverId}/docker`
+## Frontend behavior
 
-## Server Config vs. Client Lock
+The web and iOS clients display capabilities **read-only**:
 
-Runtime capability state has three layers:
+- **Server Detail → Capabilities**: a read-only summary of which capabilities the agent has enabled, with a note that they are configured in the agent config file
+- **Settings → Capabilities**: a read-only fleet matrix showing the enabled/disabled state per server
+- **Tasks page**: servers whose agent lacks `exec` are greyed out
+- **Terminal button**: hidden for servers whose agent lacks `terminal`
+- **Files button**: hidden for servers whose agent lacks `file`
+- **Docker link**: hidden for servers whose agent lacks `docker`
 
-- `capabilities`: the server-configured bitmap stored in the database
-- `agent_local_capabilities`: the bitmap allowed by the running agent process
-- `effective_capabilities`: the runtime intersection actually enforced (`capabilities & agent_local_capabilities`)
+## Runtime capability fields
 
-When an agent disables a capability locally, the UI shows the toggle as disabled with the tooltip `客户端关闭` ("disabled by client"). The running agent has locked that capability off, and the server cannot turn it back on until the agent restarts with a different local policy.
+The server response exposes three capability fields, which are all equal under the agent-owned model:
+
+- `capabilities`: the persisted mirror of the last value the agent reported
+- `agent_local_capabilities`: the live value reported by the connected agent
+- `effective_capabilities`: the value actually enforced (identical to the agent-local value)
+
+The fields are kept distinct in the API for forward compatibility and so an offline server can still display its last-known capabilities from the mirror.
 
 <Cards>
   <Card title="Web Terminal" href="/en/docs/terminal" />

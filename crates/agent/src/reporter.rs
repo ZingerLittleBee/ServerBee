@@ -5,9 +5,7 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
-use serverbee_common::constants::{
-    CapabilityDeniedReason, DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE, has_capability,
-};
+use serverbee_common::constants::{DEFAULT_COMMAND_TIMEOUT_SECS, MAX_TASK_OUTPUT_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage, UpgradeStage};
 use serverbee_common::types::{NetworkInterface, NetworkProbeResultData};
 use sysinfo::Networks;
@@ -134,8 +132,19 @@ impl Reporter {
 
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
 
-        let capabilities = Arc::new(AtomicU32::new(self.agent_local_capabilities));
-        let server_capabilities = Arc::new(AtomicU32::new(u32::MAX));
+        // Fold any active temporary grants into the initial effective caps so the
+        // first SystemInfo already reflects grants that survived a restart.
+        let base_caps = self.agent_local_capabilities;
+        let grants_path = self.config.capabilities.grants_path();
+        let now0 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let grant_store0 = crate::capability_grants::CapabilityGrantStore::load(&grants_path);
+        let effective_caps =
+            (base_caps | grant_store0.active_bits(now0, base_caps)) & serverbee_common::constants::CAP_VALID_MASK;
+        let initial_temporary = grant_store0.active_grants(now0, base_caps);
+        let capabilities = Arc::new(AtomicU32::new(effective_caps));
 
         let request = build_ws_request(&self.config)?;
         let (ws_stream, _response) = connect_async(request).await?;
@@ -151,19 +160,15 @@ impl Reporter {
                     ServerMessage::Welcome {
                         server_id,
                         report_interval,
-                        capabilities: caps,
                         ..
                     } => {
-                        let server_caps = server_capabilities_from_welcome(caps);
-                        let effective_caps = compute_effective_capabilities(
-                            server_caps,
-                            self.agent_local_capabilities,
-                        );
+                        // The server-advertised `capabilities` field is
+                        // intentionally ignored: capabilities are agent-owned
+                        // and already loaded into `capabilities` above. The
+                        // agent enforces purely on its local policy.
                         tracing::info!(
                             "Welcome from server {server_id}, interval={report_interval}s"
                         );
-                        server_capabilities.store(server_caps, Ordering::SeqCst);
-                        capabilities.store(effective_caps, Ordering::SeqCst);
                         report_interval
                     }
                     other => {
@@ -243,7 +248,8 @@ impl Reporter {
                 ipv6: initial_ipv6.clone(),
                 ..info
             },
-            agent_local_capabilities: Some(self.agent_local_capabilities),
+            agent_local_capabilities: Some(effective_caps),
+            temporary: initial_temporary.clone(),
         };
         let json = serde_json::to_string(&info_msg)?;
         write.send(Message::Text(json.into())).await?;
@@ -290,6 +296,25 @@ impl Reporter {
 
         // Channel for background command execution results.
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
+
+        // Capability grant supervisor: re-reads the grants file and pushes
+        // CapabilitiesChanged through `grant_tx` (forwarded onto the WS below).
+        let (grant_tx, mut grant_rx) = mpsc::channel::<AgentMessage>(8);
+        {
+            let grants_path = grants_path.clone();
+            let caps = Arc::clone(&capabilities);
+            let tx = grant_tx.clone();
+            tokio::spawn(async move {
+                crate::capability_grants::supervisor::run_grant_supervisor(
+                    grants_path,
+                    base_caps,
+                    caps,
+                    tx,
+                    std::time::Duration::from_secs(3),
+                )
+                .await;
+            });
+        }
 
         // Fire-and-forget: refine the just-sent SystemInfo IPs with an
         // externally-observed public IP. If discovery yields something
@@ -354,6 +379,11 @@ impl Reporter {
                     let json = serde_json::to_string(&cmd_msg)?;
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent background command result");
+                }
+                Some(grant_msg) = grant_rx.recv() => {
+                    let json = serde_json::to_string(&grant_msg)?;
+                    write.send(Message::Text(json.into())).await?;
+                    tracing::debug!("Sent CapabilitiesChanged");
                 }
                 Some(run_result) = unlock_result_rx.recv() => {
                     let msg = AgentMessage::UnlockResults {
@@ -494,7 +524,7 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
-                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &server_capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval, &unlock_checker).await?;
+                            self.handle_server_message(&text, &mut write, &mut ping_manager, &mut terminal_manager, &mut network_prober, &cmd_result_tx, &capabilities, &file_manager, &file_tx, &mut docker_manager, &mut docker_available, &mut docker_stats_interval, &unlock_checker).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
@@ -552,7 +582,6 @@ impl Reporter {
         network_prober: &mut NetworkProber,
         cmd_result_tx: &mpsc::Sender<AgentMessage>,
         capabilities: &Arc<AtomicU32>,
-        server_capabilities: &Arc<AtomicU32>,
         file_manager: &FileManager,
         file_tx: &mpsc::Sender<FileEvent>,
         docker_manager: &mut Option<DockerManager>,
@@ -574,42 +603,6 @@ impl Reporter {
         };
 
         match msg {
-            ServerMessage::CapabilitiesSync { capabilities: caps } => {
-                let old_caps = sync_capability_state(
-                    capabilities,
-                    server_capabilities,
-                    caps,
-                    self.agent_local_capabilities,
-                );
-                let effective_caps = capabilities.load(Ordering::SeqCst);
-                tracing::info!("Capabilities updated: server={caps}, effective={effective_caps}");
-                network_prober.resync_capabilities();
-
-                // Tear down in-flight operations for any capability that was
-                // just revoked, so revocation is an immediate kill-switch for
-                // the operations it authorizes (open PTY, file transfers,
-                // Docker stats) — not merely a gate on future ones.
-                let closed_terminals = teardown_revoked_capabilities(
-                    old_caps,
-                    effective_caps,
-                    terminal_manager,
-                    file_manager,
-                    docker_manager,
-                    docker_stats_interval,
-                );
-                // The agent tore these PTYs down locally (rather than them
-                // exiting on their own), so the reader task won't emit an
-                // Exited event. Tell the server explicitly so the browser
-                // bridge closes instead of hanging until idle timeout.
-                for session_id in closed_terminals {
-                    let msg = AgentMessage::TerminalError {
-                        session_id,
-                        error: "Terminal capability revoked".to_string(),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                }
-            }
             ServerMessage::Ping => {
                 let pong = serde_json::to_string(&AgentMessage::Pong)?;
                 write.send(Message::Text(pong.into())).await?;
@@ -622,11 +615,7 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_EXEC) {
-                    let denied_reason = capability_denied_reason(
-                        server_capabilities.load(Ordering::SeqCst),
-                        self.agent_local_capabilities,
-                        CAP_EXEC,
-                    );
+                    let denied_reason = CapabilityDeniedReason::AgentCapabilityDisabled;
                     tracing::warn!("Exec denied: capability disabled (task_id={task_id})");
                     let denied = AgentMessage::CapabilityDenied {
                         msg_id: Some(task_id),
@@ -697,11 +686,7 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
-                    let denied_reason = capability_denied_reason(
-                        server_capabilities.load(Ordering::SeqCst),
-                        self.agent_local_capabilities,
-                        CAP_UPGRADE,
-                    );
+                    let denied_reason = CapabilityDeniedReason::AgentCapabilityDisabled;
                     tracing::warn!("Upgrade denied: capability disabled");
                     let denied = AgentMessage::CapabilityDenied {
                         msg_id: None,
@@ -766,11 +751,7 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_PING_ICMP) {
-                    let denied_reason = capability_denied_reason(
-                        server_capabilities.load(Ordering::SeqCst),
-                        self.agent_local_capabilities,
-                        CAP_PING_ICMP,
-                    );
+                    let denied_reason = CapabilityDeniedReason::AgentCapabilityDisabled;
                     tracing::warn!(
                         "Traceroute denied: capability disabled (request_id={request_id})"
                     );
@@ -1360,84 +1341,6 @@ fn build_ws_request(
     Ok(request)
 }
 
-/// Tear down in-flight operations for capabilities that just transitioned from
-/// granted to revoked, so a capability revocation is an immediate kill-switch
-/// for the operations it authorizes (an open PTY, in-flight file transfers,
-/// Docker stats polling) — not merely a gate on future operations. Mirrors the
-/// disconnect-time cleanup, scoped to the capability bits that flipped off.
-///
-/// Returns the ids of terminal sessions that were closed, so the caller can
-/// notify the server (and thus the browser bridge) that they ended.
-fn teardown_revoked_capabilities(
-    old_caps: u32,
-    effective_caps: u32,
-    terminal_manager: &mut TerminalManager,
-    file_manager: &FileManager,
-    docker_manager: &mut Option<DockerManager>,
-    docker_stats_interval: &mut Option<tokio::time::Interval>,
-) -> Vec<String> {
-    use serverbee_common::constants::*;
-    let revoked = |cap: u32| has_capability(old_caps, cap) && !has_capability(effective_caps, cap);
-
-    let mut closed_terminals = Vec::new();
-    if revoked(CAP_TERMINAL) {
-        tracing::info!(
-            "CAP_TERMINAL revoked, closing {} terminal session(s)",
-            terminal_manager.session_count()
-        );
-        closed_terminals = terminal_manager.close_all();
-    }
-    if revoked(CAP_FILE) {
-        tracing::info!(
-            "CAP_FILE revoked, cancelling {} in-flight file transfer(s)",
-            file_manager.active_transfer_count()
-        );
-        file_manager.cancel_all_transfers();
-    }
-    if revoked(CAP_DOCKER) {
-        tracing::info!("Docker capability revoked, cleaning up");
-        if let Some(dm) = docker_manager.as_mut() {
-            dm.cleanup();
-        }
-        *docker_stats_interval = None;
-    }
-    closed_terminals
-}
-
-fn server_capabilities_from_welcome(server_caps: Option<u32>) -> u32 {
-    server_caps.unwrap_or(u32::MAX)
-}
-
-fn compute_effective_capabilities(server_caps: u32, agent_local_capabilities: u32) -> u32 {
-    serverbee_common::constants::effective_capabilities(server_caps, agent_local_capabilities)
-}
-
-fn sync_capability_state(
-    capabilities: &Arc<AtomicU32>,
-    server_capabilities: &Arc<AtomicU32>,
-    server_caps: u32,
-    agent_local_capabilities: u32,
-) -> u32 {
-    let old_caps = capabilities.load(Ordering::SeqCst);
-    let effective_caps = compute_effective_capabilities(server_caps, agent_local_capabilities);
-    server_capabilities.store(server_caps, Ordering::SeqCst);
-    capabilities.store(effective_caps, Ordering::SeqCst);
-    old_caps
-}
-
-fn capability_denied_reason(
-    server_caps: u32,
-    agent_local_capabilities: u32,
-    cap_bit: u32,
-) -> CapabilityDeniedReason {
-    if !has_capability(server_caps, cap_bit) {
-        CapabilityDeniedReason::ServerCapabilityDisabled
-    } else {
-        debug_assert!(!has_capability(agent_local_capabilities, cap_bit));
-        CapabilityDeniedReason::AgentCapabilityDisabled
-    }
-}
-
 fn should_refresh_registration(config: &AgentConfig, error: &anyhow::Error) -> bool {
     !config.enrollment_code.is_empty()
         && matches!(
@@ -1622,168 +1525,10 @@ fn spawn_external_ip_refresh(
 mod tests {
     use super::*;
     use crate::config::{
-        CollectorConfig, FileConfig, IpChangeConfig, LogConfig, SecurityConfig, UpgradeConfig,
-    };
-    use serverbee_common::constants::{
-        CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_ICMP, CapabilityDeniedReason,
+        CapabilitiesConfig, CollectorConfig, FileConfig, IpChangeConfig, LogConfig, SecurityConfig,
+        UpgradeConfig,
     };
     use tokio_tungstenite::tungstenite::http::Response;
-
-    #[test]
-    fn test_effective_capabilities_from_welcome_masks_server_and_local_caps() {
-        assert_eq!(
-            compute_effective_capabilities(CAP_EXEC | CAP_FILE, CAP_FILE),
-            CAP_FILE
-        );
-    }
-
-    #[test]
-    fn test_effective_capabilities_from_welcome_defaults_to_local_caps_when_missing() {
-        assert_eq!(
-            compute_effective_capabilities(server_capabilities_from_welcome(None), CAP_DEFAULT),
-            CAP_DEFAULT
-        );
-    }
-
-    #[test]
-    fn test_capabilities_sync_recomputes_effective_caps_instead_of_overwriting_local_policy() {
-        let capabilities = Arc::new(AtomicU32::new(CAP_FILE));
-        let server_capabilities = Arc::new(AtomicU32::new(u32::MAX));
-        let old_caps =
-            sync_capability_state(&capabilities, &server_capabilities, CAP_EXEC, CAP_FILE);
-
-        assert_eq!(old_caps, CAP_FILE);
-        assert_eq!(capabilities.load(Ordering::SeqCst), 0);
-        assert_eq!(server_capabilities.load(Ordering::SeqCst), CAP_EXEC);
-    }
-
-    fn upload_file_manager(root: &std::path::Path) -> FileManager {
-        let file_config = FileConfig {
-            enabled: true,
-            root_paths: vec![root.to_string_lossy().into_owned()],
-            max_file_size: 1_073_741_824,
-            deny_patterns: vec![],
-        };
-        FileManager::new(file_config, Arc::new(AtomicU32::new(CAP_FILE)))
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn revoking_terminal_and_file_caps_tears_down_in_flight_operations() {
-        use serverbee_common::constants::CAP_TERMINAL;
-        use tempfile::TempDir;
-
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL | CAP_FILE));
-
-        // An open PTY session.
-        let (term_tx, _term_rx) = mpsc::channel(64);
-        let mut terminal_manager = TerminalManager::new(term_tx, Arc::clone(&caps));
-        terminal_manager.open("sess-1".to_string(), 24, 80);
-        assert_eq!(terminal_manager.session_count(), 1);
-
-        // An in-flight upload.
-        let tmp = TempDir::new().unwrap();
-        let file_manager = upload_file_manager(tmp.path());
-        let target = tmp.path().join("upload.bin").to_string_lossy().into_owned();
-        file_manager
-            .start_upload("xfer-1".to_string(), target, 10)
-            .await
-            .expect("start_upload should succeed");
-        assert_eq!(file_manager.active_transfer_count(), 1);
-
-        // Revoke both capabilities.
-        let mut docker_manager: Option<DockerManager> = None;
-        let mut docker_stats_interval: Option<tokio::time::Interval> = None;
-        let closed = teardown_revoked_capabilities(
-            CAP_TERMINAL | CAP_FILE,
-            0,
-            &mut terminal_manager,
-            &file_manager,
-            &mut docker_manager,
-            &mut docker_stats_interval,
-        );
-
-        assert_eq!(
-            closed,
-            vec!["sess-1".to_string()],
-            "revoking CAP_TERMINAL must report closed session ids so the server can be notified"
-        );
-        assert_eq!(
-            terminal_manager.session_count(),
-            0,
-            "open PTY sessions must be closed when CAP_TERMINAL is revoked"
-        );
-        assert_eq!(
-            file_manager.active_transfer_count(),
-            0,
-            "in-flight transfers must be cancelled when CAP_FILE is revoked"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn unchanged_capabilities_preserve_in_flight_operations() {
-        use serverbee_common::constants::CAP_TERMINAL;
-        use tempfile::TempDir;
-
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL | CAP_FILE));
-
-        let (term_tx, _term_rx) = mpsc::channel(64);
-        let mut terminal_manager = TerminalManager::new(term_tx, Arc::clone(&caps));
-        terminal_manager.open("sess-1".to_string(), 24, 80);
-
-        let tmp = TempDir::new().unwrap();
-        let file_manager = upload_file_manager(tmp.path());
-        let target = tmp.path().join("upload.bin").to_string_lossy().into_owned();
-        file_manager
-            .start_upload("xfer-1".to_string(), target, 10)
-            .await
-            .unwrap();
-
-        // No capability transition: both still granted, nothing should be torn down.
-        let mut docker_manager: Option<DockerManager> = None;
-        let mut docker_stats_interval: Option<tokio::time::Interval> = None;
-        let closed = teardown_revoked_capabilities(
-            CAP_TERMINAL | CAP_FILE,
-            CAP_TERMINAL | CAP_FILE,
-            &mut terminal_manager,
-            &file_manager,
-            &mut docker_manager,
-            &mut docker_stats_interval,
-        );
-
-        assert!(
-            closed.is_empty(),
-            "no sessions should be reported closed when capabilities are unchanged"
-        );
-        assert_eq!(
-            terminal_manager.session_count(),
-            1,
-            "sessions must survive when capabilities are unchanged"
-        );
-        assert_eq!(
-            file_manager.active_transfer_count(),
-            1,
-            "transfers must survive when capabilities are unchanged"
-        );
-
-        // Reap the spawned shell.
-        terminal_manager.close_all();
-    }
-
-    #[test]
-    fn test_capability_denied_reason_uses_server_policy_when_server_disables_capability() {
-        assert_eq!(
-            capability_denied_reason(0, CAP_EXEC, CAP_EXEC),
-            CapabilityDeniedReason::ServerCapabilityDisabled
-        );
-    }
-
-    #[test]
-    fn test_capability_denied_reason_uses_agent_policy_when_server_allows_capability() {
-        assert_eq!(
-            capability_denied_reason(CAP_PING_ICMP, 0, CAP_PING_ICMP),
-            CapabilityDeniedReason::AgentCapabilityDisabled
-        );
-    }
 
     #[test]
     fn test_should_refresh_registration_on_unauthorized_handshake() {
@@ -1797,6 +1542,7 @@ mod tests {
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
+            capabilities: CapabilitiesConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1817,6 +1563,7 @@ mod tests {
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
+            capabilities: CapabilitiesConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -1837,6 +1584,7 @@ mod tests {
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
+            capabilities: CapabilitiesConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(500).body(None).unwrap(),
@@ -1857,6 +1605,7 @@ mod tests {
             ip_change: IpChangeConfig::default(),
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
+            capabilities: CapabilitiesConfig::default(),
         };
 
         let request = build_ws_request(&config).expect("request should build");

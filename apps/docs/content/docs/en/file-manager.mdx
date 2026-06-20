@@ -12,14 +12,18 @@ File Manager is a high-risk feature. Enable it only on trusted servers, and rest
 
 ## Requirements
 
-File Manager must be enabled at two layers:
+File Manager must be enabled at two layers, **both on the agent host** — capabilities are agent-owned, so the server cannot turn them on:
 
-1. **Server-side capability** -- enable `CAP_FILE` for the server in **Settings → Capabilities** or on the server detail page.
-2. **Agent-side policy** -- set `[file].enabled = true` and configure at least one allowed root path.
+1. **`file` capability** -- the `file` capability is off by default. Add it to the agent's `[capabilities]` allow list (or pass `--allow-cap file`). See [Capabilities](/en/docs/capabilities).
+2. **File subsystem policy** -- set `[file].enabled = true` and configure at least one allowed root path.
 
 Example `agent.toml`:
 
 ```toml
+[capabilities]
+# Turn on the high-risk file capability for this host.
+allow = ["file"]
+
 [file]
 enabled = true
 root_paths = ["/home", "/var/log", "/etc/serverbee"]
@@ -31,10 +35,13 @@ deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
 Equivalent environment variables:
 
 ```bash
+SERVERBEE_CAPABILITIES__ALLOW=["file"]
 SERVERBEE_FILE__ENABLED=true
 SERVERBEE_FILE__ROOT_PATHS=/home,/var/log,/etc/serverbee
 SERVERBEE_FILE__MAX_FILE_SIZE=1073741824
 ```
+
+Restart the agent after editing the config for the capability change to take effect.
 
 ## Accessing the File Manager
 

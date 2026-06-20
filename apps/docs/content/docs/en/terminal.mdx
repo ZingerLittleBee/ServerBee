@@ -57,7 +57,7 @@ You can open multiple terminal sessions to the same server simultaneously, makin
 ## Authentication and Access Control
 
 <Callout type="warn">
-The web terminal also requires the **terminal** capability (`CAP_TERMINAL`) to be enabled on the target server. If it is disabled, the WebSocket upgrade is rejected with 403 Forbidden. Administrators manage capabilities in Settings → Capabilities.
+The web terminal also requires the **terminal** capability (`CAP_TERMINAL`), which is off by default. It must be enabled on the agent host — add `terminal` to the agent's `[capabilities]` allow list (or pass `--allow-cap terminal`) and restart the agent. Capabilities are agent-owned; the server cannot enable them. If the capability is off, the WebSocket upgrade is rejected with 403 Forbidden. See [Capabilities](/en/docs/capabilities).
 </Callout>
 
 Authentication uses the same mechanisms as the REST API:

@@ -27,9 +27,6 @@ pub struct NetworkProber {
     tasks: HashMap<String, RunningTask>,
     tx: mpsc::Sender<NetworkProbeResultData>,
     capabilities: Arc<AtomicU32>,
-    last_targets: Vec<NetworkProbeTarget>,
-    last_interval: u32,
-    last_packet_count: u32,
 }
 
 impl NetworkProber {
@@ -38,9 +35,6 @@ impl NetworkProber {
             tasks: HashMap::new(),
             tx,
             capabilities,
-            last_targets: Vec::new(),
-            last_interval: 60,
-            last_packet_count: 5,
         }
     }
 
@@ -50,11 +44,6 @@ impl NetworkProber {
     /// in the list are stopped; tasks that are new or whose config has changed
     /// are (re)started.
     pub fn sync(&mut self, targets: Vec<NetworkProbeTarget>, interval: u32, packet_count: u32) {
-        // Store for later resync when capabilities change
-        self.last_targets = targets.clone();
-        self.last_interval = interval;
-        self.last_packet_count = packet_count;
-
         // Filter by current capability bitmap
         let caps = self.capabilities.load(Ordering::SeqCst);
         let targets: Vec<_> = targets
@@ -121,17 +110,6 @@ impl NetworkProber {
         }
 
         tracing::info!("Network probe tasks synced: {} active", self.tasks.len());
-    }
-
-    /// Re-run sync with the stored last configuration.
-    ///
-    /// Called when `CapabilitiesSync` updates the capability bitmap so that
-    /// newly enabled/disabled probe types take effect immediately.
-    pub fn resync_capabilities(&mut self) {
-        let targets = self.last_targets.clone();
-        let interval = self.last_interval;
-        let packet_count = self.last_packet_count;
-        self.sync(targets, interval, packet_count);
     }
 
     /// Abort all running probe tasks.

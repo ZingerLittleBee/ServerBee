@@ -15,7 +15,7 @@ A background task evaluates all enabled rules every 60 seconds:
 3. Send a notification when a rule triggers (subject to debounce).
 4. Clear the alert state when a previously triggered rule recovers.
 
-Alert state is persisted in the database and survives server restarts. Event-driven rules (IP change, SSH login, brute-force, port scan) are evaluated when an agent reports the event, not on the 60-second cycle.
+Alert state is persisted in the database and survives server restarts. Event-driven rules (IP change, SSH login, brute-force, port scan, temporary capability grant) are evaluated when an agent reports the event, not on the 60-second cycle.
 
 ## Creating Alert Rules
 
@@ -79,6 +79,9 @@ Cycle options: `hour` / `day` / `week` / `month` / `year`
 | `ssh_login_detected` | Event-driven; successful SSH login. Supports `first_seen_only` filter. See [Security Events](/en/docs/security-events) |
 | `ssh_brute_force_detected` | Event-driven; SSH brute-force burst. Supports `severity_min` (medium/high/critical) and `exclude_cidrs` |
 | `port_scan_detected` | Event-driven; port scan from a single source IP. Supports `severity_min` and `exclude_cidrs` |
+| `capability_grant_detected` | Event-driven; fires when a high-risk capability (`terminal` / `exec` / `file` / `docker`) is **temporarily granted** on a server via the host-local `serverbee-agent grant` CLI. Expiry, revoke, and low-risk grants are audited but do not alert. See [Capabilities → Temporary grants](/en/docs/capabilities#temporary-grants) |
+
+The Alerts page offers a one-click **preset card** for `capability_grant_detected` ("Capability Temporarily Granted") with sensible defaults; the rule type is also selectable directly in the rule editor. It carries no `severity_min` / `exclude_cidrs` filters and no auto-block action — it fires on any high-risk temporary grant — but it follows the same cover-type and maintenance-suppression behavior as the other event-driven rules.
 
 ## Threshold Configuration
 
@@ -193,7 +196,7 @@ Alert notifications are suppressed while the affected server is in an active mai
 
 ## Blocking Source IPs
 
-Security-event rules (`ssh_brute_force_detected`, `port_scan_detected`) can enable **Block source IP**. When the rule triggers, ServerBee tells the affected agent's firewall to block the offending IP, turning detection into automatic mitigation. This requires the `CAP_FIREWALL_BLOCK` capability on the server. See [Security Events](/en/docs/security-events) and [Firewall](/en/docs/firewall).
+Security-event rules (`ssh_brute_force_detected`, `port_scan_detected`) can enable **Block source IP**. When the rule triggers, ServerBee tells the affected agent's firewall to block the offending IP, turning detection into automatic mitigation. This requires the agent to have the `firewall_block` capability (`CAP_FIREWALL_BLOCK`), which is on by default but can be disabled on the agent host via `[capabilities]`. See [Security Events](/en/docs/security-events) and [Firewall](/en/docs/firewall).
 
 ## Notification Channels
 

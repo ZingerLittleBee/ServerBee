@@ -72,6 +72,8 @@
     "new_ip_login_description": "成功 SSH 登录来自从未见过的 (用户, IP) 组合时通知。",
     "port_scan_title": "端口扫描",
     "port_scan_description": "agent 检测到针对本机的端口扫描时通知。",
+    "capability_grant_title": "临时授予能力",
+    "capability_grant_description": "当服务器上临时授予高危能力(terminal/exec/file/docker)时通知。",
     "configure": "配置",
     "field_name": "规则名称",
     "field_group": "通知组",

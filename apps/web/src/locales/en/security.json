@@ -72,6 +72,8 @@
     "new_ip_login_description": "Notify when a successful SSH login arrives from a previously unseen (user, IP) pair.",
     "port_scan_title": "Port Scan",
     "port_scan_description": "Notify when the agent detects a port scan against this server.",
+    "capability_grant_title": "Capability Temporarily Granted",
+    "capability_grant_description": "Notify when a high-risk capability (terminal/exec/file/docker) is temporarily granted on a server.",
     "configure": "Configure",
     "field_name": "Rule name",
     "field_group": "Notification group",

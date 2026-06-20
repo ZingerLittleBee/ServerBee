@@ -358,7 +358,7 @@ curl -X POST https://your-server/api/servers/{id}/upgrade \
 ```
 
 <Callout type="warn">
-Auto-update requires the agent to have the `upgrade` capability (`CAP_UPGRADE`), which is enabled by default for newly registered agents. An admin can disable it under Settings → Capabilities.
+Auto-update requires the agent to have the `upgrade` capability (`CAP_UPGRADE`), which is enabled by default. Capabilities are agent-owned — to turn it off, add `upgrade` to the agent's `[capabilities]` deny list (or pass `--deny-cap upgrade`) on the agent host. See [Capabilities](/en/docs/capabilities).
 </Callout>
 
 ## Connection Behavior

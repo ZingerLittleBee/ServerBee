@@ -44,6 +44,9 @@ ServerBee automatically records audit logs for critical operations so administra
 - 2FA enable/disable
 - Terminal connect/disconnect
 - Capability denial events
+- `capability_temporarily_granted` — a host-local temporary grant turned an off-by-default capability on
+- `capability_grant_expired` — a temporary grant reached its deadline and the capability turned back off
+- `capability_grant_revoked` — a host operator revoked a temporary grant early
 
 ### Viewing Audit Logs
 
@@ -94,8 +97,8 @@ Administrators can dispatch commands to online servers and retrieve execution re
 ### Limitations
 
 - Command execution timeout: 300 seconds
-- Requires `exec` capability (CAP_EXEC) on target servers
-- Servers without CAP_EXEC receive a synthetic result: `exit_code = -2`, message: "Capability disabled"
+- Requires the target agent to have the `exec` capability (CAP_EXEC), which is off by default. Capabilities are agent-owned — enable it on the agent host by adding `exec` to its `[capabilities]` allow list (or `--allow-cap exec`). See [Capabilities](/en/docs/capabilities)
+- Servers whose agent does not report CAP_EXEC receive a synthetic result: `exit_code = -2`, message: "Capability disabled"
 - Only Admin role can create tasks
 
 ### API Endpoints

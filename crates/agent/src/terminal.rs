@@ -255,11 +255,6 @@ impl TerminalManager {
         }
         ids
     }
-
-    /// Number of currently open terminal sessions.
-    pub fn session_count(&self) -> usize {
-        self.sessions.len()
-    }
 }
 
 /// Blocking function that reads PTY output and sends it as events.

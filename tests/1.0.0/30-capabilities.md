@@ -1,21 +1,20 @@
-# 30 能力位掩码管理 — 冒烟测试
+# 30 能力（Agent 拥有）— 冒烟测试
 
-**前置条件**:已登录 admin,Agent 在线。能力位:TERMINAL=1, EXEC=2, UPGRADE=4, PING_ICMP=8, PING_TCP=16, PING_HTTP=32, FILE=64, DOCKER=128。
+**前置条件**:已登录 admin,Agent 在线。能力位:TERMINAL=1, EXEC=2, UPGRADE=4, PING_ICMP=8, PING_TCP=16, PING_HTTP=32, FILE=64, DOCKER=128, SECURITY_EVENTS=256, FIREWALL_BLOCK=512, IP_QUALITY=1024。`CAP_DEFAULT=1852`。
+
+**模型**:能力由 Agent 主机拥有。Agent 从 `[capabilities]` 配置(allow/deny over `CAP_DEFAULT`)+ `--allow-cap`/`--deny-cap` CLI 计算自身能力并在 `SystemInfo` 上报。Server 只把上报值镜像到 `servers.capabilities` 用于展示,**无法**修改。`effective == agent_local`。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 阻断级 | 状态 |
 |---|---------|---------|---------|--------|------|
-| CP1 | 查看能力 | 设置页查看服务器能力开关 | 显示各能力当前启用状态 | 是 | ✅ |
-| CP2 | 关闭能力 | 关闭能力位(API 用 HTTP 替代 TERMINAL,因 agent 本地不支持 TERMINAL) | CapabilitiesSync 下发,cap 60→28,effective 同步 | 是 | ✅ |
-| CP3 | 开启能力 | 重新开启 HTTP | cap 28→60,effective 恢复 | 是 | ✅ |
-| CP4 | 服务端拦截 | 服务端禁用 FILE 后调用 file list | 被拒 FORBIDDEN server_capability_disabled | 否 | ✅ |
-| CP5 | Agent 本地拒绝 | 服务端 set TERMINAL(cap=61) | effective 仍=60,agent_local_capabilities 不含 TERMINAL,本地拒绝生效 | 否 | ✅ |
-| CP6 | 默认能力 | 查看测试 server 默认能力位 | local=60=UPGRADE+ICMP+TCP+HTTP,UI 仅这些开启,符合 UPGRADE+PING 预期 | 否 | ✅ |
+| CP1 | 查看能力(详情) | 服务器详情 → 点击「能力」 | 只读弹窗,展示各能力 已启用/已关闭 徽章,无开关;含「能力在 Agent 配置文件中设置」提示 | 是 | ⬜ |
+| CP2 | 查看能力(机群) | 设置 → 能力开关 | 只读矩阵(✓/—),无开关、无批量操作栏、无勾选框;描述说明只读/Agent 拥有 | 是 | ⬜ |
+| CP3 | Server 无法改能力 | `PUT /api/servers/{id}` 带 `{"capabilities": N}` | `capabilities` 字段被忽略(不在 DTO 中),server 能力镜像不变 | 是 | ⬜ |
+| CP4 | 批量端点已移除 | `PUT /api/servers/batch-capabilities` | 404 Not Found(端点已删除) | 否 | ⬜ |
+| CP5 | 服务端按上报能力拦截 | Agent 未上报 FILE 时调用 file list | 403 FORBIDDEN,reason=`agent_capability_disabled` | 否 | ⬜ |
+| CP6 | Agent 配置生效 | 改 agent `[capabilities] allow=["terminal"]` 并重启 agent | 重连后详情/矩阵中 TERMINAL 显示 已启用;`CapabilitiesChanged` 推送刷新 UI | 否 | ⬜ |
+| CP7 | 默认能力 | 查看一台无 `[capabilities]` 覆盖的 agent | 能力=`1852`(UPGRADE+ICMP+TCP+HTTP+SECURITY_EVENTS+FIREWALL_BLOCK+IP_QUALITY),高风险 Terminal/Exec/File/Docker 关闭 | 否 | ⬜ |
 
 **备注**:
-- 测试 server (agent 0.9.3) 初始/恢复基线 = **60** (UPGRADE4+ICMP8+TCP16+HTTP32),非 brief 所述 56。已据实以 60 为还原值。
-- agent_local_capabilities=60,不含 TERMINAL/EXEC/FILE/DOCKER,故这些能力服务端开启也无法生效(effective 排除)。直接影响 14/15/16/31 — 这些功能在本测试 agent 上不可真机验证。
-- UI 能力开关:高风险能力(Terminal/Exec/File/Docker)开关在 UI 中 disabled(因 agent 本地不支持);可点击的开关(如 HTTP)在 UI 中点击后不持久化(快照回弹、cap 不变),但 API PUT /api/servers/batch-capabilities 正常工作。CP2/CP3 改用 API 验证。
-
-> ❌ CP-UI: 能力位 UI 开关点击后不持久化(HTTP Probe 开关点击后快照回弹 checked=true,cap 仍 60,无 toast);API 路径正常。文件 30-capabilities.md。
-
-**汇总**:✅ 6 / ❌ 0 / — 0 (功能层全通过;附 1 个 UI 持久化缺陷见上)
+- 旧的服务端能力开关、`CapabilitiesSync` 下发、`PUT /api/servers/batch-capabilities` 批量端点均已移除;协议版本升至 5。
+- 能力来源唯一为 Agent 主机配置;如需改某 agent 能力,编辑该主机 `[capabilities]` 并重启 agent,不能从 Server/UI 修改。
+- 离线服务器仍可从镜像列展示最后已知能力。

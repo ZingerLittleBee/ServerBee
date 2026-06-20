@@ -25,16 +25,13 @@ use crate::router::api::network_probe::{
 use crate::service::agent_manager::AgentManager;
 use crate::service::audit::AuditService;
 use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
-use crate::service::ip_quality::IpQualityService;
 use crate::service::network_probe::NetworkProbeService;
-use crate::service::ping::PingService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
 use crate::service::server_tag as server_tag_service;
 use crate::service::upgrade_tracker::{StartUpgradeJobError, UpgradeLookup};
 use crate::state::AppState;
-use serverbee_common::constants::effective_capabilities;
-use serverbee_common::protocol::{BrowserMessage, ServerMessage};
+use serverbee_common::protocol::ServerMessage;
 use serverbee_common::types::{NetworkProbeTarget, OutstandingEnrollmentSummary};
 
 const DEFAULT_SERVER_NAME: &str = "New Server";
@@ -72,6 +69,27 @@ pub struct CleanupResponse {
     deleted_count: u64,
 }
 
+/// A capability that is temporarily enabled on the agent host until
+/// `expires_at`. Mirrors `serverbee_common::protocol::TemporaryGrant` but adds a
+/// `ToSchema` derive so the REST `ServerResponse` can advertise it; the UI uses
+/// it to render countdowns from a plain HTTP fetch.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct TemporaryGrantDto {
+    pub cap: String,
+    pub granted_at: i64,
+    pub expires_at: i64,
+}
+
+impl From<serverbee_common::protocol::TemporaryGrant> for TemporaryGrantDto {
+    fn from(g: serverbee_common::protocol::TemporaryGrant) -> Self {
+        Self {
+            cap: g.cap,
+            granted_at: g.granted_at,
+            expires_at: g.expires_at,
+        }
+    }
+}
+
 /// Server response DTO — excludes sensitive fields (token_hash, token_prefix).
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ServerResponse {
@@ -106,6 +124,11 @@ pub struct ServerResponse {
     pub capabilities: i32,
     pub agent_local_capabilities: Option<i32>,
     pub effective_capabilities: Option<i32>,
+    /// Currently-active temporary capability grants reported by the agent, used
+    /// by the UI to render countdowns. Empty when the agent is offline or has no
+    /// active grants.
+    #[serde(default)]
+    pub temporary: Vec<TemporaryGrantDto>,
     pub protocol_version: i32,
     features: Vec<String>,
     /// `true` iff the server row has a non-NULL `token_hash`. Pending servers
@@ -223,6 +246,12 @@ fn build_server_response(
     let (agent_local_capabilities, effective_capabilities) =
         runtime_capability_fields(agent_manager, &s.id);
 
+    let temporary = agent_manager
+        .get_temporary_grants(&s.id)
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
     let has_token = s.token_hash.is_some();
 
     ServerResponse {
@@ -257,6 +286,7 @@ fn build_server_response(
         capabilities: s.capabilities,
         agent_local_capabilities,
         effective_capabilities,
+        temporary,
         protocol_version: s.protocol_version,
         features: serde_json::from_str(&s.features).unwrap_or_default(),
         has_token,
@@ -321,58 +351,6 @@ async fn fetch_outstanding_enrollments_batch(
     Ok(out)
 }
 
-fn capability_change_message(
-    agent_manager: &AgentManager,
-    server_id: &str,
-    capabilities: u32,
-) -> BrowserMessage {
-    let agent_local_capabilities = agent_manager.get_agent_local_capabilities(server_id);
-    let effective_capabilities =
-        agent_local_capabilities.map(|bits| effective_capabilities(capabilities, bits));
-
-    BrowserMessage::CapabilitiesChanged {
-        server_id: server_id.to_string(),
-        capabilities,
-        agent_local_capabilities,
-        effective_capabilities,
-    }
-}
-
-/// Send `IpQualitySync` to a single online agent.
-///
-/// Called when a server newly gains `CAP_IP_QUALITY` so the agent receives the
-/// service catalog and check interval without waiting for a reconnect (spec §4
-/// requires `IpQualitySync` on connect, on catalog change, and on capability
-/// change). A failed DB read here is logged and ignored — the agent will still
-/// receive the sync on its next reconnect.
-async fn send_ip_quality_sync_to_agent(state: &Arc<AppState>, server_id: &str) {
-    let Some(tx) = state.agent_manager.get_sender(server_id) else {
-        return;
-    };
-
-    let services = match IpQualityService::enabled_service_defs(&state.db).await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("IpQualitySync skipped for {server_id}: {e}");
-            return;
-        }
-    };
-    let setting = match IpQualityService::get_setting(&state.db).await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("IpQualitySync skipped for {server_id}: {e}");
-            return;
-        }
-    };
-
-    let _ = tx
-        .send(ServerMessage::IpQualitySync {
-            services,
-            interval_hours: setting.check_interval_hours as u32,
-        })
-        .await;
-}
-
 /// GET endpoints accessible to all authenticated users (admin + member).
 pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
@@ -406,10 +384,6 @@ pub fn write_router() -> Router<Arc<AppState>> {
         .route("/servers/{id}", delete(delete_server))
         .route("/servers/batch-delete", post(batch_delete))
         .route("/servers/cleanup", delete(cleanup_orphaned_servers))
-        .route(
-            "/servers/batch-capabilities",
-            put(batch_update_capabilities),
-        )
         .route("/servers/{id}/upgrade", post(trigger_upgrade))
         .route("/servers/{id}/recover", post(recover_server))
         .route(
@@ -928,148 +902,13 @@ async fn get_server(
 )]
 async fn update_server(
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(current_user): Extension<CurrentUser>,
-    headers: HeaderMap,
     Path(id): Path<String>,
     Json(input): Json<UpdateServerInput>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
-    use serverbee_common::constants::{
-        CAP_DOCKER, CAP_FIREWALL_BLOCK, CAP_IP_QUALITY, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP,
-        has_capability,
-    };
-    use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
-    let user_id = &current_user.user_id;
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
-        &headers,
-        &state.config.server.trusted_proxies,
-    )
-    .to_string();
-
-    // Capture old caps before update for diffing
-    let old_caps = if input.capabilities.is_some() {
-        Some(
-            ServerService::get_server(&state.db, &id)
-                .await?
-                .capabilities as u32,
-        )
-    } else {
-        None
-    };
-
+    // Capabilities are agent-owned and not writable here (the `capabilities`
+    // field was removed from `UpdateServerInput`), so updating a server can no
+    // longer change what the agent is allowed to do.
     let server = ServerService::update_server(&state.db, &id, input).await?;
-
-    // If capabilities changed, broadcast + re-sync
-    if let Some(old) = old_caps {
-        let new_caps = server.capabilities as u32;
-        state
-            .agent_manager
-            .update_server_capabilities(&id, new_caps);
-
-        // Send CapabilitiesSync to Agent (if online and protocol_version >= 2)
-        if let Some(pv) = state.agent_manager.get_protocol_version(&id)
-            && pv >= 2
-            && let Some(tx) = state.agent_manager.get_sender(&id)
-        {
-            let _ = tx
-                .send(ServerMessage::CapabilitiesSync {
-                    capabilities: new_caps,
-                })
-                .await;
-        }
-
-        // Broadcast to browsers
-        state
-            .agent_manager
-            .broadcast_browser(capability_change_message(
-                &state.agent_manager,
-                &id,
-                new_caps,
-            ));
-
-        // Re-sync ping tasks only if ping bits changed
-        let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
-        if old & ping_mask != new_caps & ping_mask {
-            PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &id).await;
-        }
-
-        // Docker capability revoked — teardown
-        if has_capability(old, CAP_DOCKER) && !has_capability(new_caps, CAP_DOCKER) {
-            // Clear in-memory Docker caches
-            state.agent_manager.clear_docker_caches(&id);
-            // Remove all docker viewer subscriptions for this server
-            state.docker_viewers.remove_all_for_server(&id);
-            // Remove all docker log sessions for this server
-            let log_session_ids = state
-                .agent_manager
-                .remove_docker_log_sessions_for_server(&id);
-            // Tell agent to stop docker streams
-            if let Some(tx) = state.agent_manager.get_sender(&id) {
-                let _ = tx.send(ServerMessage::DockerStopStats).await;
-                let _ = tx.send(ServerMessage::DockerEventsStop).await;
-                for sid in &log_session_ids {
-                    let _ = tx
-                        .send(ServerMessage::DockerLogsStop {
-                            session_id: sid.clone(),
-                        })
-                        .await;
-                }
-            }
-            // Broadcast unavailability
-            state
-                .agent_manager
-                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
-                    server_id: id.clone(),
-                    available: false,
-                });
-        }
-
-        // Firewall capability transitioned — sync the agent's view to ours.
-        let was_fw = has_capability(old, CAP_FIREWALL_BLOCK);
-        let now_fw = has_capability(new_caps, CAP_FIREWALL_BLOCK);
-        if was_fw != now_fw
-            && let Some(pv) = state.agent_manager.get_protocol_version(&id)
-            && pv >= FIREWALL_MIN_PROTOCOL
-        {
-            if now_fw {
-                if let Err(e) = state
-                    .firewall
-                    .push_sync_to(&id, &state.agent_manager)
-                    .await
-                {
-                    tracing::warn!(server_id = %id, error = %e, "firewall sync push failed");
-                }
-            } else {
-                state
-                    .firewall
-                    .push_reset_to(&id, &state.agent_manager)
-                    .await;
-            }
-        }
-
-        // IP quality capability newly gained — re-send IpQualitySync so the
-        // agent receives the service catalog without waiting for a reconnect.
-        if !has_capability(old, CAP_IP_QUALITY) && has_capability(new_caps, CAP_IP_QUALITY) {
-            send_ip_quality_sync_to_agent(&state, &id).await;
-        }
-
-        // Audit log
-        let detail = serde_json::json!({
-            "server_id": id,
-            "old": old,
-            "new": new_caps,
-        })
-        .to_string();
-        let _ = AuditService::log(
-            &state.db,
-            user_id,
-            "capabilities_changed",
-            Some(&detail),
-            &ip,
-        )
-        .await;
-    }
 
     let outstanding = fetch_outstanding_enrollment(&state.db, &id).await?;
     ok(build_server_response(server, &state.agent_manager, outstanding))
@@ -1248,14 +1087,18 @@ async fn trigger_upgrade(
     Path(id): Path<String>,
     Json(body): Json<UpgradeRequest>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
-    use serverbee_common::constants::{CAP_UPGRADE, has_capability};
+    use serverbee_common::constants::CAP_UPGRADE;
 
     let server = ServerService::get_server(&state.db, &id).await?;
-    let caps = server.capabilities as u32;
-    if !has_capability(caps, CAP_UPGRADE) {
-        return Err(AppError::Forbidden(
-            "Upgrade capability not enabled for this server".into(),
-        ));
+    // Capabilities are agent-owned: gate on the live agent-reported value
+    // (falling back to the persisted mirror only when no agent has connected),
+    // not on the stored mirror directly.
+    if let Some(reason) =
+        state
+            .agent_manager
+            .capability_denied_reason(&id, server.capabilities as u32, CAP_UPGRADE)
+    {
+        return Err(AppError::Forbidden(reason.into()));
     }
 
     let version = normalize_version(&body.version);
@@ -1314,220 +1157,6 @@ async fn trigger_upgrade(
     .await;
 
     ok("ok")
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct BatchCapabilitiesRequest {
-    server_ids: Vec<String>,
-    #[serde(default)]
-    set: u32,
-    #[serde(default)]
-    unset: u32,
-}
-
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct BatchCapabilitiesResponse {
-    updated: u64,
-}
-
-/// Side effects to execute after transaction commit.
-///
-/// Collected during the DB transaction phase so that WebSocket broadcasts
-/// and audit log writes happen only after a successful commit.
-struct CapabilityChangeEffect {
-    server_id: String,
-    old_caps: u32,
-    new_caps: u32,
-}
-
-#[utoipa::path(
-    put,
-    path = "/api/servers/batch-capabilities",
-    tag = "servers",
-    request_body = BatchCapabilitiesRequest,
-    responses(
-        (status = 200, description = "Batch capabilities update result", body = BatchCapabilitiesResponse),
-        (status = 422, description = "Validation error"),
-    ),
-    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
-)]
-async fn batch_update_capabilities(
-    State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Extension(current_user): Extension<CurrentUser>,
-    headers: HeaderMap,
-    Json(input): Json<BatchCapabilitiesRequest>,
-) -> Result<Json<ApiResponse<BatchCapabilitiesResponse>>, AppError> {
-    use serverbee_common::constants::*;
-    let user_id = &current_user.user_id;
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
-        &headers,
-        &state.config.server.trusted_proxies,
-    )
-    .to_string();
-
-    // Validate bits within mask
-    if input.set & !CAP_VALID_MASK != 0 || input.unset & !CAP_VALID_MASK != 0 {
-        return Err(AppError::Validation("Invalid capability bits".into()));
-    }
-    // No overlap
-    if input.set & input.unset != 0 {
-        return Err(AppError::Validation(
-            "set and unset must not overlap".into(),
-        ));
-    }
-    if input.server_ids.is_empty() {
-        return ok(BatchCapabilitiesResponse { updated: 0 });
-    }
-
-    let servers = server::Entity::find()
-        .filter(server::Column::Id.is_in(input.server_ids.iter().cloned()))
-        .all(&state.db)
-        .await?;
-
-    let mut count = 0u64;
-    let mut effects: Vec<CapabilityChangeEffect> = Vec::new();
-
-    // Phase 1: All DB updates in a single transaction
-    let txn = state.db.begin().await?;
-    for s in &servers {
-        let old_caps = s.capabilities as u32;
-        let new_caps = (old_caps & !input.unset) | input.set;
-        if new_caps == old_caps {
-            continue;
-        }
-
-        let mut active: server::ActiveModel = s.clone().into();
-        active.capabilities = Set(new_caps as i32);
-        active.updated_at = Set(chrono::Utc::now());
-        active.update(&txn).await?;
-        count += 1;
-
-        effects.push(CapabilityChangeEffect {
-            server_id: s.id.clone(),
-            old_caps,
-            new_caps,
-        });
-    }
-    txn.commit().await?;
-
-    // Phase 2: Side effects (fire-and-forget, all idempotent)
-    for effect in &effects {
-        let CapabilityChangeEffect {
-            server_id,
-            old_caps,
-            new_caps,
-        } = effect;
-        let new_caps = *new_caps;
-        let old_caps = *old_caps;
-
-        state
-            .agent_manager
-            .update_server_capabilities(server_id, new_caps);
-
-        // Sync to agent if online and protocol v2+
-        if let Some(pv) = state.agent_manager.get_protocol_version(server_id)
-            && pv >= 2
-            && let Some(tx) = state.agent_manager.get_sender(server_id)
-        {
-            let _ = tx
-                .send(ServerMessage::CapabilitiesSync {
-                    capabilities: new_caps,
-                })
-                .await;
-        }
-
-        // Broadcast to browsers
-        state
-            .agent_manager
-            .broadcast_browser(capability_change_message(
-                &state.agent_manager,
-                server_id,
-                new_caps,
-            ));
-
-        // Re-sync ping tasks if ping bits changed
-        let ping_mask = CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP;
-        if old_caps & ping_mask != new_caps & ping_mask {
-            PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, server_id).await;
-        }
-
-        // Docker capability revoked — teardown
-        if has_capability(old_caps, CAP_DOCKER) && !has_capability(new_caps, CAP_DOCKER) {
-            state.agent_manager.clear_docker_caches(server_id);
-            state.docker_viewers.remove_all_for_server(server_id);
-            let log_session_ids = state
-                .agent_manager
-                .remove_docker_log_sessions_for_server(server_id);
-            if let Some(tx) = state.agent_manager.get_sender(server_id) {
-                let _ = tx.send(ServerMessage::DockerStopStats).await;
-                let _ = tx.send(ServerMessage::DockerEventsStop).await;
-                for sid in &log_session_ids {
-                    let _ = tx
-                        .send(ServerMessage::DockerLogsStop {
-                            session_id: sid.clone(),
-                        })
-                        .await;
-                }
-            }
-            state
-                .agent_manager
-                .broadcast_browser(BrowserMessage::DockerAvailabilityChanged {
-                    server_id: server_id.clone(),
-                    available: false,
-                });
-        }
-
-        // Firewall capability transitioned — sync the agent's view to ours.
-        let was_fw = has_capability(old_caps, CAP_FIREWALL_BLOCK);
-        let now_fw = has_capability(new_caps, CAP_FIREWALL_BLOCK);
-        if was_fw != now_fw
-            && let Some(pv) = state.agent_manager.get_protocol_version(server_id)
-            && pv >= serverbee_common::firewall::FIREWALL_MIN_PROTOCOL
-        {
-            if now_fw {
-                if let Err(e) = state
-                    .firewall
-                    .push_sync_to(server_id, &state.agent_manager)
-                    .await
-                {
-                    tracing::warn!(server_id, error = %e, "firewall sync push failed");
-                }
-            } else {
-                state
-                    .firewall
-                    .push_reset_to(server_id, &state.agent_manager)
-                    .await;
-            }
-        }
-
-        // IP quality capability newly gained — re-send IpQualitySync so the
-        // agent receives the service catalog without waiting for a reconnect.
-        if !has_capability(old_caps, CAP_IP_QUALITY)
-            && has_capability(new_caps, CAP_IP_QUALITY)
-        {
-            send_ip_quality_sync_to_agent(&state, server_id).await;
-        }
-
-        // Audit log
-        let detail = serde_json::json!({
-            "server_id": server_id,
-            "old": old_caps,
-            "new": new_caps,
-        })
-        .to_string();
-        let _ = AuditService::log(
-            &state.db,
-            user_id,
-            "capabilities_changed",
-            Some(&detail),
-            &ip,
-        )
-        .await;
-    }
-
-    ok(BatchCapabilitiesResponse { updated: count })
 }
 
 // ---------------------------------------------------------------------------

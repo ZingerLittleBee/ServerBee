@@ -186,6 +186,10 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | Enable CPU temperature monitoring |
 | `SERVERBEE_FILE__ENABLED` | `false` | Enable file management on this agent |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | Allowed root paths (comma-separated, e.g. `/home,/var/log`). Empty rejects all file operations |
+| `SERVERBEE_CAPABILITIES__ALLOW` | `[]` | Capability keys to enable on top of the default set (`CAP_DEFAULT`), e.g. `["terminal","file"]`. See [Capabilities](/en/docs/capabilities) |
+| `SERVERBEE_CAPABILITIES__DENY` | `[]` | Capability keys to strip from the default set. `deny` wins over `allow`. Unknown keys fail at startup |
+| `SERVERBEE_CAPABILITIES__TEMPORARY_MAX_DURATION` | `24h` | Max duration a single temporary capability grant can last (e.g. `30m`, `2h`, `1d`). See [Capabilities → Temporary grants](/en/docs/capabilities#temporary-grants) |
+| `SERVERBEE_CAPABILITIES__STATE_DIR` | `/var/lib/serverbee` | Directory where the agent persists `capability_grants.json` (must be writable by the agent) |
 | `SERVERBEE_IP_CHANGE__ENABLED` | `true` | Enable periodic IP change detection |
 | `SERVERBEE_LOG__LEVEL` | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
 | `SERVERBEE_LOG__FILE` | `""` | Log file path. Empty means stdout only |
@@ -418,10 +422,30 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | bool | `false` | Enable file management capability. The server must also enable `CAP_FILE` for the agent |
+| `enabled` | bool | `false` | Enable the file-management subsystem (path sandbox). The agent must also report the `file` capability — add `file` to the `[capabilities]` allow list |
 | `root_paths` | string[] | `[]` | Restrict browsing to these directories. Empty array rejects all file operations |
 | `max_file_size` | u64 | `1073741824` | Maximum file size (bytes) for read and download operations (default 1 GB) |
 | `deny_patterns` | string[] | `["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]` | Glob patterns for files the agent will refuse to access |
+
+### `[capabilities]` -- Agent-Owned Capability Policy
+
+Capabilities are owned by the agent host. The agent starts from the default set (`CAP_DEFAULT = 1852`), applies `allow`/`deny` from this block, then applies any `--allow-cap`/`--deny-cap` CLI flags, and reports the result to the server. The server **cannot** override this. See [Capabilities](/en/docs/capabilities) for the full key list and enforcement model.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `allow` | string[] | `[]` | Capability keys to enable on top of the default set, e.g. `["terminal", "file"]`. Valid keys: `terminal`, `exec`, `upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`, `file`, `docker`, `security_events`, `firewall_block`, `ip_quality` |
+| `deny` | string[] | `[]` | Capability keys to strip from the default set. `deny` wins over `allow`. Unknown keys are rejected at startup |
+| `temporary_max_duration` | string | `"24h"` | Maximum duration a single temporary capability grant can last (e.g. `30m`, `2h`, `1d`). Used by the host-local `serverbee-agent grant` CLI. See [Capabilities → Temporary grants](/en/docs/capabilities#temporary-grants) |
+| `state_dir` | string | `"/var/lib/serverbee"` | Directory where the agent persists `capability_grants.json` (the temporary-grants store). Must be writable by the agent |
+
+```toml
+[capabilities]
+allow = ["terminal", "file"]
+deny = ["ip_quality"]
+# Footgun guard for `serverbee-agent grant --for ...`; defaults to 24h.
+temporary_max_duration = "24h"
+state_dir = "/var/lib/serverbee"
+```
 
 ### `[ip_change]` -- IP Change Detection
 

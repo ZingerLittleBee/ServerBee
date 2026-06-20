@@ -50,13 +50,11 @@ export function hasCap(capabilities: number, bit: number): boolean {
   return (capabilities & bit) !== 0
 }
 
-export function isClientCapabilityLocked(agentLocalCapabilities: number | null | undefined, bit: number): boolean {
-  if (agentLocalCapabilities == null) {
-    return false
-  }
-  return !hasCap(agentLocalCapabilities, bit)
-}
-
+// Capabilities are agent-owned: the server mirrors what the agent reports, so the
+// effective, agent-local and mirrored `capabilities` values are all the same set.
+// This resolves whether a capability bit is enabled, preferring the live runtime
+// values and falling back to the persisted mirror (then CAP_DEFAULT) when an agent
+// has never connected.
 export function getEffectiveCapabilityEnabled(
   effectiveCapabilities: number | null | undefined,
   configuredCapabilities: number | null | undefined,
@@ -66,4 +64,38 @@ export function getEffectiveCapabilityEnabled(
     return hasCap(effectiveCapabilities, bit)
   }
   return hasCap(configuredCapabilities ?? CAP_DEFAULT, bit)
+}
+
+export type CapabilityState = 'off' | 'enabled' | 'temporary'
+
+export interface TemporaryGrantView {
+  cap: string
+  expires_at: number
+  granted_at: number
+}
+
+interface CapabilityHost {
+  capabilities?: number | null
+  effective_capabilities?: number | null
+  temporary?: TemporaryGrantView[] | null
+}
+
+const CAP_BY_BIT = new Map<number, string>(CAPABILITIES.map((c) => [c.bit, c.key]))
+
+// Returns the active grant for a capability bit, if any (expiry checked client-side).
+export function temporaryGrantFor(host: CapabilityHost, bit: number): TemporaryGrantView | undefined {
+  const key = CAP_BY_BIT.get(bit)
+  if (!(key && host.temporary)) {
+    return undefined
+  }
+  const nowSecs = Math.floor(Date.now() / 1000)
+  return host.temporary.find((g) => g.cap === key && g.expires_at > nowSecs)
+}
+
+export function classifyCapability(host: CapabilityHost, bit: number): CapabilityState {
+  const enabled = getEffectiveCapabilityEnabled(host.effective_capabilities, host.capabilities, bit)
+  if (!enabled) {
+    return 'off'
+  }
+  return temporaryGrantFor(host, bit) ? 'temporary' : 'enabled'
 }
