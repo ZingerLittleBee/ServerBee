@@ -29,6 +29,13 @@ use serverbee_common::constants::{CAP_SECURITY_EVENTS, MAX_WS_MESSAGE_SIZE, has_
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
+/// High-risk capabilities whose temporary grant warrants an alert evaluation
+/// (`capability_grant_detected`). Low-risk caps still get audited but do not
+/// fire alerts.
+fn is_high_risk_cap(cap: &str) -> bool {
+    matches!(cap, "terminal" | "exec" | "file" | "docker")
+}
+
 #[derive(Debug, Deserialize)]
 pub struct OptionalWsQuery {
     token: Option<String>,
@@ -349,6 +356,11 @@ async fn handle_agent_ws(
     {
         crate::service::agent_manager::cleanup_disconnected_docker_state(&state, &server_id).await;
     }
+    // Drop any temporary-grant countdowns so a disconnected agent does not leave
+    // stale grants ticking in the REST DTO / browser view.
+    state
+        .agent_manager
+        .update_temporary_grants(&server_id, vec![]);
     write_task.abort();
     tracing::info!("Agent {server_id} disconnected");
 }
@@ -397,9 +409,15 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             msg_id,
             info,
             agent_local_capabilities,
-            // TODO(temporary-grants): filled in Task 9 (ws::agent handler)
-            temporary: _,
+            temporary,
         } => {
+            // Mirror the agent-reported temporary grants so the REST DTO and
+            // browser broadcasts can render live countdowns. The agent host is
+            // the only authority; this is a display cache.
+            state
+                .agent_manager
+                .update_temporary_grants(server_id, temporary.clone());
+
             // Resolve GeoIP. Walk the candidate chain agent ipv4 → ipv6 →
             // remote_addr and skip loopback/private addresses — GeoIP can't
             // resolve those (e.g. agents inside a docker container report the
@@ -565,8 +583,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         capabilities: bits,
                         agent_local_capabilities: Some(bits),
                         effective_capabilities: Some(bits),
-                        // TODO(temporary-grants): filled in Task 9 (ws::agent handler)
-                        temporary: vec![],
+                        temporary: temporary.clone(),
                     });
             }
 
@@ -1254,8 +1271,97 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .record_reset_ack(server_id, ok, reason, &state.db)
                 .await;
         }
-        // TODO(temporary-grants): filled in Task 9 (mirror + audit + alert + broadcast)
-        AgentMessage::CapabilitiesChanged { .. } => {}
+        AgentMessage::CapabilitiesChanged {
+            msg_id: _,
+            capabilities,
+            temporary,
+            changes,
+        } => {
+            // Mirror the agent-reported effective capability bitmask and the
+            // live temporary grants. The agent host is the only authority; the
+            // server persists these purely for display/enforcement gating.
+            state
+                .agent_manager
+                .update_agent_local_capabilities(server_id, capabilities);
+            state
+                .agent_manager
+                .update_temporary_grants(server_id, temporary.clone());
+            if let Err(e) = crate::service::server::ServerService::update_capabilities_mirror(
+                &state.db,
+                server_id,
+                capabilities,
+            )
+            .await
+            {
+                tracing::error!("Failed to mirror capabilities for {server_id}: {e}");
+            }
+
+            // Resolve display name + originating IP for the audit trail. Neither
+            // `server_name` nor `remote_addr` is in scope here, so we look them
+            // up from the DB / connection registry (mirroring the SystemInfo arm).
+            let server_name = ServerService::get_server(&state.db, server_id)
+                .await
+                .map(|s| s.name)
+                .unwrap_or_else(|_| "Unknown".to_string());
+            let ip = state
+                .agent_manager
+                .get_remote_addr(server_id)
+                .map(|a| a.ip().to_string())
+                .unwrap_or_default();
+
+            for ch in &changes {
+                let action = match ch.action {
+                    serverbee_common::protocol::CapabilityChangeAction::Granted => {
+                        "capability_temporarily_granted"
+                    }
+                    serverbee_common::protocol::CapabilityChangeAction::Expired => {
+                        "capability_grant_expired"
+                    }
+                    serverbee_common::protocol::CapabilityChangeAction::Revoked => {
+                        "capability_grant_revoked"
+                    }
+                };
+                let detail = serde_json::json!({
+                    "server_id": server_id,
+                    "server_name": server_name,
+                    "cap": ch.cap,
+                    "expires_at": ch.expires_at,
+                    "granted_by": ch.granted_by,
+                    "reason": ch.reason,
+                })
+                .to_string();
+                let _ = AuditService::log(&state.db, "", action, Some(&detail), &ip).await;
+
+                // Only a temporary grant of a high-risk capability fires the
+                // event-driven `capability_grant_detected` alert. Expiry/revoke
+                // and low-risk caps are audited but never alerted.
+                if matches!(
+                    ch.action,
+                    serverbee_common::protocol::CapabilityChangeAction::Granted
+                ) && is_high_risk_cap(&ch.cap)
+                    && let Err(e) = AlertService::check_event_rules(
+                        &state.db,
+                        &state.config,
+                        &state.alert_state_manager,
+                        server_id,
+                        "capability_grant_detected",
+                    )
+                    .await
+                {
+                    tracing::error!("capability_grant_detected alert eval failed: {e}");
+                }
+            }
+
+            state
+                .agent_manager
+                .broadcast_browser(BrowserMessage::CapabilitiesChanged {
+                    server_id: server_id.to_string(),
+                    capabilities,
+                    agent_local_capabilities: Some(capabilities),
+                    effective_capabilities: Some(capabilities),
+                    temporary,
+                });
+        }
         AgentMessage::UnlockResults {
             egress_ip,
             results,
