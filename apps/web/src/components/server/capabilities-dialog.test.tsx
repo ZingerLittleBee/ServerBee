@@ -1,13 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CapabilitiesDialog } from './capabilities-dialog'
 
-const mockMutate = vi.fn()
-const mockInvalidateQueries = vi.fn()
 const upgradeWarningPattern = /Agent does not support capability enforcement/
+const readOnlyNotePattern = /owned by the agent host/
 const translationMap: Record<string, string> = {
-  cap_dialog_description: 'Control which agent capabilities are enabled for this server.',
+  cap_dialog_description: 'Capabilities are configured in the agent config file and cannot be changed here.',
+  cap_disabled: 'Disabled',
+  cap_enabled: 'Enabled',
   cap_exec: 'Remote Exec',
   cap_file: 'File Manager',
   cap_group_high_risk: 'High Risk Operations',
@@ -17,8 +18,9 @@ const translationMap: Record<string, string> = {
   cap_ping_http: 'HTTP Probe',
   cap_ping_icmp: 'ICMP Ping',
   cap_ping_tcp: 'TCP Probe',
+  cap_read_only_note: 'These capabilities are owned by the agent host. Edit the agent config file to change them.',
   cap_terminal: 'Web Terminal',
-  cap_toggles: 'Capability Toggles',
+  cap_toggles: 'Capabilities',
   cap_upgrade: 'Auto Upgrade',
   cap_upgrade_warning: 'Agent does not support capability enforcement — upgrade recommended',
   detail_capabilities: 'Capabilities'
@@ -45,34 +47,13 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogDescription: ({ children }: { children?: ReactNode }) => <p>{children}</p>
 }))
 
-vi.mock('@tanstack/react-query', () => ({
-  useMutation: () => ({
-    mutate: mockMutate,
-    isPending: false
-  }),
-  useQueryClient: () => ({
-    invalidateQueries: mockInvalidateQueries
-  })
-}))
-
-vi.mock('sonner', () => ({
-  toast: {
-    error: vi.fn(),
-    success: vi.fn()
-  }
-}))
-
 describe('CapabilitiesDialog', () => {
-  beforeEach(() => {
-    mockMutate.mockReset()
-    mockInvalidateQueries.mockReset()
-  })
-
-  it('opens a capability console dialog from the trigger button for admins', () => {
+  it('opens a read-only capability console dialog from the trigger button for admins', () => {
     render(
       <CapabilitiesDialog
         server={{
           capabilities: 56,
+          effective_capabilities: 56,
           id: 'srv-1',
           protocol_version: 1
         }}
@@ -80,16 +61,19 @@ describe('CapabilitiesDialog', () => {
     )
 
     expect(screen.getByRole('button', { name: 'Capabilities' })).toBeInTheDocument()
-    expect(screen.queryByText('Capability Toggles')).not.toBeInTheDocument()
+    expect(screen.queryByText('High Risk Operations')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Capabilities' }))
 
-    expect(screen.getByText('Capability Toggles')).toBeInTheDocument()
-    expect(screen.getByText('Control which agent capabilities are enabled for this server.')).toBeInTheDocument()
     expect(screen.getByText('High Risk Operations')).toBeInTheDocument()
     expect(screen.getByText('Monitoring & Maintenance')).toBeInTheDocument()
+    expect(screen.getByText(readOnlyNotePattern)).toBeInTheDocument()
     expect(screen.getByText(upgradeWarningPattern)).toBeInTheDocument()
     expect(screen.getByText('Web Terminal')).toBeInTheDocument()
     expect(screen.getByText('HTTP Probe')).toBeInTheDocument()
+    // The dialog is read-only: it surfaces enabled/disabled status, not switches.
+    expect(screen.queryAllByRole('switch')).toHaveLength(0)
+    expect(screen.getAllByText('Enabled').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Disabled').length).toBeGreaterThan(0)
   })
 })

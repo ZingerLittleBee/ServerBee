@@ -25,9 +25,7 @@ use crate::service::record::RecordService;
 use crate::service::server::ServerService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
-use serverbee_common::constants::{
-    CAP_SECURITY_EVENTS, MAX_WS_MESSAGE_SIZE, effective_capabilities, has_capability,
-};
+use serverbee_common::constants::{CAP_SECURITY_EVENTS, MAX_WS_MESSAGE_SIZE, has_capability};
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, ServerMessage};
 use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
@@ -151,12 +149,14 @@ async fn handle_agent_ws(
     // Create mpsc channel for outgoing messages to this agent (buffer 64)
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(64);
 
-    // Send Welcome message
+    // Send Welcome message. Capabilities are agent-owned, so the server does
+    // NOT advertise any: the agent enforces purely on its local policy and
+    // ignores this field.
     let welcome = ServerMessage::Welcome {
         server_id: server_id.clone(),
         protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
         report_interval: 3,
-        capabilities: Some(server_capabilities as u32),
+        capabilities: None,
     };
     if let Err(e) = send_server_message(&mut ws_sink, &welcome).await {
         tracing::error!("Failed to send Welcome to {server_id}: {e}");
@@ -171,9 +171,12 @@ async fn handle_agent_ws(
             state
                 .agent_manager
                 .add_connection(server_id.clone(), server_name, tx, remote_addr);
+        // Seed the last-known agent capabilities from the persisted mirror so
+        // enforcement/display has a value before the agent's first SystemInfo.
+        // The agent overwrites this with its live value moments later.
         state
             .agent_manager
-            .update_capabilities(&server_id, server_capabilities as u32);
+            .update_agent_local_capabilities(&server_id, server_capabilities as u32);
         connection_id
     };
 
@@ -540,16 +543,27 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     .agent_manager
                     .update_agent_local_capabilities(server_id, bits);
 
-                if let Some(configured) = state.agent_manager.get_server_capabilities(server_id) {
-                    state
-                        .agent_manager
-                        .broadcast_browser(BrowserMessage::CapabilitiesChanged {
-                            server_id: server_id.to_string(),
-                            capabilities: configured,
-                            agent_local_capabilities: Some(bits),
-                            effective_capabilities: Some(effective_capabilities(configured, bits)),
-                        });
+                // Persist the agent-reported caps into the read-only mirror
+                // column so the dashboard can display them while the agent is
+                // offline and so the cache survives a server restart.
+                if let Err(e) = crate::service::server::ServerService::update_capabilities_mirror(
+                    &state.db, server_id, bits,
+                )
+                .await
+                {
+                    tracing::error!("Failed to mirror capabilities for {server_id}: {e}");
                 }
+
+                // Capabilities are agent-owned: effective == what the agent
+                // reports, and `capabilities` mirrors the same value.
+                state
+                    .agent_manager
+                    .broadcast_browser(BrowserMessage::CapabilitiesChanged {
+                        server_id: server_id.to_string(),
+                        capabilities: bits,
+                        agent_local_capabilities: Some(bits),
+                        effective_capabilities: Some(bits),
+                    });
             }
 
             // Broadcast to browsers

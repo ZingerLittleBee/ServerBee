@@ -50,13 +50,11 @@ export function hasCap(capabilities: number, bit: number): boolean {
   return (capabilities & bit) !== 0
 }
 
-export function isClientCapabilityLocked(agentLocalCapabilities: number | null | undefined, bit: number): boolean {
-  if (agentLocalCapabilities == null) {
-    return false
-  }
-  return !hasCap(agentLocalCapabilities, bit)
-}
-
+// Capabilities are agent-owned: the server mirrors what the agent reports, so the
+// effective, agent-local and mirrored `capabilities` values are all the same set.
+// This resolves whether a capability bit is enabled, preferring the live runtime
+// values and falling back to the persisted mirror (then CAP_DEFAULT) when an agent
+// has never connected.
 export function getEffectiveCapabilityEnabled(
   effectiveCapabilities: number | null | undefined,
   configuredCapabilities: number | null | undefined,

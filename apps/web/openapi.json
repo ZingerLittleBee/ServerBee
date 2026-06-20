@@ -5052,50 +5052,6 @@
         ]
       }
     },
-    "/api/servers/batch-capabilities": {
-      "put": {
-        "tags": [
-          "servers"
-        ],
-        "operationId": "batch_update_capabilities",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchCapabilitiesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Batch capabilities update result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BatchCapabilitiesResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation error"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
     "/api/servers/batch-delete": {
       "post": {
         "tags": [
@@ -9198,43 +9154,6 @@
           },
           "label": {
             "type": "string"
-          }
-        }
-      },
-      "BatchCapabilitiesRequest": {
-        "type": "object",
-        "required": [
-          "server_ids"
-        ],
-        "properties": {
-          "server_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "set": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "unset": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
-      "BatchCapabilitiesResponse": {
-        "type": "object",
-        "required": [
-          "updated"
-        ],
-        "properties": {
-          "updated": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
           }
         }
       },
@@ -15035,13 +14954,6 @@
             ]
           },
           "billing_start_day": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int32"
-          },
-          "capabilities": {
             "type": [
               "integer",
               "null"

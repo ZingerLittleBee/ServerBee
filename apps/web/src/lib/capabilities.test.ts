@@ -10,8 +10,7 @@ import {
   CAP_UPGRADE,
   CAPABILITIES,
   getEffectiveCapabilityEnabled,
-  hasCap,
-  isClientCapabilityLocked
+  hasCap
 } from './capabilities'
 
 describe('capability toggles', () => {
@@ -46,13 +45,6 @@ describe('capability toggles', () => {
     // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
     const newCaps = caps & ~CAP_TERMINAL
     expect(hasCap(newCaps, CAP_TERMINAL)).toBe(false)
-  })
-
-  it('detects client capability locks', () => {
-    // biome-ignore lint/suspicious/noBitwiseOperators: capability bitmask
-    expect(isClientCapabilityLocked(CAP_DEFAULT | CAP_FILE, CAP_FILE)).toBe(false)
-    expect(isClientCapabilityLocked(CAP_DEFAULT, CAP_FILE)).toBe(true)
-    expect(isClientCapabilityLocked(undefined, CAP_FILE)).toBe(false)
   })
 
   it('prefers effective capabilities when present', () => {

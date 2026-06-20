@@ -93,7 +93,7 @@
     "data_load_failed": "Failed to load data. Please try again."
   },
   "capability_disabled_title": "Feature not available",
-  "capability_disabled_desc": "This capability is disabled for this server. An administrator can enable it under Settings → Capabilities.",
+  "capability_disabled_desc": "This capability is disabled on the agent. Capabilities are owned by the agent host — enable it in the [capabilities] section of the agent config file and restart the agent.",
   "table": {
     "view_options": "View",
     "toggle_columns": "Toggle columns",

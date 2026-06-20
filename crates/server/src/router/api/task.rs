@@ -649,8 +649,9 @@ async fn dispatch_oneshot(
 
 pub(crate) fn exec_capability_denied_output(reason: &str) -> &'static str {
     match reason {
-        "agent_capability_disabled" => "Capability denied: exec blocked by agent local policy",
-        "server_capability_disabled" => "Capability denied: exec disabled on server",
+        "agent_capability_disabled" => {
+            "Capability denied: exec is disabled in the agent's config (capabilities are agent-owned)"
+        }
         _ => "Capability denied: exec disabled",
     }
 }

@@ -186,6 +186,8 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | 启用 CPU 温度监控 |
 | `SERVERBEE_FILE__ENABLED` | `false` | 在该 Agent 上启用文件管理 |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许的根路径（逗号分隔，如 `/home,/var/log`）。留空则拒绝所有文件操作 |
+| `SERVERBEE_CAPABILITIES__ALLOW` | `[]` | 在默认集合（`CAP_DEFAULT`）之上启用的能力键名，如 `["terminal","file"]`。见 [功能开关](/zh/docs/capabilities) |
+| `SERVERBEE_CAPABILITIES__DENY` | `[]` | 从默认集合中移除的能力键名。`deny` 优先于 `allow`。未知键名会在启动时报错 |
 | `SERVERBEE_IP_CHANGE__ENABLED` | `true` | 启用周期性 IP 变更检测 |
 | `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
 | `SERVERBEE_LOG__FILE` | `""` | 日志文件路径，留空仅输出到 stdout |
@@ -418,10 +420,25 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `enabled` | bool | `false` | 启用文件管理能力。Server 端还需为该 Agent 启用 `CAP_FILE` |
+| `enabled` | bool | `false` | 启用文件管理子系统（路径沙箱）。Agent 还需上报 `file` 能力 —— 在 `[capabilities]` 的 allow 列表中加入 `file` |
 | `root_paths` | string[] | `[]` | 将浏览限制在这些目录内。空数组拒绝所有文件操作 |
 | `max_file_size` | u64 | `1073741824` | 文件读取和下载操作的最大大小（字节），默认 1 GB |
 | `deny_patterns` | string[] | `["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]` | Agent 拒绝访问的文件名 glob 模式 |
+
+### `[capabilities]` —— Agent 拥有的能力策略
+
+能力由 Agent 主机拥有。Agent 从默认集合（`CAP_DEFAULT = 1852`）开始，应用本段的 `allow`/`deny`，再应用任何 `--allow-cap`/`--deny-cap` CLI 参数，然后将结果上报给 Server。Server **无法**覆盖它。完整键名列表和强制执行模型见 [功能开关](/zh/docs/capabilities)。
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `allow` | string[] | `[]` | 在默认集合之上启用的能力键名，如 `["terminal", "file"]`。有效键名：`terminal`、`exec`、`upgrade`、`ping_icmp`、`ping_tcp`、`ping_http`、`file`、`docker`、`security_events`、`firewall_block`、`ip_quality` |
+| `deny` | string[] | `[]` | 从默认集合中移除的能力键名。`deny` 优先于 `allow`。未知键名在启动时报错 |
+
+```toml
+[capabilities]
+allow = ["terminal", "file"]
+deny = ["ip_quality"]
+```
 
 ### `[ip_change]` —— IP 变更检测
 

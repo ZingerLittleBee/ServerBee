@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Capabilities are now agent-owned** -- The trust model changed so the agent host is the sole authority over its capabilities. Each agent computes its capability bitmask from the new `[capabilities]` config block (`allow`/`deny` over `CAP_DEFAULT`) plus optional `--allow-cap`/`--deny-cap` CLI flags and reports it in `SystemInfo`; the server now persists that value only as a display mirror (`servers.capabilities`) and gates control-plane requests on it. The server can no longer change an agent's capabilities: `PUT /api/servers/{id}` no longer accepts a `capabilities` field, the `PUT /api/servers/batch-capabilities` endpoint and the server→agent `CapabilitiesSync` message are removed, and the protocol version is bumped to 5. Effective capabilities equal the agent-reported set (no more `server_caps & agent_local_caps` intersection), so a compromised or misconfigured server cannot silently enable terminal, exec, file, or Docker access on a host. The web and iOS capability UIs (server detail dialog and Settings → Capabilities) are now read-only views, and capability denials always report `agent_capability_disabled`
+
 ## [1.0.0-alpha.8] - 2026-06-19
 
 ### Security

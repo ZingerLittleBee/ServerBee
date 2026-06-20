@@ -1475,22 +1475,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/servers/batch-capabilities": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put: operations["batch_update_capabilities"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/servers/batch-delete": {
         parameters: {
             query?: never;
@@ -2570,17 +2554,6 @@ export interface components {
         AuditUserOption: {
             id: string;
             label: string;
-        };
-        BatchCapabilitiesRequest: {
-            server_ids: string[];
-            /** Format: int32 */
-            set?: number;
-            /** Format: int32 */
-            unset?: number;
-        };
-        BatchCapabilitiesResponse: {
-            /** Format: int64 */
-            updated: number;
         };
         BatchDeleteRequest: {
             ids: string[];
@@ -4222,8 +4195,6 @@ export interface components {
             billing_cycle?: string | null;
             /** Format: int32 */
             billing_start_day?: number | null;
-            /** Format: int32 */
-            capabilities?: number | null;
             currency?: string | null;
             /** Format: date-time */
             expired_at?: string | null;
@@ -7982,37 +7953,6 @@ export interface operations {
             };
             /** @description Validation error or max_servers cap reached */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    batch_update_capabilities: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BatchCapabilitiesRequest"];
-            };
-        };
-        responses: {
-            /** @description Batch capabilities update result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BatchCapabilitiesResponse"];
-                };
-            };
-            /** @description Validation error */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };

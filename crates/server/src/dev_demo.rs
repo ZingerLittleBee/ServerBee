@@ -371,9 +371,6 @@ pub async fn start_demo_agents(state: Arc<AppState>) -> Result<(), AppError> {
         );
         state
             .agent_manager
-            .update_server_capabilities(&demo_server.id, CAP_DEFAULT);
-        state
-            .agent_manager
             .update_agent_local_capabilities(&demo_server.id, CAP_DEFAULT);
         state
             .agent_manager

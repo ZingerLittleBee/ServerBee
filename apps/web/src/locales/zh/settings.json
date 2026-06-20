@@ -190,11 +190,8 @@
   "api_keys.created": "创建时间：",
 
   "capabilities.title": "能力开关",
-  "capabilities.description": "控制每个 Agent 允许使用的功能。更改将在下次 Agent 连接时生效。",
+  "capabilities.description": "只读展示每个 Agent 已启用的能力。能力由 Agent 主机拥有，在 Agent 配置文件中设置，无法从服务端修改。",
   "capabilities.search": "搜索服务器…",
-  "capabilities.selected": "已选 {{count}} 项",
-  "capabilities.reset_default": "重置为默认",
-  "capabilities.batch_toggle": "批量切换：",
   "capabilities.no_servers": "暂无注册的服务器",
   "capabilities.server": "服务器",
 
@@ -428,20 +425,9 @@
   "users.toast_role_updated": "用户角色已更新",
   "users.toast_deleted": "用户已删除",
 
-  "capabilities.batch_enable": "+{{capability}}",
-  "capabilities.batch_disable": "-{{capability}}",
   "capabilities.footer_showing": "显示 {{filtered}} / {{total}} 台服务器",
-  "capabilities.footer_selected": "已选 {{count}} 项",
-  "capabilities.toast_updated": "能力已更新",
-  "capabilities.toast_batch_updated": "批量能力已更新",
   "capabilities.offline": "离线",
-  "capabilities.offline_disabled": "服务器离线，无法修改",
-  "capabilities.client_disabled": "客户端已关闭该能力",
   "capabilities.summary": "共 {{total}} 台 · {{online}} 在线",
-  "capabilities.batch_actions": "批量操作",
-  "capabilities.enable": "启用",
-  "capabilities.disable": "禁用",
-  "capabilities.clear_selection": "取消选择",
 
   "mobile.time_never": "从未",
   "mobile.time_just_now": "刚刚",

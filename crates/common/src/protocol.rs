@@ -510,9 +510,6 @@ pub enum ServerMessage {
         #[serde(default)]
         job_id: Option<String>,
     },
-    CapabilitiesSync {
-        capabilities: u32,
-    },
     /// Full-state sync. Agent reconciles its nft set diff against this list
     /// and emits one BlocklistAck item per entry it touched.
     BlocklistSync {
@@ -680,19 +677,6 @@ mod tests {
                 assert_eq!(capabilities, Some(56));
             }
             _ => panic!("Expected Welcome"),
-        }
-    }
-
-    #[test]
-    fn test_capabilities_sync_round_trip() {
-        let msg = ServerMessage::CapabilitiesSync { capabilities: 7 };
-        let json = serde_json::to_string(&msg).unwrap();
-        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
-        match parsed {
-            ServerMessage::CapabilitiesSync { capabilities } => {
-                assert_eq!(capabilities, 7);
-            }
-            _ => panic!("Expected CapabilitiesSync"),
         }
     }
 

@@ -294,44 +294,23 @@ async fn check_server(
         .get_sender(&id)
         .ok_or_else(|| AppError::NotFound(format!("Server {id} is not online")))?;
 
-    // Guard: do not send IpQualityRunNow if the capability is not effective.
-    // The agent would silently ignore the message, giving the UI false success.
-    // Surface *which side* is blocking it so the user knows where to flip the
-    // switch (server-side Capabilities dialog vs. agent --allow-cap).
-    let server_caps = state
+    // Guard: do not send IpQualityRunNow if the agent did not enable the
+    // capability. The agent would silently ignore the message, giving the UI
+    // false success. Capabilities are agent-owned, so the only fix is to edit
+    // the agent's config file (or CLI flags) on the host.
+    let agent_has = state
         .agent_manager
-        .get_server_capabilities(&id)
-        .unwrap_or(0);
-    let agent_local_caps = state.agent_manager.get_agent_local_capabilities(&id);
-    let server_has = has_capability(server_caps, CAP_IP_QUALITY);
-    let agent_has = agent_local_caps
+        .get_agent_local_capabilities(&id)
         .map(|caps| has_capability(caps, CAP_IP_QUALITY))
         .unwrap_or(false);
 
-    match (server_has, agent_has) {
-        (true, true) => {}
-        (false, false) => {
-            return Err(AppError::Conflict(
-                "IP Quality is disabled on both sides. Enable it in the server's \
-                 Capabilities dialog AND restart the agent with --allow-cap ip_quality."
-                    .to_string(),
-            ));
-        }
-        (false, true) => {
-            return Err(AppError::Conflict(
-                "IP Quality is disabled in this server's Capabilities. Open the \
-                 Capabilities dialog and toggle it on."
-                    .to_string(),
-            ));
-        }
-        (true, false) => {
-            return Err(AppError::Conflict(
-                "The agent on this server was started without ip_quality permission. \
-                 Restart the agent with --allow-cap ip_quality, or reinstall and \
-                 select IP Quality in the capability picker."
-                    .to_string(),
-            ));
-        }
+    if !agent_has {
+        return Err(AppError::Conflict(
+            "IP Quality is disabled by the agent. Enable it in the agent's config \
+             file ([capabilities] allow = [\"ip_quality\"]) or with --allow-cap \
+             ip_quality, then restart the agent."
+                .to_string(),
+        ));
     }
 
     tx.send(ServerMessage::IpQualityRunNow)
@@ -403,29 +382,23 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[tokio::test]
-    async fn check_server_returns_conflict_when_cap_not_effective() {
+    async fn check_server_returns_conflict_when_agent_lacks_capability() {
         use serverbee_common::constants::{CAP_DEFAULT, CAP_IP_QUALITY};
 
         let (db, _tmp) = setup_test_db().await;
         let state = AppState::new(db, AppConfig::default()).await.unwrap();
 
-        // Register a connected agent without CAP_IP_QUALITY in its local caps.
-        // Mask out CAP_IP_QUALITY so effective caps lack it once
-        // agent_local_capabilities is reported.
+        // Register a connected agent whose reported caps lack CAP_IP_QUALITY.
+        // Capabilities are agent-owned, so this is the only thing that gates it.
         let caps_without_ip_quality = CAP_DEFAULT & !CAP_IP_QUALITY;
         let (tx, _rx) = mpsc::channel::<ServerMessage>(8);
         state
             .agent_manager
             .add_connection("srv-no-cap".into(), "NoCap".into(), tx, test_addr());
-        // Set server-configured capabilities (no CAP_IP_QUALITY) and agent local caps
-        state
-            .agent_manager
-            .update_capabilities("srv-no-cap", caps_without_ip_quality);
         state
             .agent_manager
             .update_agent_local_capabilities("srv-no-cap", caps_without_ip_quality);
 
-        // Invoke check_server directly.
         let result = check_server(
             axum::extract::State(state),
             axum::extract::Path("srv-no-cap".to_string()),
@@ -435,8 +408,8 @@ mod tests {
         match result {
             Err(AppError::Conflict(msg)) => {
                 assert!(
-                    msg.contains("disabled on both sides"),
-                    "conflict message should pinpoint that both sides are off; got: {msg}"
+                    msg.contains("agent's config file") && msg.contains("ip_quality"),
+                    "conflict message should point at the agent config file; got: {msg}"
                 );
             }
             other => panic!("expected Conflict, got {other:?}"),
@@ -444,8 +417,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn check_server_blames_server_side_when_only_server_caps_missing() {
-        use serverbee_common::constants::{CAP_DEFAULT, CAP_IP_QUALITY};
+    async fn check_server_succeeds_when_agent_reports_capability() {
+        use serverbee_common::constants::CAP_DEFAULT;
 
         let (db, _tmp) = setup_test_db().await;
         let state = AppState::new(db, AppConfig::default()).await.unwrap();
@@ -454,9 +427,7 @@ mod tests {
         state
             .agent_manager
             .add_connection("srv".into(), "Srv".into(), tx, test_addr());
-        state
-            .agent_manager
-            .update_capabilities("srv", CAP_DEFAULT & !CAP_IP_QUALITY);
+        // CAP_DEFAULT includes CAP_IP_QUALITY, so the guard should pass.
         state
             .agent_manager
             .update_agent_local_capabilities("srv", CAP_DEFAULT);
@@ -467,43 +438,6 @@ mod tests {
         )
         .await;
 
-        match result {
-            Err(AppError::Conflict(msg)) => assert!(
-                msg.contains("server's Capabilities"),
-                "should point at the server-side capabilities dialog; got: {msg}"
-            ),
-            other => panic!("expected Conflict, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn check_server_blames_agent_when_only_agent_local_missing() {
-        use serverbee_common::constants::{CAP_DEFAULT, CAP_IP_QUALITY};
-
-        let (db, _tmp) = setup_test_db().await;
-        let state = AppState::new(db, AppConfig::default()).await.unwrap();
-
-        let (tx, _rx) = mpsc::channel::<ServerMessage>(8);
-        state
-            .agent_manager
-            .add_connection("srv".into(), "Srv".into(), tx, test_addr());
-        state.agent_manager.update_capabilities("srv", CAP_DEFAULT);
-        state
-            .agent_manager
-            .update_agent_local_capabilities("srv", CAP_DEFAULT & !CAP_IP_QUALITY);
-
-        let result = check_server(
-            axum::extract::State(state),
-            axum::extract::Path("srv".to_string()),
-        )
-        .await;
-
-        match result {
-            Err(AppError::Conflict(msg)) => assert!(
-                msg.contains("--allow-cap ip_quality"),
-                "should tell the user to flip --allow-cap; got: {msg}"
-            ),
-            other => panic!("expected Conflict, got {other:?}"),
-        }
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
     }
 }

@@ -21,7 +21,7 @@ use std::sync::OnceLock;
 
 use tracing_subscriber::EnvFilter;
 
-use crate::capability_policy::{compute_agent_local_capabilities, parse_capability_args};
+use crate::capability_policy::{compute_local_capabilities, parse_capability_args};
 use crate::config::AgentConfig;
 use crate::reporter::Reporter;
 use crate::security::SecurityManager;
@@ -58,7 +58,11 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("release_repo_url overridden by --release-repo CLI flag");
         config.upgrade.release_repo_url = repo;
     }
-    let mut agent_local_capabilities = compute_agent_local_capabilities(&capability_overrides);
+    // Capabilities are owned by the agent host: the config file's
+    // `[capabilities]` block (allow/deny over CAP_DEFAULT) is the source of
+    // truth, with CLI flags layered on top. The server cannot change these.
+    let mut agent_local_capabilities =
+        compute_local_capabilities(&config.capabilities, &capability_overrides)?;
 
     tracing_subscriber::fmt()
         .with_env_filter(

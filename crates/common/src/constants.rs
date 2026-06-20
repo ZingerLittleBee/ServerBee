@@ -1,7 +1,7 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_SERVER_PORT: u16 = 9527;
 pub const DEFAULT_REPORT_INTERVAL: u32 = 3;
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 pub const SESSION_TTL_SECS: i64 = 86400;
 pub const HEARTBEAT_INTERVAL_SECS: u64 = 30;
@@ -132,10 +132,6 @@ pub enum CapabilityDeniedReason {
     AgentCapabilityDisabled,
 }
 
-pub fn effective_capabilities(server_caps: u32, agent_local_caps: u32) -> u32 {
-    server_caps & agent_local_caps
-}
-
 #[derive(Debug)]
 pub struct CapabilityMeta {
     pub bit: u32,
@@ -243,7 +239,7 @@ pub fn probe_type_to_cap(probe_type: &str) -> Option<u32> {
 #[cfg(test)]
 #[test]
 fn protocol_version() {
-    assert_eq!(PROTOCOL_VERSION, 4);
+    assert_eq!(PROTOCOL_VERSION, 5);
 }
 
 #[cfg(test)]
@@ -379,14 +375,6 @@ mod tests {
     #[test]
     fn test_capability_key_parse_unknown_fails() {
         assert!("nope".parse::<CapabilityKey>().is_err());
-    }
-
-    #[test]
-    fn test_effective_capabilities_masks_server_and_agent_caps() {
-        assert_eq!(
-            effective_capabilities(CAP_EXEC | CAP_FILE, CAP_FILE),
-            CAP_FILE
-        );
     }
 
     #[test]

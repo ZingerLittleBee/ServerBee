@@ -23,6 +23,24 @@ pub struct AgentConfig {
     pub upgrade: UpgradeConfig,
     #[serde(default)]
     pub security: SecurityConfig,
+    #[serde(default)]
+    pub capabilities: CapabilitiesConfig,
+}
+
+/// Agent-local capability policy, authored exclusively on the agent host
+/// (config file or `SERVERBEE_CAPABILITIES__*` env). The server cannot
+/// modify these — it only mirrors what the agent reports.
+///
+/// `allow`/`deny` are capability keys (e.g. `terminal`, `exec`, `file`,
+/// `docker`) applied on top of the built-in default set (`CAP_DEFAULT`).
+/// `deny` wins over `allow`. CLI `--allow-cap` / `--deny-cap` flags layer
+/// on top of this config for ad-hoc overrides.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct CapabilitiesConfig {
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -43,7 +43,6 @@ pub struct UpdateServerInput {
     pub traffic_limit_type: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub billing_start_day: Option<Option<i32>>,
-    pub capabilities: Option<i32>,
 }
 
 pub struct ServerService;
@@ -117,13 +116,9 @@ impl ServerService {
         if let Some(billing_start_day) = input.billing_start_day {
             active.billing_start_day = Set(billing_start_day);
         }
-        if let Some(caps) = input.capabilities {
-            let caps_u32 = caps as u32;
-            if caps_u32 & !serverbee_common::constants::CAP_VALID_MASK != 0 {
-                return Err(AppError::Validation("Invalid capability bits".into()));
-            }
-            active.capabilities = Set(caps);
-        }
+        // NOTE: capabilities are intentionally NOT writable here. They are
+        // owned by the agent host (its config file) and the server only
+        // mirrors what the agent reports — see `update_capabilities_mirror`.
 
         active.updated_at = Set(Utc::now());
         let updated = active.update(db).await?;
@@ -257,6 +252,30 @@ impl ServerService {
         Ok(())
     }
 
+    /// Persist the agent-reported capability bitmask into `servers.capabilities`.
+    ///
+    /// This column is a read-only MIRROR of what the agent declares in its
+    /// `SystemInfo` — it is never an independently-settable server value. It
+    /// exists so the dashboard can display an agent's capabilities while the
+    /// agent is offline (and so the in-memory cache can be re-seeded on
+    /// server restart via `preload_capabilities`). Capabilities themselves are
+    /// owned exclusively by the agent host's config file.
+    pub async fn update_capabilities_mirror(
+        db: &DatabaseConnection,
+        server_id: &str,
+        capabilities: u32,
+    ) -> Result<(), DbErr> {
+        server::Entity::update_many()
+            .filter(server::Column::Id.eq(server_id))
+            .col_expr(
+                server::Column::Capabilities,
+                Expr::value(capabilities as i32),
+            )
+            .exec(db)
+            .await?;
+        Ok(())
+    }
+
     /// Update system info for a server from an agent report.
     pub async fn update_system_info(
         db: &DatabaseConnection,
@@ -336,7 +355,6 @@ mod tests {
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
-            capabilities: None,
         }
     }
 

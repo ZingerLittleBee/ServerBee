@@ -2,20 +2,23 @@ import { render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockNavigate = vi.fn()
-const mockMutate = vi.fn()
 const HEADER_TEST_ID_PATTERN = /^header-/
 
 const settingsTranslations = {
-  'capabilities.description': 'Control which features each agent is allowed to use.',
+  'capabilities.description': 'Capabilities are configured in each agent config file. This view is read-only.',
   'capabilities.footer_showing': 'Showing {{filtered}} of {{total}} servers',
   'capabilities.no_servers': 'No servers registered yet',
+  'capabilities.offline': 'Offline',
   'capabilities.search': 'Search servers…',
   'capabilities.server': 'Server',
+  'capabilities.summary': '{{total}} servers · {{online}} online',
   'capabilities.title': 'Capabilities'
 } as const
 
 const serverTranslations = {
+  cap_disabled: 'Disabled',
   cap_docker: 'Docker Management',
+  cap_enabled: 'Enabled',
   cap_exec: 'Remote Exec',
   cap_file: 'File Manager',
   cap_high_risk: 'High Risk',
@@ -30,11 +33,12 @@ const serverTranslations = {
 
 const mockServers = [
   {
-    agent_local_capabilities: 255,
+    agent_local_capabilities: 56,
     capabilities: 56,
     effective_capabilities: 56,
     id: 'srv-1',
     name: 'west-monroe-1',
+    online: true,
     protocol_version: 2
   }
 ]
@@ -44,16 +48,9 @@ function interpolate(template: string, values?: Record<string, unknown>) {
 }
 
 vi.mock('@tanstack/react-query', () => ({
-  useMutation: () => ({
-    isPending: false,
-    mutate: mockMutate
-  }),
   useQuery: () => ({
     data: mockServers,
     isLoading: false
-  }),
-  useQueryClient: () => ({
-    invalidateQueries: vi.fn()
   })
 }))
 
@@ -72,13 +69,6 @@ vi.mock('react-i18next', () => ({
       return interpolate(translations[key as keyof typeof translations] ?? options?.defaultValue ?? key, options)
     }
   })
-}))
-
-vi.mock('sonner', () => ({
-  toast: {
-    error: vi.fn(),
-    success: vi.fn()
-  }
 }))
 
 vi.mock('@/components/ui/data-table', async () => {
@@ -110,14 +100,7 @@ vi.mock('@/components/ui/data-table', async () => {
           </div>
         ))}
       </div>
-    ),
-    createSelectColumn: () => ({
-      cell: () => null,
-      enableSorting: false,
-      header: () => <span>Select</span>,
-      id: 'select',
-      meta: { className: 'w-10' }
-    })
+    )
   }
 })
 
@@ -152,7 +135,6 @@ describe('CapabilitiesPage', () => {
       .map((header) => header.textContent?.replaceAll(/\s+/g, '').trim() ?? '')
 
     expect(headerTexts).toEqual([
-      'Select',
       'Server',
       'WebTerminalHighRisk',
       'RemoteExecHighRisk',
