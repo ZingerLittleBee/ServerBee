@@ -13,27 +13,24 @@ Results appear on a dedicated **IP Quality** sidebar route (global overview), a 
 
 ## Requirements
 
-- **`CAP_IP_QUALITY`** (bit `1024`) must be enabled on each server. **Disabled by default** and not included in the new-agent default.
-- The agent must also be started with `--allow-cap ip_quality`. Both sides must opt in — see [Dual Opt-In](#dual-opt-in) below.
+- **`CAP_IP_QUALITY`** (bit `1024`) must be enabled on the agent. It is **on by default** (part of `CAP_DEFAULT`).
 - A GeoIP MMDB database is recommended for complete IP metadata. Without it, only basic location data is available. See the [Configuration](/en/docs/configuration) page for `geoip.mmdb_path`.
 
-## Dual Opt-In
+## Capability (agent-owned)
 
-`CAP_IP_QUALITY` follows the same two-sided gate used by `CAP_FILE`, `CAP_TERMINAL`, `CAP_EXEC`, `CAP_DOCKER`, and `CAP_FIREWALL_BLOCK`:
+`CAP_IP_QUALITY` is owned by the agent host, like every capability — the server cannot turn it on or off. It is enabled by default, so no action is needed to use IP Quality. To **disable** it on a specific host, add `ip_quality` to the agent's `[capabilities]` deny list (or pass `--deny-cap ip_quality`) and restart the agent:
 
-- **Server side:** enable the capability for each server in the UI (Dashboard → server detail → Capabilities, or Settings → Capabilities for bulk changes).
-- **Agent side:** start the agent process with `--allow-cap ip_quality`.
-
-If only one side is enabled the effective capability is zero — the agent runs no checks and the UI shows the standard **client-locked** placeholder. You must enable both to activate the feature.
+```toml
+[capabilities]
+deny = ["ip_quality"]
+```
 
 ```bash
-# Passing the flag directly
-./serverbee-agent --allow-cap ip_quality
-
-# Or using the serverbee management CLI
-sudo serverbee config set allow_caps ip_quality
-sudo serverbee restart agent
+# Or via the command line
+./serverbee-agent --deny-cap ip_quality
 ```
+
+If the agent does not report `ip_quality`, the agent runs no checks and the UI shows the standard **disabled** placeholder. See [Capabilities](/en/docs/capabilities).
 
 ## Built-In Services
 

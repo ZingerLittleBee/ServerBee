@@ -94,8 +94,8 @@ GET /api/audit-logs?limit=50&offset=0
 ### 限制
 
 - 命令执行超时：300 秒
-- 需要目标服务器启用 `exec` 能力（CAP_EXEC）
-- 未启用 CAP_EXEC 的服务器会收到合成结果：`exit_code = -2`，提示功能被禁用
+- 需要目标 Agent 具有 `exec` 能力（CAP_EXEC），该能力默认关闭。能力由 Agent 拥有 —— 在 Agent 主机的 `[capabilities]` allow 列表中加入 `exec`（或 `--allow-cap exec`）开启。见 [功能开关](/zh/docs/capabilities)
+- Agent 未上报 CAP_EXEC 的服务器会收到合成结果：`exit_code = -2`，提示功能被禁用
 - 仅 Admin 角色可以创建任务
 
 ### API 端点

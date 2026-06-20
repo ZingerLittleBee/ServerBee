@@ -193,7 +193,7 @@ Alert notifications are suppressed while the affected server is in an active mai
 
 ## Blocking Source IPs
 
-Security-event rules (`ssh_brute_force_detected`, `port_scan_detected`) can enable **Block source IP**. When the rule triggers, ServerBee tells the affected agent's firewall to block the offending IP, turning detection into automatic mitigation. This requires the `CAP_FIREWALL_BLOCK` capability on the server. See [Security Events](/en/docs/security-events) and [Firewall](/en/docs/firewall).
+Security-event rules (`ssh_brute_force_detected`, `port_scan_detected`) can enable **Block source IP**. When the rule triggers, ServerBee tells the affected agent's firewall to block the offending IP, turning detection into automatic mitigation. This requires the agent to have the `firewall_block` capability (`CAP_FIREWALL_BLOCK`), which is on by default but can be disabled on the agent host via `[capabilities]`. See [Security Events](/en/docs/security-events) and [Firewall](/en/docs/firewall).
 
 ## Notification Channels
 

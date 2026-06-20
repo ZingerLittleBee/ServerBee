@@ -19,7 +19,7 @@ Each event carries structured evidence (failed count, distinct users, scanned po
 ## Requirements
 
 - **Linux only.** SSH detection reads systemd journal or `/var/log/auth.log`; port-scan detection uses `conntrack`.
-- **`CAP_SECURITY_EVENTS`** must be enabled on each server (bit `256`, on by default for new agents). See [Capabilities](/en/docs/capabilities).
+- **`CAP_SECURITY_EVENTS`** must be reported by the agent (bit `256`, on by default). Capabilities are agent-owned — to turn it off, add `security_events` to the agent's `[capabilities]` deny list. See [Capabilities](/en/docs/capabilities).
 - For port-scan detection, install the `conntrack` CLI and set `security.port_scan.enabled = true`:
   ```bash
   # Debian / Ubuntu

@@ -9,7 +9,7 @@ ServerBee 可以集中管理入站流量的黑名单。Server 持有权威列表
 ## 前置条件
 
 - **仅支持 Linux** —— Agent 使用 `nft` CLI。
-- 每台目标服务器必须启用 **`CAP_FIREWALL_BLOCK`**（位值 `512`）。**默认关闭。**
+- Agent 必须启用 **`CAP_FIREWALL_BLOCK`**（位值 `512`）。**默认开启**；能力由 Agent 拥有，如需关闭，在 Agent 的 `[capabilities]` deny 列表中加入 `firewall_block`。见 [功能开关](/zh/docs/capabilities)。
 - Agent 进程需要 root 或 `CAP_NET_ADMIN`。
 
 ## 手动封禁

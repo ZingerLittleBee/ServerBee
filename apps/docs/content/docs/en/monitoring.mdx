@@ -390,7 +390,7 @@ Daily traffic aggregation respects the `scheduler.timezone` setting. Set this to
 
 ## Docker Container Monitoring
 
-ServerBee supports real-time Docker container monitoring when the agent has access to the Docker daemon. This feature requires the `CAP_DOCKER` capability to be enabled.
+ServerBee supports real-time Docker container monitoring when the agent has access to the Docker daemon. This feature requires the `docker` capability (`CAP_DOCKER`), which is off by default. Capabilities are agent-owned — enable it on the agent host by adding `docker` to its `[capabilities]` allow list (or `--allow-cap docker`) and restarting the agent. See [Capabilities](/en/docs/capabilities).
 
 ### Overview
 

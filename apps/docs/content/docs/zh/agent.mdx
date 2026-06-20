@@ -358,7 +358,7 @@ curl -X POST https://your-server/api/servers/{id}/upgrade \
 ```
 
 <Callout type="warn">
-自动更新需要 Agent 具有 `upgrade` 能力（`CAP_UPGRADE`）。新注册 Agent 默认会启用该能力，管理员可在 Settings → Capabilities 中手动关闭。
+自动更新需要 Agent 具有 `upgrade` 能力（`CAP_UPGRADE`），默认启用。能力由 Agent 拥有 —— 如需关闭，在 Agent 主机的 `[capabilities]` deny 列表中加入 `upgrade`（或传 `--deny-cap upgrade`）。见 [功能开关](/zh/docs/capabilities)。
 </Callout>
 
 ## 断线重连
