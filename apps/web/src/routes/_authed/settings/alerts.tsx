@@ -75,6 +75,9 @@ function formatRuleItem(item: AlertRuleItem, t: (key: string, options?: Record<s
   if (item.rule_type === 'ip_changed') {
     return 'IP Changed'
   }
+  if (item.rule_type === 'capability_grant_detected') {
+    return t('alerts.metric_capability_granted')
+  }
   if (item.cycle_limit) {
     return t('alerts.display_transfer', { value: item.cycle_limit, period: item.cycle_interval ?? 'month' })
   }
