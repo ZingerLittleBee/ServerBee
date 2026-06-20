@@ -8,6 +8,38 @@ use crate::types::{
     PingTaskConfig, SystemInfo, SystemReport, TaskResult, TracerouteHop,
 };
 
+/// A capability that is temporarily enabled on the agent host until `expires_at`.
+/// Reported by the agent for UI countdown; the agent host is the only authority.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TemporaryGrant {
+    pub cap: String,
+    pub granted_at: i64,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityChangeAction {
+    Granted,
+    Expired,
+    Revoked,
+}
+
+/// A single transition emitted by the agent's grant supervisor, used by the
+/// server for audit + alerting. `expires_at`/`granted_by`/`reason` are present
+/// only for `granted`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapabilityChangeEvent {
+    pub cap: String,
+    pub action: CapabilityChangeAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub granted_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 /// Strict input protocol enum used on `ServerMessage::Traceroute.protocol`
 /// and on the server's POST request DTO. Only the three values the user can
 /// pick are accepted; legacy is NOT part of this enum.
@@ -181,6 +213,16 @@ pub enum AgentMessage {
         info: SystemInfo,
         #[serde(default)]
         agent_local_capabilities: Option<u32>,
+        #[serde(default)]
+        temporary: Vec<TemporaryGrant>,
+    },
+    CapabilitiesChanged {
+        msg_id: String,
+        capabilities: u32,
+        #[serde(default)]
+        temporary: Vec<TemporaryGrant>,
+        #[serde(default)]
+        changes: Vec<CapabilityChangeEvent>,
     },
     Report(SystemReport),
     PingResult(PingResult),
@@ -558,6 +600,8 @@ pub enum BrowserMessage {
         capabilities: u32,
         agent_local_capabilities: Option<u32>,
         effective_capabilities: Option<u32>,
+        #[serde(default)]
+        temporary: Vec<TemporaryGrant>,
     },
     SecurityEvent(SecurityEventBroadcast),
     AgentInfoUpdated {
@@ -744,6 +788,7 @@ mod tests {
                 features: vec!["docker".to_string()],
             },
             agent_local_capabilities: Some(64),
+            temporary: vec![],
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
@@ -765,6 +810,7 @@ mod tests {
             capabilities: 7,
             agent_local_capabilities: Some(64),
             effective_capabilities: Some(0),
+            temporary: vec![],
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
@@ -774,6 +820,7 @@ mod tests {
                 capabilities,
                 agent_local_capabilities,
                 effective_capabilities,
+                ..
             } => {
                 assert_eq!(server_id, "server-1");
                 assert_eq!(capabilities, 7);
@@ -1979,5 +2026,48 @@ mod tests {
         assert_eq!(RecordedProtocol::from(TraceProtocol::Icmp), RecordedProtocol::Icmp);
         assert_eq!(RecordedProtocol::from(TraceProtocol::Udp), RecordedProtocol::Udp);
         assert_eq!(RecordedProtocol::from(TraceProtocol::Tcp), RecordedProtocol::Tcp);
+    }
+}
+
+#[cfg(test)]
+mod capability_grant_protocol_tests {
+    use super::*;
+
+    #[test]
+    fn capabilities_changed_round_trips_with_snake_case_tag() {
+        let msg = AgentMessage::CapabilitiesChanged {
+            msg_id: "m1".into(),
+            capabilities: 1 | 1852,
+            temporary: vec![TemporaryGrant { cap: "terminal".into(), granted_at: 10, expires_at: 1810 }],
+            changes: vec![CapabilityChangeEvent {
+                cap: "terminal".into(),
+                action: CapabilityChangeAction::Granted,
+                expires_at: Some(1810),
+                granted_by: Some("root".into()),
+                reason: Some("debug".into()),
+            }],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"type\":\"capabilities_changed\""));
+        assert!(json.contains("\"action\":\"granted\""));
+        let back: AgentMessage = serde_json::from_str(&json).unwrap();
+        match back {
+            AgentMessage::CapabilitiesChanged { capabilities, temporary, changes, .. } => {
+                assert_eq!(capabilities, 1 | 1852);
+                assert_eq!(temporary.len(), 1);
+                assert_eq!(changes[0].action, CapabilityChangeAction::Granted);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn system_info_temporary_defaults_to_empty_when_absent() {
+        let json = r#"{"type":"system_info","msg_id":"x","cpu_name":"c","cpu_cores":1,"cpu_arch":"a","os":"o","kernel_version":"k","mem_total":1,"swap_total":0,"disk_total":1,"ipv4":null,"ipv6":null,"virtualization":null,"agent_version":"1","protocol_version":5,"features":[]}"#;
+        let msg: AgentMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            AgentMessage::SystemInfo { temporary, .. } => assert!(temporary.is_empty()),
+            _ => panic!("wrong variant"),
+        }
     }
 }

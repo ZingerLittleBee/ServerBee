@@ -1,7 +1,7 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const DEFAULT_SERVER_PORT: u16 = 9527;
 pub const DEFAULT_REPORT_INTERVAL: u32 = 3;
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 pub const SESSION_TTL_SECS: i64 = 86400;
 pub const HEARTBEAT_INTERVAL_SECS: u64 = 30;
@@ -239,7 +239,7 @@ pub fn probe_type_to_cap(probe_type: &str) -> Option<u32> {
 #[cfg(test)]
 #[test]
 fn protocol_version() {
-    assert_eq!(PROTOCOL_VERSION, 5);
+    assert_eq!(PROTOCOL_VERSION, 6);
 }
 
 #[cfg(test)]

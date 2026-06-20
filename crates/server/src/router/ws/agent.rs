@@ -397,6 +397,8 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             msg_id,
             info,
             agent_local_capabilities,
+            // TODO(temporary-grants): filled in Task 9 (ws::agent handler)
+            temporary: _,
         } => {
             // Resolve GeoIP. Walk the candidate chain agent ipv4 → ipv6 →
             // remote_addr and skip loopback/private addresses — GeoIP can't
@@ -563,6 +565,8 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                         capabilities: bits,
                         agent_local_capabilities: Some(bits),
                         effective_capabilities: Some(bits),
+                        // TODO(temporary-grants): filled in Task 9 (ws::agent handler)
+                        temporary: vec![],
                     });
             }
 
@@ -1250,6 +1254,8 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .record_reset_ack(server_id, ok, reason, &state.db)
                 .await;
         }
+        // TODO(temporary-grants): filled in Task 9 (mirror + audit + alert + broadcast)
+        AgentMessage::CapabilitiesChanged { .. } => {}
         AgentMessage::UnlockResults {
             egress_ip,
             results,

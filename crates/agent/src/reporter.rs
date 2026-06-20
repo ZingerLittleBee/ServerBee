@@ -240,6 +240,8 @@ impl Reporter {
                 ..info
             },
             agent_local_capabilities: Some(self.agent_local_capabilities),
+            // TODO(temporary-grants): filled in Task 7 (reporter wiring)
+            temporary: vec![],
         };
         let json = serde_json::to_string(&info_msg)?;
         write.send(Message::Text(json.into())).await?;
