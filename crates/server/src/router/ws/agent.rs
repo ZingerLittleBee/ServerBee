@@ -1330,7 +1330,11 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                     "reason": ch.reason,
                 })
                 .to_string();
-                let _ = AuditService::log(&state.db, "", action, Some(&detail), &ip).await;
+                if let Err(e) =
+                    AuditService::log(&state.db, "system", action, Some(&detail), &ip).await
+                {
+                    tracing::error!("Failed to write capability-change audit log: {e}");
+                }
 
                 // Only a temporary grant of a high-risk capability fires the
                 // event-driven `capability_grant_detected` alert. Expiry/revoke
