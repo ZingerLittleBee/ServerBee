@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.9] - 2026-06-20
+
 ### Added
 
 - **Temporary, host-local capability grants** -- A user with shell access on an agent host can temporarily enable an off-by-default capability for a bounded duration with the new `serverbee-agent grant <cap> --for <30m|2h|1d> [--reason "..."]` CLI (plus `serverbee-agent revoke <cap>` and `serverbee-agent grants` to inspect). Grants persist to `<state_dir>/capability_grants.json` with an absolute `expires_at`, so they survive an agent restart and expire at their original deadline; a missing/corrupt store fails safe to no grants, and a duration over `temporary_max_duration` (default `24h`) is refused. Consistent with the agent-owned trust model, the server and web/iOS UI cannot grant a capability -- the agent re-reports its effective set, so the server opens the gate live, mirrors the change with an amber "Temporary" badge and a live countdown in the capabilities dialog and the Settings capabilities matrix, audits each transition (`capability_temporarily_granted` / `capability_grant_expired` / `capability_grant_revoked`), and fires the new event-driven `capability_grant_detected` alert when a high-risk capability (terminal/exec/file/docker) is granted. Two agent config keys tune the feature: `capabilities.temporary_max_duration` and `capabilities.state_dir`
