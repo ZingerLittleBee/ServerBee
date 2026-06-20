@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
-use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage};
+use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant};
 use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
 
 use crate::state::AppState;
@@ -92,6 +92,9 @@ pub struct AgentManager {
     /// the sole source of truth — capabilities are owned by the agent host and
     /// the server cannot modify them, only mirror what the agent reports.
     agent_local_capabilities: DashMap<String, u32>,
+    /// Active temporary capability grants reported by each agent (in-memory,
+    /// transient — re-reported on reconnect). Drives the UI countdown.
+    temporary_grants: DashMap<String, Vec<TemporaryGrant>>,
     /// Maps server_id -> (session_id -> log entry sender)
     docker_log_sessions: DashMap<String, DashMap<String, mpsc::Sender<Vec<DockerLogEntry>>>>,
     /// Maps request_id -> traceroute result entry (cached for polling)
@@ -133,6 +136,7 @@ impl AgentManager {
             docker_info: DashMap::new(),
             features: DashMap::new(),
             agent_local_capabilities: DashMap::new(),
+            temporary_grants: DashMap::new(),
             docker_log_sessions: DashMap::new(),
             traceroute_results: DashMap::new(),
             server_lifecycle_locks: DashMap::new(),
@@ -546,6 +550,23 @@ impl AgentManager {
         } else {
             Some("agent_capability_disabled")
         }
+    }
+
+    // --- Temporary grants cache ---
+
+    pub fn update_temporary_grants(&self, server_id: &str, grants: Vec<TemporaryGrant>) {
+        if grants.is_empty() {
+            self.temporary_grants.remove(server_id);
+        } else {
+            self.temporary_grants.insert(server_id.to_string(), grants);
+        }
+    }
+
+    pub fn get_temporary_grants(&self, server_id: &str) -> Vec<TemporaryGrant> {
+        self.temporary_grants
+            .get(server_id)
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 
     pub fn has_docker_capability(&self, server_id: &str) -> bool {
@@ -1132,5 +1153,23 @@ mod tests {
         mgr.cleanup_expired_requests();
         assert!(!mgr.has_pending_request("short"));
         assert!(mgr.has_pending_request("long"));
+    }
+
+    #[test]
+    fn temporary_grants_round_trip_and_clear() {
+        let mgr = make_manager_simple();
+        mgr.update_temporary_grants(
+            "s1",
+            vec![serverbee_common::protocol::TemporaryGrant {
+                cap: "terminal".into(),
+                granted_at: 1,
+                expires_at: 100,
+            }],
+        );
+        assert_eq!(mgr.get_temporary_grants("s1").len(), 1);
+        assert_eq!(mgr.get_temporary_grants("s1")[0].cap, "terminal");
+        assert_eq!(mgr.get_temporary_grants("missing").len(), 0);
+        mgr.update_temporary_grants("s1", vec![]);
+        assert!(mgr.get_temporary_grants("s1").is_empty());
     }
 }
