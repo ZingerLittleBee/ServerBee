@@ -35,12 +35,50 @@ pub struct AgentConfig {
 /// `docker`) applied on top of the built-in default set (`CAP_DEFAULT`).
 /// `deny` wins over `allow`. CLI `--allow-cap` / `--deny-cap` flags layer
 /// on top of this config for ad-hoc overrides.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CapabilitiesConfig {
     #[serde(default)]
     pub allow: Vec<String>,
     #[serde(default)]
     pub deny: Vec<String>,
+    /// Footgun guard: max `--for` the grant CLI accepts. Not a security
+    /// boundary (host root can edit the file directly). Default `24h`.
+    #[serde(default = "default_temporary_max_duration")]
+    pub temporary_max_duration: String,
+    /// Directory holding `capability_grants.json`.
+    #[serde(default = "default_capability_state_dir")]
+    pub state_dir: String,
+}
+
+impl Default for CapabilitiesConfig {
+    fn default() -> Self {
+        Self {
+            allow: Vec::new(),
+            deny: Vec::new(),
+            temporary_max_duration: default_temporary_max_duration(),
+            state_dir: default_capability_state_dir(),
+        }
+    }
+}
+
+fn default_temporary_max_duration() -> String {
+    "24h".to_string()
+}
+
+fn default_capability_state_dir() -> String {
+    "/var/lib/serverbee".to_string()
+}
+
+impl CapabilitiesConfig {
+    #[allow(dead_code)] // used by later tasks (grant CLI + supervisor)
+    pub fn grants_path(&self) -> std::path::PathBuf {
+        std::path::Path::new(&self.state_dir).join("capability_grants.json")
+    }
+
+    #[allow(dead_code)] // used by later tasks (grant CLI validation)
+    pub fn temporary_max_duration_secs(&self) -> anyhow::Result<i64> {
+        crate::capability_grants::parse_duration_secs(&self.temporary_max_duration)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -441,6 +479,16 @@ mod tests {
         assert!(c.security.enabled);
         assert_eq!(c.security.ssh.failed_threshold, 10);
         assert!(!c.security.port_scan.enabled);
+    }
+
+    #[test]
+    fn defaults_resolve_grants_path_and_max_duration() {
+        let c = CapabilitiesConfig::default();
+        assert_eq!(
+            c.grants_path(),
+            std::path::Path::new("/var/lib/serverbee/capability_grants.json")
+        );
+        assert_eq!(c.temporary_max_duration_secs().unwrap(), 86_400);
     }
 
     #[test]

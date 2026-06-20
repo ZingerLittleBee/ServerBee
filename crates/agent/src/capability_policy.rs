@@ -192,6 +192,7 @@ mod tests {
         let config = CapabilitiesConfig {
             allow: vec!["terminal".to_string(), "file".to_string()],
             deny: vec!["ip_quality".to_string()],
+            ..Default::default()
         };
         let caps =
             compute_local_capabilities(&config, &no_cli()).expect("config should compute");
@@ -206,6 +207,7 @@ mod tests {
         let config = CapabilitiesConfig {
             allow: vec!["docker".to_string()],
             deny: vec![],
+            ..Default::default()
         };
         let cli = CapabilityCliOverrides {
             allow_caps: vec![],
@@ -220,6 +222,7 @@ mod tests {
         let config = CapabilitiesConfig {
             allow: vec!["definitely_not_a_cap".to_string()],
             deny: vec![],
+            ..Default::default()
         };
         let err = compute_local_capabilities(&config, &no_cli())
             .expect_err("unknown config capability key should fail");
