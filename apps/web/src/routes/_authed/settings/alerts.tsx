@@ -134,7 +134,8 @@ function AlertsPage() {
     { label: t('alerts.metric_expiration'), value: 'expiration' },
     { label: 'Network Latency', value: 'network_latency' },
     { label: 'Network Packet Loss', value: 'network_packet_loss' },
-    { label: 'IP Changed', value: 'ip_changed' }
+    { label: 'IP Changed', value: 'ip_changed' },
+    { label: t('alerts.metric_capability_granted'), value: 'capability_grant_detected' }
   ]
 
   const { data: rules, isLoading } = useQuery<AlertRule[]>({

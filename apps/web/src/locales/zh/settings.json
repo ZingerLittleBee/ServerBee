@@ -168,6 +168,7 @@
   "alerts.metric_transfer_out": "出站流量（周期）",
   "alerts.metric_transfer_total": "总流量（周期）",
   "alerts.metric_expiration": "到期",
+  "alerts.metric_capability_granted": "临时授予能力",
   "alerts.display_offline": "离线",
   "alerts.display_expires": "{{count}} 天后到期",
   "alerts.display_transfer": "{{value}}B/{{period}}",

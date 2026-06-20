@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, ShieldAlert, UserCheck } from 'lucide-react'
+import { Ban, KeyRound, ShieldAlert, UserCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -27,7 +27,7 @@ interface BlockSourceIpAction {
   type: 'block_source_ip'
 }
 
-type PresetKind = 'ssh_brute_force_detected' | 'ssh_new_ip_login' | 'port_scan_detected'
+type PresetKind = 'ssh_brute_force_detected' | 'ssh_new_ip_login' | 'port_scan_detected' | 'capability_grant_detected'
 
 const AUTO_BLOCK_KINDS: PresetKind[] = ['ssh_brute_force_detected', 'port_scan_detected']
 
@@ -68,6 +68,16 @@ const PRESETS: PresetDef[] = [
     descriptionKey: 'preset.port_scan_description',
     descriptionDefault: 'Notify when the agent detects a port scan against this server.',
     defaultName: 'Port Scan'
+  },
+  {
+    kind: 'capability_grant_detected',
+    icon: KeyRound,
+    titleKey: 'preset.capability_grant_title',
+    titleDefault: 'Capability Temporarily Granted',
+    descriptionKey: 'preset.capability_grant_description',
+    descriptionDefault:
+      'Notify when a high-risk capability (terminal/exec/file/docker) is temporarily granted on a server.',
+    defaultName: 'Capability Granted'
   }
 ]
 
