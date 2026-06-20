@@ -50,6 +50,14 @@ pub struct CapabilitiesConfig {
     pub state_dir: String,
 }
 
+fn default_temporary_max_duration() -> String {
+    "24h".to_string()
+}
+
+fn default_capability_state_dir() -> String {
+    "/var/lib/serverbee".to_string()
+}
+
 impl Default for CapabilitiesConfig {
     fn default() -> Self {
         Self {
@@ -59,14 +67,6 @@ impl Default for CapabilitiesConfig {
             state_dir: default_capability_state_dir(),
         }
     }
-}
-
-fn default_temporary_max_duration() -> String {
-    "24h".to_string()
-}
-
-fn default_capability_state_dir() -> String {
-    "/var/lib/serverbee".to_string()
 }
 
 impl CapabilitiesConfig {
@@ -516,5 +516,23 @@ distinct_port_threshold = 50
         assert_eq!(c.security.ssh.failed_threshold, 5);
         assert!(c.security.port_scan.enabled);
         assert_eq!(c.security.port_scan.distinct_port_threshold, 50);
+    }
+
+    #[test]
+    fn capabilities_config_overrides_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[capabilities]
+temporary_max_duration = "2h"
+state_dir = "/tmp/grants"
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with capabilities overrides");
+        assert_eq!(c.capabilities.temporary_max_duration, "2h");
+        assert_eq!(c.capabilities.state_dir, "/tmp/grants");
+        assert_eq!(c.capabilities.temporary_max_duration_secs().unwrap(), 7_200);
     }
 }
