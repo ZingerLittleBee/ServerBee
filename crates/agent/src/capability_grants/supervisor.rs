@@ -5,18 +5,12 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use serverbee_common::constants::{
-    ALL_CAPABILITIES, CAP_DOCKER, CAP_EXEC, CAP_FILE, CAP_TERMINAL, CAP_VALID_MASK,
-};
+use serverbee_common::constants::{ALL_CAPABILITIES, CAP_VALID_MASK};
 use serverbee_common::protocol::{
     AgentMessage, CapabilityChangeAction, CapabilityChangeEvent, TemporaryGrant,
 };
 
 use super::store::CapabilityGrantStore;
-
-/// Caps that warrant an alert when temporarily granted.
-#[allow(dead_code)]
-pub const HIGH_RISK_BITS: u32 = CAP_TERMINAL | CAP_EXEC | CAP_FILE | CAP_DOCKER;
 
 /// Pure: given the previous active-grant bits and a freshly-loaded store,
 /// compute new effective caps, new active bits, the active-grant DTOs, and the
@@ -49,10 +43,10 @@ pub fn evaluate(
         if removed & meta.bit != 0 {
             // A still-present record means time elapsed (expired); a gone
             // record means the operator revoked it.
-            let still_present = store.records().any(|r| r.cap == meta.key);
+            let rec = store.records().find(|r| r.cap == meta.key);
             changes.push(CapabilityChangeEvent {
                 cap: meta.key.to_string(),
-                action: if still_present {
+                action: if rec.is_some() {
                     CapabilityChangeAction::Expired
                 } else {
                     CapabilityChangeAction::Revoked
@@ -143,6 +137,8 @@ mod tests {
         assert_eq!(eff, CAP_DEFAULT | CAP_TERMINAL);
         assert_eq!(active, CAP_TERMINAL);
         assert_eq!(temp.len(), 1);
+        assert_eq!(temp[0].cap, "terminal");
+        assert_eq!(temp[0].expires_at, 1000);
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].action, CapabilityChangeAction::Granted);
         assert_eq!(changes[0].cap, "terminal");
