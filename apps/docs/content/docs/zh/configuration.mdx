@@ -188,6 +188,8 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许的根路径（逗号分隔，如 `/home,/var/log`）。留空则拒绝所有文件操作 |
 | `SERVERBEE_CAPABILITIES__ALLOW` | `[]` | 在默认集合（`CAP_DEFAULT`）之上启用的能力键名，如 `["terminal","file"]`。见 [功能开关](/zh/docs/capabilities) |
 | `SERVERBEE_CAPABILITIES__DENY` | `[]` | 从默认集合中移除的能力键名。`deny` 优先于 `allow`。未知键名会在启动时报错 |
+| `SERVERBEE_CAPABILITIES__TEMPORARY_MAX_DURATION` | `24h` | 单次临时能力授予可持续的最大时长（如 `30m`、`2h`、`1d`）。见 [功能开关 → 临时授予](/zh/docs/capabilities#临时授予) |
+| `SERVERBEE_CAPABILITIES__STATE_DIR` | `/var/lib/serverbee` | Agent 持久化 `capability_grants.json` 的目录（必须对 Agent 可写） |
 | `SERVERBEE_IP_CHANGE__ENABLED` | `true` | 启用周期性 IP 变更检测 |
 | `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
 | `SERVERBEE_LOG__FILE` | `""` | 日志文件路径，留空仅输出到 stdout |
@@ -433,11 +435,16 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 |----|------|--------|------|
 | `allow` | string[] | `[]` | 在默认集合之上启用的能力键名，如 `["terminal", "file"]`。有效键名：`terminal`、`exec`、`upgrade`、`ping_icmp`、`ping_tcp`、`ping_http`、`file`、`docker`、`security_events`、`firewall_block`、`ip_quality` |
 | `deny` | string[] | `[]` | 从默认集合中移除的能力键名。`deny` 优先于 `allow`。未知键名在启动时报错 |
+| `temporary_max_duration` | string | `"24h"` | 单次临时能力授予可持续的最大时长（如 `30m`、`2h`、`1d`）。由主机本地 `serverbee-agent grant` CLI 使用。见 [功能开关 → 临时授予](/zh/docs/capabilities#临时授予) |
+| `state_dir` | string | `"/var/lib/serverbee"` | Agent 持久化 `capability_grants.json`（临时授予存储）的目录。必须对 Agent 可写 |
 
 ```toml
 [capabilities]
 allow = ["terminal", "file"]
 deny = ["ip_quality"]
+# `serverbee-agent grant --for ...` 的防误用上限；默认 24h。
+temporary_max_duration = "24h"
+state_dir = "/var/lib/serverbee"
 ```
 
 ### `[ip_change]` —— IP 变更检测

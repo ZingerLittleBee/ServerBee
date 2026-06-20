@@ -58,10 +58,11 @@
 | 35 | [35-deployment.md](35-deployment.md) | 部署与安装(脚本 / Docker / systemd) |
 | 36 | [36-realtime-websocket.md](36-realtime-websocket.md) | 实时 WebSocket 推送 |
 | 37 | [37-responsive.md](37-responsive.md) | 响应式与移动端布局 |
+| 38 | [38-temporary-capability-grants.md](38-temporary-capability-grants.md) | 临时能力授予(主机本地 grant/revoke/grants) |
 
 ## 发布判定
 
-- 所有 `01`–`37` 文件中标记为「阻断级」的用例必须 ✅ 才能发布 1.0.0。
+- 所有 `01`–`38` 文件中标记为「阻断级」的用例必须 ✅ 才能发布 1.0.0。
 - 非阻断级 ❌ 需在发布说明中登记为已知问题。
 
 ## 本轮执行状态(全 37 文件已完成)

@@ -100,6 +100,60 @@ curl -fsSL https://your-server/install.sh | sh -s -- --caps terminal,file
 
 交互式运行安装脚本时也会提示选择能力，默认项已预先勾选。
 
+## 临时授予
+
+编辑配置并重启 Agent 是**永久**开启某个能力的正确方式。而对于短时、临时性的需求 —— 比如「给这台机器 30 分钟的终端」—— Agent 自带一个主机本地 CLI，可以临时开启某个默认关闭的能力，并在时间窗结束时自动关回去。
+
+<Callout type="info">
+临时授予是一种**主机本地**机制，与「能力由 Agent 拥有」的信任模型完全一致：只有在 Agent 主机上拥有 shell 的人才能发起。Server 以及 Web/iOS UI 始终只读，**无法**授予能力。Server 只是镜像 Agent 上报的内容、据此拦截控制面请求、审计变更，并可触发告警。
+</Callout>
+
+### CLI
+
+在 **Agent 主机**上运行这些子命令（通常需要 `sudo`，因为它们写入 `state_dir`，而守护进程一般以 agent 用户/root 运行）。它们共用守护进程的配置（`agent.toml` / `/etc/serverbee/agent.toml`），因此 grants 文件位置和最大时长都来自同一个 `[capabilities]` 段。
+
+```bash
+# 临时开启某个默认关闭的能力，限定一个时间窗。
+serverbee-agent grant terminal --for 30m --reason "debugging a stuck deploy"
+serverbee-agent grant file --for 2h
+serverbee-agent grant docker --for 1d
+
+# 提前撤销一个生效中的授予。
+serverbee-agent revoke terminal
+
+# 列出当前生效的授予（能力、剩余秒数、授予者、原因）。
+serverbee-agent grants
+```
+
+- 传给 `--for` 的时长格式为 `<数字><单位>`，单位为 `s`（秒）、`m`（分钟）、`h`（小时）、`d`（天）之一 —— 例如 `90s`、`30m`、`2h`、`1d`。`--reason` 为可选的自由文本，会随授予一同记录。
+- `grant` 只能**开启**当前**关闭**的能力。对在 `agent.toml` 中已启用的能力执行授予会被拒绝（`'terminal' is already enabled in agent.toml; nothing to grant`）。
+- 超过 `temporary_max_duration`（默认 `24h`，见 [配置](/zh/docs/configuration)）的时长会被拒绝。
+- CLI 是一次性的：写完 grants 文件即退出。运行中的守护进程会在数秒内拾取该变更 —— 无需重启 Agent。
+
+### 重启与过期语义
+
+授予会持久化到 `<state_dir>/capability_grants.json`（默认 `/var/lib/serverbee/capability_grants.json`，以 `0600` 权限写入），其 `expires_at` 是**绝对**时间戳（Unix epoch），而非相对倒计时。这让行为足够健壮：
+
+- **跨重启存活** —— 若 Agent 在时间窗中重启，授予会被重新加载，并在原始时间窗内保持生效。
+- **在原始截止时刻过期** —— 重启不会延长授予。`30m` 的授予在发起后 30 分钟过期，无论期间 Agent 重启多少次。
+- **失败时安全归零（OFF）** —— 若 grants 文件缺失、为空、损坏，或由未知 schema 版本写入，Agent 会将其视作「无授予」，对应能力保持关闭。临时授予永远不会*增强*永久能力集，它只能在自己的时间窗内把一个原本关闭的位翻为开启。
+
+### Server 看到什么
+
+当某个授予生效（或过期 / 被撤销）时，Agent 会重新上报其有效能力集，因此 Server 会**实时**打开或关闭对应的门控：
+
+- 变更会镜像到 `servers.capabilities` 并广播给浏览器，UI 实时更新。
+- 该转换会写入 [审计日志](/zh/docs/admin)，动作为 `capability_temporarily_granted`、`capability_grant_expired` 或 `capability_grant_revoked`。
+- 对**高危**能力（`terminal`、`exec`、`file`、`docker`）的临时授予还会评估事件驱动的 `capability_grant_detected` [告警规则](/zh/docs/alerts)。过期、撤销以及低风险授予会被审计，但不触发告警。
+
+<Callout type="warn">
+在 Agent 与 Server **断连**期间发起的授予，会在本地生效并在重连后展示出来，但**不会**产生 `granted` 审计记录或告警。Server 只能看到重连后的能力状态，看不到转换发生的瞬间，因此无法区分「刚刚授予」与「本就生效」的能力。若你把该告警当作触发器（tripwire）使用，请考虑这一点。
+</Callout>
+
+### Web UI 中的展示
+
+在临时授予生效期间，受影响的能力会带一个琥珀色的 **Temporary** 徽章和一个到期实时倒计时，**服务器详情 → 能力** 弹窗与 **设置 → 能力开关** 全机群矩阵中均会显示。授予过期或被撤销后，徽章会自动消失。
+
 ## 强制执行模型
 
 Agent 主机是唯一的权威来源，但为了纵深防御，强制执行发生在两个边界上。

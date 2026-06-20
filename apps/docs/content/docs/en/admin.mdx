@@ -44,6 +44,9 @@ ServerBee automatically records audit logs for critical operations so administra
 - 2FA enable/disable
 - Terminal connect/disconnect
 - Capability denial events
+- `capability_temporarily_granted` — a host-local temporary grant turned an off-by-default capability on
+- `capability_grant_expired` — a temporary grant reached its deadline and the capability turned back off
+- `capability_grant_revoked` — a host operator revoked a temporary grant early
 
 ### Viewing Audit Logs
 

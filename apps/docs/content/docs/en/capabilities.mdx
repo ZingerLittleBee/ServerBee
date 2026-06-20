@@ -100,6 +100,60 @@ curl -fsSL https://your-server/install.sh | sh -s -- --caps terminal,file
 
 Running the installer interactively also prompts for capabilities, with the defaults pre-checked.
 
+## Temporary grants
+
+Editing the config and restarting the agent is the right way to enable a capability permanently. For short-lived, ad-hoc needs — "give me a terminal on this box for the next 30 minutes" — the agent ships a host-local CLI that temporarily turns on an off-by-default capability, then automatically turns it back off when the window ends.
+
+<Callout type="info">
+Temporary grants are a **host-local** mechanism, fully consistent with the agent-owned trust model: only someone with a shell on the agent host can issue one. The server and the web/iOS UI remain read-only and **cannot** grant a capability. The server merely mirrors what the agent reports, gates control-plane requests on it, audits the change, and can fire an alert.
+</Callout>
+
+### CLI
+
+Run these subcommands on the **agent host** (typically with `sudo`, since they write under `state_dir` and the daemon usually runs as the agent user/root). They share the daemon's config (`agent.toml` / `/etc/serverbee/agent.toml`), so the grants file location and the maximum duration come from the same `[capabilities]` block.
+
+```bash
+# Temporarily enable an off-by-default capability for a bounded duration.
+serverbee-agent grant terminal --for 30m --reason "debugging a stuck deploy"
+serverbee-agent grant file --for 2h
+serverbee-agent grant docker --for 1d
+
+# Revoke an active grant early.
+serverbee-agent revoke terminal
+
+# List the currently active grants (cap, remaining seconds, who granted it, reason).
+serverbee-agent grants
+```
+
+- The duration passed to `--for` is `<number><unit>` where the unit is one of `s` (seconds), `m` (minutes), `h` (hours), or `d` (days) — e.g. `90s`, `30m`, `2h`, `1d`. `--reason` is optional free-form text recorded with the grant.
+- `grant` only **turns on** a capability that is currently **off**. Granting a capability that is already enabled in `agent.toml` is rejected (`'terminal' is already enabled in agent.toml; nothing to grant`).
+- A duration longer than `temporary_max_duration` (default `24h`, see [Configuration](/en/docs/configuration)) is refused.
+- The CLI is one-shot: it writes the grants file and exits. The running daemon picks the change up within a few seconds — there is no need to restart the agent.
+
+### Restart and expiry semantics
+
+Grants are persisted to `<state_dir>/capability_grants.json` (default `/var/lib/serverbee/capability_grants.json`, written `0600`) with an **absolute** `expires_at` (a Unix epoch timestamp), not a relative countdown. This makes the behavior robust:
+
+- **Survives restarts** — if the agent restarts mid-window, the grant is reloaded and remains active for the rest of its original window.
+- **Expires at the original deadline** — restarting does not extend a grant. A grant for `30m` expires 30 minutes after it was issued regardless of how many times the agent restarts in between.
+- **Fails safe to OFF** — if the grants file is missing, empty, corrupt, or written by an unknown schema version, the agent treats it as "no grants" and the capability stays off. A temporary grant can never *strengthen* the permanent set; it can only flip an otherwise-off bit on for its window.
+
+### What the server sees
+
+When a grant becomes active (or expires/is revoked), the agent re-reports its effective capability set, so the server opens or closes the gate **live**:
+
+- The change is mirrored into `servers.capabilities` and broadcast to browsers, so the UI updates in real time.
+- The transition is written to the [audit log](/en/docs/admin) as `capability_temporarily_granted`, `capability_grant_expired`, or `capability_grant_revoked`.
+- A temporary grant of a **high-risk** capability (`terminal`, `exec`, `file`, or `docker`) also evaluates the event-driven `capability_grant_detected` [alert rule](/en/docs/alerts). Expiry, revoke, and low-risk grants are audited but do not fire an alert.
+
+<Callout type="warn">
+A grant issued while the agent is **disconnected** from the server is applied locally and shows up on reconnect, but it does **not** produce a `granted` audit entry or alert. The server only sees the post-reconnect capability state, not the moment of transition, so it cannot distinguish a freshly-granted capability from one that was already active. Plan around this if you rely on the alert as a tripwire.
+</Callout>
+
+### In the web UI
+
+While a temporary grant is active, the affected capability is shown with an amber **Temporary** badge and a live countdown to expiry, in both the **Server Detail → Capabilities** dialog and the **Settings → Capabilities** fleet matrix. The badge disappears automatically when the grant expires or is revoked.
+
 ## Enforcement model
 
 The agent host is the single source of truth, but enforcement happens at two boundaries for defense in depth.
