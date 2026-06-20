@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use sea_orm::{ConnectOptions, ConnectionTrait, Database};
 use sea_orm_migration::MigratorTrait;
 use serde_json::json;
-use serverbee_common::constants::{CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_TCP};
+use serverbee_common::constants::{CAP_DEFAULT, CAP_EXEC, CAP_FILE, CAP_PING_TCP, CAP_TERMINAL};
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
@@ -1128,6 +1128,270 @@ async fn test_terminal_open_and_close_are_audited() {
     );
 
     let _ = agent_sink.close().await;
+}
+
+/// Drive the full temporary-capability-grant path end to end:
+///
+/// 1. Agent reports `CAP_DEFAULT` (terminal OFF) — terminal control plane is denied.
+/// 2. Agent sends `CapabilitiesChanged` granting `terminal` temporarily — gate opens.
+/// 3. Server audits the grant (`capability_temporarily_granted`) and broadcasts a
+///    `capabilities_changed` event carrying the `temporary` grant to browsers.
+/// 4. Agent sends `CapabilitiesChanged` back to `CAP_DEFAULT` with an `expired`
+///    change — gate closes again and the expiry is audited
+///    (`capability_grant_expired`).
+///
+/// The terminal WS handshake is the observable control-plane gate: a denied
+/// capability fails the upgrade with an HTTP 403, while a granted one upgrades
+/// and immediately emits a `session` message. We synchronize on the browser
+/// broadcast (not a fixed sleep) so the assertions race-free against the
+/// server's async processing of each `CapabilitiesChanged` message.
+#[tokio::test]
+async fn test_temporary_capability_grant_gate_audit_and_expiry() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+
+    // Bring the agent online with CAP_DEFAULT (terminal OFF — see CAP_DEFAULT).
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+    let welcome = recv_agent_text(&mut agent_reader).await;
+    assert_eq!(welcome["type"], "welcome");
+    assert!(
+        !serverbee_common::constants::has_capability(CAP_DEFAULT, CAP_TERMINAL),
+        "precondition: CAP_DEFAULT must not include terminal"
+    );
+    send_system_info(
+        &mut agent_sink,
+        &mut agent_reader,
+        "grant-test-initial",
+        Some(CAP_DEFAULT),
+    )
+    .await;
+
+    // Connect a browser WS BEFORE issuing the grant so it catches the broadcast.
+    let mut browser_ws = connect_browser_ws(&base_url, &api_key).await;
+
+    // --- Step 2: terminal control plane is DENIED (no CAP_TERMINAL) ---
+    assert!(
+        terminal_gate_denied(&base_url, &server_id, &api_key).await,
+        "terminal WS should be denied before the grant"
+    );
+
+    // --- Step 3: agent grants `terminal` temporarily ---
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before epoch")
+        .as_secs() as i64;
+    let expires_at = now + 3600;
+    send_capabilities_changed(
+        &mut agent_sink,
+        json!({
+            "type": "capabilities_changed",
+            "msg_id": "grant-test-grant",
+            "capabilities": CAP_DEFAULT | CAP_TERMINAL,
+            "temporary": [{
+                "cap": "terminal",
+                "granted_at": now,
+                "expires_at": expires_at
+            }],
+            "changes": [{
+                "cap": "terminal",
+                "action": "granted",
+                "expires_at": expires_at,
+                "granted_by": "test"
+            }]
+        }),
+    )
+    .await;
+
+    // --- Step 6 (observed first): browser receives the `capabilities_changed`
+    // broadcast carrying the temporary grant. Awaiting this also synchronizes
+    // the rest of the assertions against the server's async processing. ---
+    let grant_broadcast =
+        wait_for_capabilities_changed(&mut browser_ws, &server_id, CAP_DEFAULT | CAP_TERMINAL).await;
+    let temporary = grant_broadcast["temporary"]
+        .as_array()
+        .expect("broadcast temporary should be an array");
+    assert!(
+        temporary
+            .iter()
+            .any(|g| g["cap"].as_str() == Some("terminal")
+                && g["expires_at"].as_i64() == Some(expires_at)),
+        "broadcast temporary grants should contain the terminal grant, got {temporary:?}"
+    );
+
+    // --- Step 4: the SAME terminal gate now PASSES ---
+    assert!(
+        !terminal_gate_denied(&base_url, &server_id, &api_key).await,
+        "terminal WS should be allowed after the temporary grant"
+    );
+
+    // --- Step 5: the grant is audited ---
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["action"].as_str() == Some("capability_temporarily_granted")),
+        "temporary grant should be audited as capability_temporarily_granted"
+    );
+
+    // --- Step 7: agent reports the grant expired ---
+    send_capabilities_changed(
+        &mut agent_sink,
+        json!({
+            "type": "capabilities_changed",
+            "msg_id": "grant-test-expire",
+            "capabilities": CAP_DEFAULT,
+            "temporary": [],
+            "changes": [{
+                "cap": "terminal",
+                "action": "expired"
+            }]
+        }),
+    )
+    .await;
+
+    let expire_broadcast =
+        wait_for_capabilities_changed(&mut browser_ws, &server_id, CAP_DEFAULT).await;
+    assert!(
+        expire_broadcast["temporary"]
+            .as_array()
+            .is_none_or(|t| t.is_empty()),
+        "expiry broadcast should carry no temporary grants, got {:?}",
+        expire_broadcast["temporary"]
+    );
+
+    // Gate is DENIED again now that the grant expired.
+    assert!(
+        terminal_gate_denied(&base_url, &server_id, &api_key).await,
+        "terminal WS should be denied again after the grant expires"
+    );
+
+    // Expiry is audited.
+    let entries = list_audit_entries(&client, &base_url).await;
+    assert!(
+        entries
+            .iter()
+            .any(|e| e["action"].as_str() == Some("capability_grant_expired")),
+        "grant expiry should be audited as capability_grant_expired"
+    );
+
+    let _ = browser_ws.close(None).await;
+    let _ = agent_sink.close().await;
+}
+
+/// Connect a browser WS (x-api-key auth) and drain the initial `full_sync`.
+async fn connect_browser_ws(
+    base_url: &str,
+    api_key: &str,
+) -> tokio_tungstenite::WebSocketStream<
+    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+> {
+    let ws_url = base_url.replace("http://", "ws://") + "/api/ws/servers";
+    let mut request = ws_url
+        .into_client_request()
+        .expect("browser ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(api_key).expect("api key header should be valid"),
+    );
+    let (mut browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("browser websocket should connect");
+    let full_sync = tokio::time::timeout(Duration::from_secs(5), browser_ws.next())
+        .await
+        .expect("full_sync timeout")
+        .expect("browser ws closed")
+        .expect("browser ws error");
+    let full_sync: serde_json::Value =
+        serde_json::from_str(full_sync.to_text().unwrap()).unwrap();
+    assert_eq!(full_sync["type"], "full_sync");
+    browser_ws
+}
+
+/// Send a raw `capabilities_changed` agent message. The server does not Ack this
+/// message (unlike SystemInfo), so callers synchronize on the browser broadcast.
+async fn send_capabilities_changed(
+    sink: &mut futures_util::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tungstenite::Message,
+    >,
+    msg: serde_json::Value,
+) {
+    sink.send(tungstenite::Message::Text(msg.to_string().into()))
+        .await
+        .expect("Failed to send CapabilitiesChanged");
+}
+
+/// Wait for a `capabilities_changed` broadcast for `server_id` reporting the
+/// expected capability bitmask. Tolerates interleaved updates/online events.
+async fn wait_for_capabilities_changed(
+    browser_ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    server_id: &str,
+    expected_capabilities: u32,
+) -> serde_json::Value {
+    for _ in 0..40 {
+        let Ok(Some(Ok(msg))) =
+            tokio::time::timeout(Duration::from_secs(3), browser_ws.next()).await
+        else {
+            break;
+        };
+        let Ok(text) = msg.to_text() else { continue };
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) else {
+            continue;
+        };
+        if parsed["type"] == "capabilities_changed"
+            && parsed["server_id"] == server_id
+            && parsed["capabilities"].as_u64() == Some(expected_capabilities as u64)
+        {
+            return parsed;
+        }
+    }
+    panic!("did not observe capabilities_changed broadcast for {server_id} with caps {expected_capabilities}");
+}
+
+/// Probe the terminal control-plane gate by attempting the terminal WS upgrade.
+/// Returns `true` when the upgrade is denied (HTTP 403 handshake failure), and
+/// `false` when it succeeds and yields a `session` message. The agent must stay
+/// online for the allow path (the handler enforces `is_online`).
+async fn terminal_gate_denied(base_url: &str, server_id: &str, api_key: &str) -> bool {
+    let ws_url = format!(
+        "{}/api/ws/terminal/{}",
+        base_url.replace("http://", "ws://"),
+        server_id
+    );
+    let mut request = ws_url
+        .into_client_request()
+        .expect("terminal ws request should build");
+    request.headers_mut().insert(
+        "x-api-key",
+        HeaderValue::from_str(api_key).expect("api key header should be valid"),
+    );
+
+    match tokio_tungstenite::connect_async(request).await {
+        Err(tungstenite::Error::Http(_)) => true,
+        Err(other) => panic!("unexpected terminal handshake error: {other:?}"),
+        Ok((mut terminal_ws, _)) => {
+            // Allowed: drain the leading `session` message, then close.
+            let session_msg = tokio::time::timeout(Duration::from_secs(5), terminal_ws.next())
+                .await
+                .expect("timeout waiting for terminal session message")
+                .expect("terminal ws ended")
+                .expect("terminal ws read error");
+            let session_text = session_msg.to_text().expect("session msg should be text");
+            let session_json: serde_json::Value =
+                serde_json::from_str(session_text).expect("session message should be json");
+            assert_eq!(session_json["type"], "session");
+            let _ = terminal_ws.close(None).await;
+            false
+        }
+    }
 }
 
 #[tokio::test]
