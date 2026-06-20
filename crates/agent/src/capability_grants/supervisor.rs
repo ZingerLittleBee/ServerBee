@@ -85,7 +85,14 @@ pub async fn run_grant_supervisor(
     interval.tick().await; // consume the immediate first tick
 
     loop {
-        interval.tick().await;
+        tokio::select! {
+            _ = tx.closed() => {
+                tracing::debug!("grant supervisor: receiver dropped; stopping");
+                break;
+            }
+            _ = interval.tick() => {}
+        }
+
         let now = now_unix();
         let store = CapabilityGrantStore::load(&grants_path);
         let (effective, active_bits, temporary, changes) =
@@ -161,5 +168,27 @@ mod tests {
         let empty = CapabilityGrantStore::default();
         let (_e, _a, _t, changes) = evaluate(&empty, CAP_DEFAULT, CAP_TERMINAL, 50);
         assert_eq!(changes[0].action, CapabilityChangeAction::Revoked);
+    }
+
+    #[tokio::test]
+    async fn supervisor_stops_when_receiver_dropped() {
+        use serverbee_common::constants::CAP_DEFAULT;
+        use std::sync::atomic::AtomicU32;
+        use std::sync::Arc;
+
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        let caps = Arc::new(AtomicU32::new(CAP_DEFAULT));
+        let handle = tokio::spawn(run_grant_supervisor(
+            std::path::PathBuf::from("/nonexistent/capability_grants.json"),
+            CAP_DEFAULT,
+            caps,
+            tx,
+            std::time::Duration::from_millis(10),
+        ));
+        drop(rx);
+        tokio::time::timeout(std::time::Duration::from_secs(2), handle)
+            .await
+            .expect("supervisor should stop promptly after the receiver is dropped")
+            .expect("supervisor task should not panic");
     }
 }
