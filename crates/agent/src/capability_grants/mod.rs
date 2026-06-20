@@ -2,6 +2,7 @@
 
 pub mod cli;
 pub mod store;
+pub mod supervisor;
 
 #[allow(unused_imports)]
 pub use store::{CapabilityGrantStore, GrantRecord};
