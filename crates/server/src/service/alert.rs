@@ -17,6 +17,7 @@ const EVENT_DRIVEN_RULE_TYPES: &[&str] = &[
     "ssh_brute_force_detected",
     "ssh_new_ip_login",
     "port_scan_detected",
+    "capability_grant_detected",
 ];
 
 /// Security-typed alert rules. They must not be mixed with non-security items
@@ -1516,6 +1517,13 @@ mod tests {
         assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"port_scan_detected"));
         assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"cpu"));
         assert!(!EVENT_DRIVEN_RULE_TYPES.contains(&"offline"));
+    }
+
+    #[test]
+    fn capability_grant_detected_is_event_driven_only() {
+        assert!(EVENT_DRIVEN_RULE_TYPES.contains(&"capability_grant_detected"));
+        assert!(!SECURITY_RULE_TYPES.contains(&"capability_grant_detected"));
+        assert!(!SOURCE_IP_RULE_TYPES.contains(&"capability_grant_detected"));
     }
 
     // ── validate_alert_rule_items ──
