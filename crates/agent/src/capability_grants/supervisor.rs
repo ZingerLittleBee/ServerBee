@@ -23,7 +23,7 @@ pub fn evaluate(
 ) -> (u32, u32, Vec<TemporaryGrant>, Vec<CapabilityChangeEvent>) {
     let active_bits = store.active_bits(now, base);
     let effective = (base | active_bits) & CAP_VALID_MASK;
-    let temporary = store.active_grants(now);
+    let temporary = store.active_grants(now, base);
 
     let granted = active_bits & !prev_active_bits;
     let removed = prev_active_bits & !active_bits;

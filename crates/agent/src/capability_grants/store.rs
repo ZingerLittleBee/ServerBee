@@ -96,12 +96,23 @@ impl CapabilityGrantStore {
         bits & CAP_VALID_MASK
     }
 
-    /// Active grants as protocol DTOs (sorted by cap for stable output).
-    pub fn active_grants(&self, now: i64) -> Vec<TemporaryGrant> {
+    /// Active grants as protocol DTOs (sorted by cap for stable output). Only
+    /// grants that actually turn a cap ON — i.e. the cap is a known key and is
+    /// OFF in `base` — are returned. A grant for a cap already permanently
+    /// enabled in `base` is a no-op (e.g. the cap was enabled via the daemon's
+    /// `--allow-cap` flag), so it is NOT reported as temporary, keeping the
+    /// reported state aligned with `active_bits`/`effective`.
+    pub fn active_grants(&self, now: i64, base: u32) -> Vec<TemporaryGrant> {
         let mut out: Vec<TemporaryGrant> = self
             .records
             .values()
             .filter(|r| r.expires_at > now)
+            .filter(|r| {
+                r.cap
+                    .parse::<CapabilityKey>()
+                    .map(|key| base & key.to_bit() == 0)
+                    .unwrap_or(false)
+            })
             .map(|r| TemporaryGrant {
                 cap: r.cap.clone(),
                 granted_at: r.granted_at,
@@ -196,10 +207,22 @@ mod tests {
         store.upsert(rec("terminal", 500), 0);
         store.upsert(rec("file", 50), 0);
         store.remove("nonexistent", 200);
-        let active: Vec<_> = store.active_grants(200);
+        let active: Vec<_> = store.active_grants(200, CAP_DEFAULT);
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].cap, "terminal");
         assert_eq!(active[0].expires_at, 500);
+    }
+
+    #[test]
+    fn active_grants_skips_caps_already_on_in_base() {
+        // A grant for a cap already permanently enabled in `base` (e.g. enabled
+        // via the daemon's --allow-cap flag) is a no-op and must NOT be reported
+        // as temporary, or the UI would show a misleading countdown for a cap
+        // that never turns off.
+        let mut store = CapabilityGrantStore::default();
+        store.upsert(rec("terminal", 1000), 0);
+        assert_eq!(store.active_grants(0, CAP_DEFAULT).len(), 1);
+        assert_eq!(store.active_grants(0, CAP_DEFAULT | CAP_TERMINAL).len(), 0);
     }
 
     #[test]
@@ -209,7 +232,7 @@ mod tests {
         let path = dir.join("grants.json");
         std::fs::write(&path, b"{ not json").unwrap();
         let store = CapabilityGrantStore::load(&path);
-        assert_eq!(store.active_grants(0).len(), 0);
+        assert_eq!(store.active_grants(0, CAP_DEFAULT).len(), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

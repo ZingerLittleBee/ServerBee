@@ -143,7 +143,7 @@ impl Reporter {
         let grant_store0 = crate::capability_grants::CapabilityGrantStore::load(&grants_path);
         let effective_caps =
             (base_caps | grant_store0.active_bits(now0, base_caps)) & serverbee_common::constants::CAP_VALID_MASK;
-        let initial_temporary = grant_store0.active_grants(now0);
+        let initial_temporary = grant_store0.active_grants(now0, base_caps);
         let capabilities = Arc::new(AtomicU32::new(effective_caps));
 
         let request = build_ws_request(&self.config)?;
