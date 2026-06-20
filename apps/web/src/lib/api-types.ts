@@ -3735,6 +3735,7 @@ export interface components {
             remark?: string | null;
             /** Format: int64 */
             swap_total?: number | null;
+            temporary?: components["schemas"]["TemporaryGrantDto"][];
             /** Format: int64 */
             traffic_limit?: number | null;
             traffic_limit_type?: string | null;
@@ -3908,6 +3909,13 @@ export interface components {
             /** Format: date-time */
             started_at?: string | null;
             task_id: string;
+        };
+        TemporaryGrantDto: {
+            cap: string;
+            /** Format: int64 */
+            granted_at: number;
+            /** Format: int64 */
+            expires_at: number;
         };
         Theme: {
             based_on?: string | null;

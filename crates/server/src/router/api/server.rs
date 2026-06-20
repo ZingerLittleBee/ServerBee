@@ -69,6 +69,27 @@ pub struct CleanupResponse {
     deleted_count: u64,
 }
 
+/// A capability that is temporarily enabled on the agent host until
+/// `expires_at`. Mirrors `serverbee_common::protocol::TemporaryGrant` but adds a
+/// `ToSchema` derive so the REST `ServerResponse` can advertise it; the UI uses
+/// it to render countdowns from a plain HTTP fetch.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct TemporaryGrantDto {
+    pub cap: String,
+    pub granted_at: i64,
+    pub expires_at: i64,
+}
+
+impl From<serverbee_common::protocol::TemporaryGrant> for TemporaryGrantDto {
+    fn from(g: serverbee_common::protocol::TemporaryGrant) -> Self {
+        Self {
+            cap: g.cap,
+            granted_at: g.granted_at,
+            expires_at: g.expires_at,
+        }
+    }
+}
+
 /// Server response DTO — excludes sensitive fields (token_hash, token_prefix).
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ServerResponse {
@@ -103,6 +124,11 @@ pub struct ServerResponse {
     pub capabilities: i32,
     pub agent_local_capabilities: Option<i32>,
     pub effective_capabilities: Option<i32>,
+    /// Currently-active temporary capability grants reported by the agent, used
+    /// by the UI to render countdowns. Empty when the agent is offline or has no
+    /// active grants.
+    #[serde(default)]
+    pub temporary: Vec<TemporaryGrantDto>,
     pub protocol_version: i32,
     features: Vec<String>,
     /// `true` iff the server row has a non-NULL `token_hash`. Pending servers
@@ -220,6 +246,12 @@ fn build_server_response(
     let (agent_local_capabilities, effective_capabilities) =
         runtime_capability_fields(agent_manager, &s.id);
 
+    let temporary = agent_manager
+        .get_temporary_grants(&s.id)
+        .into_iter()
+        .map(Into::into)
+        .collect();
+
     let has_token = s.token_hash.is_some();
 
     ServerResponse {
@@ -254,6 +286,7 @@ fn build_server_response(
         capabilities: s.capabilities,
         agent_local_capabilities,
         effective_capabilities,
+        temporary,
         protocol_version: s.protocol_version,
         features: serde_json::from_str(&s.features).unwrap_or_default(),
         has_token,

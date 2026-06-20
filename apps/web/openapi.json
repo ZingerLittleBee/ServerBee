@@ -13287,6 +13287,12 @@
             ],
             "format": "int64"
           },
+          "temporary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemporaryGrantDto"
+            }
+          },
           "traffic_limit": {
             "type": [
               "integer",
@@ -13890,6 +13896,27 @@
           },
           "task_id": {
             "type": "string"
+          }
+        }
+      },
+      "TemporaryGrantDto": {
+        "type": "object",
+        "required": [
+          "cap",
+          "granted_at",
+          "expires_at"
+        ],
+        "properties": {
+          "cap": {
+            "type": "string"
+          },
+          "granted_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

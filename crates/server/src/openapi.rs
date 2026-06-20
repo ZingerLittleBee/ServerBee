@@ -284,6 +284,7 @@ impl Modify for SecurityAddon {
             crate::router::api::agent::RotateTokenResponse,
             // servers
             crate::router::api::server::ServerResponse,
+            crate::router::api::server::TemporaryGrantDto,
             serverbee_common::types::OutstandingEnrollmentSummary,
             crate::router::api::server::CreateServerRequest,
             crate::router::api::server::CreateServerResponse,
