@@ -1,3 +1,4 @@
+mod capability_grants;
 mod capability_policy;
 mod collector;
 mod config;
