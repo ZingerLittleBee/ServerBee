@@ -154,6 +154,21 @@ describe('setServerCapabilities', () => {
     expect(result[0].agent_local_capabilities).toBe(0)
     expect(result[0].effective_capabilities).toBe(0)
   })
+
+  it('defaults temporary grants to an empty array when omitted', () => {
+    const prev = [makeServer({ id: 's1' })]
+    const result = setServerCapabilities(prev, 's1', 64, 0, 0)
+
+    expect(result[0].temporary).toEqual([])
+  })
+
+  it('merges temporary grant metadata onto the matching server', () => {
+    const prev = [makeServer({ id: 's1' })]
+    const temporary = [{ cap: 'CAP_TERMINAL', granted_at: 1000, expires_at: 2000 }]
+    const result = setServerCapabilities(prev, 's1', 64, 0, 0, temporary)
+
+    expect(result[0].temporary).toEqual(temporary)
+  })
 })
 
 describe('handleWsMessage upgrade messages', () => {
