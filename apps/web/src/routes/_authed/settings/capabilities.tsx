@@ -4,11 +4,12 @@ import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-
 import { Check, Minus, Search, ShieldAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TemporaryBadge } from '@/components/server/temporary-badge'
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { CAPABILITIES, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
+import { CAPABILITIES, classifyCapability, temporaryGrantFor } from '@/lib/capabilities'
 
 export const Route = createFileRoute('/_authed/settings/capabilities')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -90,25 +91,29 @@ export function CapabilitiesPage() {
               </div>
             ),
             cell: ({ row }) => {
-              const isEnabled = getEffectiveCapabilityEnabled(
-                row.original.effective_capabilities,
-                row.original.capabilities,
-                bit
-              )
+              const state = classifyCapability(row.original, bit)
               const label = `${t(labelKey, { ns: 'servers' })} - ${row.original.name}`
               return (
                 <div className="flex justify-center">
-                  {isEnabled ? (
-                    <Check
-                      aria-label={`${label}: ${t('cap_enabled', { ns: 'servers' })}`}
-                      className="size-4 text-emerald-500"
-                    />
-                  ) : (
-                    <Minus
-                      aria-label={`${label}: ${t('cap_disabled', { ns: 'servers' })}`}
-                      className="size-4 text-muted-foreground/40"
-                    />
-                  )}
+                  {(() => {
+                    if (state === 'temporary') {
+                      return <TemporaryBadge expiresAt={temporaryGrantFor(row.original, bit)?.expires_at ?? null} />
+                    }
+                    if (state === 'enabled') {
+                      return (
+                        <Check
+                          aria-label={`${label}: ${t('cap_enabled', { ns: 'servers' })}`}
+                          className="size-4 text-emerald-500"
+                        />
+                      )
+                    }
+                    return (
+                      <Minus
+                        aria-label={`${label}: ${t('cap_disabled', { ns: 'servers' })}`}
+                        className="size-4 text-muted-foreground/40"
+                      />
+                    )
+                  })()}
                 </div>
               )
             },

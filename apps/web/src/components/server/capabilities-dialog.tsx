@@ -1,13 +1,14 @@
 import { Shield } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TemporaryBadge } from '@/components/server/temporary-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/use-auth'
-import { CAP_DEFAULT, CAPABILITIES, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
+import { CAPABILITIES, classifyCapability, temporaryGrantFor } from '@/lib/capabilities'
 
 interface ServerWithCaps {
   agent_local_capabilities?: number | null
@@ -15,6 +16,7 @@ interface ServerWithCaps {
   effective_capabilities?: number | null
   id: string
   protocol_version?: number | null
+  temporary?: Array<{ cap: string; expires_at: number; granted_at: number }> | null
 }
 
 export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
@@ -47,8 +49,6 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
   if (user?.role !== 'admin') {
     return null
   }
-
-  const caps = server.capabilities ?? CAP_DEFAULT
 
   return (
     <>
@@ -95,11 +95,7 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
                     </CardHeader>
                     <CardContent className="flex flex-col gap-3">
                       {group.items.map((capability, index) => {
-                        const isEnabled = getEffectiveCapabilityEnabled(
-                          server.effective_capabilities,
-                          caps,
-                          capability.bit
-                        )
+                        const state = classifyCapability(server, capability.bit)
 
                         return (
                           <div className="flex flex-col gap-3" key={capability.bit}>
@@ -113,15 +109,24 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
                                   </Badge>
                                 </div>
                               </div>
-                              {isEnabled ? (
-                                <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                                  {t('cap_enabled', { defaultValue: 'Enabled' })}
-                                </Badge>
-                              ) : (
-                                <Badge className="text-muted-foreground" variant="outline">
-                                  {t('cap_disabled', { defaultValue: 'Disabled' })}
-                                </Badge>
-                              )}
+                              {(() => {
+                                if (state === 'temporary') {
+                                  const grant = temporaryGrantFor(server, capability.bit)
+                                  return <TemporaryBadge expiresAt={grant?.expires_at ?? null} />
+                                }
+                                if (state === 'enabled') {
+                                  return (
+                                    <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                      {t('cap_enabled', { defaultValue: 'Enabled' })}
+                                    </Badge>
+                                  )
+                                }
+                                return (
+                                  <Badge className="text-muted-foreground" variant="outline">
+                                    {t('cap_disabled', { defaultValue: 'Disabled' })}
+                                  </Badge>
+                                )
+                              })()}
                             </div>
                           </div>
                         )

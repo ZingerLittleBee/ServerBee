@@ -192,6 +192,8 @@
   "cap_low_risk": "低风险",
   "cap_enabled": "已启用",
   "cap_disabled": "已关闭",
+  "cap_temporary": "临时",
+  "cap_temporary_tooltip": "在 agent 主机上临时开启。用 `serverbee-agent grant` / `revoke` 在主机管理。",
   "cap_dialog_description": "能力在 Agent 配置文件中设置，无法在此修改。",
   "cap_read_only_note": "这些能力由 Agent 主机拥有。如需修改，请编辑 Agent 配置文件的 [capabilities] 段并重启 Agent。",
   "cap_group_high_risk": "高风险操作",

@@ -192,6 +192,8 @@
   "cap_low_risk": "Low Risk",
   "cap_enabled": "Enabled",
   "cap_disabled": "Disabled",
+  "cap_temporary": "Temporary",
+  "cap_temporary_tooltip": "Temporarily enabled on the agent host. Manage with `serverbee-agent grant` / `revoke` on the host.",
   "cap_dialog_description": "Capabilities are configured in the agent config file and cannot be changed here.",
   "cap_read_only_note": "These capabilities are owned by the agent host. To change them, edit the [capabilities] section of the agent config file and restart the agent.",
   "cap_group_high_risk": "High Risk Operations",
