@@ -104,7 +104,9 @@ Reuse the `FirstSeenStore` pattern (`crates/agent/src/security/first_seen_store.
 - Missing file → empty store. **Corrupt / unparseable / unknown version → log a warning and treat as empty.** The fail-safe direction is "no temporary grants" (revert to `base`), never "stuck on".
 - `create_dir_all` the parent on first write; copy `0600` perms.
 
-A new module `crates/agent/src/capability_grants/store.rs` (`CapabilityGrantStore`) owns load/save/prune. It is the only reader/writer of the file and is shared by both the daemon supervisor and the one-shot CLI handlers.
+A new module `crates/agent/src/capability_grants/store.rs` (`CapabilityGrantStore`) owns load/save/prune.
+
+**Single-writer rule:** the **one-shot CLI handlers are the only writer** of the file; the daemon (startup load + supervisor) is **read-only**. This eliminates any write-write race between the CLI process and the daemon. Expired records linger harmlessly until the next CLI write (the record set is bounded by the number of capabilities, ≤ 11) and are ignored by every reader because `expires_at <= now`. The CLI prunes expired records whenever it rewrites the file (on `grant`/`revoke`).
 
 ---
 
@@ -150,7 +152,7 @@ Spawned once at agent startup, modeled on the security/pinger task pattern (`tok
 Tick loop (default every **3 s**; optionally wake early at the nearest `expires_at`):
 
 1. Load the grants file (re-parse only if mtime changed; the file is tiny so unconditional parse is also fine). Parse failure → treat as empty.
-2. Prune records with `expires_at <= now`. If anything was pruned, rewrite the file (self-healing: expired records do not linger on disk).
+2. Compute the active set, ignoring records with `expires_at <= now`. The supervisor **never writes the file** (single-writer rule, § 2.2) — expired records are simply not applied.
 3. Compute `active` and `effective` (§ 3).
 4. If `effective != AtomicU32.load(SeqCst)`:
    - `.store(effective, SeqCst)`.
@@ -249,7 +251,7 @@ pub struct CapabilityChangeEvent {
 Server handler (`crates/server/src/router/ws/agent`):
 
 1. **Update live capabilities** in `AgentManager` for the server (so `get_agent_local_capabilities` returns the new value and every control-plane gate — terminal/exec/file/docker — opens or closes immediately).
-2. **Store `temporary[]`** alongside the capabilities in `AgentManager` (in-memory) so a browser connecting mid-grant gets it in `FullSync`. Not persisted to the DB: it is transient and the agent re-reports on reconnect.
+2. **Store `temporary[]`** alongside the capabilities in `AgentManager` (in-memory, `DashMap<String, Vec<TemporaryGrant>>`). Not persisted to the DB: it is transient and the agent re-reports on reconnect. A browser that connects or reloads mid-grant reads the active grants from the **REST server DTO** (the same DTO that already carries the `capabilities` mirror), since `ServerStatus`/`FullSync` do **not** carry capability data at all — on the web the initial capability values come from REST and live updates come from `BrowserMessage::CapabilitiesChanged`. The REST server list/detail handler reads `AgentManager::get_temporary_grants(server_id)`.
 3. **Mirror for display:** `ServerService::update_capabilities_mirror(server_id, capabilities)` (existing path, the only writer of `servers.capabilities`).
 4. **Audit:** for each `change`, write an `audit_logs` row (§ 9).
 5. **Alerts:** feed `Granted` events for high-risk caps to the alert evaluator (§ 9).
@@ -257,7 +259,7 @@ Server handler (`crates/server/src/router/ws/agent`):
 
 No `ServerMessage` is added. The removed `ServerMessage::CapabilitiesSync` is **not** reintroduced. `SystemInfo` continues to carry the initial (possibly grant-augmented) bitmask and now also a `temporary[]` field for grants that survived a restart.
 
-Browser-facing: `BrowserMessage::CapabilitiesChanged` (already exists) gains the `temporary` field; `FullSync` per-server payload includes active `temporary` grants.
+Browser-facing: `BrowserMessage::CapabilitiesChanged` (already exists, with `server_id`/`capabilities`/`agent_local_capabilities`/`effective_capabilities`) gains a `temporary: Vec<TemporaryGrant>` field. `ServerStatus`/`FullSync` are **not** touched (they carry no capability data); initial temporary state is delivered through the REST server DTO instead (§ 8.2 above).
 
 ---
 
@@ -279,7 +281,7 @@ Visible in **Settings → Audit Logs**. `user_id` is null (host-local origin); `
 
 ### 9.2 Alerts
 
-Add a new **event-driven alert rule type** `capability_grant_detected`, mirroring the existing security-event rules (`ssh_login_detected`, …). It fires when a **high-risk** capability (`terminal`, `exec`, `file`, `docker`) is temporarily *granted*. Reuses the existing alert → notification-group → channel pipeline and dedup machinery. The Alerts page gets a preset card for one-click setup; an optional filter narrows which caps trigger it.
+Add a new **event-driven alert rule type** `capability_grant_detected`, modeled on the existing **`ip_changed`** precedent (an event-driven rule that is *not* part of the SSH/security-event pipeline and carries no `SecurityRuleParams`/event payload — it is triggered by a bare `AlertService::check_event_rules(db, config, state_manager, server_id, "capability_grant_detected")` call). It fires when a **high-risk** capability (`terminal`, `exec`, `file`, `docker`) is temporarily *granted*. The server calls `check_event_rules` from the `CapabilitiesChanged` handler for each high-risk cap that newly transitioned to *granted*. Reuses the existing alert → notification-group → channel pipeline and `(rule_id, server_id, event_key)` dedup. `capability_grant_detected` is added to `EVENT_DRIVEN_RULE_TYPES` (and the rule-type validation set) but **not** to `SECURITY_RULE_TYPES` or `SOURCE_IP_RULE_TYPES`. The Alerts page gets a preset card for one-click setup, mirroring the existing security preset cards in `apps/web/src/components/security/alert-presets.tsx`.
 
 **Deliberate rejection of the SecurityEvent path:** a privilege-elevation audit must not be gated by `CAP_SECURITY_EVENTS` (it can be denied) and must not be Linux-only. Therefore the change events ride on `CapabilitiesChanged`, not on `AgentMessage::SecurityEvent`, and the server evaluates them through a dedicated alert type rather than the `/security` pipeline.
 
@@ -294,7 +296,7 @@ The capability surfaces are already read-only (agent-owned model). Add a **tempo
 - Applies to the settings capability matrix (`routes/_authed/settings/capabilities.tsx`) and the per-server capabilities dialog (`components/server/capabilities-dialog.tsx`).
 - **No toggles** — the UI stays read-only; granting happens only on the host.
 
-Data sources: `temporary[]` from `FullSync` (initial) and `BrowserMessage::CapabilitiesChanged` (live). `apps/web/src/lib/capabilities.ts` gains a helper to classify a cap as `off | enabled | temporary` and to expose its `expires_at`.
+Data sources: `temporary[]` from the **REST server DTO** (initial page load) and `BrowserMessage::CapabilitiesChanged` (live, merged into the `['servers']` query cache via `setServerCapabilities`). `apps/web/src/lib/capabilities.ts` gains a helper to classify a cap as `off | enabled | temporary` and to expose its `expires_at`. The live countdown reuses the `setInterval` + `useState` pattern already used by `mobile-pair-dialog.tsx`, extracted into a small `useCountdown` hook.
 
 ---
 
