@@ -70,12 +70,10 @@ impl Default for CapabilitiesConfig {
 }
 
 impl CapabilitiesConfig {
-    #[allow(dead_code)] // used by later tasks (grant CLI + supervisor)
     pub fn grants_path(&self) -> std::path::PathBuf {
         std::path::Path::new(&self.state_dir).join("capability_grants.json")
     }
 
-    #[allow(dead_code)] // used by later tasks (grant CLI validation)
     pub fn temporary_max_duration_secs(&self) -> anyhow::Result<i64> {
         crate::capability_grants::parse_duration_secs(&self.temporary_max_duration)
     }
