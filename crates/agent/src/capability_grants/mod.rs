@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod cli;
 pub mod store;
 
 #[allow(unused_imports)]

@@ -4,7 +4,7 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct AgentConfig {
     pub server_url: String,
     #[serde(default)]
