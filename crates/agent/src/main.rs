@@ -47,6 +47,11 @@ fn install_rustls_crypto_provider() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Return the token following `flag` in `argv`, if present (`--reason foo` → `foo`).
+fn flag_value(argv: &[String], flag: &str) -> Option<String> {
+    argv.iter().position(|a| a == flag).and_then(|i| argv.get(i + 1).cloned())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut config = AgentConfig::load().unwrap_or_else(|e| {
@@ -54,6 +59,65 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("Please create agent.toml or /etc/serverbee/agent.toml");
         std::process::exit(1);
     });
+
+    // Host-local capability grant subcommands. One-shot: write the grants file
+    // and exit; the running daemon picks the change up within a few seconds.
+    let argv: Vec<String> = std::env::args().collect();
+    if let Some(sub) = argv.get(1).map(String::as_str)
+        && matches!(sub, "grant" | "revoke" | "grants")
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let base = compute_local_capabilities(
+            &config.capabilities,
+            &crate::capability_policy::CapabilityCliOverrides {
+                allow_caps: vec![],
+                deny_caps: vec![],
+            },
+        )?;
+        let granted_by = std::env::var("SUDO_USER")
+            .or_else(|_| std::env::var("USER"))
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        let result = match sub {
+            "grant" => match (argv.get(2).cloned(), flag_value(&argv, "--for")) {
+                (Some(cap), Some(for_duration)) => crate::capability_grants::cli::run_grant(
+                    &config,
+                    base,
+                    &crate::capability_grants::cli::GrantArgs {
+                        cap,
+                        for_duration,
+                        reason: flag_value(&argv, "--reason"),
+                    },
+                    now,
+                    granted_by,
+                ),
+                _ => Err(anyhow::anyhow!(
+                    "usage: serverbee-agent grant <cap> --for <30m|2h|1d> [--reason \"...\"]"
+                )),
+            },
+            "revoke" => match argv.get(2) {
+                Some(cap) => crate::capability_grants::cli::run_revoke(&config, cap, now),
+                None => Err(anyhow::anyhow!("usage: serverbee-agent revoke <cap>")),
+            },
+            "grants" => crate::capability_grants::cli::run_list(&config, now),
+            _ => unreachable!(),
+        };
+
+        match result {
+            Ok(msg) => {
+                println!("{msg}");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let capability_overrides = parse_capability_args(std::env::args())?;
     if let Some(repo) = crate::upgrade::parse_release_repo_arg(std::env::args()) {
         tracing::info!("release_repo_url overridden by --release-repo CLI flag");
