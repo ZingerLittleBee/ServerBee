@@ -12,6 +12,7 @@ function makeEntry(overrides: Partial<ServerCostOverview> = {}): ServerCostOverv
     configured: true,
     name: 'srv',
     server_id: 'srv-1',
+    advisories: [],
     ...overrides
   }
 }
@@ -43,26 +44,34 @@ describe('CostCell', () => {
     expect(screen.getByText('cost_price_only')).toBeDefined()
   })
 
-  it('renders monthly equivalent cost with value score and grade', () => {
+  it('renders monthly equivalent cost with advisory warning', () => {
     render(
       <CostCell
         entry={makeEntry({
           cost_per_month_equivalent: 5,
           currency: 'USD',
-          value_score: {
-            confidence: 'high',
-            grade: 'good',
-            reasons: [],
-            score: 82
-          }
+          advisories: ['idle_burn']
         })}
       />
     )
 
     expect(screen.getByText('cost_month_equivalent')).toBeDefined()
-    expect(screen.getByText('cost_value_score')).toBeDefined()
-    expect(screen.getByText('82')).toBeDefined()
-    expect(screen.getByText('cost_grade_good')).toBeDefined()
+    expect(screen.getByText('cost_advisory_idle_burn')).toBeDefined()
+  })
+
+  it('renders monthly equivalent cost without advisories', () => {
+    render(
+      <CostCell
+        entry={makeEntry({
+          cost_per_month_equivalent: 5,
+          currency: 'USD',
+          advisories: []
+        })}
+      />
+    )
+
+    expect(screen.getByText('cost_month_equivalent')).toBeDefined()
+    expect(screen.queryByText('cost_advisory_idle_burn')).toBeNull()
   })
 
   it('renders daily cost when monthly equivalent is unavailable', () => {

@@ -71,12 +71,12 @@ struct ServerCostOverview: Decodable, Identifiable, Sendable {
     let costPerMonthEquivalent: Double?
     let cycleBurnPercent: Double?
     let daysRemaining: Int?
-    let valueScore: ValueScore?
+    let advisories: [CostAdvisory]?
 
     var id: String { serverId }
 
     enum CodingKeys: String, CodingKey {
-        case name, configured, currency
+        case name, configured, currency, advisories
         case serverId = "server_id"
         case invalidReason = "invalid_reason"
         case billingCycle = "billing_cycle"
@@ -84,6 +84,5 @@ struct ServerCostOverview: Decodable, Identifiable, Sendable {
         case costPerMonthEquivalent = "cost_per_month_equivalent"
         case cycleBurnPercent = "cycle_burn_percent"
         case daysRemaining = "days_remaining"
-        case valueScore = "value_score"
     }
 }

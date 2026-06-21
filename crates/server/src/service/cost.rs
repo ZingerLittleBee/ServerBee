@@ -12,6 +12,8 @@ use crate::service::traffic;
 
 const RECORD_LOOKBACK_HOURS: i64 = 24;
 const UPTIME_RECENT_DAYS: i64 = 30;
+/// Recent 30-day uptime below this ratio surfaces a `LowUptime` advisory.
+const LOW_UPTIME_THRESHOLD: f64 = 0.90;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -22,46 +24,22 @@ pub enum CostInvalidReason {
     InvalidPrice,
 }
 
+/// A cost advisory: an objective, per-server warning surfaced alongside the cost
+/// breakdown. Unlike the former composite "value score", each advisory is a
+/// single actionable fact computed without any fleet comparison, so it is
+/// meaningful even for a single-server deployment. The variants are declared in
+/// display-priority order (most urgent first).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum ValueGrade {
-    Excellent,
-    Good,
-    Okay,
-    Poor,
-    Waste,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ValueReason {
-    IdleBurn,
-    SleepingMoney,
-    GoodMemoryValue,
-    GoodDiskValue,
-    ExpensiveCpu,
-    HealthyUptime,
-    LowUptime,
+pub enum CostAdvisory {
+    /// Billing date (`expired_at`) is in the past — renew before losing the host.
     ExpiredBilling,
-    NoPriceCycle,
-    InsufficientData,
-    FreeOrZeroPrice,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ValueConfidence {
-    High,
-    Medium,
-    Low,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
-pub struct ValueScore {
-    pub score: f64,
-    pub grade: ValueGrade,
-    pub reasons: Vec<ValueReason>,
-    pub confidence: ValueConfidence,
+    /// Offline with no recent samples while still paying a non-zero bill.
+    SleepingMoney,
+    /// Resources sit idle (low CPU + memory, no real I/O) while paying a bill.
+    IdleBurn,
+    /// Recent 30-day uptime is below 90%.
+    LowUptime,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -119,7 +97,7 @@ pub struct ServerCostOverview {
     pub cycle_cost_elapsed: Option<f64>,
     pub cycle_burn_percent: Option<f64>,
     pub days_remaining: Option<i64>,
-    pub value_score: Option<ValueScore>,
+    pub advisories: Vec<CostAdvisory>,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -143,7 +121,7 @@ pub struct ServerCostInsights {
     pub cycle_cost_remaining: Option<f64>,
     pub cycle_burn_percent: Option<f64>,
     pub resource_value: Option<ResourceValue>,
-    pub value_score: Option<ValueScore>,
+    pub advisories: Vec<CostAdvisory>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -172,22 +150,13 @@ struct ComputedCost {
     utilization_stats: UtilizationStats,
     uptime_ratio: Option<f64>,
     online: bool,
-    value_score: Option<ValueScore>,
+    advisories: Vec<CostAdvisory>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct UptimeAggregate {
     total_minutes: i64,
     online_minutes: i64,
-}
-
-#[derive(Debug, Clone, Default)]
-struct CurrencyComparables {
-    monthly_costs: Vec<f64>,
-    cpu_unit_costs: Vec<f64>,
-    memory_unit_costs: Vec<f64>,
-    disk_unit_costs: Vec<f64>,
-    traffic_unit_costs: Vec<f64>,
 }
 
 pub struct CostService;
@@ -222,156 +191,6 @@ impl CostService {
             .find(|entry| entry.server.id == server_id)
             .map(map_insights)
             .ok_or_else(|| AppError::NotFound("Server not found".to_string()))
-    }
-
-    pub(crate) fn grade_for_score(score: f64) -> ValueGrade {
-        if score >= 90.0 {
-            ValueGrade::Excellent
-        } else if score >= 75.0 {
-            ValueGrade::Good
-        } else if score >= 60.0 {
-            ValueGrade::Okay
-        } else if score >= 40.0 {
-            ValueGrade::Poor
-        } else {
-            ValueGrade::Waste
-        }
-    }
-
-    pub(crate) fn prioritize_reasons(reasons: Vec<ValueReason>) -> Vec<ValueReason> {
-        let priority = [
-            ValueReason::SleepingMoney,
-            ValueReason::IdleBurn,
-            ValueReason::ExpensiveCpu,
-            ValueReason::LowUptime,
-            ValueReason::InsufficientData,
-            ValueReason::ExpiredBilling,
-            ValueReason::FreeOrZeroPrice,
-            ValueReason::HealthyUptime,
-            ValueReason::GoodMemoryValue,
-            ValueReason::GoodDiskValue,
-        ];
-        let mut prioritized = Vec::new();
-
-        for reason in priority {
-            if reasons.contains(&reason) {
-                prioritized.push(reason);
-                if prioritized.len() == 3 {
-                    return prioritized;
-                }
-            }
-        }
-
-        for reason in reasons {
-            if !prioritized.contains(&reason) {
-                prioritized.push(reason);
-                if prioritized.len() == 3 {
-                    break;
-                }
-            }
-        }
-
-        prioritized
-    }
-
-    pub(crate) fn resource_percentile_score(value: f64, comparable_values: &[f64]) -> f64 {
-        let mut values = finite_positive_values(comparable_values);
-        if values.len() < 2 || !is_finite_positive(value) {
-            return 0.5;
-        }
-
-        values.sort_by(f64::total_cmp);
-        let lowest = values[0];
-        let highest = values[values.len() - 1];
-        if lowest == highest {
-            return 0.5;
-        }
-
-        let lower_count = values
-            .iter()
-            .filter(|candidate| **candidate < value)
-            .count();
-        let equal_count = values
-            .iter()
-            .filter(|candidate| **candidate == value)
-            .count();
-        let rank = if equal_count == 0 {
-            lower_count as f64
-        } else {
-            lower_count as f64 + (equal_count.saturating_sub(1) as f64 / 2.0)
-        };
-
-        (1.0 - (rank / (values.len() - 1) as f64)).clamp(0.0, 1.0)
-    }
-
-    pub(crate) fn compute_utilization_score(
-        stats: &UtilizationStats,
-        monthly_cost: f64,
-        fleet_monthly_costs: &[f64],
-    ) -> (f64, Vec<ValueReason>, ValueConfidence) {
-        let stats = normalize_utilization_stats(stats);
-        let mut reasons = Vec::new();
-        let confidence = utilization_confidence(&stats);
-
-        if confidence != ValueConfidence::High {
-            reasons.push(ValueReason::InsufficientData);
-        }
-
-        let low_utilization = is_low_utilization(&stats);
-        let high_monthly_cost = is_high_monthly_cost(monthly_cost, fleet_monthly_costs);
-        let over_utilized = stats.avg_cpu.is_some_and(|value| value > 85.0)
-            || stats.avg_memory_percent.is_some_and(|value| value > 90.0);
-
-        let score = if low_utilization && high_monthly_cost {
-            reasons.push(ValueReason::IdleBurn);
-            7.0
-        } else if over_utilized {
-            35.0 * 0.7
-        } else if is_moderate_stable_utilization(&stats) {
-            31.5
-        } else if confidence == ValueConfidence::Low {
-            17.5
-        } else {
-            22.0
-        };
-
-        (score, Self::prioritize_reasons(reasons), confidence)
-    }
-
-    pub(crate) fn compute_reliability_score(
-        uptime_ratio: Option<f64>,
-        online: bool,
-        expired_at: Option<DateTime<Utc>>,
-        now: DateTime<Utc>,
-    ) -> (f64, Vec<ValueReason>, ValueConfidence) {
-        let mut reasons = Vec::new();
-        let expired = expired_at.is_some_and(|value| value < now);
-        if expired {
-            reasons.push(ValueReason::ExpiredBilling);
-        }
-
-        let (score, confidence) = match uptime_ratio.filter(|value| value.is_finite()) {
-            Some(value) => {
-                let uptime = value.clamp(0.0, 1.0);
-                if uptime >= 0.99 && !expired {
-                    reasons.push(ValueReason::HealthyUptime);
-                } else if uptime < 0.90 {
-                    reasons.push(ValueReason::LowUptime);
-                }
-                (uptime * 25.0, ValueConfidence::High)
-            }
-            None if online => {
-                reasons.push(ValueReason::InsufficientData);
-                (18.75, ValueConfidence::Low)
-            }
-            None => {
-                reasons.push(ValueReason::SleepingMoney);
-                reasons.push(ValueReason::InsufficientData);
-                (0.0, ValueConfidence::Low)
-            }
-        };
-
-        (score, Self::prioritize_reasons(reasons), confidence)
     }
 
     pub(crate) fn normalize_config(
@@ -572,14 +391,13 @@ async fn compute_costs(
                 utilization_stats,
                 uptime_ratio,
                 online,
-                value_score: None,
+                advisories: Vec::new(),
             }
         })
         .collect::<Vec<_>>();
 
-    let comparables = build_currency_comparables(&computed);
     for entry in &mut computed {
-        entry.value_score = compute_value_score(entry, &comparables, now);
+        entry.advisories = compute_advisories(entry, now);
     }
 
     computed.sort_by(|left, right| {
@@ -603,6 +421,10 @@ async fn load_utilization_stats(
 
     let recent_cutoff = now - chrono::Duration::hours(RECORD_LOOKBACK_HOURS);
     let placeholders = sql_placeholders(server_ids.len());
+    // Network activity is gated on the per-window *speed* columns only.
+    // `net_*_transfer` is a cumulative since-boot counter (sysinfo
+    // `total_received/total_transmitted`), so it is non-zero for any host that
+    // has ever moved a byte and would make this flag a constant.
     let sql = format!(
         r#"
         SELECT
@@ -619,8 +441,6 @@ async fn load_utilization_stats(
                 CASE
                     WHEN r.net_in_speed > 0
                         OR r.net_out_speed > 0
-                        OR r.net_in_transfer > 0
-                        OR r.net_out_transfer > 0
                     THEN 1
                     ELSE 0
                 END
@@ -774,209 +594,63 @@ fn positive_json_number(value: Option<&serde_json::Value>) -> bool {
         .is_some_and(|value| value.is_finite() && value > 0.0)
 }
 
-fn build_currency_comparables(computed: &[ComputedCost]) -> HashMap<String, CurrencyComparables> {
-    let mut comparables = HashMap::<String, CurrencyComparables>::new();
-
-    for entry in computed {
-        let Some(burn) = entry.burn.as_ref() else {
-            continue;
-        };
-        let Some(resource_value) = entry.resource_value.as_ref() else {
-            continue;
-        };
-        let currency = entry
-            .config
-            .currency
-            .clone()
-            .unwrap_or_else(|| "USD".to_string());
-        let currency_comparables = comparables.entry(currency).or_default();
-
-        currency_comparables
-            .monthly_costs
-            .push(burn.cost_per_month_equivalent);
-        push_if_some(
-            &mut currency_comparables.cpu_unit_costs,
-            resource_value.cost_per_cpu_core,
-        );
-        push_if_some(
-            &mut currency_comparables.memory_unit_costs,
-            resource_value.cost_per_gb_memory,
-        );
-        push_if_some(
-            &mut currency_comparables.disk_unit_costs,
-            resource_value.cost_per_gb_disk,
-        );
-        push_if_some(
-            &mut currency_comparables.traffic_unit_costs,
-            resource_value.cost_per_tb_traffic_limit,
-        );
+/// Derive the objective cost advisories for a server. Returns an empty list when
+/// billing is unconfigured (no burn). Each advisory is decided per-server with
+/// no fleet comparison, so the result is meaningful for single-server setups.
+fn compute_advisories(entry: &ComputedCost, now: DateTime<Utc>) -> Vec<CostAdvisory> {
+    if entry.burn.is_none() {
+        return Vec::new();
     }
 
-    comparables
+    let paying = entry.config.price.is_some_and(|price| price > 0.0);
+    let stats = normalize_utilization_stats(&entry.utilization_stats);
+    let has_samples = stats.avg_cpu.is_some() || stats.avg_memory_percent.is_some();
+    let low_utilization = is_low_utilization(&stats);
+    let expired = entry
+        .server
+        .expired_at
+        .is_some_and(|expired_at| expired_at < now);
+
+    advisories_from(
+        paying,
+        entry.online,
+        has_samples,
+        low_utilization,
+        entry.uptime_ratio,
+        expired,
+    )
 }
 
-fn push_if_some(values: &mut Vec<f64>, value: Option<f64>) {
-    if let Some(value) = value {
-        values.push(value);
+/// Pure advisory rules over already-derived primitives. Kept separate from
+/// `compute_advisories` so the decision logic is unit-testable without a DB.
+///
+/// `SleepingMoney` and `IdleBurn` are mutually exclusive by construction:
+/// "sleeping" requires no recent samples, while "idle" requires the low-usage
+/// samples that prove the host was recently alive.
+fn advisories_from(
+    paying: bool,
+    online: bool,
+    has_utilization_samples: bool,
+    low_utilization: bool,
+    uptime_ratio: Option<f64>,
+    expired: bool,
+) -> Vec<CostAdvisory> {
+    let mut advisories = Vec::new();
+
+    if expired {
+        advisories.push(CostAdvisory::ExpiredBilling);
     }
-}
-
-fn compute_value_score(
-    entry: &ComputedCost,
-    comparables_by_currency: &HashMap<String, CurrencyComparables>,
-    now: DateTime<Utc>,
-) -> Option<ValueScore> {
-    let burn = entry.burn.as_ref()?;
-    let resource_value = entry.resource_value.as_ref()?;
-    let currency = entry.config.currency.as_deref().unwrap_or("USD");
-    let empty_comparables = CurrencyComparables::default();
-    let comparables = comparables_by_currency
-        .get(currency)
-        .unwrap_or(&empty_comparables);
-
-    let (resource_score, mut reasons, resource_confidence) =
-        compute_resource_score(resource_value, comparables);
-    let (utilization_score, utilization_reasons, utilization_confidence) =
-        CostService::compute_utilization_score(
-            &entry.utilization_stats,
-            burn.cost_per_month_equivalent,
-            &comparables.monthly_costs,
-        );
-    let (reliability_score, reliability_reasons, reliability_confidence) =
-        CostService::compute_reliability_score(
-            entry.uptime_ratio,
-            entry.online,
-            entry.server.expired_at,
-            now,
-        );
-
-    reasons.extend(utilization_reasons);
-    reasons.extend(reliability_reasons);
-    if entry.config.price == Some(0.0) {
-        reasons.push(ValueReason::FreeOrZeroPrice);
+    if paying && !online && !has_utilization_samples {
+        advisories.push(CostAdvisory::SleepingMoney);
+    }
+    if paying && low_utilization {
+        advisories.push(CostAdvisory::IdleBurn);
+    }
+    if uptime_ratio.is_some_and(|ratio| ratio < LOW_UPTIME_THRESHOLD) {
+        advisories.push(CostAdvisory::LowUptime);
     }
 
-    let score = round_one_decimal(
-        (resource_score + utilization_score + reliability_score).clamp(0.0, 100.0),
-    );
-    Some(ValueScore {
-        score,
-        grade: CostService::grade_for_score(score),
-        reasons: CostService::prioritize_reasons(reasons),
-        confidence: merge_confidence([
-            resource_confidence,
-            utilization_confidence,
-            reliability_confidence,
-        ]),
-    })
-}
-
-fn compute_resource_score(
-    resource_value: &ResourceValue,
-    comparables: &CurrencyComparables,
-) -> (f64, Vec<ValueReason>, ValueConfidence) {
-    let mut metric_scores = Vec::new();
-    let mut has_strong_comparable = false;
-    let mut reasons = Vec::new();
-
-    collect_resource_metric(
-        resource_value.cost_per_cpu_core,
-        &comparables.cpu_unit_costs,
-        &mut metric_scores,
-        &mut has_strong_comparable,
-        None,
-        Some(ValueReason::ExpensiveCpu),
-        &mut reasons,
-    );
-    collect_resource_metric(
-        resource_value.cost_per_gb_memory,
-        &comparables.memory_unit_costs,
-        &mut metric_scores,
-        &mut has_strong_comparable,
-        Some(ValueReason::GoodMemoryValue),
-        None,
-        &mut reasons,
-    );
-    collect_resource_metric(
-        resource_value.cost_per_gb_disk,
-        &comparables.disk_unit_costs,
-        &mut metric_scores,
-        &mut has_strong_comparable,
-        Some(ValueReason::GoodDiskValue),
-        None,
-        &mut reasons,
-    );
-    collect_resource_metric(
-        resource_value.cost_per_tb_traffic_limit,
-        &comparables.traffic_unit_costs,
-        &mut metric_scores,
-        &mut has_strong_comparable,
-        None,
-        None,
-        &mut reasons,
-    );
-
-    if metric_scores.is_empty() {
-        reasons.push(ValueReason::InsufficientData);
-        return (20.0, reasons, ValueConfidence::Low);
-    }
-
-    if !has_strong_comparable {
-        reasons.push(ValueReason::InsufficientData);
-    }
-
-    let average = metric_scores.iter().sum::<f64>() / metric_scores.len() as f64;
-    let confidence = if has_strong_comparable {
-        ValueConfidence::Medium
-    } else {
-        ValueConfidence::Low
-    };
-
-    (average * 40.0, reasons, confidence)
-}
-
-fn collect_resource_metric(
-    value: Option<f64>,
-    comparable_values: &[f64],
-    metric_scores: &mut Vec<f64>,
-    has_strong_comparable: &mut bool,
-    good_reason: Option<ValueReason>,
-    expensive_reason: Option<ValueReason>,
-    reasons: &mut Vec<ValueReason>,
-) {
-    let Some(value) = value else {
-        return;
-    };
-
-    let score = CostService::resource_percentile_score(value, comparable_values);
-    metric_scores.push(score);
-
-    if finite_positive_values(comparable_values).len() >= 2 && is_finite_positive(value) {
-        *has_strong_comparable = true;
-        if score >= 0.75 {
-            if let Some(reason) = good_reason {
-                reasons.push(reason);
-            }
-        } else if score <= 0.25
-            && let Some(reason) = expensive_reason
-        {
-            reasons.push(reason);
-        }
-    }
-}
-
-fn merge_confidence(confidences: [ValueConfidence; 3]) -> ValueConfidence {
-    if confidences.contains(&ValueConfidence::Low) {
-        ValueConfidence::Low
-    } else if confidences.contains(&ValueConfidence::Medium) {
-        ValueConfidence::Medium
-    } else {
-        ValueConfidence::High
-    }
-}
-
-fn round_one_decimal(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
+    advisories
 }
 
 fn currency_summaries(computed: &[ComputedCost]) -> Vec<CurrencyCostSummary> {
@@ -1030,7 +704,7 @@ fn map_overview(entry: &ComputedCost) -> ServerCostOverview {
         cycle_cost_elapsed: entry.burn.as_ref().map(|burn| burn.cycle_cost_elapsed),
         cycle_burn_percent: entry.burn.as_ref().and_then(|burn| burn.cycle_burn_percent),
         days_remaining: entry.burn.as_ref().map(|burn| burn.days_remaining),
-        value_score: entry.value_score.clone(),
+        advisories: entry.advisories.clone(),
     }
 }
 
@@ -1058,7 +732,7 @@ fn map_insights(entry: &ComputedCost) -> ServerCostInsights {
         cycle_cost_remaining: entry.burn.as_ref().map(|burn| burn.cycle_cost_remaining),
         cycle_burn_percent: entry.burn.as_ref().and_then(|burn| burn.cycle_burn_percent),
         resource_value: entry.resource_value.clone(),
-        value_score: entry.value_score.clone(),
+        advisories: entry.advisories.clone(),
     }
 }
 
@@ -1094,18 +768,6 @@ fn is_valid_resource_cost(value: f64) -> bool {
     value.is_finite() && value >= 0.0
 }
 
-fn finite_positive_values(values: &[f64]) -> Vec<f64> {
-    values
-        .iter()
-        .copied()
-        .filter(|value| is_finite_positive(*value))
-        .collect()
-}
-
-fn is_finite_positive(value: f64) -> bool {
-    value.is_finite() && value > 0.0
-}
-
 fn normalize_utilization_stats(stats: &UtilizationStats) -> UtilizationStats {
     UtilizationStats {
         avg_cpu: stats.avg_cpu.filter(|value| value.is_finite()),
@@ -1115,67 +777,12 @@ fn normalize_utilization_stats(stats: &UtilizationStats) -> UtilizationStats {
     }
 }
 
-fn utilization_confidence(stats: &UtilizationStats) -> ValueConfidence {
-    match (stats.avg_cpu, stats.avg_memory_percent) {
-        (Some(_), Some(_)) => ValueConfidence::High,
-        (Some(_), None) | (None, Some(_)) => ValueConfidence::Medium,
-        (None, None) => ValueConfidence::Low,
-    }
-}
-
 fn is_low_utilization(stats: &UtilizationStats) -> bool {
     let cpu_is_low = stats.avg_cpu.is_some_and(|value| value < 5.0);
     let memory_is_low = stats.avg_memory_percent.is_some_and(|value| value < 20.0);
     let io_is_quiet = !stats.has_network_activity && !stats.has_disk_io_activity;
 
     cpu_is_low && memory_is_low && io_is_quiet
-}
-
-fn is_moderate_stable_utilization(stats: &UtilizationStats) -> bool {
-    let cpu_is_moderate = stats
-        .avg_cpu
-        .is_some_and(|value| (10.0..=70.0).contains(&value));
-    let memory_is_moderate = stats
-        .avg_memory_percent
-        .is_some_and(|value| (30.0..=80.0).contains(&value));
-    let has_activity = stats.has_network_activity || stats.has_disk_io_activity;
-
-    has_activity && (cpu_is_moderate || memory_is_moderate)
-}
-
-fn is_high_monthly_cost(monthly_cost: f64, fleet_monthly_costs: &[f64]) -> bool {
-    if !is_finite_positive(monthly_cost) {
-        return false;
-    }
-
-    let mut costs = finite_positive_values(fleet_monthly_costs);
-    if costs.is_empty() {
-        return false;
-    }
-
-    costs.sort_by(f64::total_cmp);
-    let threshold = if costs.len() < 4 {
-        median(&costs)
-    } else {
-        percentile_nearest_rank(&costs, 0.75)
-    };
-
-    monthly_cost >= threshold
-}
-
-fn median(sorted_values: &[f64]) -> f64 {
-    let middle = sorted_values.len() / 2;
-    if sorted_values.len().is_multiple_of(2) {
-        (sorted_values[middle - 1] + sorted_values[middle]) / 2.0
-    } else {
-        sorted_values[middle]
-    }
-}
-
-fn percentile_nearest_rank(sorted_values: &[f64], percentile: f64) -> f64 {
-    let rank = (percentile.clamp(0.0, 1.0) * sorted_values.len() as f64).ceil() as usize;
-    let index = rank.saturating_sub(1).min(sorted_values.len() - 1);
-    sorted_values[index]
 }
 
 fn bytes_to_gib(bytes: i64) -> f64 {
@@ -1193,9 +800,7 @@ mod tests {
     use serverbee_common::constants::CAP_DEFAULT;
 
     use crate::entity::{record, server, uptime_daily};
-    use crate::service::cost::{
-        CostInvalidReason, CostService, UtilizationStats, ValueConfidence, ValueGrade, ValueReason,
-    };
+    use crate::service::cost::{CostAdvisory, CostInvalidReason, CostService, UtilizationStats};
 
     fn assert_near(actual: f64, expected: f64) {
         assert!(
@@ -1390,11 +995,11 @@ mod tests {
             insights.invalid_reason,
             Some(CostInvalidReason::MissingPrice)
         );
-        assert!(insights.value_score.is_none());
+        assert!(insights.advisories.is_empty());
     }
 
     #[tokio::test]
-    async fn expired_at_adds_expired_billing_reason_without_truncating_burn() {
+    async fn expired_at_adds_expired_billing_advisory_without_truncating_burn() {
         let (db, _tmp) = crate::test_utils::setup_test_db().await;
         let expired_at = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
         insert_test_server(
@@ -1420,13 +1025,7 @@ mod tests {
             insights.cycle_cost_elapsed,
             Some(expected_burn.cycle_cost_elapsed)
         );
-        assert!(
-            insights
-                .value_score
-                .expect("value score should exist")
-                .reasons
-                .contains(&ValueReason::ExpiredBilling)
-        );
+        assert!(insights.advisories.contains(&CostAdvisory::ExpiredBilling));
     }
 
     #[tokio::test]
@@ -1461,8 +1060,8 @@ mod tests {
             overview
                 .servers
                 .iter()
-                .all(|entry| entry.value_score.is_some()),
-            "grouped record and uptime inputs should feed every server in one overview call"
+                .all(|entry| entry.advisories.is_empty()),
+            "healthy, well-utilized servers with full uptime should raise no advisories"
         );
     }
 
@@ -1493,13 +1092,7 @@ mod tests {
             .await
             .expect("server insights should succeed");
 
-        assert!(
-            insights
-                .value_score
-                .expect("value score should exist")
-                .reasons
-                .contains(&ValueReason::IdleBurn)
-        );
+        assert!(insights.advisories.contains(&CostAdvisory::IdleBurn));
     }
 
     #[test]
@@ -1664,150 +1257,106 @@ mod tests {
         assert_eq!(values.traffic_limit_type, None);
     }
 
+    // -----------------------------------------------------------------------
+    // Advisory rules
+    // -----------------------------------------------------------------------
+
     #[test]
-    fn grade_boundaries_are_half_open() {
-        assert_eq!(CostService::grade_for_score(90.0), ValueGrade::Excellent);
-        assert_eq!(CostService::grade_for_score(75.0), ValueGrade::Good);
-        assert_eq!(CostService::grade_for_score(60.0), ValueGrade::Okay);
-        assert_eq!(CostService::grade_for_score(40.0), ValueGrade::Poor);
-        assert_eq!(CostService::grade_for_score(39.9), ValueGrade::Waste);
+    fn advisory_expired_billing_when_date_is_past() {
+        let advisories = super::advisories_from(true, true, true, false, Some(1.0), true);
+        assert!(advisories.contains(&CostAdvisory::ExpiredBilling));
     }
 
     #[test]
-    fn reasons_are_limited_and_prioritized() {
-        let reasons = CostService::prioritize_reasons(vec![
-            ValueReason::HealthyUptime,
-            ValueReason::IdleBurn,
-            ValueReason::SleepingMoney,
-            ValueReason::ExpensiveCpu,
-            ValueReason::IdleBurn,
-        ]);
+    fn advisory_sleeping_money_when_offline_paying_without_samples() {
+        let advisories = super::advisories_from(true, false, false, false, None, false);
+        assert_eq!(advisories, vec![CostAdvisory::SleepingMoney]);
+    }
 
+    #[test]
+    fn advisory_no_sleeping_money_for_free_server() {
+        let advisories = super::advisories_from(false, false, false, false, None, false);
+        assert!(advisories.is_empty());
+    }
+
+    #[test]
+    fn advisory_idle_burn_when_paying_and_low_utilization() {
+        let advisories = super::advisories_from(true, true, true, true, Some(1.0), false);
+        assert!(advisories.contains(&CostAdvisory::IdleBurn));
+    }
+
+    #[test]
+    fn advisory_no_idle_burn_for_free_server() {
+        let advisories = super::advisories_from(false, true, true, true, Some(1.0), false);
+        assert!(!advisories.contains(&CostAdvisory::IdleBurn));
+    }
+
+    #[test]
+    fn advisory_sleeping_and_idle_are_mutually_exclusive() {
+        // Offline but with recent low-usage samples → idle, not sleeping.
+        let advisories = super::advisories_from(true, false, true, true, Some(1.0), false);
+        assert!(!advisories.contains(&CostAdvisory::SleepingMoney));
+        assert!(advisories.contains(&CostAdvisory::IdleBurn));
+    }
+
+    #[test]
+    fn advisory_low_uptime_threshold_is_exclusive_at_ninety_percent() {
+        assert!(
+            super::advisories_from(true, true, true, false, Some(0.89), false)
+                .contains(&CostAdvisory::LowUptime)
+        );
+        assert!(
+            !super::advisories_from(true, true, true, false, Some(0.90), false)
+                .contains(&CostAdvisory::LowUptime)
+        );
+        assert!(
+            !super::advisories_from(true, true, true, false, None, false)
+                .contains(&CostAdvisory::LowUptime)
+        );
+    }
+
+    #[test]
+    fn advisories_are_emitted_in_priority_order() {
+        // Expired + offline + no samples + weak uptime.
+        let advisories = super::advisories_from(true, false, false, false, Some(0.5), true);
         assert_eq!(
-            reasons,
+            advisories,
             vec![
-                ValueReason::SleepingMoney,
-                ValueReason::IdleBurn,
-                ValueReason::ExpensiveCpu
+                CostAdvisory::ExpiredBilling,
+                CostAdvisory::SleepingMoney,
+                CostAdvisory::LowUptime
             ]
         );
     }
 
     #[test]
-    fn single_server_resource_metric_uses_neutral_score() {
-        let score = CostService::resource_percentile_score(5.0, &[5.0]);
-
-        assert_eq!(score, 0.5);
-    }
-
-    #[test]
-    fn lower_unit_cost_gets_higher_percentile_score_than_higher_unit_cost() {
-        let comparable_values = [2.0, 5.0, 10.0, 20.0];
-
-        let cheap_score = CostService::resource_percentile_score(2.0, &comparable_values);
-        let expensive_score = CostService::resource_percentile_score(20.0, &comparable_values);
-
-        assert!(cheap_score > expensive_score);
-    }
-
-    #[test]
-    fn invalid_comparable_values_do_not_produce_non_finite_score() {
-        let score = CostService::resource_percentile_score(
-            f64::INFINITY,
-            &[f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0],
-        );
-
-        assert!(score.is_finite());
-        assert!((0.0..=1.0).contains(&score));
-    }
-
-    #[test]
-    fn expired_billing_adds_reason_without_lowering_perfect_uptime_score() {
-        let now = Utc.with_ymd_and_hms(2026, 5, 5, 0, 0, 0).unwrap();
-        let expired_at = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
-
-        let (score, reasons, confidence) =
-            CostService::compute_reliability_score(Some(1.0), true, Some(expired_at), now);
-
-        assert_eq!(score, 25.0);
-        assert_eq!(reasons, vec![ValueReason::ExpiredBilling]);
-        assert_eq!(confidence, ValueConfidence::High);
-    }
-
-    #[test]
-    fn low_utilization_with_high_monthly_cost_yields_idle_burn() {
-        let stats = UtilizationStats {
+    fn is_low_utilization_requires_idle_cpu_memory_and_quiet_io() {
+        let idle = UtilizationStats {
             avg_cpu: Some(2.0),
             avg_memory_percent: Some(10.0),
             has_network_activity: false,
             has_disk_io_activity: false,
         };
+        assert!(super::is_low_utilization(&idle));
 
-        let (_score, reasons, _confidence) =
-            CostService::compute_utilization_score(&stats, 20.0, &[5.0, 10.0, 20.0]);
+        let busy_cpu = UtilizationStats {
+            avg_cpu: Some(40.0),
+            ..idle.clone()
+        };
+        assert!(!super::is_low_utilization(&busy_cpu));
 
-        assert!(reasons.contains(&ValueReason::IdleBurn));
-    }
-
-    #[test]
-    fn non_finite_utilization_inputs_are_insufficient_data_not_overload() {
-        let stable = UtilizationStats {
-            avg_cpu: Some(35.0),
-            avg_memory_percent: Some(50.0),
+        let noisy_network = UtilizationStats {
             has_network_activity: true,
+            ..idle.clone()
+        };
+        assert!(!super::is_low_utilization(&noisy_network));
+
+        let no_samples = UtilizationStats {
+            avg_cpu: None,
+            avg_memory_percent: None,
+            has_network_activity: false,
             has_disk_io_activity: false,
         };
-        let invalid = UtilizationStats {
-            avg_cpu: Some(f64::INFINITY),
-            avg_memory_percent: Some(f64::NAN),
-            has_network_activity: true,
-            has_disk_io_activity: true,
-        };
-        let overloaded = UtilizationStats {
-            avg_cpu: Some(90.0),
-            avg_memory_percent: Some(70.0),
-            has_network_activity: true,
-            has_disk_io_activity: true,
-        };
-
-        let (stable_score, _stable_reasons, _stable_confidence) =
-            CostService::compute_utilization_score(&stable, 10.0, &[5.0, 10.0, 20.0]);
-        let (invalid_score, invalid_reasons, invalid_confidence) =
-            CostService::compute_utilization_score(&invalid, 10.0, &[5.0, 10.0, 20.0]);
-        let (overloaded_score, _overloaded_reasons, _overloaded_confidence) =
-            CostService::compute_utilization_score(&overloaded, 10.0, &[5.0, 10.0, 20.0]);
-
-        assert!(invalid_score.is_finite());
-        assert!(invalid_score < overloaded_score);
-        assert!(invalid_score < stable_score);
-        assert_eq!(invalid_confidence, ValueConfidence::Low);
-        assert!(invalid_reasons.contains(&ValueReason::InsufficientData));
-    }
-
-    #[test]
-    fn over_utilization_caps_score_below_stable_moderate_utilization() {
-        let stable = UtilizationStats {
-            avg_cpu: Some(35.0),
-            avg_memory_percent: Some(50.0),
-            has_network_activity: true,
-            has_disk_io_activity: false,
-        };
-        let overloaded = UtilizationStats {
-            avg_cpu: Some(90.0),
-            avg_memory_percent: Some(70.0),
-            has_network_activity: true,
-            has_disk_io_activity: true,
-        };
-
-        let (stable_score, _stable_reasons, stable_confidence) =
-            CostService::compute_utilization_score(&stable, 10.0, &[5.0, 10.0, 20.0]);
-        let (overloaded_score, _overloaded_reasons, overloaded_confidence) =
-            CostService::compute_utilization_score(&overloaded, 10.0, &[5.0, 10.0, 20.0]);
-
-        assert!(stable_score.is_finite());
-        assert!(overloaded_score.is_finite());
-        assert!(overloaded_score < stable_score);
-        assert_eq!(stable_confidence, ValueConfidence::High);
-        assert_eq!(overloaded_confidence, ValueConfidence::High);
+        assert!(!super::is_low_utilization(&no_samples));
     }
 }

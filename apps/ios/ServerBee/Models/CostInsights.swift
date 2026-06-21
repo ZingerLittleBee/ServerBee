@@ -1,9 +1,10 @@
 import Foundation
 
-/// Cost / value analysis for one server (`GET /api/servers/{id}/cost-insights`).
+/// Cost analysis for one server (`GET /api/servers/{id}/cost-insights`).
 ///
-/// When `configured` is false, the burn / value fields are all null and
-/// `invalidReason` explains why (missing price, missing/invalid cycle, etc.).
+/// When `configured` is false, the burn fields are all null and `invalidReason`
+/// explains why (missing price, missing/invalid cycle, etc.). `advisories` lists
+/// objective, per-server warnings (idle burn, offline while paying, etc.).
 struct ServerCostInsights: Decodable, Sendable {
     let serverId: String
     let configured: Bool
@@ -24,7 +25,7 @@ struct ServerCostInsights: Decodable, Sendable {
     var cycleCostRemaining: Double?
     var cycleBurnPercent: Double?
     var resourceValue: ResourceValue?
-    var valueScore: ValueScore?
+    var advisories: [CostAdvisory]?
 
     enum CodingKeys: String, CodingKey {
         case serverId = "server_id"
@@ -45,18 +46,26 @@ struct ServerCostInsights: Decodable, Sendable {
         case cycleCostRemaining = "cycle_cost_remaining"
         case cycleBurnPercent = "cycle_burn_percent"
         case resourceValue = "resource_value"
-        case valueScore = "value_score"
+        case advisories
     }
 
     var currencyCode: String { currency ?? "USD" }
 }
 
-/// Why a server's cost could not be analysed.
+/// Why a server's cost could not be analysed. Decoded leniently so an unknown
+/// server-side variant degrades to `.unknown` rather than failing the whole
+/// cost response.
 enum CostInvalidReason: String, Decodable, Sendable {
     case missingPrice = "missing_price"
     case missingBillingCycle = "missing_billing_cycle"
     case invalidBillingCycle = "invalid_billing_cycle"
     case invalidPrice = "invalid_price"
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = CostInvalidReason(rawValue: raw) ?? .unknown
+    }
 
     var label: String {
         switch self {
@@ -64,6 +73,7 @@ enum CostInvalidReason: String, Decodable, Sendable {
         case .missingBillingCycle: String(localized: "No billing cycle set")
         case .invalidBillingCycle: String(localized: "Invalid billing cycle")
         case .invalidPrice: String(localized: "Invalid price")
+        case .unknown: String(localized: "Cost configuration issue")
         }
     }
 }
@@ -85,79 +95,27 @@ struct ResourceValue: Decodable, Sendable {
     }
 }
 
-/// Composite value-for-money score (0-100) with grade and explanations.
-struct ValueScore: Decodable, Sendable {
-    let score: Double
-    let grade: ValueGrade
-    let reasons: [ValueReason]
-    let confidence: ValueConfidence
-
-    enum CodingKeys: String, CodingKey {
-        case score, grade, reasons, confidence
-    }
-}
-
-enum ValueGrade: String, Decodable, Sendable {
-    case excellent, good, okay, poor, waste
-
-    var label: String {
-        switch self {
-        case .excellent: String(localized: "Excellent")
-        case .good: String(localized: "Good")
-        case .okay: String(localized: "Okay")
-        case .poor: String(localized: "Poor")
-        case .waste: String(localized: "Waste")
-        }
-    }
-}
-
-enum ValueConfidence: String, Decodable, Sendable {
-    case high, medium, low
-
-    var label: String {
-        switch self {
-        case .high: String(localized: "High confidence")
-        case .medium: String(localized: "Medium confidence")
-        case .low: String(localized: "Low confidence")
-        }
-    }
-}
-
-/// A single prioritised explanation for a value score. Decoded leniently so an
-/// unknown server-side variant degrades to `.unknown` rather than failing the
-/// whole response.
-enum ValueReason: String, Decodable, Sendable {
-    case idleBurn = "idle_burn"
-    case sleepingMoney = "sleeping_money"
-    case goodMemoryValue = "good_memory_value"
-    case goodDiskValue = "good_disk_value"
-    case expensiveCpu = "expensive_cpu"
-    case healthyUptime = "healthy_uptime"
-    case lowUptime = "low_uptime"
+/// An objective, per-server cost advisory surfaced alongside the cost
+/// breakdown. Decoded leniently so an unknown server-side variant degrades to
+/// `.unknown` rather than failing the whole cost response.
+enum CostAdvisory: String, Decodable, Sendable {
     case expiredBilling = "expired_billing"
-    case noPriceCycle = "no_price_cycle"
-    case insufficientData = "insufficient_data"
-    case freeOrZeroPrice = "free_or_zero_price"
+    case sleepingMoney = "sleeping_money"
+    case idleBurn = "idle_burn"
+    case lowUptime = "low_uptime"
     case unknown
 
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
-        self = ValueReason(rawValue: raw) ?? .unknown
+        self = CostAdvisory(rawValue: raw) ?? .unknown
     }
 
     var label: String {
         switch self {
-        case .idleBurn: String(localized: "Paying for idle capacity")
-        case .sleepingMoney: String(localized: "Mostly offline — money asleep")
-        case .goodMemoryValue: String(localized: "Good memory value")
-        case .goodDiskValue: String(localized: "Good disk value")
-        case .expensiveCpu: String(localized: "Expensive per CPU core")
-        case .healthyUptime: String(localized: "Healthy uptime")
-        case .lowUptime: String(localized: "Low uptime")
         case .expiredBilling: String(localized: "Billing expired")
-        case .noPriceCycle: String(localized: "No price or cycle")
-        case .insufficientData: String(localized: "Not enough data yet")
-        case .freeOrZeroPrice: String(localized: "Free / zero price")
+        case .sleepingMoney: String(localized: "Offline & paying")
+        case .idleBurn: String(localized: "Idle & paying")
+        case .lowUptime: String(localized: "Low uptime")
         case .unknown: String(localized: "—")
         }
     }

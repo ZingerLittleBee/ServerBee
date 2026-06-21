@@ -28,6 +28,12 @@ pub struct UpdateServerInput {
     pub hidden: Option<bool>,
     pub remark: Option<String>,
     pub public_remark: Option<String>,
+    /// Manual override for the GeoIP country flag. `Some(Some("us"))` pins the
+    /// 2-letter ISO code and freezes it against auto-detection; `Some(None)`
+    /// (explicit JSON null) clears the override and resumes GeoIP on the next
+    /// agent report. Absent = unchanged.
+    #[serde(default, deserialize_with = "deserialize_optional_nullable")]
+    pub country_code: Option<Option<String>>,
     // Billing fields
     #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub price: Option<Option<f64>>,
@@ -95,6 +101,21 @@ impl ServerService {
         if let Some(public_remark) = input.public_remark {
             active.public_remark = Set(Some(public_remark));
         }
+        // Manual geo override. Setting a code pins it and freezes GeoIP; clearing
+        // it (explicit null) wipes region/country_code so the next agent report
+        // re-derives them automatically.
+        match input.country_code {
+            Some(Some(code)) => {
+                active.country_code = Set(Some(code.to_uppercase()));
+                active.geo_manual = Set(true);
+            }
+            Some(None) => {
+                active.country_code = Set(None);
+                active.region = Set(None);
+                active.geo_manual = Set(false);
+            }
+            None => {}
+        }
         if let Some(price) = input.price {
             active.price = Set(price);
         }
@@ -155,6 +176,16 @@ impl ServerService {
         if matches!(input.billing_start_day, Some(Some(day)) if !(1..=28).contains(&day)) {
             return Err(AppError::Validation(
                 "billing_start_day must be between 1 and 28".into(),
+            ));
+        }
+
+        if matches!(
+            input.country_code.as_ref(),
+            Some(Some(code))
+                if code.len() != 2 || !code.chars().all(|c| c.is_ascii_alphabetic())
+        ) {
+            return Err(AppError::Validation(
+                "country_code must be a 2-letter ISO 3166-1 alpha-2 code".into(),
             ));
         }
 
@@ -285,6 +316,8 @@ impl ServerService {
         country_code: Option<String>,
     ) -> Result<(), AppError> {
         let model = Self::get_server(db, server_id).await?;
+        // A manual geo override freezes region/country_code against auto-detection.
+        let geo_manual = model.geo_manual;
         let mut active: server::ActiveModel = model.into();
 
         active.cpu_name = Set(Some(info.cpu_name.clone()));
@@ -299,8 +332,10 @@ impl ServerService {
         active.ipv6 = Set(info.ipv6.clone());
         active.virtualization = Set(info.virtualization.clone());
         active.agent_version = Set(Some(info.agent_version.clone()));
-        active.region = Set(region);
-        active.country_code = Set(country_code);
+        if !geo_manual {
+            active.region = Set(region);
+            active.country_code = Set(country_code);
+        }
         active.protocol_version = Set(info.protocol_version as i32);
         active.updated_at = Set(Utc::now());
 
@@ -355,6 +390,26 @@ mod tests {
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
+            country_code: None,
+        }
+    }
+
+    fn system_info(country_hint: &str) -> SystemInfo {
+        SystemInfo {
+            cpu_name: "test-cpu".to_string(),
+            cpu_cores: 2,
+            cpu_arch: "x86_64".to_string(),
+            os: format!("Debian ({country_hint})"),
+            kernel_version: "6.0.0".to_string(),
+            mem_total: 1,
+            swap_total: 0,
+            disk_total: 1,
+            ipv4: None,
+            ipv6: None,
+            virtualization: None,
+            agent_version: "test".to_string(),
+            protocol_version: 1,
+            features: Vec::new(),
         }
     }
 
@@ -643,5 +698,104 @@ mod tests {
         assert_eq!(updated.billing_cycle, None);
         assert_eq!(updated.traffic_limit_type, None);
         assert_eq!(updated.billing_start_day, None);
+    }
+
+    #[tokio::test]
+    async fn update_server_rejects_invalid_country_code() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-cc-invalid", "CC Invalid").await;
+
+        for bad in ["USA", "U", "U1", "12"] {
+            let result = ServerService::update_server(
+                &db,
+                "srv-cc-invalid",
+                UpdateServerInput {
+                    country_code: Some(Some(bad.to_string())),
+                    ..update_input()
+                },
+            )
+            .await;
+            let message = validation_message(result);
+            assert!(
+                message.contains("country_code"),
+                "validation message should mention country_code for {bad:?}, got {message}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn update_server_country_override_pins_and_clears() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-cc", "CC").await;
+
+        // Setting a (lowercase) code uppercases it and flips on the manual flag.
+        let pinned = ServerService::update_server(
+            &db,
+            "srv-cc",
+            UpdateServerInput {
+                country_code: Some(Some("us".to_string())),
+                ..update_input()
+            },
+        )
+        .await
+        .expect("override should update");
+        assert_eq!(pinned.country_code.as_deref(), Some("US"));
+        assert!(pinned.geo_manual, "manual override flag should be set");
+
+        // Clearing it (explicit null) wipes geo and resumes auto-detection.
+        let cleared = ServerService::update_server(
+            &db,
+            "srv-cc",
+            UpdateServerInput {
+                country_code: Some(None),
+                ..update_input()
+            },
+        )
+        .await
+        .expect("clear should update");
+        assert_eq!(cleared.country_code, None);
+        assert_eq!(cleared.region, None);
+        assert!(!cleared.geo_manual, "manual override flag should be cleared");
+    }
+
+    #[tokio::test]
+    async fn update_system_info_respects_manual_geo_override() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-geo", "Geo").await;
+
+        // Operator pins the flag to JP.
+        ServerService::update_server(
+            &db,
+            "srv-geo",
+            UpdateServerInput {
+                country_code: Some(Some("JP".to_string())),
+                ..update_input()
+            },
+        )
+        .await
+        .expect("pin should succeed");
+
+        // A later agent report carrying a different GeoIP guess must not clobber it.
+        ServerService::update_system_info(
+            &db,
+            "srv-geo",
+            &system_info("auto"),
+            Some("California".to_string()),
+            Some("US".to_string()),
+        )
+        .await
+        .expect("update_system_info should succeed");
+
+        let after = ServerService::get_server(&db, "srv-geo")
+            .await
+            .expect("server should exist");
+        assert_eq!(
+            after.country_code.as_deref(),
+            Some("JP"),
+            "manual country_code must survive an agent report"
+        );
+        assert!(after.geo_manual, "manual flag must remain set");
+        // Non-geo fields from the report still apply.
+        assert_eq!(after.os.as_deref(), Some("Debian (auto)"));
     }
 }

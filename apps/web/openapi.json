@@ -8651,7 +8651,8 @@
             "type": "object",
             "required": [
               "server_id",
-              "configured"
+              "configured",
+              "advisories"
             ],
             "properties": {
               "billing_cycle": {
@@ -8781,15 +8782,11 @@
               "server_id": {
                 "type": "string"
               },
-              "value_score": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/components/schemas/ValueScore"
-                  }
-                ]
+              "advisories": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CostAdvisory"
+                }
               }
             }
           }
@@ -9318,6 +9315,15 @@
             "minimum": 0
           }
         }
+      },
+      "CostAdvisory": {
+        "type": "string",
+        "enum": [
+          "expired_billing",
+          "sleeping_money",
+          "idle_burn",
+          "low_uptime"
+        ]
       },
       "CostInvalidReason": {
         "type": "string",
@@ -12505,7 +12511,8 @@
         "type": "object",
         "required": [
           "server_id",
-          "configured"
+          "configured",
+          "advisories"
         ],
         "properties": {
           "billing_cycle": {
@@ -12635,15 +12642,11 @@
           "server_id": {
             "type": "string"
           },
-          "value_score": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ValueScore"
-              }
-            ]
+          "advisories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostAdvisory"
+            }
           }
         }
       },
@@ -12652,7 +12655,8 @@
         "required": [
           "server_id",
           "name",
-          "configured"
+          "configured",
+          "advisories"
         ],
         "properties": {
           "billing_cycle": {
@@ -12735,15 +12739,11 @@
           "server_id": {
             "type": "string"
           },
-          "value_score": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/ValueScore"
-              }
-            ]
+          "advisories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostAdvisory"
+            }
           }
         }
       },
@@ -15496,67 +15496,6 @@
           },
           "username": {
             "type": "string"
-          }
-        }
-      },
-      "ValueConfidence": {
-        "type": "string",
-        "enum": [
-          "high",
-          "medium",
-          "low"
-        ]
-      },
-      "ValueGrade": {
-        "type": "string",
-        "enum": [
-          "excellent",
-          "good",
-          "okay",
-          "poor",
-          "waste"
-        ]
-      },
-      "ValueReason": {
-        "type": "string",
-        "enum": [
-          "idle_burn",
-          "sleeping_money",
-          "good_memory_value",
-          "good_disk_value",
-          "expensive_cpu",
-          "healthy_uptime",
-          "low_uptime",
-          "expired_billing",
-          "no_price_cycle",
-          "insufficient_data",
-          "free_or_zero_price"
-        ]
-      },
-      "ValueScore": {
-        "type": "object",
-        "required": [
-          "score",
-          "grade",
-          "reasons",
-          "confidence"
-        ],
-        "properties": {
-          "confidence": {
-            "$ref": "#/components/schemas/ValueConfidence"
-          },
-          "grade": {
-            "$ref": "#/components/schemas/ValueGrade"
-          },
-          "reasons": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ValueReason"
-            }
-          },
-          "score": {
-            "type": "number",
-            "format": "double"
           }
         }
       },

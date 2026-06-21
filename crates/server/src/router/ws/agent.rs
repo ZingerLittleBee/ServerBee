@@ -1680,6 +1680,10 @@ async fn update_server_geo(
     use sea_orm::{ActiveModelTrait, Set};
 
     let model = ServerService::get_server(db, server_id).await?;
+    // Respect a manual override: never clobber operator-corrected geo with GeoIP.
+    if model.geo_manual {
+        return Ok(());
+    }
     let mut active: server::ActiveModel = model.into();
     active.region = Set(region);
     active.country_code = Set(country_code);

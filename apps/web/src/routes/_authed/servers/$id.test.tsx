@@ -32,6 +32,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { language: 'en' },
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key
   })
 }))
@@ -155,6 +156,7 @@ vi.mock('@/lib/disk-io', () => ({
 vi.mock('@/lib/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   countryCodeToFlag: () => 'US',
+  countryCodeToName: () => 'United States',
   formatBytes: (value: number) => `${value}`
 }))
 
@@ -290,19 +292,13 @@ describe('ServerDetailPage', () => {
         price: 5,
         resource_value: {},
         server_id: 'server-1',
-        value_score: {
-          confidence: 'high',
-          grade: 'good',
-          reasons: ['healthy_uptime'],
-          score: 82
-        }
+        advisories: ['expired_billing']
       } satisfies ServerCostInsights
     })
 
     render(<ServerDetailPage />)
 
-    expect(screen.getByText('cost_value_score')).toBeInTheDocument()
-    expect(screen.getByText('82')).toBeInTheDocument()
+    expect(screen.getByText('cost_advisory_expired_billing')).toBeInTheDocument()
     expect(screen.getByText(REGEX_EDIT_CYCLE_MONTHLY)).toBeInTheDocument()
     expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
   })
@@ -344,7 +340,8 @@ describe('ServerDetailPage', () => {
         currency: 'USD',
         invalid_reason: 'missing_billing_cycle',
         price: 5,
-        server_id: 'server-1'
+        server_id: 'server-1',
+        advisories: []
       } satisfies ServerCostInsights
     })
 

@@ -123,16 +123,17 @@ describe('applyServerEdit', () => {
       makeServer({ id: 's1', name: 'Old', group_id: null }),
       makeServer({ id: 's2', name: 'Keep', group_id: 'g0' })
     ]
-    const result = applyServerEdit(prev, 's1', { name: 'New', group_id: 'g1' })
+    const result = applyServerEdit(prev, 's1', { name: 'New', group_id: 'g1', country_code: 'US' })
     expect(result[0].name).toBe('New')
     expect(result[0].group_id).toBe('g1')
+    expect(result[0].country_code).toBe('US')
     expect(result[1].name).toBe('Keep')
     expect(result[1].group_id).toBe('g0')
   })
 
   it('preserves live metrics and online state while editing config', () => {
     const prev = [makeServer({ id: 's1', name: 'Old', online: true, cpu: 42 })]
-    const result = applyServerEdit(prev, 's1', { name: 'Renamed', group_id: null })
+    const result = applyServerEdit(prev, 's1', { name: 'Renamed', group_id: null, country_code: null })
     expect(result[0].online).toBe(true)
     expect(result[0].cpu).toBe(42)
     expect(result[0].group_id).toBeNull()
@@ -140,7 +141,7 @@ describe('applyServerEdit', () => {
 
   it('returns the list unchanged for an unknown server', () => {
     const prev = [makeServer({ id: 's1', name: 'Old' })]
-    const result = applyServerEdit(prev, 'missing', { name: 'X', group_id: null })
+    const result = applyServerEdit(prev, 'missing', { name: 'X', group_id: null, country_code: null })
     expect(result).toEqual(prev)
   })
 })

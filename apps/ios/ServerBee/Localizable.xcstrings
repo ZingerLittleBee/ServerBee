@@ -6840,6 +6840,57 @@
         }
       }
     },
+    "Idle & paying": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idle & paying"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空闲烧钱"
+          }
+        }
+      }
+    },
+    "Offline & paying": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline & paying"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "离线烧钱"
+          }
+        }
+      }
+    },
+    "Cost configuration issue": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cost configuration issue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成本配置异常"
+          }
+        }
+      }
+    },
     "MEM": {
       "extractionState": "manual",
       "localizations": {

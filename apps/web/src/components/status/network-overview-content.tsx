@@ -1,10 +1,9 @@
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, Globe, Server, Wifi } from 'lucide-react'
+import { AlertTriangle, Server, Wifi } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { getCombinedSeverity } from '@/lib/network-latency-constants'
 import { cn } from '@/lib/utils'
 
 // Both the admin (`NetworkServerSummary`) and public
@@ -32,20 +31,11 @@ export interface NetworkOverviewContentProps {
   variant: 'admin' | 'public'
 }
 
-function formatLatencyDisplay(ms: number | null | undefined): string {
-  if (ms == null) {
-    return 'N/A'
-  }
-  return `${ms.toFixed(1)} ms`
-}
+// 24h is the window the server uses to compute anomaly_count (see
+// network_probe.rs `count_anomalies`); surfaced here for the card footnote.
+const ANOMALY_WINDOW_HOURS = 24
 
-function formatAvailability(targets: NetworkOverviewSummary['targets']): string {
-  if (targets.length === 0) {
-    return 'N/A'
-  }
-  const avgLoss = targets.reduce((sum, t) => sum + t.packet_loss, 0) / targets.length
-  return `${((1 - avgLoss) * 100).toFixed(1)}%`
-}
+type Health = 'healthy' | 'warning' | 'severe' | 'unknown' | 'offline'
 
 function avgLatencyFromTargets(targets: NetworkOverviewSummary['targets']): number | null {
   const valid = targets.filter((t) => t.avg_latency != null)
@@ -53,6 +43,13 @@ function avgLatencyFromTargets(targets: NetworkOverviewSummary['targets']): numb
     return null
   }
   return valid.reduce((sum, t) => sum + (t.avg_latency ?? 0), 0) / valid.length
+}
+
+function avgLossFromTargets(targets: NetworkOverviewSummary['targets']): number | null {
+  if (targets.length === 0) {
+    return null
+  }
+  return targets.reduce((sum, t) => sum + t.packet_loss, 0) / targets.length
 }
 
 function worstTarget(targets: NetworkOverviewSummary['targets']): NetworkOverviewSummary['targets'][number] | null {
@@ -63,11 +60,100 @@ function worstTarget(targets: NetworkOverviewSummary['targets']): NetworkOvervie
   return valid.reduce((worst, t) => ((t.avg_latency ?? 0) > (worst.avg_latency ?? 0) ? t : worst))
 }
 
-function StatCard({ icon: Icon, label, value }: { icon: typeof Server; label: string; value: string | number }) {
+// Whole-server health verdict from avg latency + avg loss, reusing the shared
+// severity thresholds so it stays consistent with the rest of the app.
+export function serverHealth(summary: NetworkOverviewSummary): Health {
+  if (!summary.online) {
+    return 'offline'
+  }
+  const latency = avgLatencyFromTargets(summary.targets)
+  // Online but no latency reading yet (empty targets or all probing) — keep the
+  // verdict consistent with the card's `hasData` check, which also keys on latency.
+  if (latency == null) {
+    return 'unknown'
+  }
+  const sev = getCombinedSeverity({ latencyMs: latency, lossRatio: avgLossFromTargets(summary.targets) })
+  if (sev === 'failed' || sev === 'severe') {
+    return 'severe'
+  }
+  if (sev === 'warning') {
+    return 'warning'
+  }
+  return 'healthy'
+}
+
+const HEALTH_DOT: Record<Health, string> = {
+  healthy: 'bg-emerald-500',
+  warning: 'bg-amber-500',
+  severe: 'bg-red-500',
+  unknown: 'bg-muted-foreground',
+  offline: 'bg-muted-foreground/50'
+}
+
+const HEALTH_ACCENT: Record<Health, string> = {
+  healthy: 'text-emerald-600 dark:text-emerald-400',
+  warning: 'text-amber-600 dark:text-amber-400',
+  severe: 'text-red-600 dark:text-red-400',
+  unknown: 'text-muted-foreground',
+  offline: 'text-muted-foreground'
+}
+
+function healthLabel(health: Health, t: (key: string) => string): string {
+  switch (health) {
+    case 'healthy':
+      return t('health_healthy')
+    case 'warning':
+      return t('health_warning')
+    case 'severe':
+      return t('health_severe')
+    case 'offline':
+      return t('offline')
+    default:
+      return t('no_data')
+  }
+}
+
+function formatLatencyInt(ms: number | null): string {
+  return ms == null ? '—' : `${Math.round(ms)}`
+}
+
+function StatusPill({ health, label }: { health: Health; label: string }) {
+  const muted = health === 'offline' || health === 'unknown'
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
-      <div className="rounded-md bg-muted p-2">
-        <Icon aria-hidden="true" className="size-5 text-muted-foreground" />
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium text-xs',
+        HEALTH_ACCENT[health],
+        muted ? 'border-border' : 'border-current/25'
+      )}
+    >
+      <span className={cn('size-1.5 rounded-full', HEALTH_DOT[health])} />
+      {label}
+    </span>
+  )
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone = 'default'
+}: {
+  icon: typeof Server
+  label: string
+  value: string | number
+  tone?: 'default' | 'warning'
+}) {
+  const isWarning = tone === 'warning'
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-lg border bg-card p-4',
+        isWarning && 'border-amber-300/60 dark:border-amber-700/50'
+      )}
+    >
+      <div className={cn('rounded-md p-2', isWarning ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-muted')}>
+        <Icon aria-hidden="true" className={cn('size-5', isWarning ? 'text-amber-500' : 'text-muted-foreground')} />
       </div>
       <div>
         <p className="font-semibold text-lg leading-tight">{value}</p>
@@ -79,65 +165,68 @@ function StatCard({ icon: Icon, label, value }: { icon: typeof Server; label: st
 
 function ServerNetworkCard({ summary, variant }: { summary: NetworkOverviewSummary; variant: 'admin' | 'public' }) {
   const { t } = useTranslation('network')
-  const avgLatency = avgLatencyFromTargets(summary.targets)
+  const health = serverHealth(summary)
+  const latency = avgLatencyFromTargets(summary.targets)
+  const loss = avgLossFromTargets(summary.targets)
   const worst = worstTarget(summary.targets)
-  const availability = formatAvailability(summary.targets)
+  const hasData = summary.online && latency != null
+  const isProblem = health === 'warning' || health === 'severe'
 
   const body = (
-    <Card
-      className={cn('h-full cursor-pointer transition-colors hover:border-primary/50', !summary.online && 'opacity-70')}
+    <div
+      className={cn(
+        'flex h-full flex-col rounded-xl border bg-card p-5 transition-all',
+        'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-black/5 hover:shadow-lg',
+        !summary.online && 'opacity-60'
+      )}
     >
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="truncate text-base">{summary.server_name}</CardTitle>
-          <Badge
-            className={cn(
-              'shrink-0 gap-1 text-xs',
-              summary.online ? 'bg-emerald-500/15 text-emerald-600' : 'bg-red-500/15 text-red-600'
-            )}
-            variant="outline"
-          >
-            <span className={cn('size-1.5 rounded-full', summary.online ? 'bg-emerald-500' : 'bg-red-500')} />
-            {summary.online ? t('online') : t('offline')}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-md bg-muted/50 p-2">
-            <p className="font-mono font-semibold text-sm">{formatLatencyDisplay(avgLatency)}</p>
-            <p className="text-muted-foreground text-xs">{t('avg_latency')}</p>
-          </div>
-          <div className="rounded-md bg-muted/50 p-2">
-            <p className="font-semibold text-sm">{availability}</p>
-            <p className="text-muted-foreground text-xs">{t('availability')}</p>
-          </div>
-          <div className="rounded-md bg-muted/50 p-2">
-            <p className="font-semibold text-sm">{summary.targets.length}</p>
-            <p className="text-muted-foreground text-xs">{t('targets')}</p>
-          </div>
-        </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate font-medium text-sm tracking-tight">{summary.server_name}</span>
+        <StatusPill health={health} label={healthLabel(health, t)} />
+      </div>
 
-        {worst != null && (
-          <div className="flex items-center gap-1.5 rounded-md border border-amber-200/60 bg-amber-50/50 px-2.5 py-1.5 dark:border-amber-800/40 dark:bg-amber-900/20">
-            <AlertTriangle aria-hidden="true" className="size-3 shrink-0 text-amber-500" />
-            <p className="truncate text-amber-700 text-xs dark:text-amber-400">
-              <span className="font-medium">{t('worst_line')}:</span> {worst.target_name}{' '}
-              <span className="font-mono">{formatLatencyDisplay(worst.avg_latency)}</span>
-            </p>
+      <div className="mt-5 flex items-end gap-1.5">
+        <span
+          className={cn('font-semibold text-4xl tabular-nums leading-none tracking-tighter', HEALTH_ACCENT[health])}
+        >
+          {formatLatencyInt(latency)}
+        </span>
+        {hasData && <span className="pb-0.5 text-muted-foreground text-sm">ms</span>}
+        <span className="pb-0.5 text-muted-foreground text-xs">{t('latency')}</span>
+      </div>
+
+      <div className="mt-auto pt-4">
+        {hasData ? (
+          <div className="flex items-center gap-3 border-t pt-3 text-xs">
+            <span className="text-muted-foreground">
+              {t('loss')}{' '}
+              <span className="font-medium text-foreground tabular-nums">
+                {loss == null ? '—' : `${(loss * 100).toFixed(1)}%`}
+              </span>
+            </span>
+            <span className="text-border">·</span>
+            <span className="text-muted-foreground">
+              <span className="font-medium text-foreground tabular-nums">{summary.targets.length}</span> {t('lines')}
+            </span>
+            {isProblem && worst != null && (
+              <span className={cn('ml-auto truncate', HEALTH_ACCENT[health])}>
+                {worst.target_name} {formatLatencyInt(worst.avg_latency)}ms
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="border-t pt-3 text-muted-foreground text-xs">
+            {summary.online ? t('no_data') : t('offline_hint')}
           </div>
         )}
 
         {summary.anomaly_count > 0 && (
-          <div className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-red-500" />
-            <p className="text-muted-foreground text-xs">
-              {summary.anomaly_count} {summary.anomaly_count === 1 ? 'anomaly' : 'anomalies'}
-            </p>
-          </div>
+          <p className="pt-2 text-muted-foreground text-xs">
+            {t('anomaly_recent', { count: summary.anomaly_count, hours: ANOMALY_WINDOW_HOURS })}
+          </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 
   if (variant === 'public') {
@@ -189,14 +278,12 @@ export function NetworkOverviewContent({
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
           <StatCard icon={Server} label={t('total_servers')} value={totalServers} />
           <StatCard icon={Wifi} label={t('online_servers')} value={onlineServers} />
-          <StatCard icon={Globe} label={t('anomaly_count')} value={anomalyServers} />
-        </div>
-      )}
-
-      {anomalyServers > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50/70 px-4 py-3 dark:border-amber-700/50 dark:bg-amber-900/20">
-          <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-amber-500" />
-          <p className="text-amber-800 text-sm dark:text-amber-300">{t('anomaly_banner', { count: anomalyServers })}</p>
+          <StatCard
+            icon={AlertTriangle}
+            label={t('anomaly_count')}
+            tone={anomalyServers > 0 ? 'warning' : 'default'}
+            value={anomalyServers}
+          />
         </div>
       )}
 

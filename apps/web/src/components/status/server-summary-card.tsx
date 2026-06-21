@@ -2,13 +2,14 @@ import { Link } from '@tanstack/react-router'
 import { Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CountryFlag } from '@/components/country-flag'
 import { CompactMetric } from '@/components/server/compact-metric'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { RingChart } from '@/components/ui/ring-chart'
 import type { PublicServerSummary } from '@/lib/api-schema'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { cn, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) {
@@ -92,7 +93,6 @@ export function ServerSummaryCard({ server, clickable }: Props) {
         netOutTransfer: m.net_out_transfer
       })
     : { limit: 0, pct: 0, used: 0 }
-  const flag = countryCodeToFlag(server.country_code)
   const status = server.online ? 'online' : 'offline'
 
   const body: ReactNode = (
@@ -111,11 +111,7 @@ export function ServerSummaryCard({ server, clickable }: Props) {
       )}
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5 truncate">
-          {flag && (
-            <span className="shrink-0 text-sm" title={server.country_code ?? ''}>
-              {flag}
-            </span>
-          )}
+          <CountryFlag className="text-sm" code={server.country_code} />
           <h3 className="truncate font-semibold text-[13px]">{server.name}</h3>
           {server.region && <span className="shrink-0 text-[11px] text-muted-foreground">{server.region}</span>}
         </div>

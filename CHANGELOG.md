@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.10] - 2026-06-22
+
+### Added
+
+- **Manually correct a server's country / region flag** -- GeoIP sometimes maps an agent's public IP to the wrong country, and the flag shown next to a server could not be fixed. The server edit dialog now has a searchable Country / Region picker that lists every ISO 3166-1 entry with its flag and localized name, with frequently-used VPS locations pinned to a "Common" group on top, so an admin can choose the right one without knowing the 2-letter code. A manual choice is pinned (`geo_manual`) and is no longer overwritten by GeoIP on the next report; clearing it resumes automatic detection. The chosen value is validated and persisted server-side, and country flags across the app (server cards, list rows, detail headers, and public status pages) now reveal the localized country name on hover via a shared `CountryFlag` component
+
+- **Edit a server from its card** -- The grid-view server card's overflow menu gained an Edit item that opens the full edit dialog directly (previously only the table view could), and the Recover Agent action is now hidden for online servers, mirroring the detail page's gating since recovery only applies to a disconnected agent
+
+### Changed
+
+- **Objective cost advisories replace the value score** -- The synthetic 0-100 "value score" (grade, confidence, and fleet-relative reasoning) was dropped in favor of objective, per-server cost advisories while keeping the concrete cost data (burn rate and per-resource unit costs). Advisories -- expired billing, sleeping money, idle burn, and low uptime -- are computed without any fleet comparison and surfaced in priority order, with idle/activity detection now gated on per-window network speed instead of cumulative transfer counters. Applied across the Rust cost service and OpenAPI schema, the web cost cell and insight bar, the iOS client, and the bilingual docs
+
+- **Health-first network overview cards** -- Server cards now lead with a health verdict pill (healthy / unstable / critical / offline) derived from the shared severity thresholds, with latency as a large colour-coded focal number. The opaque "availability %" was replaced with packet-loss %, the redundant anomaly banner was removed, and the anomaly figure is now a warning-styled stat card showing "N anomalies in last 24h" only for problem servers
+
+- **Theme and language switchers moved into the sidebar user menu** -- The theme toggle (Light / Dark / System) and language switcher (中文 / English) moved from the top header into nested submenus in the sidebar user dropdown. The public status page keeps its own header toggles since it has no sidebar
+
+- **Three-tier capability risk model; firewall block is now medium risk** -- Capability risk is no longer a binary high-vs-not split. `CAP_FIREWALL_BLOCK` is reclassified from high to medium risk -- the agent can only add or remove IPs in its own dedicated nft blocklist set (with self-lockout guardrails) and cannot exec code, read files, or flush the host firewall, so its worst case is bounded availability impact rather than host compromise. The capabilities dialog and settings matrix now render high (red) / medium (amber) / low (muted) tiers and order columns by descending risk
+
+### Fixed
+
+- **Dashboard widgets no longer jitter after saving a layout** -- The custom dashboard could enter an infinite re-render loop right after saving widget positions, jittering widgets that sit below a content-height or aspect-square widget and eventually crashing with React's "Maximum update depth exceeded". The coarse-row y-snap is now applied only where appropriate, so react-grid-layout and the layout normalizer no longer ping-pong
+
 ## [1.0.0-alpha.9] - 2026-06-20
 
 ### Added

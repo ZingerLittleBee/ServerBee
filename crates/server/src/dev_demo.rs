@@ -546,6 +546,7 @@ async fn seed_servers(db: &DatabaseConnection, now: chrono::DateTime<Utc>) -> Re
             ipv6: Set(None),
             region: Set(Some(spec.region.to_string())),
             country_code: Set(Some(spec.country_code.to_string())),
+            geo_manual: Set(false),
             virtualization: Set(Some("kvm".to_string())),
             agent_version: Set(Some(format!(
                 "{}-demo",

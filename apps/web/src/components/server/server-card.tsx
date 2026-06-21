@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { MoreHorizontal, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { RingChart } from '@/components/ui/ring-chart'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useServer } from '@/hooks/use-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
@@ -28,14 +29,16 @@ import { CAP_DEFAULT } from '@/lib/capabilities'
 import { isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { cn, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
+import { CountryFlag } from '../country-flag'
 import { CostFootnote } from './cost-footnote'
 import { NetworkSquareGrid } from './network-square-grid'
 import { NetworkTargetBreakdown } from './network-target-breakdown'
 import { RecoverAgentDialog } from './recover-agent-dialog'
 import { RegenerateCodeDialog } from './regenerate-code-dialog'
 import { buildServerCardNetworkState, type ServerCardTooltipTarget } from './server-card-network-data'
+import { ServerEditDialog } from './server-edit-dialog'
 import { StatusBadge } from './status-badge'
 import { deriveServerStatus } from './status-dot'
 import { TagChips } from './tag-chips'
@@ -312,13 +315,24 @@ function PendingActionMenu({ serverId, serverName }: PendingActionMenuProps) {
   )
 }
 
-interface RecoverActionMenuProps {
+interface ServerCardActionMenuProps {
   server: ServerMetrics
 }
 
-function RecoverActionMenu({ server }: RecoverActionMenuProps) {
+// Fetches the full ServerResponse on demand (the card only holds the lighter
+// ServerMetrics shape from the WS feed) and renders the edit dialog once loaded.
+function ServerCardEditDialog({ serverId, onClose }: { onClose: () => void; serverId: string }) {
+  const { data: server } = useServer(serverId)
+  if (!server) {
+    return null
+  }
+  return <ServerEditDialog onClose={onClose} open server={server} />
+}
+
+function ServerCardActionMenu({ server }: ServerCardActionMenuProps) {
   const { t } = useTranslation(['servers'])
   const [recoverOpen, setRecoverOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   return (
     <>
@@ -326,7 +340,7 @@ function RecoverActionMenu({ server }: RecoverActionMenuProps) {
         <DropdownMenuTrigger
           render={
             <Button
-              aria-label={t('servers:recover_agent.title')}
+              aria-label={t('servers:card_actions', { defaultValue: 'Server actions' })}
               onClick={(e) => e.stopPropagation()}
               size="icon-sm"
               variant="ghost"
@@ -339,12 +353,25 @@ function RecoverActionMenu({ server }: RecoverActionMenuProps) {
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
-              setRecoverOpen(true)
+              setEditOpen(true)
             }}
           >
-            <RotateCcw aria-hidden="true" className="size-3.5" />
-            {t('servers:recover_agent.title')}
+            <Pencil aria-hidden="true" className="size-3.5" />
+            {t('servers:detail_edit')}
           </DropdownMenuItem>
+          {/* Recovery re-enrolls a dead agent — only meaningful while the server
+              is offline, mirroring the detail page's button gating. */}
+          {!server.online && (
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                setRecoverOpen(true)
+              }}
+            >
+              <RotateCcw aria-hidden="true" className="size-3.5" />
+              {t('servers:recover_agent.title')}
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -360,6 +387,8 @@ function RecoverActionMenu({ server }: RecoverActionMenuProps) {
           }}
         />
       )}
+
+      {editOpen && <ServerCardEditDialog onClose={() => setEditOpen(false)} serverId={server.id} />}
     </>
   )
 }
@@ -381,7 +410,6 @@ const ServerCardInner = ({
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
   const swapPct = server.swap_total > 0 ? (server.swap_used / server.swap_total) * 100 : 0
-  const flag = countryCodeToFlag(server.country_code)
   const osEmoji = osIcon(server.os)
 
   const { currentAvgLatency, currentAvgLossRatio, currentTargets, latencyPoints, lossPoints } = useMemo(
@@ -425,11 +453,7 @@ const ServerCardInner = ({
           search={{ range: 'realtime' }}
           to="/servers/$id"
         >
-          {flag && (
-            <span className="shrink-0 text-sm" title={server.country_code ?? ''}>
-              {flag}
-            </span>
-          )}
+          <CountryFlag className="text-sm" code={server.country_code} />
           {osEmoji && (
             <span className="shrink-0 text-sm" title={server.os ?? ''}>
               {osEmoji}
@@ -445,7 +469,7 @@ const ServerCardInner = ({
           {isPending ? (
             <PendingActionMenu serverId={server.id} serverName={server.name} />
           ) : (
-            <RecoverActionMenu server={server} />
+            <ServerCardActionMenu server={server} />
           )}
         </div>
       </div>

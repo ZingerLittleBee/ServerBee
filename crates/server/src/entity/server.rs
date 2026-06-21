@@ -21,6 +21,11 @@ pub struct Model {
     pub ipv6: Option<String>,
     pub region: Option<String>,
     pub country_code: Option<String>,
+    /// When true, `region`/`country_code` were set manually by an operator and
+    /// the GeoIP auto-detection paths must not overwrite them. See migration
+    /// `m20260621_000072_add_geo_manual`.
+    #[sea_orm(default_value = false)]
+    pub geo_manual: bool,
     pub virtualization: Option<String>,
     pub agent_version: Option<String>,
     #[sea_orm(indexed)]

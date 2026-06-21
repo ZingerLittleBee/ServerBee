@@ -1,11 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarIcon } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator
+} from '@/components/ui/command'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -14,6 +23,8 @@ import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
 import { applyServerEdit, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
+import { buildCountryOptions, type CountryOption } from '@/lib/country-codes'
+import { cn, countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
@@ -66,6 +77,11 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   const [groupId, setGroupId] = useState(server.group_id ?? '')
   const [remark, setRemark] = useState(server.remark ?? '')
   const [publicRemark, setPublicRemark] = useState(server.public_remark ?? '')
+  // The country override field is empty unless the server already has a manual
+  // override; otherwise we leave it blank and surface the auto-detected value as
+  // a hint, so saving an untouched form never accidentally pins GeoIP.
+  const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
+  const [countryCode, setCountryCode] = useState(initialCountryCode)
   const [price, setPrice] = useState(server.price?.toString() ?? '')
   const [billingCycle, setBillingCycle] = useState(server.billing_cycle ?? '')
   const [currency, setCurrency] = useState(server.currency ?? 'USD')
@@ -96,6 +112,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       setGroupId(server.group_id ?? '')
       setRemark(server.remark ?? '')
       setPublicRemark(server.public_remark ?? '')
+      setCountryCode(server.geo_manual ? (server.country_code ?? '') : '')
       setPrice(server.price?.toString() ?? '')
       setBillingCycle(server.billing_cycle ?? '')
       setCurrency(server.currency ?? 'USD')
@@ -118,26 +135,36 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     onSuccess: (data) => {
       queryClient.setQueryData(['servers', server.id], data)
       queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-        prev ? applyServerEdit(prev, server.id, { name: data.name, group_id: data.group_id ?? null }) : prev
+        prev
+          ? applyServerEdit(prev, server.id, {
+              name: data.name,
+              group_id: data.group_id ?? null,
+              country_code: data.country_code ?? null
+            })
+          : prev
       )
     }
   })
 
-  const buildPayload = (): UpdateServerInput => ({
-    name,
-    weight,
-    hidden,
-    group_id: groupId || null,
-    remark: remark || null,
-    public_remark: publicRemark || null,
-    price: price ? Number.parseFloat(price) : null,
-    billing_cycle: billingCycle || null,
-    currency: currency || null,
-    expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
-    traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
-    traffic_limit_type: trafficLimitType || null,
-    billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null
-  })
+  const buildPayload = (): UpdateServerInput => {
+    const payload: UpdateServerInput = {
+      name,
+      weight,
+      hidden,
+      group_id: groupId || null,
+      remark: remark || null,
+      public_remark: publicRemark || null,
+      price: price ? Number.parseFloat(price) : null,
+      billing_cycle: billingCycle || null,
+      currency: currency || null,
+      expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
+      traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
+      traffic_limit_type: trafficLimitType || null,
+      billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null,
+      ...countryCodePatch(countryCode, initialCountryCode)
+    }
+    return payload
+  }
 
   const saveTags = async (tags: string[]): Promise<boolean> => {
     try {
@@ -264,6 +291,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                   value={publicRemark}
                 />
               </Field>
+              <CountryOverrideField onChange={setCountryCode} server={server} value={countryCode} />
               <Field label={t('tags_label')}>
                 <Input
                   aria-label={t('tags_label')}
@@ -419,6 +447,127 @@ function Field({ label, children }: { children: React.ReactNode; label: string }
       <label className="font-medium text-sm">{label}</label>
       {children}
     </div>
+  )
+}
+
+// Only emit country_code when the override field actually changed, so saving an
+// untouched form never flips an auto-detected server to a manual one. An emptied
+// override sends null, which clears the override and resumes GeoIP detection.
+function countryCodePatch(current: string, initial: string): { country_code?: string | null } {
+  const normalized = current.trim().toUpperCase()
+  if (normalized === initial.toUpperCase()) {
+    return {}
+  }
+  return { country_code: normalized || null }
+}
+
+function CountryCommandItem({
+  option,
+  selected,
+  onSelect
+}: {
+  onSelect: (code: string) => void
+  option: CountryOption
+  selected: boolean
+}) {
+  return (
+    <CommandItem keywords={[option.name]} onSelect={() => onSelect(option.code)} value={option.code}>
+      <Check className={cn('size-4 shrink-0', selected ? 'opacity-100' : 'opacity-0')} />
+      <span aria-hidden="true" className="text-base leading-none">
+        {option.flag}
+      </span>
+      <span className="flex-1 truncate">{option.name}</span>
+      <span className="text-muted-foreground text-xs tabular-nums" data-slot="command-shortcut">
+        {option.code}
+      </span>
+    </CommandItem>
+  )
+}
+
+function CountryOverrideField({
+  value,
+  onChange,
+  server
+}: {
+  onChange: (value: string) => void
+  server: ServerResponse
+  value: string
+}) {
+  const { t, i18n } = useTranslation('servers')
+  const [open, setOpen] = useState(false)
+  const { common, rest } = useMemo(() => buildCountryOptions(i18n.language), [i18n.language])
+  const current = value.toUpperCase()
+  const selected = common.find((option) => option.code === current) ?? rest.find((option) => option.code === current)
+  const autoLabel = t('edit_country_auto_option')
+
+  function handleSelect(code: string) {
+    onChange(code)
+    setOpen(false)
+  }
+
+  return (
+    <Field label={t('edit_country')}>
+      <Popover onOpenChange={setOpen} open={open}>
+        <PopoverTrigger
+          render={
+            <Button className="w-full justify-between font-normal" type="button" variant="outline">
+              <span className="flex min-w-0 items-center gap-2">
+                <span aria-hidden="true" className="text-base leading-none">
+                  {countryCodeToFlag(value) || '🏳️'}
+                </span>
+                <span className="truncate">{selected?.name ?? (current || autoLabel)}</span>
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+            </Button>
+          }
+        />
+        <PopoverContent align="start" className="w-(--anchor-width) p-0">
+          <Command>
+            <CommandInput placeholder={t('edit_country_search')} />
+            <CommandList>
+              <CommandEmpty>{t('edit_country_empty')}</CommandEmpty>
+              <CommandGroup>
+                <CommandItem keywords={[autoLabel]} onSelect={() => handleSelect('')} value="__auto__">
+                  <Check className={cn('size-4 shrink-0', current ? 'opacity-0' : 'opacity-100')} />
+                  <span aria-hidden="true" className="text-base leading-none">
+                    🏳️
+                  </span>
+                  <span className="flex-1 truncate">{autoLabel}</span>
+                  <span className="sr-only" data-slot="command-shortcut" />
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup heading={t('edit_country_common')}>
+                {common.map((option) => (
+                  <CountryCommandItem
+                    key={option.code}
+                    onSelect={handleSelect}
+                    option={option}
+                    selected={current === option.code}
+                  />
+                ))}
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup heading={t('edit_country_all')}>
+                {rest.map((option) => (
+                  <CountryCommandItem
+                    key={option.code}
+                    onSelect={handleSelect}
+                    option={option}
+                    selected={current === option.code}
+                  />
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {server.geo_manual
+          ? t('edit_country_hint_manual')
+          : t('edit_country_hint_auto', { value: server.country_code || '—' })}
+      </p>
+    </Field>
   )
 }
 
