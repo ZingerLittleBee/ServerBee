@@ -14,6 +14,7 @@ import {
   List,
   LogOut,
   Monitor,
+  Moon,
   Palette,
   Puzzle,
   Radar,
@@ -22,12 +23,15 @@ import {
   ShieldAlert,
   ShieldBan,
   Smartphone,
+  Sun,
+  SunMoon,
   Terminal,
   Users,
   Wifi
 } from 'lucide-react'
 import type * as React from 'react'
 import { useTranslation } from 'react-i18next'
+import { useTheme } from '@/components/theme-provider'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -35,7 +39,12 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
@@ -82,12 +91,14 @@ const settingsItems = [
 ] as const
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user, logout } = useAuth()
+  const { theme, setTheme } = useTheme()
   const matchRoute = useMatchRoute()
   const navigate = useNavigate()
   const { isMobile } = useSidebar()
   const isAdmin = user?.role === 'admin'
+  const currentLang = (i18n.resolvedLanguage ?? i18n.language).startsWith('zh') ? 'zh' : 'en'
 
   const handleLogout = async () => {
     await logout()
@@ -178,9 +189,52 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <SunMoon />
+                      {t('theme')}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuRadioGroup
+                        onValueChange={(value) => setTheme(value as 'dark' | 'light' | 'system')}
+                        value={theme}
+                      >
+                        <DropdownMenuRadioItem value="light">
+                          <Sun />
+                          {t('theme_light')}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="dark">
+                          <Moon />
+                          {t('theme_dark')}
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="system">
+                          <Monitor />
+                          {t('theme_system')}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Globe />
+                      {t('language')}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuRadioGroup
+                        onValueChange={(value) => i18n.changeLanguage(value as string)}
+                        value={currentLang}
+                      >
+                        <DropdownMenuRadioItem value="zh">中文</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="en">English</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut />
-                    {t('logout')}
+                    {t('log_out')}
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>

@@ -5,10 +5,17 @@ import { AppSidebar } from './app-sidebar'
 
 const logout = vi.fn().mockResolvedValue(undefined)
 const navigate = vi.fn()
-const logoutLabel = /logout/i
+const logoutLabel = /log_out/i
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: 'en', language: 'en', changeLanguage: vi.fn() }
+  })
+}))
+
+vi.mock('@/components/theme-provider', () => ({
+  useTheme: () => ({ theme: 'system', setTheme: vi.fn() })
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -54,6 +61,11 @@ vi.mock('@/components/ui/dropdown-menu', () => {
     DropdownMenuGroup: Pass,
     DropdownMenuLabel: Pass,
     DropdownMenuSeparator: () => <hr />,
+    DropdownMenuSub: Pass,
+    DropdownMenuSubTrigger: Pass,
+    DropdownMenuSubContent: Pass,
+    DropdownMenuRadioGroup: Pass,
+    DropdownMenuRadioItem: Pass,
     DropdownMenuItem: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
       <button onClick={onClick} type="button">
         {children}
