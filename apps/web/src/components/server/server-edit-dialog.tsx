@@ -495,9 +495,9 @@ function CountryOverrideField({
 }) {
   const { t, i18n } = useTranslation('servers')
   const [open, setOpen] = useState(false)
-  const options = useMemo(() => buildCountryOptions(i18n.language), [i18n.language])
+  const { common, rest } = useMemo(() => buildCountryOptions(i18n.language), [i18n.language])
   const current = value.toUpperCase()
-  const selected = options.find((option) => option.code === current)
+  const selected = common.find((option) => option.code === current) ?? rest.find((option) => option.code === current)
   const autoLabel = t('edit_country_auto_option')
 
   function handleSelect(code: string) {
@@ -537,8 +537,19 @@ function CountryOverrideField({
                 </CommandItem>
               </CommandGroup>
               <CommandSeparator />
-              <CommandGroup>
-                {options.map((option) => (
+              <CommandGroup heading={t('edit_country_common')}>
+                {common.map((option) => (
+                  <CountryCommandItem
+                    key={option.code}
+                    onSelect={handleSelect}
+                    option={option}
+                    selected={current === option.code}
+                  />
+                ))}
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup heading={t('edit_country_all')}>
+                {rest.map((option) => (
                   <CountryCommandItem
                     key={option.code}
                     onSelect={handleSelect}

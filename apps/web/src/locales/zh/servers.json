@@ -229,6 +229,8 @@
   "edit_country_search": "搜索国家或地区…",
   "edit_country_empty": "未找到匹配的国家",
   "edit_country_auto_option": "自动识别（按 IP）",
+  "edit_country_common": "常用",
+  "edit_country_all": "全部",
   "edit_billing": "计费信息",
   "edit_price": "价格",
   "edit_currency": "货币",

@@ -254,17 +254,48 @@ export const COUNTRY_CODES = [
   'ZW'
 ] as const
 
+// Frequently-used VPS/server locations, pinned to the top of the picker in this
+// curated priority order (not alphabetical). Must be a subset of COUNTRY_CODES.
+export const COMMON_COUNTRY_CODES = [
+  'US',
+  'CN',
+  'HK',
+  'JP',
+  'SG',
+  'KR',
+  'TW',
+  'GB',
+  'DE',
+  'FR',
+  'NL',
+  'CA',
+  'AU',
+  'RU'
+] as const
+
 export interface CountryOption {
   code: string
   flag: string
   name: string
 }
 
-// Build picker options localized to the active language, sorted by display name.
-export function buildCountryOptions(locale: string): CountryOption[] {
-  return COUNTRY_CODES.map((code) => ({
+export interface CountryOptionGroups {
+  common: CountryOption[]
+  rest: CountryOption[]
+}
+
+// Build picker options localized to the active language. `common` keeps the curated
+// priority order; `rest` holds every other country sorted by localized display name.
+export function buildCountryOptions(locale: string): CountryOptionGroups {
+  const toOption = (code: string): CountryOption => ({
     code,
     flag: countryCodeToFlag(code),
     name: countryCodeToName(code, locale) || code
-  })).sort((a, b) => a.name.localeCompare(b.name, locale))
+  })
+  const commonSet = new Set<string>(COMMON_COUNTRY_CODES)
+  const common = COMMON_COUNTRY_CODES.map(toOption)
+  const rest = COUNTRY_CODES.filter((code) => !commonSet.has(code))
+    .map(toOption)
+    .sort((a, b) => a.name.localeCompare(b.name, locale))
+  return { common, rest }
 }

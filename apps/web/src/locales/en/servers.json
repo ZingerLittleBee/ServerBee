@@ -229,6 +229,8 @@
   "edit_country_search": "Search country or region…",
   "edit_country_empty": "No matching country",
   "edit_country_auto_option": "Auto-detect (by IP)",
+  "edit_country_common": "Common",
+  "edit_country_all": "All",
   "edit_billing": "BILLING",
   "edit_price": "Price",
   "edit_currency": "Currency",
