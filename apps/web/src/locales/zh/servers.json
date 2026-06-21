@@ -222,7 +222,7 @@
   "edit_remark_placeholder": "内部备注\u2026",
   "edit_public_remark": "公开备注",
   "edit_public_remark_placeholder": "显示在状态页\u2026",
-  "edit_country": "国家 / 国旗",
+  "edit_country": "国家 / 地区",
   "edit_country_placeholder": "如 US",
   "edit_country_hint_auto": "留空则按 IP 自动识别（当前：{{value}}）。选择一个国家可纠正错误的国旗。",
   "edit_country_hint_manual": "已手动指定，选择「自动识别」可恢复自动识别（GeoIP）。",
