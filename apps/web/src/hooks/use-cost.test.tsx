@@ -41,7 +41,7 @@ const costInsights = {
   cycle_cost_remaining: null,
   cycle_burn_percent: null,
   resource_value: null,
-  value_score: null
+  advisories: []
 } satisfies ServerCostInsights
 
 beforeEach(() => {

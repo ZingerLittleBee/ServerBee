@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatCostAmount, getCostGradeClassName, getCostReasonKey } from './cost'
+import { formatCostAmount, getCostAdvisoryKey } from './cost'
 
 describe('cost utilities', () => {
   it('formats tiny per-second costs without rounding to zero', () => {
@@ -9,11 +9,8 @@ describe('cost utilities', () => {
     expect(digits).toContain('0000019')
   })
 
-  it('maps waste grade to destructive style', () => {
-    expect(getCostGradeClassName('waste')).toContain('text-red')
-  })
-
-  it('maps known reasons to translation keys', () => {
-    expect(getCostReasonKey('sleeping_money')).toBe('cost_reason_sleeping_money')
+  it('maps known advisories to translation keys', () => {
+    expect(getCostAdvisoryKey('sleeping_money')).toBe('cost_advisory_sleeping_money')
+    expect(getCostAdvisoryKey('expired_billing')).toBe('cost_advisory_expired_billing')
   })
 })

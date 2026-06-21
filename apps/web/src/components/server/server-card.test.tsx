@@ -121,13 +121,13 @@ describe('ServerCard', () => {
         cost_per_month_equivalent: 7.3,
         currency: 'USD',
         name: 'test-server',
-        server_id: 'srv-1'
+        server_id: 'srv-1',
+        advisories: []
       } satisfies ServerCostOverview
     })
 
     expect(screen.getByText(REGEX_COST_PER_HOUR)).toBeDefined()
     expect(screen.getByText(REGEX_COST_PER_MONTH)).toBeDefined()
-    expect(screen.queryByText('cost_grade_good')).toBeNull()
   })
 
   it('renders compact unconfigured cost footnote labels', () => {
@@ -135,19 +135,22 @@ describe('ServerCard', () => {
       configured: false,
       invalid_reason: 'missing_price',
       name: 'test-server',
-      server_id: 'srv-1'
+      server_id: 'srv-1',
+      advisories: []
     } satisfies ServerCostOverview
     const missingCycle = {
       configured: false,
       invalid_reason: 'missing_billing_cycle',
       name: 'test-server',
-      server_id: 'srv-1'
+      server_id: 'srv-1',
+      advisories: []
     } satisfies ServerCostOverview
     const invalidPrice = {
       configured: false,
       invalid_reason: 'invalid_price',
       name: 'test-server',
-      server_id: 'srv-1'
+      server_id: 'srv-1',
+      advisories: []
     } satisfies ServerCostOverview
 
     const { rerender } = render(<CostFootnote entry={missingPrice} />)

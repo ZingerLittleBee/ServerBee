@@ -47,7 +47,7 @@ final class InsightsModelsDecodingTests: XCTestCase {
             { "server_id": "s1", "name": "BWG", "configured": true, "invalid_reason": null,
               "currency": "USD", "billing_cycle": "monthly", "cost_per_day": 0.5,
               "cost_per_month_equivalent": 15.0, "cycle_burn_percent": 40.0, "days_remaining": 18,
-              "value_score": null } ] }
+              "advisories": ["idle_burn"] } ] }
         """
         let resp = try decode(CostOverviewResponse.self, json)
         XCTAssertEqual(resp.currencies[0].currency, "USD")
@@ -55,6 +55,7 @@ final class InsightsModelsDecodingTests: XCTestCase {
         XCTAssertEqual(resp.currencies[0].configuredServerCount, 2)
         XCTAssertEqual(resp.servers[0].name, "BWG")
         XCTAssertEqual(resp.servers[0].daysRemaining, 18)
+        XCTAssertEqual(resp.servers[0].advisories, [.idleBurn])
     }
 
     // MARK: - Service monitor (flattened detail)

@@ -220,7 +220,7 @@ async fn cost_overview_requires_auth_and_returns_configured_servers() {
     assert!(configured["cost_per_day"].is_number());
     assert!(configured["cost_per_month_equivalent"].is_number());
     assert!(configured["cycle_cost_elapsed"].is_number());
-    assert!(configured["value_score"].is_object());
+    assert!(configured["advisories"].is_array());
 }
 
 #[tokio::test]
@@ -318,7 +318,7 @@ async fn traffic_overview_response_does_not_include_cost_fields() {
         "cost_per_month_equivalent",
         "cycle_cost_elapsed",
         "cycle_burn_percent",
-        "value_score",
+        "advisories",
     ] {
         assert!(
             !server.contains_key(cost_key),

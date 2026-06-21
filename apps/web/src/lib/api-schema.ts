@@ -43,11 +43,8 @@ export type CurrencyCostSummary = S['CurrencyCostSummary']
 export type ServerCostOverview = S['ServerCostOverview']
 export type ServerCostInsights = S['ServerCostInsights']
 export type ResourceValue = S['ResourceValue']
-export type ValueScore = S['ValueScore']
 export type CostInvalidReason = S['CostInvalidReason']
-export type ValueGrade = S['ValueGrade']
-export type ValueReason = S['ValueReason']
-export type ValueConfidence = S['ValueConfidence']
+export type CostAdvisory = S['CostAdvisory']
 
 // Server groups
 export type ServerGroup = S['ServerGroup']

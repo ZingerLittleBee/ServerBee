@@ -2457,7 +2457,7 @@ export interface components {
                 price?: number | null;
                 resource_value?: null | components["schemas"]["ResourceValue"];
                 server_id: string;
-                value_score?: null | components["schemas"]["ValueScore"];
+                advisories: components["schemas"]["CostAdvisory"][];
             };
         };
         ApiResponse_TrafficResponse: {
@@ -2594,6 +2594,8 @@ export interface components {
             /** Format: int64 */
             deleted: number;
         };
+        /** @enum {string} */
+        CostAdvisory: "expired_billing" | "sleeping_money" | "idle_burn" | "low_uptime";
         /** @enum {string} */
         CostInvalidReason: "missing_price" | "missing_billing_cycle" | "invalid_billing_cycle" | "invalid_price";
         CostOverviewResponse: {
@@ -3550,7 +3552,7 @@ export interface components {
             price?: number | null;
             resource_value?: null | components["schemas"]["ResourceValue"];
             server_id: string;
-            value_score?: null | components["schemas"]["ValueScore"];
+            advisories: components["schemas"]["CostAdvisory"][];
         };
         ServerCostOverview: {
             billing_cycle?: string | null;
@@ -3573,7 +3575,7 @@ export interface components {
             invalid_reason?: null | components["schemas"]["CostInvalidReason"];
             name: string;
             server_id: string;
-            value_score?: null | components["schemas"]["ValueScore"];
+            advisories: components["schemas"]["CostAdvisory"][];
         };
         ServerGroup: {
             /** Format: date-time */
@@ -4358,19 +4360,6 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             username: string;
-        };
-        /** @enum {string} */
-        ValueConfidence: "high" | "medium" | "low";
-        /** @enum {string} */
-        ValueGrade: "excellent" | "good" | "okay" | "poor" | "waste";
-        /** @enum {string} */
-        ValueReason: "idle_burn" | "sleeping_money" | "good_memory_value" | "good_disk_value" | "expensive_cpu" | "healthy_uptime" | "low_uptime" | "expired_billing" | "no_price_cycle" | "insufficient_data" | "free_or_zero_price";
-        ValueScore: {
-            confidence: components["schemas"]["ValueConfidence"];
-            grade: components["schemas"]["ValueGrade"];
-            reasons: components["schemas"]["ValueReason"][];
-            /** Format: double */
-            score: number;
         };
         WidgetInput: {
             config_json: unknown;

@@ -290,19 +290,13 @@ describe('ServerDetailPage', () => {
         price: 5,
         resource_value: {},
         server_id: 'server-1',
-        value_score: {
-          confidence: 'high',
-          grade: 'good',
-          reasons: ['healthy_uptime'],
-          score: 82
-        }
+        advisories: ['expired_billing']
       } satisfies ServerCostInsights
     })
 
     render(<ServerDetailPage />)
 
-    expect(screen.getByText('cost_value_score')).toBeInTheDocument()
-    expect(screen.getByText('82')).toBeInTheDocument()
+    expect(screen.getByText('cost_advisory_expired_billing')).toBeInTheDocument()
     expect(screen.getByText(REGEX_EDIT_CYCLE_MONTHLY)).toBeInTheDocument()
     expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
   })
@@ -344,7 +338,8 @@ describe('ServerDetailPage', () => {
         currency: 'USD',
         invalid_reason: 'missing_billing_cycle',
         price: 5,
-        server_id: 'server-1'
+        server_id: 'server-1',
+        advisories: []
       } satisfies ServerCostInsights
     })
 

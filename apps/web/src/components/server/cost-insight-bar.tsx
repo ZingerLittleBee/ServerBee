@@ -1,16 +1,9 @@
-import { CreditCard } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { AlertTriangle, CreditCard } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { useCostInsights } from '@/hooks/use-cost'
 import type { ResourceValue, ServerCostInsights, ServerResponse } from '@/lib/api-schema'
-import {
-  formatCostAmount,
-  formatCostRate,
-  getCostGradeClassName,
-  getCostInvalidReasonKey,
-  getCostReasonKey
-} from '@/lib/cost'
+import { formatCostAmount, formatCostRate, getCostAdvisoryKey, getCostInvalidReasonKey } from '@/lib/cost'
 import { cn } from '@/lib/utils'
 
 type CostInsightServer = Pick<
@@ -65,7 +58,7 @@ function ConfiguredCostBar({
   const { t } = useTranslation('servers')
   const currency = insights.currency ?? server.currency
   const resourceItems = getResourceValueItems(insights.resource_value, currency, t)
-  const reasons = insights.value_score?.reasons ?? []
+  const advisories = insights.advisories ?? []
 
   return (
     <div className={BAR_CLASS_NAME}>
@@ -109,29 +102,29 @@ function ConfiguredCostBar({
           </span>
         )}
         {insights.days_remaining != null && <span>{t('cost_days_left', { count: insights.days_remaining })}</span>}
-        {insights.value_score != null && (
-          <CostMetric label={t('cost_value_score')}>
-            <span className="font-mono font-semibold tabular-nums">{Math.round(insights.value_score.score)}</span>
-            <span aria-hidden="true" className="mx-1 text-muted-foreground">
-              /
-            </span>
-            <span className={cn('font-medium', getCostGradeClassName(insights.value_score.grade))}>
-              {t(`cost_grade_${insights.value_score.grade}`)}
-            </span>
-          </CostMetric>
-        )}
         {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
       </div>
 
-      {(resourceItems.length > 0 || reasons.length > 0) && (
+      {advisories.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {advisories.map((advisory) => (
+            <span
+              className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 font-medium text-amber-600 text-xs"
+              key={advisory}
+            >
+              <AlertTriangle aria-hidden="true" className="size-3" />
+              {t(getCostAdvisoryKey(advisory))}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {resourceItems.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
           {resourceItems.map((item) => (
             <span className="font-mono tabular-nums" key={item.label}>
               {item.label} {item.value}
             </span>
-          ))}
-          {reasons.map((reason) => (
-            <span key={reason}>{t(getCostReasonKey(reason))}</span>
           ))}
         </div>
       )}
@@ -200,14 +193,6 @@ function PriceCycle({
     <span>
       {formatCostAmount(price, currency, { maximumFractionDigits: 2 })}
       {billingCycle && <span className="text-muted-foreground"> / {getBillingCycleLabel(billingCycle, t)}</span>}
-    </span>
-  )
-}
-
-function CostMetric({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <span>
-      <span className="text-muted-foreground">{label}</span> <span className="font-medium">{children}</span>
     </span>
   )
 }

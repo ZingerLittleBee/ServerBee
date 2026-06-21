@@ -73,7 +73,7 @@ final class TrafficModelsDecodingTests: XCTestCase {
 
     // MARK: - Cost
 
-    func test_cost_configured_decodesWithScoreAndResource() throws {
+    func test_cost_configured_decodesWithAdvisoriesAndResource() throws {
         let json = """
         {
           "server_id": "abc",
@@ -99,18 +99,14 @@ final class TrafficModelsDecodingTests: XCTestCase {
             "cost_per_gb_disk": 0.024, "cost_per_tb_traffic_limit": 1.96,
             "traffic_limit_type": "sum"
           },
-          "value_score": { "score": 62.2, "grade": "okay",
-            "reasons": ["low_uptime", "insufficient_data", "good_memory_value"],
-            "confidence": "low" }
+          "advisories": ["expired_billing", "low_uptime"]
         }
         """
         let c = try decode(ServerCostInsights.self, json)
         XCTAssertTrue(c.configured)
         XCTAssertNil(c.invalidReason)
         XCTAssertEqual(c.currencyCode, "USD")
-        XCTAssertEqual(c.valueScore?.grade, .okay)
-        XCTAssertEqual(c.valueScore?.confidence, .low)
-        XCTAssertEqual(c.valueScore?.reasons, [.lowUptime, .insufficientData, .goodMemoryValue])
+        XCTAssertEqual(c.advisories, [.expiredBilling, .lowUptime])
         XCTAssertEqual(c.resourceValue?.costPerCpuCore, 1.91)
     }
 
@@ -125,14 +121,13 @@ final class TrafficModelsDecodingTests: XCTestCase {
         XCTAssertEqual(c.currencyCode, "USD")  // falls back when null
     }
 
-    func test_cost_unknownReason_degradesToUnknown() throws {
+    func test_cost_unknownAdvisory_degradesToUnknown() throws {
         let json = """
         { "server_id": "x", "configured": true,
-          "value_score": { "score": 1, "grade": "good",
-          "reasons": ["brand_new_reason_from_future"], "confidence": "high" } }
+          "advisories": ["brand_new_advisory_from_future"] }
         """
         let c = try decode(ServerCostInsights.self, json)
-        XCTAssertEqual(c.valueScore?.reasons, [.unknown])
+        XCTAssertEqual(c.advisories, [.unknown])
     }
 
     // MARK: - Uptime

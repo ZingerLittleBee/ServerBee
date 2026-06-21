@@ -28,29 +28,25 @@ struct CostInsightsCard: View {
                 Divider()
                 resourceRows(resource)
             }
-            if let score = cost.valueScore {
+            let advisories = (cost.advisories ?? []).filter { $0 != .unknown }
+            if !advisories.isEmpty {
                 Divider()
-                valueScoreView(score)
+                advisoriesView(advisories)
             }
         }
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Formatters.formatCurrency(cost.price, code: cost.currencyCode))
-                    .font(.title3.bold())
-                if let cycle = cost.billingCycle {
-                    Text(localizedCycle(cycle))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if let grade = cost.valueScore?.grade {
-                gradePill(grade, score: cost.valueScore?.score)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(Formatters.formatCurrency(cost.price, code: cost.currencyCode))
+                .font(.title3.bold())
+            if let cycle = cost.billingCycle {
+                Text(localizedCycle(cycle))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var burnRows: some View {
@@ -123,17 +119,9 @@ struct CostInsightsCard: View {
         }
     }
 
-    private func valueScoreView(_ score: ValueScore) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            let reasons = score.reasons.filter { $0 != .unknown }
-            if !reasons.isEmpty {
-                FlowChips(items: reasons) { reason in
-                    Chip(text: reason.label, color: chipColor(for: reason))
-                }
-            }
-            Text(score.confidence.label)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+    private func advisoriesView(_ advisories: [CostAdvisory]) -> some View {
+        FlowChips(items: advisories) { advisory in
+            Chip(text: advisory.label, color: .warningAmber)
         }
     }
 
@@ -167,41 +155,6 @@ struct CostInsightsCard: View {
     }
 
     // MARK: Helpers
-
-    private func gradePill(_ grade: ValueGrade, score: Double?) -> some View {
-        let color = gradeColor(grade)
-        return VStack(spacing: 2) {
-            Text(grade.label)
-                .font(.caption.bold())
-                .foregroundStyle(color)
-            if let score {
-                Text(String(format: "%.0f/100", score))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(color.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func gradeColor(_ grade: ValueGrade) -> Color {
-        switch grade {
-        case .excellent, .good: .serverOnline
-        case .okay: .warningAmber
-        case .poor: .orange
-        case .waste: .serverOffline
-        }
-    }
-
-    private func chipColor(for reason: ValueReason) -> Color {
-        switch reason {
-        case .goodMemoryValue, .goodDiskValue, .healthyUptime: .serverOnline
-        case .idleBurn, .sleepingMoney, .expensiveCpu, .lowUptime, .expiredBilling: .warningAmber
-        default: .secondary
-        }
-    }
 
     private func localizedCycle(_ cycle: String) -> String {
         switch cycle {
