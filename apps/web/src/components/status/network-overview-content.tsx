@@ -193,13 +193,6 @@ export function NetworkOverviewContent({
         </div>
       )}
 
-      {anomalyServers > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50/70 px-4 py-3 dark:border-amber-700/50 dark:bg-amber-900/20">
-          <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-amber-500" />
-          <p className="text-amber-800 text-sm dark:text-amber-300">{t('anomaly_banner', { count: anomalyServers })}</p>
-        </div>
-      )}
-
       <div className="mb-4">
         <div className="relative">
           <svg

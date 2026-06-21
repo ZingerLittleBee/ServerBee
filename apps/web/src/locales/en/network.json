@@ -28,7 +28,6 @@
   "anomaly_high_packet_loss": "High Packet Loss",
   "anomaly_very_high_packet_loss": "Very High Packet Loss",
   "anomaly_unreachable": "Unreachable",
-  "anomaly_banner": "{{count}} server(s) have network anomalies",
   "target_management": "Target Management",
   "global_settings": "Global Settings",
   "add_target": "Add Target",

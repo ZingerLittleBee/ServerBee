@@ -28,7 +28,6 @@
   "anomaly_high_packet_loss": "高丢包",
   "anomaly_very_high_packet_loss": "极高丢包",
   "anomaly_unreachable": "不可达",
-  "anomaly_banner": "{{count}} 台服务器存在网络异常",
   "target_management": "目标管理",
   "global_settings": "全局设置",
   "add_target": "添加目标",
