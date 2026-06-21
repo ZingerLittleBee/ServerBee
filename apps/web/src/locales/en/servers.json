@@ -143,6 +143,7 @@
 
   "detail_back": "Back to Dashboard",
   "detail_edit": "Edit",
+  "card_actions": "Server actions",
   "detail_terminal": "Terminal",
   "detail_files": "Files",
   "detail_docker": "Docker",
