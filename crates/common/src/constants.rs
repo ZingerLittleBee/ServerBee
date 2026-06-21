@@ -210,7 +210,11 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         key: "firewall_block",
         display_name: "Firewall Blocklist",
         default_enabled: true,
-        risk_level: "high",
+        // Medium, not high: the agent can only add/remove IPs in its own dedicated
+        // nft blocklist set (see crates/agent/src/firewall) — it can't exec code,
+        // read files, or flush the host firewall, and guardrails reject self-lockout
+        // ranges. The web/iOS UI mirrors this value.
+        risk_level: "medium",
     },
     CapabilityMeta {
         bit: CAP_IP_QUALITY,

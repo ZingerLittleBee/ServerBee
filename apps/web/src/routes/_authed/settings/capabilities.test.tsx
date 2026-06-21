@@ -22,6 +22,7 @@ const serverTranslations = {
   cap_exec: 'Remote Exec',
   cap_file: 'File Manager',
   cap_high_risk: 'High Risk',
+  cap_medium_risk: 'Medium Risk',
   cap_low_risk: 'Low Risk',
   cap_ping_http: 'HTTP Probe',
   cap_ping_icmp: 'ICMP Ping',
@@ -126,7 +127,7 @@ describe('CapabilitiesPage', () => {
     expect(screen.getByText('Docker Management')).toBeInTheDocument()
   })
 
-  it('renders all high-risk capability columns before low-risk columns', () => {
+  it('orders capability columns by risk tier: high, then medium, then low', () => {
     render(<CapabilitiesPage />)
 
     const headerGroup = screen.getByTestId('header-group-0')
@@ -140,13 +141,13 @@ describe('CapabilitiesPage', () => {
       'RemoteExecHighRisk',
       'FileManagerHighRisk',
       'DockerManagementHighRisk',
-      'cap_firewall_blockHighRisk',
+      'cap_firewall_blockMediumRisk',
+      'cap_ip_qualityMediumRisk',
       'AutoUpgradeLowRisk',
       'ICMPPingLowRisk',
       'TCPProbeLowRisk',
       'HTTPProbeLowRisk',
-      'cap_security_eventsLowRisk',
-      'cap_ip_qualityLowRisk'
+      'cap_security_eventsLowRisk'
     ])
   })
 })

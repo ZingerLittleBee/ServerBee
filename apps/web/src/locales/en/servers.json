@@ -189,6 +189,7 @@
   "cap_toggles": "Capabilities",
   "cap_upgrade_warning": "Agent does not support capability enforcement — upgrade recommended",
   "cap_high_risk": "High Risk",
+  "cap_medium_risk": "Medium Risk",
   "cap_low_risk": "Low Risk",
   "cap_enabled": "Enabled",
   "cap_disabled": "Disabled",
