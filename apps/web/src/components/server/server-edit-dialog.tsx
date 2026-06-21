@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarIcon, ChevronsUpDown } from 'lucide-react'
+import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -24,7 +24,7 @@ import { applyServerEdit, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 import { buildCountryOptions, type CountryOption } from '@/lib/country-codes'
-import { countryCodeToFlag } from '@/lib/utils'
+import { cn, countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
@@ -471,17 +471,15 @@ function CountryCommandItem({
   selected: boolean
 }) {
   return (
-    <CommandItem
-      data-checked={selected ? 'true' : undefined}
-      keywords={[option.name]}
-      onSelect={() => onSelect(option.code)}
-      value={option.code}
-    >
+    <CommandItem keywords={[option.name]} onSelect={() => onSelect(option.code)} value={option.code}>
+      <Check className={cn('size-4 shrink-0', selected ? 'opacity-100' : 'opacity-0')} />
       <span aria-hidden="true" className="text-base leading-none">
         {option.flag}
       </span>
-      <span className="truncate">{option.name}</span>
-      <span className="ml-auto text-muted-foreground text-xs">{option.code}</span>
+      <span className="flex-1 truncate">{option.name}</span>
+      <span className="text-muted-foreground text-xs tabular-nums" data-slot="command-shortcut">
+        {option.code}
+      </span>
     </CommandItem>
   )
 }
@@ -529,16 +527,13 @@ function CountryOverrideField({
             <CommandList>
               <CommandEmpty>{t('edit_country_empty')}</CommandEmpty>
               <CommandGroup>
-                <CommandItem
-                  data-checked={current ? undefined : 'true'}
-                  keywords={[autoLabel]}
-                  onSelect={() => handleSelect('')}
-                  value="__auto__"
-                >
+                <CommandItem keywords={[autoLabel]} onSelect={() => handleSelect('')} value="__auto__">
+                  <Check className={cn('size-4 shrink-0', current ? 'opacity-0' : 'opacity-100')} />
                   <span aria-hidden="true" className="text-base leading-none">
                     🏳️
                   </span>
-                  <span className="truncate">{autoLabel}</span>
+                  <span className="flex-1 truncate">{autoLabel}</span>
+                  <span className="sr-only" data-slot="command-shortcut" />
                 </CommandItem>
               </CommandGroup>
               <CommandSeparator />
