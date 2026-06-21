@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, Globe, Server, Wifi } from 'lucide-react'
+import { AlertTriangle, Server, Wifi } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
@@ -63,11 +63,27 @@ function worstTarget(targets: NetworkOverviewSummary['targets']): NetworkOvervie
   return valid.reduce((worst, t) => ((t.avg_latency ?? 0) > (worst.avg_latency ?? 0) ? t : worst))
 }
 
-function StatCard({ icon: Icon, label, value }: { icon: typeof Server; label: string; value: string | number }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone = 'default'
+}: {
+  icon: typeof Server
+  label: string
+  value: string | number
+  tone?: 'default' | 'warning'
+}) {
+  const isWarning = tone === 'warning'
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-card p-4">
-      <div className="rounded-md bg-muted p-2">
-        <Icon aria-hidden="true" className="size-5 text-muted-foreground" />
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-lg border bg-card p-4',
+        isWarning && 'border-amber-300/60 dark:border-amber-700/50'
+      )}
+    >
+      <div className={cn('rounded-md p-2', isWarning ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-muted')}>
+        <Icon aria-hidden="true" className={cn('size-5', isWarning ? 'text-amber-500' : 'text-muted-foreground')} />
       </div>
       <div>
         <p className="font-semibold text-lg leading-tight">{value}</p>
@@ -189,7 +205,12 @@ export function NetworkOverviewContent({
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
           <StatCard icon={Server} label={t('total_servers')} value={totalServers} />
           <StatCard icon={Wifi} label={t('online_servers')} value={onlineServers} />
-          <StatCard icon={Globe} label={t('anomaly_count')} value={anomalyServers} />
+          <StatCard
+            icon={AlertTriangle}
+            label={t('anomaly_count')}
+            tone={anomalyServers > 0 ? 'warning' : 'default'}
+            value={anomalyServers}
+          />
         </div>
       )}
 
