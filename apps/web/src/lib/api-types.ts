@@ -3709,6 +3709,12 @@ export interface components {
             /** Format: date-time */
             expired_at?: string | null;
             features: string[];
+            /**
+             * @description `true` when `country_code`/`region` were pinned manually by an operator
+             *     and are no longer auto-updated from GeoIP. The UI uses this to show that
+             *     the flag is a manual override.
+             */
+            geo_manual: boolean;
             group_id?: string | null;
             /**
              * @description `true` iff the server row has a non-NULL `token_hash`. Pending servers
@@ -4203,6 +4209,12 @@ export interface components {
             billing_cycle?: string | null;
             /** Format: int32 */
             billing_start_day?: number | null;
+            /**
+             * @description Manual override for the GeoIP country flag. A 2-letter ISO code pins it
+             *     and freezes it against auto-detection; explicit null clears the override
+             *     and resumes GeoIP on the next agent report. Absent = unchanged.
+             */
+            country_code?: string | null;
             currency?: string | null;
             /** Format: date-time */
             expired_at?: string | null;

@@ -127,6 +127,7 @@ async fn insert_minimal_server(db: &sea_orm::DatabaseConnection, id: &str) {
         ipv6: Set(None),
         region: Set(None),
         country_code: Set(None),
+        geo_manual: Set(false),
         virtualization: Set(None),
         agent_version: Set(None),
         group_id: Set(None),

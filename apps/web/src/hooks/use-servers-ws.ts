@@ -271,10 +271,12 @@ export function setServerDockerAvailability(
 export function applyServerEdit(
   prev: ServerMetrics[],
   serverId: string,
-  edited: { name: string; group_id: string | null }
+  edited: { name: string; group_id: string | null; country_code: string | null }
 ): ServerMetrics[] {
   return prev.map((server) =>
-    server.id === serverId ? { ...server, name: edited.name, group_id: edited.group_id } : server
+    server.id === serverId
+      ? { ...server, name: edited.name, group_id: edited.group_id, country_code: edited.country_code }
+      : server
   )
 }
 

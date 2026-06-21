@@ -14,6 +14,7 @@ import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
 import { applyServerEdit, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
+import { countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
@@ -66,6 +67,11 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   const [groupId, setGroupId] = useState(server.group_id ?? '')
   const [remark, setRemark] = useState(server.remark ?? '')
   const [publicRemark, setPublicRemark] = useState(server.public_remark ?? '')
+  // The country override field is empty unless the server already has a manual
+  // override; otherwise we leave it blank and surface the auto-detected value as
+  // a hint, so saving an untouched form never accidentally pins GeoIP.
+  const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
+  const [countryCode, setCountryCode] = useState(initialCountryCode)
   const [price, setPrice] = useState(server.price?.toString() ?? '')
   const [billingCycle, setBillingCycle] = useState(server.billing_cycle ?? '')
   const [currency, setCurrency] = useState(server.currency ?? 'USD')
@@ -96,6 +102,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       setGroupId(server.group_id ?? '')
       setRemark(server.remark ?? '')
       setPublicRemark(server.public_remark ?? '')
+      setCountryCode(server.geo_manual ? (server.country_code ?? '') : '')
       setPrice(server.price?.toString() ?? '')
       setBillingCycle(server.billing_cycle ?? '')
       setCurrency(server.currency ?? 'USD')
@@ -118,26 +125,36 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
     onSuccess: (data) => {
       queryClient.setQueryData(['servers', server.id], data)
       queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-        prev ? applyServerEdit(prev, server.id, { name: data.name, group_id: data.group_id ?? null }) : prev
+        prev
+          ? applyServerEdit(prev, server.id, {
+              name: data.name,
+              group_id: data.group_id ?? null,
+              country_code: data.country_code ?? null
+            })
+          : prev
       )
     }
   })
 
-  const buildPayload = (): UpdateServerInput => ({
-    name,
-    weight,
-    hidden,
-    group_id: groupId || null,
-    remark: remark || null,
-    public_remark: publicRemark || null,
-    price: price ? Number.parseFloat(price) : null,
-    billing_cycle: billingCycle || null,
-    currency: currency || null,
-    expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
-    traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
-    traffic_limit_type: trafficLimitType || null,
-    billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null
-  })
+  const buildPayload = (): UpdateServerInput => {
+    const payload: UpdateServerInput = {
+      name,
+      weight,
+      hidden,
+      group_id: groupId || null,
+      remark: remark || null,
+      public_remark: publicRemark || null,
+      price: price ? Number.parseFloat(price) : null,
+      billing_cycle: billingCycle || null,
+      currency: currency || null,
+      expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
+      traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
+      traffic_limit_type: trafficLimitType || null,
+      billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null,
+      ...countryCodePatch(countryCode, initialCountryCode)
+    }
+    return payload
+  }
 
   const saveTags = async (tags: string[]): Promise<boolean> => {
     try {
@@ -264,6 +281,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
                   value={publicRemark}
                 />
               </Field>
+              <CountryOverrideField onChange={setCountryCode} server={server} value={countryCode} />
               <Field label={t('tags_label')}>
                 <Input
                   aria-label={t('tags_label')}
@@ -419,6 +437,54 @@ function Field({ label, children }: { children: React.ReactNode; label: string }
       <label className="font-medium text-sm">{label}</label>
       {children}
     </div>
+  )
+}
+
+// Only emit country_code when the override field actually changed, so saving an
+// untouched form never flips an auto-detected server to a manual one. An emptied
+// override sends null, which clears the override and resumes GeoIP detection.
+function countryCodePatch(current: string, initial: string): { country_code?: string | null } {
+  const normalized = current.trim().toUpperCase()
+  if (normalized === initial.toUpperCase()) {
+    return {}
+  }
+  return { country_code: normalized || null }
+}
+
+function CountryOverrideField({
+  value,
+  onChange,
+  server
+}: {
+  onChange: (value: string) => void
+  server: ServerResponse
+  value: string
+}) {
+  const { t } = useTranslation('servers')
+  return (
+    <Field label={t('edit_country')}>
+      <div className="flex items-center gap-2">
+        <span aria-hidden="true" className="w-7 shrink-0 text-center text-lg leading-none">
+          {countryCodeToFlag(value) || '🏳️'}
+        </span>
+        <Input
+          aria-label={t('edit_country')}
+          autoComplete="off"
+          className="uppercase"
+          maxLength={2}
+          name="country_code"
+          onChange={(e) => onChange(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())}
+          placeholder={t('edit_country_placeholder')}
+          type="text"
+          value={value}
+        />
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {server.geo_manual
+          ? t('edit_country_hint_manual')
+          : t('edit_country_hint_auto', { value: server.country_code || '—' })}
+      </p>
+    </Field>
   )
 }
 

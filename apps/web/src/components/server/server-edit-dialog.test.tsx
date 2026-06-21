@@ -113,6 +113,7 @@ const server: ServerResponse = {
   currency: 'USD',
   expired_at: null,
   features: [],
+  geo_manual: false,
   group_id: null,
   has_token: true,
   hidden: false,

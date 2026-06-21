@@ -107,6 +107,10 @@ pub struct ServerResponse {
     ipv6: Option<String>,
     region: Option<String>,
     country_code: Option<String>,
+    /// `true` when `country_code`/`region` were pinned manually by an operator
+    /// and are no longer auto-updated from GeoIP. The UI uses this to show that
+    /// the flag is a manual override.
+    geo_manual: bool,
     virtualization: Option<String>,
     agent_version: Option<String>,
     group_id: Option<String>,
@@ -269,6 +273,7 @@ fn build_server_response(
         ipv6: s.ipv6,
         region: s.region,
         country_code: s.country_code,
+        geo_manual: s.geo_manual,
         virtualization: s.virtualization,
         agent_version: s.agent_version,
         group_id: s.group_id,
@@ -518,6 +523,7 @@ async fn create_server(
                     ipv6: Set(None),
                     region: Set(None),
                     country_code: Set(None),
+                    geo_manual: Set(false),
                     virtualization: Set(None),
                     agent_version: Set(None),
                     group_id: Set(tx_body.group_id.clone()),
@@ -1416,6 +1422,7 @@ mod cleanup_tests {
             ipv6: None,
             region: None,
             country_code: None,
+            geo_manual: false,
             virtualization: None,
             agent_version: None,
             group_id: None,
@@ -1544,6 +1551,7 @@ mod delete_audit_tests {
             ipv6: None,
             region: None,
             country_code: None,
+            geo_manual: false,
             virtualization: None,
             agent_version: None,
             group_id: None,

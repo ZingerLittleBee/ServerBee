@@ -117,6 +117,7 @@ async fn insert_server_with_ips(
         ipv6: Set(Some(ipv6.to_string())),
         region: Set(Some("US".to_string())),
         country_code: Set(Some("US".to_string())),
+        geo_manual: Set(false),
         virtualization: Set(Some("kvm".to_string())),
         agent_version: Set(Some("0.1.0".to_string())),
         group_id: Set(None),
