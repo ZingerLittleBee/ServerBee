@@ -13,6 +13,40 @@ export function countryCodeToFlag(code: string | null | undefined): string {
   return String.fromCodePoint(...[...upper].map((c) => 0x1_f1_e6 + c.charCodeAt(0) - 65))
 }
 
+const regionNamesCache = new Map<string, Intl.DisplayNames | null>()
+
+function regionNamesFor(locale: string): Intl.DisplayNames | null {
+  if (regionNamesCache.has(locale)) {
+    return regionNamesCache.get(locale) ?? null
+  }
+  let instance: Intl.DisplayNames | null = null
+  try {
+    instance = new Intl.DisplayNames([locale], { type: 'region' })
+  } catch {
+    instance = null
+  }
+  regionNamesCache.set(locale, instance)
+  return instance
+}
+
+// Localized country/region name from an ISO 3166-1 alpha-2 code (e.g. "JP" -> "Japan"
+// / "日本"). Falls back to the uppercased code when the runtime can't resolve a name.
+export function countryCodeToName(code: string | null | undefined, locale = 'en'): string {
+  if (!code || code.length !== 2) {
+    return ''
+  }
+  const upper = code.toUpperCase()
+  const names = regionNamesFor(locale)
+  if (!names) {
+    return upper
+  }
+  try {
+    return names.of(upper) ?? upper
+  } catch {
+    return upper
+  }
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes <= 0 || !Number.isFinite(bytes)) {
     return '0 B'

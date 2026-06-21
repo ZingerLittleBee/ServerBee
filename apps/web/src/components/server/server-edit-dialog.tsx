@@ -1,11 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarIcon } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { CalendarIcon, ChevronsUpDown } from 'lucide-react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator
+} from '@/components/ui/command'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -14,6 +23,7 @@ import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
 import { applyServerEdit, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
+import { buildCountryOptions, type CountryOption } from '@/lib/country-codes'
 import { countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
@@ -451,6 +461,31 @@ function countryCodePatch(current: string, initial: string): { country_code?: st
   return { country_code: normalized || null }
 }
 
+function CountryCommandItem({
+  option,
+  selected,
+  onSelect
+}: {
+  onSelect: (code: string) => void
+  option: CountryOption
+  selected: boolean
+}) {
+  return (
+    <CommandItem
+      data-checked={selected ? 'true' : undefined}
+      keywords={[option.name]}
+      onSelect={() => onSelect(option.code)}
+      value={option.code}
+    >
+      <span aria-hidden="true" className="text-base leading-none">
+        {option.flag}
+      </span>
+      <span className="truncate">{option.name}</span>
+      <span className="ml-auto text-muted-foreground text-xs">{option.code}</span>
+    </CommandItem>
+  )
+}
+
 function CountryOverrideField({
   value,
   onChange,
@@ -460,25 +495,67 @@ function CountryOverrideField({
   server: ServerResponse
   value: string
 }) {
-  const { t } = useTranslation('servers')
+  const { t, i18n } = useTranslation('servers')
+  const [open, setOpen] = useState(false)
+  const options = useMemo(() => buildCountryOptions(i18n.language), [i18n.language])
+  const current = value.toUpperCase()
+  const selected = options.find((option) => option.code === current)
+  const autoLabel = t('edit_country_auto_option')
+
+  function handleSelect(code: string) {
+    onChange(code)
+    setOpen(false)
+  }
+
   return (
     <Field label={t('edit_country')}>
-      <div className="flex items-center gap-2">
-        <span aria-hidden="true" className="w-7 shrink-0 text-center text-lg leading-none">
-          {countryCodeToFlag(value) || '🏳️'}
-        </span>
-        <Input
-          aria-label={t('edit_country')}
-          autoComplete="off"
-          className="uppercase"
-          maxLength={2}
-          name="country_code"
-          onChange={(e) => onChange(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())}
-          placeholder={t('edit_country_placeholder')}
-          type="text"
-          value={value}
+      <Popover onOpenChange={setOpen} open={open}>
+        <PopoverTrigger
+          render={
+            <Button className="w-full justify-between font-normal" type="button" variant="outline">
+              <span className="flex min-w-0 items-center gap-2">
+                <span aria-hidden="true" className="text-base leading-none">
+                  {countryCodeToFlag(value) || '🏳️'}
+                </span>
+                <span className="truncate">{selected?.name ?? (current || autoLabel)}</span>
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+            </Button>
+          }
         />
-      </div>
+        <PopoverContent align="start" className="w-(--anchor-width) p-0">
+          <Command>
+            <CommandInput placeholder={t('edit_country_search')} />
+            <CommandList>
+              <CommandEmpty>{t('edit_country_empty')}</CommandEmpty>
+              <CommandGroup>
+                <CommandItem
+                  data-checked={current ? undefined : 'true'}
+                  keywords={[autoLabel]}
+                  onSelect={() => handleSelect('')}
+                  value="__auto__"
+                >
+                  <span aria-hidden="true" className="text-base leading-none">
+                    🏳️
+                  </span>
+                  <span className="truncate">{autoLabel}</span>
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup>
+                {options.map((option) => (
+                  <CountryCommandItem
+                    key={option.code}
+                    onSelect={handleSelect}
+                    option={option}
+                    selected={current === option.code}
+                  />
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
       <p className="mt-1 text-[11px] text-muted-foreground">
         {server.geo_manual
           ? t('edit_country_hint_manual')
