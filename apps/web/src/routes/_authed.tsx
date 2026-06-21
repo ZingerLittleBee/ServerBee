@@ -2,7 +2,6 @@ import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tansta
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppSidebar } from '@/components/app-sidebar'
-import { ThemeToggle } from '@/components/layout/theme-toggle'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -11,7 +10,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator
 } from '@/components/ui/breadcrumb'
-import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
@@ -109,18 +107,6 @@ function isAdminRoute(pathname: string): boolean {
     return false
   }
   return !MEMBER_SETTINGS_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
-}
-
-function LanguageSwitcher() {
-  const { i18n } = useTranslation()
-  const isZh = (i18n.resolvedLanguage ?? i18n.language).startsWith('zh')
-  const toggle = () => i18n.changeLanguage(isZh ? 'en' : 'zh')
-
-  return (
-    <Button onClick={toggle} size="icon" variant="ghost">
-      {isZh ? 'EN' : '中文'}
-    </Button>
-  )
 }
 
 export const Route = createFileRoute('/_authed')({
@@ -256,10 +242,6 @@ function AuthedLayout() {
                   })}
                 </BreadcrumbList>
               </Breadcrumb>
-            </div>
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-              <LanguageSwitcher />
-              <ThemeToggle />
             </div>
           </header>
           {showOffline && (

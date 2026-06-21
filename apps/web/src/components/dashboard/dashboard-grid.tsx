@@ -256,31 +256,41 @@ export function DashboardGrid({
   // dropping onto another widget (it snaps back), so widgets never overlap.
   const compactor = useMemo(() => getCompactor(null, false, true), [])
 
-  // Manual position/size persists in coarse units, so snap the live layout to
-  // whole coarse rows (SCALE-aligned) while dragging/resizing. Otherwise the
-  // dropped fine position gets rounded on commit and the widget visibly snaps
-  // back, then ping-pongs with RGL's onLayoutChange echo (the "jitter").
-  // content-height widgets keep their measured fine height untouched.
+  // Manual position/size persists in coarse units, so when `snap` is set we align
+  // the live layout to whole coarse rows (SCALE-aligned) while dragging/resizing.
+  // Otherwise the dropped fine position gets rounded on commit and the widget
+  // visibly snaps back. content-height widgets keep their measured fine height.
+  //
+  // `snap` MUST stay off for RGL's idle onLayoutChange echo. That echo replays
+  // the de-overlapped `baseLayout`, whose widgets can hug the non-coarse bottom
+  // edge of a content-height / aspect-square widget (a non-SCALE-aligned y).
+  // Re-snapping those y values yields a layout that differs from the one RGL
+  // holds, so RGL echoes again -> setLiveLayout -> echo -> ... an infinite
+  // "Maximum update depth" ping-pong that jitters widgets right after a save.
+  // Leaving the idle echo un-snapped makes it a fixed point of baseLayout, so it
+  // converges immediately (RGL's deepEqual sees no change and stops).
   const updateLiveLayout = useCallback(
-    (nextLayout: Layout) => {
-      const snapped = nextLayout.map((item) => {
-        const strategy = getStrategy(item.i)
-        const base = {
-          ...item,
-          y: Math.round(item.y / SCALE) * SCALE
-        }
-        // Snap h to SCALE multiples only for strategies that operate at coarse h.
-        // aspect-square: h is fine pixel-square (RGL constraints handle resize); leave it.
-        // content-height: h locked to measurement; leave it.
-        if (strategy.kind === 'free' || strategy.kind === 'fixed') {
-          base.h = Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
-        }
-        return base
-      })
+    (nextLayout: Layout, snap: boolean) => {
+      const next = snap
+        ? nextLayout.map((item) => {
+            const strategy = getStrategy(item.i)
+            const base = {
+              ...item,
+              y: Math.round(item.y / SCALE) * SCALE
+            }
+            // Snap h to SCALE multiples only for strategies that operate at coarse h.
+            // aspect-square: h is fine pixel-square (RGL constraints handle resize); leave it.
+            // content-height: h locked to measurement; leave it.
+            if (strategy.kind === 'free' || strategy.kind === 'fixed') {
+              base.h = Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+            }
+            return base
+          })
+        : nextLayout
       // De-overlap every frame: RGL's identity compactor never resolves
       // overlaps, and its idle onLayoutChange echo would otherwise re-apply the
       // raw (overlapping) persisted positions over the de-overlapped layout.
-      setLiveLayout(deoverlapLayout(snapped))
+      setLiveLayout(deoverlapLayout(next))
     },
     [getStrategy]
   )
@@ -303,9 +313,14 @@ export function DashboardGrid({
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
-      updateLiveLayout(newLayout)
+      // onLayoutChange fires both during a drag/resize and as an idle "echo" when
+      // RGL re-emits the layout we just synced from `widgets` (after a save, or
+      // when a content-height widget finishes measuring). Snap only mid-interaction;
+      // never re-snap an idle echo, or it ping-pongs with RGL into an infinite
+      // "Maximum update depth" re-render (the post-save jitter). See updateLiveLayout.
+      updateLiveLayout(newLayout, isInteracting)
     },
-    [updateLiveLayout]
+    [isInteracting, updateLiveLayout]
   )
 
   const commitLayoutChange = useCallback(
@@ -399,11 +414,11 @@ export function DashboardGrid({
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
           layout={liveLayout}
-          onDrag={updateLiveLayout}
+          onDrag={(next) => updateLiveLayout(next, true)}
           onDragStart={() => setInteractionState('dragging')}
           onDragStop={commitLayoutChange}
           onLayoutChange={handleLayoutChange}
-          onResize={updateLiveLayout}
+          onResize={(next) => updateLiveLayout(next, true)}
           onResizeStart={() => setInteractionState('resizing')}
           onResizeStop={commitLayoutChange}
           resizeConfig={{ enabled: isEditing, handleComponent: renderResizeHandle, handles: ['s', 'e', 'se'] }}

@@ -104,9 +104,22 @@ export function CapabilitiesDialog({ server }: { server: ServerWithCaps }) {
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="font-medium">{t(capability.labelKey)}</span>
-                                  <Badge variant={capability.risk === 'high' ? 'destructive' : 'secondary'}>
-                                    {capability.risk === 'high' ? t('cap_high_risk') : t('cap_low_risk')}
-                                  </Badge>
+                                  {(() => {
+                                    if (capability.risk === 'high') {
+                                      return <Badge variant="destructive">{t('cap_high_risk')}</Badge>
+                                    }
+                                    if (capability.risk === 'medium') {
+                                      return (
+                                        <Badge
+                                          className="border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                          variant="outline"
+                                        >
+                                          {t('cap_medium_risk')}
+                                        </Badge>
+                                      )
+                                    }
+                                    return <Badge variant="secondary">{t('cap_low_risk')}</Badge>
+                                  })()}
                                 </div>
                               </div>
                               {(() => {

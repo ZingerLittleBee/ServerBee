@@ -14,6 +14,7 @@ const translationMap: Record<string, string> = {
   cap_group_high_risk: 'High Risk Operations',
   cap_group_low_risk: 'Monitoring & Maintenance',
   cap_high_risk: 'High Risk',
+  cap_medium_risk: 'Medium Risk',
   cap_low_risk: 'Low Risk',
   cap_ping_http: 'HTTP Probe',
   cap_ping_icmp: 'ICMP Ping',
@@ -71,6 +72,9 @@ describe('CapabilitiesDialog', () => {
     expect(screen.getByText(upgradeWarningPattern)).toBeInTheDocument()
     expect(screen.getByText('Web Terminal')).toBeInTheDocument()
     expect(screen.getByText('HTTP Probe')).toBeInTheDocument()
+    // Three risk tiers render: firewall + IP quality are medium, not high.
+    expect(screen.getAllByText('High Risk').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Medium Risk').length).toBeGreaterThan(0)
     // The dialog is read-only: it surfaces enabled/disabled status, not switches.
     expect(screen.queryAllByRole('switch')).toHaveLength(0)
     expect(screen.getAllByText('Enabled').length).toBeGreaterThan(0)

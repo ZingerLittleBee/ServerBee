@@ -9,7 +9,13 @@ import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { CAPABILITIES, classifyCapability, temporaryGrantFor } from '@/lib/capabilities'
+import {
+  CAPABILITIES,
+  classifyCapability,
+  RISK_LABEL_KEY,
+  RISK_TEXT_CLASS,
+  temporaryGrantFor
+} from '@/lib/capabilities'
 
 export const Route = createFileRoute('/_authed/settings/capabilities')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -20,9 +26,11 @@ export const Route = createFileRoute('/_authed/settings/capabilities')({
 
 type ServerInfo = ServerMetrics
 
+// Group columns by descending risk tier: high → medium → low.
 const ORDERED_CAPABILITIES = [
   ...CAPABILITIES.filter(({ risk }) => risk === 'high'),
-  ...CAPABILITIES.filter(({ risk }) => risk !== 'high')
+  ...CAPABILITIES.filter(({ risk }) => risk === 'medium'),
+  ...CAPABILITIES.filter(({ risk }) => risk === 'low')
 ]
 
 export function CapabilitiesPage() {
@@ -85,8 +93,8 @@ export function CapabilitiesPage() {
             header: () => (
               <div className="text-center">
                 <div>{t(labelKey, { ns: 'servers' })}</div>
-                <div className={`text-[10px] ${risk === 'high' ? 'text-red-500' : 'text-muted-foreground'}`}>
-                  {t(risk === 'high' ? 'cap_high_risk' : 'cap_low_risk', { ns: 'servers' })}
+                <div className={`text-[10px] ${RISK_TEXT_CLASS[risk]}`}>
+                  {t(RISK_LABEL_KEY[risk], { ns: 'servers' })}
                 </div>
               </div>
             ),

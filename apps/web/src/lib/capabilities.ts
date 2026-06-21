@@ -33,17 +33,37 @@ export const CAPABILITIES = [
     bit: CAP_FIREWALL_BLOCK,
     key: 'firewall_block',
     labelKey: 'cap_firewall_block' as const,
-    risk: 'high' as const
+    // Medium, not high: the agent can only add/remove IPs in its own dedicated
+    // nft blocklist set (see crates/agent/src/firewall) — it can't exec code,
+    // read files, or flush the host firewall, and guardrails reject self-lockout
+    // ranges. Mirrors the Rust risk_level in crates/common/src/constants.rs.
+    risk: 'medium' as const
   },
   {
     bit: CAP_IP_QUALITY,
     key: 'ip_quality',
     labelKey: 'cap_ip_quality' as const,
-    // 'medium' mirrors the Rust risk_level, but the UI renders this in the low/non-destructive
-    // risk group — capability-toggle risk grouping is binary (high vs. not-high).
+    // Mirrors the Rust risk_level in crates/common/src/constants.rs.
     risk: 'medium' as const
   }
 ] as const
+
+export type CapabilityRisk = (typeof CAPABILITIES)[number]['risk']
+
+// i18n keys (servers namespace) for each risk tier's badge label. Single source
+// so the settings table and the capabilities dialog stay in sync.
+export const RISK_LABEL_KEY: Record<CapabilityRisk, 'cap_high_risk' | 'cap_medium_risk' | 'cap_low_risk'> = {
+  high: 'cap_high_risk',
+  medium: 'cap_medium_risk',
+  low: 'cap_low_risk'
+}
+
+// Tailwind text-color class per risk tier for the compact risk labels.
+export const RISK_TEXT_CLASS: Record<CapabilityRisk, string> = {
+  high: 'text-red-500',
+  medium: 'text-amber-500',
+  low: 'text-muted-foreground'
+}
 
 export function hasCap(capabilities: number, bit: number): boolean {
   // biome-ignore lint/suspicious/noBitwiseOperators: intentional capability bitmask check
