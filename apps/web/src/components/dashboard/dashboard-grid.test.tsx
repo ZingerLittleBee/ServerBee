@@ -255,6 +255,38 @@ describe('DashboardGrid', () => {
     expect(getGridLayoutProps().layout).toEqual(nextLayout)
   })
 
+  it('preserves an idle onLayoutChange echo with a non-coarse y (no re-snap ping-pong)', () => {
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    // Reproduces the post-save jitter: baseLayout de-overlaps a widget so it hugs
+    // the non-coarse bottom edge of a content-height / aspect-square widget, giving
+    // it a y that is NOT a SCALE(4) multiple. While idle, RGL echoes that layout
+    // back through onLayoutChange. The grid must keep it verbatim — re-snapping y
+    // to a coarse row would hand RGL a different layout, which it echoes again,
+    // setLiveLayout fires again, and the two normalizers ping-pong until React
+    // aborts with "Maximum update depth exceeded". w-1 (cols 0-1) and w-2 (cols
+    // 2-4) never overlap, so de-overlap is a no-op and y=11 must survive.
+    const echoed = [
+      { i: 'w-1', x: 0, y: 11, w: 2, h: 8 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 11 }
+    ]
+
+    act(() => {
+      getGridLayoutProps().onLayoutChange?.(echoed)
+    })
+
+    expect(getGridLayoutProps().layout).toEqual(echoed)
+  })
+
   it('keeps drag-time layout changes internal until commit', () => {
     const onLayoutChange = vi.fn()
 
