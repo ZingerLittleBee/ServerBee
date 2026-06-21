@@ -3,13 +3,14 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CountryFlag } from '@/components/country-flag'
 import { StatusBadge } from '@/components/server/status-badge'
 import { ServerDetailContent } from '@/components/status/server-detail-content'
 import { Skeleton } from '@/components/ui/skeleton'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicServerDetail } from '@/lib/api-schema'
-import { countryCodeToFlag, formatBytes } from '@/lib/utils'
+import { formatBytes } from '@/lib/utils'
 
 interface PublicServerDetailSearch {
   range?: string
@@ -73,8 +74,6 @@ function PublicServerDetailPage() {
     )
   }
 
-  const flag = countryCodeToFlag(data.country_code)
-
   return (
     <div className="pb-6">
       <div className="mb-6">
@@ -87,7 +86,7 @@ function PublicServerDetailPage() {
         </Link>
 
         <div className="flex items-center gap-3">
-          {flag && <span className="text-xl">{flag}</span>}
+          <CountryFlag className="text-xl" code={data.country_code} />
           <h1 className="font-bold text-2xl">{data.name}</h1>
           <StatusBadge status={data.online ? 'online' : 'offline'} />
         </div>

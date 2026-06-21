@@ -11,6 +11,7 @@ const REGEX_COST_PER_MONTH = /7\.30\/mo/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { language: 'en' },
     t: (key: string) => key
   })
 }))

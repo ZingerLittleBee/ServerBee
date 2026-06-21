@@ -32,6 +32,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { language: 'en' },
     t: (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key
   })
 }))
@@ -155,6 +156,7 @@ vi.mock('@/lib/disk-io', () => ({
 vi.mock('@/lib/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   countryCodeToFlag: () => 'US',
+  countryCodeToName: () => 'United States',
   formatBytes: (value: number) => `${value}`
 }))
 

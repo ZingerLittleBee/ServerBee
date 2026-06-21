@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CountryFlag } from '@/components/country-flag'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { RecoverAgentDialog } from '@/components/server/recover-agent-dialog'
@@ -18,7 +19,7 @@ import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
-import { countryCodeToFlag, formatBytes } from '@/lib/utils'
+import { formatBytes } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { Route, type ServerDetailTab } from './$id'
 
@@ -194,7 +195,6 @@ export function ServerDetailPage() {
 
   const serverWithCaps = server as ServerResponse & ServerWithCaps
   const isOnline = liveData?.online ?? false
-  const flag = countryCodeToFlag(server.country_code)
   const terminalEnabled = getEffectiveCapabilityEnabled(
     serverWithCaps.effective_capabilities,
     serverWithCaps.capabilities,
@@ -225,7 +225,7 @@ export function ServerDetailPage() {
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
-              {flag && <span className="text-xl">{flag}</span>}
+              <CountryFlag className="text-xl" code={server.country_code} />
               <h1 className="font-bold text-2xl">{server.name}</h1>
               <StatusBadge status={isOnline ? 'online' : 'offline'} />
               <UpgradeJobBadge job={upgradeJob} />

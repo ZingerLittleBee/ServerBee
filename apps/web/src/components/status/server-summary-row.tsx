@@ -2,13 +2,14 @@ import { Link } from '@tanstack/react-router'
 import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network, Sigma, Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CountryFlag } from '@/components/country-flag'
 import { StatusDot } from '@/components/server/status-dot'
 import { Badge } from '@/components/ui/badge'
 import { TableCell, TableRow } from '@/components/ui/table'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import type { PublicServerSummary, PublicStatusConfig } from '@/lib/api-schema'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, countryCodeToFlag, formatBytes, formatSpeed } from '@/lib/utils'
+import { cn, formatBytes, formatSpeed } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 
 interface Props {
@@ -230,14 +231,9 @@ function DetailMetric({
 
 function ServerName({ server, clickable }: { clickable: boolean; server: PublicServerSummary }) {
   const { t } = useTranslation('status')
-  const flag = countryCodeToFlag(server.country_code)
   const title = (
     <span className="group/link flex min-w-0 items-center gap-1.5">
-      {flag && (
-        <span className="shrink-0 text-xs" title={server.country_code ?? ''}>
-          {flag}
-        </span>
-      )}
+      <CountryFlag className="text-xs" code={server.country_code} />
       <span className="truncate font-medium group-hover/link:underline">{server.name}</span>
     </span>
   )

@@ -29,8 +29,9 @@ import { CAP_DEFAULT } from '@/lib/capabilities'
 import { isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, countryCodeToFlag, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { cn, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
+import { CountryFlag } from '../country-flag'
 import { CostFootnote } from './cost-footnote'
 import { NetworkSquareGrid } from './network-square-grid'
 import { NetworkTargetBreakdown } from './network-target-breakdown'
@@ -409,7 +410,6 @@ const ServerCardInner = ({
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
   const swapPct = server.swap_total > 0 ? (server.swap_used / server.swap_total) * 100 : 0
-  const flag = countryCodeToFlag(server.country_code)
   const osEmoji = osIcon(server.os)
 
   const { currentAvgLatency, currentAvgLossRatio, currentTargets, latencyPoints, lossPoints } = useMemo(
@@ -453,11 +453,7 @@ const ServerCardInner = ({
           search={{ range: 'realtime' }}
           to="/servers/$id"
         >
-          {flag && (
-            <span className="shrink-0 text-sm" title={server.country_code ?? ''}>
-              {flag}
-            </span>
-          )}
+          <CountryFlag className="text-sm" code={server.country_code} />
           {osEmoji && (
             <span className="shrink-0 text-sm" title={server.os ?? ''}>
               {osEmoji}
