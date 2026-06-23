@@ -38,7 +38,7 @@ async fn docker_logs_ws_handler(
     // Auth: session cookie or API key
     let user = validate_auth(&state, &headers).await;
     match user {
-        Some((user_id, role)) => {
+        Some((user_id, role, mobile_expires)) => {
             // Docker log streaming exposes sensitive container output
             // (env vars, connection strings, tokens), so it is admin-only,
             // consistent with terminal access.
@@ -92,40 +92,55 @@ async fn docker_logs_ws_handler(
             }
             ws.max_message_size(MAX_WS_MESSAGE_SIZE)
                 .on_upgrade(move |socket| {
-                    handle_docker_logs_ws(socket, state, server_id, user_id, ip)
+                    handle_docker_logs_ws(socket, state, server_id, user_id, ip, mobile_expires)
                 })
         }
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
 }
 
-async fn validate_auth(state: &Arc<AppState>, headers: &HeaderMap) -> Option<(String, String)> {
+/// Returns `(user_id, role, mobile_expires)` on success.
+///
+/// `mobile_expires` is `Some(expires_at)` only for a non-web (mobile) Bearer
+/// session, whose lifetime is fixed (no sliding renewal). The handler uses it to
+/// force-close the WS when the token expires mid-session, matching the browser
+/// WS. Web sessions (sliding expiry) and API keys never expire the socket and
+/// yield `None`.
+async fn validate_auth(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+) -> Option<(String, String, Option<chrono::DateTime<chrono::Utc>>)> {
     use crate::service::auth::AuthService;
 
-    // Try session cookie
+    // Try session cookie (always web source → no mobile expiry)
     if let Some(token) = extract_session_cookie(headers)
         && let Ok(Some((user, _session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
         && !user.must_change_password
     {
-        return Some((user.id, user.role));
+        return Some((user.id, user.role, None));
     }
 
-    // Try API key header
+    // Try API key header (no expiry)
     if let Some(key) = extract_api_key(headers)
         && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
         && !user.must_change_password
     {
-        return Some((user.id, user.role));
+        return Some((user.id, user.role, None));
     }
 
-    // Try Bearer token
+    // Try Bearer token (may be a mobile session with a fixed expiry)
     if let Some(token) = extract_bearer_token(headers)
-        && let Ok(Some((user, _session))) =
+        && let Ok(Some((user, session))) =
             AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
         && !user.must_change_password
     {
-        return Some((user.id, user.role));
+        let mobile_expires = if session.source != "web" {
+            Some(session.expires_at)
+        } else {
+            None
+        };
+        return Some((user.id, user.role, mobile_expires));
     }
 
     None
@@ -188,6 +203,7 @@ async fn handle_docker_logs_ws(
     server_id: String,
     user_id: String,
     ip: String,
+    mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
@@ -299,6 +315,19 @@ async fn handle_docker_logs_ws(
                         break "server_disconnect";
                     }
                 }
+            }
+            // Mobile token expiry: force-close when a fixed-lifetime mobile token
+            // expires mid-session (web sessions / API keys never trip this arm).
+            () = async {
+                if let Some(exp) = mobile_expires {
+                    let dur = (exp - chrono::Utc::now()).to_std().unwrap_or_default();
+                    tokio::time::sleep(dur).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                tracing::debug!("Docker logs session {session_id} mobile token expired, closing");
+                break "token_expired";
             }
         }
     };
