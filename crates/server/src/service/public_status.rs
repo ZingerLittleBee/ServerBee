@@ -243,6 +243,57 @@ fn default_interval() -> String {
     "auto".to_string()
 }
 
+/// Maximum window the public metrics endpoint serves at raw resolution.
+///
+/// The dashboard never requests a raw window wider than 24h (`1h`/`6h`/`24h`
+/// use `raw`; `7d`/`30d` use `hourly`), so this preserves every legitimate
+/// request while preventing an unauthenticated caller from forcing a full scan
+/// of the high-cardinality raw table via a far-past `from`.
+const MAX_PUBLIC_RAW_WINDOW_HOURS: i64 = 25;
+
+/// Maximum window for any public metrics request (hourly resolution). Hourly
+/// retention is ~90 days, so this is a generous upper bound that still rejects
+/// absurd spans.
+const MAX_PUBLIC_METRICS_WINDOW_DAYS: i64 = 120;
+
+/// Clamp the public metrics range before it reaches the DB.
+///
+/// Rejects an inverted range and caps the span so an unauthenticated caller
+/// cannot force an oversized scan/response. The raw cap is applied exactly when
+/// `RecordService::query_history` would hit the raw table (mirrors its
+/// resolution selection). Returns the possibly-adjusted `from`; `to` is left
+/// unchanged so the response still ends at the requested instant.
+fn clamp_public_metrics_from(
+    from: chrono::DateTime<Utc>,
+    to: chrono::DateTime<Utc>,
+    interval: &str,
+) -> Result<chrono::DateTime<Utc>, AppError> {
+    if from > to {
+        return Err(AppError::Validation(
+            "`from` must not be after `to`".to_string(),
+        ));
+    }
+
+    let uses_raw = match interval {
+        "raw" => true,
+        "hourly" => false,
+        // "auto": query_history uses raw for windows <= 24h, hourly otherwise.
+        _ => (to - from) <= Duration::hours(24),
+    };
+
+    let max_window = if uses_raw {
+        Duration::hours(MAX_PUBLIC_RAW_WINDOW_HOURS)
+    } else {
+        Duration::days(MAX_PUBLIC_METRICS_WINDOW_DAYS)
+    };
+
+    if to - from > max_window {
+        Ok(to - max_window)
+    } else {
+        Ok(from)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Scope guard
 // ---------------------------------------------------------------------------
@@ -587,8 +638,8 @@ pub async fn get_server_metrics(
         return Err(AppError::NotFound("server".into()));
     }
 
-    let result =
-        RecordService::query_history(db, id, range.from, range.to, &range.interval).await?;
+    let from = clamp_public_metrics_from(range.from, range.to, &range.interval)?;
+    let result = RecordService::query_history(db, id, from, range.to, &range.interval).await?;
 
     let points = match result {
         QueryHistoryResult::Raw(records) => records
@@ -829,4 +880,61 @@ pub async fn list_maintenances(
             end_at: r.end_at.to_rfc3339(),
         })
         .collect())
+}
+
+#[cfg(test)]
+mod metrics_range_tests {
+    use super::*;
+
+    fn t(offset_hours: i64) -> chrono::DateTime<Utc> {
+        // Fixed reference instant so the test is deterministic.
+        let base = chrono::DateTime::parse_from_rfc3339("2026-06-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        base + Duration::hours(offset_hours)
+    }
+
+    #[test]
+    fn inverted_range_is_rejected() {
+        let err = clamp_public_metrics_from(t(10), t(0), "auto");
+        assert!(matches!(err, Err(AppError::Validation(_))));
+    }
+
+    #[test]
+    fn legitimate_raw_window_is_unchanged() {
+        // 24h raw is the widest raw window the dashboard requests.
+        let from = t(0);
+        let to = t(24);
+        assert_eq!(clamp_public_metrics_from(from, to, "raw").unwrap(), from);
+    }
+
+    #[test]
+    fn far_past_raw_request_is_clamped_to_raw_window() {
+        // Abuse case: 30-day span at raw resolution.
+        let from = t(0);
+        let to = t(24 * 30);
+        let clamped = clamp_public_metrics_from(from, to, "raw").unwrap();
+        assert_eq!(clamped, to - Duration::hours(MAX_PUBLIC_RAW_WINDOW_HOURS));
+        assert!(clamped > from, "from must be pulled forward");
+    }
+
+    #[test]
+    fn auto_wide_span_uses_hourly_window() {
+        // "auto" with a >24h span resolves to hourly, so the wider cap applies.
+        let from = t(0);
+        let to = t(24 * 200); // 200 days
+        let clamped = clamp_public_metrics_from(from, to, "auto").unwrap();
+        assert_eq!(clamped, to - Duration::days(MAX_PUBLIC_METRICS_WINDOW_DAYS));
+    }
+
+    #[test]
+    fn legitimate_hourly_window_is_unchanged() {
+        // 30d hourly is the widest hourly window the dashboard requests.
+        let from = t(0);
+        let to = t(24 * 30);
+        assert_eq!(
+            clamp_public_metrics_from(from, to, "hourly").unwrap(),
+            from
+        );
+    }
 }
