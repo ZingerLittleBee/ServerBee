@@ -8,7 +8,7 @@ impl Modify for SecurityAddon {
         let components = openapi.components.get_or_insert_with(Default::default);
         components.add_security_scheme(
             "session_cookie",
-            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("serverbee_session"))),
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("session_token"))),
         );
         components.add_security_scheme(
             "api_key",
