@@ -83,6 +83,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
+                        .merge(auth::admin_router())
                         .merge(server::write_router())
                         .merge(server_group::write_router())
                         .merge(server_tag::write_router())

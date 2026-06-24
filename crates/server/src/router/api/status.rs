@@ -259,6 +259,7 @@ async fn get_server_detail(
         (status = 200, description = "Time-series metrics", body = Vec<svc::PublicMetricsPoint>),
         (status = 403, description = "Public status page or server-detail panel disabled"),
         (status = 404, description = "Server not in public scope"),
+        (status = 422, description = "Invalid time range (`from` after `to`)"),
         (status = 429, description = "Rate limit exceeded"),
     )
 )]

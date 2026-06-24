@@ -98,7 +98,6 @@ pub fn protected_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/auth/logout", post(logout))
         .route("/auth/me", get(me))
-        .route("/auth/api-keys", post(create_api_key))
         .route("/auth/api-keys", get(list_api_keys))
         .route("/auth/api-keys/{id}", delete(delete_api_key))
         .route("/auth/password", put(change_password))
@@ -111,6 +110,16 @@ pub fn protected_router() -> Router<Arc<AppState>> {
         // OAuth accounts management
         .route("/auth/oauth/accounts", get(list_oauth_accounts))
         .route("/auth/oauth/accounts/{id}", delete(unlink_oauth_account))
+}
+
+/// Admin-only auth routes.
+///
+/// Minting an API key is restricted to admins because the key is a permanent,
+/// non-expiring credential bound to the caller's role. Keeping it out of the
+/// generic protected router prevents a leaked short-lived member/mobile token
+/// from being upgraded into a standing credential.
+pub fn admin_router() -> Router<Arc<AppState>> {
+    Router::new().route("/auth/api-keys", post(create_api_key))
 }
 
 #[utoipa::path(
@@ -292,6 +301,7 @@ pub async fn me(
     request_body = CreateApiKeyRequest,
     responses(
         (status = 200, description = "API key created", body = ApiKeyResponse),
+        (status = 403, description = "Admin role required"),
         (status = 422, description = "Validation error"),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))

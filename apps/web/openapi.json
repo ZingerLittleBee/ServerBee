@@ -15579,7 +15579,7 @@
       "session_cookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "serverbee_session"
+        "name": "session_token"
       }
     }
   },
