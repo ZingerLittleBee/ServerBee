@@ -26,6 +26,7 @@ ServerBee watches all your servers from one place. A central **server** receives
 - 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
 - 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, status pages, and more.
 - 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, agent-owned capability gates.
+- ✅ **Battle-tested** — 3,800+ automated tests, including integration suites that drive the real router over HTTP + WebSocket via a mock-agent harness; green on every CI run.
 
 > [!NOTE]
 > ServerBee is in active development (`v1.0.0-alpha.7`). Expect rapid iteration.
@@ -131,6 +132,10 @@ make cargo-clippy     # Rust lint
 > `make dev-full` runs Vite with HMR at `http://localhost:5173` and proxies `/api/*` to the Rust server at `:9527`. Generate a one-time enrollment code in **Settings** to connect a dev agent.
 
 **Stack:** Rust (Axum 0.8 · sea-orm · SQLite WAL) · React 19 (Vite 7 · TanStack Router/Query · Recharts · shadcn/ui · Tailwind CSS v4) · Rust agents (sysinfo · tokio-tungstenite).
+
+### Testing & quality
+
+ServerBee ships with **3,800+ automated tests** — 3,200+ Rust (unit + 42 integration suites that drive the real Axum router over HTTP/WebSocket with a mock-agent harness) and 600+ frontend Vitest tests. Coverage is measured with `cargo-llvm-cov` (common ~98%, agent ~90%, server ~92% region). Every push runs zero-warning Clippy, the full Rust suite, and frontend type/lint checks in CI. See the [Testing & Quality](https://docs.serverbee.app/en/docs/testing) guide.
 
 ## API
 

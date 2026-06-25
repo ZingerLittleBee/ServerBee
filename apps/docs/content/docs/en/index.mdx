@@ -49,6 +49,10 @@ After you record each server's price and billing cycle, ServerBee surfaces the m
 
 Sign in via GitHub, Google, or any generic OIDC provider. Mobile sessions, device pairing, and push notifications are supported for the iOS client.
 
+### Tested and CI-enforced
+
+The project ships with 3,800+ automated tests — including integration suites that drive the real Axum router over HTTP and WebSocket through a mock-agent harness — and every change passes a zero-warning Clippy lint, the full Rust suite, and frontend type/lint checks in CI. See [Testing & Quality](/en/docs/testing).
+
 ## Tech Stack
 
 | Component | Technology |
@@ -99,6 +103,7 @@ All agent-to-server communication uses WebSocket with JSON-encoded messages. Ter
   <Card title="API Reference" href="/en/docs/api-reference" />
   <Card title="Storage & Sizing" href="/en/docs/storage-sizing" />
   <Card title="Architecture" href="/en/docs/architecture" />
+  <Card title="Testing & Quality" href="/en/docs/testing" />
   <Card title="Deployment" href="/en/docs/deployment" />
   <Card title="Configuration" href="/en/docs/configuration" />
 </Cards>
