@@ -937,4 +937,755 @@ mod metrics_range_tests {
             from
         );
     }
+
+    #[test]
+    fn auto_narrow_span_uses_raw_window() {
+        // "auto" with a <=24h span resolves to raw; a 25h+ request is still
+        // capped by the raw window even though "auto" was requested.
+        let from = t(0);
+        let to = t(20); // 20h <= 24h => raw, within cap, unchanged
+        assert_eq!(clamp_public_metrics_from(from, to, "auto").unwrap(), from);
+    }
+
+    #[test]
+    fn equal_from_to_is_accepted() {
+        // from == to is not "after", so it must pass validation unchanged.
+        let from = t(5);
+        assert_eq!(clamp_public_metrics_from(from, from, "raw").unwrap(), from);
+    }
+
+    #[test]
+    fn unknown_interval_falls_back_to_auto_window() {
+        // An unrecognized interval string falls into the "auto" arm. A >24h
+        // span therefore resolves to hourly and the wide cap applies.
+        let from = t(0);
+        let to = t(24 * 200);
+        let clamped = clamp_public_metrics_from(from, to, "weekly").unwrap();
+        assert_eq!(clamped, to - Duration::days(MAX_PUBLIC_METRICS_WINDOW_DAYS));
+    }
+}
+
+#[cfg(test)]
+mod db_tests {
+    use super::*;
+    use crate::entity::{incident, incident_update, maintenance, server, server_group, unlock_service};
+    use crate::service::agent_manager::AgentManager;
+    use crate::test_utils::setup_test_db;
+    use chrono::Utc;
+    use sea_orm::Set;
+    use serverbee_common::protocol::BrowserMessage;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use tokio::sync::broadcast;
+
+    fn make_manager() -> AgentManager {
+        let (tx, _rx) = broadcast::channel::<BrowserMessage>(16);
+        AgentManager::new(tx)
+    }
+
+    fn sock() -> SocketAddr {
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    /// Overwrite the migration-seeded singleton `status_page` row so tests can
+    /// drive the config / scope branches deterministically.
+    async fn set_config(
+        db: &DatabaseConnection,
+        enabled: bool,
+        server_ids_json: &str,
+        description: Option<&str>,
+    ) {
+        let model = load_config(db).await.expect("singleton present");
+        let mut active: status_page::ActiveModel = model.into();
+        active.enabled = Set(enabled);
+        active.server_ids_json = Set(server_ids_json.to_string());
+        active.description = Set(description.map(|s| s.to_string()));
+        active.title = Set("My Status".to_string());
+        active.default_layout = Set("grid".to_string());
+        active.show_server_detail = Set(true);
+        active.show_network = Set(false);
+        active.show_ip_quality = Set(true);
+        active.show_incidents = Set(true);
+        active.show_maintenance = Set(true);
+        active.uptime_yellow_threshold = Set(99.0);
+        active.uptime_red_threshold = Set(95.0);
+        active.update(db).await.expect("update config");
+    }
+
+    async fn seed_server(
+        db: &DatabaseConnection,
+        id: &str,
+        name: &str,
+        hidden: bool,
+        group_id: Option<&str>,
+    ) {
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            name: Set(name.to_string()),
+            weight: Set(0),
+            hidden: Set(hidden),
+            capabilities: Set(0),
+            protocol_version: Set(1),
+            group_id: Set(group_id.map(|g| g.to_string())),
+            region: Set(Some("US".to_string())),
+            country_code: Set(Some("US".to_string())),
+            os: Set(Some("linux".to_string())),
+            public_remark: Set(Some("public note".to_string())),
+            // IP fields are populated to prove the public DTOs never surface them.
+            ipv4: Set(Some("203.0.113.7".to_string())),
+            ipv6: Set(Some("2001:db8::1".to_string())),
+            remark: Set(Some("private internal note".to_string())),
+            cpu_name: Set(Some("TestCPU".to_string())),
+            cpu_cores: Set(Some(4)),
+            cpu_arch: Set(Some("x86_64".to_string())),
+            kernel_version: Set(Some("6.1.0".to_string())),
+            agent_version: Set(Some("1.2.3".to_string())),
+            mem_total: Set(Some(8_000)),
+            swap_total: Set(Some(2_000)),
+            disk_total: Set(Some(100_000)),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert server");
+    }
+
+    fn sample_report() -> serverbee_common::types::SystemReport {
+        serverbee_common::types::SystemReport {
+            cpu: 42.5,
+            mem_used: 4_000,
+            swap_used: 500,
+            disk_used: 50_000,
+            net_in_speed: 100,
+            net_out_speed: 200,
+            net_in_transfer: 1_000,
+            net_out_transfer: 2_000,
+            load1: 0.5,
+            load5: 0.4,
+            load15: 0.3,
+            tcp_conn: 12,
+            udp_conn: 3,
+            process_count: 88,
+            uptime: 3_600,
+            ..Default::default()
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Config / scope
+    // ---------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn load_config_returns_seeded_singleton() {
+        let (db, _tmp) = setup_test_db().await;
+        let cfg = load_config(&db).await.expect("config loads");
+        // Migration seeds exactly one row with a non-empty id.
+        assert!(!cfg.id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn to_public_config_maps_all_fields() {
+        let (db, _tmp) = setup_test_db().await;
+        set_config(&db, true, "[]", Some("hello")).await;
+        let model = load_config(&db).await.unwrap();
+        let dto = to_public_config(&model);
+        assert!(dto.enabled);
+        assert_eq!(dto.title, "My Status");
+        assert_eq!(dto.description.as_deref(), Some("hello"));
+        assert_eq!(dto.default_layout, "grid");
+        assert!(dto.show_server_detail);
+        assert!(!dto.show_network);
+        assert!(dto.show_ip_quality);
+        assert!(dto.show_incidents);
+        assert!(dto.show_maintenance);
+        assert_eq!(dto.uptime_yellow_threshold, 99.0);
+        assert_eq!(dto.uptime_red_threshold, 95.0);
+    }
+
+    #[tokio::test]
+    async fn to_public_config_maps_none_description() {
+        let (db, _tmp) = setup_test_db().await;
+        set_config(&db, false, "[]", None).await;
+        let model = load_config(&db).await.unwrap();
+        let dto = to_public_config(&model);
+        assert!(!dto.enabled);
+        assert!(dto.description.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_scope_empty_when_no_ids_selected() {
+        let (db, _tmp) = setup_test_db().await;
+        set_config(&db, true, "  ", None).await; // whitespace-only => empty
+        let scope = resolve_scope(&db).await.expect("scope resolves");
+        assert!(scope.server_ids.is_empty());
+        assert!(!scope.contains("anything"));
+    }
+
+    #[tokio::test]
+    async fn resolve_scope_intersects_live_non_hidden_servers() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "live", "Live", false, None).await;
+        seed_server(&db, "hidden", "Hidden", true, None).await;
+        // "missing" is selected but has no servers row.
+        set_config(&db, true, r#"["live","hidden","missing"]"#, None).await;
+
+        let scope = resolve_scope(&db).await.expect("scope resolves");
+        assert_eq!(scope.server_ids, vec!["live".to_string()]);
+        assert!(scope.contains("live"));
+        assert!(!scope.contains("hidden"), "hidden server is excluded");
+        assert!(!scope.contains("missing"), "missing server is excluded");
+    }
+
+    #[tokio::test]
+    async fn resolve_scope_preserves_admin_ordering() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "b", "B", false, None).await;
+        seed_server(&db, "a", "A", false, None).await;
+        set_config(&db, true, r#"["b","a"]"#, None).await;
+        let scope = resolve_scope(&db).await.unwrap();
+        assert_eq!(scope.server_ids, vec!["b".to_string(), "a".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn resolve_scope_rejects_invalid_json() {
+        let (db, _tmp) = setup_test_db().await;
+        set_config(&db, true, "{not valid json", None).await;
+        let err = resolve_scope(&db).await;
+        assert!(matches!(err, Err(AppError::Internal(_))));
+    }
+
+    #[test]
+    fn public_scope_contains_matches_exact_id() {
+        let now = Utc::now();
+        let cfg = status_page::Model {
+            id: "sp".into(),
+            title: "t".into(),
+            description: None,
+            server_ids_json: "[]".into(),
+            group_by_server_group: false,
+            enabled: true,
+            uptime_yellow_threshold: 99.0,
+            uptime_red_threshold: 95.0,
+            show_ip_quality: false,
+            default_layout: "grid".into(),
+            show_server_detail: true,
+            show_network: false,
+            show_incidents: true,
+            show_maintenance: true,
+            created_at: now,
+            updated_at: now,
+        };
+        let scope = PublicScope {
+            config: cfg,
+            server_ids: vec!["x".into(), "y".into()],
+        };
+        assert!(scope.contains("x"));
+        assert!(scope.contains("y"));
+        assert!(!scope.contains("z"));
+    }
+
+    // ---------------------------------------------------------------------
+    // uptime_percent (pure helper)
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn uptime_percent_none_when_total_zero() {
+        assert!(uptime_percent(&[]).is_none());
+        let zero = vec![UptimeDailyEntry {
+            date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+            total_minutes: 0,
+            online_minutes: 0,
+            downtime_incidents: 0,
+        }];
+        assert!(uptime_percent(&zero).is_none());
+    }
+
+    #[test]
+    fn uptime_percent_computes_ratio() {
+        let daily = vec![
+            UptimeDailyEntry {
+                date: chrono::NaiveDate::from_ymd_opt(2026, 6, 1).unwrap(),
+                total_minutes: 100,
+                online_minutes: 90,
+                downtime_incidents: 1,
+            },
+            UptimeDailyEntry {
+                date: chrono::NaiveDate::from_ymd_opt(2026, 6, 2).unwrap(),
+                total_minutes: 100,
+                online_minutes: 100,
+                downtime_incidents: 0,
+            },
+        ];
+        let pct = uptime_percent(&daily).unwrap();
+        assert!((pct - 95.0).abs() < 1e-9, "got {pct}");
+    }
+
+    // ---------------------------------------------------------------------
+    // list_servers
+    // ---------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn list_servers_empty_scope_returns_empty() {
+        let (db, _tmp) = setup_test_db().await;
+        set_config(&db, true, "[]", None).await;
+        let mgr = make_manager();
+        let out = list_servers(&db, &mgr).await.expect("list ok");
+        assert!(out.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_servers_offline_has_no_metrics() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+        let mgr = make_manager(); // no connection => offline, no report
+        let out = list_servers(&db, &mgr).await.unwrap();
+        assert_eq!(out.len(), 1);
+        let s = &out[0];
+        assert_eq!(s.id, "s1");
+        assert_eq!(s.name, "Server One");
+        assert!(!s.online);
+        assert!(!s.in_maintenance);
+        assert!(s.metrics.is_none(), "no report => no metrics");
+        assert_eq!(s.public_remark.as_deref(), Some("public note"));
+        assert!(s.group_name.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_servers_online_with_metrics_and_group() {
+        let (db, _tmp) = setup_test_db().await;
+        // Seed a group and a server in it.
+        server_group::ActiveModel {
+            id: Set("g1".into()),
+            name: Set("Production".into()),
+            weight: Set(0),
+            created_at: Set(Utc::now()),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        seed_server(&db, "s1", "Server One", false, Some("g1")).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+
+        let mgr = make_manager();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        mgr.add_connection("s1".into(), "Server One".into(), tx, sock());
+        mgr.update_report("s1", sample_report());
+
+        let out = list_servers(&db, &mgr).await.unwrap();
+        assert_eq!(out.len(), 1);
+        let s = &out[0];
+        assert!(s.online);
+        assert_eq!(s.group_name.as_deref(), Some("Production"));
+        let m = s.metrics.as_ref().expect("online server has metrics");
+        assert_eq!(m.cpu, 42.5);
+        assert_eq!(m.mem_used, 4_000);
+        assert_eq!(m.mem_total, 8_000);
+        assert_eq!(m.disk_total, 100_000);
+        assert_eq!(m.tcp_conn, 12);
+        assert_eq!(m.process_count, 88);
+
+        // Redaction: serialize the summary and prove no IP/identity leak fields.
+        let json = serde_json::to_value(s).unwrap();
+        for leaked in ["ipv4", "ipv6", "hostname", "remark", "last_remote_addr", "fingerprint"] {
+            assert!(
+                json.get(leaked).is_none(),
+                "public summary must not expose `{leaked}`"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn list_servers_reflects_active_maintenance() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+
+        let now = Utc::now();
+        maintenance::ActiveModel {
+            id: Set("m1".into()),
+            title: Set("DB upgrade".into()),
+            description: Set(None),
+            start_at: Set(now - Duration::hours(1)),
+            end_at: Set(now + Duration::hours(1)),
+            // No server filter => applies to all servers.
+            server_ids_json: Set(None),
+            is_public: Set(true),
+            active: Set(true),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let mgr = make_manager();
+        let out = list_servers(&db, &mgr).await.unwrap();
+        assert_eq!(out.len(), 1);
+        assert!(out[0].in_maintenance, "server should be in maintenance");
+    }
+
+    // ---------------------------------------------------------------------
+    // get_server_detail
+    // ---------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn get_server_detail_out_of_scope_is_not_found() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, "[]", None).await; // s1 not selected
+        let mgr = make_manager();
+        let err = get_server_detail(&db, &mgr, "s1").await;
+        assert!(matches!(err, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn get_server_detail_offline_omits_runtime_fields() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+        let mgr = make_manager(); // offline, no report
+
+        let detail = get_server_detail(&db, &mgr, "s1").await.unwrap();
+        assert_eq!(detail.summary.id, "s1");
+        assert!(!detail.summary.online);
+        // Static hardware fields come from the row.
+        assert_eq!(detail.cpu_name.as_deref(), Some("TestCPU"));
+        assert_eq!(detail.cpu_cores, Some(4));
+        assert_eq!(detail.cpu_arch.as_deref(), Some("x86_64"));
+        assert_eq!(detail.kernel_version.as_deref(), Some("6.1.0"));
+        assert_eq!(detail.agent_version.as_deref(), Some("1.2.3"));
+        assert_eq!(detail.mem_total, Some(8_000));
+        assert_eq!(detail.disk_total, Some(100_000));
+        // Runtime fields are absent without a report.
+        assert!(detail.process_count.is_none());
+        assert!(detail.tcp_conn.is_none());
+        assert!(detail.udp_conn.is_none());
+        assert!(detail.summary.metrics.is_none());
+    }
+
+    #[tokio::test]
+    async fn get_server_detail_online_includes_runtime_fields_and_group() {
+        let (db, _tmp) = setup_test_db().await;
+        server_group::ActiveModel {
+            id: Set("g1".into()),
+            name: Set("Edge".into()),
+            weight: Set(0),
+            created_at: Set(Utc::now()),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        seed_server(&db, "s1", "Server One", false, Some("g1")).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+
+        let mgr = make_manager();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        mgr.add_connection("s1".into(), "Server One".into(), tx, sock());
+        mgr.update_report("s1", sample_report());
+
+        let detail = get_server_detail(&db, &mgr, "s1").await.unwrap();
+        assert!(detail.summary.online);
+        assert_eq!(detail.summary.group_name.as_deref(), Some("Edge"));
+        assert_eq!(detail.process_count, Some(88));
+        assert_eq!(detail.tcp_conn, Some(12));
+        assert_eq!(detail.udp_conn, Some(3));
+        assert!(detail.summary.metrics.is_some());
+
+        // Redaction at the detail level too.
+        let json = serde_json::to_value(&detail).unwrap();
+        for leaked in ["ipv4", "ipv6", "remark", "fingerprint", "last_remote_addr"] {
+            assert!(json.get(leaked).is_none(), "detail leaks `{leaked}`");
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // get_server_metrics
+    // ---------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn get_server_metrics_out_of_scope_is_not_found() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, "[]", None).await;
+        let range = PublicMetricsRangeQuery {
+            from: Utc::now() - Duration::hours(1),
+            to: Utc::now(),
+            interval: "raw".into(),
+        };
+        let err = get_server_metrics(&db, "s1", range).await;
+        assert!(matches!(err, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn get_server_metrics_inverted_range_is_validation_error() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+        let now = Utc::now();
+        let range = PublicMetricsRangeQuery {
+            from: now, // from after to
+            to: now - Duration::hours(1),
+            interval: "raw".into(),
+        };
+        let err = get_server_metrics(&db, "s1", range).await;
+        assert!(matches!(err, Err(AppError::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn get_server_metrics_in_scope_no_records_returns_empty() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+        let range = PublicMetricsRangeQuery {
+            from: Utc::now() - Duration::hours(2),
+            to: Utc::now(),
+            interval: "raw".into(),
+        };
+        let points = get_server_metrics(&db, "s1", range).await.unwrap();
+        assert!(points.is_empty(), "no seeded records => empty series");
+    }
+
+    // ---------------------------------------------------------------------
+    // get_server_uptime_daily
+    // ---------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn get_server_uptime_daily_out_of_scope_is_not_found() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, "[]", None).await;
+        let err = get_server_uptime_daily(&db, "s1").await;
+        assert!(matches!(err, Err(AppError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn get_server_uptime_daily_in_scope_returns_filled_band() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+        // get_daily_filled returns a 90-entry band even without rows.
+        let band = get_server_uptime_daily(&db, "s1").await.unwrap();
+        assert_eq!(band.len(), 90);
+    }
+
+    // ---------------------------------------------------------------------
+    // ip_quality_overview (redaction)
+    // ---------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn ip_quality_overview_redacts_and_lists_services() {
+        let (db, _tmp) = setup_test_db().await;
+        seed_server(&db, "s1", "Server One", false, None).await;
+        set_config(&db, true, r#"["s1"]"#, None).await;
+
+        // Migrations seed the built-in unlock-service catalog; clear it so this
+        // test controls exactly which services exist.
+        unlock_service::Entity::delete_many()
+            .exec(&db)
+            .await
+            .unwrap();
+
+        // Enabled service appears in the catalog; disabled is filtered out.
+        let now = Utc::now();
+        unlock_service::ActiveModel {
+            id: Set("svc-on".into()),
+            key: Set("netflix".into()),
+            name: Set("Netflix".into()),
+            category: Set("streaming".into()),
+            popularity: Set(100),
+            is_builtin: Set(true),
+            enabled: Set(true),
+            detector: Set(None),
+            request: Set(None),
+            rules: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        unlock_service::ActiveModel {
+            id: Set("svc-off".into()),
+            key: Set("disney".into()),
+            name: Set("Disney".into()),
+            category: Set("streaming".into()),
+            popularity: Set(50),
+            is_builtin: Set(false),
+            enabled: Set(false),
+            detector: Set(None),
+            request: Set(None),
+            rules: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let overview = ip_quality_overview(&db).await.unwrap();
+        // One entry per in-scope server; no snapshot/results seeded.
+        assert_eq!(overview.entries.len(), 1);
+        let e = &overview.entries[0];
+        assert_eq!(e.server_id, "s1");
+        assert!(e.ip_quality.is_none(), "no snapshot => None (redacted shape)");
+        assert!(e.unlock_results.is_empty());
+
+        // Service catalog excludes the disabled service.
+        assert_eq!(overview.services.len(), 1);
+        assert_eq!(overview.services[0].id, "svc-on");
+        assert_eq!(overview.services[0].key, "netflix");
+        assert!(overview.services[0].is_builtin);
+    }
+
+    #[tokio::test]
+    async fn ip_quality_overview_empty_scope_has_no_entries() {
+        let (db, _tmp) = setup_test_db().await;
+        set_config(&db, true, "[]", None).await;
+        let overview = ip_quality_overview(&db).await.unwrap();
+        assert!(overview.entries.is_empty());
+    }
+
+    // ---------------------------------------------------------------------
+    // list_incidents
+    // ---------------------------------------------------------------------
+
+    async fn insert_incident(
+        db: &DatabaseConnection,
+        id: &str,
+        status: &str,
+        is_public: bool,
+        resolved_at: Option<chrono::DateTime<Utc>>,
+    ) {
+        let now = Utc::now();
+        incident::ActiveModel {
+            id: Set(id.into()),
+            title: Set(format!("Incident {id}")),
+            status: Set(status.into()),
+            severity: Set("major".into()),
+            server_ids_json: Set(None),
+            is_public: Set(is_public),
+            created_at: Set(now),
+            updated_at: Set(now),
+            resolved_at: Set(resolved_at),
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_incidents_empty_when_none_public() {
+        let (db, _tmp) = setup_test_db().await;
+        // Private incident must not surface.
+        insert_incident(&db, "i1", "investigating", false, None).await;
+        let (active, recent) = list_incidents(&db).await.unwrap();
+        assert!(active.is_empty());
+        assert!(recent.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_incidents_buckets_active_recent_and_drops_old() {
+        let (db, _tmp) = setup_test_db().await;
+        let now = Utc::now();
+        // Active: non-resolved.
+        insert_incident(&db, "active1", "investigating", true, None).await;
+        // Recent: resolved within 7 days.
+        insert_incident(
+            &db,
+            "recent1",
+            "resolved",
+            true,
+            Some(now - Duration::days(2)),
+        )
+        .await;
+        // Old: resolved more than 7 days ago => dropped from both buckets.
+        insert_incident(
+            &db,
+            "old1",
+            "resolved",
+            true,
+            Some(now - Duration::days(30)),
+        )
+        .await;
+
+        // Seed an update for the active incident; it must be attached.
+        incident_update::ActiveModel {
+            id: Set("u1".into()),
+            incident_id: Set("active1".into()),
+            status: Set("investigating".into()),
+            message: Set("Looking into it".into()),
+            created_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let (active, recent) = list_incidents(&db).await.unwrap();
+        assert_eq!(active.len(), 1, "one active incident");
+        assert_eq!(active[0].id, "active1");
+        assert_eq!(active[0].updates.len(), 1);
+        assert_eq!(active[0].updates[0].message, "Looking into it");
+
+        assert_eq!(recent.len(), 1, "one recent resolved incident");
+        assert_eq!(recent[0].id, "recent1");
+        assert!(recent[0].resolved_at.is_some());
+    }
+
+    // ---------------------------------------------------------------------
+    // list_maintenances
+    // ---------------------------------------------------------------------
+
+    async fn insert_maintenance(
+        db: &DatabaseConnection,
+        id: &str,
+        is_public: bool,
+        active: bool,
+        end_offset: Duration,
+    ) {
+        let now = Utc::now();
+        maintenance::ActiveModel {
+            id: Set(id.into()),
+            title: Set(format!("Maint {id}")),
+            description: Set(Some("desc".into())),
+            start_at: Set(now - Duration::hours(1)),
+            end_at: Set(now + end_offset),
+            server_ids_json: Set(None),
+            is_public: Set(is_public),
+            active: Set(active),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_maintenances_filters_non_public_inactive_and_past() {
+        let (db, _tmp) = setup_test_db().await;
+        // Visible: public + active + ends in the future.
+        insert_maintenance(&db, "ok", true, true, Duration::hours(2)).await;
+        // Excluded: not public.
+        insert_maintenance(&db, "private", false, true, Duration::hours(2)).await;
+        // Excluded: inactive.
+        insert_maintenance(&db, "inactive", true, false, Duration::hours(2)).await;
+        // Excluded: already ended.
+        insert_maintenance(&db, "past", true, true, -Duration::hours(2)).await;
+
+        let out = list_maintenances(&db).await.unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "ok");
+        assert_eq!(out[0].title, "Maint ok");
+        assert_eq!(out[0].description.as_deref(), Some("desc"));
+    }
+
+    #[tokio::test]
+    async fn list_maintenances_empty_when_none() {
+        let (db, _tmp) = setup_test_db().await;
+        let out = list_maintenances(&db).await.unwrap();
+        assert!(out.is_empty());
+    }
 }

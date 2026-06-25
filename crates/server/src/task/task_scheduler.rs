@@ -453,6 +453,8 @@ pub async fn run(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
+    use serverbee_common::constants::CAP_DEFAULT;
 
     #[test]
     fn test_correlation_id_format() {
@@ -467,5 +469,360 @@ mod tests {
         let c = build_correlation_id("t1", "r1", "s1", 2);
         assert_ne!(a, b);
         assert_ne!(a, c);
+    }
+
+    // build_correlation_id must not collapse empty segments — the colon-joined
+    // shape is preserved even when every component is the empty string.
+    #[test]
+    fn test_correlation_id_empty_segments_keep_delimiters() {
+        assert_eq!(build_correlation_id("", "", "", 0), ":::0");
+    }
+
+    // Negative and large attempt numbers are formatted verbatim (no clamping).
+    #[test]
+    fn test_correlation_id_attempt_boundaries() {
+        assert_eq!(build_correlation_id("t", "r", "s", -1), "t:r:s:-1");
+        assert_eq!(
+            build_correlation_id("t", "r", "s", i32::MAX),
+            format!("t:r:s:{}", i32::MAX)
+        );
+    }
+
+    // ---- Helpers -------------------------------------------------------
+
+    /// Build an `Arc<AppState>` backed by a fresh migrated test DB. The two
+    /// returned `TempDir` guards must outlive the test: one owns the SQLite
+    /// file, the other backs `data_dir` so GeoIP/ASN/transfer paths never
+    /// touch the working directory.
+    async fn build_test_state() -> (
+        Arc<AppState>,
+        tempfile::TempDir,
+        tempfile::TempDir,
+    ) {
+        let (db, db_guard) = crate::test_utils::setup_test_db().await;
+        let data_dir = tempfile::TempDir::new().unwrap();
+        let mut config = crate::config::AppConfig::default();
+        config.server.data_dir = data_dir.path().to_str().unwrap().to_string();
+        let state = AppState::new(db, config).await.unwrap();
+        (state, db_guard, data_dir)
+    }
+
+    /// Insert a server row with the given id and persisted capability mirror.
+    /// The server is NOT registered with the agent_manager, so it is offline.
+    async fn seed_server(db: &DatabaseConnection, id: &str, capabilities: i32) {
+        use crate::entity::server;
+        let now = chrono::Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(Some("hash".to_string())),
+            token_prefix: Set(Some("sb_pref".to_string())),
+            name: Set(format!("server-{id}")),
+            cpu_name: Set(None),
+            cpu_cores: Set(None),
+            cpu_arch: Set(None),
+            os: Set(None),
+            kernel_version: Set(None),
+            mem_total: Set(None),
+            swap_total: Set(None),
+            disk_total: Set(None),
+            ipv4: Set(None),
+            ipv6: Set(None),
+            region: Set(None),
+            country_code: Set(None),
+            geo_manual: Set(false),
+            virtualization: Set(None),
+            agent_version: Set(None),
+            group_id: Set(None),
+            weight: Set(0),
+            hidden: Set(false),
+            remark: Set(None),
+            public_remark: Set(None),
+            price: Set(None),
+            billing_cycle: Set(None),
+            currency: Set(None),
+            expired_at: Set(None),
+            traffic_limit: Set(None),
+            traffic_limit_type: Set(None),
+            billing_start_day: Set(None),
+            capabilities: Set(capabilities),
+            protocol_version: Set(1),
+            features: Set("[]".to_string()),
+            last_remote_addr: Set(None),
+            fingerprint: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("seed server");
+    }
+
+    /// Insert a scheduled task row targeting `server_ids`.
+    async fn seed_task(db: &DatabaseConnection, id: &str, server_ids: &[&str]) {
+        let now = chrono::Utc::now();
+        task::ActiveModel {
+            id: Set(id.to_string()),
+            command: Set("echo hi".to_string()),
+            server_ids_json: Set(serde_json::to_string(server_ids).unwrap()),
+            created_by: Set("tester".to_string()),
+            task_type: Set("scheduled".to_string()),
+            name: Set(Some("test task".to_string())),
+            cron_expression: Set(Some("0 0 0 1 1 *".to_string())),
+            enabled: Set(true),
+            timeout: Set(Some(5)),
+            retry_count: Set(0),
+            retry_interval: Set(1),
+            last_run_at: Set(None),
+            next_run_at: Set(None),
+            created_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("seed task");
+    }
+
+    /// Count persisted task_result rows for a given task id.
+    async fn result_count(db: &DatabaseConnection, task_id: &str) -> u64 {
+        task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq(task_id))
+            .count(db)
+            .await
+            .expect("count task results")
+    }
+
+    /// Poll until at least `expected` task_result rows exist for `task_id` (the
+    /// offline executor path runs inside a detached tokio task spawned by
+    /// `execute_scheduled_task`).
+    async fn wait_for_results(db: &DatabaseConnection, task_id: &str, expected: u64) -> u64 {
+        for _ in 0..100 {
+            let n = result_count(db, task_id).await;
+            if n >= expected {
+                return n;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        result_count(db, task_id).await
+    }
+
+    // ---- write_result (pure DB write) ---------------------------------
+
+    // write_result persists a row with every field set verbatim, including a
+    // negative synthetic exit code and the supplied run_id/attempt/timestamps.
+    #[tokio::test]
+    async fn test_write_result_persists_all_fields() {
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        let started = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        write_result(&db, "task-w", "run-w", "srv-w", 2, started, -3, "Server offline")
+            .await
+            .expect("write_result should insert");
+
+        let row = task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq("task-w"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("row present");
+        assert_eq!(row.server_id, "srv-w");
+        assert_eq!(row.output, "Server offline");
+        assert_eq!(row.exit_code, -3);
+        assert_eq!(row.run_id.as_deref(), Some("run-w"));
+        assert_eq!(row.attempt, 2);
+        assert_eq!(row.started_at, Some(started));
+    }
+
+    // ---- write_synthetic_result --------------------------------------
+
+    // write_synthetic_result delegates to write_result with a fixed attempt of
+    // 1 and stamps started_at itself (so it is Some, not the caller's value).
+    #[tokio::test]
+    async fn test_write_synthetic_result_uses_attempt_one() {
+        let (db, _tmp) = crate::test_utils::setup_test_db().await;
+        write_synthetic_result(&db, "task-s", "run-s", "srv-s", -2, "capability denied")
+            .await
+            .expect("synthetic write should insert");
+
+        let row = task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq("task-s"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("row present");
+        assert_eq!(row.attempt, 1);
+        assert_eq!(row.exit_code, -2);
+        assert_eq!(row.output, "capability denied");
+        assert!(row.started_at.is_some());
+    }
+
+    // ---- execute_for_server (offline agent) ---------------------------
+
+    // With no connected agent, execute_for_server falls into the get_sender
+    // None branch and writes exactly one "Server offline" result (exit -3) when
+    // retries are exhausted (retry_count == 0 → single attempt).
+    #[tokio::test]
+    async fn test_execute_for_server_offline_writes_single_result() {
+        let (state, _db, _dir) = build_test_state().await;
+        let token = CancellationToken::new();
+        execute_for_server(&state, "task-off", "run-off", "srv-off", "echo hi", 1, 0, 1, token)
+            .await;
+
+        assert_eq!(result_count(&state.db, "task-off").await, 1);
+        let row = task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq("task-off"))
+            .one(&state.db)
+            .await
+            .unwrap()
+            .expect("offline result present");
+        assert_eq!(row.exit_code, -3);
+        assert_eq!(row.output, "Server offline");
+        assert_eq!(row.attempt, 1);
+    }
+
+    // An already-cancelled token short-circuits before the attempt loop body,
+    // so no result row is written at all.
+    #[tokio::test]
+    async fn test_execute_for_server_cancelled_writes_nothing() {
+        let (state, _db, _dir) = build_test_state().await;
+        let token = CancellationToken::new();
+        token.cancel();
+        execute_for_server(&state, "task-cancel", "run-c", "srv-c", "echo hi", 1, 2, 1, token)
+            .await;
+
+        assert_eq!(result_count(&state.db, "task-cancel").await, 0);
+    }
+
+    // ---- execute_scheduled_task: missing task -------------------------
+
+    // A task id that is not in the DB is rejected: the function returns false
+    // and clears its claimed active_runs entry (no result rows written).
+    #[tokio::test]
+    async fn test_execute_scheduled_task_missing_task_returns_false() {
+        let (state, _db, _dir) = build_test_state().await;
+        let started = execute_scheduled_task(&state, "ghost-task", true, None).await;
+        assert!(!started);
+        assert!(!state.task_scheduler.is_running("ghost-task"));
+        assert_eq!(result_count(&state.db, "ghost-task").await, 0);
+    }
+
+    // ---- execute_scheduled_task: overlap guard ------------------------
+
+    // When an active run already occupies the active_runs slot, a second
+    // trigger is skipped (returns false) without touching the existing entry.
+    #[tokio::test]
+    async fn test_execute_scheduled_task_overlap_is_skipped() {
+        let (state, _db, _dir) = build_test_state().await;
+        seed_task(&state.db, "task-overlap", &[]).await;
+        let token = CancellationToken::new();
+        state
+            .task_scheduler
+            .active_runs
+            .insert("task-overlap".to_string(), ("prior-run".to_string(), token));
+
+        let started = execute_scheduled_task(&state, "task-overlap", true, None).await;
+        assert!(!started);
+        // The pre-existing run_id must remain untouched.
+        let entry = state
+            .task_scheduler
+            .active_runs
+            .get("task-overlap")
+            .expect("entry retained");
+        assert_eq!(entry.value().0, "prior-run");
+    }
+
+    // ---- execute_scheduled_task: capability denied --------------------
+
+    // A target server whose mirror lacks CAP_EXEC produces a synthetic
+    // capability-denied result (exit -2) written synchronously before any
+    // server execution is spawned.
+    #[tokio::test]
+    async fn test_execute_scheduled_task_cap_exec_denied_writes_synthetic() {
+        let (state, _db, _dir) = build_test_state().await;
+        // CAP_DEFAULT intentionally excludes CAP_EXEC.
+        seed_server(&state.db, "srv-nocap", CAP_DEFAULT as i32).await;
+        seed_task(&state.db, "task-nocap", &["srv-nocap"]).await;
+
+        let started = execute_scheduled_task(&state, "task-nocap", true, None).await;
+        assert!(started);
+
+        let row = task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq("task-nocap"))
+            .one(&state.db)
+            .await
+            .unwrap()
+            .expect("synthetic denied result present");
+        assert_eq!(row.exit_code, -2);
+        assert_eq!(row.server_id, "srv-nocap");
+        assert!(row.output.contains("Capability denied"));
+    }
+
+    // With an audit context supplied, the capability-denied branch also records
+    // an `exec_denied` audit log entry alongside the synthetic result.
+    #[tokio::test]
+    async fn test_execute_scheduled_task_cap_denied_logs_audit() {
+        use crate::entity::audit_log;
+        let (state, _db, _dir) = build_test_state().await;
+        seed_server(&state.db, "srv-audit", CAP_DEFAULT as i32).await;
+        seed_task(&state.db, "task-audit", &["srv-audit"]).await;
+
+        let ctx = ExecAuditContext {
+            user_id: "admin".to_string(),
+            ip: "127.0.0.1".to_string(),
+        };
+        let started = execute_scheduled_task(&state, "task-audit", true, Some(ctx)).await;
+        assert!(started);
+
+        let denied = audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq("exec_denied"))
+            .count(&state.db)
+            .await
+            .unwrap();
+        assert_eq!(denied, 1);
+    }
+
+    // ---- execute_scheduled_task: offline agent dispatch ---------------
+
+    // A server that HAS CAP_EXEC but is not connected reaches execute_for_server
+    // via the spawned join_set, which writes a "Server offline" result (exit
+    // -3). retry_count is forced to 0 here because skip_retry == true.
+    #[tokio::test]
+    async fn test_execute_scheduled_task_offline_agent_writes_offline_result() {
+        let (state, _db, _dir) = build_test_state().await;
+        seed_server(&state.db, "srv-online-cap", (CAP_DEFAULT | CAP_EXEC) as i32).await;
+        seed_task(&state.db, "task-dispatch", &["srv-online-cap"]).await;
+
+        let started = execute_scheduled_task(&state, "task-dispatch", true, None).await;
+        assert!(started);
+
+        let n = wait_for_results(&state.db, "task-dispatch", 1).await;
+        assert_eq!(n, 1);
+        let row = task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq("task-dispatch"))
+            .one(&state.db)
+            .await
+            .unwrap()
+            .expect("offline dispatch result present");
+        assert_eq!(row.exit_code, -3);
+        assert_eq!(row.output, "Server offline");
+    }
+
+    // An empty server list produces no work and no result rows, but the trigger
+    // is still considered "started" (returns true) and updates last_run_at.
+    #[tokio::test]
+    async fn test_execute_scheduled_task_empty_server_list_starts_with_no_results() {
+        let (state, _db, _dir) = build_test_state().await;
+        seed_task(&state.db, "task-empty", &[]).await;
+
+        let started = execute_scheduled_task(&state, "task-empty", true, None).await;
+        assert!(started);
+
+        // Give any (non-existent) spawned work a chance to run, then assert none.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert_eq!(result_count(&state.db, "task-empty").await, 0);
+
+        let updated = task::Entity::find_by_id("task-empty")
+            .one(&state.db)
+            .await
+            .unwrap()
+            .expect("task present");
+        assert!(updated.last_run_at.is_some(), "last_run_at should be stamped");
     }
 }

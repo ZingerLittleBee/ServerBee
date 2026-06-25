@@ -1272,7 +1272,8 @@ mod tests {
     use super::*;
     use crate::service::auth::AuthService;
     use crate::test_utils::setup_test_db;
-    use sea_orm::{ActiveModelTrait, Set};
+    use chrono::TimeZone;
+    use sea_orm::{ActiveModelTrait, PaginatorTrait, Set};
     use serverbee_common::constants::CAP_DEFAULT;
     use tokio::sync::broadcast;
 
@@ -2279,5 +2280,1110 @@ mod tests {
 
         assert_option_series_eq(&overview.latency_sparkline, &expected_latency);
         assert_option_series_eq(&overview.loss_sparkline, &expected_loss);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: target update/delete branches
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_update_target_not_found() {
+        // Updating a non-preset, non-existent id returns NotFound.
+        let (db, _tmp) = setup_test_db().await;
+
+        let result = NetworkProbeService::update_target(
+            &db,
+            "11111111-1111-1111-1111-111111111111",
+            UpdateNetworkProbeTarget {
+                name: Some("X".to_string()),
+                provider: None,
+                location: None,
+                target: None,
+                probe_type: None,
+            },
+        )
+        .await;
+        match result {
+            Err(AppError::NotFound(_)) => {}
+            other => panic!("Expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_target_all_fields_and_invalid_probe_type() {
+        // Updating every optional field applies them; an invalid probe_type is rejected.
+        let (db, _tmp) = setup_test_db().await;
+        let created = NetworkProbeService::create_target(
+            &db,
+            CreateNetworkProbeTarget {
+                name: "Orig".to_string(),
+                provider: "OrigProv".to_string(),
+                location: "OrigLoc".to_string(),
+                target: "1.1.1.1".to_string(),
+                probe_type: "icmp".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // All fields updated together (provider/location/target/probe_type branches).
+        let updated = NetworkProbeService::update_target(
+            &db,
+            &created.id,
+            UpdateNetworkProbeTarget {
+                name: Some("NewName".to_string()),
+                provider: Some("NewProv".to_string()),
+                location: Some("NewLoc".to_string()),
+                target: Some("9.9.9.9".to_string()),
+                probe_type: Some("tcp".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.name, "NewName");
+        assert_eq!(updated.provider, "NewProv");
+        assert_eq!(updated.location, "NewLoc");
+        assert_eq!(updated.target, "9.9.9.9");
+        assert_eq!(updated.probe_type, "tcp");
+
+        // Invalid probe_type in update is rejected with Validation.
+        let bad = NetworkProbeService::update_target(
+            &db,
+            &created.id,
+            UpdateNetworkProbeTarget {
+                name: None,
+                provider: None,
+                location: None,
+                target: None,
+                probe_type: Some("nope".to_string()),
+            },
+        )
+        .await;
+        match bad {
+            Err(AppError::Validation(_)) => {}
+            other => panic!("Expected Validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_target_not_found() {
+        // Deleting a non-preset, non-existent id returns NotFound.
+        let (db, _tmp) = setup_test_db().await;
+
+        let result = NetworkProbeService::delete_target(
+            &db,
+            "22222222-2222-2222-2222-222222222222",
+        )
+        .await;
+        match result {
+            Err(AppError::NotFound(_)) => {}
+            other => panic!("Expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_target_cascades_and_clears_defaults() {
+        // Deleting a custom target cascade-removes its config/records and drops
+        // it from the global default_target_ids list.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-cascade", "Cascade Server").await;
+        let created = NetworkProbeService::create_target(
+            &db,
+            CreateNetworkProbeTarget {
+                name: "Cascade".to_string(),
+                provider: "P".to_string(),
+                location: "L".to_string(),
+                target: "3.3.3.3".to_string(),
+                probe_type: "icmp".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        // Assign the target to a server (creates a config row) and to defaults.
+        NetworkProbeService::set_server_targets(&db, "srv-cascade", vec![created.id.clone()])
+            .await
+            .unwrap();
+        NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 60,
+                packet_count: 10,
+                default_target_ids: vec![created.id.clone()],
+            },
+        )
+        .await
+        .unwrap();
+
+        // Seed a raw record and a hourly record for the target.
+        let ts = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        seed_probe_record(&db, "srv-cascade", &created.id, ts, Some(10.0), 0.0).await;
+        network_probe_record_hourly::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-cascade".to_string()),
+            target_id: Set(created.id.clone()),
+            avg_latency: Set(Some(10.0)),
+            min_latency: Set(Some(10.0)),
+            max_latency: Set(Some(10.0)),
+            avg_packet_loss: Set(0.0),
+            sample_count: Set(1),
+            hour: Set(ts.with_minute(0).unwrap().with_second(0).unwrap()),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        NetworkProbeService::delete_target(&db, &created.id)
+            .await
+            .unwrap();
+
+        // Config, raw, and hourly rows for the target are all gone.
+        let cfg_count = network_probe_config::Entity::find()
+            .filter(network_probe_config::Column::TargetId.eq(created.id.clone()))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(cfg_count, 0);
+        let raw_count = network_probe_record::Entity::find()
+            .filter(network_probe_record::Column::TargetId.eq(created.id.clone()))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(raw_count, 0);
+        let hourly_count = network_probe_record_hourly::Entity::find()
+            .filter(network_probe_record_hourly::Column::TargetId.eq(created.id.clone()))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(hourly_count, 0);
+
+        // The deleted target is removed from default_target_ids.
+        let setting = NetworkProbeService::get_setting(&db).await.unwrap();
+        assert!(!setting.default_target_ids.contains(&created.id));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: setting validation boundaries
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_update_setting_interval_boundaries() {
+        // interval below 30 / above 600 is rejected; the inclusive bounds pass.
+        let (db, _tmp) = setup_test_db().await;
+
+        let too_low = NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 29,
+                packet_count: 10,
+                default_target_ids: vec![],
+            },
+        )
+        .await;
+        match too_low {
+            Err(AppError::BadRequest(msg)) => assert!(msg.contains("interval")),
+            other => panic!("Expected BadRequest, got {other:?}"),
+        }
+
+        let too_high = NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 601,
+                packet_count: 10,
+                default_target_ids: vec![],
+            },
+        )
+        .await;
+        assert!(too_high.is_err());
+
+        // Inclusive lower and upper bounds are accepted.
+        NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 30,
+                packet_count: 10,
+                default_target_ids: vec![],
+            },
+        )
+        .await
+        .unwrap();
+        NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 600,
+                packet_count: 10,
+                default_target_ids: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_update_setting_packet_count_boundaries() {
+        // packet_count below 5 / above 20 is rejected with BadRequest.
+        let (db, _tmp) = setup_test_db().await;
+
+        let too_low = NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 60,
+                packet_count: 4,
+                default_target_ids: vec![],
+            },
+        )
+        .await;
+        match too_low {
+            Err(AppError::BadRequest(msg)) => assert!(msg.contains("packet_count")),
+            other => panic!("Expected BadRequest, got {other:?}"),
+        }
+
+        let too_high = NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 60,
+                packet_count: 21,
+                default_target_ids: vec![],
+            },
+        )
+        .await;
+        assert!(too_high.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_update_setting_accepts_preset_default_ids() {
+        // A preset target id is accepted in default_target_ids and persisted.
+        let (db, _tmp) = setup_test_db().await;
+
+        NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 60,
+                packet_count: 10,
+                default_target_ids: vec!["cn-bj-ct".to_string()],
+            },
+        )
+        .await
+        .unwrap();
+
+        let setting = NetworkProbeService::get_setting(&db).await.unwrap();
+        assert_eq!(setting.default_target_ids, vec!["cn-bj-ct".to_string()]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: apply_defaults / apply_defaults_tx
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_apply_defaults_assigns_setting_targets() {
+        // apply_defaults copies the global default_target_ids onto a server.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-defaults", "Defaults Server").await;
+
+        NetworkProbeService::update_setting(
+            &db,
+            &NetworkProbeSetting {
+                interval: 60,
+                packet_count: 10,
+                default_target_ids: vec!["cn-bj-ct".to_string(), "cn-bj-cu".to_string()],
+            },
+        )
+        .await
+        .unwrap();
+
+        NetworkProbeService::apply_defaults(&db, "srv-defaults")
+            .await
+            .unwrap();
+
+        let targets = NetworkProbeService::get_server_targets(&db, "srv-defaults")
+            .await
+            .unwrap();
+        assert_eq!(targets.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_apply_defaults_tx_empty_is_noop() {
+        // apply_defaults_tx with an empty id list returns Ok and inserts nothing.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-empty-tx", "Empty Tx Server").await;
+
+        NetworkProbeService::apply_defaults_tx(&db, "srv-empty-tx", &[])
+            .await
+            .unwrap();
+
+        let count = network_probe_config::Entity::find()
+            .filter(network_probe_config::Column::ServerId.eq("srv-empty-tx"))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_apply_defaults_tx_rejects_too_many() {
+        // apply_defaults_tx rejects more than 20 targets.
+        let (db, _tmp) = setup_test_db().await;
+        let ids: Vec<String> = (0..21).map(|i| format!("t-{i}")).collect();
+
+        let result = NetworkProbeService::apply_defaults_tx(&db, "srv-x", &ids).await;
+        match result {
+            Err(AppError::Validation(_)) => {}
+            other => panic!("Expected Validation, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_apply_defaults_tx_replaces_existing() {
+        // apply_defaults_tx clears prior assignments before inserting the new set.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-replace", "Replace Server").await;
+
+        // Seed an existing assignment.
+        NetworkProbeService::set_server_targets(&db, "srv-replace", vec!["cn-bj-ct".to_string()])
+            .await
+            .unwrap();
+
+        NetworkProbeService::apply_defaults_tx(
+            &db,
+            "srv-replace",
+            &["cn-bj-cu".to_string(), "intl-cloudflare".to_string()],
+        )
+        .await
+        .unwrap();
+
+        let targets = NetworkProbeService::get_server_targets(&db, "srv-replace")
+            .await
+            .unwrap();
+        assert_eq!(targets.len(), 2);
+        assert!(!targets.iter().any(|t| t.id == "cn-bj-ct"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: save_results / query_records
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_save_results_inserts_all() {
+        // save_results persists every result row in the supplied batch.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-save", "Save Server").await;
+
+        let ts = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        NetworkProbeService::save_results(
+            &db,
+            "srv-save",
+            vec![
+                NetworkProbeResultData {
+                    target_id: "t-a".to_string(),
+                    avg_latency: Some(11.0),
+                    min_latency: Some(10.0),
+                    max_latency: Some(12.0),
+                    packet_loss: 0.0,
+                    packet_sent: 10,
+                    packet_received: 10,
+                    timestamp: ts,
+                },
+                NetworkProbeResultData {
+                    target_id: "t-b".to_string(),
+                    avg_latency: None,
+                    min_latency: None,
+                    max_latency: None,
+                    packet_loss: 1.0,
+                    packet_sent: 10,
+                    packet_received: 0,
+                    timestamp: ts,
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let count = network_probe_record::Entity::find()
+            .filter(network_probe_record::Column::ServerId.eq("srv-save"))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_query_records_raw_branch() {
+        // A sub-day window uses the raw records table and filters by target.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-raw", "Raw Server").await;
+
+        let base = Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap();
+        seed_probe_record(&db, "srv-raw", "t-1", base, Some(15.0), 0.0).await;
+        seed_probe_record(
+            &db,
+            "srv-raw",
+            "t-2",
+            base + Duration::minutes(1),
+            Some(25.0),
+            0.0,
+        )
+        .await;
+
+        // Without a target filter: both rows in range come back.
+        let all = NetworkProbeService::query_records(
+            &db,
+            "srv-raw",
+            None,
+            base - Duration::hours(1),
+            base + Duration::hours(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(all.len(), 2);
+
+        // With a target filter: only the matching row, mapped from raw columns.
+        let filtered = NetworkProbeService::query_records(
+            &db,
+            "srv-raw",
+            Some("t-1".to_string()),
+            base - Duration::hours(1),
+            base + Duration::hours(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].target_id, "t-1");
+        assert_eq!(filtered[0].avg_latency, Some(15.0));
+        assert_eq!(filtered[0].packet_sent, 10);
+    }
+
+    #[tokio::test]
+    async fn test_query_records_hourly_branch() {
+        // A >= 1 day window uses the hourly table and maps sample_count to sent/received.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-hourly", "Hourly Server").await;
+
+        let hour = Utc.with_ymd_and_hms(2026, 1, 2, 0, 0, 0).unwrap();
+        network_probe_record_hourly::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-hourly".to_string()),
+            target_id: Set("t-h".to_string()),
+            avg_latency: Set(Some(40.0)),
+            min_latency: Set(Some(30.0)),
+            max_latency: Set(Some(50.0)),
+            avg_packet_loss: Set(0.2),
+            sample_count: Set(6),
+            hour: Set(hour),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // A 2-day window forces the hourly branch.
+        let records = NetworkProbeService::query_records(
+            &db,
+            "srv-hourly",
+            Some("t-h".to_string()),
+            hour - Duration::hours(1),
+            hour + Duration::days(2),
+        )
+        .await
+        .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].avg_latency, Some(40.0));
+        assert!((records[0].packet_loss - 0.2).abs() < f64::EPSILON);
+        // sample_count is mirrored into both packet_sent and packet_received.
+        assert_eq!(records[0].packet_sent, 6);
+        assert_eq!(records[0].packet_received, 6);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: get_server_summary
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_get_server_summary_not_found() {
+        // Summarising an unknown server returns NotFound.
+        let (db, _tmp) = setup_test_db().await;
+
+        let result = NetworkProbeService::get_server_summary(
+            &db,
+            &test_agent_manager(),
+            "missing-server",
+            &NetworkProbeConfig::default(),
+        )
+        .await;
+        match result {
+            Err(AppError::NotFound(_)) => {}
+            other => panic!("Expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_server_summary_with_and_without_records() {
+        // Targets with records report latency/availability; a target without
+        // records is still listed with None latency and zero availability.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-summary", "Summary Server").await;
+
+        // Assign two preset targets so they appear with stable names.
+        NetworkProbeService::set_server_targets(
+            &db,
+            "srv-summary",
+            vec!["cn-bj-ct".to_string(), "cn-bj-cu".to_string()],
+        )
+        .await
+        .unwrap();
+
+        // Seed a record only for the first target.
+        let ts = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        seed_probe_record(&db, "srv-summary", "cn-bj-ct", ts, Some(80.0), 0.25).await;
+
+        let summary = NetworkProbeService::get_server_summary(
+            &db,
+            &test_agent_manager(),
+            "srv-summary",
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(summary.server_name, "Summary Server");
+        assert!(!summary.online); // empty agent manager => offline
+        assert_eq!(summary.targets.len(), 2);
+        assert!(summary.last_probe_at.is_some());
+
+        let with_record = summary
+            .targets
+            .iter()
+            .find(|t| t.target_id == "cn-bj-ct")
+            .unwrap();
+        assert_eq!(with_record.avg_latency, Some(80.0));
+        assert!((with_record.packet_loss - 0.25).abs() < f64::EPSILON);
+        assert!((with_record.availability - 0.75).abs() < f64::EPSILON);
+
+        let without_record = summary
+            .targets
+            .iter()
+            .find(|t| t.target_id == "cn-bj-cu")
+            .unwrap();
+        assert!(without_record.avg_latency.is_none());
+        assert!((without_record.availability - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_get_server_summary_no_targets() {
+        // A server with no configured targets yields an empty summary and no last probe.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-notarget", "No Target Server").await;
+
+        let summary = NetworkProbeService::get_server_summary(
+            &db,
+            &test_agent_manager(),
+            "srv-notarget",
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
+        assert!(summary.targets.is_empty());
+        assert!(summary.last_probe_at.is_none());
+        assert_eq!(summary.anomaly_count, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: get_overview branches
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_get_overview_empty_when_no_servers() {
+        // No servers => empty overview list.
+        let (db, _tmp) = setup_test_db().await;
+
+        let overviews = NetworkProbeService::get_overview(
+            &db,
+            &test_agent_manager(),
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
+        assert!(overviews.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_overview_target_without_record() {
+        // A configured target with no records appears with None latency and 0 availability.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-ov", "Overview Server").await;
+        NetworkProbeService::set_server_targets(&db, "srv-ov", vec!["cn-bj-ct".to_string()])
+            .await
+            .unwrap();
+
+        let overviews = NetworkProbeService::get_overview(
+            &db,
+            &test_agent_manager(),
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
+        let ov = overviews
+            .iter()
+            .find(|o| o.server_id == "srv-ov")
+            .expect("server should be present");
+        assert_eq!(ov.targets.len(), 1);
+        assert!(ov.targets[0].avg_latency.is_none());
+        assert!(ov.last_probe_at.is_none());
+        assert_eq!(ov.anomaly_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_overview_with_record_resolves_target_name() {
+        // A configured target with a record resolves its name from the preset map
+        // and reports latency/availability plus a last_probe_at timestamp.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-ov2", "Overview Server 2").await;
+        NetworkProbeService::set_server_targets(&db, "srv-ov2", vec!["cn-bj-ct".to_string()])
+            .await
+            .unwrap();
+        let ts = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        seed_probe_record(&db, "srv-ov2", "cn-bj-ct", ts, Some(40.0), 0.0).await;
+
+        let overviews = NetworkProbeService::get_overview(
+            &db,
+            &test_agent_manager(),
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
+        let ov = overviews
+            .iter()
+            .find(|o| o.server_id == "srv-ov2")
+            .expect("server should be present");
+        assert_eq!(ov.targets.len(), 1);
+        assert_eq!(ov.targets[0].avg_latency, Some(40.0));
+        assert!((ov.targets[0].availability - 1.0).abs() < f64::EPSILON);
+        // The preset name (non-empty provider) is resolved from the lookup map.
+        assert!(!ov.targets[0].provider.is_empty());
+        assert!(ov.last_probe_at.is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: get_anomalies anomaly-type classification
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_get_anomalies_classifies_each_type() {
+        // Exercise every anomaly-type branch: unreachable, very_high_latency,
+        // high_latency, very_high_packet_loss, high_packet_loss; healthy rows excluded.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-types", "Types Server").await;
+
+        let config = NetworkProbeConfig::default(); // high=500, very_high=800
+        let base = Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap();
+
+        // unreachable: packet_loss == 1.0
+        seed_probe_record(&db, "srv-types", "t-unreach", base, Some(10.0), 1.0).await;
+        // very_high_latency: avg_latency > 800
+        seed_probe_record(
+            &db,
+            "srv-types",
+            "t-vhlat",
+            base + Duration::seconds(1),
+            Some(900.0),
+            0.0,
+        )
+        .await;
+        // high_latency: 500 < avg_latency <= 800
+        seed_probe_record(
+            &db,
+            "srv-types",
+            "t-hlat",
+            base + Duration::seconds(2),
+            Some(600.0),
+            0.0,
+        )
+        .await;
+        // very_high_packet_loss: 0.5 < loss < 1.0, latency normal
+        seed_probe_record(
+            &db,
+            "srv-types",
+            "t-vhloss",
+            base + Duration::seconds(3),
+            Some(10.0),
+            0.6,
+        )
+        .await;
+        // high_packet_loss: 0.1 < loss <= 0.5
+        seed_probe_record(
+            &db,
+            "srv-types",
+            "t-hloss",
+            base + Duration::seconds(4),
+            Some(10.0),
+            0.2,
+        )
+        .await;
+        // healthy: excluded by the SQL anomaly predicate
+        seed_probe_record(
+            &db,
+            "srv-types",
+            "t-ok",
+            base + Duration::seconds(5),
+            Some(10.0),
+            0.0,
+        )
+        .await;
+
+        let anomalies = NetworkProbeService::get_anomalies(
+            &db,
+            "srv-types",
+            base - Duration::hours(1),
+            base + Duration::hours(1),
+            &config,
+        )
+        .await
+        .unwrap();
+
+        let types: std::collections::HashSet<&str> =
+            anomalies.iter().map(|a| a.anomaly_type.as_str()).collect();
+        assert!(types.contains("unreachable"));
+        assert!(types.contains("very_high_latency"));
+        assert!(types.contains("high_latency"));
+        assert!(types.contains("very_high_packet_loss"));
+        assert!(types.contains("high_packet_loss"));
+        // Healthy row produces no anomaly entry.
+        assert!(!anomalies.iter().any(|a| a.target_id == "t-ok"));
+    }
+
+    #[tokio::test]
+    async fn test_get_anomalies_empty_window() {
+        // No matching records in the window => empty anomaly list.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-noanom", "No Anom Server").await;
+
+        let base = Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap();
+        seed_probe_record(&db, "srv-noanom", "t-ok", base, Some(10.0), 0.0).await;
+
+        let anomalies = NetworkProbeService::get_anomalies(
+            &db,
+            "srv-noanom",
+            base - Duration::hours(1),
+            base + Duration::hours(1),
+            &NetworkProbeConfig::default(),
+        )
+        .await
+        .unwrap();
+        assert!(anomalies.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: aggregate_hourly
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_empty_returns_zero() {
+        // With no raw records in the last hour, aggregation inserts nothing.
+        let (db, _tmp) = setup_test_db().await;
+
+        let inserted = NetworkProbeService::aggregate_hourly(&db).await.unwrap();
+        assert_eq!(inserted, 0);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_groups_and_averages() {
+        // Records within the last hour are grouped by (server,target,hour) and
+        // averaged; min/max reduce correctly; sample_count reflects the group size.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-agg", "Agg Server").await;
+
+        let now = Utc::now();
+        // Use an identical timestamp for both records so they are guaranteed to
+        // land in the same hour bucket regardless of the current wall-clock
+        // minute, while still sitting inside the last-hour aggregation window.
+        let record_ts = now - Duration::minutes(2);
+
+        network_probe_record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-agg".to_string()),
+            target_id: Set("t-agg".to_string()),
+            avg_latency: Set(Some(10.0)),
+            min_latency: Set(Some(5.0)),
+            max_latency: Set(Some(15.0)),
+            packet_loss: Set(0.0),
+            packet_sent: Set(10),
+            packet_received: Set(10),
+            timestamp: Set(record_ts),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        network_probe_record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-agg".to_string()),
+            target_id: Set("t-agg".to_string()),
+            avg_latency: Set(Some(20.0)),
+            min_latency: Set(Some(2.0)),
+            max_latency: Set(Some(40.0)),
+            packet_loss: Set(0.4),
+            packet_sent: Set(10),
+            packet_received: Set(6),
+            timestamp: Set(record_ts),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let inserted = NetworkProbeService::aggregate_hourly(&db).await.unwrap();
+        assert!(inserted >= 1);
+
+        let rows = network_probe_record_hourly::Entity::find()
+            .filter(network_probe_record_hourly::Column::ServerId.eq("srv-agg"))
+            .all(&db)
+            .await
+            .unwrap();
+        // Both raw records fall in the same wall-clock hour => one aggregate row.
+        let total_samples: i32 = rows.iter().map(|r| r.sample_count).sum();
+        assert_eq!(total_samples, 2);
+        // avg over [10,20] = 15, min over [5,2] = 2, max over [15,40] = 40.
+        let row = rows
+            .iter()
+            .find(|r| r.target_id == "t-agg")
+            .expect("aggregate row should exist");
+        assert!((row.avg_latency.unwrap() - 15.0).abs() < f64::EPSILON);
+        assert!((row.min_latency.unwrap() - 2.0).abs() < f64::EPSILON);
+        assert!((row.max_latency.unwrap() - 40.0).abs() < f64::EPSILON);
+        // avg packet loss over [0.0, 0.4] = 0.2.
+        assert!((row.avg_packet_loss - 0.2).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_is_idempotent() {
+        // Re-running aggregation upserts (ON CONFLICT) rather than duplicating rows.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-idem", "Idem Server").await;
+
+        let now = Utc::now();
+        network_probe_record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-idem".to_string()),
+            target_id: Set("t-idem".to_string()),
+            avg_latency: Set(Some(50.0)),
+            min_latency: Set(Some(50.0)),
+            max_latency: Set(Some(50.0)),
+            packet_loss: Set(0.0),
+            packet_sent: Set(10),
+            packet_received: Set(10),
+            timestamp: Set(now - Duration::minutes(10)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        NetworkProbeService::aggregate_hourly(&db).await.unwrap();
+        NetworkProbeService::aggregate_hourly(&db).await.unwrap();
+
+        let row_count = network_probe_record_hourly::Entity::find()
+            .filter(network_probe_record_hourly::Column::ServerId.eq("srv-idem"))
+            .count(&db)
+            .await
+            .unwrap();
+        // The unique (server,target,hour) constraint keeps this at exactly one row.
+        assert_eq!(row_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_null_latency_group() {
+        // A group where every record has null latency yields avg/min/max = NULL.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-nullagg", "Null Agg Server").await;
+
+        let now = Utc::now();
+        network_probe_record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-nullagg".to_string()),
+            target_id: Set("t-null".to_string()),
+            avg_latency: Set(None),
+            min_latency: Set(None),
+            max_latency: Set(None),
+            packet_loss: Set(1.0),
+            packet_sent: Set(10),
+            packet_received: Set(0),
+            timestamp: Set(now - Duration::minutes(5)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        NetworkProbeService::aggregate_hourly(&db).await.unwrap();
+
+        let row = network_probe_record_hourly::Entity::find()
+            .filter(network_probe_record_hourly::Column::ServerId.eq("srv-nullagg"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("aggregate row should exist");
+        assert!(row.avg_latency.is_none());
+        assert!(row.min_latency.is_none());
+        assert!(row.max_latency.is_none());
+        assert!((row.avg_packet_loss - 1.0).abs() < f64::EPSILON);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: cleanup_old_records
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_cleanup_old_records_deletes_only_expired() {
+        // Records older than the retention cutoff are deleted; fresh ones survive.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-clean", "Clean Server").await;
+
+        let now = Utc::now();
+        // Raw retention default = 7 days; hourly retention default = 90 days.
+        let retention = RetentionConfig::default();
+
+        // Old raw record (well beyond 7 days) and a fresh raw record.
+        seed_probe_record(
+            &db,
+            "srv-clean",
+            "t-old",
+            now - Duration::days(30),
+            Some(10.0),
+            0.0,
+        )
+        .await;
+        seed_probe_record(&db, "srv-clean", "t-new", now, Some(10.0), 0.0).await;
+
+        // Old hourly record (beyond 90 days) and a fresh hourly record.
+        network_probe_record_hourly::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-clean".to_string()),
+            target_id: Set("t-old-h".to_string()),
+            avg_latency: Set(Some(10.0)),
+            min_latency: Set(Some(10.0)),
+            max_latency: Set(Some(10.0)),
+            avg_packet_loss: Set(0.0),
+            sample_count: Set(1),
+            hour: Set(now - Duration::days(120)),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        network_probe_record_hourly::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-clean".to_string()),
+            target_id: Set("t-new-h".to_string()),
+            avg_latency: Set(Some(10.0)),
+            min_latency: Set(Some(10.0)),
+            max_latency: Set(Some(10.0)),
+            avg_packet_loss: Set(0.0),
+            sample_count: Set(1),
+            hour: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let (raw_deleted, hourly_deleted) =
+            NetworkProbeService::cleanup_old_records(&db, &retention)
+                .await
+                .unwrap();
+        assert_eq!(raw_deleted, 1);
+        assert_eq!(hourly_deleted, 1);
+
+        // The fresh rows remain.
+        let raw_remaining = network_probe_record::Entity::find()
+            .filter(network_probe_record::Column::ServerId.eq("srv-clean"))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(raw_remaining, 1);
+        let hourly_remaining = network_probe_record_hourly::Entity::find()
+            .filter(network_probe_record_hourly::Column::ServerId.eq("srv-clean"))
+            .count(&db)
+            .await
+            .unwrap();
+        assert_eq!(hourly_remaining, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: count_anomalies private helper
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_count_anomalies_counts_matching_rows() {
+        // count_anomalies tallies unreachable + high-latency + high-loss rows.
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-count", "Count Server").await;
+
+        let base = Utc.with_ymd_and_hms(2026, 1, 2, 12, 0, 0).unwrap();
+        // 3 anomalies + 1 healthy record.
+        seed_probe_record(&db, "srv-count", "t1", base, Some(10.0), 1.0).await; // unreachable
+        seed_probe_record(
+            &db,
+            "srv-count",
+            "t2",
+            base + Duration::seconds(1),
+            Some(900.0),
+            0.0,
+        )
+        .await; // high latency
+        seed_probe_record(
+            &db,
+            "srv-count",
+            "t3",
+            base + Duration::seconds(2),
+            Some(10.0),
+            0.3,
+        )
+        .await; // high loss
+        seed_probe_record(
+            &db,
+            "srv-count",
+            "t4",
+            base + Duration::seconds(3),
+            Some(10.0),
+            0.0,
+        )
+        .await; // healthy
+
+        let count = NetworkProbeService::count_anomalies(
+            &db,
+            "srv-count",
+            base - Duration::hours(1),
+            500.0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, 3);
+
+        // A `from` cutoff after all rows yields zero.
+        let none = NetworkProbeService::count_anomalies(
+            &db,
+            "srv-count",
+            base + Duration::hours(1),
+            500.0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(none, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional coverage: TargetDto mapping helpers
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_target_dto_from_preset_and_empty_bundle() {
+        // from_preset sets source/source_name and leaves timestamps unset;
+        // empty_sparkline_bundle returns full-length None series.
+        let presets = crate::presets::PresetTargets::load();
+        let first = presets.first().expect("at least one preset target");
+        let dto = TargetDto::from_preset(first);
+        assert_eq!(dto.id, first.id);
+        assert!(dto.source.as_ref().unwrap().starts_with("preset:"));
+        assert!(dto.source_name.is_some());
+        assert!(dto.created_at.is_none());
+        assert!(dto.updated_at.is_none());
+
+        let bundle = NetworkProbeService::empty_sparkline_bundle();
+        assert_eq!(bundle.latency.len(), SPARKLINE_LENGTH);
+        assert_eq!(bundle.loss.len(), SPARKLINE_LENGTH);
+        assert!(bundle.latency.iter().all(Option::is_none));
+        assert!(bundle.loss.iter().all(Option::is_none));
     }
 }

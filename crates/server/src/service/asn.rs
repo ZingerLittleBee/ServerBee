@@ -142,4 +142,57 @@ mod tests {
         let result = AsnService::load_from_bytes(vec![0, 1, 2, 3], "test.mmdb".into());
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_load_empty_path_returns_none() {
+        // Empty path short-circuits before touching the filesystem.
+        assert!(AsnService::load("").is_none());
+    }
+
+    #[test]
+    fn test_load_existing_but_invalid_file_returns_none() {
+        use std::io::Write;
+
+        // A real file that exists but is not a valid MMDB exercises the
+        // `Reader::open_readfile` error branch (distinct from the
+        // "missing path" short-circuit above).
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("not-a-real.mmdb");
+        {
+            let mut f = std::fs::File::create(&path).expect("create file");
+            f.write_all(b"this is not a valid mmdb file at all")
+                .expect("write garbage");
+        }
+
+        let path_str = path.to_str().expect("utf8 path");
+        // File exists, so the existence check passes, but parsing fails -> None.
+        assert!(AsnService::load(path_str).is_none());
+    }
+
+    #[test]
+    fn test_load_from_bytes_empty_data() {
+        // Empty byte slice is also invalid MMDB input.
+        let result = AsnService::load_from_bytes(Vec::new(), "empty.mmdb".into());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_from_bytes_error_message_format() {
+        // The error message is wrapped with the documented prefix so callers
+        // (and the status endpoint) get a consistent, human-readable string.
+        let err = AsnService::load_from_bytes(vec![0xFF, 0xFF, 0xFF], "bad.mmdb".into())
+            .err()
+            .expect("invalid bytes must fail");
+        assert!(
+            err.starts_with("Invalid MMDB data:"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn test_dbip_asn_filename_constant() {
+        // Guard the on-disk filename used by both download and status code.
+        assert_eq!(DBIP_ASN_FILENAME, "dbip-asn-lite.mmdb");
+        assert!(DBIP_ASN_FILENAME.ends_with(".mmdb"));
+    }
 }

@@ -808,4 +808,614 @@ mod tests {
             Some("SSH Brute Force Watch → ssh_brute_force (high)")
         );
     }
+
+    // ── canonicalize_target edge cases ──
+
+    #[test]
+    fn canonical_bare_ipv6_yields_128() {
+        let (t, f) = FirewallService::canonicalize_target("2001:db8::1").unwrap();
+        assert_eq!(t, "2001:db8::1/128");
+        assert_eq!(f, 6);
+    }
+
+    #[test]
+    fn canonical_ipv6_cidr_strips_host_bits() {
+        // Host bits in a v6 CIDR are dropped to the network address.
+        let (t, f) = FirewallService::canonicalize_target("2001:db8::dead/32").unwrap();
+        assert_eq!(t, "2001:db8::/32");
+        assert_eq!(f, 6);
+    }
+
+    #[test]
+    fn canonical_rejects_bad_cidr_prefix() {
+        // Parses as neither IpAddr nor IpNet → BadRequest.
+        let err = FirewallService::canonicalize_target("1.2.3.4/40").unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[test]
+    fn protected_invalid_cidr_input_is_reported() {
+        // is_protected returns Some("invalid CIDR") rather than panicking.
+        let reason = FirewallService::is_protected("garbage", &[]);
+        assert_eq!(reason.as_deref(), Some("invalid CIDR"));
+    }
+
+    #[test]
+    fn protected_allow_list_no_match_falls_through() {
+        // A non-overlapping allow entry must NOT veto an external target.
+        let allow = vec!["198.51.100.0/24".to_string()];
+        assert!(FirewallService::is_protected("203.0.113.5/32", &allow).is_none());
+    }
+
+    #[test]
+    fn protected_allow_list_ignores_malformed_entry() {
+        // A malformed allow entry is skipped, not treated as a match.
+        let allow = vec!["not-a-cidr".to_string()];
+        assert!(FirewallService::is_protected("203.0.113.5/32", &allow).is_none());
+    }
+
+    // ── note_agent_external_ip / collect_dynamic_allow ──
+
+    #[tokio::test]
+    async fn dynamic_allow_includes_trusted_proxies_and_agent_ips() {
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, _mgr) = make_service(db);
+
+        // Record one agent external IP, then confirm it appears in the merged set.
+        svc.note_agent_external_ip("srv-A", Some("203.0.113.50".parse().unwrap()))
+            .await;
+        let allow = svc.collect_dynamic_allow().await;
+        assert!(
+            allow.iter().any(|s| s == "203.0.113.50"),
+            "agent external IP must be in dynamic allow, got {allow:?}"
+        );
+        // Default trusted_proxies (private ranges) are merged in too.
+        assert!(
+            allow.iter().any(|s| s.contains("127.0.0.0/8")),
+            "trusted_proxies should be merged, got {allow:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn note_agent_external_ip_none_removes_entry() {
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, _mgr) = make_service(db);
+
+        svc.note_agent_external_ip("srv-A", Some("203.0.113.50".parse().unwrap()))
+            .await;
+        // Passing None clears the recorded IP.
+        svc.note_agent_external_ip("srv-A", None).await;
+        let allow = svc.collect_dynamic_allow().await;
+        assert!(
+            !allow.iter().any(|s| s == "203.0.113.50"),
+            "cleared IP must not remain, got {allow:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn auto_block_rejected_by_dynamic_allow_agent_ip() {
+        // An agent's reported external IP is tier-2.5 protected: auto-block of
+        // that exact IP must be refused and a server-side reject audit written.
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db.clone());
+        svc.note_agent_external_ip("srv-A", Some("203.0.113.77".parse().unwrap()))
+            .await;
+
+        let rule = make_rule("rule-dyn");
+        let payload = make_payload("203.0.113.77");
+        let action = AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        };
+        let result = svc
+            .auto_block("srv-A", &rule, &payload, "evt-dyn", &action, &mgr)
+            .await
+            .unwrap();
+        assert!(result.is_none(), "guarded target must not insert a row");
+
+        let rows = block_list::Entity::find().all(&db).await.unwrap();
+        assert!(rows.is_empty(), "no block_list row should exist");
+
+        let rejects = fetch_audits(&db, "firewall_block_rejected_server").await;
+        assert_eq!(rejects.len(), 1, "expected a server-reject audit entry");
+    }
+
+    #[tokio::test]
+    async fn auto_block_rejected_by_hardcoded_guardrail() {
+        // A private-range source_ip hits the tier-1 hard-coded guardrail.
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db.clone());
+
+        let rule = make_rule("rule-guard");
+        let payload = make_payload("10.0.0.5");
+        let action = AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        };
+        let result = svc
+            .auto_block("srv-A", &rule, &payload, "evt-guard", &action, &mgr)
+            .await
+            .unwrap();
+        assert!(result.is_none());
+        assert!(block_list::Entity::find().all(&db).await.unwrap().is_empty());
+        let rejects = fetch_audits(&db, "firewall_block_rejected_server").await;
+        assert_eq!(rejects.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn auto_block_fresh_insert_uses_default_comment_and_audits() {
+        // No comment template → falls back to "Auto-block from {rule_name}".
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db.clone());
+
+        let mut rule = make_rule("rule-fresh");
+        rule.name = "Watcher".to_string();
+        let payload = make_payload("203.0.113.200");
+        let action = AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        };
+        let id = svc
+            .auto_block("srv-A", &rule, &payload, "evt-fresh", &action, &mgr)
+            .await
+            .unwrap()
+            .expect("expected a fresh insert");
+
+        let row = block_list::Entity::find_by_id(&id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.comment.as_deref(), Some("Auto-block from Watcher"));
+        assert_eq!(row.target, "203.0.113.200/32");
+        assert_eq!(row.family, 4);
+        assert_eq!(row.origin, crate::service::alert::ORIGIN_AUTO);
+        assert_eq!(row.origin_event_id.as_deref(), Some("evt-fresh"));
+        assert_eq!(row.origin_rule_id.as_deref(), Some("rule-fresh"));
+
+        // A create audit is written.
+        let created = fetch_audits(&db, "firewall_block_created").await;
+        assert_eq!(created.len(), 1);
+    }
+
+    // ── list_for_server: coverage filter + ordering ──
+
+    /// Insert a `block_list` row and return its persisted Model.
+    async fn insert_block(
+        db: &sea_orm::DatabaseConnection,
+        id: &str,
+        target: &str,
+        cover_type: &str,
+        server_ids_json: Option<&str>,
+        created_at: chrono::DateTime<chrono::Utc>,
+    ) -> block_list::Model {
+        block_list::ActiveModel {
+            id: Set(id.into()),
+            target: Set(target.into()),
+            family: Set(4),
+            cover_type: Set(cover_type.into()),
+            server_ids_json: Set(server_ids_json.map(|s| s.to_string())),
+            comment: Set(None),
+            origin: Set("manual".into()),
+            origin_event_id: Set(None),
+            origin_rule_id: Set(None),
+            created_by: Set(None),
+            created_at: Set(created_at),
+        }
+        .insert(db)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn list_for_server_filters_by_coverage_and_orders_oldest_first() {
+        let (db, _tmp) = setup_test_db().await;
+        let base = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        // Newest first by insert, but list_for_server orders by created_at ASC.
+        insert_block(&db, "b-newer", "203.0.113.2/32", "all", None, base + chrono::Duration::seconds(10)).await;
+        insert_block(&db, "b-older", "203.0.113.1/32", "all", None, base).await;
+        // include srv-B only → excluded for srv-A.
+        insert_block(&db, "b-incl", "203.0.113.3/32", "include", Some(r#"["srv-B"]"#), base + chrono::Duration::seconds(20)).await;
+        // exclude srv-A → excluded for srv-A.
+        insert_block(&db, "b-excl", "203.0.113.4/32", "exclude", Some(r#"["srv-A"]"#), base + chrono::Duration::seconds(30)).await;
+
+        let (svc, _mgr) = make_service(db);
+        let entries = svc.list_for_server("srv-A").await.unwrap();
+        let ids: Vec<&str> = entries.iter().map(|e| e.id.as_str()).collect();
+        // Only the two `all`-coverage rows, oldest first.
+        assert_eq!(ids, vec!["b-older", "b-newer"]);
+        assert_eq!(entries[0].family, 4);
+    }
+
+    #[tokio::test]
+    async fn list_for_server_empty_when_nothing_covers() {
+        let (db, _tmp) = setup_test_db().await;
+        let now = chrono::Utc::now();
+        insert_block(&db, "b1", "203.0.113.9/32", "include", Some(r#"["other"]"#), now).await;
+        let (svc, _mgr) = make_service(db);
+        let entries = svc.list_for_server("srv-A").await.unwrap();
+        assert!(entries.is_empty());
+    }
+
+    // ── push_* fan-out gating ──
+
+    /// Wire an online agent into the manager with a ServerMessage receiver, a
+    /// negotiated protocol version, and an effective capability bitmask.
+    fn wire_agent(
+        mgr: &AgentManager,
+        server_id: &str,
+        protocol_version: u32,
+        caps: u32,
+    ) -> tokio::sync::mpsc::Receiver<serverbee_common::protocol::ServerMessage> {
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000);
+        mgr.add_connection(server_id.into(), "srv".into(), tx, addr);
+        mgr.set_protocol_version(server_id, protocol_version);
+        mgr.update_agent_local_capabilities(server_id, caps);
+        rx
+    }
+
+    fn block_model(id: &str, target: &str, cover_type: &str, server_ids_json: Option<&str>) -> block_list::Model {
+        block_list::Model {
+            id: id.into(),
+            target: target.into(),
+            family: 4,
+            cover_type: cover_type.into(),
+            server_ids_json: server_ids_json.map(|s| s.to_string()),
+            comment: None,
+            origin: "manual".into(),
+            origin_event_id: None,
+            origin_rule_id: None,
+            created_by: None,
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn push_add_reaches_capable_uptodate_covered_agent() {
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+        use serverbee_common::protocol::ServerMessage;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, CAP_FIREWALL_BLOCK);
+
+        let row = block_model("b1", "203.0.113.5/32", "all", None);
+        svc.push_add_to_covered_agents(&row, &mgr).await;
+
+        let msg = rx.try_recv().expect("agent should receive a message");
+        match msg {
+            ServerMessage::BlocklistAdd { entry } => {
+                assert_eq!(entry.id, "b1");
+                assert_eq!(entry.target, "203.0.113.5/32");
+            }
+            other => panic!("expected BlocklistAdd, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn push_add_skips_agent_without_firewall_capability() {
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        // caps = 0 → no CAP_FIREWALL_BLOCK.
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, 0);
+
+        let row = block_model("b1", "203.0.113.5/32", "all", None);
+        svc.push_add_to_covered_agents(&row, &mgr).await;
+        assert!(rx.try_recv().is_err(), "no message should be sent");
+    }
+
+    #[tokio::test]
+    async fn push_add_skips_agent_on_old_protocol() {
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        // protocol below the firewall gate.
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL - 1, CAP_FIREWALL_BLOCK);
+
+        let row = block_model("b1", "203.0.113.5/32", "all", None);
+        svc.push_add_to_covered_agents(&row, &mgr).await;
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn push_add_skips_uncovered_agent() {
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, CAP_FIREWALL_BLOCK);
+
+        // Row covers only srv-B → srv-A must not receive it.
+        let row = block_model("b1", "203.0.113.5/32", "include", Some(r#"["srv-B"]"#));
+        svc.push_add_to_covered_agents(&row, &mgr).await;
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn push_remove_reaches_covered_agent() {
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+        use serverbee_common::protocol::ServerMessage;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, CAP_FIREWALL_BLOCK);
+
+        let row = block_model("b-rm", "203.0.113.5/32", "all", None);
+        svc.push_remove_to_covered_agents(&row, &mgr).await;
+
+        let msg = rx.try_recv().expect("agent should receive remove");
+        match msg {
+            ServerMessage::BlocklistRemove { id } => assert_eq!(id, "b-rm"),
+            other => panic!("expected BlocklistRemove, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn push_remove_skips_uncapable_agent() {
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, 0);
+
+        let row = block_model("b-rm", "203.0.113.5/32", "all", None);
+        svc.push_remove_to_covered_agents(&row, &mgr).await;
+        assert!(rx.try_recv().is_err());
+    }
+
+    // ── push_sync_to / push_reset_to ──
+
+    #[tokio::test]
+    async fn push_sync_sends_covering_entries_to_one_agent() {
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+        use serverbee_common::protocol::ServerMessage;
+
+        let (db, _tmp) = setup_test_db().await;
+        let now = chrono::Utc::now();
+        insert_block(&db, "s1", "203.0.113.1/32", "all", None, now).await;
+        insert_block(&db, "s2", "203.0.113.2/32", "include", Some(r#"["srv-B"]"#), now).await;
+
+        let (svc, mgr) = make_service(db);
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, CAP_FIREWALL_BLOCK);
+
+        svc.push_sync_to("srv-A", &mgr).await.unwrap();
+        let msg = rx.try_recv().expect("sync should be delivered");
+        match msg {
+            ServerMessage::BlocklistSync { entries } => {
+                // Only the `all` row covers srv-A.
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].id, "s1");
+            }
+            other => panic!("expected BlocklistSync, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn push_sync_noop_when_agent_not_connected() {
+        let (db, _tmp) = setup_test_db().await;
+        let now = chrono::Utc::now();
+        insert_block(&db, "s1", "203.0.113.1/32", "all", None, now).await;
+
+        let (svc, mgr) = make_service(db);
+        // No agent wired for "ghost" → returns Ok, sends nothing.
+        let res = svc.push_sync_to("ghost", &mgr).await;
+        assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn push_reset_sends_reset_and_clears_only_target_apply_state() {
+        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
+        use serverbee_common::protocol::ServerMessage;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, 0);
+
+        // Seed apply_state for srv-A and srv-B; only srv-A should be cleared.
+        {
+            let mut g = svc.apply_state.write().await;
+            g.insert(
+                ("blk-1".into(), "srv-A".into()),
+                ApplyState {
+                    state: BlocklistEntryState::Present,
+                    reason: None,
+                    at: chrono::Utc::now(),
+                },
+            );
+            g.insert(
+                ("blk-2".into(), "srv-B".into()),
+                ApplyState {
+                    state: BlocklistEntryState::Present,
+                    reason: None,
+                    at: chrono::Utc::now(),
+                },
+            );
+        }
+
+        svc.push_reset_to("srv-A", &mgr).await;
+
+        let msg = rx.try_recv().expect("reset should be delivered");
+        assert!(matches!(msg, ServerMessage::BlocklistReset));
+
+        let g = svc.apply_state.read().await;
+        assert!(!g.contains_key(&("blk-1".into(), "srv-A".to_string())));
+        assert!(g.contains_key(&("blk-2".into(), "srv-B".to_string())));
+    }
+
+    #[tokio::test]
+    async fn push_reset_clears_state_even_without_connection() {
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, mgr) = make_service(db);
+        {
+            let mut g = svc.apply_state.write().await;
+            g.insert(
+                ("blk-1".into(), "ghost".into()),
+                ApplyState {
+                    state: BlocklistEntryState::Present,
+                    reason: None,
+                    at: chrono::Utc::now(),
+                },
+            );
+        }
+        // No connection for "ghost" — the local apply_state is still cleared.
+        svc.push_reset_to("ghost", &mgr).await;
+        let g = svc.apply_state.read().await;
+        assert!(g.is_empty());
+    }
+
+    // ── record_ack: state mirror + audit + broadcast ──
+
+    #[tokio::test]
+    async fn record_ack_present_mirrors_state_and_audits_and_broadcasts() {
+        use serverbee_common::firewall::BlocklistAckItem;
+        use serverbee_common::protocol::BrowserMessage;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (browser_tx, mut browser_rx) = broadcast::channel(16);
+        let config = Arc::new(AppConfig::default());
+        let svc = FirewallService::new(db.clone(), config, browser_tx);
+
+        let item = BlocklistAckItem {
+            id: "blk-1".into(),
+            state: BlocklistEntryState::Present,
+            reason: None,
+        };
+        svc.record_ack("srv-A", item, &db).await;
+
+        // apply_state mirror updated.
+        {
+            let g = svc.apply_state.read().await;
+            let st = g
+                .get(&("blk-1".to_string(), "srv-A".to_string()))
+                .expect("apply state recorded");
+            assert_eq!(st.state, BlocklistEntryState::Present);
+        }
+
+        // audit row written with the "applied" action.
+        let applied = fetch_audits(&db, "firewall_block_applied_agent").await;
+        assert_eq!(applied.len(), 1);
+
+        // broadcast emitted.
+        let msg = browser_rx.try_recv().expect("broadcast emitted");
+        match msg {
+            BrowserMessage::FirewallApplyStateChanged { block_id, server_id, state, .. } => {
+                assert_eq!(block_id, "blk-1");
+                assert_eq!(server_id, "srv-A");
+                assert_eq!(state, BlocklistEntryState::Present);
+            }
+            other => panic!("expected FirewallApplyStateChanged, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn record_ack_absent_uses_removed_action() {
+        use serverbee_common::firewall::BlocklistAckItem;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, _mgr) = make_service(db.clone());
+        let item = BlocklistAckItem {
+            id: "blk-2".into(),
+            state: BlocklistEntryState::Absent,
+            reason: None,
+        };
+        svc.record_ack("srv-A", item, &db).await;
+        let removed = fetch_audits(&db, "firewall_block_removed_agent").await;
+        assert_eq!(removed.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn record_ack_failed_uses_rejected_action_and_keeps_reason() {
+        use serverbee_common::firewall::BlocklistAckItem;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, _mgr) = make_service(db.clone());
+        let item = BlocklistAckItem {
+            id: "blk-3".into(),
+            state: BlocklistEntryState::Failed,
+            reason: Some("nft denied".into()),
+        };
+        svc.record_ack("srv-A", item, &db).await;
+
+        let rejected = fetch_audits(&db, "firewall_block_rejected_agent").await;
+        assert_eq!(rejected.len(), 1);
+        // The reason is mirrored into apply_state.
+        let g = svc.apply_state.read().await;
+        let st = g
+            .get(&("blk-3".to_string(), "srv-A".to_string()))
+            .unwrap();
+        assert_eq!(st.state, BlocklistEntryState::Failed);
+        assert_eq!(st.reason.as_deref(), Some("nft denied"));
+    }
+
+    // ── record_reset_ack: ok / failure audit actions ──
+
+    #[tokio::test]
+    async fn record_reset_ack_ok_writes_acked_audit() {
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, _mgr) = make_service(db.clone());
+        svc.record_reset_ack("srv-A", true, None, &db).await;
+        let acked = fetch_audits(&db, "firewall_reset_acked").await;
+        assert_eq!(acked.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn record_reset_ack_failure_writes_failed_audit() {
+        let (db, _tmp) = setup_test_db().await;
+        let (svc, _mgr) = make_service(db.clone());
+        svc.record_reset_ack("srv-A", false, Some("agent error".into()), &db)
+            .await;
+        let failed = fetch_audits(&db, "firewall_reset_failed_agent").await;
+        assert_eq!(failed.len(), 1);
+        // The success action must NOT be written.
+        let acked = fetch_audits(&db, "firewall_reset_acked").await;
+        assert!(acked.is_empty());
+    }
+
+    // ── broadcast_changed_* ──
+
+    #[tokio::test]
+    async fn broadcast_changed_created_and_deleted_emit_correct_kind() {
+        use serverbee_common::firewall::BlocklistChangeKind;
+        use serverbee_common::protocol::BrowserMessage;
+
+        let (db, _tmp) = setup_test_db().await;
+        let (browser_tx, mut browser_rx) = broadcast::channel(16);
+        let config = Arc::new(AppConfig::default());
+        let svc = FirewallService::new(db, config, browser_tx);
+
+        let row = block_model("blk-x", "203.0.113.5/32", "all", None);
+        svc.broadcast_changed_created(&row);
+        match browser_rx.try_recv().unwrap() {
+            BrowserMessage::BlocklistChanged { kind, block_id, target } => {
+                assert_eq!(kind, BlocklistChangeKind::Created);
+                assert_eq!(block_id, "blk-x");
+                assert_eq!(target, "203.0.113.5/32");
+            }
+            other => panic!("expected BlocklistChanged Created, got {other:?}"),
+        }
+
+        svc.broadcast_changed_deleted(&row);
+        match browser_rx.try_recv().unwrap() {
+            BrowserMessage::BlocklistChanged { kind, .. } => {
+                assert_eq!(kind, BlocklistChangeKind::Deleted);
+            }
+            other => panic!("expected BlocklistChanged Deleted, got {other:?}"),
+        }
+    }
 }

@@ -160,4 +160,128 @@ mod tests {
 
         assert_eq!(result, None, "Missing key should return None for get_typed");
     }
+
+    #[tokio::test]
+    async fn test_get_typed_invalid_json_errors() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Store a raw value that is not valid JSON for the requested type
+        ConfigService::set(&db, "bad_json", "not-a-number")
+            .await
+            .expect("set should succeed");
+
+        // Deserializing into u64 must fail with an Internal error (deserialize branch)
+        let err = ConfigService::get_typed::<u64>(&db, "bad_json")
+            .await
+            .err()
+            .expect("get_typed on malformed JSON should return an error");
+
+        match err {
+            AppError::Internal(msg) => {
+                assert!(
+                    msg.contains("Failed to deserialize config"),
+                    "Error message should mention deserialize failure, got: {msg}"
+                );
+            }
+            other => panic!("Expected AppError::Internal, got a different variant: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_set_typed_overwrites_existing() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // First write a typed value, then overwrite it via set_typed (update path)
+        ConfigService::set_typed(&db, "obj_key", &vec![1u32, 2, 3])
+            .await
+            .expect("first set_typed should succeed");
+        ConfigService::set_typed(&db, "obj_key", &vec![9u32])
+            .await
+            .expect("second set_typed (update) should succeed");
+
+        let retrieved: Option<Vec<u32>> = ConfigService::get_typed(&db, "obj_key")
+            .await
+            .expect("get_typed should succeed");
+
+        assert_eq!(
+            retrieved,
+            Some(vec![9u32]),
+            "set_typed must overwrite the previous serialized value"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_typed_struct_roundtrip() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Round-trip a struct value through set_typed/get_typed to exercise JSON object parsing
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct Sample {
+            name: String,
+            count: u32,
+        }
+        let original = Sample {
+            name: "alpha".to_string(),
+            count: 7,
+        };
+        ConfigService::set_typed(&db, "struct_key", &original)
+            .await
+            .expect("set_typed should succeed");
+
+        let retrieved: Option<Sample> = ConfigService::get_typed(&db, "struct_key")
+            .await
+            .expect("get_typed should succeed");
+
+        assert_eq!(
+            retrieved,
+            Some(Sample {
+                name: "alpha".to_string(),
+                count: 7,
+            }),
+            "Struct should round-trip through typed config storage"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_empty_value() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // An empty string is a valid stored value and must be preserved, distinct from None
+        ConfigService::set(&db, "empty_key", "")
+            .await
+            .expect("set with empty value should succeed");
+
+        let value = ConfigService::get(&db, "empty_key")
+            .await
+            .expect("get should succeed");
+
+        assert_eq!(
+            value,
+            Some(String::new()),
+            "Empty stored value should round-trip as Some(\"\"), not None"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_keys_are_independent() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Writing one key must not affect another (verifies primary-key isolation)
+        ConfigService::set(&db, "key_a", "value_a")
+            .await
+            .expect("set key_a should succeed");
+        ConfigService::set(&db, "key_b", "value_b")
+            .await
+            .expect("set key_b should succeed");
+
+        let a = ConfigService::get(&db, "key_a")
+            .await
+            .expect("get key_a should succeed");
+        let b = ConfigService::get(&db, "key_b")
+            .await
+            .expect("get key_b should succeed");
+
+        assert_eq!(a, Some("value_a".to_string()), "key_a should keep its own value");
+        assert_eq!(b, Some("value_b".to_string()), "key_b should keep its own value");
+    }
 }

@@ -147,4 +147,108 @@ mod tests {
         assert!(!result.success);
         assert!(result.error.unwrap_or_default().contains("Invalid TCP target"));
     }
+
+    #[test]
+    fn test_split_host_port_ipv6_missing_closing_bracket() {
+        // `[`-prefixed but no closing `]`: the split_once('\]') fails -> None.
+        assert_eq!(split_host_port("[fd00::1:443"), None);
+    }
+
+    #[test]
+    fn test_split_host_port_ipv6_missing_port_colon() {
+        // Bracketed host closes with `]` but the remainder lacks the `:port`.
+        assert_eq!(split_host_port("[fd00::1]"), None);
+    }
+
+    #[test]
+    fn test_split_host_port_ipv6_non_numeric_port() {
+        // Bracketed IPv6 with a non-numeric port fails the parse -> None.
+        assert_eq!(split_host_port("[fd00::1]:https"), None);
+    }
+
+    #[test]
+    fn test_split_host_port_ipv6_empty_port() {
+        // Bracketed IPv6 with an empty port string fails u16 parse -> None.
+        assert_eq!(split_host_port("[fd00::1]:"), None);
+    }
+
+    #[test]
+    fn test_split_host_port_port_out_of_range() {
+        // 70000 exceeds u16::MAX, so the port parse fails -> None.
+        assert_eq!(split_host_port("example.com:70000"), None);
+    }
+
+    #[test]
+    fn test_split_host_port_empty_port_after_colon() {
+        // Trailing colon with no port digits fails the u16 parse -> None.
+        assert_eq!(split_host_port("example.com:"), None);
+    }
+
+    #[test]
+    fn test_split_host_port_min_and_max_port() {
+        // Boundary ports 0 and 65535 both parse successfully.
+        assert_eq!(
+            split_host_port("host:0"),
+            Some(("host".to_string(), 0))
+        );
+        assert_eq!(
+            split_host_port("host:65535"),
+            Some(("host".to_string(), 65535))
+        );
+    }
+
+    #[test]
+    fn test_split_host_port_hostname_with_port() {
+        // A plain hostname (not an IP) is preserved verbatim as the host.
+        assert_eq!(
+            split_host_port("db.internal.example.com:5432"),
+            Some(("db.internal.example.com".to_string(), 5432))
+        );
+    }
+
+    #[test]
+    fn test_split_host_port_unbracketed_ipv6_takes_last_colon() {
+        // Without brackets, rsplit_once(':') splits on the LAST colon; here the
+        // trailing "443" parses as a port and the rest becomes the "host".
+        assert_eq!(
+            split_host_port("fd00::1:443"),
+            Some(("fd00::1".to_string(), 443))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tcp_invalid_target_detail_reports_not_connected() {
+        // The invalid-target branch sets a connected:false detail payload.
+        let result = check("garbage", &json!({})).await;
+        assert!(!result.success);
+        assert_eq!(result.latency, None);
+        assert_eq!(result.detail, json!({ "connected": false }));
+    }
+
+    #[tokio::test]
+    async fn test_tcp_loopback_detail_and_no_latency() {
+        // SSRF-rejected targets report no latency and a not-connected detail.
+        let result = check("127.0.0.1:80", &json!({ "timeout": 2 })).await;
+        assert!(!result.success);
+        assert_eq!(result.latency, None);
+        assert_eq!(result.detail, json!({ "connected": false }));
+    }
+
+    #[tokio::test]
+    async fn test_tcp_default_timeout_used_when_config_missing() {
+        // No `timeout` key -> default applies; loopback is still SSRF-rejected,
+        // which proves the config-parse path tolerates an empty config object.
+        let result = check("127.0.0.1:80", &json!({})).await;
+        assert!(!result.success);
+        assert!(result.error.unwrap_or_default().contains("SSRF guard"));
+    }
+
+    #[tokio::test]
+    async fn test_tcp_non_numeric_timeout_falls_back_to_default() {
+        // A non-integer `timeout` value is ignored (as_u64 -> None) and the
+        // check still proceeds rather than panicking.
+        let result = check("169.254.169.254:80", &json!({ "timeout": "soon" })).await;
+        assert!(!result.success);
+        assert!(result.error.unwrap_or_default().contains("SSRF guard"));
+    }
 }

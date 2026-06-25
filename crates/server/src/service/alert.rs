@@ -1268,7 +1268,7 @@ fn majority_exceeded(exceeded_count: usize, total: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use chrono::{TimeZone, Utc};
 
     /// Build a minimal `record::Model` with the given field values.
     fn make_record(cpu: f64, mem_used: i64, load1: f64) -> record::Model {
@@ -1996,5 +1996,1219 @@ mod tests {
         }];
         let err = validate_actions(&rules, &actions).unwrap_err();
         assert!(format!("{err}").contains("invalid cover_type"));
+    }
+
+    #[test]
+    fn validate_actions_forbids_empty_rules_with_action() {
+        // block_source_ip with zero rules must be rejected (rules.is_empty() branch).
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "all".into(),
+            server_ids_json: None,
+            comment: None,
+        }];
+        assert!(validate_actions(&[], &actions).is_err());
+    }
+
+    #[test]
+    fn validate_actions_allows_port_scan_detected() {
+        // port_scan_detected is the other SOURCE_IP rule type that permits the action.
+        let rules = vec![AlertRuleItem {
+            rule_type: "port_scan_detected".into(),
+            ..Default::default()
+        }];
+        let actions = vec![AlertRuleAction::BlockSourceIp {
+            cover_type: "include".into(),
+            server_ids_json: Some(r#"["srv-1"]"#.to_string()),
+            comment: Some("auto block".into()),
+        }];
+        assert!(validate_actions(&rules, &actions).is_ok());
+    }
+
+    // ── validate_cover_type ──
+
+    #[test]
+    fn test_validate_cover_type_accepts_all_valid() {
+        // Every value in VALID_COVER_TYPES must pass validation.
+        validate_cover_type("all").expect("all is valid");
+        validate_cover_type("include").expect("include is valid");
+        validate_cover_type("exclude").expect("exclude is valid");
+    }
+
+    #[test]
+    fn test_validate_cover_type_rejects_invalid() {
+        // An unknown cover_type yields a Validation error mentioning the value.
+        let err = validate_cover_type("bogus").err().expect("should reject");
+        assert!(matches!(err, AppError::Validation(_)));
+        assert!(format!("{err}").contains("bogus"));
+    }
+
+    // ── default helpers ──
+
+    #[test]
+    fn test_default_action_cover_type_and_dedupe() {
+        // Serde defaults used by AlertRuleAction / SecurityRuleParams.
+        assert_eq!(default_action_cover_type(), "all");
+        assert_eq!(default_dedupe_secs(), 600);
+        assert!(default_true());
+    }
+
+    #[test]
+    fn test_security_rule_params_default_struct() {
+        // The Default impl mirrors the serde-default dedupe window.
+        let p = SecurityRuleParams::default();
+        assert_eq!(p.dedupe_window_seconds, 600);
+        assert_eq!(p.min_failed_count, None);
+        assert_eq!(p.min_distinct_ports, None);
+        assert!(p.exclude_users.is_empty());
+        assert!(p.exclude_cidrs.is_empty());
+    }
+
+    // ── extract_metric: remaining variants ──
+
+    #[test]
+    fn test_extract_metric_remaining_variants() {
+        // Exercise every metric branch not covered by the existing tests.
+        let mut rec = make_record(0.0, 0, 0.0);
+        rec.swap_used = 1024;
+        rec.disk_used = 2048;
+        rec.load5 = 2.5;
+        rec.load15 = 3.5;
+        rec.net_in_speed = 111;
+        rec.net_out_speed = 222;
+        assert!((extract_metric(&rec, "swap") - 1024.0).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "disk") - 2048.0).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "load5") - 2.5).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "load15") - 3.5).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "net_in_speed") - 111.0).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "net_out_speed") - 222.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_extract_metric_temperature_and_gpu_none() {
+        // None temperature/gpu must coerce to 0.0 via unwrap_or.
+        let mut rec = make_record(0.0, 0, 0.0);
+        rec.temperature = None;
+        rec.gpu_usage = None;
+        assert!((extract_metric(&rec, "temperature") - 0.0).abs() < f64::EPSILON);
+        assert!((extract_metric(&rec, "gpu") - 0.0).abs() < f64::EPSILON);
+    }
+
+    // ── AlertRuleAction serde round-trip ──
+
+    #[test]
+    fn test_alert_rule_action_serde_roundtrip() {
+        // The tagged enum serializes with a snake_case "type" discriminant.
+        let action = AlertRuleAction::BlockSourceIp {
+            cover_type: "exclude".into(),
+            server_ids_json: Some(r#"["a","b"]"#.into()),
+            comment: Some("note".into()),
+        };
+        let json = serde_json::to_string(&action).expect("serialize");
+        assert!(json.contains("\"type\":\"block_source_ip\""));
+        let parsed: AlertRuleAction = serde_json::from_str(&json).expect("deserialize");
+        match parsed {
+            AlertRuleAction::BlockSourceIp {
+                cover_type,
+                server_ids_json,
+                comment,
+            } => {
+                assert_eq!(cover_type, "exclude");
+                assert_eq!(server_ids_json.as_deref(), Some(r#"["a","b"]"#));
+                assert_eq!(comment.as_deref(), Some("note"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_alert_rule_action_defaults_on_deserialize() {
+        // Only the discriminant is provided; cover_type falls back to "all".
+        let parsed: AlertRuleAction =
+            serde_json::from_str(r#"{"type":"block_source_ip"}"#).expect("deserialize");
+        match parsed {
+            AlertRuleAction::BlockSourceIp {
+                cover_type,
+                server_ids_json,
+                comment,
+            } => {
+                assert_eq!(cover_type, "all");
+                assert!(server_ids_json.is_none());
+                assert!(comment.is_none());
+            }
+        }
+    }
+
+    // ── AlertService CRUD (DB-backed) ──
+
+    #[tokio::test]
+    async fn test_create_get_list_alert_rule() {
+        let (db, _tmp) = setup_test_db().await;
+
+        // Create a rule with metric items and an explicit server include list.
+        let input = CreateAlertRule {
+            name: "CPU".into(),
+            rules: vec![AlertRuleItem {
+                rule_type: "cpu".into(),
+                min: Some(80.0),
+                ..Default::default()
+            }],
+            trigger_mode: "always".into(),
+            notification_group_id: None,
+            cover_type: "include".into(),
+            server_ids: Some(vec!["srv-1".into(), "srv-2".into()]),
+            enabled: true,
+            actions: vec![],
+        };
+        let created = AlertService::create(&db, input).await.expect("create");
+        assert_eq!(created.name, "CPU");
+        assert_eq!(created.cover_type, "include");
+        assert!(created.actions_json.is_none());
+        assert_eq!(
+            created.server_ids_json.as_deref(),
+            Some(r#"["srv-1","srv-2"]"#)
+        );
+
+        // get() returns the same row.
+        let fetched = AlertService::get(&db, &created.id).await.expect("get");
+        assert_eq!(fetched.id, created.id);
+
+        // list() returns exactly one rule.
+        let all = AlertService::list(&db).await.expect("list");
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_create_with_action_persists_actions_json() {
+        let (db, _tmp) = setup_test_db().await;
+        // A security rule plus a valid block_source_ip action serializes actions_json.
+        let input = CreateAlertRule {
+            name: "Brute".into(),
+            rules: vec![AlertRuleItem {
+                rule_type: "ssh_brute_force_detected".into(),
+                ..Default::default()
+            }],
+            trigger_mode: "always".into(),
+            notification_group_id: None,
+            cover_type: "all".into(),
+            server_ids: None,
+            enabled: true,
+            actions: vec![AlertRuleAction::BlockSourceIp {
+                cover_type: "all".into(),
+                server_ids_json: None,
+                comment: None,
+            }],
+        };
+        let created = AlertService::create(&db, input).await.expect("create");
+        assert!(created.actions_json.is_some());
+        assert!(created.actions_json.unwrap().contains("block_source_ip"));
+    }
+
+    #[tokio::test]
+    async fn test_create_rejects_invalid_cover_type() {
+        let (db, _tmp) = setup_test_db().await;
+        // create() validates cover_type before touching the DB.
+        let input = CreateAlertRule {
+            name: "Bad".into(),
+            rules: vec![],
+            trigger_mode: "always".into(),
+            notification_group_id: None,
+            cover_type: "nope".into(),
+            server_ids: None,
+            enabled: true,
+            actions: vec![],
+        };
+        let err = AlertService::create(&db, input)
+            .await
+            .err()
+            .expect("should reject");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn test_create_rejects_mixed_security_items() {
+        let (db, _tmp) = setup_test_db().await;
+        // Mixing a security rule with a metric rule is rejected by validate_alert_rule_items.
+        let input = CreateAlertRule {
+            name: "Mixed".into(),
+            rules: vec![
+                AlertRuleItem {
+                    rule_type: "ssh_brute_force_detected".into(),
+                    ..Default::default()
+                },
+                AlertRuleItem {
+                    rule_type: "cpu".into(),
+                    min: Some(50.0),
+                    ..Default::default()
+                },
+            ],
+            trigger_mode: "always".into(),
+            notification_group_id: None,
+            cover_type: "all".into(),
+            server_ids: None,
+            enabled: true,
+            actions: vec![],
+        };
+        let err = AlertService::create(&db, input)
+            .await
+            .err()
+            .expect("should reject");
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn test_get_not_found() {
+        let (db, _tmp) = setup_test_db().await;
+        // get() of a missing id maps to NotFound.
+        let err = AlertService::get(&db, "missing")
+            .await
+            .err()
+            .expect("should be not found");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_update_all_fields() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_rule(&db, "rule-1", "Original").await;
+
+        // Update every mutable field at once.
+        let input = UpdateAlertRule {
+            name: Some("Renamed".into()),
+            rules: Some(vec![AlertRuleItem {
+                rule_type: "memory".into(),
+                min: Some(1000.0),
+                ..Default::default()
+            }]),
+            trigger_mode: Some("once".into()),
+            notification_group_id: Some(Some("grp-9".into())),
+            cover_type: Some("exclude".into()),
+            server_ids: Some(Some(vec!["srv-x".into()])),
+            enabled: Some(false),
+            actions: Some(vec![]),
+        };
+        let updated = AlertService::update(&db, "rule-1", input)
+            .await
+            .expect("update");
+        assert_eq!(updated.name, "Renamed");
+        assert_eq!(updated.trigger_mode, "once");
+        assert_eq!(updated.notification_group_id.as_deref(), Some("grp-9"));
+        assert_eq!(updated.cover_type, "exclude");
+        assert_eq!(updated.server_ids_json.as_deref(), Some(r#"["srv-x"]"#));
+        assert!(!updated.enabled);
+        assert!(updated.rules_json.contains("memory"));
+        // Empty actions vector clears actions_json.
+        assert!(updated.actions_json.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_clears_notification_group_and_server_ids() {
+        let (db, _tmp) = setup_test_db().await;
+        // Seed a rule that already has a group + include list.
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-1".into()),
+            name: Set("R".into()),
+            enabled: Set(true),
+            rules_json: Set("[]".into()),
+            trigger_mode: Set("always".into()),
+            notification_group_id: Set(Some("grp".into())),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("include".into()),
+            server_ids_json: Set(Some(r#"["a"]"#.into())),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        // Passing Some(None) clears nullable fields back to NULL.
+        let input = UpdateAlertRule {
+            name: None,
+            rules: None,
+            trigger_mode: None,
+            notification_group_id: Some(None),
+            cover_type: None,
+            server_ids: Some(None),
+            enabled: None,
+            actions: None,
+        };
+        let updated = AlertService::update(&db, "rule-1", input)
+            .await
+            .expect("update");
+        assert!(updated.notification_group_id.is_none());
+        assert!(updated.server_ids_json.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_actions_validated_against_existing_rules() {
+        let (db, _tmp) = setup_test_db().await;
+        // Existing rule is a metric rule; adding block_source_ip must fail validation.
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-1".into()),
+            name: Set("R".into()),
+            enabled: Set(true),
+            rules_json: Set(r#"[{"rule_type":"cpu","min":80.0}]"#.into()),
+            trigger_mode: Set("always".into()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".into()),
+            server_ids_json: Set(None),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let input = UpdateAlertRule {
+            name: None,
+            rules: None,
+            trigger_mode: None,
+            notification_group_id: None,
+            cover_type: None,
+            server_ids: None,
+            enabled: None,
+            actions: Some(vec![AlertRuleAction::BlockSourceIp {
+                cover_type: "all".into(),
+                server_ids_json: None,
+                comment: None,
+            }]),
+        };
+        let err = AlertService::update(&db, "rule-1", input)
+            .await
+            .err()
+            .expect("should reject");
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[tokio::test]
+    async fn test_update_not_found() {
+        let (db, _tmp) = setup_test_db().await;
+        // Updating a missing rule surfaces NotFound from get().
+        let input = UpdateAlertRule {
+            name: Some("X".into()),
+            rules: None,
+            trigger_mode: None,
+            notification_group_id: None,
+            cover_type: None,
+            server_ids: None,
+            enabled: None,
+            actions: None,
+        };
+        let err = AlertService::update(&db, "missing", input)
+            .await
+            .err()
+            .expect("should be not found");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn test_delete_removes_rule_and_states() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_rule(&db, "rule-1", "R").await;
+        insert_test_server(&db, "srv-1", "S").await;
+        let now = Utc::now();
+        insert_test_state(&db, "rule-1", "srv-1", false, now, None, 1).await;
+
+        AlertService::delete(&db, "rule-1").await.expect("delete");
+
+        // Rule is gone.
+        assert!(AlertService::get(&db, "rule-1").await.is_err());
+        // Associated states are cleaned up.
+        let remaining = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq("rule-1"))
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(remaining.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_not_found() {
+        let (db, _tmp) = setup_test_db().await;
+        // Deleting a missing rule yields NotFound (rows_affected == 0).
+        let err = AlertService::delete(&db, "missing")
+            .await
+            .err()
+            .expect("should be not found");
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    // ── list_states ──
+
+    #[tokio::test]
+    async fn test_list_states_resolves_server_name_and_unknown() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_rule(&db, "rule-1", "R").await;
+        insert_test_server(&db, "srv-known", "Known Server").await;
+        let t = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        // One state for a known server, one for a server that no longer exists.
+        insert_test_state(&db, "rule-1", "srv-known", false, t, None, 2).await;
+        insert_test_state(&db, "rule-1", "srv-gone", true, t, Some(t), 5).await;
+
+        let states = AlertService::list_states(&db, "rule-1")
+            .await
+            .expect("list_states");
+        assert_eq!(states.len(), 2);
+        let known = states
+            .iter()
+            .find(|s| s.server_id == "srv-known")
+            .expect("known present");
+        assert_eq!(known.server_name, "Known Server");
+        assert_eq!(known.count, 2);
+        assert!(!known.resolved);
+        let gone = states
+            .iter()
+            .find(|s| s.server_id == "srv-gone")
+            .expect("gone present");
+        // Missing server falls back to the "Unknown" placeholder.
+        assert_eq!(gone.server_name, "Unknown");
+        assert!(gone.resolved);
+        assert!(gone.resolved_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_list_events_empty() {
+        let (db, _tmp) = setup_test_db().await;
+        // No alert_state rows yields an empty event list.
+        let events = AlertService::list_events(&db, 10).await.expect("list");
+        assert!(events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_events_unknown_rule_and_server_names() {
+        let (db, _tmp) = setup_test_db().await;
+        // A state whose rule/server rows are absent falls back to "Unknown".
+        let t = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+        insert_test_state(&db, "ghost-rule", "ghost-srv", false, t, None, 1).await;
+        let events = AlertService::list_events(&db, 10).await.expect("list");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].rule_name, "Unknown");
+        assert_eq!(events[0].server_name, "Unknown");
+        assert_eq!(events[0].status, "firing");
+    }
+
+    #[tokio::test]
+    async fn test_list_events_resolved_without_resolved_at_falls_back() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_rule(&db, "rule-1", "R").await;
+        insert_test_server(&db, "srv-1", "S").await;
+        let first = Utc.with_ymd_and_hms(2026, 3, 4, 5, 6, 7).unwrap();
+        // resolved=true but resolved_at=None => event_at uses first_triggered_at.
+        insert_test_state(&db, "rule-1", "srv-1", true, first, None, 1).await;
+        let events = AlertService::list_events(&db, 10).await.expect("list");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].status, "resolved");
+        assert!(events[0].resolved_at.is_none());
+        assert!(events[0].event_at.starts_with("2026-03-04"));
+    }
+
+    // ── rule_covers_server: invalid cover_type defaults to all ──
+
+    #[test]
+    fn test_rule_covers_server_unknown_type_defaults_all() {
+        // An unrecognized cover_type falls through to the "all" arm.
+        assert!(rule_covers_server("garbage", &None, "srv-1"));
+    }
+
+    // ── resolve_servers (DB-backed) ──
+
+    #[tokio::test]
+    async fn test_resolve_servers_all() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "A").await;
+        insert_test_server(&db, "srv-2", "B").await;
+        // "all" returns every server regardless of server_ids_json.
+        let servers = resolve_servers(&db, "all", &None).await.expect("resolve");
+        assert_eq!(servers.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_servers_include_and_empty() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "A").await;
+        insert_test_server(&db, "srv-2", "B").await;
+        // include with a list filters to the matching ids.
+        let servers = resolve_servers(&db, "include", &Some(r#"["srv-1"]"#.into()))
+            .await
+            .expect("resolve");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].id, "srv-1");
+        // include with an empty list resolves to no servers.
+        let none = resolve_servers(&db, "include", &Some("[]".into()))
+            .await
+            .expect("resolve");
+        assert!(none.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_servers_exclude_and_empty() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "A").await;
+        insert_test_server(&db, "srv-2", "B").await;
+        // exclude with a list drops the matching ids.
+        let servers = resolve_servers(&db, "exclude", &Some(r#"["srv-1"]"#.into()))
+            .await
+            .expect("resolve");
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].id, "srv-2");
+        // exclude with an empty list returns everyone.
+        let all = resolve_servers(&db, "exclude", &Some("[]".into()))
+            .await
+            .expect("resolve");
+        assert_eq!(all.len(), 2);
+    }
+
+    // ── get_last_record_time ──
+
+    #[tokio::test]
+    async fn test_get_last_record_time_picks_latest_and_none() {
+        let (db, _tmp) = setup_test_db().await;
+        // No records => None.
+        assert!(get_last_record_time(&db, "srv-1").await.is_none());
+
+        let older = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let newer = Utc.with_ymd_and_hms(2026, 1, 1, 1, 0, 0).unwrap();
+        insert_record(&db, "srv-1", older, 10.0).await;
+        insert_record(&db, "srv-1", newer, 20.0).await;
+
+        // Returns the most recent record's time.
+        let last = get_last_record_time(&db, "srv-1").await.expect("some");
+        assert_eq!(last, newer);
+    }
+
+    // ── check_threshold (DB-backed) ──
+
+    #[tokio::test]
+    async fn test_check_threshold_empty_records() {
+        let (db, _tmp) = setup_test_db().await;
+        // No records in the last 10 minutes => never triggers.
+        let item = AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(50.0),
+            ..Default::default()
+        };
+        assert!(!check_threshold(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_threshold_majority_exceeds() {
+        let (db, _tmp) = setup_test_db().await;
+        // 8 of 10 recent records exceed 80 => 80% >= 70% threshold => triggers.
+        let now = Utc::now();
+        for i in 0..10 {
+            let cpu = if i < 8 { 90.0 } else { 10.0 };
+            insert_record(&db, "srv-1", now - Duration::seconds(i as i64), cpu).await;
+        }
+        let item = AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(80.0),
+            ..Default::default()
+        };
+        assert!(check_threshold(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_threshold_minority_does_not_trigger() {
+        let (db, _tmp) = setup_test_db().await;
+        // Only 5 of 10 exceed => 50% < 70% => does not trigger.
+        let now = Utc::now();
+        for i in 0..10 {
+            let cpu = if i < 5 { 90.0 } else { 10.0 };
+            insert_record(&db, "srv-1", now - Duration::seconds(i as i64), cpu).await;
+        }
+        let item = AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(80.0),
+            ..Default::default()
+        };
+        assert!(!check_threshold(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_threshold_ignores_old_records() {
+        let (db, _tmp) = setup_test_db().await;
+        // Records older than 10 minutes are excluded from the window.
+        let old = Utc::now() - Duration::minutes(30);
+        insert_record(&db, "srv-1", old, 99.0).await;
+        let item = AlertRuleItem {
+            rule_type: "cpu".into(),
+            min: Some(80.0),
+            ..Default::default()
+        };
+        assert!(!check_threshold(&db, "srv-1", &item).await);
+    }
+
+    // ── check_expiration ──
+
+    #[tokio::test]
+    async fn test_check_expiration_no_server() {
+        let (db, _tmp) = setup_test_db().await;
+        // Missing server => false.
+        let item = AlertRuleItem {
+            rule_type: "expiration".into(),
+            ..Default::default()
+        };
+        assert!(!check_expiration(&db, "missing", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_expiration_no_expired_at() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "S").await;
+        // Server without expired_at => false.
+        let item = AlertRuleItem {
+            rule_type: "expiration".into(),
+            ..Default::default()
+        };
+        assert!(!check_expiration(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_expiration_within_threshold() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server_with_expiry(&db, "srv-1", Some(Utc::now() + Duration::days(3))).await;
+        // Expires in 3 days, default threshold is 7 => triggers.
+        let item = AlertRuleItem {
+            rule_type: "expiration".into(),
+            ..Default::default()
+        };
+        assert!(check_expiration(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_expiration_outside_threshold() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server_with_expiry(&db, "srv-1", Some(Utc::now() + Duration::days(30))).await;
+        // Expires in 30 days with a 7-day duration => does not trigger.
+        let item = AlertRuleItem {
+            rule_type: "expiration".into(),
+            duration: Some(7),
+            ..Default::default()
+        };
+        assert!(!check_expiration(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_expiration_already_expired() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server_with_expiry(&db, "srv-1", Some(Utc::now() - Duration::days(1))).await;
+        // Already expired => triggers (expired_at <= deadline).
+        let item = AlertRuleItem {
+            rule_type: "expiration".into(),
+            duration: Some(1),
+            ..Default::default()
+        };
+        assert!(check_expiration(&db, "srv-1", &item).await);
+    }
+
+    // ── check_network_latency ──
+
+    #[tokio::test]
+    async fn test_check_network_latency_empty_and_null() {
+        let (db, _tmp) = setup_test_db().await;
+        // Probe records FK to servers(id), so the parent server must exist first.
+        insert_server_with_expiry(&db, "srv-1", None).await;
+        let item = AlertRuleItem {
+            rule_type: "network_latency".into(),
+            min: Some(100.0),
+            ..Default::default()
+        };
+        // No probe records => false.
+        assert!(!check_network_latency(&db, "srv-1", &item).await);
+
+        // A record whose avg_latency is NULL is skipped => still false.
+        insert_probe(&db, "srv-1", None, 0.0).await;
+        assert!(!check_network_latency(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_network_latency_worst_exceeds() {
+        let (db, _tmp) = setup_test_db().await;
+        // Probe records FK to servers(id), so the parent server must exist first.
+        insert_server_with_expiry(&db, "srv-1", None).await;
+        // Worst (highest) avg_latency across targets is compared to the threshold.
+        insert_probe(&db, "srv-1", Some(50.0), 0.0).await;
+        insert_probe(&db, "srv-1", Some(250.0), 0.0).await;
+        let item = AlertRuleItem {
+            rule_type: "network_latency".into(),
+            min: Some(200.0),
+            ..Default::default()
+        };
+        assert!(check_network_latency(&db, "srv-1", &item).await);
+
+        // Threshold above the worst value => false.
+        let high = AlertRuleItem {
+            rule_type: "network_latency".into(),
+            min: Some(300.0),
+            ..Default::default()
+        };
+        assert!(!check_network_latency(&db, "srv-1", &high).await);
+    }
+
+    // ── check_network_packet_loss ──
+
+    #[tokio::test]
+    async fn test_check_network_packet_loss_empty_and_threshold() {
+        let (db, _tmp) = setup_test_db().await;
+        // Probe records FK to servers(id), so the parent server must exist first.
+        insert_server_with_expiry(&db, "srv-1", None).await;
+        let item = AlertRuleItem {
+            rule_type: "network_packet_loss".into(),
+            min: Some(10.0),
+            ..Default::default()
+        };
+        // No records => false.
+        assert!(!check_network_packet_loss(&db, "srv-1", &item).await);
+
+        // Worst packet_loss of 25% exceeds a 10% threshold => triggers.
+        insert_probe(&db, "srv-1", Some(20.0), 5.0).await;
+        insert_probe(&db, "srv-1", Some(20.0), 25.0).await;
+        assert!(check_network_packet_loss(&db, "srv-1", &item).await);
+
+        // A 30% threshold is above the worst 25% => false.
+        let high = AlertRuleItem {
+            rule_type: "network_packet_loss".into(),
+            min: Some(30.0),
+            ..Default::default()
+        };
+        assert!(!check_network_packet_loss(&db, "srv-1", &high).await);
+    }
+
+    // ── check_transfer_cycle (deterministic branches) ──
+
+    #[tokio::test]
+    async fn test_check_transfer_cycle_no_limit() {
+        let (db, _tmp) = setup_test_db().await;
+        // No cycle_limit set => always false (early return).
+        let item = AlertRuleItem {
+            rule_type: "transfer_in_cycle".into(),
+            ..Default::default()
+        };
+        assert!(!check_transfer_cycle(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_transfer_cycle_no_traffic_rows() {
+        let (db, _tmp) = setup_test_db().await;
+        // Time-windowed path with no traffic_hourly rows => sum is 0 < limit => false.
+        let item = AlertRuleItem {
+            rule_type: "transfer_all_cycle".into(),
+            cycle_interval: Some("month".into()),
+            cycle_limit: Some(1),
+            ..Default::default()
+        };
+        assert!(!check_transfer_cycle(&db, "srv-1", &item).await);
+    }
+
+    #[tokio::test]
+    async fn test_check_transfer_cycle_billing_no_server() {
+        let (db, _tmp) = setup_test_db().await;
+        // Billing path with a missing server => false.
+        let item = AlertRuleItem {
+            rule_type: "transfer_out_cycle".into(),
+            cycle_interval: Some("billing".into()),
+            cycle_limit: Some(1),
+            ..Default::default()
+        };
+        assert!(!check_transfer_cycle(&db, "missing", &item).await);
+    }
+
+    // ── check_server (AND semantics + offline) ──
+
+    #[tokio::test]
+    async fn test_check_server_offline_no_records() {
+        let (db, _tmp) = setup_test_db().await;
+        let (browser_tx, _) = tokio::sync::broadcast::channel(8);
+        let agent_manager = AgentManager::new(browser_tx);
+        // Offline rule: agent is not online and there is no last record => triggers.
+        let items = vec![AlertRuleItem {
+            rule_type: "offline".into(),
+            duration: Some(60),
+            ..Default::default()
+        }];
+        assert!(AlertService::check_server(&db, &agent_manager, &items, "srv-1").await);
+    }
+
+    #[tokio::test]
+    async fn test_check_server_offline_recent_record_not_long_enough() {
+        let (db, _tmp) = setup_test_db().await;
+        let (browser_tx, _) = tokio::sync::broadcast::channel(8);
+        let agent_manager = AgentManager::new(browser_tx);
+        // A very recent record means elapsed < duration => offline does not match.
+        insert_record(&db, "srv-1", Utc::now(), 10.0).await;
+        let items = vec![AlertRuleItem {
+            rule_type: "offline".into(),
+            duration: Some(3600),
+            ..Default::default()
+        }];
+        assert!(!AlertService::check_server(&db, &agent_manager, &items, "srv-1").await);
+    }
+
+    #[tokio::test]
+    async fn test_check_server_and_logic_short_circuits() {
+        let (db, _tmp) = setup_test_db().await;
+        let (browser_tx, _) = tokio::sync::broadcast::channel(8);
+        let agent_manager = AgentManager::new(browser_tx);
+        // First item (cpu) cannot match (no records) so AND logic returns false
+        // even though the offline item would match.
+        let items = vec![
+            AlertRuleItem {
+                rule_type: "cpu".into(),
+                min: Some(80.0),
+                ..Default::default()
+            },
+            AlertRuleItem {
+                rule_type: "offline".into(),
+                duration: Some(1),
+                ..Default::default()
+            },
+        ];
+        assert!(!AlertService::check_server(&db, &agent_manager, &items, "srv-1").await);
+    }
+
+    // ── AlertStateManager: load_from_db / mark_triggered increment ──
+
+    #[tokio::test]
+    async fn test_load_from_db_only_unresolved() {
+        let (db, _tmp) = setup_test_db().await;
+        let t = Utc.with_ymd_and_hms(2026, 2, 2, 2, 2, 2).unwrap();
+        // One firing, one resolved row. Only the firing one is loaded into cache.
+        insert_test_state(&db, "rule-1", "srv-1", false, t, None, 3).await;
+        insert_test_state(&db, "rule-2", "srv-2", true, t, Some(t), 1).await;
+
+        let mgr = AlertStateManager::load_from_db(&db).await.expect("load");
+        assert!(mgr.is_triggered("rule-1", "srv-1", ""));
+        assert!(!mgr.is_triggered("rule-2", "srv-2", ""));
+        let info = mgr.get_info("rule-1", "srv-1", "").expect("info");
+        assert_eq!(info.count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_mark_triggered_increments_existing() {
+        let (db, _tmp) = setup_test_db().await;
+        let mgr = AlertStateManager::new();
+        // First trigger inserts count=1.
+        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+            .await
+            .expect("first");
+        // Second trigger increments the existing cache entry and DB row.
+        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+            .await
+            .expect("second");
+
+        let info = mgr.get_info("rule-1", "srv-1", "").expect("info");
+        assert_eq!(info.count, 2);
+        let row = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq("rule-1"))
+            .filter(alert_state::Column::ServerId.eq("srv-1"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("row");
+        assert_eq!(row.count, 2);
+        assert!(!row.resolved);
+    }
+
+    #[tokio::test]
+    async fn test_mark_resolved_persists_and_clears_cache() {
+        let (db, _tmp) = setup_test_db().await;
+        let mgr = AlertStateManager::new();
+        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+            .await
+            .expect("trigger");
+        mgr.mark_resolved(&db, "rule-1", "srv-1", "")
+            .await
+            .expect("resolve");
+
+        // Cache cleared.
+        assert!(!mgr.is_triggered("rule-1", "srv-1", ""));
+        // DB row flipped to resolved with resolved_at populated.
+        let row = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq("rule-1"))
+            .filter(alert_state::Column::ServerId.eq("srv-1"))
+            .one(&db)
+            .await
+            .unwrap()
+            .expect("row");
+        assert!(row.resolved);
+        assert!(row.resolved_at.is_some());
+    }
+
+    // ── evaluate_all: skips fully event-driven rules ──
+
+    #[tokio::test]
+    async fn test_evaluate_all_skips_event_driven_rules() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "S").await;
+        // A rule whose only item is ip_changed must NOT be evaluated by the poller,
+        // so no alert_state row is created for it.
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-ev".into()),
+            name: Set("IP".into()),
+            enabled: Set(true),
+            rules_json: Set(r#"[{"rule_type":"ip_changed"}]"#.into()),
+            trigger_mode: Set("always".into()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".into()),
+            server_ids_json: Set(None),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let (browser_tx, _) = tokio::sync::broadcast::channel(8);
+        let agent_manager = AgentManager::new(browser_tx);
+        let state_manager = AlertStateManager::new();
+        let config = crate::config::AppConfig::default();
+
+        AlertService::evaluate_all(&db, &config, &agent_manager, &state_manager)
+            .await
+            .expect("evaluate_all");
+        assert!(!state_manager.is_triggered("rule-ev", "srv-1", ""));
+        let states = alert_state::Entity::find().all(&db).await.unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_all_fires_offline_rule() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "S").await;
+        // An offline rule (no notification group) over an offline server with no
+        // records should fire and create a triggered alert_state.
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-off".into()),
+            name: Set("Offline".into()),
+            enabled: Set(true),
+            rules_json: Set(r#"[{"rule_type":"offline","duration":1}]"#.into()),
+            trigger_mode: Set("always".into()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".into()),
+            server_ids_json: Set(None),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let (browser_tx, _) = tokio::sync::broadcast::channel(8);
+        let agent_manager = AgentManager::new(browser_tx);
+        let state_manager = AlertStateManager::new();
+        let config = crate::config::AppConfig::default();
+
+        AlertService::evaluate_all(&db, &config, &agent_manager, &state_manager)
+            .await
+            .expect("evaluate_all");
+        // Server is not connected => offline => triggered.
+        assert!(state_manager.is_triggered("rule-off", "srv-1", ""));
+    }
+
+    // ── check_event_rules ──
+
+    #[tokio::test]
+    async fn test_check_event_rules_no_matching_event() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "S").await;
+        // Rule listens for ip_changed; firing a different event must not trigger it.
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-ip".into()),
+            name: Set("IP".into()),
+            enabled: Set(true),
+            rules_json: Set(r#"[{"rule_type":"ip_changed"}]"#.into()),
+            trigger_mode: Set("always".into()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".into()),
+            server_ids_json: Set(None),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let state_manager = AlertStateManager::new();
+        let config = crate::config::AppConfig::default();
+        AlertService::check_event_rules(
+            &db,
+            &config,
+            &state_manager,
+            "srv-1",
+            "ssh_new_ip_login",
+        )
+        .await
+        .expect("check_event_rules");
+        assert!(!state_manager.is_triggered("rule-ip", "srv-1", ""));
+    }
+
+    #[tokio::test]
+    async fn test_check_event_rules_matching_event_fires() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "S").await;
+        // Rule listens for ip_changed and covers all servers; firing ip_changed triggers it.
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-ip".into()),
+            name: Set("IP".into()),
+            enabled: Set(true),
+            rules_json: Set(r#"[{"rule_type":"ip_changed"}]"#.into()),
+            trigger_mode: Set("always".into()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".into()),
+            server_ids_json: Set(None),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let state_manager = AlertStateManager::new();
+        let config = crate::config::AppConfig::default();
+        AlertService::check_event_rules(&db, &config, &state_manager, "srv-1", "ip_changed")
+            .await
+            .expect("check_event_rules");
+        assert!(state_manager.is_triggered("rule-ip", "srv-1", ""));
+    }
+
+    #[tokio::test]
+    async fn test_check_event_rules_skips_uncovered_server() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "S").await;
+        // Rule only covers srv-other via include; an event for srv-1 must be skipped.
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-ip".into()),
+            name: Set("IP".into()),
+            enabled: Set(true),
+            rules_json: Set(r#"[{"rule_type":"ip_changed"}]"#.into()),
+            trigger_mode: Set("always".into()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("include".into()),
+            server_ids_json: Set(Some(r#"["srv-other"]"#.into())),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+
+        let state_manager = AlertStateManager::new();
+        let config = crate::config::AppConfig::default();
+        AlertService::check_event_rules(&db, &config, &state_manager, "srv-1", "ip_changed")
+            .await
+            .expect("check_event_rules");
+        assert!(!state_manager.is_triggered("rule-ip", "srv-1", ""));
+    }
+
+    // ── shared helpers for DB-backed tests ──
+
+    /// Helper: insert a single metric record for a server at a given time.
+    async fn insert_record(
+        db: &DatabaseConnection,
+        server_id: &str,
+        time: chrono::DateTime<Utc>,
+        cpu: f64,
+    ) {
+        record::ActiveModel {
+            id: NotSet,
+            server_id: Set(server_id.to_string()),
+            time: Set(time),
+            cpu: Set(cpu),
+            mem_used: Set(0),
+            swap_used: Set(0),
+            disk_used: Set(0),
+            net_in_speed: Set(0),
+            net_out_speed: Set(0),
+            net_in_transfer: Set(0),
+            net_out_transfer: Set(0),
+            load1: Set(0.0),
+            load5: Set(0.0),
+            load15: Set(0.0),
+            tcp_conn: Set(0),
+            udp_conn: Set(0),
+            process_count: Set(0),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(None),
+        }
+        .insert(db)
+        .await
+        .expect("insert record");
+    }
+
+    /// Helper: insert a network probe record with optional latency.
+    async fn insert_probe(
+        db: &DatabaseConnection,
+        server_id: &str,
+        avg_latency: Option<f64>,
+        packet_loss: f64,
+    ) {
+        network_probe_record::ActiveModel {
+            id: NotSet,
+            server_id: Set(server_id.to_string()),
+            target_id: Set("tgt".to_string()),
+            avg_latency: Set(avg_latency),
+            min_latency: Set(avg_latency),
+            max_latency: Set(avg_latency),
+            packet_loss: Set(packet_loss),
+            packet_sent: Set(10),
+            packet_received: Set(10),
+            timestamp: Set(Utc::now()),
+        }
+        .insert(db)
+        .await
+        .expect("insert probe");
+    }
+
+    /// Helper: insert a server with a specific `expired_at` value.
+    async fn insert_server_with_expiry(
+        db: &DatabaseConnection,
+        id: &str,
+        expired_at: Option<chrono::DateTime<Utc>>,
+    ) {
+        let now = Utc::now();
+        server::ActiveModel {
+            id: Set(id.to_string()),
+            token_hash: Set(Some("hash".to_string())),
+            token_prefix: Set(Some("prefix".to_string())),
+            name: Set("S".to_string()),
+            weight: Set(0),
+            hidden: Set(false),
+            capabilities: Set(0),
+            protocol_version: Set(1),
+            expired_at: Set(expired_at),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .expect("insert server with expiry");
     }
 }
