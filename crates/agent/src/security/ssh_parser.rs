@@ -145,4 +145,88 @@ mod tests {
     fn returns_none_on_unrelated_line() {
         assert!(parse_sshd_line("pam_unix(sshd:session): session opened").is_none());
     }
+
+    #[test]
+    fn parses_accepted_password_method() {
+        let line = "Accepted password for alice from 10.0.0.9 port 5555 ssh2";
+        let a = parse_sshd_line(line).unwrap();
+        assert_eq!(a.username, "alice");
+        assert_eq!(a.source_port, Some(5555));
+        assert!(matches!(
+            a.outcome,
+            AuthOutcome::Success {
+                auth_method: AuthMethodHint::Password
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_accepted_keyboard_interactive_method() {
+        let line = "Accepted keyboard-interactive for bob from 10.0.0.10 port 6666 ssh2";
+        let a = parse_sshd_line(line).unwrap();
+        assert_eq!(a.username, "bob");
+        assert!(matches!(
+            a.outcome,
+            AuthOutcome::Success {
+                auth_method: AuthMethodHint::KeyboardInteractive
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_accepted_other_method() {
+        // A method that is not one of the three named hints maps to `Other`.
+        let line = "Accepted gssapi-with-mic for carol from 10.0.0.11 port 7777 ssh2";
+        let a = parse_sshd_line(line).unwrap();
+        assert_eq!(a.username, "carol");
+        assert!(matches!(
+            a.outcome,
+            AuthOutcome::Success {
+                auth_method: AuthMethodHint::Other
+            }
+        ));
+    }
+
+    #[test]
+    fn failed_without_invalid_user_keeps_real_username() {
+        // `invalid_user` capture group is absent, so it must be false and the
+        // username taken from the second group.
+        let line = "Failed publickey for realuser from 172.16.0.1 port 40000 ssh2";
+        let a = parse_sshd_line(line).unwrap();
+        assert_eq!(a.username, "realuser");
+        assert!(matches!(
+            a.outcome,
+            AuthOutcome::Failure {
+                invalid_user: false
+            }
+        ));
+    }
+
+    #[test]
+    fn port_overflow_yields_none_port() {
+        // A port that does not fit in u16 fails `.parse::<u16>()`, exercising
+        // the `.ok()` -> None branch while still parsing the rest of the line.
+        let line = "Accepted publickey for root from 203.0.113.5 port 99999 ssh2: ED25519 abc";
+        let a = parse_sshd_line(line).unwrap();
+        assert_eq!(a.source_ip, "203.0.113.5");
+        assert_eq!(a.source_port, None);
+    }
+
+    #[test]
+    fn invalid_user_line_parses_port() {
+        let line = "Invalid user attacker from 192.0.2.5 port 22000";
+        let a = parse_sshd_line(line).unwrap();
+        assert_eq!(a.source_port, Some(22000));
+    }
+
+    #[test]
+    fn empty_line_returns_none() {
+        assert!(parse_sshd_line("").is_none());
+    }
+
+    #[test]
+    fn accepted_missing_port_returns_none() {
+        // RE_ACCEPTED requires a numeric port; without one no regex matches.
+        assert!(parse_sshd_line("Accepted publickey for root from 1.2.3.4").is_none());
+    }
 }

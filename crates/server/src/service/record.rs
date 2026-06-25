@@ -625,6 +625,617 @@ mod tests {
         }
     }
 
+    // gpu_record / record_hourly are already in scope via `use super::*`.
+    use serverbee_common::types::{GpuInfo, GpuReport};
+
+    /// Insert a raw record at an explicit time with explicit disk_io_json.
+    /// Numeric metric columns are zeroed so tests can focus on the field under test.
+    async fn insert_record_at(
+        db: &DatabaseConnection,
+        server_id: &str,
+        time: DateTime<Utc>,
+        disk_io_json: Option<String>,
+    ) {
+        record::ActiveModel {
+            id: NotSet,
+            server_id: Set(server_id.to_string()),
+            time: Set(time),
+            cpu: Set(0.0),
+            mem_used: Set(0),
+            swap_used: Set(0),
+            disk_used: Set(0),
+            net_in_speed: Set(0),
+            net_out_speed: Set(0),
+            net_in_transfer: Set(0),
+            net_out_transfer: Set(0),
+            load1: Set(0.0),
+            load5: Set(0.0),
+            load15: Set(0.0),
+            tcp_conn: Set(0),
+            udp_conn: Set(0),
+            process_count: Set(0),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(disk_io_json),
+        }
+        .insert(db)
+        .await
+        .expect("insert_record_at should succeed");
+    }
+
+    // --- serialize_disk_io ---
+
+    #[test]
+    fn test_serialize_disk_io_none_returns_none() {
+        // None input must short-circuit to Ok(None) without serializing.
+        let result = serialize_disk_io(None).expect("serialize should succeed");
+        assert_eq!(result, None, "None disk_io should serialize to None");
+    }
+
+    #[test]
+    fn test_serialize_disk_io_some_returns_json() {
+        let entries = vec![DiskIo {
+            name: "sda".to_string(),
+            read_bytes_per_sec: 10,
+            write_bytes_per_sec: 20,
+        }];
+        let result = serialize_disk_io(Some(&entries)).expect("serialize should succeed");
+        let json = result.expect("Some input should produce Some output");
+        let parsed: Vec<DiskIo> = serde_json::from_str(&json).expect("round-trip parse");
+        assert_eq!(parsed, entries, "serialized JSON should round-trip");
+    }
+
+    // --- aggregate_disk_io (pure helper) branch coverage ---
+
+    #[test]
+    fn test_aggregate_disk_io_all_null_returns_none() {
+        // No record carries disk_io_json => saw_non_null stays false => Ok(None).
+        let r1 = record::Model {
+            id: 1,
+            server_id: "s".to_string(),
+            time: Utc::now(),
+            cpu: 0.0,
+            mem_used: 0,
+            swap_used: 0,
+            disk_used: 0,
+            net_in_speed: 0,
+            net_out_speed: 0,
+            net_in_transfer: 0,
+            net_out_transfer: 0,
+            load1: 0.0,
+            load5: 0.0,
+            load15: 0.0,
+            tcp_conn: 0,
+            udp_conn: 0,
+            process_count: 0,
+            temperature: None,
+            gpu_usage: None,
+            disk_io_json: None,
+        };
+        let r2 = record::Model {
+            id: 2,
+            disk_io_json: None,
+            ..r1.clone()
+        };
+        let result = aggregate_disk_io(&[&r1, &r2]).expect("aggregate should succeed");
+        assert_eq!(result, None, "all-null disk_io_json should yield None");
+    }
+
+    #[test]
+    fn test_aggregate_disk_io_non_null_but_empty_returns_empty_array() {
+        // A non-null but empty JSON array sets saw_non_null=true but leaves grouped empty
+        // => Ok(Some("[]")).
+        let base = record::Model {
+            id: 1,
+            server_id: "s".to_string(),
+            time: Utc::now(),
+            cpu: 0.0,
+            mem_used: 0,
+            swap_used: 0,
+            disk_used: 0,
+            net_in_speed: 0,
+            net_out_speed: 0,
+            net_in_transfer: 0,
+            net_out_transfer: 0,
+            load1: 0.0,
+            load5: 0.0,
+            load15: 0.0,
+            tcp_conn: 0,
+            udp_conn: 0,
+            process_count: 0,
+            temperature: None,
+            gpu_usage: None,
+            disk_io_json: Some("[]".to_string()),
+        };
+        let result = aggregate_disk_io(&[&base]).expect("aggregate should succeed");
+        assert_eq!(
+            result,
+            Some("[]".to_string()),
+            "non-null empty array should yield '[]'"
+        );
+    }
+
+    #[test]
+    fn test_aggregate_disk_io_invalid_json_is_skipped() {
+        // Invalid JSON triggers the parse-error warn+continue branch. Since it is the only
+        // record and it is non-null, saw_non_null=true but grouped stays empty => Ok(Some("[]")).
+        let bad = record::Model {
+            id: 7,
+            server_id: "s".to_string(),
+            time: Utc::now(),
+            cpu: 0.0,
+            mem_used: 0,
+            swap_used: 0,
+            disk_used: 0,
+            net_in_speed: 0,
+            net_out_speed: 0,
+            net_in_transfer: 0,
+            net_out_transfer: 0,
+            load1: 0.0,
+            load5: 0.0,
+            load15: 0.0,
+            tcp_conn: 0,
+            udp_conn: 0,
+            process_count: 0,
+            temperature: None,
+            gpu_usage: None,
+            disk_io_json: Some("not valid json".to_string()),
+        };
+        let result = aggregate_disk_io(&[&bad]).expect("aggregate should not error on bad json");
+        assert_eq!(
+            result,
+            Some("[]".to_string()),
+            "invalid JSON should be skipped, leaving empty aggregate"
+        );
+    }
+
+    // --- query_history "auto" interval selection against the DB ---
+
+    #[tokio::test]
+    async fn test_query_history_auto_short_range_uses_raw() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-auto-raw").await;
+
+        let report = SystemReport {
+            cpu: 11.0,
+            ..Default::default()
+        };
+        RecordService::save_report(&db, "srv-auto-raw", &report)
+            .await
+            .expect("save_report should succeed");
+
+        // Range of 12h (<=24h) under "auto" must hit the raw records table.
+        let now = Utc::now();
+        let from = now - Duration::hours(12);
+        let result = RecordService::query_history(&db, "srv-auto-raw", from, now, "auto")
+            .await
+            .expect("query_history should succeed");
+        match result {
+            QueryHistoryResult::Raw(records) => {
+                assert_eq!(records.len(), 1, "auto short range should read raw table");
+            }
+            QueryHistoryResult::Hourly(_) => panic!("auto short range should be Raw"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_query_history_auto_long_range_uses_hourly() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-auto-hourly").await;
+
+        // Seed an hourly row directly so the >24h auto branch finds it.
+        let bucket = Utc::now() - Duration::hours(30);
+        record_hourly::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-auto-hourly".to_string()),
+            time: Set(bucket),
+            cpu: Set(33.0),
+            mem_used: Set(0),
+            swap_used: Set(0),
+            disk_used: Set(0),
+            net_in_speed: Set(0),
+            net_out_speed: Set(0),
+            net_in_transfer: Set(0),
+            net_out_transfer: Set(0),
+            load1: Set(0.0),
+            load5: Set(0.0),
+            load15: Set(0.0),
+            tcp_conn: Set(0),
+            udp_conn: Set(0),
+            process_count: Set(0),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(None),
+        }
+        .insert(&db)
+        .await
+        .expect("hourly insert should succeed");
+
+        // Range of 48h (>24h) under "auto" must hit the hourly table.
+        let now = Utc::now();
+        let from = now - Duration::hours(48);
+        let result = RecordService::query_history(&db, "srv-auto-hourly", from, now, "auto")
+            .await
+            .expect("query_history should succeed");
+        match result {
+            QueryHistoryResult::Hourly(records) => {
+                assert_eq!(records.len(), 1, "auto long range should read hourly table");
+                assert!((records[0].cpu - 33.0).abs() < f64::EPSILON);
+            }
+            QueryHistoryResult::Raw(_) => panic!("auto long range should be Hourly"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_query_history_excludes_out_of_window_records() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-window").await;
+
+        let now = Utc::now();
+        // One record inside the window, one well before it.
+        insert_record_at(&db, "srv-window", now - Duration::minutes(30), None).await;
+        insert_record_at(&db, "srv-window", now - Duration::hours(5), None).await;
+
+        let from = now - Duration::hours(1);
+        let result = RecordService::query_history(&db, "srv-window", from, now, "raw")
+            .await
+            .expect("query_history should succeed");
+        match result {
+            QueryHistoryResult::Raw(records) => {
+                assert_eq!(
+                    records.len(),
+                    1,
+                    "only the in-window record should be returned"
+                );
+            }
+            QueryHistoryResult::Hourly(_) => panic!("Expected Raw result"),
+        }
+    }
+
+    // --- save_gpu_records / query_gpu_history ---
+
+    #[tokio::test]
+    async fn test_save_and_query_gpu_records() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-gpu-1").await;
+
+        let gpu = GpuReport {
+            count: 2,
+            average_usage: 50.0,
+            detailed_info: vec![
+                GpuInfo {
+                    name: "GPU0".to_string(),
+                    mem_total: 8000,
+                    mem_used: 4000,
+                    utilization: 40.0,
+                    temperature: 55.0,
+                },
+                GpuInfo {
+                    name: "GPU1".to_string(),
+                    mem_total: 16000,
+                    mem_used: 2000,
+                    utilization: 60.0,
+                    temperature: 65.0,
+                },
+            ],
+        };
+
+        RecordService::save_gpu_records(&db, "srv-gpu-1", &gpu)
+            .await
+            .expect("save_gpu_records should succeed");
+
+        let now = Utc::now();
+        let from = now - Duration::hours(1);
+        let records = RecordService::query_gpu_history(&db, "srv-gpu-1", from, now)
+            .await
+            .expect("query_gpu_history should succeed");
+
+        assert_eq!(records.len(), 2, "both GPU devices should be persisted");
+        // device_index is assigned from enumerate order.
+        let dev0 = records
+            .iter()
+            .find(|r| r.device_index == 0)
+            .expect("device 0 should exist");
+        assert_eq!(dev0.device_name, "GPU0");
+        assert_eq!(dev0.mem_total, 8000);
+        let dev1 = records
+            .iter()
+            .find(|r| r.device_index == 1)
+            .expect("device 1 should exist");
+        assert_eq!(dev1.device_name, "GPU1");
+        assert!((dev1.utilization - 60.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_save_gpu_records_empty_detailed_info_inserts_nothing() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-gpu-empty").await;
+
+        // Empty detailed_info => the loop body never runs, nothing is inserted.
+        let gpu = GpuReport {
+            count: 0,
+            average_usage: 0.0,
+            detailed_info: vec![],
+        };
+        RecordService::save_gpu_records(&db, "srv-gpu-empty", &gpu)
+            .await
+            .expect("save_gpu_records should succeed with empty info");
+
+        let now = Utc::now();
+        let from = now - Duration::hours(1);
+        let records = RecordService::query_gpu_history(&db, "srv-gpu-empty", from, now)
+            .await
+            .expect("query_gpu_history should succeed");
+        assert!(records.is_empty(), "no GPU records should be inserted");
+    }
+
+    #[tokio::test]
+    async fn test_query_gpu_history_filters_by_window() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-gpu-win").await;
+
+        // Insert one in-window and one out-of-window gpu record directly.
+        let now = Utc::now();
+        gpu_record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-gpu-win".to_string()),
+            time: Set(now - Duration::minutes(10)),
+            device_index: Set(0),
+            device_name: Set("inwin".to_string()),
+            mem_total: Set(1),
+            mem_used: Set(1),
+            utilization: Set(1.0),
+            temperature: Set(1.0),
+        }
+        .insert(&db)
+        .await
+        .expect("in-window gpu insert");
+        gpu_record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-gpu-win".to_string()),
+            time: Set(now - Duration::hours(10)),
+            device_index: Set(0),
+            device_name: Set("outwin".to_string()),
+            mem_total: Set(1),
+            mem_used: Set(1),
+            utilization: Set(1.0),
+            temperature: Set(1.0),
+        }
+        .insert(&db)
+        .await
+        .expect("out-of-window gpu insert");
+
+        let from = now - Duration::hours(1);
+        let records = RecordService::query_gpu_history(&db, "srv-gpu-win", from, now)
+            .await
+            .expect("query_gpu_history should succeed");
+        assert_eq!(records.len(), 1, "only in-window gpu record returned");
+        assert_eq!(records[0].device_name, "inwin");
+    }
+
+    // --- aggregate_hourly edge branches ---
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_no_records_returns_zero() {
+        let (db, _tmp) = setup_test_db().await;
+        // No records exist in the previous-hour window => rows_affected == 0 => Ok(0).
+        let rows = RecordService::aggregate_hourly(&db)
+            .await
+            .expect("aggregate_hourly should succeed");
+        assert_eq!(rows, 0, "empty window should aggregate zero rows");
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_null_disk_io_writes_null() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-agg-null").await;
+
+        // Place a record in the previous-hour bucket with NO disk_io_json. This drives the
+        // None => Value::String(None) UPDATE branch in aggregate_hourly.
+        let now = Utc::now();
+        let hour = now
+            .duration_trunc(chrono::Duration::hours(1))
+            .expect("duration_trunc should succeed");
+        let hour_start = hour - chrono::Duration::hours(1);
+        let record_time = hour_start + chrono::Duration::minutes(20);
+        insert_record_at(&db, "srv-agg-null", record_time, None).await;
+
+        let rows = RecordService::aggregate_hourly(&db)
+            .await
+            .expect("aggregate_hourly should succeed");
+        assert_eq!(rows, 1, "one server bucket should be aggregated");
+
+        let from = now - Duration::hours(2);
+        let result = RecordService::query_history(&db, "srv-agg-null", from, now, "hourly")
+            .await
+            .expect("query_history should succeed");
+        match result {
+            QueryHistoryResult::Hourly(records) => {
+                assert_eq!(records.len(), 1);
+                assert_eq!(
+                    records[0].disk_io_json, None,
+                    "all-null source disk_io should aggregate to NULL"
+                );
+            }
+            QueryHistoryResult::Raw(_) => panic!("Expected Hourly result"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_hourly_idempotent_upsert() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-agg-upsert").await;
+
+        let now = Utc::now();
+        let hour = now
+            .duration_trunc(chrono::Duration::hours(1))
+            .expect("duration_trunc should succeed");
+        let hour_start = hour - chrono::Duration::hours(1);
+        let record_time = hour_start + chrono::Duration::minutes(15);
+
+        // Seed a single record in the previous-hour bucket so aggregation has input.
+        record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-agg-upsert".to_string()),
+            time: Set(record_time),
+            cpu: Set(80.0),
+            mem_used: Set(0),
+            swap_used: Set(0),
+            disk_used: Set(0),
+            net_in_speed: Set(0),
+            net_out_speed: Set(0),
+            net_in_transfer: Set(0),
+            net_out_transfer: Set(0),
+            load1: Set(0.0),
+            load5: Set(0.0),
+            load15: Set(0.0),
+            tcp_conn: Set(0),
+            udp_conn: Set(0),
+            process_count: Set(0),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(None),
+        }
+        .insert(&db)
+        .await
+        .expect("second record insert should succeed");
+
+        // First aggregation creates the hourly bucket.
+        let first = RecordService::aggregate_hourly(&db)
+            .await
+            .expect("first aggregate should succeed");
+        assert_eq!(first, 1, "first run should affect one row");
+
+        // Second aggregation over the same window must upsert (not duplicate) the bucket.
+        let second = RecordService::aggregate_hourly(&db)
+            .await
+            .expect("second aggregate should succeed");
+        assert_eq!(second, 1, "upsert should affect one row");
+
+        // Only a single hourly row should exist for this server.
+        let from = now - Duration::hours(2);
+        let result = RecordService::query_history(&db, "srv-agg-upsert", from, now, "hourly")
+            .await
+            .expect("query_history should succeed");
+        match result {
+            QueryHistoryResult::Hourly(records) => {
+                assert_eq!(records.len(), 1, "upsert must not create duplicate rows");
+            }
+            QueryHistoryResult::Raw(_) => panic!("Expected Hourly result"),
+        }
+    }
+
+    // --- cleanup_expired branch coverage ---
+
+    #[tokio::test]
+    async fn test_cleanup_expired_unknown_table_returns_bad_request() {
+        let (db, _tmp) = setup_test_db().await;
+        let err = RecordService::cleanup_expired(&db, 7, "not_a_table")
+            .await
+            .expect_err("unknown table should error");
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(
+                    msg.contains("not_a_table"),
+                    "error should name the unknown table"
+                );
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_hourly_table() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-clean-hourly").await;
+
+        // Old hourly row (10 days ago) should be deleted with 0-day retention.
+        record_hourly::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-clean-hourly".to_string()),
+            time: Set(Utc::now() - Duration::days(10)),
+            cpu: Set(1.0),
+            mem_used: Set(0),
+            swap_used: Set(0),
+            disk_used: Set(0),
+            net_in_speed: Set(0),
+            net_out_speed: Set(0),
+            net_in_transfer: Set(0),
+            net_out_transfer: Set(0),
+            load1: Set(0.0),
+            load5: Set(0.0),
+            load15: Set(0.0),
+            tcp_conn: Set(0),
+            udp_conn: Set(0),
+            process_count: Set(0),
+            temperature: Set(None),
+            gpu_usage: Set(None),
+            disk_io_json: Set(None),
+        }
+        .insert(&db)
+        .await
+        .expect("hourly insert should succeed");
+
+        let deleted = RecordService::cleanup_expired(&db, 0, "records_hourly")
+            .await
+            .expect("cleanup_expired should succeed");
+        assert_eq!(deleted, 1, "the old hourly row should be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_gpu_table() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-clean-gpu").await;
+
+        // Old gpu row (10 days ago) should be deleted with 0-day retention.
+        gpu_record::ActiveModel {
+            id: NotSet,
+            server_id: Set("srv-clean-gpu".to_string()),
+            time: Set(Utc::now() - Duration::days(10)),
+            device_index: Set(0),
+            device_name: Set("g".to_string()),
+            mem_total: Set(1),
+            mem_used: Set(1),
+            utilization: Set(1.0),
+            temperature: Set(1.0),
+        }
+        .insert(&db)
+        .await
+        .expect("gpu insert should succeed");
+
+        let deleted = RecordService::cleanup_expired(&db, 0, "gpu_records")
+            .await
+            .expect("cleanup_expired should succeed");
+        assert_eq!(deleted, 1, "the old gpu row should be deleted");
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_retains_recent_records() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-clean-keep").await;
+
+        // A fresh record (now) with 30-day retention must be retained.
+        let report = SystemReport::default();
+        RecordService::save_report(&db, "srv-clean-keep", &report)
+            .await
+            .expect("save_report should succeed");
+
+        let deleted = RecordService::cleanup_expired(&db, 30, "records")
+            .await
+            .expect("cleanup_expired should succeed");
+        assert_eq!(deleted, 0, "recent record should not be deleted");
+
+        let now = Utc::now();
+        let from = now - Duration::hours(1);
+        let result = RecordService::query_history(&db, "srv-clean-keep", from, now, "raw")
+            .await
+            .expect("query_history should succeed");
+        match result {
+            QueryHistoryResult::Raw(records) => assert_eq!(records.len(), 1, "record retained"),
+            QueryHistoryResult::Hourly(_) => panic!("Expected Raw result"),
+        }
+    }
+
     // NOTE: All RecordService methods (save_report, query_history, aggregate_hourly,
     // cleanup_expired) require a DatabaseConnection. There are no pure helper
     // functions to unit-test in isolation.

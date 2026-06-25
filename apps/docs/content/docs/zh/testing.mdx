@@ -1,0 +1,81 @@
+---
+title: 测试与质量
+description: ServerBee 如何做测试 —— 3800+ 自动化测试、mock-agent WebSocket 测试桩，以及 CI 强制的质量门槛。
+icon: FlaskConical
+---
+
+ServerBee 把可靠性当作一项功能来对待。代码库自带一套规模庞大、运行飞快的自动化测试,覆盖从纯 Rust 逻辑、实时 WebSocket 控制面到 React 界面的整条链路,且每次改动都由 CI 把关。
+
+## 测试规模一览
+
+| 范围 | 测试数 | 覆盖内容 |
+|------|--------|----------|
+| `common` crate | 148 | 协议消息、能力位掩码、SSRF guard、共享类型 |
+| `agent` crate | 865 | 采集器、reporter WebSocket 循环、pinger、文件管理、安全检测器、防火墙、IP 质量 |
+| `server` crate | 2,188 | REST 处理器、WebSocket 处理器、服务层、后台任务、数据库迁移 |
+| 前端(`apps/web`) | 600+ | Hooks、组件、状态 store、工具函数(Vitest) |
+
+合计 **3800+ 自动化测试**,每次 CI 运行全部通过。
+
+## 我们怎么测
+
+ServerBee 采用分层策略,为每一层匹配最合适的测试方式。
+
+### 单元测试
+
+纯逻辑就近放在源文件的内联 `#[cfg(test)]` 模块里测试:协议(反)序列化、能力位掩码、SSRF guard、告警评估、成本计算、各类解析器以及采集器。它们以毫秒级运行,构成了 agent 与 `common` 测试套件的主体。
+
+### 集成测试
+
+服务端的 42 个集成套件让测试直接驱动**真实的 Axum 路由,经由 HTTP 与 WebSocket**,跑在一个全新迁移、相互隔离的 SQLite 数据库之上。一套专门构建的 **mock-agent 测试桩**(`crates/server/tests/common/mod.rs`)会在真实的 WebSocket 连接上拉起一个模拟 Agent,从而无需真实主机即可端到端地演练整个控制面:
+
+- 终端中继、Docker 日志流、文件操作、定时任务派发
+- 实时浏览器广播(首次全量同步 + 增量更新)
+- 安全事件、告警、能力门控,以及 Admin/Member 权限
+
+在 Agent 一侧,reporter 的 连接 → 握手 → 派发 → 重连 主循环则跑在一个**进程内的假 WebSocket 服务器**之上,从而无需真实后端即可测试其网络核心。
+
+### 前端测试
+
+React 应用由 [Vitest](https://vitest.dev) 覆盖,分布在 89 个测试文件中 —— 涵盖 Hooks、组件、状态 store 与工具函数 —— 通过 `make web-test` 运行。
+
+<Callout type="info">
+这套集成测试桩让贡献者在一台笔记本上就能验证真实的请求/响应与 WebSocket 流程,无需 Agent、Docker 守护进程或任何外部服务。
+</Callout>
+
+## 覆盖率
+
+覆盖率使用 [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov) 测量:
+
+| Crate | Region | Line |
+|-------|--------|------|
+| `common` | 98% | 97% |
+| `agent` | 90% | 89% |
+| `server` | 92% | 93% |
+
+剩余未覆盖的代码是只能在真实环境中执行的 I/O 路径 —— Docker 守护进程、Linux 内核设施(nftables / conntrack / journald)、原始 ICMP 套接字、PTY,或外部服务(OAuth、SMTP、APNs)。这些路径通过集成测试桩以及 `tests/` 目录下的手动端到端检查清单来演练,而非单元测试。
+
+## 本地运行测试
+
+```bash
+make cargo-test     # Rust:整个 workspace 的单元 + 集成测试
+make web-test       # 前端:Vitest
+make cargo-clippy   # Rust 代码检查(强制 0 warning)
+```
+
+测量单个 crate 的覆盖率:
+
+```bash
+cargo llvm-cov -p serverbee-server --summary-only
+```
+
+## CI 门槛
+
+每次 push 和 Pull Request 都会运行:
+
+- `cargo clippy --workspace -- -D warnings` —— 零警告 lint
+- `cargo test --workspace` —— 完整的 Rust 测试套件
+- `bun run tsc -b` 与 `bun x ultracite check` —— 前端类型检查与 lint(Biome)
+- 安装脚本 `install.sh` 的 POSIX 与 ShellCheck 检查
+
+发布构建会为五个目标交叉编译二进制(Linux x86_64/aarch64 musl、macOS x86_64/aarch64、Windows x86_64),并发布多架构 Docker 镜像。

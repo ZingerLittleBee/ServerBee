@@ -1272,4 +1272,781 @@ mod tests {
             .collect();
         assert_eq!(String::from_utf8(decoded).unwrap(), "Download me!");
     }
+
+    // ---- is_enabled ----
+
+    #[test]
+    fn test_is_enabled_true() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+        assert!(mgr.is_enabled());
+    }
+
+    #[test]
+    fn test_is_enabled_false() {
+        let tmp = TempDir::new().unwrap();
+        let mut config = make_config(tmp.path().to_str().unwrap());
+        config.enabled = false;
+        let mgr = make_manager(config);
+        assert!(!mgr.is_enabled());
+    }
+
+    // ---- FileEvent -> AgentMessage conversion (all 4 variants) ----
+
+    #[test]
+    fn test_file_event_into_agent_message_ready() {
+        let msg: AgentMessage = FileEvent::DownloadReady {
+            transfer_id: "t".into(),
+            size: 42,
+        }
+        .into();
+        match msg {
+            AgentMessage::FileDownloadReady { transfer_id, size } => {
+                assert_eq!(transfer_id, "t");
+                assert_eq!(size, 42);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_event_into_agent_message_chunk() {
+        let msg: AgentMessage = FileEvent::DownloadChunk {
+            transfer_id: "t".into(),
+            offset: 7,
+            data: "abc".into(),
+        }
+        .into();
+        match msg {
+            AgentMessage::FileDownloadChunk {
+                transfer_id,
+                offset,
+                data,
+            } => {
+                assert_eq!(transfer_id, "t");
+                assert_eq!(offset, 7);
+                assert_eq!(data, "abc");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_event_into_agent_message_end() {
+        let msg: AgentMessage = FileEvent::DownloadEnd {
+            transfer_id: "tend".into(),
+        }
+        .into();
+        match msg {
+            AgentMessage::FileDownloadEnd { transfer_id } => assert_eq!(transfer_id, "tend"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_file_event_into_agent_message_error() {
+        let msg: AgentMessage = FileEvent::DownloadError {
+            transfer_id: "terr".into(),
+            error: "boom".into(),
+        }
+        .into();
+        match msg {
+            AgentMessage::FileDownloadError { transfer_id, error } => {
+                assert_eq!(transfer_id, "terr");
+                assert_eq!(error, "boom");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ---- validate_path error branches ----
+
+    #[test]
+    fn test_validate_path_nonexistent_cannot_resolve() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let missing = tmp.path().join("does_not_exist.txt");
+        let result = mgr.validate_path(missing.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Cannot resolve path"));
+    }
+
+    // ---- list_dir branches ----
+
+    #[tokio::test]
+    async fn test_list_dir_empty_roots_bails() {
+        let config = FileConfig {
+            enabled: true,
+            root_paths: vec![],
+            max_file_size: 1_073_741_824,
+            deny_patterns: vec![],
+        };
+        let mgr = make_manager(config);
+        let result = mgr.list_dir("/tmp").await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No root paths configured")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_ancestor_returns_virtual_entries() {
+        // Root is a nested subdir; requesting its parent (outside root) should
+        // return the root as a virtual directory entry for navigation.
+        let tmp = TempDir::new().unwrap();
+        let nested = tmp.path().join("nested_root");
+        std::fs::create_dir(&nested).unwrap();
+
+        let config = make_config(nested.to_str().unwrap());
+        let mgr = make_manager(config);
+
+        // The parent (tmp) is an ancestor of the root but not within it.
+        let entries = mgr.list_dir(tmp.path().to_str().unwrap()).await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(matches!(entries[0].file_type, FileType::Directory));
+        // The virtual entry path is the canonical root path.
+        let canonical_nested = std::fs::canonicalize(&nested).unwrap();
+        assert_eq!(entries[0].path, canonical_nested.to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_root_slash_ancestor() {
+        // Requesting "/" should surface the root path as a virtual entry,
+        // exercising the `path == "/"` branch.
+        let tmp = TempDir::new().unwrap();
+        let nested = tmp.path().join("only_root");
+        std::fs::create_dir(&nested).unwrap();
+
+        let config = make_config(nested.to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let entries = mgr.list_dir("/").await.unwrap();
+        assert!(!entries.is_empty());
+        assert!(entries.iter().all(|e| matches!(e.file_type, FileType::Directory)));
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_outside_and_not_ancestor_bails() {
+        let tmp = TempDir::new().unwrap();
+        let allowed = tmp.path().join("allowed");
+        std::fs::create_dir(&allowed).unwrap();
+        let sibling = tmp.path().join("sibling");
+        std::fs::create_dir(&sibling).unwrap();
+
+        let config = make_config(allowed.to_str().unwrap());
+        let mgr = make_manager(config);
+
+        // sibling is neither within nor an ancestor of allowed.
+        let result = mgr.list_dir(sibling.to_str().unwrap()).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("outside allowed root paths")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_includes_symlink_entry() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let target = tmp.path().join("target.txt");
+        std::fs::write(&target, "data").unwrap();
+        let link = tmp.path().join("link.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        #[cfg(unix)]
+        {
+            let entries = mgr.list_dir(tmp.path().to_str().unwrap()).await.unwrap();
+            let link_entry = entries.iter().find(|e| e.name == "link.txt").unwrap();
+            assert!(matches!(link_entry.file_type, FileType::Symlink));
+        }
+    }
+
+    // ---- stat branches ----
+
+    #[tokio::test]
+    async fn test_stat_nonexistent_path_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let missing = tmp.path().join("nope.txt");
+        let result = mgr.stat(missing.to_str().unwrap()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_stat_directory() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let dir = tmp.path().join("a_dir");
+        std::fs::create_dir(&dir).unwrap();
+
+        let entry = mgr.stat(dir.to_str().unwrap()).await.unwrap();
+        assert_eq!(entry.name, "a_dir");
+        assert!(matches!(entry.file_type, FileType::Directory));
+        #[cfg(unix)]
+        assert!(entry.permissions.is_some());
+    }
+
+    // ---- read_file boundaries ----
+
+    #[tokio::test]
+    async fn test_read_file_nonexistent_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let missing = tmp.path().join("missing.txt");
+        let result = mgr.read_file(missing.to_str().unwrap(), 1024).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_file_exactly_at_limit_ok() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("exact.txt");
+        std::fs::write(&path, vec![b'a'; 100]).unwrap();
+
+        // size == max_size must pass (boundary is strictly greater-than).
+        let result = mgr.read_file(path.to_str().unwrap(), 100).await;
+        assert!(result.is_ok());
+        let decoded = BASE64.decode(result.unwrap()).unwrap();
+        assert_eq!(decoded.len(), 100);
+    }
+
+    #[tokio::test]
+    async fn test_read_file_one_over_limit_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("over.txt");
+        std::fs::write(&path, vec![b'a'; 101]).unwrap();
+
+        let result = mgr.read_file(path.to_str().unwrap(), 100).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeds max_size"));
+    }
+
+    // ---- write_file error branches ----
+
+    #[tokio::test]
+    async fn test_write_file_invalid_base64_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("bad.txt");
+        std::fs::write(&path, "").unwrap();
+
+        // "!!!" is not valid base64.
+        let result = mgr.write_file(path.to_str().unwrap(), "!!!not-base64!!!").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid base64 content"));
+    }
+
+    #[tokio::test]
+    async fn test_write_file_outside_root_errors() {
+        let tmp = TempDir::new().unwrap();
+        let allowed = tmp.path().join("allowed");
+        std::fs::create_dir(&allowed).unwrap();
+        let config = make_config(allowed.to_str().unwrap());
+        let mgr = make_manager(config);
+
+        // Path outside the allowed root, but file exists so canonicalize succeeds.
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, "x").unwrap();
+
+        let encoded = BASE64.encode(b"data");
+        let result = mgr.write_file(outside.to_str().unwrap(), &encoded).await;
+        assert!(result.is_err());
+    }
+
+    // ---- delete error branches ----
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let missing = tmp.path().join("ghost.txt");
+        let result = mgr.delete(missing.to_str().unwrap(), false).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonempty_dir_non_recursive_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let dir = tmp.path().join("nonempty");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("child.txt"), "x").unwrap();
+
+        // Non-recursive remove of a non-empty directory must fail.
+        let result = mgr.delete(dir.to_str().unwrap(), false).await;
+        assert!(result.is_err());
+        assert!(dir.exists());
+    }
+
+    #[tokio::test]
+    async fn test_delete_empty_dir_non_recursive_ok() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let dir = tmp.path().join("empty_to_remove");
+        std::fs::create_dir(&dir).unwrap();
+
+        mgr.delete(dir.to_str().unwrap(), false).await.unwrap();
+        assert!(!dir.exists());
+    }
+
+    // ---- mkdir error branches ----
+
+    #[tokio::test]
+    async fn test_mkdir_outside_root_errors() {
+        let tmp = TempDir::new().unwrap();
+        let allowed = tmp.path().join("allowed");
+        std::fs::create_dir(&allowed).unwrap();
+        let config = make_config(allowed.to_str().unwrap());
+        let mgr = make_manager(config);
+
+        // Closest existing ancestor (tmp) is outside the allowed root.
+        let target = tmp.path().join("brand_new").join("child");
+        let result = mgr.mkdir(target.to_str().unwrap()).await;
+        assert!(result.is_err());
+        assert!(!target.exists());
+    }
+
+    #[tokio::test]
+    async fn test_mkdir_existing_dir_ok() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let dir = tmp.path().join("already_there");
+        std::fs::create_dir(&dir).unwrap();
+
+        // create_dir_all on an existing directory is idempotent.
+        mgr.mkdir(dir.to_str().unwrap()).await.unwrap();
+        assert!(dir.is_dir());
+    }
+
+    // ---- rename_path error branches ----
+
+    #[tokio::test]
+    async fn test_rename_path_from_missing_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let from = tmp.path().join("not_here.txt");
+        let to = tmp.path().join("dest.txt");
+        let result = mgr.rename_path(from.to_str().unwrap(), to.to_str().unwrap()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rename_path_dest_deny_pattern_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let from = tmp.path().join("plain.txt");
+        std::fs::write(&from, "x").unwrap();
+        // Destination filename matches a deny pattern (*.key).
+        let to = tmp.path().join("secret.key");
+
+        let result = mgr.rename_path(from.to_str().unwrap(), to.to_str().unwrap()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("deny pattern"));
+        assert!(from.exists());
+        assert!(!to.exists());
+    }
+
+    #[tokio::test]
+    async fn test_rename_path_dest_parent_outside_root_errors() {
+        let tmp = TempDir::new().unwrap();
+        let allowed = tmp.path().join("allowed");
+        std::fs::create_dir(&allowed).unwrap();
+        let config = make_config(allowed.to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let from = allowed.join("src.txt");
+        std::fs::write(&from, "x").unwrap();
+        // Destination parent (tmp) is outside the allowed root.
+        let to = tmp.path().join("escaped.txt");
+
+        let result = mgr.rename_path(from.to_str().unwrap(), to.to_str().unwrap()).await;
+        assert!(result.is_err());
+        assert!(from.exists());
+    }
+
+    // ---- start_download error path ----
+
+    #[tokio::test]
+    async fn test_start_download_invalid_path_emits_error() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let missing = tmp.path().join("nope.bin");
+        let (tx, mut rx) = mpsc::channel::<FileEvent>(4);
+        mgr.start_download("derr".into(), missing.to_str().unwrap().into(), tx);
+
+        let event = rx.recv().await.expect("should receive an error event");
+        match event {
+            FileEvent::DownloadError { transfer_id, error } => {
+                assert_eq!(transfer_id, "derr");
+                assert!(!error.is_empty());
+            }
+            _ => panic!("expected DownloadError"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_download_empty_file_sends_ready_and_end_only() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("empty.bin");
+        std::fs::write(&path, b"").unwrap();
+
+        let (tx, mut rx) = mpsc::channel::<FileEvent>(16);
+        mgr.start_download("dempty".into(), path.to_str().unwrap().into(), tx);
+
+        let mut got_ready = false;
+        let mut got_end = false;
+        let mut chunk_count = 0;
+        while let Some(event) = rx.recv().await {
+            match event {
+                FileEvent::DownloadReady { size, .. } => {
+                    assert_eq!(size, 0);
+                    got_ready = true;
+                }
+                FileEvent::DownloadChunk { .. } => chunk_count += 1,
+                FileEvent::DownloadEnd { .. } => {
+                    got_end = true;
+                    break;
+                }
+                FileEvent::DownloadError { error, .. } => panic!("unexpected error: {error}"),
+            }
+        }
+        assert!(got_ready);
+        assert!(got_end);
+        assert_eq!(chunk_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_multi_chunk_file() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        // Slightly larger than one chunk to force a second read iteration.
+        let total = MAX_FILE_CHUNK_SIZE + 1234;
+        let payload: Vec<u8> = (0..total).map(|i| (i % 251) as u8).collect();
+        let path = tmp.path().join("multi.bin");
+        std::fs::write(&path, &payload).unwrap();
+
+        let (tx, mut rx) = mpsc::channel::<FileEvent>(64);
+        mgr.start_download("dmulti".into(), path.to_str().unwrap().into(), tx);
+
+        let mut reported_size = 0u64;
+        let mut reassembled: Vec<u8> = Vec::new();
+        let mut chunk_count = 0;
+        let mut last_offset = 0u64;
+        while let Some(event) = rx.recv().await {
+            match event {
+                FileEvent::DownloadReady { size, .. } => reported_size = size,
+                FileEvent::DownloadChunk { offset, data, .. } => {
+                    assert_eq!(offset, last_offset);
+                    let bytes = BASE64.decode(&data).unwrap();
+                    last_offset += bytes.len() as u64;
+                    reassembled.extend_from_slice(&bytes);
+                    chunk_count += 1;
+                }
+                FileEvent::DownloadEnd { .. } => break,
+                FileEvent::DownloadError { error, .. } => panic!("unexpected error: {error}"),
+            }
+        }
+        assert_eq!(reported_size, total as u64);
+        assert!(chunk_count >= 2, "expected multiple chunks, got {chunk_count}");
+        assert_eq!(reassembled, payload);
+    }
+
+    // ---- cancel_download / cancel_all_transfers ----
+
+    #[tokio::test]
+    async fn test_cancel_download_removes_entry() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("cancel.bin");
+        std::fs::write(&path, vec![0u8; MAX_FILE_CHUNK_SIZE * 2]).unwrap();
+
+        let (tx, _rx) = mpsc::channel::<FileEvent>(1);
+        mgr.start_download("c1".into(), path.to_str().unwrap().into(), tx);
+        assert!(mgr.active_downloads.contains_key("c1"));
+
+        mgr.cancel_download("c1");
+        assert!(!mgr.active_downloads.contains_key("c1"));
+
+        // Cancelling an unknown transfer is a no-op.
+        mgr.cancel_download("does-not-exist");
+    }
+
+    #[tokio::test]
+    async fn test_cancel_all_transfers_clears_maps() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        // Seed an active download.
+        let dpath = tmp.path().join("dl.bin");
+        std::fs::write(&dpath, vec![0u8; MAX_FILE_CHUNK_SIZE * 2]).unwrap();
+        let (tx, _rx) = mpsc::channel::<FileEvent>(1);
+        mgr.start_download("d".into(), dpath.to_str().unwrap().into(), tx);
+
+        // Seed an active upload.
+        let upath = tmp.path().join("up.bin");
+        mgr.start_upload("u".into(), upath.to_str().unwrap().into(), 10)
+            .await
+            .unwrap();
+
+        assert!(!mgr.active_downloads.is_empty());
+        assert!(!mgr.active_uploads.is_empty());
+
+        mgr.cancel_all_transfers();
+
+        assert!(mgr.active_downloads.is_empty());
+        assert!(mgr.active_uploads.is_empty());
+    }
+
+    // ---- start_upload error branches ----
+
+    #[tokio::test]
+    async fn test_start_upload_deny_pattern_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("secret.key");
+        let result = mgr
+            .start_upload("up_deny".into(), path.to_str().unwrap().into(), 10)
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("deny pattern"));
+        assert!(!mgr.active_uploads.contains_key("up_deny"));
+    }
+
+    #[tokio::test]
+    async fn test_start_upload_size_exceeds_limit_errors() {
+        let tmp = TempDir::new().unwrap();
+        let mut config = make_config(tmp.path().to_str().unwrap());
+        config.max_file_size = 50;
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("toobig.bin");
+        let result = mgr
+            .start_upload("up_big".into(), path.to_str().unwrap().into(), 51)
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeds max_file_size"));
+    }
+
+    #[tokio::test]
+    async fn test_start_upload_parent_outside_root_errors() {
+        let tmp = TempDir::new().unwrap();
+        let allowed = tmp.path().join("allowed");
+        std::fs::create_dir(&allowed).unwrap();
+        let config = make_config(allowed.to_str().unwrap());
+        let mgr = make_manager(config);
+
+        // Parent (tmp) is outside the allowed root.
+        let path = tmp.path().join("escape.bin");
+        let result = mgr
+            .start_upload("up_out".into(), path.to_str().unwrap().into(), 10)
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_start_upload_size_exactly_at_limit_ok() {
+        let tmp = TempDir::new().unwrap();
+        let mut config = make_config(tmp.path().to_str().unwrap());
+        config.max_file_size = 50;
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("exact_upload.bin");
+        // size == max_file_size must be allowed (boundary is strictly greater-than).
+        mgr.start_upload("up_exact".into(), path.to_str().unwrap().into(), 50)
+            .await
+            .unwrap();
+        assert!(mgr.active_uploads.contains_key("up_exact"));
+    }
+
+    // ---- receive_chunk error branches ----
+
+    #[tokio::test]
+    async fn test_receive_chunk_unknown_transfer_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let data = BASE64.encode(b"x");
+        let result = mgr.receive_chunk("ghost", 0, &data).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown upload transfer"));
+    }
+
+    #[tokio::test]
+    async fn test_receive_chunk_invalid_base64_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("chunk.bin");
+        mgr.start_upload("uc".into(), path.to_str().unwrap().into(), 100)
+            .await
+            .unwrap();
+
+        let result = mgr.receive_chunk("uc", 0, "%%%not-base64%%%").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid base64 chunk"));
+    }
+
+    #[tokio::test]
+    async fn test_receive_chunk_multi_chunk_offsets() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("multi_upload.bin");
+        mgr.start_upload("um".into(), path.to_str().unwrap().into(), 1000)
+            .await
+            .unwrap();
+
+        let chunk_a = BASE64.encode(b"AAAAA");
+        let chunk_b = BASE64.encode(b"BBBBB");
+
+        let off1 = mgr.receive_chunk("um", 0, &chunk_a).await.unwrap();
+        assert_eq!(off1, 5);
+        let off2 = mgr.receive_chunk("um", off1, &chunk_b).await.unwrap();
+        assert_eq!(off2, 10);
+
+        mgr.finish_upload("um").await.unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, "AAAAABBBBB");
+    }
+
+    #[tokio::test]
+    async fn test_receive_chunk_empty_data_ok() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("empty_chunk.bin");
+        mgr.start_upload("ue".into(), path.to_str().unwrap().into(), 100)
+            .await
+            .unwrap();
+
+        // Empty (but valid) base64 -> zero bytes, offset unchanged.
+        let new_offset = mgr.receive_chunk("ue", 0, "").await.unwrap();
+        assert_eq!(new_offset, 0);
+
+        mgr.finish_upload("ue").await.unwrap();
+        assert!(path.exists());
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
+    }
+
+    // ---- finish_upload error branch ----
+
+    #[tokio::test]
+    async fn test_finish_upload_unknown_transfer_errors() {
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let result = mgr.finish_upload("never-started").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown upload transfer"));
+    }
+
+    // ---- find_existing_ancestor ----
+
+    #[test]
+    fn test_find_existing_ancestor_finds_root() {
+        let tmp = TempDir::new().unwrap();
+        let deep = tmp.path().join("a").join("b").join("c");
+        let found = find_existing_ancestor(&deep);
+        assert_eq!(found, Some(tmp.path().to_path_buf()));
+    }
+
+    #[test]
+    fn test_find_existing_ancestor_returns_self_when_exists() {
+        let tmp = TempDir::new().unwrap();
+        let found = find_existing_ancestor(tmp.path());
+        assert_eq!(found, Some(tmp.path().to_path_buf()));
+    }
+
+    #[test]
+    fn test_find_existing_ancestor_none_for_relative_missing() {
+        // A relative path with no existing component returns None once pop()
+        // exhausts the path.
+        let p = std::path::Path::new("definitely_missing_dir_xyz123/sub/leaf");
+        let found = find_existing_ancestor(p);
+        assert!(found.is_none());
+    }
+
+    // ---- format_unix_permissions (via stat, unix only) ----
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_stat_reports_permission_string() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let config = make_config(tmp.path().to_str().unwrap());
+        let mgr = make_manager(config);
+
+        let path = tmp.path().join("perm.txt");
+        std::fs::write(&path, "x").unwrap();
+        // rw-r--r-- = 0o644
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let entry = mgr.stat(path.to_str().unwrap()).await.unwrap();
+        let perms = entry.permissions.unwrap();
+        assert_eq!(perms.len(), 9);
+        assert_eq!(perms, "rw-r--r--");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_format_unix_permissions_full_and_none() {
+        assert_eq!(format_unix_permissions(0o777), "rwxrwxrwx");
+        assert_eq!(format_unix_permissions(0o000), "---------");
+        assert_eq!(format_unix_permissions(0o755), "rwxr-xr-x");
+    }
 }

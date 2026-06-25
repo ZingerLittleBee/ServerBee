@@ -206,6 +206,78 @@ mod tests {
     }
 
     #[test]
+    fn test_load_empty_path_returns_none() {
+        // Empty path short-circuits before touching the filesystem.
+        assert!(GeoIpService::load("").is_none());
+    }
+
+    #[test]
+    fn test_load_existing_but_invalid_file_returns_none() {
+        use std::io::Write;
+
+        // A real file that exists but is not a valid MMDB exercises the
+        // `Reader::open_readfile` error branch (distinct from the
+        // "missing path" short-circuit above).
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("not-a-real.mmdb");
+        {
+            let mut f = std::fs::File::create(&path).expect("create file");
+            f.write_all(b"this is not a valid mmdb file at all")
+                .expect("write garbage");
+        }
+
+        let path_str = path.to_str().expect("utf8 path");
+        // File exists, so the existence check passes, but parsing fails -> None.
+        assert!(GeoIpService::load(path_str).is_none());
+    }
+
+    #[test]
+    fn test_load_from_bytes_empty_data() {
+        // Empty byte slice is also invalid MMDB input.
+        let result = GeoIpService::load_from_bytes(Vec::new(), "empty.mmdb".into());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_from_bytes_error_message_format() {
+        // The error message is wrapped with the documented prefix so callers
+        // (and the status endpoint) get a consistent, human-readable string.
+        let err = GeoIpService::load_from_bytes(vec![0xFF, 0xFF, 0xFF], "bad.mmdb".into())
+            .err()
+            .expect("invalid bytes must fail");
+        assert!(
+            err.starts_with("Invalid MMDB data:"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn test_dbip_filename_constant() {
+        // Guard the on-disk filename used by both download and status code.
+        assert_eq!(DBIP_FILENAME, "dbip-country-lite.mmdb");
+        assert!(DBIP_FILENAME.ends_with(".mmdb"));
+    }
+
+    #[test]
+    fn test_geo_lookup_struct_fields() {
+        // The public result struct is a plain data carrier; exercise both the
+        // populated and the empty representations the lookup paths return.
+        let populated = GeoLookup {
+            country_code: Some("US".to_string()),
+            region: Some("California".to_string()),
+        };
+        assert_eq!(populated.country_code.as_deref(), Some("US"));
+        assert_eq!(populated.region.as_deref(), Some("California"));
+
+        let empty = GeoLookup {
+            country_code: None,
+            region: None,
+        };
+        assert!(empty.country_code.is_none());
+        assert!(empty.region.is_none());
+    }
+
+    #[test]
     fn test_is_private_ipv4() {
         // Private ranges
         assert!(is_private(&"192.168.1.1".parse().unwrap()));
@@ -236,5 +308,46 @@ mod tests {
         // Global unicast
         assert!(!is_private(&"2001:db8::1".parse().unwrap()));
         assert!(!is_private(&"2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_private_ipv4_172_boundaries() {
+        // The 172.16.0.0/12 private block runs from 172.16.x to 172.31.x.
+        // Addresses just outside the block must be classified as public.
+        assert!(!is_private(&"172.15.255.255".parse().unwrap()));
+        assert!(!is_private(&"172.32.0.0".parse().unwrap()));
+        // And the very edges inside the block are private.
+        assert!(is_private(&"172.16.0.0".parse().unwrap()));
+        assert!(is_private(&"172.31.255.255".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_private_ipv4_link_local_boundaries() {
+        // 169.254.0.0/16 is link-local; 169.253.x and 169.255.x are not.
+        assert!(is_private(&"169.254.0.0".parse().unwrap()));
+        assert!(is_private(&"169.254.255.255".parse().unwrap()));
+        assert!(!is_private(&"169.253.255.255".parse().unwrap()));
+        assert!(!is_private(&"169.255.0.0".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_private_ipv6_ula_boundaries() {
+        // ULA is fc00::/7, i.e. fc00:: through fdff:: -> the first 7 bits match.
+        // fbff:: is just below the range, fe00:: is just above (and is the
+        // start of the fe80::/10 link-local check, which fe00:: does not match).
+        assert!(!is_private(&"fbff::1".parse().unwrap()));
+        assert!(is_private(&"fc00::1".parse().unwrap()));
+        assert!(is_private(&"fdff:ffff::1".parse().unwrap()));
+        // fe00:: is neither ULA (fc00::/7) nor link-local (fe80::/10).
+        assert!(!is_private(&"fe00::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_private_ipv6_link_local_boundaries() {
+        // Link-local is fe80::/10, i.e. fe80:: through febf::.
+        assert!(is_private(&"fe80::1".parse().unwrap()));
+        assert!(is_private(&"febf:ffff::1".parse().unwrap()));
+        // fec0:: is outside the /10 link-local range -> public.
+        assert!(!is_private(&"fec0::1".parse().unwrap()));
     }
 }

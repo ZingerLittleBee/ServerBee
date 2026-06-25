@@ -118,3 +118,66 @@ impl Collector {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod branch_tests {
+    use super::*;
+
+    #[test]
+    fn collect_with_temperature_disabled_yields_none() {
+        // When `enable_temperature` is false the collector skips the sensor read
+        // entirely and reports `temperature: None` (the disabled branch in
+        // `Collector::collect`).
+        let mut collector = Collector::new(false, false);
+        let report = collector.collect();
+        assert!(report.temperature.is_none());
+    }
+
+    #[test]
+    fn collect_with_gpu_enabled_does_not_panic() {
+        // With `enable_gpu` true the collector invokes `gpu::get_gpu_report()`.
+        // Without the `gpu` cargo feature (the default, and the case on CI hosts
+        // with no NVIDIA GPU) this returns None, but the branch must be reached
+        // and must not panic. When a report is present, validate its invariants.
+        let mut collector = Collector::new(false, true);
+        let report = collector.collect();
+        if let Some(gpu) = report.gpu {
+            assert_eq!(gpu.count as usize, gpu.detailed_info.len());
+            assert!(gpu.average_usage.is_finite());
+        }
+    }
+
+    #[test]
+    fn collect_report_field_invariants() {
+        // Cross-field invariants on a freshly collected report: connection and
+        // network counters are non-negative and load averages are finite.
+        let mut collector = Collector::new(false, false);
+        let report = collector.collect();
+        assert!(report.tcp_conn >= 0);
+        assert!(report.udp_conn >= 0);
+        assert!(report.net_in_transfer >= 0);
+        assert!(report.net_out_transfer >= 0);
+        assert!(report.net_in_speed >= 0);
+        assert!(report.net_out_speed >= 0);
+        assert!(report.load1 >= 0.0 && report.load1.is_finite());
+        assert!(report.load5 >= 0.0 && report.load5.is_finite());
+        assert!(report.load15 >= 0.0 && report.load15.is_finite());
+        assert!(report.swap_used >= 0);
+    }
+
+    #[test]
+    fn system_info_static_assembly_fields() {
+        // Assert the `system_info` assembly fields not covered by the existing
+        // populated-fields test (arch, agent version, protocol version, and the
+        // default-empty optional/ip/feature fields).
+        let collector = Collector::new(false, false);
+        let info = collector.system_info();
+        assert!(!info.cpu_arch.is_empty());
+        assert!(!info.agent_version.is_empty());
+        assert_eq!(info.protocol_version, 0);
+        assert!(info.ipv4.is_none());
+        assert!(info.ipv6.is_none());
+        assert!(info.features.is_empty());
+        assert!(info.swap_total >= 0);
+    }
+}

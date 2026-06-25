@@ -401,4 +401,55 @@ mod tests {
         assert!(entry.is_some());
         assert!(entry.unwrap().default_enabled);
     }
+
+    /// Exhaustively exercise `as_str`, `to_bit`, and `FromStr` for every
+    /// `CapabilityKey` variant so each match arm is covered and the three
+    /// representations stay mutually consistent (and aligned with the bit
+    /// constants and `ALL_CAPABILITIES` metadata table).
+    #[test]
+    fn capability_key_round_trips_every_variant() {
+        use CapabilityKey::*;
+        let table = [
+            (Terminal, "terminal", CAP_TERMINAL),
+            (Exec, "exec", CAP_EXEC),
+            (Upgrade, "upgrade", CAP_UPGRADE),
+            (PingIcmp, "ping_icmp", CAP_PING_ICMP),
+            (PingTcp, "ping_tcp", CAP_PING_TCP),
+            (PingHttp, "ping_http", CAP_PING_HTTP),
+            (File, "file", CAP_FILE),
+            (Docker, "docker", CAP_DOCKER),
+            (SecurityEvents, "security_events", CAP_SECURITY_EVENTS),
+            (FirewallBlock, "firewall_block", CAP_FIREWALL_BLOCK),
+            (IpQuality, "ip_quality", CAP_IP_QUALITY),
+        ];
+
+        for (key, name, bit) in table {
+            assert_eq!(key.as_str(), name, "as_str mismatch for {key:?}");
+            assert_eq!(key.to_bit(), bit, "to_bit mismatch for {key:?}");
+            assert_eq!(
+                name.parse::<CapabilityKey>(),
+                Ok(key),
+                "FromStr should round-trip {name}"
+            );
+            let meta = ALL_CAPABILITIES
+                .iter()
+                .find(|m| m.bit == bit)
+                .expect("every capability bit has a metadata entry");
+            assert_eq!(meta.key, name, "ALL_CAPABILITIES key mismatch for {key:?}");
+        }
+
+        // The table must cover the full valid mask: ORing every variant's bit
+        // reproduces CAP_VALID_MASK exactly (no variant missing, none stray).
+        let union = table.iter().fold(0u32, |acc, (_, _, bit)| acc | bit);
+        assert_eq!(union, CAP_VALID_MASK, "variants must span CAP_VALID_MASK");
+    }
+
+    #[test]
+    fn capability_key_from_str_error_echoes_unknown_input() {
+        let err = "bogus_cap".parse::<CapabilityKey>().unwrap_err();
+        assert!(
+            err.contains("bogus_cap"),
+            "error should name the unknown input, got: {err}"
+        );
+    }
 }

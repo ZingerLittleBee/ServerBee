@@ -323,6 +323,205 @@ mod tests {
     }
 
     #[test]
+    fn sweep_evicts_fully_aged_ips() {
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = SshDetector::with_clock(Duration::from_secs(60), 10, move || {
+            *nowc.lock().unwrap()
+        });
+        det.observe(attempt("root", "1.2.3.4", false));
+        det.observe(attempt("root", "5.6.7.8", false));
+        assert_eq!(det.per_ip.len(), 2);
+        // Advance past the window so every entry is older than cutoff.
+        *now.lock().unwrap() += Duration::from_secs(120);
+        det.sweep();
+        // Both IPs should be gone since their queues drained empty.
+        assert!(det.per_ip.is_empty());
+    }
+
+    #[test]
+    fn sweep_retains_ip_with_recent_entries() {
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = SshDetector::with_clock(Duration::from_secs(60), 10, move || {
+            *nowc.lock().unwrap()
+        });
+        det.observe(attempt("root", "1.2.3.4", false));
+        // Advance only a little — entry is still inside the window.
+        *now.lock().unwrap() += Duration::from_secs(5);
+        det.sweep();
+        // IP must be retained because its queue still has a fresh entry.
+        assert_eq!(det.per_ip.len(), 1);
+    }
+
+    #[test]
+    fn sweep_on_empty_detector_is_noop() {
+        let mut det = SshDetector::new(Duration::from_secs(60), 10);
+        det.sweep();
+        assert!(det.per_ip.is_empty());
+    }
+
+    #[test]
+    fn expiry_partially_drops_then_refills_to_fire() {
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = SshDetector::with_clock(Duration::from_secs(60), 3, move || {
+            *nowc.lock().unwrap()
+        });
+        // Two failures at t0.
+        det.observe(attempt("root", "1.2.3.4", false));
+        det.observe(attempt("root", "1.2.3.4", false));
+        // Advance past the window so the two t0 entries age out on next observe.
+        *now.lock().unwrap() += Duration::from_secs(90);
+        // This observe expires both old entries, leaving only itself → None.
+        assert!(matches!(
+            det.observe(attempt("root", "1.2.3.4", false)),
+            DetectorEmit::None
+        ));
+        // Two more recent ones now reach the threshold of 3.
+        det.observe(attempt("root", "1.2.3.4", false));
+        let last = det.observe(attempt("root", "1.2.3.4", false));
+        match last {
+            DetectorEmit::BruteForce { evidence, .. } => {
+                if let SecurityEvidence::SshBruteForce { failed_count, .. } = evidence {
+                    assert_eq!(failed_count, 3);
+                } else {
+                    panic!("wrong evidence variant");
+                }
+            }
+            _ => panic!("expected fire after refill"),
+        }
+    }
+
+    #[test]
+    fn started_and_ended_at_reflect_window_bounds() {
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = SshDetector::with_clock(Duration::from_secs(600), 3, move || {
+            *nowc.lock().unwrap()
+        });
+        let t0 = *now.lock().unwrap();
+        det.observe(attempt("root", "1.2.3.4", false)); // at t0
+        *now.lock().unwrap() += Duration::from_secs(10);
+        det.observe(attempt("root", "1.2.3.4", false)); // t0 + 10
+        *now.lock().unwrap() += Duration::from_secs(10);
+        let t_end = *now.lock().unwrap();
+        let last = det.observe(attempt("root", "1.2.3.4", false)); // t0 + 20
+        match last {
+            DetectorEmit::BruteForce {
+                started_at,
+                ended_at,
+                ..
+            } => {
+                // started_at is the oldest queued entry (t0); ended_at is now.
+                assert_eq!(started_at, t0);
+                assert_eq!(ended_at, t_end);
+            }
+            _ => panic!("expected fire"),
+        }
+    }
+
+    #[test]
+    fn login_password_method_maps_to_common() {
+        let mut det = SshDetector::new(Duration::from_secs(60), 10);
+        let a = AuthAttempt {
+            outcome: AuthOutcome::Success {
+                auth_method: AuthMethodHint::Password,
+            },
+            username: "u".into(),
+            source_ip: "1.1.1.1".into(),
+            source_port: Some(22),
+        };
+        match det.observe(a) {
+            DetectorEmit::Login { auth_method, .. } => {
+                assert!(matches!(auth_method, SshAuthMethod::Password));
+            }
+            _ => panic!("expected login"),
+        }
+    }
+
+    #[test]
+    fn login_keyboard_interactive_and_other_map_to_common() {
+        let mut det = SshDetector::new(Duration::from_secs(60), 10);
+        let ki = AuthAttempt {
+            outcome: AuthOutcome::Success {
+                auth_method: AuthMethodHint::KeyboardInteractive,
+            },
+            username: "u".into(),
+            source_ip: "1.1.1.1".into(),
+            source_port: None,
+        };
+        match det.observe(ki) {
+            DetectorEmit::Login { auth_method, .. } => {
+                assert!(matches!(auth_method, SshAuthMethod::KeyboardInteractive));
+            }
+            _ => panic!("expected login"),
+        }
+        let other = AuthAttempt {
+            outcome: AuthOutcome::Success {
+                auth_method: AuthMethodHint::Other,
+            },
+            username: "u".into(),
+            source_ip: "1.1.1.1".into(),
+            source_port: None,
+        };
+        match det.observe(other) {
+            DetectorEmit::Login { auth_method, .. } => {
+                assert!(matches!(auth_method, SshAuthMethod::Other));
+            }
+            _ => panic!("expected login"),
+        }
+    }
+
+    #[test]
+    fn sample_users_capped_at_five() {
+        // Six distinct usernames but sample_users must hold at most five.
+        let mut det = SshDetector::new(Duration::from_secs(60), 6);
+        for u in &["a", "b", "c", "d", "e"] {
+            det.observe(attempt(u, "1.2.3.4", false));
+        }
+        let last = det.observe(attempt("f", "1.2.3.4", false));
+        match last {
+            DetectorEmit::BruteForce { evidence, severity, .. } => {
+                assert_eq!(severity, Severity::Critical);
+                if let SecurityEvidence::SshBruteForce {
+                    sample_users,
+                    distinct_users,
+                    ..
+                } = evidence
+                {
+                    assert_eq!(distinct_users, 6);
+                    assert_eq!(sample_users.len(), 5);
+                    assert_eq!(sample_users, vec!["a", "b", "c", "d", "e"]);
+                } else {
+                    panic!("wrong evidence variant");
+                }
+            }
+            _ => panic!("expected fire"),
+        }
+    }
+
+    #[test]
+    fn distinct_ips_tracked_independently() {
+        // Failures on different IPs must not share a window.
+        let mut det = SshDetector::new(Duration::from_secs(60), 2);
+        assert!(matches!(
+            det.observe(attempt("root", "1.1.1.1", false)),
+            DetectorEmit::None
+        ));
+        // Different IP, still only one failure for it → None.
+        assert!(matches!(
+            det.observe(attempt("root", "2.2.2.2", false)),
+            DetectorEmit::None
+        ));
+        // Second failure on the first IP reaches threshold.
+        match det.observe(attempt("root", "1.1.1.1", false)) {
+            DetectorEmit::BruteForce { source_ip, .. } => assert_eq!(source_ip, "1.1.1.1"),
+            _ => panic!("expected fire on first IP"),
+        }
+    }
+
+    #[test]
     fn invalid_user_counted_in_evidence() {
         let mut det = SshDetector::new(Duration::from_secs(60), 3);
         let inv = AuthAttempt {

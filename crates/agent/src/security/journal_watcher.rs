@@ -435,4 +435,131 @@ mod tests {
             Some("Failed password for invalid user qa from 127.0.0.1 port 2850 ssh2")
         );
     }
+
+    #[test]
+    fn strip_syslog_prefix_no_message_separator_returns_none() {
+        // The `sshd[` token is present but the `]: ` message separator is
+        // missing, so the inner `rest.find("]: ")?` short-circuits to None.
+        assert_eq!(strip_syslog_prefix("host sshd[1234 truncated"), None);
+    }
+
+    #[test]
+    fn extract_message_returns_none_on_invalid_json() {
+        // `serde_json::from_str` fails -> `.ok()?` yields None.
+        assert_eq!(extract_message("not json at all"), None);
+        assert_eq!(extract_message("{unterminated"), None);
+    }
+
+    #[test]
+    fn extract_message_returns_none_when_field_absent() {
+        // Valid JSON object without a MESSAGE key -> `v.get("MESSAGE")?` None.
+        assert_eq!(extract_message(r#"{"OTHER":"value"}"#), None);
+    }
+
+    #[test]
+    fn extract_message_returns_none_for_non_string_non_array() {
+        // MESSAGE present but neither a string nor an array -> `_ => None`.
+        assert_eq!(extract_message(r#"{"MESSAGE":42}"#), None);
+        assert_eq!(extract_message(r#"{"MESSAGE":true}"#), None);
+        assert_eq!(extract_message(r#"{"MESSAGE":null}"#), None);
+    }
+
+    #[test]
+    fn extract_message_returns_none_for_array_with_non_u8_element() {
+        // Array element that is not a u64 number -> `b.as_u64()?` None.
+        assert_eq!(extract_message(r#"{"MESSAGE":[72,"x",73]}"#), None);
+    }
+
+    #[test]
+    fn extract_message_returns_none_for_array_invalid_utf8() {
+        // Bytes that are not valid UTF-8 -> `String::from_utf8(..).ok()` None.
+        // 0xFF is never a valid standalone UTF-8 byte.
+        assert_eq!(extract_message(r#"{"MESSAGE":[255,254,253]}"#), None);
+    }
+
+    #[test]
+    fn extract_message_decodes_string_field() {
+        // String branch returns the raw message verbatim.
+        assert_eq!(
+            extract_message(r#"{"MESSAGE":"hello world"}"#).as_deref(),
+            Some("hello world")
+        );
+    }
+
+    #[test]
+    fn extract_blocked_ip_handles_nf_log() {
+        // The `nf_log` keyword branch is exercised here.
+        let msg = "nf_log: drop IN=eth0 SRC=8.8.4.4 DST=10.0.0.1 PROTO=UDP";
+        assert_eq!(extract_blocked_ip(msg).as_deref(), Some("8.8.4.4"));
+    }
+
+    #[test]
+    fn extract_blocked_ip_src_at_end_of_line() {
+        // `SRC=` is the last token with no trailing whitespace, exercising the
+        // `unwrap_or(rest.len())` fallback for the end index.
+        let msg = "[UFW BLOCK] IN=eth0 DST=10.0.0.1 SRC=192.0.2.123";
+        assert_eq!(extract_blocked_ip(msg).as_deref(), Some("192.0.2.123"));
+    }
+
+    #[test]
+    fn extract_blocked_ip_empty_src_returns_none() {
+        // `SRC=` immediately followed by whitespace yields an empty IP slice,
+        // hitting the `if ip.is_empty()` -> None branch.
+        let msg = "[UFW BLOCK] IN=eth0 SRC= DST=10.0.0.1";
+        assert!(extract_blocked_ip(msg).is_none());
+    }
+
+    #[tokio::test]
+    async fn drain_journalctl_json_stops_when_receiver_dropped() {
+        // Dropping the receiver makes `out_tx.send(..).await` fail, which must
+        // break the loop early but still return Ok(()).
+        let input = concat!(
+            r#"{"MESSAGE":"Failed password for root from 1.2.3.4 port 22 ssh2"}"#,
+            "\n",
+            r#"{"MESSAGE":"Failed password for root from 5.6.7.8 port 22 ssh2"}"#,
+            "\n",
+        );
+        let (tx, rx) = mpsc::channel::<AuthAttempt>(1);
+        drop(rx);
+        let reader = BufReader::new(input.as_bytes());
+        // Must not error even though the send side fails.
+        drain_journalctl_json(reader, tx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn drain_kernel_json_stops_when_receiver_dropped() {
+        let input = concat!(
+            r#"{"MESSAGE":"[UFW BLOCK] IN=eth0 SRC=203.0.113.5 DST=10.0.0.1"}"#,
+            "\n",
+            r#"{"MESSAGE":"iptables denied: SRC=198.51.100.7 DST=10.0.0.1"}"#,
+            "\n",
+        );
+        let (tx, rx) = mpsc::channel::<String>(1);
+        drop(rx);
+        let reader = BufReader::new(input.as_bytes());
+        drain_kernel_json(reader, tx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn drain_auth_log_returns_on_empty_input() {
+        // Empty reader: the first `read_line` returns 0 -> early Ok(()).
+        let (tx, mut rx) = mpsc::channel::<AuthAttempt>(4);
+        drain_auth_log(BufReader::new(&b""[..]), tx).await.unwrap();
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn drain_auth_log_stops_when_receiver_dropped() {
+        // A matching sshd line whose send fails (receiver dropped) breaks the
+        // loop via the `out_tx.send(..).is_err()` branch, returning Ok(()).
+        let input = concat!(
+            "Mar 12 13:14:16 host sshd[1234]: Failed password for root from 1.2.3.4 port 22 ssh2\n",
+            "Mar 12 13:14:18 host sshd[1235]: Failed password for root from 5.6.7.8 port 22 ssh2\n",
+        );
+        let (tx, rx) = mpsc::channel::<AuthAttempt>(1);
+        drop(rx);
+        drain_auth_log(BufReader::new(input.as_bytes()), tx)
+            .await
+            .unwrap();
+    }
 }

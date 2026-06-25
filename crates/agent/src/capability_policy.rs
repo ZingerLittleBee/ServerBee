@@ -228,4 +228,78 @@ mod tests {
             .expect_err("unknown config capability key should fail");
         assert!(err.to_string().contains("unknown capability"));
     }
+
+    #[test]
+    fn test_config_file_unknown_deny_capability_key_is_rejected() {
+        // The deny list is parsed by the same parse_list closure; a bad key
+        // there must also fail fast.
+        let config = CapabilitiesConfig {
+            allow: vec![],
+            deny: vec!["not_a_cap".to_string()],
+            ..Default::default()
+        };
+        let err = compute_local_capabilities(&config, &no_cli())
+            .expect_err("unknown deny capability key should fail");
+        assert!(err.to_string().contains("unknown capability"));
+    }
+
+    #[test]
+    fn test_parse_capability_args_rejects_missing_deny_cap_value() {
+        let error = parse_capability_args(vec![
+            "serverbee-agent".to_string(),
+            "--deny-cap".to_string(),
+        ])
+        .expect_err("missing deny value should fail");
+        assert!(error.to_string().contains("missing value for --deny-cap"));
+    }
+
+    #[test]
+    fn test_parse_capability_args_rejects_deny_cap_value_that_looks_like_flag() {
+        // A `--deny-cap` immediately followed by another `--flag` means the
+        // value is missing (the next token starts with `--`).
+        let error = parse_capability_args(vec![
+            "--deny-cap".to_string(),
+            "--allow-cap".to_string(),
+        ])
+        .expect_err("flag-shaped deny value should fail");
+        assert!(error.to_string().contains("missing value for --deny-cap"));
+    }
+
+    #[test]
+    fn test_parse_capability_args_rejects_allow_cap_value_that_looks_like_flag() {
+        let error = parse_capability_args(vec![
+            "--allow-cap".to_string(),
+            "--deny-cap".to_string(),
+        ])
+        .expect_err("flag-shaped allow value should fail");
+        assert!(error.to_string().contains("missing value for --allow-cap"));
+    }
+
+    #[test]
+    fn test_parse_capability_args_rejects_unknown_deny_cap_like_flag() {
+        let error = parse_capability_args(vec![
+            "--deny-caps".to_string(),
+            "file".to_string(),
+        ])
+        .expect_err("unknown deny-cap-like flag should fail");
+        assert!(error.to_string().contains("unknown capability flag"));
+    }
+
+    #[test]
+    fn test_parse_capability_args_rejects_unknown_deny_capability_name() {
+        let error = parse_capability_args(vec![
+            "--deny-cap".to_string(),
+            "nope".to_string(),
+        ])
+        .expect_err("unknown deny capability name should fail");
+        assert!(error.to_string().contains("unknown capability"));
+    }
+
+    #[test]
+    fn test_parse_capability_args_empty_yields_no_overrides() {
+        let overrides = parse_capability_args(Vec::<String>::new())
+            .expect("empty args should parse");
+        assert!(overrides.allow_caps.is_empty());
+        assert!(overrides.deny_caps.is_empty());
+    }
 }

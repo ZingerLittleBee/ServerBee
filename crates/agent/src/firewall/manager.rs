@@ -369,4 +369,285 @@ mod tests {
         assert!(!g.contains_key("orphan"));
         assert!(g.contains_key("new"));
     }
+
+    // ----- additional executor mocks -----
+
+    /// Fails on the first resource-bootstrap call (`add table`), so
+    /// `ensure_resources` / `ensure_ready` returns Err for every caller.
+    struct FailEnsure;
+    #[async_trait]
+    impl NftExecutor for FailEnsure {
+        async fn run(&self, _args: &[&str], op: NftOp) -> Result<(), NftError> {
+            if matches!(op, NftOp::AddTable) {
+                Err(NftError::PermissionDenied)
+            } else {
+                Ok(())
+            }
+        }
+        async fn list_json(&self, _: &[&str]) -> Result<String, NftError> {
+            Ok(r#"{"nftables":[]}"#.into())
+        }
+    }
+
+    /// Fails only on element deletion; everything else (bootstrap, add) is OK.
+    struct FailDelete;
+    #[async_trait]
+    impl NftExecutor for FailDelete {
+        async fn run(&self, _args: &[&str], op: NftOp) -> Result<(), NftError> {
+            if matches!(op, NftOp::DeleteElement) {
+                Err(NftError::KernelMissing)
+            } else {
+                Ok(())
+            }
+        }
+        async fn list_json(&self, _: &[&str]) -> Result<String, NftError> {
+            Ok(r#"{"nftables":[]}"#.into())
+        }
+    }
+
+    /// Fails on `delete table` (the last step of `unconditional_wipe`), so
+    /// `handle_reset` returns a failure ack.
+    struct FailWipe;
+    #[async_trait]
+    impl NftExecutor for FailWipe {
+        async fn run(&self, _args: &[&str], op: NftOp) -> Result<(), NftError> {
+            if matches!(op, NftOp::DeleteTable) {
+                Err(NftError::PermissionDenied)
+            } else {
+                Ok(())
+            }
+        }
+        async fn list_json(&self, _: &[&str]) -> Result<String, NftError> {
+            Ok(r#"{"nftables":[]}"#.into())
+        }
+    }
+
+    // ----- handle() dispatch -----
+
+    #[tokio::test]
+    async fn handle_dispatches_add() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        let out = mgr
+            .handle(ServerMessage::BlocklistAdd {
+                entry: entry("d1", "1.2.3.4/32", 4),
+            })
+            .await;
+        assert!(matches!(out, Some(AgentMessage::BlocklistAck { .. })));
+    }
+
+    #[tokio::test]
+    async fn handle_dispatches_remove() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        let out = mgr
+            .handle(ServerMessage::BlocklistRemove { id: "nope".into() })
+            .await;
+        assert!(matches!(out, Some(AgentMessage::BlocklistAck { .. })));
+    }
+
+    #[tokio::test]
+    async fn handle_dispatches_sync() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        let out = mgr
+            .handle(ServerMessage::BlocklistSync {
+                entries: vec![entry("s1", "1.1.1.1/32", 4)],
+            })
+            .await;
+        assert!(matches!(out, Some(AgentMessage::BlocklistAck { .. })));
+    }
+
+    #[tokio::test]
+    async fn handle_dispatches_reset() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        let out = mgr.handle(ServerMessage::BlocklistReset).await;
+        assert!(matches!(
+            out,
+            Some(AgentMessage::BlocklistResetAck { ok: true, .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn handle_ignores_unrelated_message() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        // Any non-blocklist ServerMessage takes the `_ => None` arm.
+        let out = mgr.handle(ServerMessage::Ping).await;
+        assert!(out.is_none());
+    }
+
+    // ----- reset failure path -----
+
+    #[tokio::test]
+    async fn reset_failure_returns_not_ok_ack() {
+        let mgr = FirewallManager::new(Arc::new(FailWipe));
+        // Seed some desired state to confirm it is NOT cleared on failure.
+        mgr.desired.lock().await.insert(
+            "keep".into(),
+            entry("keep", "8.8.8.8/32", 4),
+        );
+        let ack = mgr.handle_reset().await;
+        match ack {
+            AgentMessage::BlocklistResetAck { ok, reason } => {
+                assert!(!ok);
+                assert!(reason.is_some());
+            }
+            _ => panic!("expected reset ack"),
+        }
+        // desired untouched because wipe failed.
+        assert!(mgr.desired.lock().await.contains_key("keep"));
+    }
+
+    // ----- ensure_ready failure surfaces in add & sync -----
+
+    #[tokio::test]
+    async fn add_fails_when_resources_cannot_bootstrap() {
+        let mgr = FirewallManager::new(Arc::new(FailEnsure));
+        let ack = mgr.handle_add(entry("b1", "1.2.3.4/32", 4)).await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                assert_eq!(results[0].state, BlocklistEntryState::Failed);
+                assert!(results[0].reason.is_some());
+            }
+            _ => panic!(),
+        }
+        assert!(!*mgr.nft_ready.lock().await);
+    }
+
+    #[tokio::test]
+    async fn sync_fails_all_entries_when_resources_cannot_bootstrap() {
+        let mgr = FirewallManager::new(Arc::new(FailEnsure));
+        let entries = vec![entry("a", "1.1.1.1/32", 4), entry("b", "2.2.2.2/32", 4)];
+        let ack = mgr.handle_sync(entries).await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                assert_eq!(results.len(), 2);
+                assert!(
+                    results
+                        .iter()
+                        .all(|r| r.state == BlocklistEntryState::Failed)
+                );
+            }
+            _ => panic!(),
+        }
+    }
+
+    // ----- handle_remove success + failure -----
+
+    #[tokio::test]
+    async fn remove_known_id_acks_absent_and_drops_desired() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        mgr.handle_add(entry("b1", "1.2.3.4/32", 4)).await;
+        assert!(mgr.desired.lock().await.contains_key("b1"));
+        let ack = mgr.handle_remove("b1".into()).await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                assert_eq!(results[0].state, BlocklistEntryState::Absent);
+            }
+            _ => panic!(),
+        }
+        assert!(!mgr.desired.lock().await.contains_key("b1"));
+    }
+
+    #[tokio::test]
+    async fn remove_known_id_failed_delete_keeps_desired() {
+        let mgr = FirewallManager::new(Arc::new(FailDelete));
+        // Seed desired directly so the delete path is reached. nft_ready stays
+        // false but handle_remove does not call ensure_ready.
+        mgr.desired
+            .lock()
+            .await
+            .insert("b1".into(), entry("b1", "1.2.3.4/32", 4));
+        let ack = mgr.handle_remove("b1".into()).await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                assert_eq!(results[0].state, BlocklistEntryState::Failed);
+                assert!(results[0].reason.is_some());
+            }
+            _ => panic!(),
+        }
+        // Kept for retry because the kernel delete failed.
+        assert!(mgr.desired.lock().await.contains_key("b1"));
+    }
+
+    // ----- sync: guardrail-blocked incoming entry -----
+
+    #[tokio::test]
+    async fn sync_marks_guardrail_blocked_entry_failed() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        let ack = mgr
+            .handle_sync(vec![
+                entry("ok", "1.1.1.1/32", 4),
+                entry("bad", "127.0.0.1/32", 4),
+            ])
+            .await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                let bad = results.iter().find(|r| r.id == "bad").unwrap();
+                assert_eq!(bad.state, BlocklistEntryState::Failed);
+                assert!(bad.reason.as_ref().unwrap().contains("guardrail"));
+                let ok = results.iter().find(|r| r.id == "ok").unwrap();
+                assert_eq!(ok.state, BlocklistEntryState::Present);
+            }
+            _ => panic!(),
+        }
+        let g = mgr.desired.lock().await;
+        assert!(!g.contains_key("bad"));
+        assert!(g.contains_key("ok"));
+    }
+
+    // ----- sync: orphan deletion failure keeps desired -----
+
+    #[tokio::test]
+    async fn sync_orphan_delete_failure_keeps_desired_for_retry() {
+        let mgr = FirewallManager::new(Arc::new(FailDelete));
+        // Bootstrap succeeds (FailDelete only fails DeleteElement), so seed an
+        // entry via desired directly, mark ready, then sync it away.
+        *mgr.nft_ready.lock().await = true;
+        mgr.desired
+            .lock()
+            .await
+            .insert("orphan".into(), entry("orphan", "9.9.9.9/32", 4));
+        let ack = mgr.handle_sync(vec![entry("new", "1.1.1.1/32", 4)]).await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                let orphan = results.iter().find(|r| r.id == "orphan").unwrap();
+                assert_eq!(orphan.state, BlocklistEntryState::Failed);
+            }
+            _ => panic!(),
+        }
+        // Orphan kept because its kernel delete failed; new entry present.
+        let g = mgr.desired.lock().await;
+        assert!(g.contains_key("orphan"));
+        assert!(g.contains_key("new"));
+    }
+
+    // ----- set_external_ip drives the guardrail in add -----
+
+    #[tokio::test]
+    async fn add_blocked_by_own_external_ip_after_set() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        mgr.set_external_ip(Some("203.0.113.7".parse().unwrap())).await;
+        let ack = mgr.handle_add(entry("b1", "203.0.113.7/32", 4)).await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                assert_eq!(results[0].state, BlocklistEntryState::Failed);
+                assert!(results[0].reason.as_ref().unwrap().contains("guardrail"));
+            }
+            _ => panic!(),
+        }
+        assert!(!mgr.desired.lock().await.contains_key("b1"));
+    }
+
+    // ----- ipv6 add round-trips through manager -----
+
+    #[tokio::test]
+    async fn add_ipv6_entry_succeeds() {
+        let mgr = FirewallManager::new(Arc::new(OkExec));
+        let ack = mgr.handle_add(entry("v6", "2001:db8::/32", 6)).await;
+        match ack {
+            AgentMessage::BlocklistAck { results } => {
+                assert_eq!(results[0].state, BlocklistEntryState::Present);
+            }
+            _ => panic!(),
+        }
+        assert!(mgr.desired.lock().await.contains_key("v6"));
+    }
 }

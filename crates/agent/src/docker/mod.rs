@@ -411,3 +411,259 @@ impl DockerManager {
             .await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serverbee_common::constants::{CAP_DEFAULT, CAP_TERMINAL};
+
+    /// Build a DockerManager pointing at a bogus HTTP endpoint.
+    ///
+    /// `Docker::connect_with_http` only constructs the transport; it performs no
+    /// network I/O and never touches a daemon socket, so this is deterministic and
+    /// cross-platform. The returned manager is only used to exercise in-memory state
+    /// handlers — no method that actually hits the daemon is called.
+    fn make_manager(caps: u32) -> (DockerManager, mpsc::Receiver<AgentMessage>) {
+        let docker = bollard::Docker::connect_with_http(
+            "http://127.0.0.1:1",
+            1,
+            bollard::API_DEFAULT_VERSION,
+        )
+        .expect("connect_with_http never connects, only builds a client");
+        let (tx, rx) = mpsc::channel(16);
+        let manager = DockerManager {
+            docker,
+            agent_tx: tx,
+            capabilities: Arc::new(AtomicU32::new(caps)),
+            stats_interval: None,
+            log_sessions: HashMap::new(),
+            event_stream_handle: None,
+            running_container_ids: Vec::new(),
+        };
+        (manager, rx)
+    }
+
+    #[test]
+    fn is_capable_true_when_docker_bit_set() {
+        // CAP_DOCKER bit present -> capability check passes
+        let (manager, _rx) = make_manager(CAP_DOCKER);
+        assert!(manager.is_capable());
+    }
+
+    #[test]
+    fn is_capable_false_when_no_caps() {
+        // No capability bits set -> docker is not capable
+        let (manager, _rx) = make_manager(0);
+        assert!(!manager.is_capable());
+    }
+
+    #[test]
+    fn is_capable_false_when_only_unrelated_caps() {
+        // A different capability set (terminal only) does not enable docker
+        let (manager, _rx) = make_manager(CAP_TERMINAL);
+        assert!(!manager.is_capable());
+    }
+
+    #[test]
+    fn is_capable_false_when_default_caps_excludes_docker() {
+        // CAP_DEFAULT does not include docker, so the docker manager stays disabled
+        let (manager, _rx) = make_manager(CAP_DEFAULT);
+        assert!(!manager.is_capable());
+    }
+
+    #[test]
+    fn is_capable_reflects_atomic_updates() {
+        // Toggling the shared atomic flips the capability result without rebuilding
+        let (manager, _rx) = make_manager(0);
+        assert!(!manager.is_capable());
+        manager.capabilities.store(CAP_DOCKER, Ordering::SeqCst);
+        assert!(manager.is_capable());
+    }
+
+    #[tokio::test]
+    async fn start_stats_sets_interval() {
+        // Starting stats with a positive interval arms the polling timer
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        assert!(manager.stats_interval.is_none());
+        manager.handle_start_stats(5);
+        assert!(manager.stats_interval.is_some());
+    }
+
+    #[tokio::test]
+    async fn start_stats_clamps_zero_interval_to_one() {
+        // An interval of 0 is clamped to >= 1s (still produces a valid interval)
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager.handle_start_stats(0);
+        assert!(manager.stats_interval.is_some());
+    }
+
+    #[tokio::test]
+    async fn stop_stats_clears_interval() {
+        // Stopping stats disarms a previously-armed polling timer
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager.handle_start_stats(2);
+        assert!(manager.stats_interval.is_some());
+        manager.handle_stop_stats();
+        assert!(manager.stats_interval.is_none());
+    }
+
+    #[tokio::test]
+    async fn logs_stop_aborts_known_session() {
+        // Stopping a tracked log session removes it from the session map
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        manager.log_sessions.insert("sess-1".to_string(), handle);
+        assert_eq!(manager.log_sessions.len(), 1);
+        manager.handle_logs_stop("sess-1");
+        assert!(manager.log_sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn logs_stop_is_noop_for_unknown_session() {
+        // Stopping an unknown session id leaves existing sessions untouched
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        manager.log_sessions.insert("keep".to_string(), handle);
+        manager.handle_logs_stop("missing");
+        assert_eq!(manager.log_sessions.len(), 1);
+        assert!(manager.log_sessions.contains_key("keep"));
+    }
+
+    #[tokio::test]
+    async fn events_stop_clears_handle() {
+        // Stopping the event stream clears the stored handle
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        manager.event_stream_handle = Some(handle);
+        manager.handle_events_stop();
+        assert!(manager.event_stream_handle.is_none());
+    }
+
+    #[tokio::test]
+    async fn events_stop_is_noop_when_no_stream() {
+        // Stopping with no active stream is a safe no-op
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        assert!(manager.event_stream_handle.is_none());
+        manager.handle_events_stop();
+        assert!(manager.event_stream_handle.is_none());
+    }
+
+    #[tokio::test]
+    async fn cleanup_drains_sessions_and_clears_handles() {
+        // cleanup() drains all log sessions, the event handle, and the stats interval
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager
+            .log_sessions
+            .insert("a".to_string(), tokio::spawn(async { std::future::pending::<()>().await }));
+        manager
+            .log_sessions
+            .insert("b".to_string(), tokio::spawn(async { std::future::pending::<()>().await }));
+        manager.event_stream_handle = Some(tokio::spawn(async { std::future::pending::<()>().await }));
+        manager.handle_start_stats(3);
+
+        manager.cleanup();
+
+        assert!(manager.log_sessions.is_empty());
+        assert!(manager.event_stream_handle.is_none());
+        assert!(manager.stats_interval.is_none());
+    }
+
+    #[tokio::test]
+    async fn cleanup_is_idempotent_on_empty_state() {
+        // Calling cleanup() on an already-empty manager does not panic and stays empty
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager.cleanup();
+        assert!(manager.log_sessions.is_empty());
+        assert!(manager.event_stream_handle.is_none());
+        assert!(manager.stats_interval.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_server_message_ignored_when_capability_disabled() {
+        // With docker capability off, a stats-start message is dropped without arming the timer
+        let (mut manager, _rx) = make_manager(0);
+        manager
+            .handle_server_message(ServerMessage::DockerStartStats { interval_secs: 5 })
+            .await
+            .expect("disabled capability returns Ok without daemon access");
+        assert!(manager.stats_interval.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_server_message_dispatches_start_stats_when_capable() {
+        // A capable manager routes DockerStartStats to the in-memory interval handler
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager
+            .handle_server_message(ServerMessage::DockerStartStats { interval_secs: 4 })
+            .await
+            .expect("start stats does not touch the daemon");
+        assert!(manager.stats_interval.is_some());
+    }
+
+    #[tokio::test]
+    async fn handle_server_message_dispatches_stop_stats_when_capable() {
+        // DockerStopStats clears a previously-armed interval via the dispatcher
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager.handle_start_stats(2);
+        manager
+            .handle_server_message(ServerMessage::DockerStopStats)
+            .await
+            .expect("stop stats does not touch the daemon");
+        assert!(manager.stats_interval.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_server_message_dispatches_logs_stop_when_capable() {
+        // DockerLogsStop routes through the dispatcher and removes the named session
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager
+            .log_sessions
+            .insert("s9".to_string(), tokio::spawn(async { std::future::pending::<()>().await }));
+        manager
+            .handle_server_message(ServerMessage::DockerLogsStop {
+                session_id: "s9".to_string(),
+            })
+            .await
+            .expect("logs stop does not touch the daemon");
+        assert!(manager.log_sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_server_message_ignores_non_docker_variant() {
+        // A non-docker message hits the catch-all branch and changes no state
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+        manager
+            .handle_server_message(ServerMessage::Ack {
+                msg_id: "x".to_string(),
+            })
+            .await
+            .expect("unknown variant is ignored");
+        assert!(manager.stats_interval.is_none());
+        assert!(manager.log_sessions.is_empty());
+        assert!(manager.event_stream_handle.is_none());
+    }
+
+    #[tokio::test]
+    async fn notify_unavailable_sends_message_with_msg_id() {
+        // notify_unavailable forwards a DockerUnavailable carrying the provided msg_id
+        let (manager, mut rx) = make_manager(CAP_DOCKER);
+        manager.notify_unavailable(Some("req-7".to_string())).await;
+        match rx.recv().await {
+            Some(AgentMessage::DockerUnavailable { msg_id }) => {
+                assert_eq!(msg_id, Some("req-7".to_string()));
+            }
+            other => panic!("expected DockerUnavailable, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn notify_unavailable_sends_message_with_none_id() {
+        // notify_unavailable also handles the None msg_id branch (stats-poll path)
+        let (manager, mut rx) = make_manager(CAP_DOCKER);
+        manager.notify_unavailable(None).await;
+        match rx.recv().await {
+            Some(AgentMessage::DockerUnavailable { msg_id }) => assert!(msg_id.is_none()),
+            other => panic!("expected DockerUnavailable, got {other:?}"),
+        }
+    }
+}

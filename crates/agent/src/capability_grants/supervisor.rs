@@ -191,4 +191,117 @@ mod tests {
             .expect("supervisor should stop promptly after the receiver is dropped")
             .expect("supervisor task should not panic");
     }
+
+    #[test]
+    fn granted_event_carries_grant_metadata() {
+        // Exercise the `rec.map(...)`/`and_then(...)` arms of the Granted event
+        // by giving the record a granted_by and a reason. The earlier
+        // `newly_active_emits_granted` test uses reason: None, leaving the
+        // Some() branch uncovered.
+        let mut store = CapabilityGrantStore::default();
+        store.upsert(
+            GrantRecord {
+                cap: "terminal".into(),
+                granted_at: 0,
+                expires_at: 1000,
+                granted_by: "alice".into(),
+                reason: Some("incident-42".into()),
+            },
+            0,
+        );
+        let (_eff, _active, _temp, changes) = evaluate(&store, CAP_DEFAULT, 0, 0);
+        assert_eq!(changes.len(), 1);
+        let ev = &changes[0];
+        assert_eq!(ev.action, CapabilityChangeAction::Granted);
+        assert_eq!(ev.expires_at, Some(1000));
+        assert_eq!(ev.granted_by.as_deref(), Some("alice"));
+        assert_eq!(ev.reason.as_deref(), Some("incident-42"));
+    }
+
+    #[test]
+    fn evaluate_no_grants_yields_base_effective() {
+        // Empty store, no previous active bits: effective == base, no changes.
+        let store = CapabilityGrantStore::default();
+        let (eff, active, temp, changes) = evaluate(&store, CAP_DEFAULT, 0, 0);
+        assert_eq!(eff, CAP_DEFAULT);
+        assert_eq!(active, 0);
+        assert!(temp.is_empty());
+        assert!(changes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn supervisor_emits_capabilities_changed_on_new_grant() {
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_TERMINAL};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("capability_grants.json");
+
+        // Seed an active grant for a cap that is OFF in CAP_DEFAULT (terminal)
+        // BEFORE starting the supervisor would seed it as prev_active. So instead
+        // we start with an empty file, then write the grant after start so the
+        // supervisor observes a transition and emits CapabilitiesChanged.
+        let store = CapabilityGrantStore::load(&path);
+        store.flush().unwrap();
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let caps = Arc::new(AtomicU32::new(CAP_DEFAULT));
+        let caps_clone = Arc::clone(&caps);
+        let handle = tokio::spawn(run_grant_supervisor(
+            path.clone(),
+            CAP_DEFAULT,
+            caps_clone,
+            tx,
+            std::time::Duration::from_millis(10),
+        ));
+
+        // Let the supervisor seed `prev_active` from the still-empty file before
+        // we write the grant; otherwise the grant could land first and be folded
+        // into the seed, suppressing the Granted change event (test would race).
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+
+        // Write a grant that turns terminal ON far in the future.
+        let mut store = CapabilityGrantStore::load(&path);
+        store.upsert(
+            GrantRecord {
+                cap: "terminal".into(),
+                granted_at: 0,
+                expires_at: i64::MAX,
+                granted_by: "root".into(),
+                reason: Some("debug".into()),
+            },
+            0,
+        );
+        store.flush().unwrap();
+
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
+            .await
+            .expect("supervisor should emit within timeout")
+            .expect("channel should deliver a message");
+
+        match msg {
+            AgentMessage::CapabilitiesChanged {
+                capabilities,
+                temporary,
+                changes,
+                ..
+            } => {
+                assert_eq!(capabilities, CAP_DEFAULT | CAP_TERMINAL);
+                assert_eq!(caps.load(Ordering::SeqCst), CAP_DEFAULT | CAP_TERMINAL);
+                assert_eq!(temporary.len(), 1);
+                assert_eq!(temporary[0].cap, "terminal");
+                assert_eq!(changes.len(), 1);
+                assert_eq!(changes[0].action, CapabilityChangeAction::Granted);
+            }
+            other => panic!("unexpected message: {other:?}"),
+        }
+
+        // Drop the receiver so the supervisor stops, then await it.
+        drop(rx);
+        tokio::time::timeout(std::time::Duration::from_secs(2), handle)
+            .await
+            .expect("supervisor should stop after receiver dropped")
+            .expect("supervisor task should not panic");
+    }
 }

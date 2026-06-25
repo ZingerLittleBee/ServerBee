@@ -95,4 +95,53 @@ mod tests {
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 64);
     }
+
+    #[test]
+    fn fingerprint_distinct_inputs_yield_distinct_hashes() {
+        // Different machine ids must not collide.
+        let a = fingerprint_from_machine_id("host-a");
+        let b = fingerprint_from_machine_id("host-b");
+        assert_ne!(a, b);
+        assert_eq!(a.len(), 64);
+        assert_eq!(b.len(), 64);
+    }
+
+    #[test]
+    fn fingerprint_of_empty_input_is_sha256_of_empty() {
+        // The helper does not special-case empty input; it hashes verbatim.
+        // (The empty-id guard lives in read_machine_id, not here.)
+        let expected = hex::encode(Sha256::digest(b""));
+        assert_eq!(fingerprint_from_machine_id(""), expected);
+        assert_eq!(fingerprint_from_machine_id("").len(), 64);
+    }
+
+    #[test]
+    fn fingerprint_matches_known_vector() {
+        // Lock in a known SHA-256 hex to guard against accidental algorithm
+        // changes. echo -n "abc" | sha256sum.
+        let known = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        assert_eq!(fingerprint_from_machine_id("abc"), known);
+    }
+
+    #[test]
+    fn generate_is_deterministic_across_calls() {
+        // On any host, generate() must be stable: either consistently empty
+        // (no machine-id) or a consistent 64-hex digest.
+        let first = generate();
+        let second = generate();
+        assert_eq!(first, second);
+    }
+
+    /// On macOS the test runner can read the platform UUID via `ioreg`, so the
+    /// `read_machine_id` arm and the non-empty `generate` branch are exercised.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_read_machine_id_yields_non_empty_fingerprint() {
+        if let Some(id) = read_machine_id() {
+            assert!(!id.is_empty());
+            let fp = generate();
+            assert_eq!(fp.len(), 64);
+            assert_eq!(fp, fingerprint_from_machine_id(&id));
+        }
+    }
 }

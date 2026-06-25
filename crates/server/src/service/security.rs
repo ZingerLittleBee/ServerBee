@@ -421,6 +421,28 @@ mod tests {
         }
     }
 
+    fn port_scan_payload(ip: &str, distinct_ports: u32) -> SecurityEventPayload {
+        SecurityEventPayload {
+            event_type: SecurityEventType::PortScan,
+            severity: Severity::Medium,
+            source_ip: ip.to_string(),
+            source_port: Some(443),
+            username: None,
+            started_at: 1_700_000_000,
+            ended_at: 1_700_000_030,
+            first_seen: false,
+            detector_source: DetectorSource::Conntrack,
+            evidence: SecurityEvidence::PortScan {
+                distinct_ports,
+                sample_ports: vec![22, 80, 443],
+                total_attempts: distinct_ports * 2,
+                window_seconds: 30,
+                threshold: 5,
+                blocked_count: 0,
+            },
+        }
+    }
+
     fn ssh_login_payload(ip: &str, user: &str, first_seen: bool) -> SecurityEventPayload {
         SecurityEventPayload {
             event_type: SecurityEventType::SshLogin,
@@ -705,5 +727,536 @@ mod tests {
         assert!(!ip_in_any_cidr("11.0.0.5", &["10.0.0.0/8".into()]));
         assert!(ip_in_any_cidr("192.168.1.1", &["192.168.1.1".into()]));
         assert!(!ip_in_any_cidr("not-an-ip", &["10.0.0.0/8".into()]));
+    }
+
+    /// Insert an active maintenance window (raw entity) covering all servers.
+    async fn insert_maintenance_all_servers(db: &DatabaseConnection) {
+        let now = Utc::now();
+        crate::entity::maintenance::ActiveModel {
+            id: Set("maint-1".to_string()),
+            title: Set("Window".to_string()),
+            description: Set(None),
+            // Window straddles `now` so is_in_maintenance returns true.
+            start_at: Set(now - chrono::Duration::hours(1)),
+            end_at: Set(now + chrono::Duration::hours(1)),
+            server_ids_json: Set(None),
+            is_public: Set(false),
+            active: Set(true),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(db)
+        .await
+        .expect("insert maintenance");
+    }
+
+    #[tokio::test]
+    async fn record_event_persists_but_skips_alerts_during_maintenance() {
+        // Maintenance window suppresses alert evaluation: event is still stored
+        // and broadcast, but no alert_state row is created.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_maintenance_all_servers(&db).await;
+        insert_rule(
+            &db,
+            "rule-bf",
+            r#"[{"rule_type":"ssh_brute_force_detected","security":{}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.5", 99))
+            .await
+            .expect("record_event");
+
+        // Event persisted.
+        let rows = security_event::Entity::find().all(&db).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        // No alert state because evaluate_rules short-circuited on maintenance.
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_event_skips_rule_not_covering_server() {
+        // A rule with cover_type=exclude listing srv-1 does not cover srv-1,
+        // so no alert state is recorded for that server's events.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-excl".to_string()),
+            name: Set("Excl".to_string()),
+            enabled: Set(true),
+            rules_json: Set(
+                r#"[{"rule_type":"ssh_brute_force_detected","security":{}}]"#.to_string(),
+            ),
+            trigger_mode: Set("always".to_string()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("exclude".to_string()),
+            server_ids_json: Set(Some(r#"["srv-1"]"#.to_string())),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.5", 50))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_event_skips_rule_without_security_item() {
+        // A purely metric rule has no security item, so the security event
+        // never matches it and no alert state is created.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-cpu",
+            r#"[{"rule_type":"cpu","min":90.0}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.5", 50))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_event_skips_rule_type_mismatch() {
+        // A port_scan rule does not match a brute-force event (rule_type differs),
+        // so no alert state is recorded.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-ps",
+            r#"[{"rule_type":"port_scan_detected","security":{}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.5", 50))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_event_skips_when_failed_count_below_min() {
+        // min_failed_count=10 but the event only has 3 failures: params don't
+        // match, so the rule is skipped and no alert state is created.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-bf",
+            r#"[{"rule_type":"ssh_brute_force_detected","security":{"min_failed_count":10}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.5", 3))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_event_matches_when_min_failed_count_absent() {
+        // With no min_failed_count, the brute-force rule matches any count and
+        // marks a triggered alert state (no notification group configured).
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-bf",
+            r#"[{"rule_type":"ssh_brute_force_detected","security":{}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.5", 1))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0].count, 1);
+        assert_eq!(states[0].event_key, "203.0.113.5");
+    }
+
+    #[tokio::test]
+    async fn record_event_port_scan_respects_min_distinct_ports() {
+        // Below the distinct-ports threshold the port_scan rule is skipped; at
+        // or above it the rule fires and an alert state is recorded.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-ps",
+            r#"[{"rule_type":"port_scan_detected","security":{"min_distinct_ports":5}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        // 3 distinct ports < 5 → no match.
+        svc.record_event("srv-1", port_scan_payload("203.0.113.7", 3))
+            .await
+            .unwrap();
+        assert!(
+            crate::entity::alert_state::Entity::find()
+                .all(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        // 8 distinct ports >= 5 → match, alert state created.
+        svc.record_event("srv-1", port_scan_payload("203.0.113.8", 8))
+            .await
+            .unwrap();
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0].event_key, "203.0.113.8");
+    }
+
+    #[tokio::test]
+    async fn record_event_marks_state_but_skips_notify_without_group() {
+        // A matching rule with no notification_group_id still records the
+        // triggered alert state but dispatches no notification.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-bf",
+            r#"[{"rule_type":"ssh_brute_force_detected","security":{}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.9", 20))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0].rule_id, "rule-bf");
+    }
+
+    #[tokio::test]
+    async fn ssh_new_ip_login_excluded_user_does_not_fire() {
+        // exclude_users matches the login username (case-insensitively), so the
+        // ssh_new_ip_login rule is skipped even on first_seen=true.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-new-ip",
+            r#"[{"rule_type":"ssh_new_ip_login","security":{"exclude_users":["ROOT"]}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", ssh_login_payload("198.51.100.5", "root", true))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn ssh_new_ip_login_excluded_cidr_does_not_fire() {
+        // exclude_cidrs covers the source IP, so the rule is skipped even on a
+        // genuine first-seen login.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_rule(
+            &db,
+            "rule-new-ip",
+            r#"[{"rule_type":"ssh_new_ip_login","security":{"exclude_cidrs":["10.0.0.0/8"]}}]"#,
+            None,
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", ssh_login_payload("10.1.2.3", "bob", true))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[tokio::test]
+    async fn record_event_block_source_ip_action_inserts_block_list_row() {
+        // A rule with a block_source_ip auto-action inserts a block_list row on
+        // match, even with no notification group configured.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-block".to_string()),
+            name: Set("Blocker".to_string()),
+            enabled: Set(true),
+            rules_json: Set(
+                r#"[{"rule_type":"ssh_brute_force_detected","security":{}}]"#.to_string(),
+            ),
+            trigger_mode: Set("always".to_string()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".to_string()),
+            server_ids_json: Set(None),
+            actions_json: Set(Some(
+                r#"[{"type":"block_source_ip","cover_type":"all"}]"#.to_string(),
+            )),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.42", 30))
+            .await
+            .unwrap();
+
+        let blocks = crate::entity::block_list::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(blocks.len(), 1);
+        // Bare IPv4 is canonicalized to a /32 CIDR.
+        assert_eq!(blocks[0].target, "203.0.113.42/32");
+        assert_eq!(blocks[0].origin, "auto");
+        assert_eq!(blocks[0].origin_rule_id.as_deref(), Some("rule-block"));
+    }
+
+    #[tokio::test]
+    async fn record_event_disabled_rule_is_ignored() {
+        // Disabled rules are filtered out of evaluation, so no alert state is
+        // created for an otherwise-matching event.
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        let now = Utc::now();
+        alert_rule::ActiveModel {
+            id: Set("rule-off".to_string()),
+            name: Set("Off".to_string()),
+            enabled: Set(false),
+            rules_json: Set(
+                r#"[{"rule_type":"ssh_brute_force_detected","security":{}}]"#.to_string(),
+            ),
+            trigger_mode: Set("always".to_string()),
+            notification_group_id: Set(None),
+            fail_trigger_tasks: Set(None),
+            recover_trigger_tasks: Set(None),
+            cover_type: Set("all".to_string()),
+            server_ids_json: Set(None),
+            actions_json: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("srv-1", brute_force_payload("203.0.113.5", 50))
+            .await
+            .unwrap();
+
+        let states = crate::entity::alert_state::Entity::find()
+            .all(&db)
+            .await
+            .unwrap();
+        assert!(states.is_empty());
+    }
+
+    #[test]
+    fn matches_security_params_rejects_mismatched_evidence() {
+        // A brute_force rule_type paired with PortScan evidence hits the
+        // catch-all arm and returns false.
+        let item = AlertRuleItem {
+            rule_type: "ssh_brute_force_detected".to_string(),
+            ..Default::default()
+        };
+        let params = SecurityRuleParams::default();
+        let payload = port_scan_payload("203.0.113.1", 9);
+        assert!(!matches_security_params(&item, &params, &payload));
+    }
+
+    #[test]
+    fn matches_security_params_new_ip_rejects_non_first_seen() {
+        // ssh_new_ip_login with first_seen=false returns false (early return).
+        let item = AlertRuleItem {
+            rule_type: "ssh_new_ip_login".to_string(),
+            ..Default::default()
+        };
+        let params = SecurityRuleParams::default();
+        let payload = ssh_login_payload("198.51.100.9", "carol", false);
+        assert!(!matches_security_params(&item, &params, &payload));
+    }
+
+    #[test]
+    fn matches_security_params_new_ip_accepts_first_seen() {
+        // ssh_new_ip_login with first_seen=true and no exclusions returns true.
+        let item = AlertRuleItem {
+            rule_type: "ssh_new_ip_login".to_string(),
+            ..Default::default()
+        };
+        let params = SecurityRuleParams::default();
+        let payload = ssh_login_payload("198.51.100.9", "carol", true);
+        assert!(matches_security_params(&item, &params, &payload));
+    }
+
+    #[test]
+    fn event_type_to_rule_type_maps_all_variants() {
+        // Every SecurityEventType maps to its event-driven rule type key.
+        assert_eq!(
+            event_type_to_rule_type(SecurityEventType::SshLogin),
+            "ssh_new_ip_login"
+        );
+        assert_eq!(
+            event_type_to_rule_type(SecurityEventType::SshBruteForce),
+            "ssh_brute_force_detected"
+        );
+        assert_eq!(
+            event_type_to_rule_type(SecurityEventType::PortScan),
+            "port_scan_detected"
+        );
+    }
+
+    #[test]
+    fn event_type_to_str_maps_all_variants() {
+        // Persisted event_type discriminants for each event type.
+        assert_eq!(event_type_to_str(SecurityEventType::SshLogin), "ssh_login");
+        assert_eq!(
+            event_type_to_str(SecurityEventType::SshBruteForce),
+            "ssh_brute_force"
+        );
+        assert_eq!(event_type_to_str(SecurityEventType::PortScan), "port_scan");
+    }
+
+    #[test]
+    fn severity_to_str_maps_all_variants() {
+        // Every Severity maps to its lowercase string discriminant.
+        assert_eq!(severity_to_str(Severity::Info), "info");
+        assert_eq!(severity_to_str(Severity::Low), "low");
+        assert_eq!(severity_to_str(Severity::Medium), "medium");
+        assert_eq!(severity_to_str(Severity::High), "high");
+        assert_eq!(severity_to_str(Severity::Critical), "critical");
+    }
+
+    #[test]
+    fn detector_source_to_str_maps_all_variants() {
+        // Every DetectorSource maps to its snake_case string discriminant.
+        assert_eq!(detector_source_to_str(DetectorSource::Journal), "journal");
+        assert_eq!(detector_source_to_str(DetectorSource::AuthLog), "auth_log");
+        assert_eq!(
+            detector_source_to_str(DetectorSource::Conntrack),
+            "conntrack"
+        );
+        assert_eq!(
+            detector_source_to_str(DetectorSource::FirewallLog),
+            "firewall_log"
+        );
+    }
+
+    #[test]
+    fn unix_to_utc_converts_valid_and_falls_back_on_overflow() {
+        // A normal unix timestamp round-trips exactly.
+        let dt = unix_to_utc(1_700_000_000);
+        assert_eq!(dt.timestamp(), 1_700_000_000);
+        // An out-of-range timestamp falls back to "now" rather than panicking.
+        let fallback = unix_to_utc(i64::MAX);
+        assert!(fallback.timestamp() > 1_600_000_000);
+    }
+
+    #[tokio::test]
+    async fn record_event_uses_unknown_when_server_row_missing() {
+        // When the rule matches but the server row is absent, the notification
+        // context falls back to the "Unknown" server name (no panic), and the
+        // webhook still fires.
+        let (db, _tmp) = setup_test_db().await;
+        // Note: intentionally do NOT insert a server row for "ghost".
+        let (port, rx_webhook) = start_webhook_sink().await;
+        let group_id = insert_webhook_group(&db, port).await;
+        insert_rule(
+            &db,
+            "rule-bf",
+            r#"[{"rule_type":"ssh_brute_force_detected","security":{}}]"#,
+            Some(group_id),
+        )
+        .await;
+        let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
+
+        svc.record_event("ghost", brute_force_payload("203.0.113.5", 12))
+            .await
+            .expect("record_event");
+
+        let body = tokio::time::timeout(std::time::Duration::from_secs(5), rx_webhook)
+            .await
+            .expect("webhook fired")
+            .expect("recv");
+        assert!(body.contains("triggered"), "webhook body: {body}");
     }
 }

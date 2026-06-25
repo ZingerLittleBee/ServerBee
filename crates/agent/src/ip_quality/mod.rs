@@ -428,6 +428,28 @@ mod tests {
         }
     }
 
+    /// A custom (non-detector) service whose probe URL is loopback, so the
+    /// fetch is rejected by the SSRF guard offline and drives the custom-path
+    /// `Err` branch of `run_single_service`.
+    fn stub_custom(id: &str, url: &str) -> UnlockServiceDef {
+        use serverbee_common::protocol::{UnlockMatch, UnlockRequest, UnlockRule};
+        UnlockServiceDef {
+            id: id.to_string(),
+            key: "custom".to_string(),
+            detector: None,
+            request: Some(UnlockRequest {
+                url: url.to_string(),
+                method: "GET".to_string(),
+                headers: vec![],
+                timeout_ms: 1000,
+            }),
+            rules: Some(vec![UnlockRule {
+                match_: UnlockMatch::StatusEquals { code: 200 },
+                result: UnlockStatus::Unlocked,
+            }]),
+        }
+    }
+
     // ── sync stores services + interval ──────────────────────────────────────
 
     #[tokio::test]
@@ -715,5 +737,98 @@ mod tests {
         checker.sync(vec![stub_builtin("svc2", "unknown_abc")], 12).await;
         let extra = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
         assert!(extra.is_err(), "second sync must not retrigger a run");
+    }
+
+    // ── run_single_service: custom (request + rules) path, offline ────────────
+
+    #[tokio::test]
+    async fn run_once_custom_service_fetch_failure_reports_failed_with_detail() {
+        // A custom service with a loopback URL: the SSRF guard rejects the fetch
+        // offline, so `run_single_service` takes its custom-path `Err` arm and
+        // reports `Failed` with a populated `detail` string.
+        let services = vec![stub_custom("custom1", "http://127.0.0.1/probe")];
+        let (results, _) = run_once(&services).await;
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].service_id, "custom1");
+        assert_eq!(results[0].status, UnlockStatus::Failed);
+        assert!(results[0].region.is_none());
+        assert!(
+            results[0].detail.is_some(),
+            "custom-path fetch failure must carry an error detail"
+        );
+        assert!(results[0].latency_ms.is_some());
+    }
+
+    #[tokio::test]
+    async fn run_once_mixed_services_each_produce_one_result() {
+        // Built-in (unknown key → Unsupported), custom (fetch fails → Failed),
+        // and misconfigured (→ Unsupported) all coexist; each yields exactly one
+        // row, exercising all three arms of `run_single_service` in one run.
+        let misconfigured = UnlockServiceDef {
+            id: "mis".to_string(),
+            key: "misc".to_string(),
+            detector: None,
+            request: None,
+            rules: None,
+        };
+        let services = vec![
+            stub_builtin("b1", "unknown_builtin"),
+            stub_custom("c1", "http://127.0.0.1/x"),
+            misconfigured,
+        ];
+        let (results, _) = run_once(&services).await;
+        assert_eq!(results.len(), 3);
+
+        let by_id = |id: &str| results.iter().find(|r| r.service_id == id).unwrap();
+        assert_eq!(by_id("b1").status, UnlockStatus::Unsupported);
+        assert_eq!(by_id("c1").status, UnlockStatus::Failed);
+        assert_eq!(by_id("mis").status, UnlockStatus::Unsupported);
+    }
+
+    // ── scheduler: IP-change trigger arm ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn ip_change_triggers_scheduler_run() {
+        // A *changed* IP (differing from the initial `None`) must trigger a run
+        // even without an explicit run_now — exercises the ip_changed arm where
+        // `new_ip != last_ip`.
+        let (tx, mut rx) = mpsc::channel(16);
+        let caps = make_caps(CAP_IP_QUALITY);
+        let checker = UnlockChecker::new(caps, tx);
+
+        // Configure services without consuming the initial-run one-shot via
+        // run_now: sync triggers the initial run, drain it first.
+        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+        tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("initial run expected")
+            .expect("channel open");
+
+        // Now a genuine IP change must drive another run.
+        checker.notify_ip_changed(Some("198.51.100.7".to_string()));
+        let result = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("ip change must trigger a recheck")
+            .expect("channel open");
+        assert_eq!(result.results.len(), 1);
+        // The egress IP captured at run start reflects the changed value.
+        assert_eq!(result.egress_ip, "198.51.100.7");
+    }
+
+    // ── stop() aborts the scheduler ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn stop_aborts_scheduler_handle_without_panicking() {
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = make_caps(CAP_IP_QUALITY);
+        let checker = UnlockChecker::new(caps, tx);
+
+        // stop() aborts the background scheduler task. It must be safe to call
+        // (and idempotent). We don't assert on delivery suppression because
+        // JoinHandle::abort() is asynchronous (cancels at the next await point),
+        // so any already-queued run may still race to completion.
+        checker.stop();
+        checker.stop();
     }
 }

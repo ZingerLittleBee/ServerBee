@@ -233,4 +233,90 @@ mod tests {
         assert_eq!(store.active_grants(0, CAP_DEFAULT).len(), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn empty_file_is_empty() {
+        // A zero-byte file hits the `bytes.is_empty()` early return.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("grants.json");
+        std::fs::write(&path, b"").unwrap();
+        let store = CapabilityGrantStore::load(&path);
+        assert_eq!(store.active_bits(0, CAP_DEFAULT), 0);
+        assert_eq!(store.records().count(), 0);
+    }
+
+    #[test]
+    fn unknown_schema_version_is_empty() {
+        // A well-formed file with a future schema version is treated as empty
+        // (fail-safe), exercising the `parsed.version != SCHEMA_VERSION` branch.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("grants.json");
+        let payload = serde_json::json!({
+            "version": 999,
+            "grants": [
+                {
+                    "cap": "terminal",
+                    "granted_at": 0,
+                    "expires_at": 1000,
+                    "granted_by": "root"
+                }
+            ]
+        });
+        std::fs::write(&path, serde_json::to_vec(&payload).unwrap()).unwrap();
+        let store = CapabilityGrantStore::load(&path);
+        assert_eq!(store.records().count(), 0);
+        assert_eq!(store.active_bits(0, CAP_DEFAULT), 0);
+    }
+
+    #[test]
+    fn read_error_other_than_not_found_is_empty() {
+        // Pointing at a directory makes `fs::read` fail with an error that is
+        // NOT NotFound, exercising the generic `Err(e) => return Err(e)` arm of
+        // load_from (and the load() catch-all that maps it to empty).
+        let tmp = tempfile::TempDir::new().unwrap();
+        // tmp.path() itself is a directory.
+        let store = CapabilityGrantStore::load(tmp.path());
+        assert_eq!(store.records().count(), 0);
+        assert_eq!(store.active_bits(0, CAP_DEFAULT), 0);
+    }
+
+    #[test]
+    fn flush_with_bare_filename_has_no_parent_dir() {
+        // A path that is a bare filename has an empty parent, exercising the
+        // `!parent.as_os_str().is_empty()` false branch (no create_dir_all).
+        // Use a process-unique name and clean up both the file and its `.tmp`
+        // sibling so we never pollute the working tree.
+        let name = format!("sbtest-bare-grants-{}.json", std::process::id());
+        let tmp_name = format!("sbtest-bare-grants-{}.tmp", std::process::id());
+        let bare = CapabilityGrantStore::load(std::path::PathBuf::from(&name));
+        let result = bare.flush();
+        let _ = std::fs::remove_file(&name);
+        let _ = std::fs::remove_file(&tmp_name);
+        result.expect("flush with bare filename should succeed");
+    }
+
+    #[test]
+    fn roundtrip_preserves_reason_field() {
+        // A grant with a reason serializes and reloads with the reason intact,
+        // exercising the non-skipped serde path for the optional field.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("grants.json");
+        let mut store = CapabilityGrantStore::load(&path);
+        store.upsert(
+            GrantRecord {
+                cap: "terminal".into(),
+                granted_at: 5,
+                expires_at: 1000,
+                granted_by: "root".into(),
+                reason: Some("kept".into()),
+            },
+            0,
+        );
+        store.flush().unwrap();
+
+        let reloaded = CapabilityGrantStore::load(&path);
+        let rec = reloaded.records().find(|r| r.cap == "terminal").unwrap();
+        assert_eq!(rec.reason.as_deref(), Some("kept"));
+        assert_eq!(rec.granted_at, 5);
+    }
 }

@@ -39,3 +39,17 @@ pub async fn probe_local_capability() -> bool {
         .await;
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// On the macOS CI host there is no `nft` binary in PATH, so the very
+    /// first `list_json(&["ruleset"])` call fails with `BinaryMissing` and the
+    /// probe must short-circuit to `false`. This exercises the early-return
+    /// branch without relying on Linux/nft being present.
+    #[tokio::test]
+    async fn probe_returns_false_without_nft() {
+        assert!(!probe_local_capability().await);
+    }
+}

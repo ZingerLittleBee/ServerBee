@@ -276,4 +276,72 @@ interval = 3
 level = "info""#
         );
     }
+
+    #[test]
+    fn persist_rebind_token_creates_file_when_absent() {
+        // Path does not exist → existing is empty; the rendered output is just
+        // the token line with no trailing newline.
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        assert!(!path.exists());
+
+        super::persist_rebind_token_impl(&path, "brand-new").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(content, "token = \"brand-new\"");
+    }
+
+    #[test]
+    fn persist_rebind_token_replaces_indented_token_line() {
+        // A leading-whitespace token line is recognised and replaced wholesale
+        // (the replacement is not indented).
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+        fs::write(
+            &path,
+            "server_url = \"http://127.0.0.1:9527\"\n  token = \"old\"\n",
+        )
+        .expect("seed file");
+
+        super::persist_rebind_token_impl(&path, "replaced").expect("persist");
+
+        let content = fs::read_to_string(&path).expect("read file");
+        assert_eq!(
+            content,
+            "server_url = \"http://127.0.0.1:9527\"\ntoken = \"replaced\"\n"
+        );
+    }
+
+    #[test]
+    fn is_token_line_matches_only_real_token_assignments() {
+        // Real assignments, including spaced and indented forms.
+        assert!(is_token_line("token = \"x\""));
+        assert!(is_token_line("token=\"x\""));
+        assert!(is_token_line("   token   =   \"x\""));
+        // Not a token assignment: similarly named keys or missing '='.
+        assert!(!is_token_line("tokens = \"x\""));
+        assert!(!is_token_line("token_dir = \"x\""));
+        assert!(!is_token_line("token"));
+        assert!(!is_token_line("# token = \"x\""));
+        assert!(!is_token_line(""));
+    }
+
+    #[test]
+    fn is_table_header_matches_only_bracketed_lines() {
+        assert!(is_table_header("[collector]"));
+        assert!(is_table_header("  [log]"));
+        assert!(is_table_header("[a.b.c]"));
+        // Not headers: partial brackets or key/value lines.
+        assert!(!is_table_header("collector"));
+        assert!(!is_table_header("[collector"));
+        assert!(!is_table_header("collector]"));
+        assert!(!is_table_header("key = \"[v]\""));
+        assert!(!is_table_header(""));
+    }
+
+    #[test]
+    fn run_assert_persist_rebind_token_helper() {
+        // Exercise the standalone shared assertion helper.
+        super::assert_persist_rebind_token();
+    }
 }

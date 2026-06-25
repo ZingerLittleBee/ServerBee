@@ -26,6 +26,7 @@ ServerBee 在一处统一监控你的所有服务器。中心 **Server** 通过 
 - 📦 **单一二进制** —— Server 与内嵌 Web UI 打包成一个文件,支持 Docker、一行脚本、Railway 部署。
 - 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、状态页等功能。
 - 🔒 **默认安全** —— OAuth + 2FA、RBAC、审计日志、一次性 Agent 注册、Agent 自主掌管的能力门控。
+- ✅ **充分测试** —— 3800+ 自动化测试,其中集成套件通过 mock-agent 测试桩驱动真实路由、经由 HTTP + WebSocket 演练控制面;每次 CI 全部通过。
 
 > [!NOTE]
 > ServerBee 正在活跃开发中(`v1.0.0-alpha.7`),迭代频繁。
@@ -131,6 +132,10 @@ make cargo-clippy     # Rust 代码检查
 > `make dev-full` 启动带 HMR 的 Vite(`http://localhost:5173`),并代理 `/api/*` 到 `:9527` 的 Rust 服务端。在 **设置** 页生成一次性 enrollment code 即可接入开发用 Agent。
 
 **技术栈:** Rust(Axum 0.8 · sea-orm · SQLite WAL)· React 19(Vite 7 · TanStack Router/Query · Recharts · shadcn/ui · Tailwind CSS v4)· Rust Agent(sysinfo · tokio-tungstenite)。
+
+### 测试与质量
+
+ServerBee 自带 **3800+ 自动化测试** —— 其中 3200+ 为 Rust(单元测试 + 42 个集成套件,通过 mock-agent 测试桩驱动真实 Axum 路由、经由 HTTP/WebSocket 演练),以及 600+ 前端 Vitest 测试。覆盖率使用 `cargo-llvm-cov` 测量(common ~98%、agent ~90%、server ~92% region)。每次 push 都会在 CI 中运行零警告 Clippy、完整 Rust 测试套件,以及前端类型/lint 检查。详见 [测试与质量](https://docs.serverbee.app/zh/docs/testing) 指南。
 
 ## API
 

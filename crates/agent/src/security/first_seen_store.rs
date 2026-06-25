@@ -210,4 +210,100 @@ mod tests {
         // "ab\x00c" must not collide with "a\x00bc".
         assert!(store.mark("a", "bc", 2));
     }
+
+    #[test]
+    fn empty_file_treated_as_empty_store() {
+        let dir = TempDir::new().unwrap();
+        let p = path_in(&dir);
+        // Zero-length file exercises the `bytes.is_empty()` branch in load_from.
+        fs::write(&p, b"").unwrap();
+        let mut store = FirstSeenStore::open(p, 100);
+        assert_eq!(store.len(), 0);
+        assert!(store.mark("root", "1.2.3.4", 1));
+    }
+
+    #[test]
+    fn flush_creates_missing_parent_directory() {
+        let dir = TempDir::new().unwrap();
+        // Path with a not-yet-existing nested parent.
+        let p = dir.path().join("nested").join("deeper").join("first_seen.json");
+        let mut store = FirstSeenStore::open(p.clone(), 100);
+        assert!(store.mark("root", "1.2.3.4", 1000));
+        store.flush().unwrap();
+        assert!(p.exists());
+        // Reload from the freshly created path round-trips the entry.
+        let mut reloaded = FirstSeenStore::open(p, 100);
+        assert!(!reloaded.mark("root", "1.2.3.4", 2000));
+    }
+
+    #[test]
+    fn flush_then_remark_stays_clean_until_change() {
+        let dir = TempDir::new().unwrap();
+        let mut store = FirstSeenStore::open(path_in(&dir), 100);
+        assert!(store.mark("root", "1.2.3.4", 1));
+        store.flush().unwrap();
+        // A repeat mark returns false and does NOT set dirty, so flush no-ops.
+        assert!(!store.mark("root", "1.2.3.4", 2));
+        store.flush().unwrap();
+    }
+
+    #[test]
+    fn lru_eviction_order_preserved_across_reload() {
+        let dir = TempDir::new().unwrap();
+        let p = path_in(&dir);
+        {
+            let mut store = FirstSeenStore::open(p.clone(), 3);
+            assert!(store.mark("u", "a", 1));
+            assert!(store.mark("u", "b", 2));
+            assert!(store.mark("u", "c", 3));
+            store.flush().unwrap();
+        }
+        // Reopen at the same cap; insertion order must survive so the next
+        // insert evicts the oldest ("u\0a").
+        let mut store = FirstSeenStore::open(p, 3);
+        assert_eq!(store.len(), 3);
+        assert!(store.mark("u", "d", 4)); // pushes len to 4, evicts oldest "a"
+        assert_eq!(store.len(), 3);
+        // Proof the on-disk order survived: "a" (the oldest) was the one
+        // evicted, so it reads as a brand-new tuple again...
+        assert!(store.mark("u", "a", 5));
+        // ...while "d" (just inserted) is still known. (Marking "a" above
+        // evicted the next-oldest "b", so we check "d", which cannot have
+        // been evicted yet.)
+        assert!(!store.mark("u", "d", 6));
+    }
+
+    #[test]
+    fn cap_zero_evicts_immediately() {
+        let dir = TempDir::new().unwrap();
+        let mut store = FirstSeenStore::open(path_in(&dir), 0);
+        // With cap 0 the while-loop pops the just-inserted key back out.
+        assert!(store.mark("root", "1.2.3.4", 1));
+        assert_eq!(store.len(), 0);
+        // Since nothing is retained, the same tuple reads as unseen again.
+        assert!(store.mark("root", "1.2.3.4", 2));
+        assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn reload_after_eviction_flush_keeps_only_survivors() {
+        let dir = TempDir::new().unwrap();
+        let p = path_in(&dir);
+        {
+            let mut store = FirstSeenStore::open(p.clone(), 2);
+            store.mark("u", "a", 1);
+            store.mark("u", "b", 2);
+            store.mark("u", "c", 3); // evicts "a"
+            store.flush().unwrap();
+        }
+        let mut store = FirstSeenStore::open(p, 2);
+        assert_eq!(store.len(), 2);
+        // "b" and "c" survived the flush — re-marking them yields no new-tuple
+        // signal. (Check these BEFORE re-introducing "a", since that insert
+        // would evict the oldest survivor.)
+        assert!(!store.mark("u", "b", 4));
+        assert!(!store.mark("u", "c", 5));
+        // "a" was evicted before the flush, so it reads as new again.
+        assert!(store.mark("u", "a", 6));
+    }
 }

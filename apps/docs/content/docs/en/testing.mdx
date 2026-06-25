@@ -1,0 +1,81 @@
+---
+title: Testing & Quality
+description: How ServerBee is tested — 3,800+ automated tests, a mock-agent WebSocket harness, and CI-enforced quality gates.
+icon: FlaskConical
+---
+
+ServerBee treats reliability as a feature. The codebase ships with a large, fast automated test suite that exercises the full stack — from pure Rust logic to the live WebSocket control plane and the React UI — and every change is gated by CI.
+
+## Test suite at a glance
+
+| Area | Tests | What it covers |
+|------|-------|----------------|
+| `common` crate | 148 | Protocol messages, capability bitmask, SSRF guard, shared types |
+| `agent` crate | 865 | Collectors, reporter WebSocket loop, pinger, file manager, security detectors, firewall, IP quality |
+| `server` crate | 2,188 | REST handlers, WebSocket handlers, services, background tasks, migrations |
+| Frontend (`apps/web`) | 600+ | Hooks, components, stores, and utilities (Vitest) |
+
+That is **3,800+ automated tests** in total, all green on every CI run.
+
+## How we test
+
+ServerBee follows a layered strategy that matches each layer to the right kind of test.
+
+### Unit tests
+
+Pure logic is tested next to the code in inline `#[cfg(test)]` modules: protocol (de)serialization, the capability bitmask, the SSRF guard, alert evaluation, cost math, parsers, and the collectors. These run in milliseconds and make up the bulk of the agent and `common` suites.
+
+### Integration tests
+
+The server's 42 integration suites drive the **real Axum router over HTTP and WebSocket** against a freshly migrated, isolated SQLite database. A purpose-built **mock-agent harness** (`crates/server/tests/common/mod.rs`) stands up a simulated agent on a real WebSocket connection, so the control plane is exercised end-to-end without a live host:
+
+- terminal relay, Docker log streaming, file operations, and scheduled-task dispatch
+- real-time browser fan-out (initial full sync plus incremental updates)
+- security events, alerts, capability gating, and Admin/Member RBAC
+
+On the agent side, the reporter's connect → handshake → dispatch → reconnect loop is driven against an **in-process fake WebSocket server**, so the networking core is tested without a real backend.
+
+### Frontend tests
+
+The React app is covered by [Vitest](https://vitest.dev) across 89 test files — hooks, components, state stores, and utilities — run with `make web-test`.
+
+<Callout type="info">
+The integration harness lets contributors verify real request/response and WebSocket flows on a laptop, with no agent, Docker daemon, or external service required.
+</Callout>
+
+## Coverage
+
+Coverage is measured with [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov):
+
+| Crate | Region | Line |
+|-------|--------|------|
+| `common` | 98% | 97% |
+| `agent` | 90% | 89% |
+| `server` | 92% | 93% |
+
+The remaining uncovered lines are I/O paths that only execute in a live environment — a Docker daemon, Linux kernel facilities (nftables / conntrack / journald), raw ICMP sockets, a PTY, or external services (OAuth, SMTP, APNs). These are exercised through the integration harness and the manual end-to-end checklists in `tests/` rather than unit tests.
+
+## Running tests locally
+
+```bash
+make cargo-test     # Rust: unit + integration across the workspace
+make web-test       # Frontend: Vitest
+make cargo-clippy   # Rust lint (0 warnings enforced)
+```
+
+Measure coverage for a single crate:
+
+```bash
+cargo llvm-cov -p serverbee-server --summary-only
+```
+
+## CI gates
+
+Every push and pull request runs:
+
+- `cargo clippy --workspace -- -D warnings` — zero-warning lint
+- `cargo test --workspace` — the full Rust suite
+- `bun run tsc -b` and `bun x ultracite check` — frontend type check and lint (Biome)
+- POSIX and ShellCheck linting of the `install.sh` install script
+
+Release builds cross-compile the binary for five targets (Linux x86_64/aarch64 musl, macOS x86_64/aarch64, Windows x86_64) and publish multi-arch Docker images.

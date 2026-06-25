@@ -69,3 +69,39 @@ fn count_connections_netstat(protocol: &str) -> i32 {
         })
         .count() as i32
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate};
+
+    #[test]
+    fn test_count_positive() {
+        let mut sys = System::new_all();
+        sys.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing(),
+        );
+        assert!(count(&sys) > 0, "at least the test process must be running");
+    }
+
+    #[test]
+    fn test_tcp_connections_non_negative() {
+        // On Linux/Windows this reads real connection tables; on macOS it
+        // returns 0. Either way the result must be non-negative.
+        assert!(tcp_connections() >= 0);
+    }
+
+    #[test]
+    fn test_udp_connections_non_negative() {
+        assert!(udp_connections() >= 0);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_count_lines_missing_file_errors() {
+        // count_lines propagates an io::Error for a non-existent path.
+        assert!(count_lines("/proc/this/does/not/exist").is_err());
+    }
+}
