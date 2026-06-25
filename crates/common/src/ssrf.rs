@@ -639,4 +639,69 @@ mod tests {
         assert!(reject_literal_unsafe_target("192.168.1.1:80").is_ok());
         assert!(reject_literal_unsafe_target("172.16.5.5").is_ok());
     }
+
+    // ── validate_url: malformed-input error path ──────────────────────────────
+
+    #[test]
+    fn validate_url_rejects_unparseable_input() {
+        // Url::parse fails outright (no scheme/host) — exercises the `?` path.
+        assert!(validate_url("not a url at all").is_err());
+        assert!(validate_url("://missing-scheme").is_err());
+        assert!(validate_monitor_url("http://").is_err());
+    }
+
+    // ── is_global_addr: remaining IPv4 special-use ranges ─────────────────────
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_broadcast() {
+        assert!(!is_global_addr("255.255.255.255".parse().unwrap()));
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_documentation_ranges() {
+        // RFC 5737 documentation/example ranges must never be treated as global.
+        assert!(!is_global_addr("192.0.2.1".parse().unwrap())); // 192.0.2.0/24
+        assert!(!is_global_addr("198.51.100.7".parse().unwrap())); // 198.51.100.0/24
+        assert!(!is_global_addr("203.0.113.9".parse().unwrap())); // 203.0.113.0/24
+    }
+
+    #[test]
+    fn is_global_addr_rejects_ipv4_shared_address_space() {
+        // RFC 6598 carrier-grade NAT space: 100.64.0.0/10.
+        assert!(!is_global_addr("100.64.0.1".parse().unwrap()));
+        assert!(!is_global_addr("100.127.255.254".parse().unwrap()));
+        // 100.63.x and 100.128.x sit just outside the /10 and stay global.
+        assert!(is_global_addr("100.63.0.1".parse().unwrap()));
+        assert!(is_global_addr("100.128.0.1".parse().unwrap()));
+    }
+
+    // ── is_monitor_safe_addr: broadcast still blocked ─────────────────────────
+
+    #[test]
+    fn monitor_safe_blocks_broadcast_and_this_network() {
+        assert!(!is_monitor_safe_addr("255.255.255.255".parse().unwrap()));
+        assert!(!is_monitor_safe_addr("0.0.0.0".parse().unwrap()));
+    }
+
+    // ── extract_target_host: bracketed IPv6 forms (no scheme) ─────────────────
+
+    #[test]
+    fn reject_literal_unsafe_target_blocks_bracketed_ipv6_with_port() {
+        // `[::1]:8080` — bracketed IPv6 + port, no scheme: host must be isolated
+        // and rejected as loopback.
+        assert!(reject_literal_unsafe_target("[::1]:8080").is_err());
+    }
+
+    #[test]
+    fn reject_literal_unsafe_target_blocks_bare_bracketed_ipv6() {
+        // `[::1]` — bracketed IPv6 with no port and no scheme.
+        assert!(reject_literal_unsafe_target("[::1]").is_err());
+    }
+
+    #[test]
+    fn reject_literal_unsafe_target_allows_bracketed_public_ipv6() {
+        // Bracketed public IPv6 passes through both extraction branches.
+        assert!(reject_literal_unsafe_target("[2606:4700:4700::1111]:443").is_ok());
+        assert!(reject_literal_unsafe_target("[2606:4700:4700::1111]").is_ok());
+    }
 }

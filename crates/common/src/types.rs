@@ -323,4 +323,59 @@ mod tests {
 
         assert!(report.disk_io.is_none());
     }
+
+    /// Build a `ServerStatus` JSON object with every required field populated.
+    /// `has_token` and `outstanding_enrollment` are intentionally omitted so
+    /// callers can assert the serde defaults.
+    fn server_status_json_without_token() -> serde_json::Value {
+        json!({
+            "id": "srv-1",
+            "name": "node-a",
+            "online": true,
+            "last_active": 1_700_000_000_i64,
+            "uptime": 3600_u64,
+            "cpu": 12.5,
+            "mem_used": 100,
+            "mem_total": 1000,
+            "swap_used": 0,
+            "swap_total": 0,
+            "disk_used": 50,
+            "disk_total": 500,
+            "net_in_speed": 1,
+            "net_out_speed": 2,
+            "net_in_transfer": 3,
+            "net_out_transfer": 4,
+            "load1": 0.1,
+            "load5": 0.2,
+            "load15": 0.3,
+            "tcp_conn": 5,
+            "udp_conn": 6,
+            "process_count": 7,
+            "cpu_name": null,
+            "os": null,
+            "region": null,
+            "country_code": null,
+            "group_id": null
+        })
+    }
+
+    #[test]
+    fn test_server_status_has_token_defaults_to_true_for_legacy_snapshots() {
+        // Older serialized snapshots predate the `has_token` field; they must
+        // deserialize as `has_token = true` (server is considered enrolled).
+        let legacy = server_status_json_without_token();
+        let status: ServerStatus = serde_json::from_value(legacy).unwrap();
+        assert!(status.has_token, "missing has_token must default to true");
+        assert!(status.outstanding_enrollment.is_none());
+    }
+
+    #[test]
+    fn test_server_status_has_token_false_round_trips() {
+        // An explicit `has_token = false` (pending, un-enrolled server) must be
+        // preserved rather than overwritten by the default.
+        let mut value = server_status_json_without_token();
+        value["has_token"] = json!(false);
+        let status: ServerStatus = serde_json::from_value(value).unwrap();
+        assert!(!status.has_token, "explicit has_token=false must be honored");
+    }
 }
