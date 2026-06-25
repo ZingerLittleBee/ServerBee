@@ -1524,6 +1524,7 @@ fn spawn_external_ip_refresh(
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+    use serverbee_common::constants::CapabilityDeniedReason;
     use crate::config::{
         CapabilitiesConfig, CollectorConfig, FileConfig, IpChangeConfig, LogConfig, SecurityConfig,
         UpgradeConfig,
@@ -1739,6 +1740,2148 @@ mod tests {
         // Both fail — but the function should have *tried* both and surfaced
         // the last error, not panicked or hung.
         assert!(result.is_err());
+    }
+
+    // ----------------------------------------------------------------------
+    // Pure-helper coverage (no I/O, no managers).
+    // ----------------------------------------------------------------------
+
+    #[test]
+    fn test_build_ws_url_rewrites_schemes_and_trims_trailing_slash() {
+        let mk = |url: &str| {
+            let c = AgentConfig {
+                server_url: url.to_string(),
+                token: "t".to_string(),
+                enrollment_code: String::new(),
+                collector: CollectorConfig::default(),
+                log: LogConfig::default(),
+                file: FileConfig::default(),
+                ip_change: IpChangeConfig::default(),
+                upgrade: UpgradeConfig::default(),
+                security: SecurityConfig::default(),
+                capabilities: CapabilitiesConfig::default(),
+            };
+            build_ws_url(&c).unwrap()
+        };
+        assert_eq!(mk("https://example.com"), "wss://example.com/api/agent/ws");
+        assert_eq!(mk("http://example.com"), "ws://example.com/api/agent/ws");
+        // trailing slash trimmed before appending the path
+        assert_eq!(
+            mk("https://example.com/"),
+            "wss://example.com/api/agent/ws"
+        );
+        // schemeless host gets ws:// prefix
+        assert_eq!(mk("example.com:9527"), "ws://example.com:9527/api/agent/ws");
+    }
+
+    #[test]
+    fn test_apply_jitter_stays_within_bounds_and_has_floor() {
+        // 100 samples should always land inside [base - 20%, base + 20%] and
+        // never below the 0.5 floor.
+        for _ in 0..100 {
+            let j = apply_jitter(10);
+            assert!((8.0..=12.0).contains(&j), "jitter out of band: {j}");
+        }
+        // Floor enforced even for base 0.
+        for _ in 0..100 {
+            let j = apply_jitter(0);
+            assert!(j >= 0.5, "jitter below floor: {j}");
+        }
+    }
+
+    #[test]
+    fn test_primary_external_ip_prefers_ipv4_then_ipv6_then_none() {
+        // IPv4 wins when both present.
+        assert_eq!(
+            primary_external_ip(Some("203.0.113.5"), Some("2001:db8::1")),
+            Some("203.0.113.5".parse().unwrap())
+        );
+        // Falls back to IPv6 when IPv4 missing.
+        assert_eq!(
+            primary_external_ip(None, Some("2001:db8::1")),
+            Some("2001:db8::1".parse().unwrap())
+        );
+        // Unparseable IPv4 falls through to IPv6.
+        assert_eq!(
+            primary_external_ip(Some("not-an-ip"), Some("2001:db8::1")),
+            Some("2001:db8::1".parse().unwrap())
+        );
+        // Both missing / unparseable -> None.
+        assert_eq!(primary_external_ip(None, None), None);
+        assert_eq!(primary_external_ip(Some("garbage"), Some("also-bad")), None);
+    }
+
+    #[test]
+    fn test_collect_interface_ips_is_sorted_and_well_formed() {
+        // Real host scan: we can't assert specific addresses, but the result
+        // must be name-sorted and every reported interface must carry at least
+        // one address.
+        let ifaces = collect_interface_ips();
+        for w in ifaces.windows(2) {
+            assert!(w[0].name <= w[1].name, "interfaces not name-sorted");
+        }
+        for iface in &ifaces {
+            assert!(
+                !iface.ipv4.is_empty() || !iface.ipv6.is_empty(),
+                "empty interface should not be reported: {}",
+                iface.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_apply_external_ip_with_none_inputs_passes_through() {
+        // Defensive: all-None inputs are a valid pass-through.
+        assert_eq!(apply_external_ip(None, None, None), (None, None));
+        // External present but no interface IPs: external still applied.
+        assert_eq!(
+            apply_external_ip(None, None, Some("203.0.113.9".to_string())),
+            (Some("203.0.113.9".to_string()), None)
+        );
+        assert_eq!(
+            apply_external_ip(None, None, Some("2001:db8::9".to_string())),
+            (None, Some("2001:db8::9".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_docker_request_msg_id_extracts_only_request_variants() {
+        // Variants that carry a msg_id return it...
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerListContainers {
+                msg_id: "a".to_string()
+            }),
+            Some("a".to_string())
+        );
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerGetInfo {
+                msg_id: "b".to_string()
+            }),
+            Some("b".to_string())
+        );
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerListNetworks {
+                msg_id: "c".to_string()
+            }),
+            Some("c".to_string())
+        );
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerListVolumes {
+                msg_id: "d".to_string()
+            }),
+            Some("d".to_string())
+        );
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerContainerAction {
+                msg_id: "e".to_string(),
+                container_id: "cid".to_string(),
+                action: serverbee_common::docker_types::DockerAction::Restart { timeout: None },
+            }),
+            Some("e".to_string())
+        );
+        // ...non-request docker variants return None.
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerStopStats),
+            None
+        );
+        assert_eq!(docker_request_msg_id(&ServerMessage::Ping), None);
+    }
+
+    // ----------------------------------------------------------------------
+    // `handle_server_message` dispatcher coverage via a mock sink.
+    //
+    // The dispatcher is generic over the WS sink (`S: SinkExt<Message,...>`),
+    // so we drive it with an in-memory recording sink instead of a real
+    // WebSocket. A `Harness` owns every manager + channel the method borrows,
+    // keeping receivers alive so spawned senders never error.
+    // ----------------------------------------------------------------------
+
+    /// In-memory sink that records every `Message` written to it. All poll_*
+    /// hooks succeed immediately; `start_send` just pushes into a shared Vec.
+    #[derive(Clone)]
+    struct RecordingSink {
+        sent: Arc<std::sync::Mutex<Vec<Message>>>,
+    }
+
+    impl RecordingSink {
+        fn new() -> Self {
+            Self {
+                sent: Arc::new(std::sync::Mutex::new(Vec::new())),
+            }
+        }
+
+        /// All recorded messages decoded into `AgentMessage` (text frames only).
+        fn agent_messages(&self) -> Vec<AgentMessage> {
+            self.sent
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|m| match m {
+                    Message::Text(t) => serde_json::from_str::<AgentMessage>(t.as_str()).ok(),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        fn sent_count(&self) -> usize {
+            self.sent.lock().unwrap().len()
+        }
+    }
+
+    impl futures_util::Sink<Message> for RecordingSink {
+        type Error = tokio_tungstenite::tungstenite::Error;
+
+        fn poll_ready(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn start_send(
+            self: std::pin::Pin<&mut Self>,
+            item: Message,
+        ) -> Result<(), Self::Error> {
+            self.sent.lock().unwrap().push(item);
+            Ok(())
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    /// Owns every manager + channel borrowed by `handle_server_message`,
+    /// plus the receiver ends so background senders never see a closed channel.
+    struct Harness {
+        reporter: Reporter,
+        capabilities: Arc<AtomicU32>,
+        ping_manager: PingManager,
+        terminal_manager: TerminalManager,
+        network_prober: NetworkProber,
+        cmd_result_tx: mpsc::Sender<AgentMessage>,
+        cmd_result_rx: mpsc::Receiver<AgentMessage>,
+        file_manager: FileManager,
+        file_tx: mpsc::Sender<FileEvent>,
+        docker_manager: Option<DockerManager>,
+        docker_available: bool,
+        docker_stats_interval: Option<tokio::time::Interval>,
+        unlock_checker: UnlockChecker,
+        // Keep manager-side receivers alive for the test's lifetime.
+        _ping_rx: mpsc::Receiver<serverbee_common::types::PingResult>,
+        _term_rx: mpsc::Receiver<TerminalEvent>,
+        _network_rx: mpsc::Receiver<NetworkProbeResultData>,
+        _file_rx: mpsc::Receiver<FileEvent>,
+        _unlock_rx: mpsc::Receiver<RunResult>,
+    }
+
+    impl Harness {
+        /// Build a harness with all capability bits ON by default. `file_cfg`
+        /// lets individual tests enable the file manager with a temp root.
+        fn new(caps: u32, file_cfg: FileConfig) -> Self {
+            let config = AgentConfig {
+                server_url: "http://127.0.0.1:9527".to_string(),
+                token: "t".to_string(),
+                enrollment_code: String::new(),
+                collector: CollectorConfig::default(),
+                log: LogConfig::default(),
+                file: file_cfg.clone(),
+                ip_change: IpChangeConfig::default(),
+                upgrade: UpgradeConfig::default(),
+                security: SecurityConfig::default(),
+                capabilities: CapabilitiesConfig::default(),
+            };
+            let reporter = Reporter::new(config, "fp".to_string(), caps);
+            let capabilities = Arc::new(AtomicU32::new(caps));
+
+            let (ping_tx, _ping_rx) = mpsc::channel(16);
+            let ping_manager = PingManager::new(ping_tx, Arc::clone(&capabilities));
+
+            let (term_tx, _term_rx) = mpsc::channel(16);
+            let terminal_manager = TerminalManager::new(term_tx, Arc::clone(&capabilities));
+
+            let (network_tx, _network_rx) = mpsc::channel(16);
+            let network_prober = NetworkProber::new(network_tx, Arc::clone(&capabilities));
+
+            let (cmd_result_tx, cmd_result_rx) = mpsc::channel(32);
+
+            let (file_tx, _file_rx) = mpsc::channel(16);
+            let file_manager = FileManager::new(file_cfg, Arc::clone(&capabilities));
+
+            let (unlock_tx, _unlock_rx) = mpsc::channel(8);
+            let unlock_checker = UnlockChecker::new(Arc::clone(&capabilities), unlock_tx);
+
+            Self {
+                reporter,
+                capabilities,
+                ping_manager,
+                terminal_manager,
+                network_prober,
+                cmd_result_tx,
+                cmd_result_rx,
+                file_manager,
+                file_tx,
+                docker_manager: None,
+                docker_available: false,
+                docker_stats_interval: None,
+                unlock_checker,
+                _ping_rx,
+                _term_rx,
+                _network_rx,
+                _file_rx,
+                _unlock_rx,
+            }
+        }
+
+        /// Dispatch a single `ServerMessage` (as JSON) through the method.
+        async fn dispatch(&mut self, text: &str, sink: &mut RecordingSink) -> anyhow::Result<()> {
+            self.reporter
+                .handle_server_message(
+                    text,
+                    sink,
+                    &mut self.ping_manager,
+                    &mut self.terminal_manager,
+                    &mut self.network_prober,
+                    &self.cmd_result_tx,
+                    &self.capabilities,
+                    &self.file_manager,
+                    &self.file_tx,
+                    &mut self.docker_manager,
+                    &mut self.docker_available,
+                    &mut self.docker_stats_interval,
+                    &self.unlock_checker,
+                )
+                .await
+        }
+    }
+
+    /// All capability bits set — every success arm runs.
+    const ALL_CAPS: u32 = serverbee_common::constants::CAP_VALID_MASK;
+
+    fn enabled_file_cfg(root: &std::path::Path) -> FileConfig {
+        FileConfig {
+            enabled: true,
+            root_paths: vec![root.to_string_lossy().to_string()],
+            ..FileConfig::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_unparseable_text_is_ignored() {
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        // Not valid JSON for ServerMessage — must be swallowed as Ok with no output.
+        h.dispatch("this is not json", &mut sink).await.unwrap();
+        h.dispatch(r#"{"type":"nonexistent_variant"}"#, &mut sink)
+            .await
+            .unwrap();
+        assert_eq!(sink.sent_count(), 0, "unparseable input must not emit anything");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_ping_responds_with_pong() {
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(r#"{"type":"ping"}"#, &mut sink).await.unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(msgs[0], AgentMessage::Pong));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_ack_and_welcome_are_noops() {
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(r#"{"type":"ack","msg_id":"m1"}"#, &mut sink)
+            .await
+            .unwrap();
+        h.dispatch(
+            r#"{"type":"welcome","server_id":"s","protocol_version":1,"report_interval":3}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        assert_eq!(sink.sent_count(), 0, "ack/welcome must not write to the sink");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_exec_denied_when_capability_absent() {
+        // CAP_EXEC missing -> a CapabilityDenied is pushed onto cmd_result_tx
+        // (NOT the sink). We drain the channel to assert.
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_EXEC;
+        let mut h = Harness::new(caps, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"exec","task_id":"task-42","command":"true","timeout":1}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        assert_eq!(sink.sent_count(), 0, "denied exec writes to channel, not sink");
+        let denied = h.cmd_result_rx.recv().await.expect("denied msg expected");
+        match denied {
+            AgentMessage::CapabilityDenied {
+                msg_id,
+                capability,
+                reason,
+                ..
+            } => {
+                assert_eq!(msg_id, Some("task-42".to_string()));
+                assert_eq!(capability, "exec");
+                assert_eq!(reason, CapabilityDeniedReason::AgentCapabilityDisabled);
+            }
+            other => panic!("expected CapabilityDenied, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_exec_allowed_runs_and_emits_task_result() {
+        // `true` is a deterministic, always-present POSIX builtin/command.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"exec","task_id":"task-ok","command":"true","timeout":5}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        // The execution is spawned; await its TaskResult on the channel.
+        let result = tokio::time::timeout(Duration::from_secs(10), h.cmd_result_rx.recv())
+            .await
+            .expect("task did not complete in time")
+            .expect("TaskResult expected");
+        match result {
+            AgentMessage::TaskResult { result, .. } => {
+                assert_eq!(result.task_id, "task-ok");
+                assert_eq!(result.exit_code, 0);
+            }
+            other => panic!("expected TaskResult, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_ping_tasks_sync_is_accepted() {
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        // Empty task list — sync clears the manager; dispatcher returns Ok with
+        // no WS output.
+        h.dispatch(r#"{"type":"ping_tasks_sync","tasks":[]}"#, &mut sink)
+            .await
+            .unwrap();
+        assert_eq!(sink.sent_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_network_probe_sync_is_accepted() {
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"network_probe_sync","targets":[],"interval":30,"packet_count":3}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        assert_eq!(sink.sent_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_terminal_lifecycle_without_capability() {
+        // CAP_TERMINAL off: open() routes to the denied event (no PTY spawned),
+        // and input/resize/close on a missing session are safe no-ops. The
+        // dispatcher must return Ok for each and never touch the sink.
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_TERMINAL;
+        let mut h = Harness::new(caps, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"terminal_open","session_id":"s1","rows":24,"cols":80}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"terminal_input","session_id":"s1","data":"aGk="}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"terminal_resize","session_id":"s1","rows":30,"cols":100}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"terminal_close","session_id":"s1"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        assert_eq!(sink.sent_count(), 0, "terminal control writes nothing to the WS sink");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_upgrade_denied_when_capability_absent() {
+        // CAP_UPGRADE off -> denied is written DIRECTLY to the sink (not the
+        // channel), unlike Exec.
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_UPGRADE;
+        let mut h = Harness::new(caps, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"upgrade","version":"9.9.9","job_id":"j1"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        match &msgs[0] {
+            AgentMessage::CapabilityDenied {
+                capability, reason, ..
+            } => {
+                assert_eq!(capability, "upgrade");
+                assert_eq!(*reason, CapabilityDeniedReason::AgentCapabilityDisabled);
+            }
+            other => panic!("expected CapabilityDenied, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_traceroute_denied_when_capability_absent() {
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_PING_ICMP;
+        let mut h = Harness::new(caps, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"traceroute","request_id":"r1","target":"example.com","max_hops":30}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        assert_eq!(sink.sent_count(), 0, "denied traceroute goes to the channel");
+        let denied = h.cmd_result_rx.recv().await.expect("denied expected");
+        match denied {
+            AgentMessage::CapabilityDenied {
+                msg_id,
+                capability,
+                reason,
+                ..
+            } => {
+                assert_eq!(msg_id, Some("r1".to_string()));
+                assert_eq!(capability, "ping_icmp");
+                assert_eq!(reason, CapabilityDeniedReason::AgentCapabilityDisabled);
+            }
+            other => panic!("expected CapabilityDenied, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_traceroute_invalid_target_is_rejected() {
+        // Capability present but target fails validation -> a completed
+        // TracerouteRoundUpdate with an error is emitted on the channel. No
+        // real traceroute subprocess is spawned.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"traceroute","request_id":"r2","target":"bad target with spaces; rm -rf","max_hops":30}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        assert_eq!(sink.sent_count(), 0);
+        let msg = h.cmd_result_rx.recv().await.expect("update expected");
+        match msg {
+            AgentMessage::TracerouteRoundUpdate {
+                request_id,
+                completed,
+                error,
+                ..
+            } => {
+                assert_eq!(request_id, "r2");
+                assert!(completed);
+                assert!(error.is_some(), "invalid target must carry an error");
+            }
+            other => panic!("expected TracerouteRoundUpdate, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_file_ops_denied_when_capability_absent() {
+        // CAP_FILE off -> each file op replies with a disabled error frame on
+        // the sink (capability-absent branch).
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_FILE;
+        let mut h = Harness::new(caps, FileConfig::default());
+        let mut sink = RecordingSink::new();
+
+        h.dispatch(r#"{"type":"file_list","msg_id":"m1","path":"/tmp"}"#, &mut sink)
+            .await
+            .unwrap();
+        h.dispatch(r#"{"type":"file_stat","msg_id":"m2","path":"/tmp"}"#, &mut sink)
+            .await
+            .unwrap();
+        h.dispatch(
+            r#"{"type":"file_read","msg_id":"m3","path":"/tmp/x","max_size":1024}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"file_write","msg_id":"m4","path":"/tmp/x","content":"aGk="}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"file_delete","msg_id":"m5","path":"/tmp/x","recursive":false}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(r#"{"type":"file_mkdir","msg_id":"m6","path":"/tmp/d"}"#, &mut sink)
+            .await
+            .unwrap();
+        h.dispatch(
+            r#"{"type":"file_move","msg_id":"m7","from":"/tmp/a","to":"/tmp/b"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"file_download_start","transfer_id":"t1","path":"/tmp/x"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"file_upload_start","transfer_id":"t2","path":"/tmp/x","size":4}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"file_upload_chunk","transfer_id":"t3","offset":0,"data":"aGk="}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"file_upload_end","transfer_id":"t4"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+
+        let msgs = sink.agent_messages();
+        // 11 dispatches each produce exactly one response frame.
+        assert_eq!(msgs.len(), 11, "each denied file op emits one frame");
+        // Spot-check representative variants carry the disabled error.
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileListResult { error: Some(e), .. } if e.contains("disabled")
+        )));
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileOpResult { success: false, error: Some(e), .. } if e.contains("disabled")
+        )));
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileDownloadError { error, .. } if error.contains("disabled")
+        )));
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileUploadError { error, .. } if error.contains("disabled")
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_file_download_cancel_is_silent_noop() {
+        // FileDownloadCancel has no capability gate and no response; it just
+        // calls cancel_download. Cancelling an unknown transfer is a no-op.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"file_download_cancel","transfer_id":"nope"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        assert_eq!(sink.sent_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_file_ops_success_with_enabled_manager() {
+        // File manager enabled with a real temp root: exercise the success
+        // branches (mkdir -> write -> list -> stat -> read -> move -> delete).
+        let tmp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tmp.path()).unwrap();
+        let cfg = enabled_file_cfg(&root);
+        let mut h = Harness::new(ALL_CAPS, cfg);
+        let mut sink = RecordingSink::new();
+
+        let sub = root.join("sub");
+        let file_a = sub.join("a.txt");
+        let file_b = sub.join("b.txt");
+        let mkdir = format!(
+            r#"{{"type":"file_mkdir","msg_id":"mk","path":"{}"}}"#,
+            sub.to_string_lossy()
+        );
+        h.dispatch(&mkdir, &mut sink).await.unwrap();
+
+        // `validate_path` canonicalizes, which requires the target to already
+        // exist — mirror the file_manager's own tests by pre-creating an empty
+        // file so the write overwrites it.
+        std::fs::write(&file_a, "").unwrap();
+
+        // base64("hi") == "aGk="
+        let write = format!(
+            r#"{{"type":"file_write","msg_id":"w","path":"{}","content":"aGk="}}"#,
+            file_a.to_string_lossy()
+        );
+        h.dispatch(&write, &mut sink).await.unwrap();
+
+        let list = format!(
+            r#"{{"type":"file_list","msg_id":"ls","path":"{}"}}"#,
+            sub.to_string_lossy()
+        );
+        h.dispatch(&list, &mut sink).await.unwrap();
+
+        let stat = format!(
+            r#"{{"type":"file_stat","msg_id":"st","path":"{}"}}"#,
+            file_a.to_string_lossy()
+        );
+        h.dispatch(&stat, &mut sink).await.unwrap();
+
+        let read = format!(
+            r#"{{"type":"file_read","msg_id":"rd","path":"{}","max_size":1024}}"#,
+            file_a.to_string_lossy()
+        );
+        h.dispatch(&read, &mut sink).await.unwrap();
+
+        let mv = format!(
+            r#"{{"type":"file_move","msg_id":"mv","from":"{}","to":"{}"}}"#,
+            file_a.to_string_lossy(),
+            file_b.to_string_lossy()
+        );
+        h.dispatch(&mv, &mut sink).await.unwrap();
+
+        let del = format!(
+            r#"{{"type":"file_delete","msg_id":"del","path":"{}","recursive":false}}"#,
+            file_b.to_string_lossy()
+        );
+        h.dispatch(&del, &mut sink).await.unwrap();
+
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 7, "seven file ops, seven responses");
+
+        // mkdir succeeded
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileOpResult { msg_id, success: true, .. } if msg_id == "mk"
+        )));
+        // write succeeded
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileOpResult { msg_id, success: true, .. } if msg_id == "w"
+        )));
+        // list returned at least the written file, no error
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileListResult { msg_id, error: None, entries, .. }
+                if msg_id == "ls" && entries.iter().any(|e| e.name == "a.txt")
+        )));
+        // stat found the entry
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileStatResult { msg_id, entry: Some(_), error: None } if msg_id == "st"
+        )));
+        // read returned the base64 content of "hi"
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileReadResult { msg_id, content: Some(c), error: None }
+                if msg_id == "rd" && c == "aGk="
+        )));
+        // move + delete succeeded
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileOpResult { msg_id, success: true, .. } if msg_id == "mv"
+        )));
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileOpResult { msg_id, success: true, .. } if msg_id == "del"
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_file_upload_success_round_trip() {
+        // Enabled manager: start -> chunk -> end upload, all on the sink.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tmp.path()).unwrap();
+        let cfg = enabled_file_cfg(&root);
+        let mut h = Harness::new(ALL_CAPS, cfg);
+        let mut sink = RecordingSink::new();
+
+        let dest = root.join("up.bin");
+        // "hi" -> base64 "aGk=" -> 2 bytes
+        let start = format!(
+            r#"{{"type":"file_upload_start","transfer_id":"u1","path":"{}","size":2}}"#,
+            dest.to_string_lossy()
+        );
+        h.dispatch(&start, &mut sink).await.unwrap();
+        h.dispatch(
+            r#"{"type":"file_upload_chunk","transfer_id":"u1","offset":0,"data":"aGk="}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(
+            r#"{"type":"file_upload_end","transfer_id":"u1"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 3);
+        // start ack at offset 0
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::FileUploadAck { transfer_id, offset: 0 } if transfer_id == "u1"
+        ));
+        // chunk ack advances offset to 2
+        assert!(matches!(
+            &msgs[1],
+            AgentMessage::FileUploadAck { transfer_id, offset: 2 } if transfer_id == "u1"
+        ));
+        // upload complete
+        assert!(matches!(
+            &msgs[2],
+            AgentMessage::FileUploadComplete { transfer_id } if transfer_id == "u1"
+        ));
+        // bytes actually landed on disk
+        assert_eq!(std::fs::read(&dest).unwrap(), b"hi");
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_docker_start_stats_unavailable_emits_unavailable() {
+        // docker_manager is None -> DockerStartStats replies DockerUnavailable
+        // and leaves the stats interval unset.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"docker_start_stats","interval_secs":2}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::DockerUnavailable { msg_id: None }
+        ));
+        assert!(h.docker_stats_interval.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_docker_stop_stats_clears_interval() {
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        // Pre-seed an interval so we can observe it being cleared.
+        h.docker_stats_interval =
+            Some(tokio::time::interval(Duration::from_secs(60)));
+        let mut sink = RecordingSink::new();
+        h.dispatch(r#"{"type":"docker_stop_stats"}"#, &mut sink)
+            .await
+            .unwrap();
+        assert_eq!(sink.sent_count(), 0);
+        assert!(h.docker_stats_interval.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_docker_request_unavailable_carries_msg_id() {
+        // Request variants with docker_manager None reply DockerUnavailable
+        // echoing the request's msg_id.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"docker_list_containers","msg_id":"req-1"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::DockerUnavailable { msg_id: Some(id) } if id == "req-1"
+        ));
+
+        // An event variant with no msg_id replies with msg_id: None.
+        let mut sink2 = RecordingSink::new();
+        h.dispatch(r#"{"type":"docker_events_start"}"#, &mut sink2)
+            .await
+            .unwrap();
+        let msgs2 = sink2.agent_messages();
+        assert_eq!(msgs2.len(), 1);
+        assert!(matches!(
+            &msgs2[0],
+            AgentMessage::DockerUnavailable { msg_id: None }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_blocklist_reset_returns_ack() {
+        // FirewallManager uses the real CliNftExecutor. On a host without `nft`
+        // (macOS CI) BlocklistReset deterministically fails the wipe but still
+        // returns a BlocklistResetAck reply, which the dispatcher forwards.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(r#"{"type":"blocklist_reset"}"#, &mut sink)
+            .await
+            .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1, "reset always produces an ack");
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::BlocklistResetAck { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_ip_quality_sync_and_run_now_respect_capability() {
+        // With CAP_IP_QUALITY present, sync/run_now are accepted (no WS output).
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"ip_quality_sync","services":[],"interval_hours":12}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        h.dispatch(r#"{"type":"ip_quality_run_now"}"#, &mut sink)
+            .await
+            .unwrap();
+        assert_eq!(sink.sent_count(), 0);
+
+        // Without CAP_IP_QUALITY, both are silently ignored as well.
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_IP_QUALITY;
+        let mut h2 = Harness::new(caps, FileConfig::default());
+        let mut sink2 = RecordingSink::new();
+        h2.dispatch(
+            r#"{"type":"ip_quality_sync","services":[],"interval_hours":6}"#,
+            &mut sink2,
+        )
+        .await
+        .unwrap();
+        h2.dispatch(r#"{"type":"ip_quality_run_now"}"#, &mut sink2)
+            .await
+            .unwrap();
+        assert_eq!(sink2.sent_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_blocklist_sync_add_remove_forward_acks() {
+        // Sync/Add/Remove all route into FirewallManager and forward its
+        // BlocklistAck reply over the WS sink. On a host without `nft` the
+        // apply fails but the manager still returns an ack (with Failed state),
+        // so the dispatcher always emits exactly one frame per request.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+
+        // Full-state sync with one entry.
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"blocklist_sync","entries":[{"id":"e1","target":"1.2.3.4/32","family":4}]}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1, "sync emits one ack frame");
+        assert!(matches!(&msgs[0], AgentMessage::BlocklistAck { .. }));
+
+        // Incremental add.
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"blocklist_add","entry":{"id":"e2","target":"5.6.7.8/32","family":4}}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1, "add emits one ack frame");
+        assert!(matches!(&msgs[0], AgentMessage::BlocklistAck { .. }));
+
+        // Incremental remove of an unknown id still produces a single-item ack.
+        let mut sink = RecordingSink::new();
+        h.dispatch(r#"{"type":"blocklist_remove","id":"e2"}"#, &mut sink)
+            .await
+            .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1, "remove emits one ack frame");
+        assert!(matches!(&msgs[0], AgentMessage::BlocklistAck { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_file_ops_disabled_manager_replies_disabled_even_with_capability() {
+        // CAP_FILE present but the manager is disabled (default FileConfig has
+        // enabled=false). The `!file_manager.is_enabled()` half of the guard
+        // must still short-circuit with the disabled error, independent of caps.
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        assert!(!h.file_manager.is_enabled(), "default file manager is disabled");
+        let mut sink = RecordingSink::new();
+        h.dispatch(r#"{"type":"file_list","msg_id":"m1","path":"/tmp"}"#, &mut sink)
+            .await
+            .unwrap();
+        h.dispatch(
+            r#"{"type":"file_write","msg_id":"m2","path":"/tmp/x","content":"aGk="}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 2, "each op replies once even with cap present");
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileListResult { error: Some(e), .. } if e.contains("disabled")
+        )));
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AgentMessage::FileOpResult { success: false, error: Some(e), .. } if e.contains("disabled")
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_upgrade_already_running_emits_failure_on_channel() {
+        // Force the global single-flight latch to "in progress", then dispatch
+        // an Upgrade with the capability present. The duplicate must be rejected
+        // with an UpgradeResult error on the cmd channel (not the WS sink), and
+        // the latch must be left untouched (still true) for the real holder.
+        UPGRADE_IN_PROGRESS.store(true, Ordering::SeqCst);
+        // Ensure we always release the global latch so other tests aren't poisoned.
+        struct Guard;
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                UPGRADE_IN_PROGRESS.store(false, Ordering::SeqCst);
+            }
+        }
+        let _guard = Guard;
+
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"upgrade","version":"9.9.9","job_id":"dup-job"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        // Nothing is written to the WS sink for the duplicate case.
+        assert_eq!(sink.sent_count(), 0, "duplicate upgrade writes to channel, not sink");
+        let msg = tokio::time::timeout(Duration::from_secs(5), h.cmd_result_rx.recv())
+            .await
+            .expect("failure msg expected in time")
+            .expect("UpgradeResult expected");
+        match msg {
+            AgentMessage::UpgradeResult {
+                job_id,
+                target_version,
+                stage,
+                error,
+                ..
+            } => {
+                assert_eq!(job_id, Some("dup-job".to_string()));
+                assert_eq!(target_version, "9.9.9");
+                assert_eq!(stage, UpgradeStage::Downloading);
+                assert!(error.contains("already running"));
+            }
+            other => panic!("expected UpgradeResult, got {other:?}"),
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    // `docker_request_msg_id` — remaining non-msg-id docker variants.
+    // ----------------------------------------------------------------------
+
+    #[test]
+    fn test_docker_request_msg_id_none_for_log_and_event_variants() {
+        // Streaming control variants carry no request msg_id -> None.
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerLogsStart {
+                session_id: "s".to_string(),
+                container_id: "c".to_string(),
+                tail: None,
+                follow: false,
+            }),
+            None
+        );
+        assert_eq!(
+            docker_request_msg_id(&ServerMessage::DockerLogsStop {
+                session_id: "s".to_string(),
+            }),
+            None
+        );
+        assert_eq!(docker_request_msg_id(&ServerMessage::DockerEventsStart), None);
+        assert_eq!(docker_request_msg_id(&ServerMessage::DockerEventsStop), None);
+        assert_eq!(docker_request_msg_id(&ServerMessage::DockerStartStats { interval_secs: 5 }), None);
+    }
+
+    // ----------------------------------------------------------------------
+    // `execute_command` — pure-ish process helper. These shell out to `sh`,
+    // which is always present on macOS/Linux CI, so they remain deterministic.
+    // ----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_execute_command_captures_stdout_and_zero_exit() {
+        // Deterministic stdout, exit 0.
+        let r = execute_command("t-ok", "printf hello", Some(5)).await;
+        assert_eq!(r.task_id, "t-ok");
+        assert_eq!(r.exit_code, 0);
+        assert!(r.output.contains("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_command_nonzero_exit_and_stderr_appended() {
+        // `sh -c 'exit 3'` yields exit_code 3; stderr is folded into output.
+        let r = execute_command("t-fail", "echo oops 1>&2; exit 3", Some(5)).await;
+        assert_eq!(r.exit_code, 3);
+        assert!(r.output.contains("oops"), "stderr must be appended to output");
+    }
+
+    #[tokio::test]
+    async fn test_execute_command_truncates_large_output() {
+        // Emit more than MAX_TASK_OUTPUT_SIZE bytes; the helper must cap and
+        // append the truncation marker. `yes | head -c N` is portable.
+        let cmd = format!("yes A | head -c {}", MAX_TASK_OUTPUT_SIZE + 5000);
+        let r = execute_command("t-big", &cmd, Some(10)).await;
+        assert_eq!(r.exit_code, 0);
+        assert!(
+            r.output.ends_with("\n... (output truncated)"),
+            "oversized output must carry the truncation marker"
+        );
+        assert!(
+            r.output.len() <= MAX_TASK_OUTPUT_SIZE + "\n... (output truncated)".len(),
+            "truncated output must respect the cap"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_command_times_out_with_negative_exit() {
+        // A 2s sleep against a 1s timeout must surface the timeout branch.
+        let r = execute_command("t-timeout", "sleep 2", Some(1)).await;
+        assert_eq!(r.exit_code, -1);
+        assert!(r.output.contains("timed out"), "timeout branch must report it");
+    }
+
+    // ----------------------------------------------------------------------
+    // Upgrade progress/failure emitters — pure channel-send helpers.
+    // ----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_emit_upgrade_progress_sends_progress_message() {
+        let (tx, mut rx) = mpsc::channel::<AgentMessage>(4);
+        emit_upgrade_progress(&tx, Some("job-7".to_string()), "1.2.3", UpgradeStage::Verifying)
+            .await;
+        let msg = rx.recv().await.expect("progress message expected");
+        match msg {
+            AgentMessage::UpgradeProgress {
+                job_id,
+                target_version,
+                stage,
+                ..
+            } => {
+                assert_eq!(job_id, Some("job-7".to_string()));
+                assert_eq!(target_version, "1.2.3");
+                assert_eq!(stage, UpgradeStage::Verifying);
+            }
+            other => panic!("expected UpgradeProgress, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_emit_upgrade_failure_sends_result_with_error_and_backup() {
+        let (tx, mut rx) = mpsc::channel::<AgentMessage>(4);
+        emit_upgrade_failure(
+            &tx,
+            None,
+            "2.0.0".to_string(),
+            UpgradeStage::Installing,
+            "disk full".to_string(),
+            Some("/opt/agent.bak".to_string()),
+        )
+        .await;
+        let msg = rx.recv().await.expect("failure message expected");
+        match msg {
+            AgentMessage::UpgradeResult {
+                job_id,
+                target_version,
+                stage,
+                error,
+                backup_path,
+                ..
+            } => {
+                assert_eq!(job_id, None);
+                assert_eq!(target_version, "2.0.0");
+                assert_eq!(stage, UpgradeStage::Installing);
+                assert_eq!(error, "disk full");
+                assert_eq!(backup_path, Some("/opt/agent.bak".to_string()));
+            }
+            other => panic!("expected UpgradeResult, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_emit_upgrade_helpers_swallow_closed_channel() {
+        // Dropping the receiver makes send() fail; the helper must log-and-return
+        // rather than panic (the send error is intentionally ignored).
+        let (tx, rx) = mpsc::channel::<AgentMessage>(1);
+        drop(rx);
+        // Neither call should panic on the closed channel.
+        emit_upgrade_progress(&tx, None, "1.0.0", UpgradeStage::Downloading).await;
+        emit_upgrade_failure(
+            &tx,
+            None,
+            "1.0.0".to_string(),
+            UpgradeStage::Downloading,
+            "x".to_string(),
+            None,
+        )
+        .await;
+    }
+
+    // ----------------------------------------------------------------------
+    // End-to-end connect/handshake/send/receive/reconnect coverage against a
+    // FAKE in-process WebSocket server.
+    //
+    // These tests drive the *real* connection entry points
+    // (`connect_and_report` and `run_with_external`) over a loopback TCP
+    // socket so the handshake parse, SystemInfo/Report send loop, the
+    // receive/dispatch loop for several ServerMessage variants, server-
+    // initiated Close, and the reconnect-with-backoff path all execute
+    // against an actual WebSocket — not a mock sink.
+    //
+    // Everything is bounded by `tokio::time::timeout` so a stuck path fails
+    // fast instead of hanging the suite. Network-touching background work
+    // (external IP discovery, IP-change polling) is disabled via the config
+    // so the only frames the fake server observes come from the code under
+    // test.
+    // ----------------------------------------------------------------------
+
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::WebSocketStream;
+    use tokio_tungstenite::tungstenite::Message as WsMessage;
+
+    /// Server-side half of an accepted fake connection.
+    type ServerWs = WebSocketStream<tokio::net::TcpStream>;
+
+    /// Build a reporter config that points at the given loopback `ws_addr`
+    /// (`host:port`) and disables every network-touching background task so
+    /// the fake server only ever sees frames produced by the connect/report
+    /// loop itself. `state_dir` is a throwaway temp dir so the capability
+    /// grant store/supervisor never touch a real `/var/lib` path.
+    fn e2e_config(ws_addr: &std::net::SocketAddr, state_dir: &std::path::Path) -> AgentConfig {
+        AgentConfig {
+            // build_ws_url prepends ws:// for a schemeless host:port.
+            server_url: ws_addr.to_string(),
+            token: "e2e-token".to_string(),
+            enrollment_code: String::new(),
+            collector: CollectorConfig::default(),
+            log: LogConfig::default(),
+            file: FileConfig::default(),
+            ip_change: IpChangeConfig {
+                // Disable the interface-delta poller AND clear the external IP
+                // URL list so no public-IP HTTP probe is ever spawned.
+                enabled: false,
+                external_ip_urls: vec![],
+                interval_secs: 3600,
+            },
+            upgrade: UpgradeConfig::default(),
+            security: SecurityConfig::default(),
+            capabilities: CapabilitiesConfig {
+                state_dir: state_dir.to_string_lossy().to_string(),
+                ..CapabilitiesConfig::default()
+            },
+        }
+    }
+
+    /// Bind a loopback listener and return it plus its bound address.
+    async fn bind_fake_server() -> (TcpListener, std::net::SocketAddr) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        (listener, addr)
+    }
+
+    /// Accept one TCP connection and complete the WebSocket handshake.
+    async fn accept_ws(listener: &TcpListener) -> ServerWs {
+        let (stream, _) = listener.accept().await.expect("accept");
+        tokio_tungstenite::accept_async(stream)
+            .await
+            .expect("ws handshake")
+    }
+
+    /// Send a `Welcome` frame from the server side, advertising the given
+    /// report interval (seconds).
+    async fn send_welcome(ws: &mut ServerWs, report_interval: u32) {
+        let welcome = ServerMessage::Welcome {
+            server_id: "fake-server".to_string(),
+            protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
+            report_interval,
+            capabilities: None,
+        };
+        let json = serde_json::to_string(&welcome).unwrap();
+        ws.send(WsMessage::Text(json.into())).await.expect("send welcome");
+    }
+
+    /// Send any `ServerMessage` as a text frame.
+    async fn send_server_msg(ws: &mut ServerWs, msg: &ServerMessage) {
+        let json = serde_json::to_string(msg).unwrap();
+        ws.send(WsMessage::Text(json.into())).await.expect("send server msg");
+    }
+
+    /// Send a raw text frame verbatim. Used for hand-rolled JSON (entries whose
+    /// constructor shape we don't want to depend on) and for deliberately
+    /// malformed / unknown-variant payloads.
+    async fn send_raw_text(ws: &mut ServerWs, text: &str) {
+        ws.send(WsMessage::Text(text.to_string().into()))
+            .await
+            .expect("send raw text");
+    }
+
+    /// Read text frames from the agent until one decodes into an
+    /// `AgentMessage` matching `pred`, returning it. Pings/Pongs/binary frames
+    /// and non-matching messages are skipped. Bounded by the outer timeout the
+    /// caller wraps this in.
+    async fn read_agent_until<F>(ws: &mut ServerWs, mut pred: F) -> AgentMessage
+    where
+        F: FnMut(&AgentMessage) -> bool,
+    {
+        loop {
+            let frame = ws
+                .next()
+                .await
+                .expect("stream ended before match")
+                .expect("ws read error");
+            if let WsMessage::Text(text) = frame
+                && let Ok(msg) = serde_json::from_str::<AgentMessage>(text.as_str())
+                && pred(&msg)
+            {
+                return msg;
+            }
+        }
+    }
+
+    /// Helper: perform the standard server-side handshake — receive the
+    /// agent's first `SystemInfo`, then send an `Ack` for it. Returns the
+    /// SystemInfo frame for assertions.
+    async fn handshake_collect_system_info(ws: &mut ServerWs) -> AgentMessage {
+        let info = read_agent_until(ws, |m| matches!(m, AgentMessage::SystemInfo { .. })).await;
+        if let AgentMessage::SystemInfo { msg_id, .. } = &info {
+            send_server_msg(ws, &ServerMessage::Ack { msg_id: msg_id.clone() }).await;
+        }
+        info
+    }
+
+    /// Drive `connect_and_report` to completion (or error) with no external
+    /// stream, bounded by `dur`. Returns the loop's result; `Elapsed` on the
+    /// outer timeout means the connection was still live (never closed).
+    async fn run_connect_once(
+        reporter: &mut Reporter,
+        dur: Duration,
+    ) -> Result<anyhow::Result<()>, tokio::time::error::Elapsed> {
+        let mut external: Option<mpsc::Receiver<AgentMessage>> = None;
+        tokio::time::timeout(dur, reporter.connect_and_report(&mut external)).await
+    }
+
+    #[tokio::test]
+    async fn test_e2e_handshake_sends_system_info_after_welcome() {
+        // Handshake + Welcome parse + first send: after the server sends
+        // Welcome, the agent must emit a SystemInfo frame carrying its
+        // effective capabilities. Then the server closes and the connect loop
+        // returns Ok.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 1).await;
+            let info = handshake_collect_system_info(&mut ws).await;
+            // Tell the agent to shut the connection down cleanly.
+            ws.send(WsMessage::Close(None)).await.ok();
+            info
+        });
+
+        let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
+
+        let info = tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+
+        // The very first agent frame after Welcome is SystemInfo with our caps.
+        match info {
+            AgentMessage::SystemInfo {
+                agent_local_capabilities,
+                ..
+            } => {
+                assert_eq!(
+                    agent_local_capabilities,
+                    Some(ALL_CAPS),
+                    "SystemInfo must report the agent's effective capabilities"
+                );
+            }
+            other => panic!("expected SystemInfo, got {other:?}"),
+        }
+
+        // Server-initiated Close makes connect_and_report return Ok(()).
+        let connect = connect.expect("connect loop should finish before the timeout");
+        assert!(connect.is_ok(), "clean server Close should yield Ok: {connect:?}");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_report_loop_emits_periodic_reports() {
+        // Send loop: with a 1s report interval the agent must push at least one
+        // Report frame on its own (driven by the collector + interval), which
+        // the fake server reads off the wire.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 1).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            // Wait for an unsolicited Report (interval-driven, ~1s).
+            let report = tokio::time::timeout(
+                Duration::from_secs(8),
+                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Report(_))),
+            )
+            .await
+            .expect("no Report observed within bound");
+            ws.send(WsMessage::Close(None)).await.ok();
+            report
+        });
+
+        let _ = run_connect_once(&mut reporter, Duration::from_secs(12)).await;
+
+        let report = tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+        assert!(
+            matches!(report, AgentMessage::Report(_)),
+            "expected a periodic Report frame"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_e2e_receive_dispatch_ping_pong() {
+        // Receive/dispatch loop: a server-sent Ping must round-trip into an
+        // agent Pong over the real socket.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let pong = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Pong)).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            pong
+        });
+
+        let _ = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
+
+        let pong = tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+        assert!(matches!(pong, AgentMessage::Pong), "Ping must yield Pong");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_receive_dispatch_exec_returns_task_result() {
+        // Receive/dispatch + spawned execution + background-result forwarding:
+        // a server Exec drives execute_command and the resulting TaskResult is
+        // forwarded back over the WS via the cmd_result channel arm of the
+        // select! loop.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::Exec {
+                    task_id: "e2e-task".to_string(),
+                    command: "printf e2e-out".to_string(),
+                    timeout: Some(5),
+                },
+            )
+            .await;
+            let result = tokio::time::timeout(
+                Duration::from_secs(10),
+                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::TaskResult { .. })),
+            )
+            .await
+            .expect("no TaskResult within bound");
+            ws.send(WsMessage::Close(None)).await.ok();
+            result
+        });
+
+        let _ = run_connect_once(&mut reporter, Duration::from_secs(15)).await;
+
+        let result = tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+        match result {
+            AgentMessage::TaskResult { result, .. } => {
+                assert_eq!(result.task_id, "e2e-task");
+                assert_eq!(result.exit_code, 0);
+                assert!(result.output.contains("e2e-out"));
+            }
+            other => panic!("expected TaskResult, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_ping_tasks_sync_then_close_is_clean() {
+        // A non-reply ServerMessage (PingTasksSync with an empty list) is
+        // dispatched without producing a WS frame, and the subsequent
+        // server-initiated Close still returns Ok — exercising the
+        // receive-dispatch path for a "silent" variant plus the Close arm.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(&mut ws, &ServerMessage::PingTasksSync { tasks: vec![] }).await;
+            // Then a server Ping to confirm the loop is still alive and
+            // processing after the silent sync.
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let _ = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Pong)).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
+
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+        let connect = connect.expect("connect loop should finish before the timeout");
+        assert!(connect.is_ok(), "clean close after sync should be Ok: {connect:?}");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_server_initiated_close_returns_ok() {
+        // Server-initiated Close handling: the server sends Welcome, reads
+        // SystemInfo, then immediately closes. connect_and_report must return
+        // Ok(()) (the normal-reconnect signal), not an error.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::SystemInfo { .. })).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            // Drain until the agent's side of the close arrives / stream ends.
+            while let Some(Ok(frame)) = ws.next().await {
+                if matches!(frame, WsMessage::Close(_)) {
+                    break;
+                }
+            }
+        });
+
+        let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+
+        let connect = connect.expect("connect loop should finish before the timeout");
+        assert!(connect.is_ok(), "server Close must yield Ok(()): {connect:?}");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_connect_failure_to_closed_port_is_error() {
+        // Connect-failure path: pointing at a bound-then-closed port makes the
+        // TCP/WS connect fail, so connect_and_report returns Err (which the
+        // run_with_external loop turns into a backoff+retry).
+        let (listener, addr) = bind_fake_server().await;
+        // Drop the listener so the port refuses connections.
+        drop(listener);
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
+        let connect = connect.expect("connect should fail fast, not hang");
+        assert!(
+            connect.is_err(),
+            "connecting to a closed port must surface an error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_e2e_run_loop_reconnects_after_server_close() {
+        // Reconnect-with-backoff: run_with_external loops forever. The fake
+        // server accepts connection #1, completes the handshake, then closes.
+        // After a (jittered, ~0.5-1.2s) backoff the agent must dial again and
+        // we observe a *second* accepted+handshaked connection. The whole loop
+        // is bounded by an outer timeout that aborts the never-returning task.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        // Server: accept two connections; each time send Welcome, read
+        // SystemInfo, then close. Signal each successful handshake.
+        let (hs_tx, mut hs_rx) = mpsc::channel::<u32>(2);
+        let server = tokio::spawn(async move {
+            for n in 1..=2u32 {
+                let mut ws = accept_ws(&listener).await;
+                send_welcome(&mut ws, 30).await;
+                let _ = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::SystemInfo { .. }))
+                    .await;
+                hs_tx.send(n).await.ok();
+                ws.send(WsMessage::Close(None)).await.ok();
+                // Give the agent a moment to observe the close before we loop
+                // back to accept the reconnect.
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+
+        // Drive the real reconnect loop in the background; abort it once we've
+        // confirmed the reconnect so the forever-loop can't outlive the test.
+        let agent = tokio::spawn(async move {
+            // run_with_external takes the external stream by value; None for tests.
+            reporter.run_with_external(None).await;
+        });
+
+        // First handshake.
+        let first = tokio::time::timeout(Duration::from_secs(8), hs_rx.recv())
+            .await
+            .expect("first handshake timed out")
+            .expect("server dropped before first handshake");
+        assert_eq!(first, 1);
+
+        // Second handshake — only reachable if the agent reconnected after the
+        // server's first Close (i.e. the run_with_external backoff/retry path).
+        let second = tokio::time::timeout(Duration::from_secs(8), hs_rx.recv())
+            .await
+            .expect("agent did not reconnect within bound")
+            .expect("server dropped before reconnect");
+        assert_eq!(second, 2, "agent must reconnect after a clean server close");
+
+        agent.abort();
+        let _ = tokio::time::timeout(Duration::from_secs(5), server).await;
+    }
+
+    // ----------------------------------------------------------------------
+    // Additional inbound-dispatch coverage through the REAL select! loop.
+    //
+    // Each test below drives a single, previously-uncovered `ServerMessage`
+    // dispatch arm end-to-end over the fake WS server. We follow the same
+    // handshake recipe (accept -> Welcome -> read SystemInfo -> Ack), push one
+    // control message, observe (or assert the absence of) the agent's reply on
+    // the wire, then Close. Everything stays bounded by tokio::time::timeout so
+    // a stuck arm fails fast. Docker-over-socket and wss/TLS arms are skipped:
+    // they genuinely require a live daemon or a real certificate.
+    // ----------------------------------------------------------------------
+
+    /// Drive `run_connect_once` to completion in the background and join the
+    /// server task, both bounded. Returns the server task's value.
+    async fn drive_e2e<T>(
+        reporter: &mut Reporter,
+        server: tokio::task::JoinHandle<T>,
+        connect_bound: Duration,
+    ) -> T {
+        let _ = run_connect_once(reporter, connect_bound).await;
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked")
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_network_probe_sync_is_silent() {
+        // NetworkProbeSync with an empty target list is dispatched without
+        // producing any WS frame. We confirm liveness afterwards with a
+        // Ping->Pong round-trip so the silent arm can't simply have wedged
+        // the loop.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::NetworkProbeSync {
+                    targets: vec![],
+                    interval: 30,
+                    packet_count: 3,
+                },
+            )
+            .await;
+            // Liveness check: the loop is still processing inbound frames.
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let pong = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Pong)).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            pong
+        });
+
+        let pong = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(matches!(pong, AgentMessage::Pong));
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_ip_quality_sync_and_run_now_are_silent() {
+        // IpQualitySync + IpQualityRunNow are accepted silently when the
+        // capability is present (default ALL_CAPS includes CAP_IP_QUALITY).
+        // No WS frame results; we confirm liveness with Ping->Pong.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::IpQualitySync {
+                    services: vec![],
+                    interval_hours: 12,
+                },
+            )
+            .await;
+            send_server_msg(&mut ws, &ServerMessage::IpQualityRunNow).await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let pong = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Pong)).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            pong
+        });
+
+        let pong = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(matches!(pong, AgentMessage::Pong));
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_terminal_open_denied_then_input_resize_close_noop() {
+        // TerminalOpen with CAP_TERMINAL revoked: the manager routes to its
+        // denied path (no PTY spawned) and emits a TerminalEvent::Error, which
+        // the select! loop's term_rx arm forwards over the WS as a
+        // TerminalError frame — exercising both the TerminalOpen dispatch arm
+        // AND the terminal-event forwarding arm end-to-end. The subsequent
+        // input/resize/close ops target a session that was never created, so
+        // they are safe no-ops. We assert we see the TerminalError frame and
+        // that the loop survives (Ping->Pong afterward).
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_TERMINAL;
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::TerminalOpen {
+                    session_id: "term-1".to_string(),
+                    rows: 24,
+                    cols: 80,
+                },
+            )
+            .await;
+            // The denied open surfaces a TerminalError over the WS.
+            let err = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::TerminalError { session_id, .. } if session_id == "term-1")
+            })
+            .await;
+            // Input/resize/close on the never-opened session are no-ops.
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::TerminalInput {
+                    session_id: "term-1".to_string(),
+                    data: "aGk=".to_string(),
+                },
+            )
+            .await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::TerminalResize {
+                    session_id: "term-1".to_string(),
+                    rows: 30,
+                    cols: 100,
+                },
+            )
+            .await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::TerminalClose {
+                    session_id: "term-1".to_string(),
+                },
+            )
+            .await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let pong = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Pong)).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            (err, pong)
+        });
+
+        let (err, pong) = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(
+            matches!(err, AgentMessage::TerminalError { session_id, .. } if session_id == "term-1"),
+            "denied terminal open must surface a TerminalError over the WS"
+        );
+        assert!(matches!(pong, AgentMessage::Pong));
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_blocklist_reset_forwards_ack() {
+        // BlocklistReset routes into the FirewallManager and forwards its
+        // BlocklistResetAck reply straight back over the WS. On a host without
+        // `nft` (macOS CI) the wipe fails but the manager still returns the
+        // ack, so the dispatcher always emits exactly one reply frame.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(&mut ws, &ServerMessage::BlocklistReset).await;
+            let ack = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::BlocklistResetAck { .. })
+            })
+            .await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            ack
+        });
+
+        let ack = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(matches!(ack, AgentMessage::BlocklistResetAck { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_blocklist_sync_forwards_ack() {
+        // BlocklistSync (full-state) routes into the FirewallManager and
+        // forwards its BlocklistAck reply over the WS. The apply fails without
+        // `nft` but the manager still returns a (failed-state) ack frame.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            // Build a single-entry full-state sync via JSON so we don't depend
+            // on the exact BlockEntry constructor shape.
+            send_raw_text(
+                &mut ws,
+                r#"{"type":"blocklist_sync","entries":[{"id":"b1","target":"1.2.3.4/32","family":4}]}"#,
+            )
+            .await;
+            let ack =
+                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::BlocklistAck { .. })).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            ack
+        });
+
+        let ack = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(matches!(ack, AgentMessage::BlocklistAck { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_list_denied_replies_over_ws() {
+        // CAP_FILE revoked: FileList replies with a FileListResult carrying the
+        // "disabled" error directly over the WS (the capability-absent branch).
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_FILE;
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileList {
+                    msg_id: "fl-1".to_string(),
+                    path: "/tmp".to_string(),
+                },
+            )
+            .await;
+            let reply =
+                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::FileListResult { .. }))
+                    .await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            reply
+        });
+
+        let reply = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        match reply {
+            AgentMessage::FileListResult { msg_id, error, .. } => {
+                assert_eq!(msg_id, "fl-1");
+                assert!(
+                    error.is_some_and(|e| e.contains("disabled")),
+                    "disabled file capability must surface an error"
+                );
+            }
+            other => panic!("expected FileListResult, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_upload_start_acks_over_ws() {
+        // File manager enabled with a real temp root: FileUploadStart returns a
+        // FileUploadAck at offset 0 over the WS (the success branch of the
+        // capability-present + enabled path).
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(tmp.path()).unwrap();
+        // Throwaway state dir for the capability grant store/supervisor.
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(&root);
+        let mut reporter = Reporter::new(config, "fp".to_string(), ALL_CAPS);
+
+        let dest = root.join("upload.bin");
+        let dest_s = dest.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-1".to_string(),
+                    path: dest_s,
+                    size: 2,
+                },
+            )
+            .await;
+            let ack =
+                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::FileUploadAck { .. })).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            ack
+        });
+
+        let ack = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        match ack {
+            AgentMessage::FileUploadAck { transfer_id, offset } => {
+                assert_eq!(transfer_id, "up-1");
+                assert_eq!(offset, 0, "fresh upload starts at offset 0");
+            }
+            other => panic!("expected FileUploadAck, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_exec_denied_forwards_capability_denied() {
+        // CAP_EXEC revoked: Exec is denied and the CapabilityDenied is pushed
+        // onto the cmd_result channel, which the select! loop forwards over the
+        // WS. This exercises the denied-Exec arm AND the cmd_result_rx
+        // forwarding arm end-to-end.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_EXEC;
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::Exec {
+                    task_id: "denied-exec".to_string(),
+                    command: "true".to_string(),
+                    timeout: Some(1),
+                },
+            )
+            .await;
+            let denied = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::CapabilityDenied { capability, .. } if capability == "exec")
+            })
+            .await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            denied
+        });
+
+        let denied = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        match denied {
+            AgentMessage::CapabilityDenied {
+                msg_id,
+                capability,
+                reason,
+                ..
+            } => {
+                assert_eq!(msg_id, Some("denied-exec".to_string()));
+                assert_eq!(capability, "exec");
+                assert_eq!(reason, CapabilityDeniedReason::AgentCapabilityDisabled);
+            }
+            other => panic!("expected CapabilityDenied, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_upgrade_denied_writes_capability_denied_to_ws() {
+        // CAP_UPGRADE revoked: Upgrade is denied with a CapabilityDenied written
+        // DIRECTLY to the WS sink (not via the cmd channel, unlike Exec).
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let caps = ALL_CAPS & !serverbee_common::constants::CAP_UPGRADE;
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::Upgrade {
+                    version: "9.9.9".to_string(),
+                    download_url: String::new(),
+                    sha256: String::new(),
+                    job_id: Some("up-job".to_string()),
+                },
+            )
+            .await;
+            let denied = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::CapabilityDenied { capability, .. } if capability == "upgrade")
+            })
+            .await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            denied
+        });
+
+        let denied = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        match denied {
+            AgentMessage::CapabilityDenied {
+                capability, reason, ..
+            } => {
+                assert_eq!(capability, "upgrade");
+                assert_eq!(reason, CapabilityDeniedReason::AgentCapabilityDisabled);
+            }
+            other => panic!("expected CapabilityDenied, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_traceroute_invalid_target_forwards_error_update() {
+        // Capability present but the target fails validation: a completed
+        // TracerouteRoundUpdate carrying an error is pushed onto the cmd_result
+        // channel and forwarded over the WS. No traceroute subprocess spawns.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_raw_text(
+                &mut ws,
+                r#"{"type":"traceroute","request_id":"tr-bad","target":"bad target; rm -rf","max_hops":30}"#,
+            )
+            .await;
+            let update = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::TracerouteRoundUpdate { request_id, .. } if request_id == "tr-bad")
+            })
+            .await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            update
+        });
+
+        let update = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        match update {
+            AgentMessage::TracerouteRoundUpdate {
+                request_id,
+                completed,
+                error,
+                ..
+            } => {
+                assert_eq!(request_id, "tr-bad");
+                assert!(completed);
+                assert!(error.is_some(), "invalid target must carry an error");
+            }
+            other => panic!("expected TracerouteRoundUpdate, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_unparseable_text_is_ignored_then_loop_survives() {
+        // A non-JSON / unknown-variant text frame is swallowed by the
+        // dispatcher (parse error -> Ok with no output). The loop must keep
+        // running, proven by a subsequent Ping->Pong.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            send_raw_text(&mut ws, "definitely not json").await;
+            send_raw_text(&mut ws, r#"{"type":"does_not_exist"}"#).await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let pong = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Pong)).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            pong
+        });
+
+        let pong = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(matches!(pong, AgentMessage::Pong));
+    }
+
+    #[tokio::test]
+    async fn test_e2e_server_ping_frame_round_trips_to_pong_frame() {
+        // A WebSocket protocol-level Ping frame (not a ServerMessage::Ping) is
+        // answered by the dedicated `Message::Ping(data) => Pong(data)` arm of
+        // the select! loop. tokio-tungstenite may auto-respond to control
+        // frames, so we don't assert on the Pong wire frame directly; instead
+        // we send a Ping frame and then confirm the loop is still alive and
+        // dispatching application messages via a ServerMessage::Ping->Pong.
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            ws.send(WsMessage::Ping(vec![1, 2, 3].into())).await.ok();
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let pong = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::Pong)).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            pong
+        });
+
+        let pong = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(matches!(pong, AgentMessage::Pong));
     }
 }
 

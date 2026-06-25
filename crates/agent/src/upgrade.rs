@@ -383,5 +383,240 @@ mod tests {
         assert!(is_group_or_world_writable(0o664));
         // 0o646 rw-r--rw-: other writable
         assert!(is_group_or_world_writable(0o646));
+        // 0o666 rw-rw-rw-: both group and other writable
+        assert!(is_group_or_world_writable(0o666));
+        // 0o000: no bits set at all
+        assert!(!is_group_or_world_writable(0o000));
+    }
+
+    #[test]
+    fn derive_urls_trims_trailing_slash_and_prefixes_version() {
+        // Multiple trailing slashes are stripped; the asset path is appended.
+        let (bin, sums) = derive_urls("https://host/releases///", "2.0.0").unwrap();
+        assert!(bin.starts_with("https://host/releases/download/v2.0.0/"));
+        assert_eq!(sums, "https://host/releases/download/v2.0.0/checksums.txt");
+        // The binary URL embeds the current platform asset name.
+        assert!(bin.contains(current_asset_name()));
+    }
+
+    #[test]
+    fn derive_urls_rejects_plain_http_and_other_schemes() {
+        assert!(derive_urls("http://host/releases", "1.0.0").is_err());
+        assert!(derive_urls("ftp://host/releases", "1.0.0").is_err());
+        // Even a bare host without scheme is rejected.
+        assert!(derive_urls("host/releases", "1.0.0").is_err());
+    }
+
+    #[test]
+    fn ensure_upgrade_rejects_invalid_target_version() {
+        // Current valid, target unparsable → Err on the target branch.
+        assert!(ensure_upgrade("1.0.0", "not-a-version").is_err());
+        // Current unparsable → Err on the current branch.
+        assert!(ensure_upgrade("not-a-version", "1.0.0").is_err());
+        // Leading 'v' is stripped on both sides before parsing.
+        assert!(ensure_upgrade("v1.0.0", "v1.0.1").is_ok());
+    }
+
+    #[test]
+    fn checksum_for_skips_blank_and_single_token_lines() {
+        // Blank lines and lines with a single token are skipped (continue branch).
+        let body = "\n\
+                    onlyonetoken\n\
+                    \n\
+                    cafebabe  serverbee-agent-linux-arm64\n";
+        assert_eq!(
+            checksum_for(body, "serverbee-agent-linux-arm64").unwrap(),
+            "cafebabe"
+        );
+    }
+
+    #[test]
+    fn checksum_for_handles_non_star_prefixed_name() {
+        // Text-mode sha256sum uses two spaces with no '*' prefix.
+        let body = "0011aabb  serverbee-agent-darwin-arm64\n";
+        assert_eq!(
+            checksum_for(body, "serverbee-agent-darwin-arm64").unwrap(),
+            "0011aabb"
+        );
+    }
+
+    #[test]
+    fn normalize_spki_pin_rejects_wrong_lengths() {
+        // 65 chars → Err on the length check.
+        assert!(normalize_spki_pin(&"a".repeat(65)).is_err());
+        // 64 chars but a non-hex char present → Err on the hexdigit check.
+        let almost = format!("{}g", "a".repeat(63));
+        assert!(normalize_spki_pin(&almost).is_err());
+    }
+
+    #[test]
+    fn spki_sha256_hex_rejects_invalid_der() {
+        // Non-certificate bytes fail to parse → Err branch of spki_sha256_hex.
+        assert!(spki_sha256_hex(&[0u8, 1, 2, 3]).is_err());
+        assert!(spki_sha256_hex(&[]).is_err());
+    }
+
+    #[test]
+    fn webpki_root_store_is_populated() {
+        // The embedded webpki root bundle must contain trust anchors.
+        let store = webpki_root_store();
+        assert!(!store.roots.is_empty());
+    }
+
+    #[test]
+    fn spki_pin_verifier_delegates_supported_schemes() {
+        // Build a verifier wrapping the standard WebPki verifier and confirm
+        // the delegating methods route through `inner`.
+        let inner = WebPkiServerVerifier::builder(Arc::new(webpki_root_store()))
+            .build()
+            .expect("build webpki verifier");
+        let verifier = SpkiPinVerifier {
+            inner,
+            expected_spki_hex: "a".repeat(64),
+        };
+        // supported_verify_schemes delegates to the inner verifier; non-empty.
+        assert!(!verifier.supported_verify_schemes().is_empty());
+        // Debug impl is exercised (derive(Debug)).
+        assert!(format!("{verifier:?}").contains("SpkiPinVerifier"));
+    }
+
+    #[test]
+    fn redirect_action_equality_and_debug() {
+        // Exercise PartialEq/Eq + Debug derives on every variant.
+        assert_eq!(RedirectAction::Follow, RedirectAction::Follow);
+        assert_ne!(RedirectAction::Follow, RedirectAction::StopNonHttps);
+        assert_ne!(RedirectAction::StopNonHttps, RedirectAction::StopTooMany);
+        for a in [
+            RedirectAction::Follow,
+            RedirectAction::StopNonHttps,
+            RedirectAction::StopTooMany,
+        ] {
+            assert!(!format!("{a:?}").is_empty());
+        }
+    }
+
+    #[test]
+    fn upgrade_download_timeout_is_ten_minutes() {
+        assert_eq!(UPGRADE_DOWNLOAD_TIMEOUT_SECS, 600);
+    }
+
+    #[test]
+    fn parse_release_repo_arg_ignores_unrelated_flags_before_match() {
+        // Unrelated args are skipped until the flag is found.
+        let v = vec![
+            "bin".into(),
+            "--other".into(),
+            "value".into(),
+            "--release-repo".into(),
+            "https://r/releases".into(),
+        ];
+        assert_eq!(parse_release_repo_arg(v), Some("https://r/releases".into()));
+    }
+
+    #[test]
+    fn spki_sha256_hex_matches_known_fixture_value() {
+        // Regression-lock the SPKI extraction: the SHA-256 over the leaf cert's
+        // raw SubjectPublicKeyInfo DER must equal this fixed value. Any change to
+        // the parsing/hashing path (e.g. hashing the wrong field) breaks this.
+        assert_eq!(
+            spki_sha256_hex(TEST_CERT_DER).unwrap(),
+            "775868e8add9e661fb231ad0762f2f555dc2e53453bb26735b87225b4c6f04ec"
+        );
+    }
+
+    #[test]
+    fn derive_urls_with_empty_version_yields_v_only_segment() {
+        // Boundary: an empty version interpolates to a bare `v` between slashes,
+        // so both URLs contain the `download/v/` segment with no version digits.
+        let (bin, sums) = derive_urls("https://host/releases", "").unwrap();
+        assert!(bin.starts_with("https://host/releases/download/v/"));
+        assert_eq!(sums, "https://host/releases/download/v/checksums.txt");
+    }
+
+    #[test]
+    fn derive_urls_preserves_existing_path_segments() {
+        // A base with nested path segments is kept verbatim before `/download`.
+        let (bin, _) = derive_urls("https://h/org/repo/releases", "3.1.4").unwrap();
+        assert!(bin.starts_with("https://h/org/repo/releases/download/v3.1.4/"));
+    }
+
+    #[test]
+    fn parse_release_repo_arg_eq_form_wins_when_first() {
+        // The `=` form is matched at the first arg, before any later plain flag.
+        let v = vec![
+            "bin".into(),
+            "--release-repo=https://first/releases".into(),
+            "--release-repo".into(),
+            "https://second/releases".into(),
+        ];
+        assert_eq!(
+            parse_release_repo_arg(v),
+            Some("https://first/releases".into())
+        );
+    }
+
+    #[test]
+    fn parse_release_repo_arg_eq_value_may_contain_equals() {
+        // strip_prefix only removes the leading `--release-repo=`; the rest of the
+        // value (including further `=`) is preserved intact.
+        let v = vec!["bin".into(), "--release-repo=https://h/p?a=b=c".into()];
+        assert_eq!(parse_release_repo_arg(v), Some("https://h/p?a=b=c".into()));
+    }
+
+    #[test]
+    fn checksum_for_asset_name_match_is_case_sensitive() {
+        // The asset name comparison is exact: a differently-cased name does not
+        // match, so the lookup falls through to the not-found error.
+        let body = "feedface  SERVERBEE-AGENT-LINUX-AMD64\n";
+        assert!(checksum_for(body, "serverbee-agent-linux-amd64").is_err());
+    }
+
+    #[test]
+    fn checksum_for_returns_first_matching_line() {
+        // When the asset appears twice, the first occurrence wins (early return).
+        let body = "1111  serverbee-agent-linux-amd64\n\
+                    2222  serverbee-agent-linux-amd64\n";
+        assert_eq!(
+            checksum_for(body, "serverbee-agent-linux-amd64").unwrap(),
+            "1111"
+        );
+    }
+
+    #[test]
+    fn normalize_spki_pin_trims_surrounding_whitespace_on_valid_pin() {
+        // Leading/trailing whitespace around an otherwise-valid pin is trimmed,
+        // and the result is returned lowercased without error.
+        let core = "c".repeat(64);
+        let padded = format!("  \t{}\n", core.to_uppercase());
+        assert_eq!(normalize_spki_pin(&padded).unwrap(), Some(core));
+    }
+
+    #[test]
+    fn ensure_upgrade_accepts_patch_and_minor_bumps() {
+        // Patch and minor increments are strictly greater and therefore accepted.
+        assert!(ensure_upgrade("1.2.3", "1.2.4").is_ok());
+        assert!(ensure_upgrade("1.2.3", "1.3.0").is_ok());
+        // A higher prerelease is still less than its release per semver ordering.
+        assert!(ensure_upgrade("1.0.0", "1.0.0-rc.1").is_err());
+    }
+
+    #[test]
+    fn redirect_decision_non_https_takes_priority_over_hop_limit() {
+        // A non-https scheme is rejected even when the hop count is also at/over
+        // the limit: the scheme check is evaluated first.
+        assert_eq!(redirect_decision("http", 50), RedirectAction::StopNonHttps);
+        // Empty scheme is likewise treated as non-https.
+        assert_eq!(redirect_decision("", 0), RedirectAction::StopNonHttps);
+    }
+
+    #[test]
+    fn is_group_or_world_writable_ignores_setuid_and_exec_bits() {
+        // setuid/setgid/sticky and execute bits do not set the write mask, so a
+        // mode with only those high bits is reported as not group/world writable.
+        assert!(!is_group_or_world_writable(0o4700)); // setuid + rwx owner only
+        assert!(!is_group_or_world_writable(0o2755)); // setgid + rwxr-xr-x (no g/o write)
+        assert!(!is_group_or_world_writable(0o1755)); // sticky + rwxr-xr-x (no g/o write)
+        // A high mode that DOES include group write is still detected.
+        assert!(is_group_or_world_writable(0o4775)); // setuid + group write present
     }
 }

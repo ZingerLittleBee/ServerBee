@@ -95,3 +95,62 @@ fn map_vendor_to_virt(value: &str) -> Option<String> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_does_not_panic() {
+        // On non-Linux platforms this returns None; on Linux it returns either
+        // None or a short virt identifier. We only assert it does not panic and,
+        // when present, the value is a non-empty string.
+        let result = detect();
+        if let Some(ref v) = result {
+            assert!(!v.is_empty());
+        }
+        #[cfg(not(target_os = "linux"))]
+        assert!(result.is_none(), "non-Linux detect() must return None");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_map_vendor_to_virt_known_vendors() {
+        let cases = [
+            ("QEMU Standard PC", "kvm"),
+            ("KVM", "kvm"),
+            ("VMware, Inc.", "vmware"),
+            ("VirtualBox", "virtualbox"),
+            ("innotek GmbH VBOX", "virtualbox"),
+            ("Microsoft Corporation", "hyperv"),
+            ("Hyper-V", "hyperv"),
+            ("Xen", "xen"),
+            ("docker", "docker"),
+            ("LXC", "lxc"),
+            ("Linux Container", "lxc"),
+            ("Parallels", "parallels"),
+            ("Bochs", "bochs"),
+            ("OpenStack Nova", "openstack"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                map_vendor_to_virt(input).as_deref(),
+                Some(expected),
+                "vendor {input:?} should map to {expected}"
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_map_vendor_to_virt_unknown_is_none() {
+        assert_eq!(map_vendor_to_virt("Acme Bare Metal Server"), None);
+        assert_eq!(map_vendor_to_virt(""), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_detect_from_dmi_missing_path_is_none() {
+        assert_eq!(detect_from_dmi("/sys/class/dmi/id/nonexistent_xyz"), None);
+    }
+}

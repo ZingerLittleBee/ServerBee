@@ -401,4 +401,316 @@ mod tests {
 
         prober.stop_all();
     }
+
+    fn target(id: &str, probe_type: &str, addr: &str) -> NetworkProbeTarget {
+        NetworkProbeTarget {
+            target_id: id.to_string(),
+            name: format!("name-{id}"),
+            target: addr.to_string(),
+            probe_type: probe_type.to_string(),
+        }
+    }
+
+    // ── probe_type_to_cap: unknown/empty variants ────────────────────────────
+
+    #[test]
+    fn test_probe_type_to_cap_empty_and_other() {
+        assert_eq!(probe_type_to_cap(""), None);
+        assert_eq!(probe_type_to_cap("ICMP"), None); // case-sensitive
+        assert_eq!(probe_type_to_cap("dns"), None);
+    }
+
+    // ── parse_host_port: extra fall-through branches ─────────────────────────
+
+    #[test]
+    fn test_parse_host_port_non_numeric_port_falls_through() {
+        // rfind finds a colon but the port doesn't parse: fall through to default.
+        let (host, port) = parse_host_port("example.com:notaport");
+        assert_eq!(host, "example.com:notaport");
+        assert_eq!(port, 80);
+    }
+
+    #[test]
+    fn test_parse_host_port_trailing_colon() {
+        // Trailing colon -> empty port string -> parse fails -> default.
+        let (host, port) = parse_host_port("example.com:");
+        assert_eq!(host, "example.com:");
+        assert_eq!(port, 80);
+    }
+
+    #[test]
+    fn test_parse_host_port_uses_last_colon() {
+        // rfind returns the LAST colon; the bare IPv6 here has its port parsed
+        // off the final segment only when that segment is numeric.
+        let (host, port) = parse_host_port("[::1]:8443");
+        assert_eq!(host, "[::1]");
+        assert_eq!(port, 8443);
+    }
+
+    // ── aggregate_results: single sample + zero-sent edge cases ───────────────
+
+    #[test]
+    fn test_aggregate_results_single_sample() {
+        let result = aggregate_results("solo", 1, 1, vec![42.5]);
+        assert_eq!(result.target_id, "solo");
+        assert_eq!(result.packet_sent, 1);
+        assert_eq!(result.packet_received, 1);
+        assert!((result.packet_loss - 0.0).abs() < f64::EPSILON);
+        assert!((result.avg_latency.unwrap() - 42.5).abs() < 0.001);
+        assert!((result.min_latency.unwrap() - 42.5).abs() < 0.001);
+        assert!((result.max_latency.unwrap() - 42.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_aggregate_results_zero_sent_is_total_loss() {
+        // sent == 0 hits the dedicated `1.0` branch (avoids divide-by-zero).
+        let result = aggregate_results("z", 0, 0, vec![]);
+        assert_eq!(result.packet_sent, 0);
+        assert_eq!(result.packet_received, 0);
+        assert!((result.packet_loss - 1.0).abs() < f64::EPSILON);
+        assert!(result.avg_latency.is_none());
+    }
+
+    #[test]
+    fn test_aggregate_results_min_max_unordered_input() {
+        // Latencies arrive out of order; min/max must still be correct.
+        let result = aggregate_results("u", 5, 5, vec![30.0, 5.0, 99.0, 12.0, 50.0]);
+        assert!((result.min_latency.unwrap() - 5.0).abs() < 0.001);
+        assert!((result.max_latency.unwrap() - 99.0).abs() < 0.001);
+        assert!((result.avg_latency.unwrap() - 39.2).abs() < 0.001);
+    }
+
+    // ── run_multi_probe: unknown probe type returns total-loss result ─────────
+
+    #[tokio::test]
+    async fn test_run_multi_probe_unknown_type_total_loss() {
+        let t = target("u1", "dns", "example.com");
+        let result = run_multi_probe(&t, 4).await;
+        assert_eq!(result.target_id, "u1");
+        assert_eq!(result.packet_sent, 4);
+        assert_eq!(result.packet_received, 0);
+        assert!((result.packet_loss - 1.0).abs() < f64::EPSILON);
+        assert!(result.avg_latency.is_none());
+        assert!(result.min_latency.is_none());
+        assert!(result.max_latency.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_run_multi_probe_unknown_type_clamps_count_to_one() {
+        // count.max(1): a 0 count becomes 1 for the reported packet_sent.
+        let t = target("u2", "whatever", "host");
+        let result = run_multi_probe(&t, 0).await;
+        assert_eq!(result.packet_sent, 1);
+        assert!((result.packet_loss - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_run_multi_probe_icmp_blocked_loopback_total_loss() {
+        // ICMP path: SSRF guard blocks loopback inside probe_icmp_batch, so the
+        // aggregated result reports total loss without any real ping.
+        let t = target("icmp-lb", "icmp", "127.0.0.1");
+        let result = run_multi_probe(&t, 3).await;
+        assert_eq!(result.target_id, "icmp-lb");
+        assert_eq!(result.packet_sent, 3);
+        assert_eq!(result.packet_received, 0);
+        assert!((result.packet_loss - 1.0).abs() < f64::EPSILON);
+        assert!(result.avg_latency.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_run_multi_probe_tcp_blocked_loopback_total_loss() {
+        // TCP path: each probe_tcp is SSRF-blocked (no outbound network), so
+        // successes stays 0 and aggregate_results reports total loss.
+        let t = target("tcp-lb", "tcp", "127.0.0.1:1");
+        let result = run_multi_probe(&t, 2).await;
+        assert_eq!(result.target_id, "tcp-lb");
+        assert_eq!(result.packet_sent, 2);
+        assert_eq!(result.packet_received, 0);
+        assert!((result.packet_loss - 1.0).abs() < f64::EPSILON);
+        assert!(result.avg_latency.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_run_multi_probe_http_blocked_loopback_total_loss() {
+        // HTTP path: each probe_http is SSRF-blocked before any connect.
+        let t = target("http-lb", "http", "http://127.0.0.1:1");
+        let result = run_multi_probe(&t, 2).await;
+        assert_eq!(result.target_id, "http-lb");
+        assert_eq!(result.packet_sent, 2);
+        assert_eq!(result.packet_received, 0);
+        assert!((result.packet_loss - 1.0).abs() < f64::EPSILON);
+    }
+
+    // ── sync: restart-on-config-change branches ──────────────────────────────
+
+    #[tokio::test]
+    async fn test_sync_restarts_when_interval_changes() {
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.len(), 1);
+        let first_interval = prober.tasks.get("t1").unwrap().interval;
+        assert_eq!(first_interval, 60);
+
+        // Same target, different interval -> task is restarted with new interval.
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 120, 3);
+        assert_eq!(prober.tasks.len(), 1);
+        assert_eq!(prober.tasks.get("t1").unwrap().interval, 120);
+
+        prober.stop_all();
+    }
+
+    #[tokio::test]
+    async fn test_sync_restarts_when_packet_count_changes() {
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.get("t1").unwrap().packet_count, 3);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 7);
+        assert_eq!(prober.tasks.len(), 1);
+        assert_eq!(prober.tasks.get("t1").unwrap().packet_count, 7);
+
+        prober.stop_all();
+    }
+
+    #[tokio::test]
+    async fn test_sync_restarts_when_target_address_changes() {
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.get("t1").unwrap().target.target, "1.1.1.1:80");
+
+        // Same id, different target address -> restart.
+        prober.sync(vec![target("t1", "tcp", "8.8.8.8:80")], 60, 3);
+        assert_eq!(prober.tasks.len(), 1);
+        assert_eq!(prober.tasks.get("t1").unwrap().target.target, "8.8.8.8:80");
+
+        prober.stop_all();
+    }
+
+    #[tokio::test]
+    async fn test_sync_restarts_when_probe_type_changes() {
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP | CAP_PING_HTTP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.get("t1").unwrap().target.probe_type, "tcp");
+
+        // Same id, different probe_type -> restart.
+        prober.sync(vec![target("t1", "http", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.len(), 1);
+        assert_eq!(prober.tasks.get("t1").unwrap().target.probe_type, "http");
+
+        prober.stop_all();
+    }
+
+    #[tokio::test]
+    async fn test_sync_no_restart_when_unchanged() {
+        // Re-syncing with an identical target keeps the same handle (no restart).
+        // We can't compare handle identity, but the task count and config stay
+        // stable across the unchanged sync.
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.len(), 1);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.len(), 1);
+        assert_eq!(prober.tasks.get("t1").unwrap().interval, 60);
+        assert_eq!(prober.tasks.get("t1").unwrap().packet_count, 3);
+
+        prober.stop_all();
+    }
+
+    #[tokio::test]
+    async fn test_sync_adds_and_keeps_multiple_targets() {
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP | CAP_PING_HTTP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(
+            vec![
+                target("a", "tcp", "1.1.1.1:80"),
+                target("b", "http", "1.1.1.1:80"),
+            ],
+            60,
+            3,
+        );
+        assert_eq!(prober.tasks.len(), 2);
+        assert!(prober.tasks.contains_key("a"));
+        assert!(prober.tasks.contains_key("b"));
+
+        // Drop "a", keep "b", add "c".
+        prober.sync(
+            vec![
+                target("b", "http", "1.1.1.1:80"),
+                target("c", "tcp", "1.1.1.1:80"),
+            ],
+            60,
+            3,
+        );
+        assert_eq!(prober.tasks.len(), 2);
+        assert!(!prober.tasks.contains_key("a"));
+        assert!(prober.tasks.contains_key("b"));
+        assert!(prober.tasks.contains_key("c"));
+
+        prober.stop_all();
+    }
+
+    #[tokio::test]
+    async fn test_sync_filters_all_when_no_capabilities() {
+        // Zero capability bitmap -> every target is filtered out.
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(0));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(
+            vec![
+                target("a", "icmp", "1.1.1.1"),
+                target("b", "tcp", "1.1.1.1:80"),
+                target("c", "http", "http://1.1.1.1"),
+            ],
+            60,
+            3,
+        );
+        assert_eq!(prober.tasks.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_sync_filters_unknown_probe_type() {
+        // An unknown probe_type maps to None -> filtered out even with full caps.
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(vec![target("weird", "dns", "example.com")], 60, 3);
+        assert_eq!(prober.tasks.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_stop_all_clears_tasks() {
+        let (tx, _rx) = mpsc::channel(16);
+        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let mut prober = NetworkProber::new(tx, caps);
+
+        prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
+        assert_eq!(prober.tasks.len(), 1);
+
+        prober.stop_all();
+        assert_eq!(prober.tasks.len(), 0);
+
+        // stop_all on an already-empty prober is a no-op.
+        prober.stop_all();
+        assert_eq!(prober.tasks.len(), 0);
+    }
 }

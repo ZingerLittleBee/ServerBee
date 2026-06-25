@@ -347,4 +347,249 @@ mod tests {
     fn chain_has_set_drop_rule_handles_malformed() {
         assert!(!super::chain_has_set_drop_rule("not json", "block_v4"));
     }
+
+    // ----- is_idempotent_signal branch coverage -----
+
+    #[test]
+    fn add_op_without_file_exists_is_not_idempotent() {
+        // Add op but stderr is some other failure → must NOT be treated as
+        // already-in-desired-state.
+        assert!(!is_idempotent_signal(
+            "Error: Operation not permitted",
+            NftOp::AddElement
+        ));
+    }
+
+    #[test]
+    fn delete_op_with_enoent_is_idempotent_for_all_delete_variants() {
+        assert!(is_idempotent_signal(
+            "Error: No such file or directory",
+            NftOp::FlushSet
+        ));
+        assert!(is_idempotent_signal(
+            "Error: No such file or directory",
+            NftOp::DeleteTable
+        ));
+    }
+
+    #[test]
+    fn delete_op_with_file_exists_is_not_idempotent() {
+        // ENOENT is the only idempotent signal for delete ops; a stray
+        // "File exists" must not be mistaken for one.
+        assert!(!is_idempotent_signal("Error: File exists", NftOp::DeleteElement));
+    }
+
+    #[test]
+    fn add_table_set_chain_rule_share_eexist_signal() {
+        assert!(is_idempotent_signal("File exists", NftOp::AddTable));
+        assert!(is_idempotent_signal("File exists", NftOp::AddSet));
+        assert!(is_idempotent_signal("File exists", NftOp::AddChain));
+        assert!(is_idempotent_signal("File exists", NftOp::AddRule));
+    }
+
+    // ----- element op family selection -----
+
+    #[tokio::test]
+    async fn add_element_v6_uses_v6_set() {
+        let exec = MockExec::default();
+        let entry = BlockEntry {
+            id: "y".into(),
+            target: "2001:db8::/32".into(),
+            family: 6,
+        };
+        add_element(&exec, &entry).await.unwrap();
+        let calls = exec.calls.lock().await;
+        let joined = calls[0].join(" ");
+        assert!(joined.contains("block_v6"));
+        assert!(joined.contains("2001:db8::/32"));
+        assert!(joined.contains("add element inet serverbee"));
+    }
+
+    #[tokio::test]
+    async fn delete_element_v4_uses_v4_set() {
+        let exec = MockExec::default();
+        let entry = BlockEntry {
+            id: "z".into(),
+            target: "5.6.7.8/32".into(),
+            family: 4,
+        };
+        delete_element(&exec, &entry).await.unwrap();
+        let calls = exec.calls.lock().await;
+        let joined = calls[0].join(" ");
+        assert!(joined.contains("delete element inet serverbee block_v4"));
+        assert!(joined.contains("5.6.7.8/32"));
+    }
+
+    #[tokio::test]
+    async fn delete_element_v6_uses_v6_set() {
+        let exec = MockExec::default();
+        let entry = BlockEntry {
+            id: "z".into(),
+            target: "2001:db8::1/128".into(),
+            family: 6,
+        };
+        delete_element(&exec, &entry).await.unwrap();
+        let calls = exec.calls.lock().await;
+        let joined = calls[0].join(" ");
+        assert!(joined.contains("delete element inet serverbee block_v6"));
+    }
+
+    // ----- unconditional_wipe -----
+
+    #[tokio::test]
+    async fn unconditional_wipe_flushes_both_sets_then_deletes_table() {
+        let exec = MockExec::default();
+        unconditional_wipe(&exec).await.unwrap();
+        let calls = exec.calls.lock().await;
+        let has = |needle: &str| calls.iter().any(|c| c.join(" ").contains(needle));
+        assert!(has("flush set inet serverbee block_v4"));
+        assert!(has("flush set inet serverbee block_v6"));
+        assert!(has("delete table inet serverbee"));
+        // delete table must be the final call.
+        assert!(calls.last().unwrap().join(" ").contains("delete table"));
+    }
+
+    // ----- ensure_resources when drop rules already exist -----
+
+    /// Mock whose `list_json` reports both drop rules already present, so
+    /// `ensure_resources` must SKIP both `add rule` invocations.
+    #[derive(Default)]
+    struct RulesPresentExec {
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl NftExecutor for RulesPresentExec {
+        async fn run(&self, args: &[&str], _op: NftOp) -> Result<(), NftError> {
+            self.calls
+                .lock()
+                .await
+                .push(args.iter().map(|s| s.to_string()).collect());
+            Ok(())
+        }
+        async fn list_json(&self, _args: &[&str]) -> Result<String, NftError> {
+            Ok(r#"{"nftables":[
+                {"rule":{"expr":[{"match":{"right":{"set":"block_v4"}}},{"drop":null}]}},
+                {"rule":{"expr":[{"match":{"right":{"set":"block_v6"}}},{"drop":null}]}}
+            ]}"#
+            .into())
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_resources_skips_existing_drop_rules() {
+        let exec = RulesPresentExec::default();
+        ensure_resources(&exec).await.unwrap();
+        let calls = exec.calls.lock().await;
+        let added_rule = calls.iter().any(|c| c.join(" ").contains("add rule"));
+        assert!(!added_rule, "drop rules already present must not be re-added");
+        // Table/set/chain bootstrap still happens.
+        assert!(calls.iter().any(|c| c.join(" ").contains("add table inet serverbee")));
+    }
+
+    /// Mock whose first `run` (add table) fails, so `ensure_resources`
+    /// propagates the error before reaching the listing step.
+    struct AddTableFailsExec;
+
+    #[async_trait]
+    impl NftExecutor for AddTableFailsExec {
+        async fn run(&self, _args: &[&str], op: NftOp) -> Result<(), NftError> {
+            if matches!(op, NftOp::AddTable) {
+                Err(NftError::PermissionDenied)
+            } else {
+                Ok(())
+            }
+        }
+        async fn list_json(&self, _args: &[&str]) -> Result<String, NftError> {
+            Ok(r#"{"nftables":[]}"#.into())
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_resources_propagates_run_error() {
+        let exec = AddTableFailsExec;
+        let err = ensure_resources(&exec).await.unwrap_err();
+        assert!(matches!(err, NftError::PermissionDenied));
+    }
+
+    /// Mock whose `list_json` errors, exercising the `?` on the listing call.
+    struct ListFailsExec;
+
+    #[async_trait]
+    impl NftExecutor for ListFailsExec {
+        async fn run(&self, _args: &[&str], _op: NftOp) -> Result<(), NftError> {
+            Ok(())
+        }
+        async fn list_json(&self, _args: &[&str]) -> Result<String, NftError> {
+            Err(NftError::Other("list boom".into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn ensure_resources_propagates_list_error() {
+        let exec = ListFailsExec;
+        let err = ensure_resources(&exec).await.unwrap_err();
+        assert!(matches!(err, NftError::Other(_)));
+    }
+
+    // ----- chain_has_set_drop_rule structural parsing edge cases -----
+
+    #[test]
+    fn chain_has_set_drop_rule_missing_nftables_key() {
+        assert!(!super::chain_has_set_drop_rule(r#"{"other":[]}"#, "block_v4"));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_nftables_not_array() {
+        assert!(!super::chain_has_set_drop_rule(
+            r#"{"nftables":{"k":"v"}}"#,
+            "block_v4"
+        ));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_item_without_rule_is_skipped() {
+        // First item has no "rule" key (e.g. a "table"/"chain" metadata item),
+        // second carries the matching rule.
+        let listing = r#"{"nftables":[
+            {"table":{"name":"serverbee"}},
+            {"rule":{"expr":[{"match":{"right":{"set":"block_v4"}}}]}}
+        ]}"#;
+        assert!(super::chain_has_set_drop_rule(listing, "block_v4"));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_rule_without_expr_is_skipped() {
+        assert!(!super::chain_has_set_drop_rule(
+            r#"{"nftables":[{"rule":{"family":"inet"}}]}"#,
+            "block_v4"
+        ));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_stmt_without_match_is_skipped() {
+        // expr present but its statements never carry a "match" → no hit.
+        assert!(!super::chain_has_set_drop_rule(
+            r#"{"nftables":[{"rule":{"expr":[{"drop":null}]}}]}"#,
+            "block_v4"
+        ));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_match_without_set_right_is_skipped() {
+        // match present but right side has no "set" key.
+        assert!(!super::chain_has_set_drop_rule(
+            r#"{"nftables":[{"rule":{"expr":[{"match":{"right":{"payload":{}}}}]}}]}"#,
+            "block_v4"
+        ));
+    }
+
+    #[test]
+    fn chain_has_set_drop_rule_different_set_name_is_skipped() {
+        // A rule that references a *different* set must not match.
+        assert!(!super::chain_has_set_drop_rule(
+            r#"{"nftables":[{"rule":{"expr":[{"match":{"right":{"set":"some_other_set"}}}]}}]}"#,
+            "block_v4"
+        ));
+    }
 }

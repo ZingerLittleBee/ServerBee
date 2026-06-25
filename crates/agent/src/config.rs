@@ -533,4 +533,242 @@ state_dir = "/tmp/grants"
         assert_eq!(c.capabilities.state_dir, "/tmp/grants");
         assert_eq!(c.capabilities.temporary_max_duration_secs().unwrap(), 7_200);
     }
+
+    #[test]
+    fn capabilities_allow_deny_lists_parse_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[capabilities]
+allow = ["terminal", "exec"]
+deny = ["docker"]
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with capability lists");
+        assert_eq!(c.capabilities.allow, vec!["terminal", "exec"]);
+        assert_eq!(c.capabilities.deny, vec!["docker"]);
+        // Unspecified fields fall back to defaults.
+        assert_eq!(c.capabilities.temporary_max_duration, "24h");
+        assert_eq!(c.capabilities.state_dir, "/var/lib/serverbee");
+    }
+
+    #[test]
+    fn capabilities_grants_path_uses_custom_state_dir() {
+        let c = CapabilitiesConfig {
+            state_dir: "/srv/state".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            c.grants_path(),
+            std::path::Path::new("/srv/state/capability_grants.json")
+        );
+    }
+
+    #[test]
+    fn temporary_max_duration_secs_propagates_parse_error() {
+        // An unparsable duration surfaces as Err from parse_duration_secs.
+        let c = CapabilitiesConfig {
+            temporary_max_duration: "not-a-duration".to_string(),
+            ..Default::default()
+        };
+        assert!(c.temporary_max_duration_secs().is_err());
+    }
+
+    #[test]
+    fn collector_config_overrides_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[collector]
+interval = 15
+enable_gpu = true
+enable_temperature = false
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with collector overrides");
+        assert_eq!(c.collector.interval, 15);
+        assert!(c.collector.enable_gpu);
+        assert!(!c.collector.enable_temperature);
+    }
+
+    #[test]
+    fn collector_config_defaults_when_section_absent() {
+        let c = CollectorConfig::default();
+        assert_eq!(c.interval, 3);
+        assert!(!c.enable_gpu);
+        assert!(c.enable_temperature);
+    }
+
+    #[test]
+    fn file_config_overrides_and_defaults() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[file]
+enabled = true
+root_paths = ["/data", "/srv"]
+max_file_size = 4096
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with file overrides");
+        assert!(c.file.enabled);
+        assert_eq!(c.file.root_paths, vec!["/data", "/srv"]);
+        assert_eq!(c.file.max_file_size, 4096);
+        // deny_patterns not overridden → falls back to the curated defaults.
+        assert!(c.file.deny_patterns.iter().any(|p| p == "*.key"));
+    }
+
+    #[test]
+    fn file_config_default_has_expected_size_and_patterns() {
+        let c = FileConfig::default();
+        assert!(!c.enabled);
+        assert!(c.root_paths.is_empty());
+        assert_eq!(c.max_file_size, 1_073_741_824);
+        assert!(c.deny_patterns.contains(&"shadow".to_string()));
+        assert!(c.deny_patterns.contains(&"passwd".to_string()));
+    }
+
+    #[test]
+    fn log_config_overrides_and_defaults() {
+        let overridden: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[log]
+level = "debug"
+file = "/var/log/agent.log"
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with log overrides");
+        assert_eq!(overridden.log.level, "debug");
+        assert_eq!(overridden.log.file, "/var/log/agent.log");
+
+        // LogConfig derives Default, so both fields default to empty strings.
+        let defaults = LogConfig::default();
+        assert!(defaults.level.is_empty());
+        assert!(defaults.file.is_empty());
+    }
+
+    #[test]
+    fn ip_change_config_overrides_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[ip_change]
+enabled = false
+external_ip_urls = ["https://example.test/ip"]
+interval_secs = 60
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with ip_change overrides");
+        assert!(!c.ip_change.enabled);
+        assert_eq!(c.ip_change.external_ip_urls, vec!["https://example.test/ip"]);
+        assert_eq!(c.ip_change.interval_secs, 60);
+    }
+
+    #[test]
+    fn upgrade_config_overrides_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[upgrade]
+release_repo_url = "https://mirror.test/releases"
+release_cert_spki_sha256 = "abc123"
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with upgrade overrides");
+        assert_eq!(c.upgrade.release_repo_url, "https://mirror.test/releases");
+        assert_eq!(c.upgrade.release_cert_spki_sha256, "abc123");
+    }
+
+    #[test]
+    fn top_level_fields_parse_from_toml() {
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+token = "tkn"
+enrollment_code = "ENR-1"
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with top-level fields");
+        assert_eq!(c.server_url, "ws://localhost:9527");
+        assert_eq!(c.token, "tkn");
+        assert_eq!(c.enrollment_code, "ENR-1");
+    }
+
+    #[test]
+    fn env_prefix_overrides_toml_token() {
+        // Figment merges env (split on `__`) over TOML; the env token wins.
+        let value = super::with_serverbee_token_env(Some("env-wins"), || {
+            let c: AgentConfig = figment::Figment::new()
+                .merge(figment::providers::Toml::string(
+                    r#"
+server_url = "ws://localhost:9527"
+token = "from-toml"
+"#,
+                ))
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()
+                .expect("AgentConfig with env override");
+            c.token
+        });
+        assert_eq!(value, "env-wins");
+    }
+
+    #[test]
+    fn token_env_override_absent_returns_false() {
+        super::with_serverbee_token_env(None, || {
+            assert!(!AgentConfig::token_env_override_present());
+        });
+    }
+
+    #[test]
+    fn select_config_path_for_persistence_all_branches() {
+        // local exists → prefer local regardless of system.
+        assert_eq!(
+            AgentConfig::select_config_path_for_persistence(true, false),
+            "agent.toml"
+        );
+        assert_eq!(
+            AgentConfig::select_config_path_for_persistence(true, true),
+            "agent.toml"
+        );
+        // only system exists → use system path.
+        assert_eq!(
+            AgentConfig::select_config_path_for_persistence(false, true),
+            "/etc/serverbee/agent.toml"
+        );
+        // neither exists → fall back to local.
+        assert_eq!(
+            AgentConfig::select_config_path_for_persistence(false, false),
+            "agent.toml"
+        );
+        // Exercise the shared assertion helper too.
+        super::assert_config_path();
+    }
+
+    #[test]
+    fn agent_config_default_is_empty_and_carries_nested_defaults() {
+        let c = AgentConfig::default();
+        assert!(c.server_url.is_empty());
+        assert!(c.token.is_empty());
+        assert!(c.enrollment_code.is_empty());
+        // Nested #[serde(default)] sub-configs use their Default impls.
+        assert_eq!(c.collector.interval, 3);
+        assert!(c.security.enabled);
+        assert!(c.ip_change.enabled);
+    }
 }

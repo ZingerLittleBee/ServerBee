@@ -168,4 +168,132 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("exceeds temporary_max_duration"));
     }
+
+    #[test]
+    fn grant_rejects_unknown_cap_name() {
+        let dir = std::env::temp_dir().join(format!("sbtest-cli-badcap-{}", std::process::id()));
+        let config = config_with(&dir);
+        let err = run_grant(
+            &config,
+            CAP_DEFAULT,
+            &GrantArgs { cap: "not_a_real_cap".into(), for_duration: "30m".into(), reason: None },
+            0,
+            "root".into(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown capability"));
+    }
+
+    #[test]
+    fn grant_rejects_bad_duration_string() {
+        // The `for_duration` is parsed via parse_duration_secs; an unparseable
+        // value must surface as an error before any file is written.
+        let dir = std::env::temp_dir().join(format!("sbtest-cli-baddur-{}", std::process::id()));
+        let config = config_with(&dir);
+        let err = run_grant(
+            &config,
+            CAP_DEFAULT,
+            &GrantArgs { cap: "terminal".into(), for_duration: "notaduration".into(), reason: None },
+            0,
+            "root".into(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("invalid duration"));
+    }
+
+    #[test]
+    fn revoke_rejects_unknown_cap_name() {
+        let dir = std::env::temp_dir().join(format!("sbtest-cli-revbad-{}", std::process::id()));
+        let config = config_with(&dir);
+        let err = run_revoke(&config, "not_a_real_cap", 0).unwrap_err();
+        assert!(err.to_string().contains("unknown capability"));
+    }
+
+    #[test]
+    fn revoke_without_existing_grant_reports_no_active() {
+        // Revoking a cap that has no record exercises the `existed == false`
+        // branch of run_revoke.
+        let dir = std::env::temp_dir().join(format!("sbtest-cli-revnone-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = config_with(&dir);
+        let out = run_revoke(&config, "terminal", 0).unwrap();
+        assert!(out.contains("No active temporary grant for 'terminal'"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_empty_reports_none() {
+        let dir = std::env::temp_dir().join(format!("sbtest-cli-listempty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = config_with(&dir);
+        let out = run_list(&config, 0).unwrap();
+        assert_eq!(out, "No active temporary capability grants.");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_renders_active_grants_with_and_without_reason() {
+        let dir = std::env::temp_dir().join(format!("sbtest-cli-list-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = config_with(&dir);
+
+        // Grant with a reason.
+        run_grant(
+            &config,
+            CAP_DEFAULT,
+            &GrantArgs {
+                cap: "terminal".into(),
+                for_duration: "30m".into(),
+                reason: Some("debugging".into()),
+            },
+            1000,
+            "root".into(),
+        )
+        .unwrap();
+        // Grant without a reason.
+        run_grant(
+            &config,
+            CAP_DEFAULT,
+            &GrantArgs { cap: "file".into(), for_duration: "30m".into(), reason: None },
+            1000,
+            "alice".into(),
+        )
+        .unwrap();
+
+        let out = run_list(&config, 1000).unwrap();
+        // Sorted lines: "file" comes before "terminal".
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2);
+        // file line has no reason, terminal line carries the reason suffix.
+        assert!(lines[0].contains("file"));
+        assert!(lines[0].contains("by alice"));
+        assert!(!lines[0].contains("(debugging)"));
+        assert!(lines[1].contains("terminal"));
+        assert!(lines[1].contains("by root"));
+        assert!(lines[1].contains("(debugging)"));
+        assert!(lines[1].contains("expires in"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_filters_out_expired_records() {
+        // A record that has already expired (expires_at <= now) is filtered out
+        // of the listing, exercising the `expires_at > now` filter false-branch.
+        let dir = std::env::temp_dir().join(format!("sbtest-cli-listexp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = config_with(&dir);
+        run_grant(
+            &config,
+            CAP_DEFAULT,
+            &GrantArgs { cap: "terminal".into(), for_duration: "30m".into(), reason: None },
+            1000,
+            "root".into(),
+        )
+        .unwrap();
+        // Now list far in the future: the grant has expired.
+        let out = run_list(&config, 1_000_000).unwrap();
+        assert_eq!(out, "No active temporary capability grants.");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -279,4 +279,141 @@ mod tests {
             ));
         }
     }
+
+    #[test]
+    fn sweep_evicts_empty_ip_but_keeps_blocked_only_ip() {
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = ScanDetector::with_clock(Duration::from_secs(30), 20, move || {
+            *nowc.lock().unwrap()
+        });
+        // IP "a" gets a couple of port events; IP "b" only a blocked counter.
+        det.observe("a".into(), 1);
+        det.observe("a".into(), 2);
+        det.record_blocked("b");
+        assert_eq!(det.per_ip.len(), 2);
+        // Age every event out of the window.
+        *now.lock().unwrap() += Duration::from_secs(60);
+        det.sweep();
+        // "a" drained empty with blocked==0 → evicted; "b" kept (blocked>0).
+        assert!(det.per_ip.contains_key("b"));
+        assert!(!det.per_ip.contains_key("a"));
+    }
+
+    #[test]
+    fn window_slide_decrements_port_counts() {
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = ScanDetector::with_clock(Duration::from_secs(30), 20, move || {
+            *nowc.lock().unwrap()
+        });
+        // Ten distinct ports at t0.
+        for port in 1..=10 {
+            det.observe("1.2.3.4".into(), port);
+        }
+        // Advance past window so all ten age out via expire_head on next observe,
+        // exercising the per-port count decrement + removal branch.
+        *now.lock().unwrap() += Duration::from_secs(60);
+        // One fresh port: expire_head drops the 10 old ports, leaving 1 distinct.
+        assert!(matches!(
+            det.observe("1.2.3.4".into(), 100),
+            ScanEmit::None
+        ));
+        // Add 18 more distinct fresh ports → 19 distinct, still below 20.
+        for port in 101..=118 {
+            assert!(matches!(
+                det.observe("1.2.3.4".into(), port),
+                ScanEmit::None
+            ));
+        }
+        // 20th distinct fresh port fires; old ports must NOT inflate the count.
+        match det.observe("1.2.3.4".into(), 119) {
+            ScanEmit::PortScan { evidence, .. } => {
+                if let SecurityEvidence::PortScan { distinct_ports, .. } = evidence {
+                    assert_eq!(distinct_ports, 20);
+                } else {
+                    panic!("wrong evidence variant");
+                }
+            }
+            _ => panic!("expected fire"),
+        }
+    }
+
+    #[test]
+    fn repeated_port_count_decrements_without_removal() {
+        // Same port observed twice keeps the entry after one expiry.
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = ScanDetector::with_clock(Duration::from_secs(30), 20, move || {
+            *nowc.lock().unwrap()
+        });
+        det.observe("1.2.3.4".into(), 22); // t0, count(22)=1
+        *now.lock().unwrap() += Duration::from_secs(10);
+        det.observe("1.2.3.4".into(), 22); // t0+10, count(22)=2
+        // Move time so only the first entry (t0) ages out.
+        *now.lock().unwrap() += Duration::from_secs(25); // now = t0+35, cutoff = t0+5
+        det.sweep();
+        // Port 22 still present (count decremented 2 -> 1, not removed).
+        assert_eq!(det.per_ip.get("1.2.3.4").unwrap().port_counts.get(&22), Some(&1));
+        assert_eq!(det.per_ip.get("1.2.3.4").unwrap().total, 1);
+    }
+
+    #[test]
+    fn sample_ports_capped_at_twenty() {
+        let mut det = ScanDetector::new(Duration::from_secs(60), 25);
+        for port in 1..=24 {
+            det.observe("1.2.3.4".into(), port);
+        }
+        match det.observe("1.2.3.4".into(), 25) {
+            ScanEmit::PortScan { evidence, .. } => {
+                if let SecurityEvidence::PortScan {
+                    sample_ports,
+                    distinct_ports,
+                    ..
+                } = evidence
+                {
+                    assert_eq!(distinct_ports, 25);
+                    assert_eq!(sample_ports.len(), 20);
+                } else {
+                    panic!("wrong evidence variant");
+                }
+            }
+            _ => panic!("expected fire"),
+        }
+    }
+
+    #[test]
+    fn record_blocked_saturates_at_max() {
+        let mut det = ScanDetector::new(Duration::from_secs(30), 5);
+        // Pre-seed the blocked counter to u32::MAX to exercise saturating_add.
+        det.record_blocked("1.2.3.4");
+        det.per_ip.get_mut("1.2.3.4").unwrap().blocked = u32::MAX;
+        det.record_blocked("1.2.3.4");
+        assert_eq!(det.per_ip.get("1.2.3.4").unwrap().blocked, u32::MAX);
+    }
+
+    #[test]
+    fn record_blocked_creates_state_for_new_ip() {
+        let mut det = ScanDetector::new(Duration::from_secs(30), 5);
+        det.record_blocked("9.9.9.9");
+        assert_eq!(det.per_ip.get("9.9.9.9").unwrap().blocked, 1);
+    }
+
+    #[test]
+    fn sweep_resets_window_started_at_when_drained() {
+        let now = Arc::new(Mutex::new(Instant::now()));
+        let nowc = now.clone();
+        let mut det = ScanDetector::with_clock(Duration::from_secs(30), 20, move || {
+            *nowc.lock().unwrap()
+        });
+        det.record_blocked("1.2.3.4"); // keeps the IP alive after sweep
+        det.observe("1.2.3.4".into(), 1);
+        assert!(det.per_ip.get("1.2.3.4").unwrap().window_started_at.is_some());
+        *now.lock().unwrap() += Duration::from_secs(60);
+        det.sweep();
+        // Events drained but IP retained via blocked>0; window_started_at reset.
+        let st = det.per_ip.get("1.2.3.4").unwrap();
+        assert!(st.events.is_empty());
+        assert!(st.window_started_at.is_none());
+    }
 }
