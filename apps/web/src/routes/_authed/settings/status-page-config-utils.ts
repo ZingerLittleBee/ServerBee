@@ -1,4 +1,4 @@
-import type { UpdateStatusPageRequest } from '@/lib/api-schema'
+import type { StatusPageItem, UpdateStatusPageRequest } from '@/lib/api-schema'
 
 export interface ConfigFormState {
   defaultLayout: 'grid' | 'list'
@@ -28,6 +28,23 @@ export function parseServerIds(raw: string | null | undefined): string[] {
     // ignore malformed JSON; fall through to []
   }
   return []
+}
+
+export function configFromItem(item: StatusPageItem): ConfigFormState {
+  return {
+    defaultLayout: item.default_layout === 'grid' ? 'grid' : 'list',
+    description: item.description ?? '',
+    enabled: item.enabled,
+    redThreshold: item.uptime_red_threshold,
+    selectedServers: parseServerIds(item.server_ids_json),
+    showIncidents: item.show_incidents,
+    showIpQuality: item.show_ip_quality,
+    showMaintenance: item.show_maintenance,
+    showNetwork: item.show_network,
+    showServerDetail: item.show_server_detail,
+    title: item.title,
+    yellowThreshold: item.uptime_yellow_threshold
+  }
 }
 
 export function buildStatusPageUpdatePayload(state: ConfigFormState): UpdateStatusPageRequest {
