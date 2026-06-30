@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ban, KeyRound, ShieldAlert, UserCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -99,6 +99,40 @@ interface SecurityFormState {
   minFailedCount: string
 }
 
+interface PresetDialogState extends SecurityFormState {
+  autoBlock: boolean
+  groupId: string
+  name: string
+  open: boolean
+}
+
+type PresetDialogAction = { type: 'patch'; value: Partial<PresetDialogState> } | { type: 'setOpen'; value: boolean }
+
+function presetDialogInitialState(preset: PresetDef): PresetDialogState {
+  return {
+    autoBlock: AUTO_BLOCK_KINDS.includes(preset.kind),
+    dedupe: '600',
+    excludeCidrs: '',
+    excludeUsers: '',
+    groupId: '',
+    minDistinctPorts: '50',
+    minFailedCount: '20',
+    name: preset.defaultName,
+    open: false
+  }
+}
+
+function presetDialogReducer(state: PresetDialogState, action: PresetDialogAction): PresetDialogState {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.value }
+    case 'setOpen':
+      return { ...state, open: action.value }
+    default:
+      return state
+  }
+}
+
 function parsePositive(value: string): number | null {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
@@ -184,23 +218,15 @@ function PresetCard({ preset }: { preset: PresetDef }) {
 
 function PresetDialog({ preset }: { preset: PresetDef }) {
   const { t } = useTranslation('security')
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState(preset.defaultName)
-  const [groupId, setGroupId] = useState<string>('')
-  const [minFailedCount, setMinFailedCount] = useState<string>('20')
-  const [minDistinctPorts, setMinDistinctPorts] = useState<string>('50')
-  const [excludeUsers, setExcludeUsers] = useState<string>('')
-  const [excludeCidrs, setExcludeCidrs] = useState<string>('')
-  const [dedupe, setDedupe] = useState<string>('600')
+  const [state, dispatch] = useReducer(presetDialogReducer, preset, presetDialogInitialState)
   const supportsAutoBlock = AUTO_BLOCK_KINDS.includes(preset.kind)
-  const [autoBlock, setAutoBlock] = useState<boolean>(supportsAutoBlock)
 
   const queryClient = useQueryClient()
 
   const { data: groups } = useQuery<NotificationGroup[]>({
     queryKey: ['notification-groups'],
     queryFn: () => api.get<NotificationGroup[]>('/api/notification-groups'),
-    enabled: open
+    enabled: state.open
   })
 
   const createMutation = useMutation({
@@ -208,33 +234,27 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['alert-rules'] }).catch(() => undefined)
       toast.success(t('preset.created', { defaultValue: 'Alert rule created' }))
-      setOpen(false)
+      dispatch({ type: 'setOpen', value: false })
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : t('preset.create_failed', { defaultValue: 'Create failed' }))
   })
 
   const submit = () => {
-    if (name.trim().length === 0) {
+    if (state.name.trim().length === 0) {
       toast.error(t('preset.name_required', { defaultValue: 'Name required' }))
       return
     }
 
-    const security = buildSecurityParams(preset.kind, {
-      dedupe,
-      minFailedCount,
-      minDistinctPorts,
-      excludeUsers,
-      excludeCidrs
-    })
+    const security = buildSecurityParams(preset.kind, state)
 
     const actions: BlockSourceIpAction[] =
-      supportsAutoBlock && autoBlock ? [{ type: 'block_source_ip', cover_type: 'all' }] : []
+      supportsAutoBlock && state.autoBlock ? [{ type: 'block_source_ip', cover_type: 'all' }] : []
 
     createMutation.mutate({
       cover_type: 'all',
-      name: name.trim(),
-      notification_group_id: groupId || null,
+      name: state.name.trim(),
+      notification_group_id: state.groupId || null,
       rules: [{ rule_type: preset.kind, security: security as AlertRuleItem['security'] }],
       server_ids: [],
       trigger_mode: 'always',
@@ -243,7 +263,7 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
   }
 
   return (
-    <Dialog onOpenChange={setOpen} open={open}>
+    <Dialog onOpenChange={(open) => dispatch({ type: 'setOpen', value: open })} open={state.open}>
       <DialogTrigger
         render={
           <Button size="sm" variant="outline">
@@ -264,9 +284,9 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
             </Label>
             <Input
               id={`preset-name-${preset.kind}`}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
               placeholder={preset.defaultName}
-              value={name}
+              value={state.name}
             />
           </div>
 
@@ -279,8 +299,8 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
                 '': t('preset.field_group_none', { defaultValue: 'None' }),
                 ...Object.fromEntries((groups ?? []).map((g) => [g.id, g.name]))
               }}
-              onValueChange={(v) => setGroupId(v ?? '')}
-              value={groupId}
+              onValueChange={(value) => dispatch({ type: 'patch', value: { groupId: value ?? '' } })}
+              value={state.groupId}
             >
               <SelectTrigger id={`preset-group-${preset.kind}`}>
                 <SelectValue placeholder={t('preset.field_group_none', { defaultValue: 'None' })} />
@@ -304,8 +324,8 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
               <Input
                 id={`preset-min-failed-${preset.kind}`}
                 inputMode="numeric"
-                onChange={(e) => setMinFailedCount(e.target.value)}
-                value={minFailedCount}
+                onChange={(e) => dispatch({ type: 'patch', value: { minFailedCount: e.target.value } })}
+                value={state.minFailedCount}
               />
             </div>
           )}
@@ -318,8 +338,8 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
               <Input
                 id={`preset-min-ports-${preset.kind}`}
                 inputMode="numeric"
-                onChange={(e) => setMinDistinctPorts(e.target.value)}
-                value={minDistinctPorts}
+                onChange={(e) => dispatch({ type: 'patch', value: { minDistinctPorts: e.target.value } })}
+                value={state.minDistinctPorts}
               />
             </div>
           )}
@@ -332,9 +352,9 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
                 </Label>
                 <Input
                   id={`preset-exclude-users-${preset.kind}`}
-                  onChange={(e) => setExcludeUsers(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'patch', value: { excludeUsers: e.target.value } })}
                   placeholder="nagios, backup"
-                  value={excludeUsers}
+                  value={state.excludeUsers}
                 />
               </div>
               <div className="space-y-1">
@@ -343,9 +363,9 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
                 </Label>
                 <Input
                   id={`preset-exclude-cidrs-${preset.kind}`}
-                  onChange={(e) => setExcludeCidrs(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'patch', value: { excludeCidrs: e.target.value } })}
                   placeholder="10.0.0.0/8"
-                  value={excludeCidrs}
+                  value={state.excludeCidrs}
                 />
               </div>
             </>
@@ -358,22 +378,25 @@ function PresetDialog({ preset }: { preset: PresetDef }) {
             <Input
               id={`preset-dedupe-${preset.kind}`}
               inputMode="numeric"
-              onChange={(e) => setDedupe(e.target.value)}
-              value={dedupe}
+              onChange={(e) => dispatch({ type: 'patch', value: { dedupe: e.target.value } })}
+              value={state.dedupe}
             />
           </div>
 
           {supportsAutoBlock && (
             // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
             <label className="flex items-center gap-2 text-sm">
-              <Checkbox checked={autoBlock} onCheckedChange={(checked) => setAutoBlock(checked === true)} />
+              <Checkbox
+                checked={state.autoBlock}
+                onCheckedChange={(checked) => dispatch({ type: 'patch', value: { autoBlock: checked === true } })}
+              />
               <span>{t('preset.field_auto_block', { defaultValue: 'Auto-block source IP on every match' })}</span>
             </label>
           )}
         </div>
 
         <DialogFooter>
-          <Button onClick={() => setOpen(false)} variant="outline">
+          <Button onClick={() => dispatch({ type: 'setOpen', value: false })} variant="outline">
             {t('preset.cancel', { defaultValue: 'Cancel' })}
           </Button>
           <Button disabled={createMutation.isPending} onClick={submit}>
