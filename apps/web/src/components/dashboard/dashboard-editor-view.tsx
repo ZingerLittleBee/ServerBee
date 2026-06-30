@@ -1,6 +1,5 @@
 import { PencilIcon, PlusIcon, SaveIcon, XIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { WidgetInput } from '@/hooks/use-dashboard'
@@ -153,9 +152,9 @@ function DashboardEditorViewContent({
 
   function handleDashboardSelect(id: string) {
     if (editor.isEditing) {
-      flushSync(() => {
-        handleCancel()
-      })
+      handleCancel()
+      queueMicrotask(() => onSelectDashboard(id))
+      return
     }
     onSelectDashboard(id)
   }

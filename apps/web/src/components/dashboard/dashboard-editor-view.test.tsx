@@ -386,7 +386,7 @@ describe('DashboardEditorView', () => {
     expect(screen.getByTestId('grid-widget-ids')).toHaveTextContent('w-2')
   })
 
-  it('flushes local cancel state before notifying dashboard selection', () => {
+  it('flushes local cancel state before notifying dashboard selection', async () => {
     const onSelectDashboard = vi.fn(() => {
       expect(screen.queryByRole('button', { name: 'save' })).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'edit' })).toBeInTheDocument()
@@ -412,7 +412,7 @@ describe('DashboardEditorView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'switch-dashboard' }))
 
-    expect(onSelectDashboard).toHaveBeenCalledWith('dash-2')
+    await waitFor(() => expect(onSelectDashboard).toHaveBeenCalledWith('dash-2'))
   })
 
   it('keeps the selected dashboard id while the next dashboard is still loading', () => {
