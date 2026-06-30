@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarIcon, Copy, Plus } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -164,24 +164,77 @@ function DatePickerField({ ariaLabel, onChange, value }: DatePickerFieldProps) {
   )
 }
 
+interface AddServerFormState {
+  billingCycle: string
+  billingStartDay: string
+  currency: string
+  expiredAt: string
+  groupId: string
+  issued: CreateServerResponse | null
+  name: string
+  price: string
+  publicRemark: string
+  remark: string
+  selectedCaps: Set<string>
+  tagsInput: string
+  trafficLimit: string
+  trafficLimitType: string
+}
+
+type AddServerFormAction =
+  | { type: 'patch'; value: Partial<AddServerFormState> }
+  | { type: 'reset' }
+  | { type: 'setCaps'; value: Set<string> }
+  | { type: 'setIssued'; value: CreateServerResponse | null }
+  | { type: 'toggleCap'; key: string }
+
+function initialAddServerFormState(): AddServerFormState {
+  return {
+    billingCycle: '',
+    billingStartDay: '',
+    currency: 'USD',
+    expiredAt: '',
+    groupId: '',
+    issued: null,
+    name: '',
+    price: '',
+    publicRemark: '',
+    remark: '',
+    selectedCaps: new Set(DEFAULT_CAP_KEYS),
+    tagsInput: '',
+    trafficLimit: '',
+    trafficLimitType: 'sum'
+  }
+}
+
+function addServerFormReducer(state: AddServerFormState, action: AddServerFormAction): AddServerFormState {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.value }
+    case 'reset':
+      return initialAddServerFormState()
+    case 'setCaps':
+      return { ...state, selectedCaps: action.value }
+    case 'setIssued':
+      return { ...state, issued: action.value }
+    case 'toggleCap': {
+      const selectedCaps = new Set(state.selectedCaps)
+      if (selectedCaps.has(action.key)) {
+        selectedCaps.delete(action.key)
+      } else {
+        selectedCaps.add(action.key)
+      }
+      return { ...state, selectedCaps }
+    }
+    default:
+      return state
+  }
+}
+
 export function AddServerDialog({ open, onClose }: { onClose: () => void; open: boolean }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
-
-  const [name, setName] = useState('')
-  const [groupId, setGroupId] = useState('')
-  const [tagsInput, setTagsInput] = useState('')
-  const [remark, setRemark] = useState('')
-  const [publicRemark, setPublicRemark] = useState('')
-  const [price, setPrice] = useState('')
-  const [currency, setCurrency] = useState('USD')
-  const [billingCycle, setBillingCycle] = useState('')
-  const [billingStartDay, setBillingStartDay] = useState('')
-  const [expiredAt, setExpiredAt] = useState('')
-  const [trafficLimit, setTrafficLimit] = useState('')
-  const [trafficLimitType, setTrafficLimitType] = useState('sum')
-  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(() => new Set(DEFAULT_CAP_KEYS))
-  const [issued, setIssued] = useState<CreateServerResponse | null>(null)
+  const [state, dispatch] = useReducer(addServerFormReducer, undefined, initialAddServerFormState)
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -193,7 +246,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   const mutation = useMutation({
     mutationFn: (body: CreateServerRequest) => api.post<CreateServerResponse>('/api/servers', body),
     onSuccess: async (data) => {
-      setIssued(data)
+      dispatch({ type: 'setIssued', value: data })
       // ['servers'] is a WS-fed cache (queryFn: () => []); invalidating it
       // would wipe the list. Refresh membership from REST and reconcile —
       // existing rows keep their runtime metrics, the brand-new row is
@@ -216,9 +269,9 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   // Emit --caps only when the selection differs from the default set; an
   // omitted flag means "use install.sh's built-in defaults", which keeps the
   // copy/paste command short for the common case.
-  const orderedCapSelection = ALL_CAP_KEYS.filter((k) => selectedCaps.has(k))
+  const orderedCapSelection = ALL_CAP_KEYS.filter((k) => state.selectedCaps.has(k))
   const capsIsDefault =
-    orderedCapSelection.length === DEFAULT_CAP_KEYS.length && DEFAULT_CAP_KEYS.every((k) => selectedCaps.has(k))
+    orderedCapSelection.length === DEFAULT_CAP_KEYS.length && DEFAULT_CAP_KEYS.every((k) => state.selectedCaps.has(k))
   const capsArg = (() => {
     if (capsIsDefault) {
       return ''
@@ -228,24 +281,17 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
     }
     return ` --caps ${orderedCapSelection.join(',')}`
   })()
+  const issued = state.issued
   const installCommand = issued
     ? `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --server-url '${origin}' --enrollment-code '${issued.enrollment.code}'${capsArg}`
     : ''
 
   const toggleCap = (key: string) => {
-    setSelectedCaps((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
-      return next
-    })
+    dispatch({ type: 'toggleCap', key })
   }
-  const resetCapsToDefault = () => setSelectedCaps(new Set(DEFAULT_CAP_KEYS))
-  const selectAllCaps = () => setSelectedCaps(new Set(ALL_CAP_KEYS))
-  const selectNoCaps = () => setSelectedCaps(new Set())
+  const resetCapsToDefault = () => dispatch({ type: 'setCaps', value: new Set(DEFAULT_CAP_KEYS) })
+  const selectAllCaps = () => dispatch({ type: 'setCaps', value: new Set(ALL_CAP_KEYS) })
+  const selectNoCaps = () => dispatch({ type: 'setCaps', value: new Set() })
 
   const highRiskCaps = CAPABILITIES.filter((c) => c.risk === 'high')
   const standardCaps = CAPABILITIES.filter((c) => c.risk !== 'high')
@@ -260,20 +306,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   }
 
   const reset = () => {
-    setIssued(null)
-    setName('')
-    setGroupId('')
-    setTagsInput('')
-    setRemark('')
-    setPublicRemark('')
-    setPrice('')
-    setCurrency('USD')
-    setBillingCycle('')
-    setBillingStartDay('')
-    setExpiredAt('')
-    setTrafficLimit('')
-    setTrafficLimitType('sum')
-    setSelectedCaps(new Set(DEFAULT_CAP_KEYS))
+    dispatch({ type: 'reset' })
   }
 
   const handleClose = () => {
@@ -282,19 +315,19 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   }
 
   const buildBody = (trimmedName: string, tags: string[]): CreateServerRequest => {
-    const trafficLimitValue = numberOrUndefined(Math.round(parseFloatOrNaN(trafficLimit) * 1024 ** 3))
+    const trafficLimitValue = numberOrUndefined(Math.round(parseFloatOrNaN(state.trafficLimit) * 1024 ** 3))
     const optionalFields: Partial<CreateServerRequest> = {
-      group_id: groupId || undefined,
+      group_id: state.groupId || undefined,
       tags: tags.length > 0 ? tags : undefined,
-      remark: nullIfBlank(remark),
-      public_remark: nullIfBlank(publicRemark),
-      price: numberOrUndefined(parseFloatOrNaN(price)),
-      currency: currency || undefined,
-      billing_cycle: billingCycle || undefined,
-      billing_start_day: numberOrUndefined(parseIntOrNaN(billingStartDay)),
-      expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : undefined,
+      remark: nullIfBlank(state.remark),
+      public_remark: nullIfBlank(state.publicRemark),
+      price: numberOrUndefined(parseFloatOrNaN(state.price)),
+      currency: state.currency || undefined,
+      billing_cycle: state.billingCycle || undefined,
+      billing_start_day: numberOrUndefined(parseIntOrNaN(state.billingStartDay)),
+      expired_at: state.expiredAt ? `${state.expiredAt}T00:00:00Z` : undefined,
       traffic_limit: trafficLimitValue,
-      traffic_limit_type: trafficLimitValue === undefined ? undefined : trafficLimitType,
+      traffic_limit_type: trafficLimitValue === undefined ? undefined : state.trafficLimitType,
       caps: capsIsDefault ? undefined : orderedCapSelection
     }
     const body: CreateServerRequest = { name: trimmedName }
@@ -308,11 +341,11 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
 
   const handleSubmit = (e?: FormEvent) => {
     e?.preventDefault()
-    const trimmedName = name.trim()
+    const trimmedName = state.name.trim()
     if (!trimmedName) {
       return
     }
-    const parsed = parseTagsInput(tagsInput)
+    const parsed = parseTagsInput(state.tagsInput)
     if (parsed.error) {
       toast.error(t(parsed.error))
       return
@@ -320,7 +353,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
     mutation.mutate(buildBody(trimmedName, parsed.tags))
   }
 
-  const submitDisabled = mutation.isPending || !name.trim()
+  const submitDisabled = mutation.isPending || !state.name.trim()
 
   return (
     <Dialog
@@ -416,11 +449,11 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                     autoComplete="off"
                     id="add-server-name"
                     name="name"
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
                     placeholder={t('add_server.name_placeholder')}
                     required
                     type="text"
-                    value={name}
+                    value={state.name}
                   />
                 </Field>
                 <Field label={t('add_server.group_label')}>
@@ -429,8 +462,13 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                       { value: '__none__', label: t('edit_no_group') },
                       ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
                     ]}
-                    onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
-                    value={groupId || '__none__'}
+                    onValueChange={(value) =>
+                      dispatch({
+                        type: 'patch',
+                        value: { groupId: value === '__none__' || value === null ? '' : value }
+                      })
+                    }
+                    value={state.groupId || '__none__'}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -450,10 +488,10 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                     aria-label={t('add_server.tags_label')}
                     autoComplete="off"
                     name="tags"
-                    onChange={(e) => setTagsInput(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'patch', value: { tagsInput: e.target.value } })}
                     placeholder={t('tags_placeholder')}
                     type="text"
-                    value={tagsInput}
+                    value={state.tagsInput}
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
                 </Field>
@@ -462,10 +500,10 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                     aria-label={t('add_server.remark_label')}
                     autoComplete="off"
                     name="remark"
-                    onChange={(e) => setRemark(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'patch', value: { remark: e.target.value } })}
                     placeholder={t('edit_remark_placeholder')}
                     type="text"
-                    value={remark}
+                    value={state.remark}
                   />
                 </Field>
                 <Field label={t('add_server.public_remark_label')}>
@@ -473,10 +511,10 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                     aria-label={t('add_server.public_remark_label')}
                     autoComplete="off"
                     name="public_remark"
-                    onChange={(e) => setPublicRemark(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'patch', value: { publicRemark: e.target.value } })}
                     placeholder={t('edit_public_remark_placeholder')}
                     type="text"
-                    value={publicRemark}
+                    value={state.publicRemark}
                   />
                 </Field>
               </fieldset>
@@ -493,15 +531,20 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                       autoComplete="off"
                       min="0"
                       name="price"
-                      onChange={(e) => setPrice(e.target.value)}
+                      onChange={(e) => dispatch({ type: 'patch', value: { price: e.target.value } })}
                       placeholder="0.00"
                       step="0.01"
                       type="number"
-                      value={price}
+                      value={state.price}
                     />
                   </Field>
                   <Field label={t('add_server.currency_label')}>
-                    <Select onValueChange={(v) => v !== null && setCurrency(v)} value={currency}>
+                    <Select
+                      onValueChange={(value) =>
+                        value !== null && dispatch({ type: 'patch', value: { currency: value } })
+                      }
+                      value={state.currency}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -522,8 +565,13 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                         quarterly: t('edit_cycle_quarterly'),
                         yearly: t('edit_cycle_yearly')
                       }}
-                      onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
-                      value={billingCycle || '__none__'}
+                      onValueChange={(value) =>
+                        dispatch({
+                          type: 'patch',
+                          value: { billingCycle: value === '__none__' || value === null ? '' : value }
+                        })
+                      }
+                      value={state.billingCycle || '__none__'}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue />
@@ -540,8 +588,8 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                 <Field label={t('add_server.expired_at_label')}>
                   <DatePickerField
                     ariaLabel={t('add_server.expired_at_label')}
-                    onChange={setExpiredAt}
-                    value={expiredAt}
+                    onChange={(expiredAt) => dispatch({ type: 'patch', value: { expiredAt } })}
+                    value={state.expiredAt}
                   />
                 </Field>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -551,11 +599,11 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                       autoComplete="off"
                       min="0"
                       name="traffic_limit"
-                      onChange={(e) => setTrafficLimit(e.target.value)}
+                      onChange={(e) => dispatch({ type: 'patch', value: { trafficLimit: e.target.value } })}
                       placeholder={t('edit_unlimited')}
                       step="0.1"
                       type="number"
-                      value={trafficLimit}
+                      value={state.trafficLimit}
                     />
                   </Field>
                   <Field label={t('add_server.traffic_limit_type_label')}>
@@ -565,8 +613,10 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                         up: t('edit_limit_upload'),
                         down: t('edit_limit_download')
                       }}
-                      onValueChange={(v) => v !== null && setTrafficLimitType(v)}
-                      value={trafficLimitType}
+                      onValueChange={(value) =>
+                        value !== null && dispatch({ type: 'patch', value: { trafficLimitType: value } })
+                      }
+                      value={state.trafficLimitType}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue />
@@ -586,12 +636,12 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                     max="28"
                     min="1"
                     name="billing_start_day"
-                    onChange={(e) => setBillingStartDay(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'patch', value: { billingStartDay: e.target.value } })}
                     placeholder={t('edit_billing_start_day_placeholder', {
                       defaultValue: 'Leave empty for natural month (1st)'
                     })}
                     type="number"
-                    value={billingStartDay}
+                    value={state.billingStartDay}
                   />
                 </Field>
               </fieldset>
@@ -633,7 +683,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                   <CapGroup
                     caps={standardCaps}
                     onToggle={toggleCap}
-                    selected={selectedCaps}
+                    selected={state.selectedCaps}
                     t={t}
                     title={t('add_server.caps_low_risk')}
                     tone="standard"
@@ -641,7 +691,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
                   <CapGroup
                     caps={highRiskCaps}
                     onToggle={toggleCap}
-                    selected={selectedCaps}
+                    selected={state.selectedCaps}
                     t={t}
                     title={t('add_server.caps_high_risk')}
                     tone="high"
