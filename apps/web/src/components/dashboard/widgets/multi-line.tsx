@@ -1,6 +1,5 @@
 import { useQueries } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import {
   type ChartConfig,
   ChartContainer,
@@ -9,6 +8,7 @@ import {
   ChartTooltip,
   ChartTooltipContent
 } from '@/components/ui/chart'
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'

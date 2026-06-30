@@ -4,11 +4,13 @@ import {
   type CSSProperties,
   createContext,
   type ReactNode,
+  Suspense,
   use,
   useId,
   useMemo
 } from 'react'
-import { Legend, type LegendProps, ResponsiveContainer, Tooltip } from 'recharts'
+import type { LegendProps } from 'recharts'
+import { Legend, ResponsiveContainer, Tooltip } from '@/components/ui/recharts-lazy'
 import { cn } from '@/lib/utils'
 
 // Format: { THEME_NAME: CSS_SELECTOR }
@@ -24,6 +26,25 @@ export interface ChartConfig {
 interface ChartContextProps {
   config: ChartConfig
 }
+
+type ChartPayloadValue = number | string
+
+interface ChartPayloadItem {
+  color?: string
+  dataKey?: number | string
+  name?: number | string
+  payload?: Record<string, unknown> & { fill?: string }
+  type?: string
+  value?: ChartPayloadValue
+}
+
+type ChartFormatter = (
+  value: ChartPayloadValue,
+  name: number | string,
+  item: ChartPayloadItem,
+  index: number,
+  payload: Record<string, unknown>
+) => ReactNode
 
 const ChartContext = createContext<ChartContextProps | null>(null)
 
@@ -45,7 +66,7 @@ function ChartContainer({
   ...props
 }: ComponentProps<'div'> & {
   config: ChartConfig
-  children: ComponentProps<typeof ResponsiveContainer>['children']
+  children: ReactNode
 }) {
   const uniqueId = useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, '')}`
@@ -63,7 +84,9 @@ function ChartContainer({
         {...props}
       >
         <ChartStyle config={config} id={chartId} />
-        <ResponsiveContainer>{children}</ResponsiveContainer>
+        <Suspense fallback={<div className="h-full w-full" />}>
+          <ResponsiveContainer>{children}</ResponsiveContainer>
+        </Suspense>
       </div>
     </ChartContext.Provider>
   )
@@ -147,15 +170,21 @@ function ChartTooltipContent({
   color,
   nameKey,
   labelKey
-}: ComponentProps<typeof Tooltip> &
-  ComponentProps<'div'> & {
-    hideLabel?: boolean
-    hideIndicator?: boolean
-    indicator?: 'line' | 'dot' | 'dashed'
-    nameKey?: string
-    labelKey?: string
-    valueFormatter?: (value: number) => string
-  }) {
+}: ComponentProps<'div'> & {
+  active?: boolean
+  color?: string
+  formatter?: ChartFormatter
+  hideIndicator?: boolean
+  hideLabel?: boolean
+  indicator?: 'line' | 'dot' | 'dashed'
+  label?: unknown
+  labelClassName?: string
+  labelFormatter?: (label: string, payload: ChartPayloadItem[]) => ReactNode
+  labelKey?: string
+  nameKey?: string
+  payload?: ChartPayloadItem[]
+  valueFormatter?: (value: number) => string
+}) {
   const { config } = useChart()
 
   if (!(active && payload?.length)) {
@@ -172,13 +201,16 @@ function ChartTooltipContent({
   let tooltipLabel: ReactNode = null
   if (!hideLabel) {
     if (labelFormatter) {
-      tooltipLabel = <div className={cn('font-medium', labelClassName)}>{labelFormatter(labelValue, payload)}</div>
+      tooltipLabel = (
+        <div className={cn('font-medium', labelClassName)}>{labelFormatter(String(labelValue ?? ''), payload)}</div>
+      )
     } else if (labelValue) {
       tooltipLabel = <div className={cn('font-medium', labelClassName)}>{labelValue}</div>
     }
   }
 
-  const nestLabel = payload.length === 1 && indicator !== 'dot'
+  const visiblePayload = payload.filter((item) => item.type !== 'none')
+  const nestLabel = visiblePayload.length === 1 && indicator !== 'dot'
 
   return (
     <div
@@ -189,25 +221,21 @@ function ChartTooltipContent({
     >
       {nestLabel ? null : tooltipLabel}
       <div className="grid gap-1.5">
-        {payload.reduce<ReactNode[]>((items, item) => {
-          if (item.type === 'none') {
-            return items
-          }
-          const index = items.length
+        {visiblePayload.map((item, index) => {
           const key = `${nameKey || item.name || item.dataKey || 'value'}`
           const itemConfig = getPayloadConfigFromPayload(config, item, key)
-          const indicatorColor = color || item.payload.fill || item.color
+          const indicatorColor = color || item.payload?.fill || item.color || 'currentColor'
 
-          items.push(
+          return (
             <div
               className={cn(
                 'flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground',
                 indicator === 'dot' && 'items-center'
               )}
-              key={item.dataKey}
+              key={String(item.dataKey ?? key)}
             >
               {formatter && !valueFormatter && item?.value !== undefined && item.name ? (
-                formatter(item.value, item.name, item, index, item.payload)
+                formatter(item.value, item.name, item, index, item.payload ?? {})
               ) : (
                 <>
                   <TooltipIndicator
@@ -234,8 +262,7 @@ function ChartTooltipContent({
               )}
             </div>
           )
-          return items
-        }, [])}
+        })}
       </div>
     </div>
   )
@@ -250,9 +277,10 @@ function ChartLegendContent({
   verticalAlign = 'bottom',
   nameKey
 }: ComponentProps<'div'> &
-  Pick<LegendProps, 'payload' | 'verticalAlign'> & {
+  Pick<LegendProps, 'verticalAlign'> & {
     hideIcon?: boolean
     nameKey?: string
+    payload?: ChartPayloadItem[]
   }) {
   const { config } = useChart()
 
@@ -272,7 +300,7 @@ function ChartLegendContent({
         items.push(
           <div
             className={cn('flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground')}
-            key={item.value}
+            key={String(item.value ?? key)}
           >
             {itemConfig?.icon && !hideIcon ? (
               <itemConfig.icon />
