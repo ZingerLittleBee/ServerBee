@@ -1,18 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import { Lock, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { Plus } from 'lucide-react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { DataTable } from '@/components/ui/data-table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   useCreateTarget,
@@ -22,13 +13,11 @@ import {
   useUpdateNetworkSetting,
   useUpdateTarget
 } from '@/hooks/use-network-api'
-import {
-  getNetworkProbeTypeLabel,
-  getNetworkTargetDisplayLocation,
-  getNetworkTargetDisplayName,
-  getNetworkTargetDisplayProvider
-} from '@/lib/network-i18n'
-import type { NetworkProbeTarget } from '@/lib/network-types'
+import type { NetworkProbeSetting, NetworkProbeTarget } from '@/lib/network-types'
+import { NetworkProbeDeleteDialog } from './network-probe-delete-dialog'
+import { NetworkProbeSettingsTab } from './network-probe-settings-tab'
+import { NetworkProbeTargetDialog, type TargetFormData } from './network-probe-target-dialog'
+import { NetworkProbeTargetsTab } from './network-probe-targets-tab'
 
 export const Route = createFileRoute('/_authed/settings/network-probes')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -36,24 +25,6 @@ export const Route = createFileRoute('/_authed/settings/network-probes')({
   }),
   component: NetworkProbeSettingsPage
 })
-
-type ProbeType = 'icmp' | 'tcp' | 'http'
-
-interface TargetFormData {
-  location: string
-  name: string
-  probe_type: ProbeType
-  provider: string
-  target: string
-}
-
-const DEFAULT_FORM: TargetFormData = {
-  name: '',
-  provider: '',
-  location: '',
-  target: '',
-  probe_type: 'icmp'
-}
 
 function getCustomTargetCreatedAt(target: NetworkProbeTarget): number {
   if (target.source || !target.created_at) {
@@ -80,7 +51,7 @@ function compareTargetsForDisplay(a: NetworkProbeTarget, b: NetworkProbeTarget):
 }
 
 export function NetworkProbeSettingsPage() {
-  const { t, i18n } = useTranslation('network')
+  const { t } = useTranslation('network')
 
   const { tab: activeTab } = Route.useSearch()
   const navigate = Route.useNavigate()
@@ -88,31 +59,12 @@ export function NetworkProbeSettingsPage() {
   // Target dialog state
   const [showDialog, setShowDialog] = useState(false)
   const [editingTarget, setEditingTarget] = useState<NetworkProbeTarget | null>(null)
-  const [form, setForm] = useState<TargetFormData>(DEFAULT_FORM)
 
   // Delete confirmation
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
-  // Settings form state
-  const [settingsForm, setSettingsForm] = useState({
-    defaultTargetIds: [] as string[],
-    packetCount: 10,
-    probeInterval: 60
-  })
-
   const { data: targets, isLoading: targetsLoading } = useNetworkTargets()
   const { data: setting } = useNetworkSetting()
-
-  // Sync settings into local state once loaded
-  useEffect(() => {
-    if (setting) {
-      setSettingsForm({
-        defaultTargetIds: setting.default_target_ids,
-        packetCount: setting.packet_count,
-        probeInterval: setting.interval
-      })
-    }
-  }, [setting])
 
   const createTarget = useCreateTarget()
   const updateTarget = useUpdateTarget()
@@ -121,30 +73,20 @@ export function NetworkProbeSettingsPage() {
 
   const openAddDialog = () => {
     setEditingTarget(null)
-    setForm(DEFAULT_FORM)
     setShowDialog(true)
   }
 
   const openEditDialog = useCallback((target: NetworkProbeTarget) => {
     setEditingTarget(target)
-    setForm({
-      name: target.name,
-      provider: target.provider,
-      location: target.location,
-      target: target.target,
-      probe_type: target.probe_type as ProbeType
-    })
     setShowDialog(true)
   }, [])
 
   const closeDialog = () => {
     setShowDialog(false)
     setEditingTarget(null)
-    setForm(DEFAULT_FORM)
   }
 
-  const handleSubmitTarget = (e: FormEvent) => {
-    e.preventDefault()
+  const handleSubmitTarget = (form: TargetFormData) => {
     if (!(form.name.trim() && form.target.trim())) {
       return
     }
@@ -198,161 +140,23 @@ export function NetworkProbeSettingsPage() {
     })
   }
 
-  const handleSaveSettings = (e: FormEvent) => {
-    e.preventDefault()
-    updateSetting.mutate(
-      {
-        default_target_ids: settingsForm.defaultTargetIds,
-        interval: settingsForm.probeInterval,
-        packet_count: settingsForm.packetCount
+  const handleSaveSettings = (nextSetting: NetworkProbeSetting) => {
+    updateSetting.mutate(nextSetting, {
+      onSuccess: () => {
+        toast.success(t('settings_saved', { defaultValue: 'Settings saved' }))
       },
-      {
-        onSuccess: () => {
-          toast.success(t('settings_saved', { defaultValue: 'Settings saved' }))
-        },
-        onError: (err) => {
-          toast.error(
-            err instanceof Error ? err.message : t('settings_save_failed', { defaultValue: 'Failed to save settings' })
-          )
-        }
+      onError: (err) => {
+        toast.error(
+          err instanceof Error ? err.message : t('settings_save_failed', { defaultValue: 'Failed to save settings' })
+        )
       }
-    )
+    })
   }
-
-  const toggleDefaultTarget = (id: string) => {
-    setSettingsForm((current) => ({
-      ...current,
-      defaultTargetIds: current.defaultTargetIds.includes(id)
-        ? current.defaultTargetIds.filter((targetId) => targetId !== id)
-        : [...current.defaultTargetIds, id]
-    }))
-  }
-
-  const getProbeTypeLabel = useCallback((probeType: string) => getNetworkProbeTypeLabel(t, probeType), [t])
-  const getTargetDisplayName = useCallback(
-    (target: NetworkProbeTarget) => getNetworkTargetDisplayName(t, i18n.resolvedLanguage ?? i18n.language, target),
-    [t, i18n.language, i18n.resolvedLanguage]
-  )
-  const getTargetDisplayProvider = useCallback(
-    (target: NetworkProbeTarget) => getNetworkTargetDisplayProvider(t, i18n.resolvedLanguage ?? i18n.language, target),
-    [t, i18n.language, i18n.resolvedLanguage]
-  )
-  const getTargetDisplayLocation = useCallback(
-    (target: NetworkProbeTarget) => getNetworkTargetDisplayLocation(t, i18n.resolvedLanguage ?? i18n.language, target),
-    [t, i18n.language, i18n.resolvedLanguage]
-  )
-
-  const probeTypes: { value: ProbeType; label: string }[] = [
-    { value: 'icmp', label: getProbeTypeLabel('icmp') },
-    { value: 'tcp', label: getProbeTypeLabel('tcp') },
-    { value: 'http', label: getProbeTypeLabel('http') }
-  ]
 
   const sortedTargets = useMemo(() => (targets ?? []).toSorted(compareTargetsForDisplay), [targets])
-
-  const targetColumns = useMemo<ColumnDef<NetworkProbeTarget>[]>(
-    () => [
-      {
-        accessorKey: 'name',
-        header: () => t('target_name'),
-        enableSorting: false,
-        cell: ({ row }) => <span className="font-medium">{getTargetDisplayName(row.original)}</span>
-      },
-      {
-        accessorKey: 'provider',
-        header: () => t('target_provider'),
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">{getTargetDisplayProvider(row.original) || '\u2014'}</span>
-        )
-      },
-      {
-        accessorKey: 'location',
-        header: () => t('target_location'),
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="text-muted-foreground">{getTargetDisplayLocation(row.original) || '\u2014'}</span>
-        )
-      },
-      {
-        accessorKey: 'target',
-        header: () => t('target_address'),
-        enableSorting: false,
-        cell: ({ row }) => <span className="font-mono text-muted-foreground text-xs">{row.original.target}</span>
-      },
-      {
-        accessorKey: 'probe_type',
-        header: () => t('target_type'),
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-            {getProbeTypeLabel(row.original.probe_type)}
-          </span>
-        )
-      },
-      {
-        accessorKey: 'source',
-        header: () => t('target_status', { defaultValue: 'Source' }),
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.source ? (
-            <span className="flex items-center gap-1 text-muted-foreground text-xs">
-              <Lock aria-hidden="true" className="size-3" />
-              {row.original.source_name ?? t('builtin', { defaultValue: 'Built-in' })}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs">{t('custom')}</span>
-          )
-      },
-      {
-        id: 'actions',
-        header: () => t('target_actions', { defaultValue: 'Manage' }),
-        enableSorting: false,
-        meta: { className: 'text-right' },
-        cell: ({ row }) =>
-          !row.original.source && (
-            <div className="flex justify-end">
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  aria-label={t('target_actions_menu_aria', {
-                    defaultValue: 'More actions for {{name}}',
-                    name: getTargetDisplayName(row.original)
-                  })}
-                  render={<Button className="ml-auto" size="icon-sm" variant="ghost" />}
-                >
-                  <MoreHorizontal aria-hidden="true" className="size-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-36">
-                  <DropdownMenuItem
-                    aria-label={t('edit_target_aria', { defaultValue: 'Edit {{name}}', name: row.original.name })}
-                    onClick={() => openEditDialog(row.original)}
-                  >
-                    <Pencil className="size-3.5" />
-                    {t('edit_target')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    aria-label={t('delete_target_aria', { defaultValue: 'Delete {{name}}', name: row.original.name })}
-                    onClick={() => setDeleteTargetId(row.original.id)}
-                    variant="destructive"
-                  >
-                    <Trash2 className="size-3.5" />
-                    {t('delete_target')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )
-      }
-    ],
-    [t, openEditDialog, getProbeTypeLabel, getTargetDisplayLocation, getTargetDisplayName, getTargetDisplayProvider]
-  )
-
-  const targetsTable = useReactTable({
-    data: sortedTargets,
-    columns: targetColumns,
-    getCoreRowModel: getCoreRowModel(),
-    getRowId: (row) => row.id
-  })
+  const settingVersion = setting
+    ? `${setting.interval}:${setting.packet_count}:${setting.default_target_ids.join(',')}`
+    : 'default-setting'
 
   return (
     <div className="flex min-h-0 w-full min-w-0 max-w-[calc(100vw-1.5rem)] flex-1 flex-col overflow-hidden sm:max-w-full">
@@ -376,232 +180,42 @@ export function NetworkProbeSettingsPage() {
 
         {/* Tab 1: Target Management */}
         <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="targets">
-          {targetsLoading && (
-            <div className="max-w-4xl space-y-2 p-4">
-              {Array.from({ length: 3 }, (_, i) => (
-                <Skeleton className="h-10" key={`skel-${i.toString()}`} />
-              ))}
-            </div>
-          )}
-
-          {!targetsLoading && (
-            <DataTable
-              className="flex h-full w-full min-w-0 max-w-full sm:max-w-4xl"
-              noResults={t('no_targets')}
-              table={targetsTable}
-            />
-          )}
+          <NetworkProbeTargetsTab
+            onDelete={setDeleteTargetId}
+            onEdit={openEditDialog}
+            targets={sortedTargets}
+            targetsLoading={targetsLoading}
+          />
         </TabsContent>
 
         {/* Tab 2: Global Settings */}
         <TabsContent className="min-h-0 overflow-hidden" value="settings">
-          <ScrollArea className="h-full">
-            <form className="max-w-xl space-y-6 pb-1" onSubmit={handleSaveSettings}>
-              <div className="space-y-1.5">
-                <label className="font-medium text-sm" htmlFor="probe-interval">
-                  {t('probe_interval')}
-                </label>
-                <Input
-                  autoComplete="off"
-                  id="probe-interval"
-                  max={600}
-                  min={30}
-                  name="probe-interval"
-                  onChange={(e) =>
-                    setSettingsForm((current) => ({
-                      ...current,
-                      probeInterval: Number.parseInt(e.target.value, 10) || 60
-                    }))
-                  }
-                  type="number"
-                  value={settingsForm.probeInterval}
-                />
-                <p className="text-muted-foreground text-xs">{t('probe_interval_desc')}</p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-medium text-sm" htmlFor="packet-count">
-                  {t('packet_count')}
-                </label>
-                <Input
-                  autoComplete="off"
-                  id="packet-count"
-                  max={20}
-                  min={5}
-                  name="packet-count"
-                  onChange={(e) =>
-                    setSettingsForm((current) => ({
-                      ...current,
-                      packetCount: Number.parseInt(e.target.value, 10) || 10
-                    }))
-                  }
-                  type="number"
-                  value={settingsForm.packetCount}
-                />
-                <p className="text-muted-foreground text-xs">{t('packet_count_desc')}</p>
-              </div>
-
-              <div className="space-y-2">
-                <p className="font-medium text-sm">{t('default_targets')}</p>
-                <p className="text-muted-foreground text-xs">{t('default_targets_desc')}</p>
-                {sortedTargets.length > 0 ? (
-                  <ScrollArea className="h-72 rounded-md border p-3">
-                    <div className="space-y-1.5">
-                      {sortedTargets.map((target) => (
-                        // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                        <label className="flex cursor-pointer items-center gap-2 text-sm" key={target.id}>
-                          <Checkbox
-                            checked={settingsForm.defaultTargetIds.includes(target.id)}
-                            onCheckedChange={() => toggleDefaultTarget(target.id)}
-                          />
-                          <span>{getTargetDisplayName(target)}</span>
-                          <span className="text-muted-foreground text-xs">
-                            ({getProbeTypeLabel(target.probe_type)})
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                ) : (
-                  <p className="text-muted-foreground text-xs">{t('no_targets')}</p>
-                )}
-              </div>
-
-              <Button disabled={updateSetting.isPending} size="sm" type="submit">
-                {t('save')}
-              </Button>
-            </form>
-          </ScrollArea>
+          <NetworkProbeSettingsTab
+            key={settingVersion}
+            onSubmit={handleSaveSettings}
+            setting={setting}
+            targets={sortedTargets}
+            updatePending={updateSetting.isPending}
+          />
         </TabsContent>
       </Tabs>
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) {
-            closeDialog()
-          }
-        }}
-        open={showDialog}
-      >
-        <DialogContent className="sm:max-w-md" showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{editingTarget ? t('edit_target') : t('add_target')}</DialogTitle>
-          </DialogHeader>
-          <form className="space-y-3" onSubmit={handleSubmitTarget}>
-            <div className="space-y-1">
-              <label className="font-medium text-sm" htmlFor="form-name">
-                {t('target_name')}
-              </label>
-              <Input
-                autoComplete="off"
-                id="form-name"
-                name="target-name"
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder={t('target_name')}
-                required
-                type="text"
-                value={form.name}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-medium text-sm" htmlFor="form-provider">
-                {t('target_provider')}
-              </label>
-              <Input
-                autoComplete="off"
-                id="form-provider"
-                name="target-provider"
-                onChange={(e) => setForm((prev) => ({ ...prev, provider: e.target.value }))}
-                placeholder={t('target_provider')}
-                type="text"
-                value={form.provider}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-medium text-sm" htmlFor="form-location">
-                {t('target_location')}
-              </label>
-              <Input
-                autoComplete="off"
-                id="form-location"
-                name="target-location"
-                onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))}
-                placeholder={t('target_location')}
-                type="text"
-                value={form.location}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-medium text-sm" htmlFor="form-target">
-                {t('target_address')}
-              </label>
-              <Input
-                autoComplete="off"
-                id="form-target"
-                name="target-address"
-                onChange={(e) => setForm((prev) => ({ ...prev, target: e.target.value }))}
-                placeholder={t('target_address_placeholder', { defaultValue: 'e.g. 1.1.1.1 or example.com:80' })}
-                required
-                type="text"
-                value={form.target}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-medium text-sm" htmlFor="form-probe-type">
-                {t('target_type')}
-              </label>
-              <Select
-                items={probeTypes}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, probe_type: value as ProbeType }))}
-                value={form.probe_type}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {probeTypes.map((pt) => (
-                    <SelectItem key={pt.value} value={pt.value}>
-                      {pt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button disabled={createTarget.isPending || updateTarget.isPending} size="sm" type="submit">
-                {editingTarget ? t('save') : t('add_target')}
-              </Button>
-              <Button onClick={closeDialog} size="sm" type="button" variant="ghost">
-                {t('cancel')}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
 
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteTargetId(null)
-          }
-        }}
+      <NetworkProbeTargetDialog
+        createPending={createTarget.isPending}
+        key={editingTarget ? `${editingTarget.id}:${editingTarget.updated_at ?? ''}` : 'new-target'}
+        onClose={closeDialog}
+        onSubmit={handleSubmitTarget}
+        open={showDialog}
+        target={editingTarget}
+        updatePending={updateTarget.isPending}
+      />
+
+      <NetworkProbeDeleteDialog
+        onClose={() => setDeleteTargetId(null)}
+        onConfirm={handleDeleteConfirm}
         open={deleteTargetId !== null}
-      >
-        <DialogContent className="sm:max-w-sm" showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>{t('delete_target')}</DialogTitle>
-          </DialogHeader>
-          <p className="text-muted-foreground text-sm">{t('confirm_delete_target')}</p>
-          <div className="flex gap-2">
-            <Button disabled={deleteTarget.isPending} onClick={handleDeleteConfirm} size="sm" variant="destructive">
-              <Trash2 className="mr-1 size-3.5" />
-              {t('delete_target')}
-            </Button>
-            <Button onClick={() => setDeleteTargetId(null)} size="sm" type="button" variant="ghost">
-              {t('cancel')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        pending={deleteTarget.isPending}
+      />
     </div>
   )
 }
