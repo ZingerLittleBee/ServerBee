@@ -48,6 +48,7 @@ import type {
   UpdateMaintenanceRequest,
   UpdateStatusPageRequest
 } from '@/lib/api-schema'
+import { buildStatusPageUpdatePayload, type ConfigFormState, parseServerIds } from './status-page-config-utils'
 
 const STATUS_PAGE_TABS = ['config', 'incidents', 'maintenance'] as const
 type StatusPageTab = (typeof STATUS_PAGE_TABS)[number]
@@ -60,26 +61,6 @@ export const Route = createFileRoute('/_authed/settings/status-pages')({
     tab: STATUS_PAGE_TABS.includes(search.tab as StatusPageTab) ? (search.tab as StatusPageTab) : 'config'
   })
 })
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Parse the entity's `server_ids_json` storage column into a `string[]`. */
-export function parseServerIds(raw: string | null | undefined): string[] {
-  if (!raw) {
-    return []
-  }
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (Array.isArray(parsed)) {
-      return parsed.filter((v): v is string => typeof v === 'string')
-    }
-  } catch {
-    // ignore malformed JSON; fall through to []
-  }
-  return []
-}
 
 function ServerCheckboxItem({ checked, name, onToggle }: { checked: boolean; name: string; onToggle: () => void }) {
   return (
@@ -95,21 +76,6 @@ function ServerCheckboxItem({ checked, name, onToggle }: { checked: boolean; nam
 // Singleton Status-Page Config
 // ---------------------------------------------------------------------------
 
-interface ConfigFormState {
-  defaultLayout: 'grid' | 'list'
-  description: string
-  enabled: boolean
-  redThreshold: number
-  selectedServers: string[]
-  showIncidents: boolean
-  showIpQuality: boolean
-  showMaintenance: boolean
-  showNetwork: boolean
-  showServerDetail: boolean
-  title: string
-  yellowThreshold: number
-}
-
 function configFromItem(item: StatusPageItem): ConfigFormState {
   return {
     defaultLayout: item.default_layout === 'grid' ? 'grid' : 'list',
@@ -124,25 +90,6 @@ function configFromItem(item: StatusPageItem): ConfigFormState {
     showServerDetail: item.show_server_detail,
     title: item.title,
     yellowThreshold: item.uptime_yellow_threshold
-  }
-}
-
-/** Build the PUT body. Sends every field so the admin can save a fully-edited
- * form in one round-trip; matches the prevailing settings UX in this app. */
-export function buildStatusPageUpdatePayload(state: ConfigFormState): UpdateStatusPageRequest {
-  return {
-    default_layout: state.defaultLayout,
-    description: state.description.trim() ? state.description.trim() : null,
-    enabled: state.enabled,
-    server_ids: state.selectedServers,
-    show_incidents: state.showIncidents,
-    show_ip_quality: state.showIpQuality,
-    show_maintenance: state.showMaintenance,
-    show_network: state.showNetwork,
-    show_server_detail: state.showServerDetail,
-    title: state.title.trim(),
-    uptime_red_threshold: state.redThreshold,
-    uptime_yellow_threshold: state.yellowThreshold
   }
 }
 

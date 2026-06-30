@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { deriveServerStatus, StatusDot } from './status-dot'
+import { StatusDot } from './status-dot'
+import { deriveServerStatus } from './status-dot-utils'
 
 const ANIMATE_PULSE_RE = /animate-pulse/
 const BG_EMERALD_RE = /bg-emerald-500/

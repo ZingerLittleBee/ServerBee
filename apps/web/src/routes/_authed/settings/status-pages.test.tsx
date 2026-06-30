@@ -4,7 +4,7 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => config
 }))
 
-const { buildStatusPageUpdatePayload, parseServerIds } = await import('./status-pages')
+const { buildStatusPageUpdatePayload, parseServerIds } = await import('./status-page-config-utils')
 
 describe('parseServerIds', () => {
   it('returns an empty array for null / undefined / empty input', () => {

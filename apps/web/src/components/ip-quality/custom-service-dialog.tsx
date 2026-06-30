@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCreateService, useUpdateService } from '@/hooks/use-ip-quality-api'
 import { CATEGORY_ORDER, categoryLabel } from '@/lib/ip-quality-constants'
 import type { UnlockMatch, UnlockRule, UnlockService, UnlockStatus } from '@/lib/ip-quality-types'
+import { defaultRule, parseExistingRules, parseRequest, toNumber } from './custom-service-dialog-utils'
 
 interface Props {
   onOpenChange: (open: boolean) => void
@@ -57,20 +58,6 @@ function defaultMatch(kind: MatchKind): UnlockMatch {
     default:
       return { kind: 'status_equals', code: 200 }
   }
-}
-
-function defaultRule(): UnlockRule {
-  return { match: { kind: 'status_equals', code: 200 }, result: 'unlocked' }
-}
-
-const DEFAULT_TIMEOUT_MS = 5000
-
-// Coerce a number-input value to a valid number. `Number(...)` yields `NaN`
-// for a partially-typed `-` / `e`, and `NaN` serializes to `null`, which would
-// silently corrupt the value — fall back to 0 instead.
-export function toNumber(value: string): number {
-  const parsed = Number.parseInt(value, 10)
-  return Number.isNaN(parsed) ? 0 : parsed
 }
 
 interface RuleRowProps {
@@ -206,63 +193,6 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
       </div>
     </div>
   )
-}
-
-/** A custom service's request config, parsed from the stored JSON string. */
-export interface ParsedRequest {
-  headers: [string, string][]
-  method: string
-  timeout_ms: number
-  url: string
-}
-
-/**
- * Parse a service's `request` JSON string in a single pass.
- *
- * Intentional asymmetry vs `parseExistingRules`: headers legitimately default
- * to `[]` (a custom service may send no extra headers), whereas rules always
- * default to ≥1 (a service with zero match rules can never classify a result).
- */
-export function parseRequest(service: UnlockService | null | undefined): ParsedRequest {
-  const fallback: ParsedRequest = { url: '', method: 'GET', timeout_ms: DEFAULT_TIMEOUT_MS, headers: [] }
-  if (!service?.request) {
-    return fallback
-  }
-  try {
-    const req = JSON.parse(service.request) as {
-      url?: string
-      method?: string
-      timeout_ms?: number
-      headers?: [string, string][]
-    }
-    return {
-      url: req.url ?? '',
-      method: req.method ?? 'GET',
-      timeout_ms: typeof req.timeout_ms === 'number' ? req.timeout_ms : DEFAULT_TIMEOUT_MS,
-      headers: Array.isArray(req.headers) ? req.headers : []
-    }
-  } catch {
-    return fallback
-  }
-}
-
-/**
- * Parse a service's `rules` JSON string.
- *
- * Unlike `parseRequest`'s headers (which default to `[]`), rules always fall
- * back to a single default rule — a custom service must have at least one match
- * rule to ever produce a non-failed result.
- */
-export function parseExistingRules(service: UnlockService | null | undefined): UnlockRule[] {
-  if (!service?.rules) {
-    return [defaultRule()]
-  }
-  try {
-    const parsed = JSON.parse(service.rules) as UnlockRule[]
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [defaultRule()]
-  } catch {
-    return [defaultRule()]
-  }
 }
 
 export function CustomServiceDialog({ open, onOpenChange, service }: Props) {

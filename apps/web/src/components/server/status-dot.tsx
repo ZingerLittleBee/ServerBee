@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
-
-export type StatusKind = 'online' | 'offline' | 'pending'
+import type { StatusKind } from './status-dot-utils'
 
 interface StatusDotProps {
   className?: string
@@ -25,11 +24,4 @@ export function StatusDot({ status, className }: StatusDotProps) {
       />
     </>
   )
-}
-
-export function deriveServerStatus(s: { has_token?: boolean; online: boolean }): StatusKind {
-  if (s.has_token === false) {
-    return 'pending'
-  }
-  return s.online ? 'online' : 'offline'
 }

@@ -6,7 +6,7 @@ import type { VariantProps } from 'class-variance-authority'
 // biome-ignore lint/performance/noNamespaceImport: React namespace import required for createContext and CSSProperties
 import * as React from 'react'
 import { use, useMemo } from 'react'
-import { toggleVariants } from '@/components/ui/toggle'
+import { toggleVariants } from '@/components/ui/toggle-variants'
 import { cn } from '@/lib/utils'
 
 const ToggleGroupContext = React.createContext<

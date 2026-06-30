@@ -4,32 +4,14 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
 import { MetricValue } from '@/components/server/metric-value'
-import { deriveServerStatus, StatusDot } from '@/components/server/status-dot'
+import { StatusDot } from '@/components/server/status-dot'
+import { deriveServerStatus } from '@/components/server/status-dot-utils'
 import { TagChipRow } from '@/components/server/tag-chip'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { cn, formatUptime } from '@/lib/utils'
-
-export function getBarColor(pct: number): string {
-  if (pct > 90) {
-    return 'bg-red-500'
-  }
-  if (pct > 70) {
-    return 'bg-amber-500'
-  }
-  return 'bg-emerald-500'
-}
-
-export function getBarTextColor(pct: number): string {
-  if (pct > 90) {
-    return 'text-red-600 dark:text-red-400'
-  }
-  if (pct > 70) {
-    return 'text-amber-600 dark:text-amber-400'
-  }
-  return 'text-foreground'
-}
+import { getBarColor, getBarTextColor } from './metric-bar-colors'
 
 interface MetricBarRowProps {
   ariaLabel?: string

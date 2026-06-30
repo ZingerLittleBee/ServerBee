@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import type { StatusKind } from '@/components/server/status-dot'
+import type { StatusKind } from '@/components/server/status-dot-utils'
 import { cn } from '@/lib/utils'
 
 interface StatusBadgeProps {

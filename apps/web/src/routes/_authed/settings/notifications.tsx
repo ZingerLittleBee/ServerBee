@@ -34,16 +34,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
 import type { Notification, NotificationGroup } from '@/lib/api-schema'
+import { buildEmailPayload } from './notification-payloads'
 
 export const Route = createFileRoute('/_authed/settings/notifications')({
   component: NotificationsPage
 })
 
 type NotifyType = 'apns' | 'bark' | 'email' | 'telegram' | 'webhook'
-
-export function buildEmailPayload(from: string, toAddresses: string[]): { from: string; to: string[] } {
-  return { from, to: toAddresses }
-}
 
 function isPlausibleEmail(s: string): boolean {
   const at = s.indexOf('@')

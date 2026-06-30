@@ -2,20 +2,15 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { CircleDot, ExternalLink, Tag } from 'lucide-react'
 import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header'
 import { CostCell } from '@/components/server/cost-cell'
-import { deriveServerStatus, StatusDot } from '@/components/server/status-dot'
-import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
+import { StatusDot } from '@/components/server/status-dot'
+import { deriveServerStatus } from '@/components/server/status-dot-utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import type { ServerCostOverview } from '@/lib/api-schema'
 import { cn } from '@/lib/utils'
-import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CpuCell, DiskCell, MemoryCell, NameCell, NetworkCell, UptimeCell } from './index-cells'
-
-export function UpgradeBadgeCell({ serverId }: { serverId: string }) {
-  const job = useUpgradeJobsStore((state) => state.jobs.get(serverId))
-  return <UpgradeJobBadge job={job} />
-}
+import { UpgradeBadgeCell } from './upgrade-badge-cell'
 
 const arrayIncludesFilter = (row: { getValue: (id: string) => unknown }, id: string, value: unknown) => {
   if (!Array.isArray(value) || value.length === 0) {

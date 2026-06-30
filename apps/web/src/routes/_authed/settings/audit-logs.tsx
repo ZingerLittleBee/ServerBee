@@ -17,7 +17,8 @@ import {
   AlertDialogTrigger
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { DataTable, DataTablePagination } from '@/components/ui/data-table'
+import { DataTable } from '@/components/ui/data-table'
+import { DataTablePagination } from '@/components/ui/data-table-pagination'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'

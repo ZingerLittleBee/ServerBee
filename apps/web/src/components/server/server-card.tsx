@@ -41,7 +41,7 @@ import { RegenerateCodeDialog } from './regenerate-code-dialog'
 import { buildServerCardNetworkState, type ServerCardTooltipTarget } from './server-card-network-data'
 import { ServerEditDialog } from './server-edit-dialog'
 import { StatusBadge } from './status-badge'
-import { deriveServerStatus } from './status-dot'
+import { deriveServerStatus } from './status-dot-utils'
 import { TagChips } from './tag-chips'
 import { UpgradeJobBadge } from './upgrade-job-badge'
 
