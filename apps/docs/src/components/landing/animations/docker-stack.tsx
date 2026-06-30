@@ -1,17 +1,18 @@
 import { Box } from 'lucide-react'
 
+const DOCKER_CONTAINERS = [
+  { name: 'web', tag: 'caddy:2', cpu: '0.4%', delay: '0s' },
+  { name: 'api', tag: 'rust:1.84', cpu: '1.2%', delay: '0.4s' },
+  { name: 'cache', tag: 'redis:7', cpu: '0.1%', delay: '0.8s' }
+]
+
 export function DockerStackAnim() {
-  const containers = [
-    { name: 'web', tag: 'caddy:2', cpu: '0.4%', delay: '0s' },
-    { name: 'api', tag: 'rust:1.84', cpu: '1.2%', delay: '0.4s' },
-    { name: 'cache', tag: 'redis:7', cpu: '0.1%', delay: '0.8s' }
-  ]
   return (
     <figure
       aria-label="Animated demo of Docker container management"
       className="m-0 flex h-full flex-col justify-center gap-1.5"
     >
-      {containers.map((c) => (
+      {DOCKER_CONTAINERS.map((c) => (
         <div
           className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 font-mono text-[11px]"
           key={c.name}

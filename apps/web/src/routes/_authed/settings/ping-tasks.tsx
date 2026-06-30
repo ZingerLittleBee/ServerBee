@@ -46,6 +46,10 @@ interface Server {
 
 type ProbeType = 'http' | 'icmp' | 'tcp'
 
+const PING_CHART_CONFIG = {
+  latency: { label: 'Latency', color: 'var(--chart-4)' }
+} satisfies ChartConfig
+
 function PingResultsChart({ taskId }: { taskId: string }) {
   const { t } = useTranslation('settings')
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-compute when taskId changes
@@ -79,10 +83,6 @@ function PingResultsChart({ taskId }: { taskId: string }) {
     records.filter((r) => r.success).reduce((sum, r) => sum + r.latency, 0) /
     Math.max(1, records.filter((r) => r.success).length)
 
-  const pingChartConfig = {
-    latency: { label: 'Latency', color: 'var(--chart-4)' }
-  } satisfies ChartConfig
-
   return (
     <div className="space-y-2">
       <div className="flex gap-4 text-muted-foreground text-xs">
@@ -90,7 +90,7 @@ function PingResultsChart({ taskId }: { taskId: string }) {
         <span>{t('ping.avg_latency', { value: avgLatency.toFixed(1) })}</span>
         <span>{t('ping.record_count', { count: records.length })}</span>
       </div>
-      <ChartContainer className="h-[180px] w-full" config={pingChartConfig}>
+      <ChartContainer className="h-[180px] w-full" config={PING_CHART_CONFIG}>
         <AreaChart accessibilityLayer data={chartData}>
           <CartesianGrid vertical={false} />
           <XAxis
