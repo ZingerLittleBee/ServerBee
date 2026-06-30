@@ -263,6 +263,10 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
     !isRealtime && chartData.some((d) => 'temperature' in d && d.temperature != null && (d.temperature as number) > 0)
   const hasDiskIo = isAdminVariant && !isRealtime && diskIoPerDiskData.length > 0
   const hasGpu = !isRealtime && gpuChartData.length > 0
+  const availableMetrics = useMemo<AvailableMetrics>(
+    () => ({ diskIo: hasDiskIo, gpu: hasGpu, temperature: hasTemperature }),
+    [hasDiskIo, hasGpu, hasTemperature]
+  )
 
   const publicMetricsSnapshot = isAdminVariant || isAdminServer(server) ? null : server.metrics
   const { netInLabel, netOutLabel, netTotalLabel } = deriveNetworkLabels(
@@ -307,20 +311,18 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
         isAdminVariant={isAdminVariant}
         metricsTab={
           <MetricsTabContent
+            availableMetrics={availableMetrics}
             chartData={chartData}
             diskIoMergedData={diskIoMergedData}
             diskIoPerDiskData={diskIoPerDiskData}
             formatTime={chartFormatTime}
             formatTooltipLabel={tooltipFormatTime}
             gpuChartData={gpuChartData}
-            hasDiskIo={hasDiskIo}
-            hasGpu={hasGpu}
-            hasTemperature={hasTemperature}
-            isPublic={isPublic}
             onRangeChange={onRangeChange}
             rangeIndex={rangeIndex}
             ranges={ranges}
             serverId={serverId}
+            variant={isPublic ? 'public' : 'admin'}
             xAxisInterval={xAxisInterval}
           />
         }
@@ -511,23 +513,28 @@ function useGpuChartData(
   }, [isAdminVariant, gpuRecords, publicMetrics])
 }
 
+interface AvailableMetrics {
+  diskIo: boolean
+  gpu: boolean
+  temperature: boolean
+}
+
 function MetricsTabContent({
+  availableMetrics,
   chartData,
   diskIoMergedData,
   diskIoPerDiskData,
   gpuChartData,
-  hasDiskIo,
-  hasGpu,
-  hasTemperature,
-  isPublic,
   onRangeChange,
   rangeIndex,
   ranges,
   formatTime,
   formatTooltipLabel,
   serverId,
+  variant,
   xAxisInterval
 }: {
+  availableMetrics: AvailableMetrics
   chartData: Record<string, unknown>[]
   diskIoMergedData: { read_bytes_per_sec: number; timestamp: string; write_bytes_per_sec: number }[]
   diskIoPerDiskData: {
@@ -535,20 +542,18 @@ function MetricsTabContent({
     name: string
   }[]
   gpuChartData: Record<string, unknown>[]
-  hasDiskIo: boolean
-  hasGpu: boolean
-  hasTemperature: boolean
-  isPublic: boolean
   onRangeChange?: (rangeKey: string) => void
   rangeIndex: number
   ranges: TimeRange[]
   formatTime: ((time: string) => string) | undefined
   formatTooltipLabel: ((time: string) => string) | undefined
   serverId: string
+  variant: 'admin' | 'public'
   xAxisInterval?: number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd' | 'equidistantPreserveStart'
 }) {
   const { t } = useTranslation('servers')
   const hasGpuTemp = gpuChartData.some((d) => 'gpu_temp' in d && d.gpu_temp != null)
+  const isPublic = variant === 'public'
 
   return (
     <>
@@ -632,7 +637,7 @@ function MetricsTabContent({
           xAxisInterval={xAxisInterval}
         />
 
-        {hasTemperature && (
+        {availableMetrics.temperature && (
           <MetricsChart
             color="var(--color-chart-4)"
             data={chartData}
@@ -645,7 +650,7 @@ function MetricsTabContent({
           />
         )}
 
-        {hasGpu && (
+        {availableMetrics.gpu && (
           <MetricsChart
             color="var(--color-chart-5)"
             data={gpuChartData}
@@ -660,7 +665,7 @@ function MetricsTabContent({
         )}
         {/* GPU temp series is admin-only; the public surface does not
             expose it, so we gate the chart on a non-empty data key. */}
-        {hasGpu && hasGpuTemp && (
+        {availableMetrics.gpu && hasGpuTemp && (
           <MetricsChart
             color="var(--color-chart-2)"
             data={gpuChartData}
@@ -674,7 +679,7 @@ function MetricsTabContent({
         )}
       </div>
 
-      {hasDiskIo && (
+      {availableMetrics.diskIo && (
         <DiskIoChart formatTime={formatTime} mergedData={diskIoMergedData} perDiskData={diskIoPerDiskData} />
       )}
 
