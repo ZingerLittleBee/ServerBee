@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useRef, useState } from 'react'
 
 interface VisibilityGateProps {
   children: ReactNode
@@ -25,40 +25,43 @@ interface VisibilityGateProps {
  * cells) or interacted with (edit mode drag/drop).
  */
 export function VisibilityGate({ children, disabled = false, fallback, rootMargin = '200px' }: VisibilityGateProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(disabled)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const [visible, setVisible] = useState(false)
 
-  useEffect(() => {
-    if (disabled) {
-      setVisible(true)
-      return
-    }
-    const el = ref.current
-    if (!el) {
-      return
-    }
-    if (typeof IntersectionObserver === 'undefined') {
-      setVisible(true)
-      return
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setVisible(true)
-            observer.disconnect()
-            return
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      observerRef.current?.disconnect()
+      observerRef.current = null
+
+      if (!node) {
+        return
+      }
+      if (disabled || typeof IntersectionObserver === 'undefined') {
+        setVisible(true)
+        return
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              setVisible(true)
+              observer.disconnect()
+              observerRef.current = null
+              return
+            }
           }
-        }
-      },
-      { rootMargin }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [disabled, rootMargin])
+        },
+        { rootMargin }
+      )
+      observerRef.current = observer
+      observer.observe(node)
+    },
+    [disabled, rootMargin]
+  )
 
   return (
-    <div className="h-full w-full" ref={ref}>
+    <div className="h-full w-full" ref={setRef}>
       {visible || disabled ? children : fallback}
     </div>
   )

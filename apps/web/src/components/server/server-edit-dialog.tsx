@@ -86,26 +86,26 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 function ServerEditDialogContent({ server, onClose }: { onClose: () => void; server: ServerResponse }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
-  const [name, setName] = useState(server.name)
-  const [weight, setWeight] = useState(server.weight)
-  const [hidden, setHidden] = useState(server.hidden)
-  const [groupId, setGroupId] = useState(server.group_id ?? '')
-  const [remark, setRemark] = useState(server.remark ?? '')
-  const [publicRemark, setPublicRemark] = useState(server.public_remark ?? '')
+  const [name, setName] = useState(() => server.name)
+  const [weight, setWeight] = useState(() => server.weight)
+  const [hidden, setHidden] = useState(() => server.hidden)
+  const [groupId, setGroupId] = useState(() => server.group_id ?? '')
+  const [remark, setRemark] = useState(() => server.remark ?? '')
+  const [publicRemark, setPublicRemark] = useState(() => server.public_remark ?? '')
   // The country override field is empty unless the server already has a manual
   // override; otherwise we leave it blank and surface the auto-detected value as
   // a hint, so saving an untouched form never accidentally pins GeoIP.
   const [initialCountryCode] = useState(() => (server.geo_manual ? (server.country_code ?? '') : ''))
   const [countryCode, setCountryCode] = useState(initialCountryCode)
-  const [price, setPrice] = useState(server.price?.toString() ?? '')
-  const [billingCycle, setBillingCycle] = useState(server.billing_cycle ?? '')
-  const [currency, setCurrency] = useState(server.currency ?? 'USD')
-  const [expiredAt, setExpiredAt] = useState(server.expired_at?.slice(0, 10) ?? '')
-  const [trafficLimit, setTrafficLimit] = useState(
+  const [price, setPrice] = useState(() => server.price?.toString() ?? '')
+  const [billingCycle, setBillingCycle] = useState(() => server.billing_cycle ?? '')
+  const [currency, setCurrency] = useState(() => server.currency ?? 'USD')
+  const [expiredAt, setExpiredAt] = useState(() => server.expired_at?.slice(0, 10) ?? '')
+  const [trafficLimit, setTrafficLimit] = useState(() =>
     server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : ''
   )
-  const [trafficLimitType, setTrafficLimitType] = useState(server.traffic_limit_type ?? 'sum')
-  const [billingStartDay, setBillingStartDay] = useState(server.billing_start_day?.toString() ?? '')
+  const [trafficLimitType, setTrafficLimitType] = useState(() => server.traffic_limit_type ?? 'sum')
+  const [billingStartDay, setBillingStartDay] = useState(() => server.billing_start_day?.toString() ?? '')
   const [tagsDraft, setTagsDraft] = useState<{ dirty: boolean; value: string }>({ dirty: false, value: '' })
 
   const { data: groups } = useQuery<ServerGroup[]>({
