@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getLatencySquareColor, getLossSquareColor, LATENCY_UNKNOWN_BAR_COLOR } from '@/lib/network-latency-constants'
@@ -7,7 +6,6 @@ import type { ServerCardMetricPoint } from './server-card-network-data'
 
 const SQUARE_SIZE = 6
 const SQUARE_GAP = 2
-const STEP = SQUARE_SIZE + SQUARE_GAP
 
 interface NetworkSquareGridProps {
   kind: 'latency' | 'loss'
@@ -58,27 +56,10 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
 
 export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
   const { t } = useTranslation(['servers'])
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(0)
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) {
-      return
-    }
-    const observer = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? 0
-      setWidth(w)
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
-
-  const maxSquares = Math.max(1, Math.floor((width + SQUARE_GAP) / STEP))
-  const visible = points.slice(-maxSquares)
+  const visible = points.toReversed()
 
   return (
-    <div className="flex h-3 w-full items-end overflow-hidden" ref={containerRef} style={{ gap: `${SQUARE_GAP}px` }}>
+    <div className="flex h-3 w-full flex-row-reverse items-end overflow-hidden" style={{ gap: `${SQUARE_GAP}px` }}>
       {visible.map((point) => (
         <Tooltip key={point.timestamp}>
           <TooltipTrigger
