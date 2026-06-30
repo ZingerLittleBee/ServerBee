@@ -48,8 +48,75 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace -- -D warnings
 
-      - name: Test
-        run: cargo test --workspace
+      - name: Test common
+        run: cargo test -p serverbee-common
+
+      - name: Test agent
+        run: cargo test -p serverbee-agent
+
+      - name: Test server units
+        run: cargo test -p serverbee-server --lib --bins --examples
+
+      - name: Test server integrations (agent)
+        run: >
+          cargo test -p serverbee-server
+          --test agent_docker_extra
+          --test agent_file_ops
+          --test agent_messages
+          --test agent_registration_integration
+          --test agent_ws_dispatch
+          --test api_key_admin_only
+          --test browser_ws
+          --test cost_integration
+          --test docker_integration
+
+      - name: Test server integrations (api)
+        run: >
+          cargo test -p serverbee-server
+          --test email_migration_integration
+          --test integration
+          --test ip_quality_integration
+          --test mobile_push_integration
+          --test notification_update_integration
+          --test public_status_anonymous
+          --test public_status_gating
+          --test public_status_ip_quality_redaction
+          --test public_status_redaction
+          --test public_status_redaction_authenticated
+          --test public_status_scope
+
+      - name: Test server integrations (router)
+        run: >
+          cargo test -p serverbee-server
+          --test router_admin_extra
+          --test router_alerting
+          --test router_auth_user
+          --test router_authtask_extra
+          --test router_content_admin
+          --test router_file_extra
+          --test router_geo_servers
+          --test router_misc_endpoints
+          --test router_mobile
+          --test router_monitoring
+          --test router_probes_extra
+          --test router_security_rate
+          --test router_server_crud
+          --test router_server_extra
+          --test router_server_extra2
+          --test router_smoke
+          --test router_static_and_misc
+
+      - name: Test server integrations (widgets and ws)
+        run: >
+          cargo test -p serverbee-server
+          --test router_widget_dashboard
+          --test widget_module_integration
+          --test ws_agent_dispatch2
+          --test ws_docker_browser
+          --test ws_terminal_relay
+
+      - name: Test server docs
+        run: cargo test -p serverbee-server --doc
 
   frontend:
     name: Frontend Check
