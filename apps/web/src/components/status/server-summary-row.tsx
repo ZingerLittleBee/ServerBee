@@ -3,13 +3,14 @@ import { ArrowDown, ArrowUp, Cpu, HardDrive, MemoryStick, Network, Sigma, Wrench
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
+import { MetricValue } from '@/components/server/metric-value'
 import { StatusDot } from '@/components/server/status-dot'
 import { Badge } from '@/components/ui/badge'
 import { TableCell, TableRow } from '@/components/ui/table'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import type { PublicServerSummary, PublicStatusConfig } from '@/lib/api-schema'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, formatBytes, formatSpeed } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 
 interface Props {
@@ -31,45 +32,6 @@ function metricPercent(used: number, total: number): number {
 
 function finiteMetric(value: number | null | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-function splitValueUnit(formatted: string): { unit: string | null; value: string } {
-  const lastSpace = formatted.lastIndexOf(' ')
-  if (lastSpace < 0) {
-    return { unit: null, value: formatted }
-  }
-  return { unit: formatted.slice(lastSpace + 1), value: formatted.slice(0, lastSpace) }
-}
-
-function valueClassName(value: string): string {
-  return value === '0' ? 'text-xs' : 'font-semibold text-foreground text-xs'
-}
-
-function renderBytesValue(bytes: number): ReactNode {
-  const { value, unit } = splitValueUnit(formatBytes(bytes))
-  if (unit == null) {
-    return <span className={valueClassName(value)}>{value}</span>
-  }
-  return (
-    <>
-      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
-    </>
-  )
-}
-
-function renderSpeedValue(bytesPerSec: number): ReactNode {
-  if (bytesPerSec <= 0) {
-    return <span className="text-xs">0</span>
-  }
-  const { value, unit } = splitValueUnit(formatSpeed(bytesPerSec))
-  if (unit == null) {
-    return <span className={valueClassName(value)}>{value}</span>
-  }
-  return (
-    <>
-      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
-    </>
-  )
 }
 
 function getBarColor(pct: number): string {
@@ -131,23 +93,23 @@ function DiskMetric({ server }: { server: PublicServerSummary }) {
     <div className="grid grid-cols-[max-content_max-content] gap-x-1.5 gap-y-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
       <span className="flex h-4 items-center gap-1">
         <HardDrive aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(metrics.disk_used)}
+        <MetricValue kind="bytes" value={metrics.disk_used} />
       </span>
       <span className="flex h-4 items-center gap-1">
         <Sigma aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(metrics.disk_total)}
+        <MetricValue kind="bytes" value={metrics.disk_total} />
       </span>
       <span className="flex h-4 items-center gap-1">
         <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
           R
         </span>
-        {renderSpeedValue(metrics.disk_read_bytes_per_sec)}
+        <MetricValue kind="speed" value={metrics.disk_read_bytes_per_sec} />
       </span>
       <span className="flex h-4 items-center gap-1">
         <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
           W
         </span>
-        {renderSpeedValue(metrics.disk_write_bytes_per_sec)}
+        <MetricValue kind="speed" value={metrics.disk_write_bytes_per_sec} />
       </span>
     </div>
   )
@@ -169,23 +131,23 @@ function NetworkMetric({ server }: { server: PublicServerSummary }) {
     <div className="grid grid-cols-[max-content_max-content] gap-x-1.5 gap-y-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
       <span className="flex h-4 items-center gap-1" title={t('network_total', { defaultValue: 'Network total' })}>
         <Network aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(traffic.used)}
+        <MetricValue kind="bytes" value={traffic.used} />
       </span>
       <span className="flex h-4 items-center gap-1" title={t('network_limit', { defaultValue: 'Network limit' })}>
         <Sigma aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(traffic.limit)}
+        <MetricValue kind="bytes" value={traffic.limit} />
       </span>
       <span className="flex h-4 items-center gap-1" title={t('network_in')}>
         <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
           <ArrowDown aria-hidden="true" className="size-2.5" />
         </span>
-        {renderSpeedValue(metrics.net_in_speed)}
+        <MetricValue kind="speed" value={metrics.net_in_speed} />
       </span>
       <span className="flex h-4 items-center gap-1" title={t('network_out')}>
         <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
           <ArrowUp aria-hidden="true" className="size-2.5" />
         </span>
-        {renderSpeedValue(metrics.net_out_speed)}
+        <MetricValue kind="speed" value={metrics.net_out_speed} />
       </span>
     </div>
   )
@@ -299,7 +261,8 @@ export function ServerSummaryRow({ server, clickable, thresholds }: Props) {
             pct={memoryPct}
             value={
               <>
-                {renderBytesValue(metrics.mem_used)} / {renderBytesValue(metrics.mem_total)}
+                <MetricValue kind="bytes" value={metrics.mem_used} /> /{' '}
+                <MetricValue kind="bytes" value={metrics.mem_total} />
               </>
             }
           />

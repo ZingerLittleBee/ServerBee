@@ -5,6 +5,7 @@ import { memo, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CompactMetric } from '@/components/server/compact-metric'
+import { MetricValue } from '@/components/server/metric-value'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +30,7 @@ import { CAP_DEFAULT } from '@/lib/capabilities'
 import { isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { cn, formatBytes, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CountryFlag } from '../country-flag'
 import { CostFootnote } from './cost-footnote'
@@ -113,23 +114,6 @@ function formatPacketLoss(lossRatio: number | null): string {
 
 function formatLoad(load: number): string {
   return load.toFixed(2)
-}
-
-function renderSpeedValue(bytesPerSec: number): React.ReactNode {
-  if (bytesPerSec <= 0) {
-    return '0'
-  }
-  const formatted = formatSpeed(bytesPerSec)
-  const lastSpace = formatted.lastIndexOf(' ')
-  if (lastSpace < 0) {
-    return formatted
-  }
-  return (
-    <>
-      {formatted.slice(0, lastSpace)}
-      <span className="ml-0.5 font-normal text-[10px] text-muted-foreground">{formatted.slice(lastSpace + 1)}</span>
-    </>
-  )
 }
 
 interface RingMetricProps {
@@ -531,8 +515,14 @@ const ServerCardInner = ({
           </div>
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/40 px-2 py-1.5">
-            <CompactMetric label={t('card_net_in_speed')} value={renderSpeedValue(server.net_in_speed)} />
-            <CompactMetric label={t('card_net_out_speed')} value={renderSpeedValue(server.net_out_speed)} />
+            <CompactMetric
+              label={t('card_net_in_speed')}
+              value={<MetricValue kind="speed" value={server.net_in_speed} variant="compact" />}
+            />
+            <CompactMetric
+              label={t('card_net_out_speed')}
+              value={<MetricValue kind="speed" value={server.net_out_speed} variant="compact" />}
+            />
             <CompactMetric
               label={
                 <span className="inline-flex items-center gap-1">
@@ -545,7 +535,7 @@ const ServerCardInner = ({
                   {t('card_disk_read')}
                 </span>
               }
-              value={renderSpeedValue(server.disk_read_bytes_per_sec)}
+              value={<MetricValue kind="speed" value={server.disk_read_bytes_per_sec} variant="compact" />}
             />
             <CompactMetric
               label={
@@ -559,7 +549,7 @@ const ServerCardInner = ({
                   {t('card_disk_write')}
                 </span>
               }
-              value={renderSpeedValue(server.disk_write_bytes_per_sec)}
+              value={<MetricValue kind="speed" value={server.disk_write_bytes_per_sec} variant="compact" />}
             />
           </div>
 
