@@ -1,6 +1,6 @@
 import { renderConfigForm } from '@serverbee/widget-sdk'
 import { LayoutGrid, List } from 'lucide-react'
-import { useId, useMemo, useState } from 'react'
+import { useId, useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -123,6 +123,35 @@ function parseExistingConfig(widget?: DashboardWidget): WidgetConfig | null {
     return null
   }
   return parseConfig<WidgetConfig>(widget.config_json)
+}
+
+interface WidgetFormDraft {
+  config: Record<string, unknown>
+  title: string
+}
+
+type WidgetFormAction = { type: 'configChanged'; config: object } | { type: 'titleChanged'; value: string }
+
+function toConfigRecord(config: object | null | undefined): Record<string, unknown> {
+  return { ...config }
+}
+
+function createWidgetFormDraft(widget?: DashboardWidget): WidgetFormDraft {
+  return {
+    config: toConfigRecord(parseExistingConfig(widget)),
+    title: widget?.title ?? ''
+  }
+}
+
+function widgetFormReducer(state: WidgetFormDraft, action: WidgetFormAction): WidgetFormDraft {
+  switch (action.type) {
+    case 'configChanged':
+      return { ...state, config: toConfigRecord(action.config) }
+    case 'titleChanged':
+      return { ...state, title: action.value }
+    default:
+      return state
+  }
 }
 
 function ServerSelect({
@@ -841,8 +870,14 @@ function NetworkOverviewForm({
   )
 }
 
+export function WidgetConfigDialog({ widget, widgetType, ...props }: WidgetConfigDialogProps) {
+  const formKey = widget ? `edit:${widget.id}` : `new:${widgetType}`
+
+  return <WidgetConfigDialogForm key={formKey} widget={widget} widgetType={widgetType} {...props} />
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: dispatcher renders one form per widget_type; refactoring to a table is more work than the value
-export function WidgetConfigDialog({
+function WidgetConfigDialogForm({
   open,
   onOpenChange,
   onSubmit,
@@ -852,20 +887,8 @@ export function WidgetConfigDialog({
 }: WidgetConfigDialogProps) {
   const { t } = useTranslation('dashboard')
 
-  const [title, setTitle] = useState(widget?.title ?? '')
-  const [config, setConfig] = useState<Record<string, unknown>>(
-    () => (parseExistingConfig(widget) as Record<string, unknown>) ?? {}
-  )
-
-  // Reset the form when the edited widget changes, during render rather than in an
-  // effect: this avoids the extra commit and stops a parent re-creating the widget
-  // object (same id, new reference) from clobbering in-progress edits.
-  const [prevWidget, setPrevWidget] = useState(widget)
-  if (widget !== prevWidget) {
-    setPrevWidget(widget)
-    setTitle(widget?.title ?? '')
-    setConfig((parseExistingConfig(widget) as Record<string, unknown>) ?? {})
-  }
+  const [draft, dispatchDraft] = useReducer(widgetFormReducer, widget, createWidgetFormDraft)
+  const setConfig = (config: object) => dispatchDraft({ type: 'configChanged', config })
 
   const needsNoConfig = widgetType === 'service-status' || widgetType === 'server-map'
   const isModule = widgetType === 'module'
@@ -880,11 +903,11 @@ export function WidgetConfigDialog({
     // Seed per-widget defaults that the form only shows but doesn't write,
     // so a "save without changes" doesn't persist an invalid empty config
     // (e.g. the metric-card form displays 'cpu' but only commits it on user change).
-    const normalized = { ...config }
+    const normalized = { ...draft.config }
     if (widgetType === 'metric-card' && normalized.metric === undefined) {
       normalized.metric = 'cpu'
     }
-    onSubmit(title, JSON.stringify(normalized))
+    onSubmit(draft.title, JSON.stringify(normalized))
     onOpenChange(false)
   }
 
@@ -900,51 +923,73 @@ export function WidgetConfigDialog({
           <div className="space-y-1.5">
             <Label>{t('dialogs.widgetConfig.labels.titleOptional')}</Label>
             <Input
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => dispatchDraft({ type: 'titleChanged', value: e.target.value })}
               placeholder={t('dialogs.widgetConfig.placeholders.widgetTitle')}
-              value={title}
+              value={draft.title}
             />
           </div>
 
           {widgetType === 'stat-number' && (
-            <StatNumberForm config={config as Partial<StatNumberConfig>} onChange={setConfig} t={t} />
+            <StatNumberForm config={draft.config as Partial<StatNumberConfig>} onChange={setConfig} t={t} />
           )}
           {widgetType === 'metric-card' && (
-            <MetricCardForm config={config as Partial<MetricCardConfig>} onChange={setConfig} servers={servers} t={t} />
+            <MetricCardForm
+              config={draft.config as Partial<MetricCardConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
           )}
           {widgetType === 'gauge' && (
-            <GaugeForm config={config as Partial<GaugeConfig>} onChange={setConfig} servers={servers} t={t} />
+            <GaugeForm config={draft.config as Partial<GaugeConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'line-chart' && (
-            <LineChartForm config={config as Partial<LineChartConfig>} onChange={setConfig} servers={servers} t={t} />
+            <LineChartForm
+              config={draft.config as Partial<LineChartConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
           )}
           {widgetType === 'multi-line' && (
-            <MultiLineForm config={config as Partial<MultiLineConfig>} onChange={setConfig} servers={servers} t={t} />
+            <MultiLineForm
+              config={draft.config as Partial<MultiLineConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
           )}
-          {widgetType === 'top-n' && <TopNForm config={config as Partial<TopNConfig>} onChange={setConfig} t={t} />}
+          {widgetType === 'top-n' && (
+            <TopNForm config={draft.config as Partial<TopNConfig>} onChange={setConfig} t={t} />
+          )}
           {widgetType === 'server-cards' && (
             <ServerCardsForm
-              config={config as Partial<ServerCardsConfig>}
+              config={draft.config as Partial<ServerCardsConfig>}
               onChange={setConfig}
               servers={servers}
               t={t}
             />
           )}
           {widgetType === 'traffic-bar' && (
-            <TrafficBarForm config={config as Partial<TrafficBarConfig>} onChange={setConfig} servers={servers} t={t} />
+            <TrafficBarForm
+              config={draft.config as Partial<TrafficBarConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
           )}
           {widgetType === 'disk-io' && (
-            <DiskIoForm config={config as Partial<DiskIoConfig>} onChange={setConfig} servers={servers} t={t} />
+            <DiskIoForm config={draft.config as Partial<DiskIoConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'alert-list' && (
-            <AlertListForm config={config as Partial<AlertListConfig>} onChange={setConfig} t={t} />
+            <AlertListForm config={draft.config as Partial<AlertListConfig>} onChange={setConfig} t={t} />
           )}
           {widgetType === 'markdown' && (
-            <MarkdownForm config={config as Partial<MarkdownConfig>} onChange={setConfig} t={t} />
+            <MarkdownForm config={draft.config as Partial<MarkdownConfig>} onChange={setConfig} t={t} />
           )}
           {widgetType === 'uptime-timeline' && (
             <UptimeTimelineForm
-              config={config as Partial<UptimeTimelineConfig>}
+              config={draft.config as Partial<UptimeTimelineConfig>}
               onChange={setConfig}
               servers={servers}
               t={t}
@@ -952,7 +997,7 @@ export function WidgetConfigDialog({
           )}
           {widgetType === 'network-latency' && (
             <NetworkLatencyForm
-              config={config as Partial<NetworkLatencyConfig>}
+              config={draft.config as Partial<NetworkLatencyConfig>}
               onChange={setConfig}
               servers={servers}
               t={t}
@@ -960,7 +1005,7 @@ export function WidgetConfigDialog({
           )}
           {widgetType === 'network-quality' && (
             <NetworkQualityForm
-              config={config as Partial<NetworkQualityConfig>}
+              config={draft.config as Partial<NetworkQualityConfig>}
               onChange={setConfig}
               servers={servers}
               t={t}
@@ -968,13 +1013,15 @@ export function WidgetConfigDialog({
           )}
           {widgetType === 'network-overview' && (
             <NetworkOverviewForm
-              config={config as Partial<NetworkOverviewConfig>}
+              config={draft.config as Partial<NetworkOverviewConfig>}
               onChange={setConfig}
               servers={servers}
               t={t}
             />
           )}
-          {isModule && moduleEntry && <ModuleForm config={config} entry={moduleEntry} onChange={setConfig} t={t} />}
+          {isModule && moduleEntry && (
+            <ModuleForm config={draft.config} entry={moduleEntry} onChange={setConfig} t={t} />
+          )}
           {moduleMissing && (
             <p className="text-destructive text-sm">
               {moduleId ? t('module_not_installed_id').replace('{{id}}', moduleId) : t('module_not_installed')}
