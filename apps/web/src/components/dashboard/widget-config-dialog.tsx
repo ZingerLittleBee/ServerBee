@@ -2,6 +2,7 @@ import { renderConfigForm } from '@serverbee/widget-sdk'
 import { LayoutGrid, List } from 'lucide-react'
 import { useId, useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
+import { MarkdownContent } from '@/components/dashboard/markdown-content'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -11,7 +12,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { renderMarkdown } from '@/lib/markdown'
 import { parseConfig } from '@/lib/widget-helpers'
 import type {
   AlertListConfig,
@@ -681,8 +681,8 @@ function MarkdownForm({
   onChange: (c: Partial<MarkdownConfig>) => void
   t: (key: string) => string
 }) {
-  const html = useMemo(() => renderMarkdown(config.content ?? ''), [config.content])
   const contentId = useId()
+  const content = config.content ?? ''
 
   return (
     <div className="space-y-1.5">
@@ -695,15 +695,11 @@ function MarkdownForm({
         placeholder={t('widgets.common.placeholders.writeMarkdown')}
         value={config.content ?? ''}
       />
-      {(config.content ?? '').length > 0 && (
+      {content.length > 0 && (
         <div className="rounded-lg border p-3">
           <p className="mb-1 font-medium text-muted-foreground text-xs">{t('dialogs.widgetConfig.labels.preview')}</p>
           <ScrollArea className="max-h-32">
-            <div
-              className="prose prose-sm dark:prose-invert max-w-none text-sm"
-              // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown escapes all raw HTML and validates URLs
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            <MarkdownContent className="prose prose-sm dark:prose-invert max-w-none text-sm" content={content} />
           </ScrollArea>
         </div>
       )}
