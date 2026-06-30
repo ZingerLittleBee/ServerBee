@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Eye, Pencil, Play, Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -442,6 +442,49 @@ function MonitorFormDialog({
   )
 }
 
+interface MonitorFormState {
+  config: Record<string, unknown>
+  enabled: boolean
+  interval: number
+  monitorType: MonitorType
+  name: string
+  target: string
+  targetError: string | null
+}
+
+type MonitorFormAction =
+  | { type: 'patch'; value: Partial<MonitorFormState> }
+  | { type: 'setMonitorType'; value: MonitorType }
+  | { type: 'setTarget'; value: string }
+  | { type: 'setTargetError'; value: string | null }
+
+function monitorFormFromEditing(editing: ServiceMonitor | null): MonitorFormState {
+  return {
+    config: editing ? parseConfigJson(editing.config_json) : {},
+    enabled: editing?.enabled ?? true,
+    interval: editing?.interval ?? 300,
+    monitorType: toMonitorType(editing?.monitor_type),
+    name: editing?.name ?? '',
+    target: editing?.target ?? '',
+    targetError: null
+  }
+}
+
+function monitorFormReducer(state: MonitorFormState, action: MonitorFormAction): MonitorFormState {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.value }
+    case 'setMonitorType':
+      return { ...state, config: {}, monitorType: action.value }
+    case 'setTarget':
+      return { ...state, target: action.value, targetError: state.targetError ? null : state.targetError }
+    case 'setTargetError':
+      return { ...state, targetError: action.value }
+    default:
+      return state
+  }
+}
+
 function MonitorFormDialogContent({
   editing,
   onSubmit,
@@ -455,25 +498,17 @@ function MonitorFormDialogContent({
   const { t: tCommon } = useTranslation('common')
   const MONITOR_TYPES = useMonitorTypes(t)
 
-  const [name, setName] = useState(editing?.name ?? '')
-  const [monitorType, setMonitorType] = useState<MonitorType>(() => toMonitorType(editing?.monitor_type))
-  const [target, setTarget] = useState(editing?.target ?? '')
-  const [interval, setIntervalVal] = useState(editing?.interval ?? 300)
-  const [enabled, setEnabled] = useState(editing?.enabled ?? true)
-  const [config, setConfig] = useState<Record<string, unknown>>(() =>
-    editing ? parseConfigJson(editing.config_json) : {}
-  )
-  const [targetError, setTargetError] = useState<string | null>(null)
+  const [state, dispatch] = useReducer(monitorFormReducer, editing, monitorFormFromEditing)
 
-  const activeMonitorType = editing ? toMonitorType(editing.monitor_type) : monitorType
-  const normalizedWhoisTarget = activeMonitorType === 'whois' ? normalizeWhoisTarget(target) : null
+  const activeMonitorType = editing ? toMonitorType(editing.monitor_type) : state.monitorType
+  const normalizedWhoisTarget = activeMonitorType === 'whois' ? normalizeWhoisTarget(state.target) : null
   const showUnsupportedWhoisHint =
     activeMonitorType === 'whois' && normalizedWhoisTarget ? isUnsupportedWhoisTld(normalizedWhoisTarget) : false
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    const trimmedName = name.trim()
-    const trimmedTarget = target.trim()
+    const trimmedName = state.name.trim()
+    const trimmedTarget = state.target.trim()
 
     if (trimmedName.length === 0 || trimmedTarget.length === 0) {
       return
@@ -482,31 +517,31 @@ function MonitorFormDialogContent({
     const normalizedTarget = activeMonitorType === 'whois' ? normalizeWhoisTarget(trimmedTarget) : trimmedTarget
 
     if (activeMonitorType === 'whois' && !normalizedTarget) {
-      setTargetError(t('whoisConfig.targetInvalid'))
+      dispatch({ type: 'setTargetError', value: t('whoisConfig.targetInvalid') })
       return
     }
 
-    setTargetError(null)
+    dispatch({ type: 'setTargetError', value: null })
 
     if (editing) {
       onSubmit(
         {
           name: trimmedName,
           target: normalizedTarget ?? trimmedTarget,
-          interval,
-          enabled,
-          config_json: config
+          interval: state.interval,
+          enabled: state.enabled,
+          config_json: state.config
         },
         editing.id
       )
     } else {
       onSubmit({
         name: trimmedName,
-        monitor_type: monitorType,
+        monitor_type: state.monitorType,
         target: normalizedTarget ?? trimmedTarget,
-        interval,
-        enabled,
-        config_json: config
+        interval: state.interval,
+        enabled: state.enabled,
+        config_json: state.config
       })
     }
   }
@@ -539,10 +574,10 @@ function MonitorFormDialogContent({
           <Label htmlFor="monitor-name">{t('form.name')}</Label>
           <Input
             id="monitor-name"
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
             placeholder={t('namePlaceholder')}
             required
-            value={name}
+            value={state.name}
           />
         </div>
 
@@ -551,11 +586,8 @@ function MonitorFormDialogContent({
             <Label htmlFor="monitor-type">{t('form.type')}</Label>
             <Select
               items={MONITOR_TYPES}
-              onValueChange={(v) => {
-                setMonitorType(toMonitorType(v))
-                setConfig({})
-              }}
-              value={monitorType}
+              onValueChange={(value) => dispatch({ type: 'setMonitorType', value: toMonitorType(value) })}
+              value={state.monitorType}
             >
               <SelectTrigger id="monitor-type">
                 <SelectValue />
@@ -574,17 +606,12 @@ function MonitorFormDialogContent({
         <div className="space-y-1">
           <Label htmlFor="monitor-target">{t('form.target')}</Label>
           <Input
-            aria-invalid={targetError ? true : undefined}
+            aria-invalid={state.targetError ? true : undefined}
             id="monitor-target"
-            onChange={(e) => {
-              setTarget(e.target.value)
-              if (targetError) {
-                setTargetError(null)
-              }
-            }}
+            onChange={(e) => dispatch({ type: 'setTarget', value: e.target.value })}
             placeholder={getTargetPlaceholder(activeMonitorType)}
             required
-            value={target}
+            value={state.target}
           />
           {activeMonitorType === 'whois' && (
             <div className="space-y-1">
@@ -597,7 +624,7 @@ function MonitorFormDialogContent({
               {showUnsupportedWhoisHint && (
                 <p className="text-amber-600 text-xs dark:text-amber-400">{t('whoisConfig.unsupportedTldHint')}</p>
               )}
-              {targetError && <p className="text-destructive text-xs">{targetError}</p>}
+              {state.targetError && <p className="text-destructive text-xs">{state.targetError}</p>}
             </div>
           )}
         </div>
@@ -608,21 +635,29 @@ function MonitorFormDialogContent({
             <Input
               id="monitor-interval"
               min={10}
-              onChange={(e) => setIntervalVal(Number(e.target.value) || 300)}
+              onChange={(e) => dispatch({ type: 'patch', value: { interval: Number(e.target.value) || 300 } })}
               type="number"
-              value={interval}
+              value={state.interval}
             />
           </div>
           <div className="flex items-end gap-2 pb-1">
             {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
             <label className="flex items-center gap-2 text-sm">
-              <Switch checked={enabled} onCheckedChange={setEnabled} />
+              <Switch
+                checked={state.enabled}
+                onCheckedChange={(enabled) => dispatch({ type: 'patch', value: { enabled } })}
+              />
               {t('form.enabled')}
             </label>
           </div>
         </div>
 
-        <TypeConfigFields config={config} onChange={setConfig} t={t} type={activeMonitorType} />
+        <TypeConfigFields
+          config={state.config}
+          onChange={(config) => dispatch({ type: 'patch', value: { config } })}
+          t={t}
+          type={activeMonitorType}
+        />
       </form>
       <DialogFooter>
         <Button disabled={pending} form="monitor-form" type="submit">
