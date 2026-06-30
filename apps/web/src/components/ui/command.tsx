@@ -2,7 +2,8 @@ import { Command as CommandPrimitive } from 'cmdk'
 import { CheckIcon, SearchIcon } from 'lucide-react'
 import type * as React from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { InputGroup, InputGroupAddon } from '@/components/ui/input-group'
+import { InputGroupAddon } from '@/components/ui/input-group-addon'
+import { InputGroup } from '@/components/ui/input-group-root'
 import { cn } from '@/lib/utils'
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {

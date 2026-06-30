@@ -1,32 +1,12 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { MoreHorizontal, Pencil, RefreshCw, RotateCcw, Trash2 } from 'lucide-react'
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import { CompactMetric } from '@/components/server/compact-metric'
 import { MetricValue } from '@/components/server/metric-value'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { RingChart } from '@/components/ui/ring-chart'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useServer } from '@/hooks/use-api'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
-import { api } from '@/lib/api-client'
-import type { OutstandingEnrollmentSummary, ServerCostOverview } from '@/lib/api-schema'
-import { CAP_DEFAULT } from '@/lib/capabilities'
+import type { ServerCostOverview } from '@/lib/api-schema'
 import { isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import { computeTrafficQuota } from '@/lib/traffic'
@@ -34,12 +14,13 @@ import { cn, formatBytes, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CountryFlag } from '../country-flag'
 import { CostFootnote } from './cost-footnote'
+import { NetworkMetricValue } from './network-metric-value'
 import { NetworkSquareGrid } from './network-square-grid'
-import { NetworkTargetBreakdown } from './network-target-breakdown'
-import { RecoverAgentDialog } from './recover-agent-dialog'
-import { RegenerateCodeDialog } from './regenerate-code-dialog'
-import { buildServerCardNetworkState, type ServerCardTooltipTarget } from './server-card-network-data'
-import { ServerEditDialog } from './server-edit-dialog'
+import { PendingActionMenu } from './pending-action-menu'
+import { PendingEnrollmentSummary } from './pending-enrollment-summary'
+import { RingMetric } from './ring-metric'
+import { ServerCardActionMenu } from './server-card-action-menu'
+import { buildServerCardNetworkState } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
 import { deriveServerStatus } from './status-dot-utils'
 import { TagChips } from './tag-chips'
@@ -114,267 +95,6 @@ function formatPacketLoss(lossRatio: number | null): string {
 
 function formatLoad(load: number): string {
   return load.toFixed(2)
-}
-
-interface RingMetricProps {
-  color: string
-  label: string
-  subText: React.ReactNode
-  value: number
-}
-
-function RingMetric({ color, label, subText, value }: RingMetricProps) {
-  return (
-    <div className="flex items-center gap-2">
-      <RingChart color={color} compact label={label} value={value} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
-        <span className="truncate text-[10px] text-muted-foreground tabular-nums">{subText}</span>
-      </div>
-    </div>
-  )
-}
-
-function NetworkMetricValue({
-  children,
-  targets
-}: {
-  children: React.ReactElement
-  targets: readonly ServerCardTooltipTarget[]
-}) {
-  if (targets.length === 0) {
-    return children
-  }
-  return (
-    <Tooltip>
-      <TooltipTrigger render={children} />
-      <TooltipContent className="grid min-w-48 gap-1.5" sideOffset={4}>
-        <NetworkTargetBreakdown targets={targets} />
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
-function formatCountdown(remainingMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}m ${seconds.toString().padStart(2, '0')}s`
-}
-
-interface PendingSummaryProps {
-  enrollment: OutstandingEnrollmentSummary | null | undefined
-}
-
-/**
- * Renders the one-line enrollment-status hint shown below the "Waiting for agent…"
- * headline on a pending server card. Ticks every second while the code is still
- * within its TTL so operators can see the countdown drain in real time.
- */
-function PendingEnrollmentSummary({ enrollment }: PendingSummaryProps) {
-  const { t } = useTranslation(['servers'])
-  const expiresAt = enrollment ? new Date(enrollment.expires_at).getTime() : null
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    if (expiresAt == null) {
-      return
-    }
-    // Only tick while there is a meaningful countdown to display; once expired we
-    // stop tearing through render cycles for no reason.
-    if (expiresAt <= Date.now()) {
-      return
-    }
-    const id = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(id)
-  }, [expiresAt])
-
-  if (!enrollment) {
-    return <p className="text-muted-foreground text-xs">{t('card_pending.no_code')}</p>
-  }
-
-  if (expiresAt != null && expiresAt > now) {
-    return (
-      <p className="text-muted-foreground text-xs tabular-nums">
-        {t('card_pending.code_expires_in', {
-          prefix: enrollment.code_prefix,
-          countdown: formatCountdown(expiresAt - now)
-        })}
-      </p>
-    )
-  }
-
-  return (
-    <p className="text-muted-foreground text-xs">
-      {t('card_pending.code_expired', { prefix: enrollment.code_prefix })}
-    </p>
-  )
-}
-
-interface PendingActionMenuProps {
-  serverId: string
-  serverName: string
-}
-
-function PendingActionMenu({ serverId, serverName }: PendingActionMenuProps) {
-  const { t } = useTranslation(['servers', 'common'])
-  const queryClient = useQueryClient()
-  const [regenerateOpen, setRegenerateOpen] = useState(false)
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
-
-  const deleteMutation = useMutation({
-    mutationFn: () => api.delete<void>(`/api/servers/${serverId}`),
-    onSuccess: () => {
-      // ['servers'] is a WS-fed cache (queryFn: () => []); invalidating it would
-      // wipe the whole list. Remove the deleted row in place.
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => prev?.filter((s) => s.id !== serverId))
-      toast.success(t('servers:card_pending.deleted'))
-      setConfirmDeleteOpen(false)
-    },
-    onError: (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : t('servers:card_pending.delete_failed'))
-    }
-  })
-
-  return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              aria-label={`${t('servers:card_pending.regenerate_code')} / ${t('servers:card_pending.delete_server')}`}
-              onClick={(e) => e.stopPropagation()}
-              size="icon-sm"
-              variant="ghost"
-            />
-          }
-        >
-          <MoreHorizontal aria-hidden="true" className="size-3.5" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-fit">
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation()
-              setRegenerateOpen(true)
-            }}
-          >
-            <RefreshCw aria-hidden="true" className="size-3.5" />
-            {t('servers:card_pending.regenerate_code')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation()
-              setConfirmDeleteOpen(true)
-            }}
-          >
-            <Trash2 aria-hidden="true" className="size-3.5" />
-            {t('servers:card_pending.delete_server')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <RegenerateCodeDialog onOpenChange={setRegenerateOpen} open={regenerateOpen} serverId={serverId} />
-
-      <AlertDialog onOpenChange={setConfirmDeleteOpen} open={confirmDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('servers:card_pending.delete_confirm_title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('servers:card_pending.delete_confirm_description', { name: serverName })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>{t('common:cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate()}
-              variant="destructive"
-            >
-              {t('common:delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  )
-}
-
-interface ServerCardActionMenuProps {
-  server: ServerMetrics
-}
-
-// Fetches the full ServerResponse on demand (the card only holds the lighter
-// ServerMetrics shape from the WS feed) and renders the edit dialog once loaded.
-function ServerCardEditDialog({ serverId, onClose }: { onClose: () => void; serverId: string }) {
-  const { data: server } = useServer(serverId)
-  if (!server) {
-    return null
-  }
-  return <ServerEditDialog onClose={onClose} open server={server} />
-}
-
-function ServerCardActionMenu({ server }: ServerCardActionMenuProps) {
-  const { t } = useTranslation(['servers'])
-  const [recoverOpen, setRecoverOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-
-  return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              aria-label={t('servers:card_actions', { defaultValue: 'Server actions' })}
-              onClick={(e) => e.stopPropagation()}
-              size="icon-sm"
-              variant="ghost"
-            />
-          }
-        >
-          <MoreHorizontal aria-hidden="true" className="size-3.5" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-fit">
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation()
-              setEditOpen(true)
-            }}
-          >
-            <Pencil aria-hidden="true" className="size-3.5" />
-            {t('servers:detail_edit')}
-          </DropdownMenuItem>
-          {/* Recovery re-enrolls a dead agent — only meaningful while the server
-              is offline, mirroring the detail page's button gating. */}
-          {!server.online && (
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation()
-                setRecoverOpen(true)
-              }}
-            >
-              <RotateCcw aria-hidden="true" className="size-3.5" />
-              {t('servers:recover_agent.title')}
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {recoverOpen && (
-        <RecoverAgentDialog
-          onOpenChange={setRecoverOpen}
-          open={recoverOpen}
-          server={{
-            id: server.id,
-            name: server.name,
-            capabilities: server.capabilities ?? CAP_DEFAULT,
-            outstanding_enrollment: server.outstanding_enrollment ?? null
-          }}
-        />
-      )}
-
-      {editOpen && <ServerCardEditDialog onClose={() => setEditOpen(false)} serverId={server.id} />}
-    </>
-  )
 }
 
 const ServerCardInner = ({
@@ -469,49 +189,33 @@ const ServerCardInner = ({
             <RingMetric
               color={getRingColor(server.cpu, 'var(--color-chart-1)')}
               label={t('col_cpu')}
-              subText={
-                <>
-                  {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
-                </>
-              }
               value={server.cpu}
-            />
+            >
+              {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
+            </RingMetric>
             <RingMetric
               color={getRingColor(memoryPct, 'var(--color-chart-2)')}
               label={t('col_memory')}
-              subText={
-                <>
-                  <span className="font-medium text-foreground">{formatBytes(server.mem_used)}</span>
-                  <span className="mx-0.5">/</span>
-                  {formatBytes(server.mem_total)}
-                </>
-              }
               value={memoryPct}
-            />
-            <RingMetric
-              color={getRingColor(diskPct, 'var(--color-chart-3)')}
-              label={t('col_disk')}
-              subText={
-                <>
-                  <span className="font-medium text-foreground">{formatBytes(server.disk_used)}</span>
-                  <span className="mx-0.5">/</span>
-                  {formatBytes(server.disk_total)}
-                </>
-              }
-              value={diskPct}
-            />
+            >
+              <span className="font-medium text-foreground">{formatBytes(server.mem_used)}</span>
+              <span className="mx-0.5">/</span>
+              {formatBytes(server.mem_total)}
+            </RingMetric>
+            <RingMetric color={getRingColor(diskPct, 'var(--color-chart-3)')} label={t('col_disk')} value={diskPct}>
+              <span className="font-medium text-foreground">{formatBytes(server.disk_used)}</span>
+              <span className="mx-0.5">/</span>
+              {formatBytes(server.disk_total)}
+            </RingMetric>
             <RingMetric
               color={getRingColor(trafficRingPct, 'var(--color-chart-4)')}
               label={t('card_traffic_quota')}
-              subText={
-                <>
-                  <span className="font-medium text-foreground">{formatBytes(trafficUsed)}</span>
-                  <span className="mx-0.5">/</span>
-                  {formatBytes(trafficLimit)}
-                </>
-              }
               value={trafficRingPct}
-            />
+            >
+              <span className="font-medium text-foreground">{formatBytes(trafficUsed)}</span>
+              <span className="mx-0.5">/</span>
+              {formatBytes(trafficLimit)}
+            </RingMetric>
           </div>
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/40 px-2 py-1.5">
