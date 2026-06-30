@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -83,30 +83,66 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   )
 }
 
+interface ServerEditState {
+  billingCycle: string
+  billingStartDay: string
+  countryCode: string
+  currency: string
+  expiredAt: string
+  groupId: string
+  hidden: boolean
+  name: string
+  price: string
+  publicRemark: string
+  remark: string
+  tagsDraft: { dirty: boolean; value: string }
+  trafficLimit: string
+  trafficLimitType: string
+  weight: number
+}
+
+interface ServerEditAction {
+  type: 'patch'
+  value: Partial<ServerEditState>
+}
+
+function serverEditStateFromServer(server: ServerResponse): ServerEditState {
+  return {
+    billingCycle: server.billing_cycle ?? '',
+    billingStartDay: server.billing_start_day?.toString() ?? '',
+    countryCode: server.geo_manual ? (server.country_code ?? '') : '',
+    currency: server.currency ?? 'USD',
+    expiredAt: server.expired_at?.slice(0, 10) ?? '',
+    groupId: server.group_id ?? '',
+    hidden: server.hidden,
+    name: server.name,
+    price: server.price?.toString() ?? '',
+    publicRemark: server.public_remark ?? '',
+    remark: server.remark ?? '',
+    tagsDraft: { dirty: false, value: '' },
+    trafficLimit: server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : '',
+    trafficLimitType: server.traffic_limit_type ?? 'sum',
+    weight: server.weight
+  }
+}
+
+function serverEditReducer(state: ServerEditState, action: ServerEditAction): ServerEditState {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.value }
+    default:
+      return state
+  }
+}
+
 function ServerEditDialogContent({ server, onClose }: { onClose: () => void; server: ServerResponse }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
-  const [name, setName] = useState(() => server.name)
-  const [weight, setWeight] = useState(() => server.weight)
-  const [hidden, setHidden] = useState(() => server.hidden)
-  const [groupId, setGroupId] = useState(() => server.group_id ?? '')
-  const [remark, setRemark] = useState(() => server.remark ?? '')
-  const [publicRemark, setPublicRemark] = useState(() => server.public_remark ?? '')
   // The country override field is empty unless the server already has a manual
   // override; otherwise we leave it blank and surface the auto-detected value as
   // a hint, so saving an untouched form never accidentally pins GeoIP.
-  const [initialCountryCode] = useState(() => (server.geo_manual ? (server.country_code ?? '') : ''))
-  const [countryCode, setCountryCode] = useState(initialCountryCode)
-  const [price, setPrice] = useState(() => server.price?.toString() ?? '')
-  const [billingCycle, setBillingCycle] = useState(() => server.billing_cycle ?? '')
-  const [currency, setCurrency] = useState(() => server.currency ?? 'USD')
-  const [expiredAt, setExpiredAt] = useState(() => server.expired_at?.slice(0, 10) ?? '')
-  const [trafficLimit, setTrafficLimit] = useState(() =>
-    server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : ''
-  )
-  const [trafficLimitType, setTrafficLimitType] = useState(() => server.traffic_limit_type ?? 'sum')
-  const [billingStartDay, setBillingStartDay] = useState(() => server.billing_start_day?.toString() ?? '')
-  const [tagsDraft, setTagsDraft] = useState<{ dirty: boolean; value: string }>({ dirty: false, value: '' })
+  const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
+  const [state, dispatch] = useReducer(serverEditReducer, server, serverEditStateFromServer)
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -117,7 +153,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
 
   const { data: initialTags } = useServerTags(server.id, true)
   const tagsMutation = useUpdateServerTags(server.id)
-  const tagsInput = tagsDraft.dirty ? tagsDraft.value : (initialTags?.join(', ') ?? '')
+  const tagsInput = state.tagsDraft.dirty ? state.tagsDraft.value : (initialTags?.join(', ') ?? '')
 
   const mutation = useMutation({
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
@@ -137,20 +173,20 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
 
   const buildPayload = (): UpdateServerInput => {
     const payload: UpdateServerInput = {
-      name,
-      weight,
-      hidden,
-      group_id: groupId || null,
-      remark: remark || null,
-      public_remark: publicRemark || null,
-      price: price ? Number.parseFloat(price) : null,
-      billing_cycle: billingCycle || null,
-      currency: currency || null,
-      expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
-      traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
-      traffic_limit_type: trafficLimitType || null,
-      billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null,
-      ...countryCodePatch(countryCode, initialCountryCode)
+      name: state.name,
+      weight: state.weight,
+      hidden: state.hidden,
+      group_id: state.groupId || null,
+      remark: state.remark || null,
+      public_remark: state.publicRemark || null,
+      price: state.price ? Number.parseFloat(state.price) : null,
+      billing_cycle: state.billingCycle || null,
+      currency: state.currency || null,
+      expired_at: state.expiredAt ? `${state.expiredAt}T00:00:00Z` : null,
+      traffic_limit: state.trafficLimit ? Math.round(Number.parseFloat(state.trafficLimit) * 1024 ** 3) : null,
+      traffic_limit_type: state.trafficLimitType || null,
+      billing_start_day: state.billingStartDay ? Number.parseInt(state.billingStartDay, 10) : null,
+      ...countryCodePatch(state.countryCode, initialCountryCode)
     }
     return payload
   }
@@ -161,7 +197,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
       return true
     } catch (err) {
       if (initialTags) {
-        setTagsDraft({ dirty: false, value: '' })
+        dispatch({ type: 'patch', value: { tagsDraft: { dirty: false, value: '' } } })
       }
       toast.error(err instanceof Error ? err.message : t('tags_save_failed'))
       return false
@@ -181,7 +217,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
       toast.error(err instanceof Error ? err.message : t('edit_failed'))
       return
     }
-    if (tagsDraft.dirty && !(await saveTags(parsed.tags))) {
+    if (state.tagsDraft.dirty && !(await saveTags(parsed.tags))) {
       return
     }
     toast.success(t('edit_success', { defaultValue: 'Server updated successfully' }))
@@ -205,10 +241,10 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
               <Input
                 aria-label={t('edit_name')}
                 name="name"
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
                 required
                 type="text"
-                value={name}
+                value={state.name}
               />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -217,15 +253,20 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
                   aria-label={t('edit_weight')}
                   autoComplete="off"
                   name="weight"
-                  onChange={(e) => setWeight(Number.parseInt(e.target.value, 10) || 0)}
+                  onChange={(e) =>
+                    dispatch({ type: 'patch', value: { weight: Number.parseInt(e.target.value, 10) || 0 } })
+                  }
                   type="number"
-                  value={weight}
+                  value={state.weight}
                 />
               </Field>
               <Field label={t('edit_hidden')}>
                 {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
                 <label className="flex cursor-pointer items-center gap-2 pt-1">
-                  <Checkbox checked={hidden} onCheckedChange={(checked) => setHidden(!!checked)} />
+                  <Checkbox
+                    checked={state.hidden}
+                    onCheckedChange={(checked) => dispatch({ type: 'patch', value: { hidden: !!checked } })}
+                  />
                   <span className="text-sm">{t('edit_hide_from_status')}</span>
                 </label>
               </Field>
@@ -236,8 +277,10 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
                   { value: '__none__', label: t('edit_no_group') },
                   ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
                 ]}
-                onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
-                value={groupId || '__none__'}
+                onValueChange={(value) =>
+                  dispatch({ type: 'patch', value: { groupId: value === '__none__' || value === null ? '' : value } })
+                }
+                value={state.groupId || '__none__'}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -256,29 +299,33 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
               <Input
                 aria-label={t('edit_remark')}
                 name="remark"
-                onChange={(e) => setRemark(e.target.value)}
+                onChange={(e) => dispatch({ type: 'patch', value: { remark: e.target.value } })}
                 placeholder={t('edit_remark_placeholder')}
                 type="text"
-                value={remark}
+                value={state.remark}
               />
             </Field>
             <Field label={t('edit_public_remark')}>
               <Input
                 aria-label={t('edit_public_remark')}
                 name="public_remark"
-                onChange={(e) => setPublicRemark(e.target.value)}
+                onChange={(e) => dispatch({ type: 'patch', value: { publicRemark: e.target.value } })}
                 placeholder={t('edit_public_remark_placeholder')}
                 type="text"
-                value={publicRemark}
+                value={state.publicRemark}
               />
             </Field>
-            <CountryOverrideField onChange={setCountryCode} server={server} value={countryCode} />
+            <CountryOverrideField
+              onChange={(countryCode) => dispatch({ type: 'patch', value: { countryCode } })}
+              server={server}
+              value={state.countryCode}
+            />
             <Field label={t('tags_label')}>
               <Input
                 aria-label={t('tags_label')}
                 name="tags"
                 onChange={(e) => {
-                  setTagsDraft({ dirty: true, value: e.target.value })
+                  dispatch({ type: 'patch', value: { tagsDraft: { dirty: true, value: e.target.value } } })
                 }}
                 placeholder={t('tags_placeholder')}
                 type="text"
@@ -300,15 +347,18 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
                   autoComplete="off"
                   min="0"
                   name="price"
-                  onChange={(e) => setPrice(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'patch', value: { price: e.target.value } })}
                   placeholder="0.00"
                   step="0.01"
                   type="number"
-                  value={price}
+                  value={state.price}
                 />
               </Field>
               <Field label={t('edit_currency')}>
-                <Select onValueChange={(v) => v !== null && setCurrency(v)} value={currency}>
+                <Select
+                  onValueChange={(value) => value !== null && dispatch({ type: 'patch', value: { currency: value } })}
+                  value={state.currency}
+                >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -329,8 +379,13 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
                     quarterly: t('edit_cycle_quarterly'),
                     yearly: t('edit_cycle_yearly')
                   }}
-                  onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
-                  value={billingCycle || '__none__'}
+                  onValueChange={(value) =>
+                    dispatch({
+                      type: 'patch',
+                      value: { billingCycle: value === '__none__' || value === null ? '' : value }
+                    })
+                  }
+                  value={state.billingCycle || '__none__'}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -345,7 +400,11 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
               </Field>
             </div>
             <Field label={t('edit_expiration')}>
-              <DatePickerField ariaLabel={t('edit_expiration')} onChange={setExpiredAt} value={expiredAt} />
+              <DatePickerField
+                ariaLabel={t('edit_expiration')}
+                onChange={(expiredAt) => dispatch({ type: 'patch', value: { expiredAt } })}
+                value={state.expiredAt}
+              />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t('edit_traffic_limit')}>
@@ -354,11 +413,11 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
                   autoComplete="off"
                   min="0"
                   name="traffic_limit"
-                  onChange={(e) => setTrafficLimit(e.target.value)}
+                  onChange={(e) => dispatch({ type: 'patch', value: { trafficLimit: e.target.value } })}
                   placeholder={t('edit_unlimited')}
                   step="0.1"
                   type="number"
-                  value={trafficLimit}
+                  value={state.trafficLimit}
                 />
               </Field>
               <Field label={t('edit_limit_type')}>
@@ -368,8 +427,10 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
                     up: t('edit_limit_upload'),
                     down: t('edit_limit_download')
                   }}
-                  onValueChange={(v) => v !== null && setTrafficLimitType(v)}
-                  value={trafficLimitType}
+                  onValueChange={(value) =>
+                    value !== null && dispatch({ type: 'patch', value: { trafficLimitType: value } })
+                  }
+                  value={state.trafficLimitType}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
@@ -389,12 +450,12 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
                 max="28"
                 min="1"
                 name="billing_start_day"
-                onChange={(e) => setBillingStartDay(e.target.value)}
+                onChange={(e) => dispatch({ type: 'patch', value: { billingStartDay: e.target.value } })}
                 placeholder={t('edit_billing_start_day_placeholder', {
                   defaultValue: 'Leave empty for natural month (1st)'
                 })}
                 type="number"
-                value={billingStartDay}
+                value={state.billingStartDay}
               />
             </Field>
           </fieldset>
