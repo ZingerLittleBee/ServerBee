@@ -31,6 +31,22 @@ interface Props {
   open: boolean
 }
 
+interface AddBlockForm {
+  comment: string
+  coverType: 'all' | 'include' | 'exclude'
+  serverIds: string[]
+  target: string
+}
+
+function getInitialForm(initialValues?: AddBlockInitialValues): AddBlockForm {
+  return {
+    comment: initialValues?.comment ?? '',
+    coverType: initialValues?.cover_type ?? 'all',
+    serverIds: initialValues?.server_ids ?? [],
+    target: initialValues?.target ?? ''
+  }
+}
+
 function tryExtractReason(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
     try {
@@ -52,31 +68,25 @@ function tryExtractReason(err: unknown, fallback: string): string {
 
 export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
   const { t } = useTranslation(['firewall', 'common'])
-  const [target, setTarget] = useState('')
-  const [coverType, setCoverType] = useState<'all' | 'include' | 'exclude'>('all')
-  const [serverIds, setServerIds] = useState<string[]>([])
-  const [comment, setComment] = useState('')
+  const [form, setForm] = useState(() => getInitialForm(initialValues))
 
   useEffect(() => {
     if (!open) {
       return
     }
-    setTarget(initialValues?.target ?? '')
-    setCoverType(initialValues?.cover_type ?? 'all')
-    setServerIds(initialValues?.server_ids ?? [])
-    setComment(initialValues?.comment ?? '')
+    setForm(getInitialForm(initialValues))
   }, [open, initialValues])
 
   const { data: servers } = useQuery<ServerLite[]>({
     queryKey: ['servers', 'lite'],
     queryFn: () => api.get<ServerLite[]>('/api/servers'),
-    enabled: open && coverType !== 'all'
+    enabled: open && form.coverType !== 'all'
   })
 
   const createMutation = useCreateBlock()
 
   const handleSubmit = () => {
-    const trimmed = target.trim()
+    const trimmed = form.target.trim()
     if (trimmed.length === 0) {
       toast.error(t('add.target_required', { defaultValue: 'Target is required' }))
       return
@@ -84,9 +94,9 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
     createMutation.mutate(
       {
         target: trimmed,
-        cover_type: coverType,
-        server_ids: coverType === 'all' ? null : serverIds,
-        comment: comment.trim().length > 0 ? comment.trim() : null
+        cover_type: form.coverType,
+        server_ids: form.coverType === 'all' ? null : form.serverIds,
+        comment: form.comment.trim().length > 0 ? form.comment.trim() : null
       },
       {
         onSuccess: () => {
@@ -118,9 +128,9 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
               <Label htmlFor="firewall-target">{t('add.field_target', { defaultValue: 'Target (IP or CIDR)' })}</Label>
               <Input
                 id="firewall-target"
-                onChange={(e) => setTarget(e.target.value)}
+                onChange={(e) => setForm((current) => ({ ...current, target: e.target.value }))}
                 placeholder="203.0.113.5 or 198.51.100.0/24"
-                value={target}
+                value={form.target}
               />
             </div>
 
@@ -137,12 +147,13 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
                     return
                   }
                   const next = v as 'all' | 'exclude' | 'include'
-                  setCoverType(next)
-                  if (next === 'all') {
-                    setServerIds([])
-                  }
+                  setForm((current) => ({
+                    ...current,
+                    coverType: next,
+                    serverIds: next === 'all' ? [] : current.serverIds
+                  }))
                 }}
-                value={coverType}
+                value={form.coverType}
               >
                 <SelectTrigger id="firewall-cover-type">
                   <SelectValue />
@@ -159,7 +170,7 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
               </Select>
             </div>
 
-            {coverType !== 'all' && (
+            {form.coverType !== 'all' && (
               <div className="space-y-1">
                 <Label>{t('add.field_servers', { defaultValue: 'Servers' })}</Label>
                 <div className="flex flex-wrap gap-2 rounded-md border p-2">
@@ -168,9 +179,14 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
                       // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                       <label className="flex items-center gap-1.5 text-sm" key={s.id}>
                         <Checkbox
-                          checked={serverIds.includes(s.id)}
+                          checked={form.serverIds.includes(s.id)}
                           onCheckedChange={(checked) => {
-                            setServerIds((prev) => (checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)))
+                            setForm((current) => ({
+                              ...current,
+                              serverIds: checked
+                                ? [...current.serverIds, s.id]
+                                : current.serverIds.filter((id) => id !== s.id)
+                            }))
                           }}
                         />
                         {s.name}
@@ -189,10 +205,10 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
               <Label htmlFor="firewall-comment">{t('add.field_comment', { defaultValue: 'Comment (optional)' })}</Label>
               <Textarea
                 id="firewall-comment"
-                onChange={(e) => setComment(e.target.value)}
+                onChange={(e) => setForm((current) => ({ ...current, comment: e.target.value }))}
                 placeholder={t('add.comment_placeholder', { defaultValue: 'Reason for blocking' })}
                 rows={3}
-                value={comment}
+                value={form.comment}
               />
             </div>
           </div>

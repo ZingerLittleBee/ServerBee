@@ -94,9 +94,11 @@ export function NetworkProbeSettingsPage() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   // Settings form state
-  const [probeInterval, setProbeInterval] = useState(60)
-  const [packetCount, setPacketCount] = useState(10)
-  const [defaultTargetIds, setDefaultTargetIds] = useState<string[]>([])
+  const [settingsForm, setSettingsForm] = useState({
+    defaultTargetIds: [] as string[],
+    packetCount: 10,
+    probeInterval: 60
+  })
 
   const { data: targets, isLoading: targetsLoading } = useNetworkTargets()
   const { data: setting } = useNetworkSetting()
@@ -104,9 +106,11 @@ export function NetworkProbeSettingsPage() {
   // Sync settings into local state once loaded
   useEffect(() => {
     if (setting) {
-      setProbeInterval(setting.interval)
-      setPacketCount(setting.packet_count)
-      setDefaultTargetIds(setting.default_target_ids)
+      setSettingsForm({
+        defaultTargetIds: setting.default_target_ids,
+        packetCount: setting.packet_count,
+        probeInterval: setting.interval
+      })
     }
   }, [setting])
 
@@ -197,7 +201,11 @@ export function NetworkProbeSettingsPage() {
   const handleSaveSettings = (e: FormEvent) => {
     e.preventDefault()
     updateSetting.mutate(
-      { interval: probeInterval, packet_count: packetCount, default_target_ids: defaultTargetIds },
+      {
+        default_target_ids: settingsForm.defaultTargetIds,
+        interval: settingsForm.probeInterval,
+        packet_count: settingsForm.packetCount
+      },
       {
         onSuccess: () => {
           toast.success(t('settings_saved', { defaultValue: 'Settings saved' }))
@@ -212,7 +220,12 @@ export function NetworkProbeSettingsPage() {
   }
 
   const toggleDefaultTarget = (id: string) => {
-    setDefaultTargetIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    setSettingsForm((current) => ({
+      ...current,
+      defaultTargetIds: current.defaultTargetIds.includes(id)
+        ? current.defaultTargetIds.filter((targetId) => targetId !== id)
+        : [...current.defaultTargetIds, id]
+    }))
   }
 
   const getProbeTypeLabel = useCallback((probeType: string) => getNetworkProbeTypeLabel(t, probeType), [t])
@@ -394,9 +407,14 @@ export function NetworkProbeSettingsPage() {
                   max={600}
                   min={30}
                   name="probe-interval"
-                  onChange={(e) => setProbeInterval(Number.parseInt(e.target.value, 10) || 60)}
+                  onChange={(e) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      probeInterval: Number.parseInt(e.target.value, 10) || 60
+                    }))
+                  }
                   type="number"
-                  value={probeInterval}
+                  value={settingsForm.probeInterval}
                 />
                 <p className="text-muted-foreground text-xs">{t('probe_interval_desc')}</p>
               </div>
@@ -411,9 +429,14 @@ export function NetworkProbeSettingsPage() {
                   max={20}
                   min={5}
                   name="packet-count"
-                  onChange={(e) => setPacketCount(Number.parseInt(e.target.value, 10) || 10)}
+                  onChange={(e) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      packetCount: Number.parseInt(e.target.value, 10) || 10
+                    }))
+                  }
                   type="number"
-                  value={packetCount}
+                  value={settingsForm.packetCount}
                 />
                 <p className="text-muted-foreground text-xs">{t('packet_count_desc')}</p>
               </div>
@@ -428,7 +451,7 @@ export function NetworkProbeSettingsPage() {
                         // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
                         <label className="flex cursor-pointer items-center gap-2 text-sm" key={target.id}>
                           <Checkbox
-                            checked={defaultTargetIds.includes(target.id)}
+                            checked={settingsForm.defaultTargetIds.includes(target.id)}
                             onCheckedChange={() => toggleDefaultTarget(target.id)}
                           />
                           <span>{getTargetDisplayName(target)}</span>
