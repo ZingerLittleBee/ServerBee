@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AddBlockDrawer, type AddBlockInitialValues } from '@/components/firewall/add-block-drawer'
 import { SecurityEventDetailDrawer } from '@/components/security/event-detail-drawer'
@@ -37,32 +37,84 @@ function computeSince(range: RangeKey): string {
   return new Date(Date.now() - hours * 3600 * 1000).toISOString()
 }
 
+interface SecurityPageState {
+  activeEvent: SecurityEventDto | null
+  blockInitial: AddBlockInitialValues | undefined
+  blockOpen: boolean
+  eventType: string
+  firstSeenOnly: boolean
+  range: RangeKey
+  serverId: string
+  severity: string
+  sourceIp: string
+}
+
+type SecurityPageAction =
+  | { type: 'blockSourceIp'; sourceIp: string }
+  | { type: 'setActiveEvent'; value: SecurityEventDto | null }
+  | { type: 'setBlockOpen'; value: boolean }
+  | { type: 'setEventType'; value: string }
+  | { type: 'setFirstSeenOnly'; value: boolean }
+  | { type: 'setRange'; value: RangeKey }
+  | { type: 'setServerId'; value: string }
+  | { type: 'setSeverity'; value: string }
+  | { type: 'setSourceIp'; value: string }
+
+const INITIAL_SECURITY_PAGE_STATE: SecurityPageState = {
+  activeEvent: null,
+  blockInitial: undefined,
+  blockOpen: false,
+  eventType: '',
+  firstSeenOnly: false,
+  range: '24h',
+  serverId: '',
+  severity: '',
+  sourceIp: ''
+}
+
+function securityPageReducer(state: SecurityPageState, action: SecurityPageAction): SecurityPageState {
+  switch (action.type) {
+    case 'blockSourceIp':
+      return { ...state, blockInitial: { target: action.sourceIp, cover_type: 'all' }, blockOpen: true }
+    case 'setActiveEvent':
+      return { ...state, activeEvent: action.value }
+    case 'setBlockOpen':
+      return { ...state, blockOpen: action.value }
+    case 'setEventType':
+      return { ...state, eventType: action.value }
+    case 'setFirstSeenOnly':
+      return { ...state, firstSeenOnly: action.value }
+    case 'setRange':
+      return { ...state, range: action.value }
+    case 'setServerId':
+      return { ...state, serverId: action.value }
+    case 'setSeverity':
+      return { ...state, severity: action.value }
+    case 'setSourceIp':
+      return { ...state, sourceIp: action.value }
+    default:
+      return state
+  }
+}
+
 function SecurityIndexPage() {
   const { t } = useTranslation('security')
-  const [range, setRange] = useState<RangeKey>('24h')
-  const [serverId, setServerId] = useState<string>('')
-  const [eventType, setEventType] = useState<string>('')
-  const [severity, setSeverity] = useState<string>('')
-  const [sourceIp, setSourceIp] = useState<string>('')
-  const [firstSeenOnly, setFirstSeenOnly] = useState(false)
-  const [activeEvent, setActiveEvent] = useState<SecurityEventDto | null>(null)
-  const [blockOpen, setBlockOpen] = useState(false)
-  const [blockInitial, setBlockInitial] = useState<AddBlockInitialValues | undefined>(undefined)
+  const [state, dispatch] = useReducer(securityPageReducer, INITIAL_SECURITY_PAGE_STATE)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  const since = useMemo(() => computeSince(range), [range])
+  const since = useMemo(() => computeSince(state.range), [state.range])
 
   const filters: SecurityEventFilters = useMemo(
     () => ({
-      server_id: serverId || null,
-      event_type: eventType || null,
-      severity: severity || null,
-      source_ip: sourceIp || null,
+      server_id: state.serverId || null,
+      event_type: state.eventType || null,
+      severity: state.severity || null,
+      source_ip: state.sourceIp || null,
       since,
       limit: 100
     }),
-    [serverId, eventType, severity, sourceIp, since]
+    [state.serverId, state.eventType, state.severity, state.sourceIp, since]
   )
 
   const eventsQuery = useSecurityEvents(filters)
@@ -79,8 +131,8 @@ function SecurityIndexPage() {
         list.push(item)
       }
     }
-    return firstSeenOnly ? list.filter((event) => event.first_seen) : list
-  }, [eventsQuery.data, firstSeenOnly])
+    return state.firstSeenOnly ? list.filter((event) => event.first_seen) : list
+  }, [eventsQuery.data, state.firstSeenOnly])
 
   return (
     <div className="space-y-4 p-4">
@@ -88,7 +140,12 @@ function SecurityIndexPage() {
         <h1 className="font-semibold text-2xl">{t('page_title', { defaultValue: 'Security Events' })}</h1>
         <div className="flex gap-1 rounded-md border bg-card p-1">
           {(['24h', '7d', '30d'] as const).map((key) => (
-            <Button key={key} onClick={() => setRange(key)} size="sm" variant={range === key ? 'default' : 'ghost'}>
+            <Button
+              key={key}
+              onClick={() => dispatch({ type: 'setRange', value: key })}
+              size="sm"
+              variant={state.range === key ? 'default' : 'ghost'}
+            >
               {t(`range.${key}`, { defaultValue: key })}
             </Button>
           ))}
@@ -103,8 +160,8 @@ function SecurityIndexPage() {
             { value: '__all__', label: t('filter.server_all', { defaultValue: 'All servers' }) },
             ...(servers ?? []).map((s) => ({ value: s.id, label: s.name }))
           ]}
-          onValueChange={(v) => setServerId(v === '__all__' ? '' : (v ?? ''))}
-          value={serverId || '__all__'}
+          onValueChange={(value) => dispatch({ type: 'setServerId', value: value === '__all__' ? '' : (value ?? '') })}
+          value={state.serverId || '__all__'}
         >
           <SelectTrigger className="h-9 w-[180px]">
             <SelectValue placeholder={t('filter.server', { defaultValue: 'All servers' })} />
@@ -126,8 +183,8 @@ function SecurityIndexPage() {
             { value: 'port_scan', label: t('event_type.port_scan', { defaultValue: 'Port Scan' }) },
             { value: 'ssh_login', label: t('event_type.ssh_login', { defaultValue: 'SSH Login' }) }
           ]}
-          onValueChange={(v) => setEventType(v === '__all__' ? '' : (v ?? ''))}
-          value={eventType || '__all__'}
+          onValueChange={(value) => dispatch({ type: 'setEventType', value: value === '__all__' ? '' : (value ?? '') })}
+          value={state.eventType || '__all__'}
         >
           <SelectTrigger className="h-9 w-[180px]">
             <SelectValue placeholder={t('filter.event_type', { defaultValue: 'All types' })} />
@@ -150,8 +207,8 @@ function SecurityIndexPage() {
             { value: 'medium', label: t('severity.medium', { defaultValue: 'Medium' }) },
             { value: 'low', label: t('severity.low', { defaultValue: 'Low' }) }
           ]}
-          onValueChange={(v) => setSeverity(v === '__all__' ? '' : (v ?? ''))}
-          value={severity || '__all__'}
+          onValueChange={(value) => dispatch({ type: 'setSeverity', value: value === '__all__' ? '' : (value ?? '') })}
+          value={state.severity || '__all__'}
         >
           <SelectTrigger className="h-9 w-[160px]">
             <SelectValue placeholder={t('filter.severity', { defaultValue: 'All severities' })} />
@@ -168,16 +225,16 @@ function SecurityIndexPage() {
         <Input
           aria-label={t('filter.source_ip', { defaultValue: 'Source IP' })}
           className="w-[180px]"
-          onChange={(e) => setSourceIp(e.target.value)}
+          onChange={(e) => dispatch({ type: 'setSourceIp', value: e.target.value })}
           placeholder={t('filter.source_ip', { defaultValue: 'Source IP' })}
-          value={sourceIp}
+          value={state.sourceIp}
         />
 
         <label className="flex items-center gap-2 text-muted-foreground text-sm">
           <input
-            checked={firstSeenOnly}
+            checked={state.firstSeenOnly}
             className="accent-primary"
-            onChange={(e) => setFirstSeenOnly(e.target.checked)}
+            onChange={(e) => dispatch({ type: 'setFirstSeenOnly', value: e.target.checked })}
             type="checkbox"
           />
           {t('filter.first_seen_only', { defaultValue: 'First-seen only' })}
@@ -192,20 +249,26 @@ function SecurityIndexPage() {
         isFetchingNextPage={eventsQuery.isFetchingNextPage}
         isLoading={eventsQuery.isLoading}
         onBlockSourceIp={
-          isAdmin
-            ? (event) => {
-                setBlockInitial({ target: event.source_ip, cover_type: 'all' })
-                setBlockOpen(true)
-              }
-            : undefined
+          isAdmin ? (event) => dispatch({ type: 'blockSourceIp', sourceIp: event.source_ip }) : undefined
         }
         onFetchNextPage={() => eventsQuery.fetchNextPage()}
-        onRowClick={(event) => setActiveEvent(event)}
-        onSourceIpClick={(ip) => setSourceIp(ip)}
+        onRowClick={(event) => dispatch({ type: 'setActiveEvent', value: event })}
+        onSourceIpClick={(ip) => dispatch({ type: 'setSourceIp', value: ip })}
       />
 
-      <SecurityEventDetailDrawer event={activeEvent} onOpenChange={(open) => !open && setActiveEvent(null)} />
-      <AddBlockDrawer initialValues={blockInitial} onOpenChange={setBlockOpen} open={blockOpen} />
+      <SecurityEventDetailDrawer
+        event={state.activeEvent}
+        onOpenChange={(open) => {
+          if (!open) {
+            dispatch({ type: 'setActiveEvent', value: null })
+          }
+        }}
+      />
+      <AddBlockDrawer
+        initialValues={state.blockInitial}
+        onOpenChange={(open) => dispatch({ type: 'setBlockOpen', value: open })}
+        open={state.blockOpen}
+      />
     </div>
   )
 }
