@@ -41,7 +41,7 @@ function getMetricPathSuggestions(): string[] {
   return METRIC_PATH_SUGGESTIONS
 }
 
-export function renderField(props: FieldProps) {
+export function Field(props: FieldProps) {
   const info = props.schema.introspect()
   switch (info.kind) {
     case 'string':

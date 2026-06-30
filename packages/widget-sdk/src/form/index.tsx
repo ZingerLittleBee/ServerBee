@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react'
 import type { ZodTypeAny } from '../z'
-import { renderField } from './field-renderers'
+import { Field } from './field-renderers'
 
-export function renderConfigForm(
-  schema: ZodTypeAny,
-  value: Record<string, unknown>,
+interface ConfigFormProps {
   onChange: (v: Record<string, unknown>) => void
-): ReactNode {
+  schema: ZodTypeAny
+  value: Record<string, unknown>
+}
+
+export function ConfigForm({ schema, value, onChange }: ConfigFormProps) {
   const info = schema.introspect()
   if (info.kind !== 'object' || !info.shape) {
     return <em>Top-level schema must be z.object()</em>
@@ -23,16 +25,24 @@ export function renderConfigForm(
             <label htmlFor={id} style={{ display: 'block' }}>
               {label}
             </label>
-            {renderField({
-              schema: fieldSchema,
-              value: value[key],
-              onChange: (v) => onChange({ ...value, [key]: v }),
-              id,
-              label
-            })}
+            <Field
+              id={id}
+              label={label}
+              onChange={(v) => onChange({ ...value, [key]: v })}
+              schema={fieldSchema}
+              value={value[key]}
+            />
           </div>
         )
       })}
     </div>
   )
+}
+
+export function renderConfigForm(
+  schema: ZodTypeAny,
+  value: Record<string, unknown>,
+  onChange: (v: Record<string, unknown>) => void
+): ReactNode {
+  return <ConfigForm onChange={onChange} schema={schema} value={value} />
 }

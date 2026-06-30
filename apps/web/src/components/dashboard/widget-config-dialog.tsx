@@ -1,4 +1,4 @@
-import { renderConfigForm } from '@serverbee/widget-sdk'
+import { ConfigForm } from '@serverbee/widget-sdk'
 import { LayoutGrid, List } from 'lucide-react'
 import { useId, useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -731,7 +731,11 @@ function ModuleForm({
   if (info.kind !== 'object' || !info.shape || Object.keys(info.shape).length === 0) {
     return <p className="text-muted-foreground text-sm">{t('module_config_no_fields')}</p>
   }
-  return <div data-testid="module-config-form">{renderConfigForm(schema, config, onChange)}</div>
+  return (
+    <div data-testid="module-config-form">
+      <ConfigForm onChange={onChange} schema={schema} value={config} />
+    </div>
+  )
 }
 
 function UptimeTimelineForm({

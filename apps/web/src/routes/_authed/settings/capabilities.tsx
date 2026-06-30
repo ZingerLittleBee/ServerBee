@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { type ColumnDef, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { type ColumnDef, getCoreRowModel, type Table, useReactTable } from '@tanstack/react-table'
 import { Check, Minus, Search, ShieldAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -32,6 +32,37 @@ const ORDERED_CAPABILITIES = [
   ...CAPABILITIES.filter(({ risk }) => risk === 'medium'),
   ...CAPABILITIES.filter(({ risk }) => risk === 'low')
 ]
+
+function CapabilitiesTableContent({
+  isLoading,
+  noResults,
+  servers,
+  table
+}: {
+  isLoading: boolean
+  noResults: string
+  servers: ServerInfo[]
+  table: Table<ServerInfo>
+}) {
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
+    )
+  }
+  if (servers.length === 0) {
+    return (
+      <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
+        <p className="text-muted-foreground text-sm">{noResults}</p>
+      </div>
+    )
+  }
+  return <DataTable noResults={noResults} table={table} />
+}
 
 export function CapabilitiesPage() {
   const { t } = useTranslation(['settings', 'servers'])
@@ -140,27 +171,6 @@ export function CapabilitiesPage() {
     getRowId: (row) => row.id
   })
 
-  const renderTableContent = () => {
-    if (isLoading) {
-      return (
-        <div className="space-y-3">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-12 w-full" />
-        </div>
-      )
-    }
-    if (servers.length === 0) {
-      return (
-        <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-muted-foreground text-sm">{t('capabilities.no_servers')}</p>
-        </div>
-      )
-    }
-    return <DataTable noResults={t('capabilities.no_servers')} table={table} />
-  }
-
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
       <p className="mb-6 min-w-0 text-muted-foreground text-sm">{t('capabilities.description')}</p>
@@ -186,7 +196,12 @@ export function CapabilitiesPage() {
         </p>
       </div>
 
-      {renderTableContent()}
+      <CapabilitiesTableContent
+        isLoading={isLoading}
+        noResults={t('capabilities.no_servers')}
+        servers={servers}
+        table={table}
+      />
 
       {filtered.length > 0 && search.length > 0 && (
         <p className="mt-3 text-muted-foreground text-xs">
