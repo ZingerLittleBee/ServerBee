@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2, Shield, ShieldOff, Smartphone } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -9,12 +9,64 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { TotpSetupResponse, TotpStatusResponse } from '@/lib/api-schema'
 
+interface TwoFactorState {
+  disablePassword: string
+  setupData: TotpSetupResponse | null
+  setupPending: boolean
+  showDisable: boolean
+  verifyCode: string
+}
+
+type TwoFactorAction =
+  | { type: 'cancelDisable' }
+  | { type: 'cancelSetup' }
+  | { type: 'disableSubmitted' }
+  | { type: 'enableSucceeded' }
+  | { type: 'setDisablePassword'; value: string }
+  | { type: 'setShowDisable'; value: boolean }
+  | { type: 'setVerifyCode'; value: string }
+  | { type: 'setupFailed' }
+  | { type: 'setupStarted' }
+  | { type: 'setupSucceeded'; data: TotpSetupResponse }
+
+const INITIAL_TWO_FACTOR_STATE: TwoFactorState = {
+  disablePassword: '',
+  setupData: null,
+  setupPending: false,
+  showDisable: false,
+  verifyCode: ''
+}
+
+function twoFactorReducer(state: TwoFactorState, action: TwoFactorAction): TwoFactorState {
+  switch (action.type) {
+    case 'cancelDisable':
+      return { ...state, disablePassword: '', showDisable: false }
+    case 'cancelSetup':
+    case 'enableSucceeded':
+      return { ...state, setupData: null, verifyCode: '' }
+    case 'disableSubmitted':
+      return { ...state, disablePassword: '', showDisable: false }
+    case 'setDisablePassword':
+      return { ...state, disablePassword: action.value }
+    case 'setShowDisable':
+      return { ...state, showDisable: action.value }
+    case 'setVerifyCode':
+      return { ...state, verifyCode: action.value }
+    case 'setupFailed':
+      return { ...state, setupPending: false }
+    case 'setupStarted':
+      return { ...state, setupPending: true }
+    case 'setupSucceeded':
+      return { ...state, setupData: action.data, setupPending: false }
+    default:
+      return state
+  }
+}
+
 export function TwoFactorSection() {
   const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
-  const [setupData, setSetupData] = useState<TotpSetupResponse | null>(null)
-  const [setupPending, setSetupPending] = useState(false)
-  const [verifyCode, setVerifyCode] = useState('')
+  const [state, dispatch] = useReducer(twoFactorReducer, INITIAL_TWO_FACTOR_STATE)
 
   const { data: status, isLoading } = useQuery<TotpStatusResponse>({
     queryKey: ['auth', '2fa', 'status'],
@@ -22,26 +74,24 @@ export function TwoFactorSection() {
   })
 
   const handleSetup = async () => {
-    if (setupPending) {
+    if (state.setupPending) {
       return
     }
-    setSetupPending(true)
+    dispatch({ type: 'setupStarted' })
     try {
       const data = await api.post<TotpSetupResponse>('/api/auth/2fa/setup')
-      setSetupData(data)
+      dispatch({ type: 'setupSucceeded', data })
       toast.success(t('security.toast_2fa_setup'))
     } catch (err) {
+      dispatch({ type: 'setupFailed' })
       toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
-    } finally {
-      setSetupPending(false)
     }
   }
 
   const enableMutation = useMutation({
     mutationFn: (code: string) => api.post('/api/auth/2fa/enable', { code }),
     onSuccess: () => {
-      setSetupData(null)
-      setVerifyCode('')
+      dispatch({ type: 'enableSucceeded' })
       queryClient.invalidateQueries({ queryKey: ['auth', '2fa', 'status'] }).catch(() => undefined)
       toast.success(t('security.toast_2fa_enabled'))
     },
@@ -63,23 +113,19 @@ export function TwoFactorSection() {
 
   const handleEnable = (e: FormEvent) => {
     e.preventDefault()
-    if (!setupData || verifyCode.length !== 6) {
+    if (!state.setupData || state.verifyCode.length !== 6) {
       return
     }
-    enableMutation.mutate(verifyCode)
+    enableMutation.mutate(state.verifyCode)
   }
-
-  const [disablePassword, setDisablePassword] = useState('')
-  const [showDisable, setShowDisable] = useState(false)
 
   const handleDisable = (e: FormEvent) => {
     e.preventDefault()
-    if (disablePassword.length === 0) {
+    if (state.disablePassword.length === 0) {
       return
     }
-    disableMutation.mutate(disablePassword)
-    setDisablePassword('')
-    setShowDisable(false)
+    disableMutation.mutate(state.disablePassword)
+    dispatch({ type: 'disableSubmitted' })
   }
 
   if (isLoading) {
@@ -104,31 +150,24 @@ export function TwoFactorSection() {
             <span className="font-medium text-sm">{t('security.two_factor_enabled')}</span>
           </div>
 
-          {showDisable ? (
+          {state.showDisable ? (
             <form className="space-y-3" onSubmit={handleDisable}>
               <p className="text-muted-foreground text-sm">{t('security.enter_password_disable')}</p>
               <Input
                 aria-label={t('security.current_password')}
                 autoComplete="current-password"
                 className="max-w-xs"
-                onChange={(e) => setDisablePassword(e.target.value)}
+                onChange={(e) => dispatch({ type: 'setDisablePassword', value: e.target.value })}
                 placeholder={t('security.current_password')}
                 required
                 type="password"
-                value={disablePassword}
+                value={state.disablePassword}
               />
               <div className="flex gap-2">
                 <Button disabled={disableMutation.isPending} type="submit" variant="destructive">
                   {t('security.confirm_disable')}
                 </Button>
-                <Button
-                  onClick={() => {
-                    setShowDisable(false)
-                    setDisablePassword('')
-                  }}
-                  type="button"
-                  variant="outline"
-                >
+                <Button onClick={() => dispatch({ type: 'cancelDisable' })} type="button" variant="outline">
                   {t('common:cancel')}
                 </Button>
               </div>
@@ -139,14 +178,14 @@ export function TwoFactorSection() {
               )}
             </form>
           ) : (
-            <Button onClick={() => setShowDisable(true)} variant="destructive">
+            <Button onClick={() => dispatch({ type: 'setShowDisable', value: true })} variant="destructive">
               <ShieldOff aria-hidden="true" className="size-4" />
               {t('security.disable_2fa')}
             </Button>
           )}
         </div>
       )}
-      {!status?.enabled && setupData && (
+      {!status?.enabled && state.setupData && (
         <div className="space-y-4">
           <p className="text-muted-foreground text-sm">{t('security.scan_qr')}</p>
 
@@ -154,7 +193,7 @@ export function TwoFactorSection() {
             <img
               alt={t('security.qr_alt')}
               height={192}
-              src={`data:image/png;base64,${setupData.qr_code_base64}`}
+              src={`data:image/png;base64,${state.setupData.qr_code_base64}`}
               width={192}
             />
           </div>
@@ -162,7 +201,7 @@ export function TwoFactorSection() {
           <details className="text-sm">
             <summary className="cursor-pointer text-muted-foreground">{t('security.cant_scan')}</summary>
             <code className="mt-1 block break-all rounded bg-muted px-2 py-1 font-mono text-xs">
-              {setupData.secret}
+              {state.setupData.secret}
             </code>
           </details>
 
@@ -176,25 +215,18 @@ export function TwoFactorSection() {
               id="totp-code"
               inputMode="numeric"
               maxLength={6}
-              onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => dispatch({ type: 'setVerifyCode', value: e.target.value.replace(/\D/g, '') })}
               pattern="[0-9]{6}"
               placeholder="000000"
               required
-              value={verifyCode}
+              value={state.verifyCode}
             />
             <div className="flex gap-2">
-              <Button disabled={enableMutation.isPending || verifyCode.length !== 6} type="submit">
+              <Button disabled={enableMutation.isPending || state.verifyCode.length !== 6} type="submit">
                 {enableMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
                 {t('security.verify_enable')}
               </Button>
-              <Button
-                onClick={() => {
-                  setSetupData(null)
-                  setVerifyCode('')
-                }}
-                type="button"
-                variant="outline"
-              >
+              <Button onClick={() => dispatch({ type: 'cancelSetup' })} type="button" variant="outline">
                 {t('common:cancel')}
               </Button>
             </div>
@@ -202,10 +234,10 @@ export function TwoFactorSection() {
           </form>
         </div>
       )}
-      {!(status?.enabled || setupData) && (
+      {!(status?.enabled || state.setupData) && (
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm">{t('security.two_factor_description')}</p>
-          <Button disabled={setupPending} onClick={handleSetup}>
+          <Button disabled={state.setupPending} onClick={handleSetup}>
             <Shield aria-hidden="true" className="size-4" />
             {t('security.setup_2fa')}
           </Button>
