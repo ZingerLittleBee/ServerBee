@@ -7,7 +7,17 @@ import {
   TrashIcon,
   UnlockIcon
 } from 'lucide-react'
-import { type ReactNode, type Ref, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import {
+  type ReactNode,
+  type Ref,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from 'react'
 import {
   GridLayout,
   getCompactor,
@@ -51,6 +61,7 @@ function isWidgetStatic(configJson: string): boolean {
 const MOBILE_ROW_PX = 80
 const MOBILE_BREAKPOINT = 768
 const SINGLE_COLUMN_CONTENT_WIDTH = 900
+const MOBILE_QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
 
 const WIDGET_TYPE_MAP = new Map<string, WidgetTypeDefinition>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
 
@@ -174,22 +185,21 @@ function renderResizeHandle(axis: ResizeHandleAxis, ref: Ref<HTMLElement>) {
   )
 }
 
+function getMobileSnapshot(): boolean {
+  return typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
+}
+
+function subscribeToMobileChanges(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return () => undefined
+  }
+  const mql = window.matchMedia(MOBILE_QUERY)
+  mql.addEventListener('change', onStoreChange)
+  return () => mql.removeEventListener('change', onStoreChange)
+}
+
 function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
-  )
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return
-    }
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
-  }, [])
-
-  return isMobile
+  return useSyncExternalStore(subscribeToMobileChanges, getMobileSnapshot, () => false)
 }
 
 export function DashboardGrid({
