@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Search } from 'lucide-react'
-import { useState } from 'react'
+import { useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FirewallActivityLog } from '@/components/firewall/activity-log'
 import { AddBlockDrawer, type AddBlockInitialValues } from '@/components/firewall/add-block-drawer'
@@ -17,17 +17,52 @@ export const Route = createFileRoute('/_authed/settings/firewall')({
   component: FirewallPage
 })
 
+interface FirewallPageState {
+  addInitial: AddBlockInitialValues | undefined
+  addOpen: boolean
+  deleteTarget: BlockListItem | null
+  originFilter: string
+  targetQuery: string
+}
+
+type FirewallPageAction =
+  | { type: 'openAddBlock'; values?: AddBlockInitialValues }
+  | { type: 'setAddOpen'; value: boolean }
+  | { type: 'setDeleteTarget'; value: BlockListItem | null }
+  | { type: 'setOriginFilter'; value: string }
+  | { type: 'setTargetQuery'; value: string }
+
+const INITIAL_FIREWALL_PAGE_STATE: FirewallPageState = {
+  addInitial: undefined,
+  addOpen: false,
+  deleteTarget: null,
+  originFilter: '',
+  targetQuery: ''
+}
+
+function firewallPageReducer(state: FirewallPageState, action: FirewallPageAction): FirewallPageState {
+  switch (action.type) {
+    case 'openAddBlock':
+      return { ...state, addInitial: action.values, addOpen: true }
+    case 'setAddOpen':
+      return { ...state, addOpen: action.value }
+    case 'setDeleteTarget':
+      return { ...state, deleteTarget: action.value }
+    case 'setOriginFilter':
+      return { ...state, originFilter: action.value }
+    case 'setTargetQuery':
+      return { ...state, targetQuery: action.value }
+    default:
+      return state
+  }
+}
+
 function FirewallPage() {
   const { t } = useTranslation(['firewall', 'common'])
-  const [addOpen, setAddOpen] = useState(false)
-  const [addInitial, setAddInitial] = useState<AddBlockInitialValues | undefined>(undefined)
-  const [deleteTarget, setDeleteTarget] = useState<BlockListItem | null>(null)
-  const [originFilter, setOriginFilter] = useState<string>('')
-  const [targetQuery, setTargetQuery] = useState<string>('')
+  const [state, dispatch] = useReducer(firewallPageReducer, INITIAL_FIREWALL_PAGE_STATE)
 
   const openAddBlock = (values?: AddBlockInitialValues) => {
-    setAddInitial(values)
-    setAddOpen(true)
+    dispatch({ type: 'openAddBlock', values })
   }
 
   return (
@@ -61,9 +96,9 @@ function FirewallPage() {
               />
               <Input
                 className="pl-9"
-                onChange={(e) => setTargetQuery(e.target.value)}
+                onChange={(e) => dispatch({ type: 'setTargetQuery', value: e.target.value })}
                 placeholder={t('filter.target_search', { defaultValue: 'Search IP or CIDR' })}
-                value={targetQuery}
+                value={state.targetQuery}
               />
             </div>
             <Select
@@ -72,8 +107,8 @@ function FirewallPage() {
                 manual: t('filter.origin_manual', { defaultValue: 'Manual' }),
                 auto: t('filter.origin_auto', { defaultValue: 'Auto' })
               }}
-              onValueChange={(v) => setOriginFilter(v ?? '')}
-              value={originFilter}
+              onValueChange={(value) => dispatch({ type: 'setOriginFilter', value: value ?? '' })}
+              value={state.originFilter}
             >
               <SelectTrigger className="h-9 w-[180px]">
                 <SelectValue placeholder={t('filter.origin', { defaultValue: 'All origins' })} />
@@ -87,9 +122,9 @@ function FirewallPage() {
           </div>
 
           <BlockTable
-            onDelete={(block) => setDeleteTarget(block)}
-            originFilter={originFilter || null}
-            targetQuery={targetQuery || null}
+            onDelete={(block) => dispatch({ type: 'setDeleteTarget', value: block })}
+            originFilter={state.originFilter || null}
+            targetQuery={state.targetQuery || null}
           />
         </TabsContent>
 
@@ -98,16 +133,20 @@ function FirewallPage() {
         </TabsContent>
       </Tabs>
 
-      <AddBlockDrawer initialValues={addInitial} onOpenChange={setAddOpen} open={addOpen} />
+      <AddBlockDrawer
+        initialValues={state.addInitial}
+        onOpenChange={(open) => dispatch({ type: 'setAddOpen', value: open })}
+        open={state.addOpen}
+      />
 
       <DeleteBlockDialog
-        blockId={deleteTarget?.id ?? null}
+        blockId={state.deleteTarget?.id ?? null}
         onOpenChange={(open) => {
           if (!open) {
-            setDeleteTarget(null)
+            dispatch({ type: 'setDeleteTarget', value: null })
           }
         }}
-        target={deleteTarget?.target ?? null}
+        target={state.deleteTarget?.target ?? null}
       />
     </div>
   )
