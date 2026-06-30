@@ -23,7 +23,7 @@ export function UptimeBar({ data, height = 16, getColor, maxValue, ariaLabel }: 
   }
 
   return (
-    <div aria-label={ariaLabel} role="img" style={{ display: 'flex', gap: '2px', height, alignItems: 'flex-end' }}>
+    <figure aria-label={ariaLabel} style={{ display: 'flex', gap: '2px', height, alignItems: 'flex-end', margin: 0 }}>
       {data.map((value, i) => (
         <div
           data-testid="uptime-bar-item"
@@ -37,6 +37,6 @@ export function UptimeBar({ data, height = 16, getColor, maxValue, ariaLabel }: 
           }}
         />
       ))}
-    </div>
+    </figure>
   )
 }

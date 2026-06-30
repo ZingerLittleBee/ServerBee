@@ -1,9 +1,8 @@
 export function MiniDashboard() {
   return (
-    <div
+    <figure
       aria-label="Animated demo of a ServerBee server card"
-      className="relative w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-2xl shadow-amber-500/5 backdrop-blur"
-      role="img"
+      className="relative m-0 w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-2xl shadow-amber-500/5 backdrop-blur"
     >
       <header className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -31,7 +30,7 @@ export function MiniDashboard() {
         <Stat label="Disk" value="58%" />
         <Stat label="Uptime" value="14d" />
       </footer>
-    </div>
+    </figure>
   )
 }
 

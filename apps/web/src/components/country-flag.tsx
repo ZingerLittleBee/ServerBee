@@ -16,7 +16,7 @@ export function CountryFlag({ className, code }: { className?: string; code: str
     <Tooltip>
       <TooltipTrigger
         render={
-          <span aria-label={name} className={cn('shrink-0', className)} role="img">
+          <span aria-hidden="true" className={cn('shrink-0', className)} title={name}>
             {flag}
           </span>
         }

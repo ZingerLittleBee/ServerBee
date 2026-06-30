@@ -243,41 +243,34 @@ function HistoryRow({
   t: (key: string, opts?: Record<string, unknown>) => string
 }) {
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: list items are supplemented by explicit icon buttons
-    // biome-ignore lint/a11y/noNoninteractiveElementInteractions: history rows act as selection targets
-    <li
-      className={cn(
-        'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40',
-        isSelected && 'bg-muted'
-      )}
-      onClick={() => onSelect(record)}
-    >
-      <span className="flex-1 truncate font-mono">{record.target}</span>
-      <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
-        {record.protocol === 'legacy' ? (
-          <Tooltip>
-            <TooltipTrigger>
-              <span>legacy</span>
-            </TooltipTrigger>
-            <TooltipContent>{t('legacy_record_tooltip')}</TooltipContent>
-          </Tooltip>
-        ) : (
-          record.protocol.toUpperCase()
+    <li className="flex items-center gap-1">
+      <button
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/40',
+          isSelected && 'bg-muted'
         )}
-      </Badge>
-      <span className="text-muted-foreground text-xs">{record.hop_count} hops</span>
-      <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at)}</span>
-      {record.has_error ? <X className="size-3 text-destructive" /> : <Check className="size-3 text-emerald-500" />}
+        onClick={() => onSelect(record)}
+        type="button"
+      >
+        <span className="flex-1 truncate font-mono">{record.target}</span>
+        <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
+          {record.protocol === 'legacy' ? (
+            <Tooltip>
+              <TooltipTrigger>
+                <span>legacy</span>
+              </TooltipTrigger>
+              <TooltipContent>{t('legacy_record_tooltip')}</TooltipContent>
+            </Tooltip>
+          ) : (
+            record.protocol.toUpperCase()
+          )}
+        </Badge>
+        <span className="text-muted-foreground text-xs">{record.hop_count} hops</span>
+        <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at)}</span>
+        {record.has_error ? <X className="size-3 text-destructive" /> : <Check className="size-3 text-emerald-500" />}
+      </button>
       {isAdmin && (
-        <Button
-          aria-label={t('delete')}
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete(record.request_id)
-          }}
-          size="icon"
-          variant="ghost"
-        >
+        <Button aria-label={t('delete')} onClick={() => onDelete(record.request_id)} size="icon" variant="ghost">
           <Trash2 className="size-4" />
         </Button>
       )}

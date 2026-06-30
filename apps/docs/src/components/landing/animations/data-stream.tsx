@@ -1,9 +1,8 @@
 export function DataStreamAnim() {
   return (
-    <div
+    <figure
       aria-label="Animated demo of real-time WebSocket streaming"
-      className="relative flex h-40 items-center justify-between px-6"
-      role="img"
+      className="relative m-0 flex h-40 items-center justify-between px-6"
     >
       <Endpoint color="#ffb300" label="Server" />
       <div className="relative mx-3 h-px flex-1 bg-gradient-to-r from-amber-400/30 via-cyan-300/30 to-amber-400/30">
@@ -13,7 +12,7 @@ export function DataStreamAnim() {
         <Particle colorClass="bg-cyan-300" delay="1.8s" reverse />
       </div>
       <Endpoint color="#4cc9f0" label="Agent" />
-    </div>
+    </figure>
   )
 }
 

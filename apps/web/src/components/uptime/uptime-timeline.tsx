@@ -207,13 +207,12 @@ export function UptimeTimeline({
         }}
       </TooltipPrimitive.Root>
 
-      <div
+      <figure
         aria-label={timelineTitle}
         className="w-full"
         data-uptime-timeline=""
         ref={timelineRef}
-        role="img"
-        style={{ height }}
+        style={{ height, margin: 0 }}
       >
         <div className="relative h-full w-full">
           <div
@@ -244,7 +243,7 @@ export function UptimeTimeline({
             )
           })}
         </div>
-      </div>
+      </figure>
 
       {showLegend && (
         <div className="mt-2 flex gap-4 text-muted-foreground text-xs">

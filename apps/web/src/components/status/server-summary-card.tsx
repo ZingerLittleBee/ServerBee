@@ -183,11 +183,7 @@ export function ServerSummaryCard({ server, clickable }: Props) {
             />
             <CompactMetric
               label={
-                <span
-                  aria-label={t('card_disk_read', { ns: 'servers' })}
-                  className="inline-flex items-center gap-1"
-                  role="img"
-                >
+                <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
                     className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
@@ -201,11 +197,7 @@ export function ServerSummaryCard({ server, clickable }: Props) {
             />
             <CompactMetric
               label={
-                <span
-                  aria-label={t('card_disk_write', { ns: 'servers' })}
-                  className="inline-flex items-center gap-1"
-                  role="img"
-                >
+                <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
                     className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"

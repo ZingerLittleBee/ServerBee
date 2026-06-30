@@ -216,6 +216,7 @@ function ApnsFormFields({ apnsFileInputRef, configFields, onFieldChange, onFileU
       />
       <div className="space-y-1">
         <textarea
+          aria-label={t('notifications.apns_private_key')}
           className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           onChange={(e) => onFieldChange({ private_key: e.target.value })}
           placeholder={t('notifications.apns_private_key')}
@@ -225,6 +226,7 @@ function ApnsFormFields({ apnsFileInputRef, configFields, onFieldChange, onFileU
         />
         <input
           accept=".p8,.pem,.key,text/plain"
+          aria-label={t('notifications.upload_p8_file')}
           className="hidden"
           onChange={onFileUpload}
           ref={apnsFileInputRef}

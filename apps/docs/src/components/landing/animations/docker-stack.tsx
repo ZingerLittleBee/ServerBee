@@ -7,10 +7,9 @@ export function DockerStackAnim() {
     { name: 'cache', tag: 'redis:7', cpu: '0.1%', delay: '0.8s' }
   ]
   return (
-    <div
+    <figure
       aria-label="Animated demo of Docker container management"
-      className="flex h-full flex-col justify-center gap-1.5"
-      role="img"
+      className="m-0 flex h-full flex-col justify-center gap-1.5"
     >
       {containers.map((c) => (
         <div
@@ -29,6 +28,6 @@ export function DockerStackAnim() {
           </span>
         </div>
       ))}
-    </div>
+    </figure>
   )
 }

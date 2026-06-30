@@ -15,12 +15,15 @@ const TONE_BY_STATUS: Record<StatusKind, string> = {
 
 export function StatusDot({ status, className }: StatusDotProps) {
   return (
-    <span
-      aria-label={status}
-      className={cn('inline-block size-2 rounded-full', TONE_BY_STATUS[status], className)}
-      data-slot="status-dot"
-      role="img"
-    />
+    <>
+      <span className="sr-only">{status}</span>
+      <span
+        aria-hidden="true"
+        className={cn('inline-block size-2 rounded-full', TONE_BY_STATUS[status], className)}
+        data-slot="status-dot"
+        title={status}
+      />
+    </>
   )
 }
 

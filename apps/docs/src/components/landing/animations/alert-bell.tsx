@@ -3,10 +3,9 @@ import { Bell } from 'lucide-react'
 export function AlertBellAnim() {
   const channels = ['Webhook', 'Telegram', 'Bark', 'Email', 'APNs']
   return (
-    <div
+    <figure
       aria-label="Animated demo of multi-channel alerts"
-      className="flex h-full flex-col items-center justify-center gap-3"
-      role="img"
+      className="m-0 flex h-full flex-col items-center justify-center gap-3"
     >
       <div className="relative">
         <Bell className="bell-shake h-9 w-9 text-amber-300" />
@@ -23,6 +22,6 @@ export function AlertBellAnim() {
           </span>
         ))}
       </div>
-    </div>
+    </figure>
   )
 }

@@ -1,6 +1,6 @@
 import { renderConfigForm } from '@serverbee/widget-sdk'
 import { LayoutGrid, List } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -653,12 +653,15 @@ function MarkdownForm({
   t: (key: string) => string
 }) {
   const html = useMemo(() => renderMarkdown(config.content ?? ''), [config.content])
+  const contentId = useId()
 
   return (
     <div className="space-y-1.5">
-      <Label>{t('widgets.common.labels.markdownContent')}</Label>
+      <Label htmlFor={contentId}>{t('widgets.common.labels.markdownContent')}</Label>
       <textarea
+        aria-label={t('widgets.common.labels.markdownContent')}
         className="h-32 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+        id={contentId}
         onChange={(e) => onChange({ ...config, content: e.target.value })}
         placeholder={t('widgets.common.placeholders.writeMarkdown')}
         value={config.content ?? ''}

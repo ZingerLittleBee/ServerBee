@@ -85,6 +85,7 @@ export function FileContextMenu({
       ref={menuRef}
       role="menu"
       style={{ left: position.x, top: position.y }}
+      tabIndex={-1}
     >
       {items
         .filter((item) => item.show)

@@ -5,10 +5,9 @@ const RING_RADIUS = 56
 
 export function OrbitIconsAnim() {
   return (
-    <div
+    <figure
       aria-label="Animated demo of terminal, file manager, and Docker orbiting the agent"
-      className="relative flex h-40 items-center justify-center"
-      role="img"
+      className="relative m-0 flex h-40 items-center justify-center"
     >
       <div className="relative h-36 w-36">
         <svg aria-hidden="true" className="absolute inset-0 h-full w-full" focusable="false" viewBox="0 0 144 144">
@@ -42,7 +41,7 @@ export function OrbitIconsAnim() {
           <OrbitItem angle={240} icon={<Layers className="h-4 w-4" />} />
         </div>
       </div>
-    </div>
+    </figure>
   )
 }
 

@@ -3,11 +3,7 @@ import type { ComponentType } from 'react'
 
 export function FileTreeAnim() {
   return (
-    <div
-      aria-label="Animated demo of the file manager"
-      className="flex h-full flex-col gap-2 font-mono text-xs"
-      role="img"
-    >
+    <figure aria-label="Animated demo of the file manager" className="m-0 flex h-full flex-col gap-2 font-mono text-xs">
       <div className="min-h-0 flex-1 space-y-0.5 overflow-hidden rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-zinc-300">
         <Row Icon={FolderTree} label="/var/log" />
         <Row Icon={FolderOpen} indent label="nginx" />
@@ -22,7 +18,7 @@ export function FileTreeAnim() {
         </div>
         <span className="shrink-0 font-mono text-[10px] text-amber-300">64%</span>
       </div>
-    </div>
+    </figure>
   )
 }
 

@@ -7,10 +7,9 @@ export function MonitorDotsAnim() {
     { name: 'WHOIS', meta: 'renews 2027-04' }
   ]
   return (
-    <div
+    <figure
       aria-label="Animated demo of service monitors"
-      className="grid h-full grid-cols-1 gap-1.5 font-mono text-xs sm:grid-cols-2"
-      role="img"
+      className="m-0 grid h-full grid-cols-1 gap-1.5 font-mono text-xs sm:grid-cols-2"
     >
       {probes.map((p, i) => (
         <div className="flex items-center justify-between rounded-md bg-white/[0.03] px-3 py-1.5" key={p.name}>
@@ -24,6 +23,6 @@ export function MonitorDotsAnim() {
           <span className="text-[10px] text-zinc-500">{p.meta}</span>
         </div>
       ))}
-    </div>
+    </figure>
   )
 }

@@ -507,6 +507,7 @@ function AlertsPage() {
                 <CollapsibleTrigger
                   render={
                     <button
+                      aria-label={t('alerts.auto_block_title', { defaultValue: 'Auto-block source IP' })}
                       className="flex w-full items-center justify-between text-left"
                       onClick={() => setAutoBlockEnabled((v) => !v)}
                       type="button"

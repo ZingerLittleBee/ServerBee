@@ -2,10 +2,9 @@ import { RotateCw } from 'lucide-react'
 
 export function UpgradeLoopAnim() {
   return (
-    <div
+    <figure
       aria-label="Animated demo of auto-upgrade"
-      className="flex h-full flex-col items-center justify-center gap-3"
-      role="img"
+      className="m-0 flex h-full flex-col items-center justify-center gap-3"
     >
       <div className="relative flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/30 bg-amber-400/10">
         <RotateCw className="upgrade-spin h-7 w-7 text-amber-300" />
@@ -15,6 +14,6 @@ export function UpgradeLoopAnim() {
         <span className="text-amber-300">→</span>
         <span className="rounded-md bg-emerald-400/15 px-2 py-0.5 text-emerald-300">v0.3.0</span>
       </div>
-    </div>
+    </figure>
   )
 }

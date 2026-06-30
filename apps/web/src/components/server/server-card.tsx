@@ -535,7 +535,7 @@ const ServerCardInner = ({
             <CompactMetric label={t('card_net_out_speed')} value={renderSpeedValue(server.net_out_speed)} />
             <CompactMetric
               label={
-                <span aria-label={t('card_disk_read')} className="inline-flex items-center gap-1" role="img">
+                <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
                     className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
@@ -549,7 +549,7 @@ const ServerCardInner = ({
             />
             <CompactMetric
               label={
-                <span aria-label={t('card_disk_write')} className="inline-flex items-center gap-1" role="img">
+                <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
                     className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
