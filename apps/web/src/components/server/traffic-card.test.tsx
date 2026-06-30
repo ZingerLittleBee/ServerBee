@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { createContext, type ReactNode, useContext, useState } from 'react'
+import { createContext, type ReactNode, use, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { TrafficCard } from './traffic-card'
 
@@ -28,7 +28,7 @@ vi.mock('@/components/ui/tabs', () => ({
   },
   TabsList: ({ children }: { children?: ReactNode }) => <div data-testid="tabs-list">{children}</div>,
   TabsTrigger: ({ children, value }: { children?: ReactNode; value: string }) => {
-    const context = useContext(TabsContext)
+    const context = use(TabsContext)
     if (!context) {
       return null
     }
@@ -40,7 +40,7 @@ vi.mock('@/components/ui/tabs', () => ({
     )
   },
   TabsContent: ({ children, value }: { children?: ReactNode; value: string }) => {
-    const context = useContext(TabsContext)
+    const context = use(TabsContext)
     if (!context || context.value !== value) {
       return null
     }

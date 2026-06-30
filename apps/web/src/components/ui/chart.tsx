@@ -4,7 +4,7 @@ import {
   type CSSProperties,
   createContext,
   type ReactNode,
-  useContext,
+  use,
   useId,
   useMemo
 } from 'react'
@@ -28,7 +28,7 @@ interface ChartContextProps {
 const ChartContext = createContext<ChartContextProps | null>(null)
 
 function useChart() {
-  const context = useContext(ChartContext)
+  const context = use(ChartContext)
 
   if (!context) {
     throw new Error('useChart must be used within a <ChartContainer />')
