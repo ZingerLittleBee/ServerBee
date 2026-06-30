@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { Plus, Trash2, UserCog } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -36,17 +36,67 @@ export const Route = createFileRoute('/_authed/settings/users')({
   component: UsersPage
 })
 
+interface UsersPageState {
+  deleteUserId: string | null
+  editingId: string | null
+  editRole: string
+  newPassword: string
+  newRole: string
+  newUsername: string
+  showForm: boolean
+}
+
+type UsersPageAction =
+  | { type: 'closeCreateForm' }
+  | { type: 'setDeleteUserId'; value: string | null }
+  | { type: 'setEditRole'; value: string }
+  | { type: 'setNewPassword'; value: string }
+  | { type: 'setNewRole'; value: string }
+  | { type: 'setNewUsername'; value: string }
+  | { type: 'setShowForm'; value: boolean }
+  | { type: 'startEditing'; id: string; role: string }
+  | { type: 'stopEditing' }
+
+const INITIAL_USERS_PAGE_STATE: UsersPageState = {
+  deleteUserId: null,
+  editingId: null,
+  editRole: '',
+  newPassword: '',
+  newRole: 'member',
+  newUsername: '',
+  showForm: false
+}
+
+function usersPageReducer(state: UsersPageState, action: UsersPageAction): UsersPageState {
+  switch (action.type) {
+    case 'closeCreateForm':
+      return { ...state, newPassword: '', newRole: 'member', newUsername: '', showForm: false }
+    case 'setDeleteUserId':
+      return { ...state, deleteUserId: action.value }
+    case 'setEditRole':
+      return { ...state, editRole: action.value }
+    case 'setNewPassword':
+      return { ...state, newPassword: action.value }
+    case 'setNewRole':
+      return { ...state, newRole: action.value }
+    case 'setNewUsername':
+      return { ...state, newUsername: action.value }
+    case 'setShowForm':
+      return action.value ? { ...state, showForm: true } : usersPageReducer(state, { type: 'closeCreateForm' })
+    case 'startEditing':
+      return { ...state, editingId: action.id, editRole: action.role }
+    case 'stopEditing':
+      return { ...state, editingId: null }
+    default:
+      return state
+  }
+}
+
 function UsersPage() {
   const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
   const { user: currentUser } = useAuth()
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editRole, setEditRole] = useState('')
-  const [newUsername, setNewUsername] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [newRole, setNewRole] = useState('member')
-  const [deleteUserId, setDeleteUserId] = useState<string | null>(null)
+  const [state, dispatch] = useReducer(usersPageReducer, INITIAL_USERS_PAGE_STATE)
 
   const { data: users, isLoading } = useQuery<UserResponse[]>({
     queryKey: ['users'],
@@ -58,7 +108,7 @@ function UsersPage() {
       api.post<UserResponse>('/api/users', input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined)
-      resetForm()
+      dispatch({ type: 'closeCreateForm' })
       toast.success(t('users.toast_created'))
     },
     onError: (err) => {
@@ -70,7 +120,7 @@ function UsersPage() {
     mutationFn: ({ id, role }: { id: string; role: string }) => api.put<UserResponse>(`/api/users/${id}`, { role }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined)
-      setEditingId(null)
+      dispatch({ type: 'stopEditing' })
       toast.success(t('users.toast_role_updated'))
     },
     onError: (err) => {
@@ -89,22 +139,15 @@ function UsersPage() {
     }
   })
 
-  const resetForm = () => {
-    setNewUsername('')
-    setNewPassword('')
-    setNewRole('member')
-    setShowForm(false)
-  }
-
   const handleCreate = (e: FormEvent) => {
     e.preventDefault()
-    if (newUsername.trim().length === 0 || newPassword.length === 0) {
+    if (state.newUsername.trim().length === 0 || state.newPassword.length === 0) {
       return
     }
     createMutation.mutate({
-      username: newUsername.trim(),
-      password: newPassword,
-      role: newRole
+      username: state.newUsername.trim(),
+      password: state.newPassword,
+      role: state.newRole
     })
   }
 
@@ -112,17 +155,7 @@ function UsersPage() {
     <div className="max-w-2xl space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="font-semibold text-lg">{t('users.count')}</h2>
-        <Dialog
-          onOpenChange={(open) => {
-            setShowForm(open)
-            if (!open) {
-              setNewUsername('')
-              setNewPassword('')
-              setNewRole('member')
-            }
-          }}
-          open={showForm}
-        >
+        <Dialog onOpenChange={(open) => dispatch({ type: 'setShowForm', value: open })} open={state.showForm}>
           <DialogTrigger render={<Button size="sm" variant="outline" />}>
             <Plus className="size-4" />
             {t('users.add')}
@@ -137,28 +170,28 @@ function UsersPage() {
                 aria-label={t('users.username')}
                 autoComplete="username"
                 name="username"
-                onChange={(e) => setNewUsername(e.target.value)}
+                onChange={(e) => dispatch({ type: 'setNewUsername', value: e.target.value })}
                 placeholder={t('users.username')}
                 required
                 spellCheck={false}
                 type="text"
-                value={newUsername}
+                value={state.newUsername}
               />
               <Input
                 aria-label={t('users.password_hint')}
                 autoComplete="new-password"
                 minLength={6}
                 name="password"
-                onChange={(e) => setNewPassword(e.target.value)}
+                onChange={(e) => dispatch({ type: 'setNewPassword', value: e.target.value })}
                 placeholder={t('users.password_hint')}
                 required
                 type="password"
-                value={newPassword}
+                value={state.newPassword}
               />
               <Select
                 items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
-                onValueChange={(val) => val !== null && setNewRole(val)}
-                value={newRole}
+                onValueChange={(value) => value !== null && dispatch({ type: 'setNewRole', value })}
+                value={state.newRole}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -171,7 +204,7 @@ function UsersPage() {
               {createMutation.error && <p className="text-destructive text-sm">{createMutation.error.message}</p>}
             </form>
             <DialogFooter>
-              <Button onClick={resetForm} size="sm" type="button" variant="ghost">
+              <Button onClick={() => dispatch({ type: 'closeCreateForm' })} size="sm" type="button" variant="ghost">
                 {t('common:cancel')}
               </Button>
               <Button disabled={createMutation.isPending} form="create-user-form" size="sm" type="submit">
@@ -208,12 +241,12 @@ function UsersPage() {
                     )}
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    {editingId === user.id ? (
+                    {state.editingId === user.id ? (
                       <span className="inline-flex items-center gap-2">
                         <Select
                           items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
-                          onValueChange={(val) => val !== null && setEditRole(val)}
-                          value={editRole}
+                          onValueChange={(value) => value !== null && dispatch({ type: 'setEditRole', value })}
+                          value={state.editRole}
                         >
                           <SelectTrigger aria-label={t('users.role_label')} className="h-6 text-xs" size="sm">
                             <SelectValue />
@@ -225,14 +258,14 @@ function UsersPage() {
                         </Select>
                         <button
                           className="rounded text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => updateMutation.mutate({ id: user.id, role: editRole })}
+                          onClick={() => updateMutation.mutate({ id: user.id, role: state.editRole })}
                           type="button"
                         >
                           {t('common:save')}
                         </button>
                         <button
                           className="rounded text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => setEditingId(null)}
+                          onClick={() => dispatch({ type: 'stopEditing' })}
                           type="button"
                         >
                           {t('common:cancel')}
@@ -243,10 +276,7 @@ function UsersPage() {
                         {t('users.role_label')}{' '}
                         <button
                           className="rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => {
-                            setEditingId(user.id)
-                            setEditRole(user.role)
-                          }}
+                          onClick={() => dispatch({ type: 'startEditing', id: user.id, role: user.role })}
                           type="button"
                         >
                           {user.role}
@@ -262,13 +292,13 @@ function UsersPage() {
                 <AlertDialog
                   onOpenChange={(open) => {
                     if (!open) {
-                      setDeleteUserId(null)
+                      dispatch({ type: 'setDeleteUserId', value: null })
                     }
                   }}
-                  open={deleteUserId === user.id}
+                  open={state.deleteUserId === user.id}
                 >
                   <AlertDialogTrigger
-                    onClick={() => setDeleteUserId(user.id)}
+                    onClick={() => dispatch({ type: 'setDeleteUserId', value: user.id })}
                     render={
                       <Button
                         aria-label={`${t('users.delete')} ${user.username}`}
@@ -290,7 +320,7 @@ function UsersPage() {
                       <AlertDialogAction
                         onClick={() => {
                           deleteMutation.mutate(user.id)
-                          setDeleteUserId(null)
+                          dispatch({ type: 'setDeleteUserId', value: null })
                         }}
                         variant="destructive"
                       >
