@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from 'lucide-react'
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -43,6 +43,84 @@ interface HeaderRow {
 interface RuleEntry {
   rule: UnlockRule
   uid: string
+}
+
+interface CustomServiceFormState {
+  category: string
+  headers: HeaderRow[]
+  method: string
+  name: string
+  popularity: number
+  rules: RuleEntry[]
+  timeoutMs: number
+  url: string
+}
+
+type CustomServiceFormAction =
+  | { type: 'addHeader' }
+  | { type: 'addRule' }
+  | { type: 'moveRule'; direction: -1 | 1; uid: string }
+  | { type: 'patch'; value: Partial<CustomServiceFormState> }
+  | { type: 'removeHeader'; uid: string }
+  | { type: 'removeRule'; uid: string }
+  | { type: 'updateHeader'; patch: Partial<HeaderRow>; uid: string }
+  | { type: 'updateRule'; rule: UnlockRule; uid: string }
+
+function customServiceFormFromService(service?: UnlockService | null): CustomServiceFormState {
+  const request = parseRequest(service)
+  return {
+    category: service?.category ?? 'streaming',
+    headers: request.headers.map(([headerName, value]) => ({ uid: nextUid(), name: headerName, value })),
+    method: request.method,
+    name: service?.name ?? '',
+    popularity: service?.popularity ?? 50,
+    rules: parseExistingRules(service).map((rule) => ({ uid: nextUid(), rule })),
+    timeoutMs: request.timeout_ms,
+    url: request.url
+  }
+}
+
+function customServiceFormReducer(
+  state: CustomServiceFormState,
+  action: CustomServiceFormAction
+): CustomServiceFormState {
+  switch (action.type) {
+    case 'addHeader':
+      return { ...state, headers: [...state.headers, { uid: nextUid(), name: '', value: '' }] }
+    case 'addRule':
+      return { ...state, rules: [...state.rules, { uid: nextUid(), rule: defaultRule() }] }
+    case 'moveRule': {
+      const index = state.rules.findIndex((entry) => entry.uid === action.uid)
+      const target = index + action.direction
+      if (index === -1 || target < 0 || target >= state.rules.length) {
+        return state
+      }
+      const rules = [...state.rules]
+      ;[rules[index], rules[target]] = [rules[target], rules[index]]
+      return { ...state, rules }
+    }
+    case 'patch':
+      return { ...state, ...action.value }
+    case 'removeHeader':
+      return { ...state, headers: state.headers.filter((header) => header.uid !== action.uid) }
+    case 'removeRule':
+      return {
+        ...state,
+        rules: state.rules.length <= 1 ? state.rules : state.rules.filter((entry) => entry.uid !== action.uid)
+      }
+    case 'updateHeader':
+      return {
+        ...state,
+        headers: state.headers.map((header) => (header.uid === action.uid ? { ...header, ...action.patch } : header))
+      }
+    case 'updateRule':
+      return {
+        ...state,
+        rules: state.rules.map((entry) => (entry.uid === action.uid ? { ...entry, rule: action.rule } : entry))
+      }
+    default:
+      return state
+  }
 }
 
 function defaultMatch(kind: MatchKind): UnlockMatch {
@@ -221,61 +299,39 @@ function CustomServiceDialogContent({
   const createMutation = useCreateService()
   const updateMutation = useUpdateService()
   const isPending = createMutation.isPending || updateMutation.isPending
-  const request = parseRequest(service)
-
-  const [name, setName] = useState(service?.name ?? '')
-  const [category, setCategory] = useState(service?.category ?? 'streaming')
-  const [popularity, setPopularity] = useState(service?.popularity ?? 50)
-  const [url, setUrl] = useState(request.url)
-  const [method, setMethod] = useState(request.method)
-  const [timeoutMs, setTimeoutMs] = useState(request.timeout_ms)
-  const [headers, setHeaders] = useState<HeaderRow[]>(() =>
-    request.headers.map(([headerName, value]) => ({ uid: nextUid(), name: headerName, value }))
-  )
-  const [rules, setRules] = useState<RuleEntry[]>(() =>
-    parseExistingRules(service).map((rule) => ({ uid: nextUid(), rule }))
-  )
+  const [state, dispatch] = useReducer(customServiceFormReducer, service, customServiceFormFromService)
 
   const updateRule = (uid: string, rule: UnlockRule) => {
-    setRules((prev) => prev.map((entry) => (entry.uid === uid ? { ...entry, rule } : entry)))
+    dispatch({ type: 'updateRule', uid, rule })
   }
 
   const moveRule = (uid: string, direction: -1 | 1) => {
-    setRules((prev) => {
-      const index = prev.findIndex((entry) => entry.uid === uid)
-      const target = index + direction
-      if (index === -1 || target < 0 || target >= prev.length) {
-        return prev
-      }
-      const next = [...prev]
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
+    dispatch({ type: 'moveRule', uid, direction })
   }
 
   const removeRule = (uid: string) => {
-    setRules((prev) => (prev.length <= 1 ? prev : prev.filter((entry) => entry.uid !== uid)))
+    dispatch({ type: 'removeRule', uid })
   }
 
   const updateHeader = (uid: string, patch: Partial<HeaderRow>) => {
-    setHeaders((prev) => prev.map((h) => (h.uid === uid ? { ...h, ...patch } : h)))
+    dispatch({ type: 'updateHeader', uid, patch })
   }
 
   const removeHeader = (uid: string) => {
-    setHeaders((prev) => prev.filter((h) => h.uid !== uid))
+    dispatch({ type: 'removeHeader', uid })
   }
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (name.trim().length === 0 || url.trim().length === 0) {
+    if (state.name.trim().length === 0 || state.url.trim().length === 0) {
       return
     }
 
-    const headerPairs: [string, string][] = headers.flatMap((h) => {
+    const headerPairs: [string, string][] = state.headers.flatMap((h) => {
       const headerName = h.name.trim()
       return headerName.length > 0 ? [[headerName, h.value]] : []
     })
-    const rulePayload: UnlockRule[] = rules.map((entry) => entry.rule)
+    const rulePayload: UnlockRule[] = state.rules.map((entry) => entry.rule)
 
     const onSuccess = () => {
       toast.success(isEdit ? t('dialog_updated') : t('dialog_created'))
@@ -289,13 +345,13 @@ function CustomServiceDialogContent({
       updateMutation.mutate(
         {
           id: service.id,
-          name: name.trim(),
-          category,
-          popularity,
-          url: url.trim(),
-          method,
+          name: state.name.trim(),
+          category: state.category,
+          popularity: state.popularity,
+          url: state.url.trim(),
+          method: state.method,
           headers: headerPairs,
-          timeout_ms: timeoutMs,
+          timeout_ms: state.timeoutMs,
           rules: rulePayload
         },
         { onSuccess, onError }
@@ -303,13 +359,13 @@ function CustomServiceDialogContent({
     } else {
       createMutation.mutate(
         {
-          name: name.trim(),
-          category,
-          popularity,
-          url: url.trim(),
-          method,
+          name: state.name.trim(),
+          category: state.category,
+          popularity: state.popularity,
+          url: state.url.trim(),
+          method: state.method,
           headers: headerPairs,
-          timeout_ms: timeoutMs,
+          timeout_ms: state.timeoutMs,
           rules: rulePayload
         },
         { onSuccess, onError }
@@ -329,10 +385,10 @@ function CustomServiceDialogContent({
             <Input
               autoComplete="off"
               id="ipq-name"
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
               placeholder={t('dialog_name_placeholder')}
               required
-              value={name}
+              value={state.name}
             />
           </div>
 
@@ -341,8 +397,8 @@ function CustomServiceDialogContent({
               <Label htmlFor="ipq-category">{t('dialog_category')}</Label>
               <Select
                 items={Object.fromEntries(CATEGORY_ORDER.map((c) => [c, categoryLabel(c)]))}
-                onValueChange={(v) => setCategory(v ?? 'streaming')}
-                value={category}
+                onValueChange={(value) => dispatch({ type: 'patch', value: { category: value ?? 'streaming' } })}
+                value={state.category}
               >
                 <SelectTrigger className="w-full" id="ipq-category">
                   <SelectValue />
@@ -362,9 +418,9 @@ function CustomServiceDialogContent({
                 id="ipq-popularity"
                 max={100}
                 min={0}
-                onChange={(e) => setPopularity(toNumber(e.target.value))}
+                onChange={(e) => dispatch({ type: 'patch', value: { popularity: toNumber(e.target.value) } })}
                 type="number"
-                value={popularity}
+                value={state.popularity}
               />
             </div>
           </div>
@@ -374,17 +430,20 @@ function CustomServiceDialogContent({
             <Input
               autoComplete="off"
               id="ipq-url"
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => dispatch({ type: 'patch', value: { url: e.target.value } })}
               placeholder={t('dialog_url_placeholder')}
               required
-              value={url}
+              value={state.url}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="ipq-method">{t('dialog_method')}</Label>
-              <Select onValueChange={(v) => setMethod(v ?? 'GET')} value={method}>
+              <Select
+                onValueChange={(value) => dispatch({ type: 'patch', value: { method: value ?? 'GET' } })}
+                value={state.method}
+              >
                 <SelectTrigger className="w-full" id="ipq-method">
                   <SelectValue />
                 </SelectTrigger>
@@ -402,9 +461,9 @@ function CustomServiceDialogContent({
               <Input
                 id="ipq-timeout"
                 min={100}
-                onChange={(e) => setTimeoutMs(toNumber(e.target.value))}
+                onChange={(e) => dispatch({ type: 'patch', value: { timeoutMs: toNumber(e.target.value) } })}
                 type="number"
-                value={timeoutMs}
+                value={state.timeoutMs}
               />
             </div>
           </div>
@@ -412,17 +471,12 @@ function CustomServiceDialogContent({
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <Label>{t('dialog_headers')}</Label>
-              <Button
-                onClick={() => setHeaders((prev) => [...prev, { uid: nextUid(), name: '', value: '' }])}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
+              <Button onClick={() => dispatch({ type: 'addHeader' })} size="sm" type="button" variant="outline">
                 <PlusIcon />
                 {t('dialog_add_header')}
               </Button>
             </div>
-            {headers.map((header) => (
+            {state.headers.map((header) => (
               <div className="flex items-center gap-2" data-testid="header-row" key={header.uid}>
                 <Input
                   aria-label={t('dialog_header_name_aria')}
@@ -452,19 +506,14 @@ function CustomServiceDialogContent({
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <Label>{t('dialog_rules')}</Label>
-              <Button
-                onClick={() => setRules((prev) => [...prev, { uid: nextUid(), rule: defaultRule() }])}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
+              <Button onClick={() => dispatch({ type: 'addRule' })} size="sm" type="button" variant="outline">
                 <PlusIcon />
                 {t('dialog_add_rule')}
               </Button>
             </div>
-            {rules.map((entry, index) => (
+            {state.rules.map((entry, index) => (
               <RuleRow
-                canMoveDown={index < rules.length - 1}
+                canMoveDown={index < state.rules.length - 1}
                 canMoveUp={index > 0}
                 index={index}
                 key={entry.uid}
@@ -481,7 +530,7 @@ function CustomServiceDialogContent({
           <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
             {t('dialog_cancel')}
           </Button>
-          <Button disabled={isPending || name.trim().length === 0 || url.trim().length === 0} type="submit">
+          <Button disabled={isPending || state.name.trim().length === 0 || state.url.trim().length === 0} type="submit">
             {isEdit ? t('dialog_save') : t('dialog_create')}
           </Button>
         </DialogFooter>
