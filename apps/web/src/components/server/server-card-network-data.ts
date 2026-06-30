@@ -73,13 +73,18 @@ function buildFallbackTargets(
   targetOrder: ReadonlyMap<string, number>
 ): ServerCardTooltipTarget[] {
   return targets
-    .filter(hasTargetSample)
-    .map((target) => ({
-      latency: target.avg_latency,
-      lossRatio: target.packet_loss,
-      targetId: target.target_id,
-      targetName: target.target_name
-    }))
+    .flatMap((target) =>
+      hasTargetSample(target)
+        ? [
+            {
+              latency: target.avg_latency,
+              lossRatio: target.packet_loss,
+              targetId: target.target_id,
+              targetName: target.target_name
+            }
+          ]
+        : []
+    )
     .sort((left, right) => compareTargets(left, right, targetOrder))
 }
 

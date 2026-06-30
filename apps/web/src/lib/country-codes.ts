@@ -294,8 +294,8 @@ export function buildCountryOptions(locale: string): CountryOptionGroups {
   })
   const commonSet = new Set<string>(COMMON_COUNTRY_CODES)
   const common = COMMON_COUNTRY_CODES.map(toOption)
-  const rest = COUNTRY_CODES.filter((code) => !commonSet.has(code))
-    .map(toOption)
-    .sort((a, b) => a.name.localeCompare(b.name, locale))
+  const rest = COUNTRY_CODES.flatMap((code) => (commonSet.has(code) ? [] : [toOption(code)])).sort((a, b) =>
+    a.name.localeCompare(b.name, locale)
+  )
   return { common, rest }
 }

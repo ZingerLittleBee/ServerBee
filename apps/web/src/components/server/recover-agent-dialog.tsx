@@ -12,7 +12,7 @@ import type { OutstandingEnrollmentSummary, RecoverRequest, RecoverResponse, Ser
 import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn } from '@/lib/utils'
 
-const DEFAULT_CAP_KEYS = CAPABILITIES.filter((c) => hasCap(CAP_DEFAULT, c.bit)).map((c) => c.key)
+const DEFAULT_CAP_KEYS = CAPABILITIES.flatMap((c) => (hasCap(CAP_DEFAULT, c.bit) ? [c.key] : []))
 const ALL_CAP_KEYS = CAPABILITIES.map((c) => c.key)
 
 interface CapGroupProps {
@@ -139,7 +139,7 @@ interface RecoverAgentDialogProps {
 }
 
 function initialCapsFor(caps: number | null | undefined): Set<string> {
-  return new Set(CAPABILITIES.filter((c) => hasCap(caps ?? CAP_DEFAULT, c.bit)).map((c) => c.key))
+  return new Set(CAPABILITIES.flatMap((c) => (hasCap(caps ?? CAP_DEFAULT, c.bit) ? [c.key] : [])))
 }
 
 export function RecoverAgentDialog({ open, onOpenChange, server }: RecoverAgentDialogProps) {

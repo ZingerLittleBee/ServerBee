@@ -341,9 +341,10 @@ function CustomServiceDialogContent({
       return
     }
 
-    const headerPairs: [string, string][] = headers
-      .filter((h) => h.name.trim().length > 0)
-      .map((h) => [h.name.trim(), h.value])
+    const headerPairs: [string, string][] = headers.flatMap((h) => {
+      const headerName = h.name.trim()
+      return headerName.length > 0 ? [[headerName, h.value]] : []
+    })
     const rulePayload: UnlockRule[] = rules.map((entry) => entry.rule)
 
     const onSuccess = () => {

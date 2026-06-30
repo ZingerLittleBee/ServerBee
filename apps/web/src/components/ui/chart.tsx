@@ -194,53 +194,53 @@ function ChartTooltipContent({
     >
       {nestLabel ? null : tooltipLabel}
       <div className="grid gap-1.5">
-        {payload
-          .filter((item) => item.type !== 'none')
-          .map((item, index) => {
-            const key = `${nameKey || item.name || item.dataKey || 'value'}`
-            const itemConfig = getPayloadConfigFromPayload(config, item, key)
-            const indicatorColor = color || item.payload.fill || item.color
+        {payload.reduce<ReactNode[]>((items, item) => {
+          if (item.type === 'none') {
+            return items
+          }
+          const index = items.length
+          const key = `${nameKey || item.name || item.dataKey || 'value'}`
+          const itemConfig = getPayloadConfigFromPayload(config, item, key)
+          const indicatorColor = color || item.payload.fill || item.color
 
-            return (
-              <div
-                className={cn(
-                  'flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground',
-                  indicator === 'dot' && 'items-center'
-                )}
-                key={item.dataKey}
-              >
-                {formatter && !valueFormatter && item?.value !== undefined && item.name ? (
-                  formatter(item.value, item.name, item, index, item.payload)
-                ) : (
-                  <>
-                    <TooltipIndicator
-                      color={indicatorColor}
-                      hideIndicator={hideIndicator}
-                      icon={itemConfig?.icon}
-                      indicator={indicator}
-                      nestLabel={nestLabel}
-                    />
-                    <div
-                      className={cn(
-                        'flex flex-1 justify-between leading-none',
-                        nestLabel ? 'items-end' : 'items-center'
-                      )}
-                    >
-                      <div className="grid gap-1.5">
-                        {nestLabel ? tooltipLabel : null}
-                        <span className="text-muted-foreground">{itemConfig?.label || item.name}</span>
-                      </div>
-                      {item.value != null && (
-                        <span className="ml-2 font-medium font-mono text-foreground tabular-nums">
-                          {valueFormatter ? valueFormatter(Number(item.value)) : item.value.toLocaleString()}
-                        </span>
-                      )}
+          items.push(
+            <div
+              className={cn(
+                'flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground',
+                indicator === 'dot' && 'items-center'
+              )}
+              key={item.dataKey}
+            >
+              {formatter && !valueFormatter && item?.value !== undefined && item.name ? (
+                formatter(item.value, item.name, item, index, item.payload)
+              ) : (
+                <>
+                  <TooltipIndicator
+                    color={indicatorColor}
+                    hideIndicator={hideIndicator}
+                    icon={itemConfig?.icon}
+                    indicator={indicator}
+                    nestLabel={nestLabel}
+                  />
+                  <div
+                    className={cn('flex flex-1 justify-between leading-none', nestLabel ? 'items-end' : 'items-center')}
+                  >
+                    <div className="grid gap-1.5">
+                      {nestLabel ? tooltipLabel : null}
+                      <span className="text-muted-foreground">{itemConfig?.label || item.name}</span>
                     </div>
-                  </>
-                )}
-              </div>
-            )
-          })}
+                    {item.value != null && (
+                      <span className="ml-2 font-medium font-mono text-foreground tabular-nums">
+                        {valueFormatter ? valueFormatter(Number(item.value)) : item.value.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+          return items
+        }, [])}
       </div>
     </div>
   )
@@ -267,31 +267,33 @@ function ChartLegendContent({
 
   return (
     <div className={cn('flex items-center justify-center gap-4', verticalAlign === 'top' ? 'pb-3' : 'pt-3', className)}>
-      {payload
-        .filter((item) => item.type !== 'none')
-        .map((item) => {
-          const key = `${nameKey || item.dataKey || 'value'}`
-          const itemConfig = getPayloadConfigFromPayload(config, item, key)
+      {payload.reduce<ReactNode[]>((items, item) => {
+        if (item.type === 'none') {
+          return items
+        }
+        const key = `${nameKey || item.dataKey || 'value'}`
+        const itemConfig = getPayloadConfigFromPayload(config, item, key)
 
-          return (
-            <div
-              className={cn('flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground')}
-              key={item.value}
-            >
-              {itemConfig?.icon && !hideIcon ? (
-                <itemConfig.icon />
-              ) : (
-                <div
-                  className="h-2 w-2 shrink-0 rounded-[2px]"
-                  style={{
-                    backgroundColor: item.color
-                  }}
-                />
-              )}
-              {itemConfig?.label}
-            </div>
-          )
-        })}
+        items.push(
+          <div
+            className={cn('flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground')}
+            key={item.value}
+          >
+            {itemConfig?.icon && !hideIcon ? (
+              <itemConfig.icon />
+            ) : (
+              <div
+                className="h-2 w-2 shrink-0 rounded-[2px]"
+                style={{
+                  backgroundColor: item.color
+                }}
+              />
+            )}
+            {itemConfig?.label}
+          </div>
+        )
+        return items
+      }, [])}
     </div>
   )
 }

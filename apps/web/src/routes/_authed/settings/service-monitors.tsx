@@ -220,10 +220,10 @@ function DnsConfigFields({
           className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           id="dns-expected"
           onChange={(e) => {
-            const values = e.target.value
-              .split('\n')
-              .map((v) => v.trim())
-              .filter(Boolean)
+            const values = e.target.value.split('\n').flatMap((v) => {
+              const value = v.trim()
+              return value ? [value] : []
+            })
             onChange({ ...config, expected_values: values.length > 0 ? values : undefined })
           }}
           placeholder={t('dnsExpectedPlaceholder')}

@@ -16,7 +16,7 @@ import type { CreateServerRequest, CreateServerResponse, ServerGroup, ServerResp
 import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn } from '@/lib/utils'
 
-const DEFAULT_CAP_KEYS = CAPABILITIES.filter((c) => hasCap(CAP_DEFAULT, c.bit)).map((c) => c.key)
+const DEFAULT_CAP_KEYS = CAPABILITIES.flatMap((c) => (hasCap(CAP_DEFAULT, c.bit) ? [c.key] : []))
 const ALL_CAP_KEYS = CAPABILITIES.map((c) => c.key)
 
 const TAG_SPLIT_RE = /[\s,]+/
@@ -53,10 +53,10 @@ function numberOrUndefined(value: number): number | undefined {
 }
 
 function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
-  const parts = raw
-    .split(TAG_SPLIT_RE)
-    .map((t) => t.trim())
-    .filter(Boolean)
+  const parts = raw.split(TAG_SPLIT_RE).flatMap((t) => {
+    const tag = t.trim()
+    return tag ? [tag] : []
+  })
   const seen = new Set<string>()
   const deduped: string[] = []
   for (const tag of parts) {

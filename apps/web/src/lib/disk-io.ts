@@ -21,6 +21,10 @@ function toNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 export function parseDiskIoJson(raw: string | null | undefined): DiskIoSample[] {
   if (!raw) {
     return []
@@ -33,13 +37,20 @@ export function parseDiskIoJson(raw: string | null | undefined): DiskIoSample[] 
     }
 
     return parsed
-      .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
-      .map((entry) => ({
-        name: typeof entry.name === 'string' ? entry.name : '',
-        read_bytes_per_sec: toNumber(entry.read_bytes_per_sec),
-        write_bytes_per_sec: toNumber(entry.write_bytes_per_sec)
-      }))
-      .filter((entry) => entry.name.length > 0)
+      .reduce<DiskIoSample[]>((entries, entry) => {
+        if (!isRecord(entry) || typeof entry.name !== 'string') {
+          return entries
+        }
+        if (entry.name.length === 0) {
+          return entries
+        }
+        entries.push({
+          name: entry.name,
+          read_bytes_per_sec: toNumber(entry.read_bytes_per_sec),
+          write_bytes_per_sec: toNumber(entry.write_bytes_per_sec)
+        })
+        return entries
+      }, [])
       .sort((left, right) => left.name.localeCompare(right.name))
   } catch {
     return []

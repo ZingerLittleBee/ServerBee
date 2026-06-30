@@ -37,10 +37,10 @@ function formatIsoDate(date: Date): string {
 }
 
 function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
-  const parts = raw
-    .split(TAG_SPLIT_RE)
-    .map((t) => t.trim())
-    .filter(Boolean)
+  const parts = raw.split(TAG_SPLIT_RE).flatMap((t) => {
+    const tag = t.trim()
+    return tag ? [tag] : []
+  })
   const seen = new Set<string>()
   const deduped: string[] = []
   for (const tag of parts) {
