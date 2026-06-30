@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -16,19 +16,48 @@ interface RenameDialogProps {
 }
 
 export function RenameDialog({ serverId, entry, open, onClose, onRenamed }: RenameDialogProps) {
-  const { t } = useTranslation('file')
-  const [newName, setNewName] = useState('')
-  const moveMutation = useFileMoveMutation(serverId)
-
-  useEffect(() => {
-    if (open && entry) {
-      setNewName(entry.name)
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      onClose()
     }
-  }, [open, entry])
+  }
+
+  return (
+    <Dialog onOpenChange={handleOpenChange} open={open}>
+      {entry && (
+        <RenameDialogContent
+          entry={entry}
+          key={entry.path}
+          onClose={onClose}
+          onOpenChange={handleOpenChange}
+          onRenamed={onRenamed}
+          serverId={serverId}
+        />
+      )}
+    </Dialog>
+  )
+}
+
+function RenameDialogContent({
+  entry,
+  onClose,
+  onOpenChange,
+  onRenamed,
+  serverId
+}: {
+  entry: FileEntry
+  onClose: () => void
+  onOpenChange: (isOpen: boolean) => void
+  onRenamed?: (oldPath: string, newPath: string) => void
+  serverId: string
+}) {
+  const { t } = useTranslation('file')
+  const [newName, setNewName] = useState(() => entry.name)
+  const moveMutation = useFileMoveMutation(serverId)
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (!entry || newName.trim().length === 0) {
+    if (newName.trim().length === 0) {
       return
     }
     const parentDir = entry.path.substring(0, entry.path.lastIndexOf('/'))
@@ -48,40 +77,32 @@ export function RenameDialog({ serverId, entry, open, onClose, onRenamed }: Rena
     )
   }
 
-  const handleOpenChange = (isOpen: boolean) => {
-    if (!isOpen) {
-      onClose()
-    }
-  }
-
   return (
-    <Dialog onOpenChange={handleOpenChange} open={open}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>{t('rename_title')}</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <Input
-            aria-label={t('new_name')}
-            autoComplete="off"
-            autoFocus
-            name="new-name"
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder={t('new_name')}
-            required
-            type="text"
-            value={newName}
-          />
-          <DialogFooter>
-            <Button onClick={() => handleOpenChange(false)} type="button" variant="outline">
-              {t('cancel')}
-            </Button>
-            <Button disabled={newName.trim().length === 0 || moveMutation.isPending} type="submit">
-              {t('rename')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <DialogContent className="sm:max-w-sm">
+      <DialogHeader>
+        <DialogTitle>{t('rename_title')}</DialogTitle>
+      </DialogHeader>
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <Input
+          aria-label={t('new_name')}
+          autoComplete="off"
+          autoFocus
+          name="new-name"
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder={t('new_name')}
+          required
+          type="text"
+          value={newName}
+        />
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+            {t('cancel')}
+          </Button>
+          <Button disabled={newName.trim().length === 0 || moveMutation.isPending} type="submit">
+            {t('rename')}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   )
 }

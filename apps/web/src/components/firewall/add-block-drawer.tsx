@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -38,12 +38,45 @@ interface AddBlockForm {
   target: string
 }
 
+type AddBlockFormAction =
+  | { type: 'commentChanged'; value: string }
+  | { type: 'coverTypeChanged'; value: 'all' | 'include' | 'exclude' }
+  | { checked: boolean; serverId: string; type: 'serverToggled' }
+  | { initialValues?: AddBlockInitialValues; type: 'reset' }
+  | { type: 'targetChanged'; value: string }
+
 function getInitialForm(initialValues?: AddBlockInitialValues): AddBlockForm {
   return {
     comment: initialValues?.comment ?? '',
     coverType: initialValues?.cover_type ?? 'all',
     serverIds: initialValues?.server_ids ?? [],
     target: initialValues?.target ?? ''
+  }
+}
+
+function addBlockFormReducer(state: AddBlockForm, action: AddBlockFormAction): AddBlockForm {
+  switch (action.type) {
+    case 'commentChanged':
+      return { ...state, comment: action.value }
+    case 'coverTypeChanged':
+      return {
+        ...state,
+        coverType: action.value,
+        serverIds: action.value === 'all' ? [] : state.serverIds
+      }
+    case 'reset':
+      return getInitialForm(action.initialValues)
+    case 'serverToggled':
+      return {
+        ...state,
+        serverIds: action.checked
+          ? [...state.serverIds, action.serverId]
+          : state.serverIds.filter((id) => id !== action.serverId)
+      }
+    case 'targetChanged':
+      return { ...state, target: action.value }
+    default:
+      return state
   }
 }
 
@@ -68,13 +101,13 @@ function tryExtractReason(err: unknown, fallback: string): string {
 
 export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
   const { t } = useTranslation(['firewall', 'common'])
-  const [form, setForm] = useState(() => getInitialForm(initialValues))
+  const [form, dispatchForm] = useReducer(addBlockFormReducer, initialValues, getInitialForm)
 
   useEffect(() => {
     if (!open) {
       return
     }
-    setForm(getInitialForm(initialValues))
+    dispatchForm({ type: 'reset', initialValues })
   }, [open, initialValues])
 
   const { data: servers } = useQuery<ServerLite[]>({
@@ -128,7 +161,7 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
               <Label htmlFor="firewall-target">{t('add.field_target', { defaultValue: 'Target (IP or CIDR)' })}</Label>
               <Input
                 id="firewall-target"
-                onChange={(e) => setForm((current) => ({ ...current, target: e.target.value }))}
+                onChange={(e) => dispatchForm({ type: 'targetChanged', value: e.target.value })}
                 placeholder="203.0.113.5 or 198.51.100.0/24"
                 value={form.target}
               />
@@ -146,12 +179,9 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
                   if (v === null) {
                     return
                   }
-                  const next = v as 'all' | 'exclude' | 'include'
-                  setForm((current) => ({
-                    ...current,
-                    coverType: next,
-                    serverIds: next === 'all' ? [] : current.serverIds
-                  }))
+                  if (v === 'all' || v === 'include' || v === 'exclude') {
+                    dispatchForm({ type: 'coverTypeChanged', value: v })
+                  }
                 }}
                 value={form.coverType}
               >
@@ -181,12 +211,7 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
                         <Checkbox
                           checked={form.serverIds.includes(s.id)}
                           onCheckedChange={(checked) => {
-                            setForm((current) => ({
-                              ...current,
-                              serverIds: checked
-                                ? [...current.serverIds, s.id]
-                                : current.serverIds.filter((id) => id !== s.id)
-                            }))
+                            dispatchForm({ checked: Boolean(checked), serverId: s.id, type: 'serverToggled' })
                           }}
                         />
                         {s.name}
@@ -205,7 +230,7 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
               <Label htmlFor="firewall-comment">{t('add.field_comment', { defaultValue: 'Comment (optional)' })}</Label>
               <Textarea
                 id="firewall-comment"
-                onChange={(e) => setForm((current) => ({ ...current, comment: e.target.value }))}
+                onChange={(e) => dispatchForm({ type: 'commentChanged', value: e.target.value })}
                 placeholder={t('add.comment_placeholder', { defaultValue: 'Reason for blocking' })}
                 rows={3}
                 value={form.comment}
