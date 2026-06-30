@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { getRouteApi, Link } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { useServer } from '@/hooks/use-api'
 import { useTerminalWs } from '@/hooks/use-terminal-ws'
 import { CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
-import { Route } from './terminal.$serverId'
+
+const routeApi = getRouteApi('/_authed/terminal/$serverId')
 
 function statusColor(status: string): string {
   if (status === 'connected') {
@@ -32,7 +33,7 @@ function statusLabel(status: string, t: (key: string) => string): string {
 
 export function TerminalPage() {
   const { t } = useTranslation('terminal')
-  const { serverId } = Route.useParams()
+  const { serverId } = routeApi.useParams()
   const { data: server } = useServer(serverId)
   const terminalDisabled =
     !!server && !getEffectiveCapabilityEnabled(server.effective_capabilities, server.capabilities, CAP_TERMINAL)
