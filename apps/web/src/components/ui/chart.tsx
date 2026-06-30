@@ -5,8 +5,7 @@ import {
   createContext,
   type ReactNode,
   use,
-  useId,
-  useMemo
+  useId
 } from 'react'
 import { Legend, type LegendProps, ResponsiveContainer, Tooltip } from 'recharts'
 import { cn } from '@/lib/utils'
@@ -157,30 +156,24 @@ function ChartTooltipContent({
   }) {
   const { config } = useChart()
 
-  const tooltipLabel = useMemo(() => {
-    if (hideLabel || !payload?.length) {
-      return null
-    }
-
-    const [item] = payload
-    const key = `${labelKey || item?.dataKey || item?.name || 'value'}`
-    const itemConfig = getPayloadConfigFromPayload(config, item, key)
-    const value =
-      !labelKey && typeof label === 'string' ? config[label as keyof typeof config]?.label || label : itemConfig?.label
-
-    if (labelFormatter) {
-      return <div className={cn('font-medium', labelClassName)}>{labelFormatter(value, payload)}</div>
-    }
-
-    if (!value) {
-      return null
-    }
-
-    return <div className={cn('font-medium', labelClassName)}>{value}</div>
-  }, [label, labelFormatter, payload, hideLabel, labelClassName, config, labelKey])
-
   if (!(active && payload?.length)) {
     return null
+  }
+
+  const [labelItem] = payload
+  const labelConfigKey = `${labelKey || labelItem?.dataKey || labelItem?.name || 'value'}`
+  const labelItemConfig = getPayloadConfigFromPayload(config, labelItem, labelConfigKey)
+  const labelValue =
+    !labelKey && typeof label === 'string'
+      ? config[label as keyof typeof config]?.label || label
+      : labelItemConfig?.label
+  let tooltipLabel: ReactNode = null
+  if (!hideLabel) {
+    if (labelFormatter) {
+      tooltipLabel = <div className={cn('font-medium', labelClassName)}>{labelFormatter(labelValue, payload)}</div>
+    } else if (labelValue) {
+      tooltipLabel = <div className={cn('font-medium', labelClassName)}>{labelValue}</div>
+    }
   }
 
   const nestLabel = payload.length === 1 && indicator !== 'dot'
