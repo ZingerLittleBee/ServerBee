@@ -90,8 +90,8 @@ function buildBucketedRows(
   const bucketMs = Math.max(MIN_BUCKET_MS, Math.ceil((hours * 3600 * 1000) / TARGET_POINTS))
   const buckets = accumulateBuckets(serverIds, queries, serverMap, metric, bucketMs)
 
-  return [...buckets.entries()]
-    .sort(([a], [b]) => a - b)
+  return Array.from(buckets.entries())
+    .toSorted(([a], [b]) => a - b)
     .map(([, bucket]) => {
       const row: Record<string, unknown> = { timestamp: bucket.timestamp }
       for (const [sid, sum] of bucket.sums) {

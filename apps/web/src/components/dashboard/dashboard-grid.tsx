@@ -69,7 +69,7 @@ function rectsOverlap(a: Layout[number], b: Layout[number]): boolean {
 // non-colliding widget exactly where it was.
 function deoverlapLayout(layout: Layout): Layout {
   const placed: LayoutItem[] = []
-  const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x)
+  const sorted = layout.toSorted((a, b) => a.y - b.y || a.x - b.x)
   for (const original of sorted) {
     const item = { ...original }
     let collided = true
@@ -367,7 +367,7 @@ export function DashboardGrid({
   )
 
   const sortedWidgets = useMemo(() => {
-    return [...widgets].sort((a, b) => a.sort_order - b.sort_order)
+    return widgets.toSorted((a, b) => a.sort_order - b.sort_order)
   }, [widgets])
 
   const useSingleColumn = isMobile || (mounted && width < SINGLE_COLUMN_CONTENT_WIDTH)

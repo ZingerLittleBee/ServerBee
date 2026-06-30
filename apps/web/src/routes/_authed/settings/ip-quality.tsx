@@ -64,13 +64,15 @@ export function IpQualitySettingsPage() {
   // Separate built-in services from custom ones, sort each group
   const builtinServices = useMemo(
     () =>
-      [...services.filter((s) => s.is_builtin)].sort(
-        (a, b) => categoryLabel(a.category).localeCompare(categoryLabel(b.category)) || b.popularity - a.popularity
-      ),
+      services
+        .filter((s) => s.is_builtin)
+        .toSorted(
+          (a, b) => categoryLabel(a.category).localeCompare(categoryLabel(b.category)) || b.popularity - a.popularity
+        ),
     [services]
   )
   const customServices = useMemo(
-    () => [...services.filter((s) => !s.is_builtin)].sort((a, b) => a.name.localeCompare(b.name)),
+    () => services.filter((s) => !s.is_builtin).toSorted((a, b) => a.name.localeCompare(b.name)),
     [services]
   )
 

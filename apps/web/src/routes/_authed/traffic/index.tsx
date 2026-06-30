@@ -229,7 +229,7 @@ export function TrafficPage() {
     if (!overview) {
       return []
     }
-    return [...overview].sort((a, b) => compareServers(a, b, sortField, sortDir))
+    return overview.toSorted((a, b) => compareServers(a, b, sortField, sortDir))
   }, [overview, sortField, sortDir])
 
   // Stat card aggregations

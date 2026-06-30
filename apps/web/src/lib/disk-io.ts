@@ -83,7 +83,7 @@ export function buildPerDiskIoSeries(records: Pick<ServerMetricRecord, 'disk_io_
     return { timestamp: record.time, byName }
   })
 
-  const diskNames = [...new Set(parsedRecords.flatMap((record) => [...record.byName.keys()]))].sort((a, b) =>
+  const diskNames = Array.from(new Set(parsedRecords.flatMap((record) => [...record.byName.keys()]))).toSorted((a, b) =>
     a.localeCompare(b)
   )
 

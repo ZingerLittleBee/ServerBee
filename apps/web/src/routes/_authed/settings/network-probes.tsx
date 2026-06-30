@@ -235,7 +235,7 @@ export function NetworkProbeSettingsPage() {
     { value: 'http', label: getProbeTypeLabel('http') }
   ]
 
-  const sortedTargets = useMemo(() => [...(targets ?? [])].sort(compareTargetsForDisplay), [targets])
+  const sortedTargets = useMemo(() => (targets ?? []).toSorted(compareTargetsForDisplay), [targets])
 
   const targetColumns = useMemo<ColumnDef<NetworkProbeTarget>[]>(
     () => [
