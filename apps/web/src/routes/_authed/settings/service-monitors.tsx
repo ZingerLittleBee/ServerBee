@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Eye, Pencil, Play, Plus, Trash2 } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -42,6 +42,14 @@ export const Route = createFileRoute('/_authed/settings/service-monitors')({
 // ---------------------------------------------------------------------------
 
 type MonitorType = 'ssl' | 'dns' | 'http_keyword' | 'tcp' | 'whois'
+
+function isMonitorType(value: string): value is MonitorType {
+  return value === 'ssl' || value === 'dns' || value === 'http_keyword' || value === 'tcp' || value === 'whois'
+}
+
+function toMonitorType(value: string | null | undefined): MonitorType {
+  return value && isMonitorType(value) ? value : 'ssl'
+}
 
 interface ServiceMonitor {
   config_json: string
@@ -412,57 +420,54 @@ function MonitorFormDialog({
   open: boolean
   pending: boolean
 }) {
+  return (
+    <Dialog
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          onClose()
+        }
+      }}
+      open={open}
+    >
+      {open && (
+        <MonitorFormDialogContent
+          editing={editing}
+          key={editing?.id ?? 'new-monitor'}
+          onSubmit={onSubmit}
+          pending={pending}
+        />
+      )}
+    </Dialog>
+  )
+}
+
+function MonitorFormDialogContent({
+  editing,
+  onSubmit,
+  pending
+}: {
+  editing: ServiceMonitor | null
+  onSubmit: (data: CreateInput | UpdateInput, id?: string) => void
+  pending: boolean
+}) {
   const { t } = useTranslation('service-monitors')
   const { t: tCommon } = useTranslation('common')
   const MONITOR_TYPES = useMonitorTypes(t)
 
-  const [name, setName] = useState('')
-  const [monitorType, setMonitorType] = useState<MonitorType>('ssl')
-  const [target, setTarget] = useState('')
-  const [interval, setIntervalVal] = useState(300)
-  const [enabled, setEnabled] = useState(true)
-  const [config, setConfig] = useState<Record<string, unknown>>({})
+  const [name, setName] = useState(editing?.name ?? '')
+  const [monitorType, setMonitorType] = useState<MonitorType>(() => toMonitorType(editing?.monitor_type))
+  const [target, setTarget] = useState(editing?.target ?? '')
+  const [interval, setIntervalVal] = useState(editing?.interval ?? 300)
+  const [enabled, setEnabled] = useState(editing?.enabled ?? true)
+  const [config, setConfig] = useState<Record<string, unknown>>(() =>
+    editing ? parseConfigJson(editing.config_json) : {}
+  )
   const [targetError, setTargetError] = useState<string | null>(null)
 
-  const activeMonitorType = (editing?.monitor_type as MonitorType) ?? monitorType
+  const activeMonitorType = editing ? toMonitorType(editing.monitor_type) : monitorType
   const normalizedWhoisTarget = activeMonitorType === 'whois' ? normalizeWhoisTarget(target) : null
   const showUnsupportedWhoisHint =
     activeMonitorType === 'whois' && normalizedWhoisTarget ? isUnsupportedWhoisTld(normalizedWhoisTarget) : false
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    setTargetError(null)
-
-    if (editing) {
-      setName(editing.name)
-      setMonitorType(editing.monitor_type as MonitorType)
-      setTarget(editing.target)
-      setIntervalVal(editing.interval)
-      setEnabled(editing.enabled)
-      setConfig(parseConfigJson(editing.config_json))
-      return
-    }
-
-    setName('')
-    setMonitorType('ssl')
-    setTarget('')
-    setIntervalVal(300)
-    setEnabled(true)
-    setConfig({})
-  }, [editing, open])
-
-  const handleOpenChange = (isOpen: boolean) => {
-    if (!isOpen) {
-      setName('')
-      setTarget('')
-      setConfig({})
-      setTargetError(null)
-      onClose()
-    }
-  }
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -523,109 +528,107 @@ function MonitorFormDialog({
   }
 
   return (
-    <Dialog onOpenChange={handleOpenChange} open={open}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{editing ? t('dialog.editTitle') : t('dialog.addTitle')}</DialogTitle>
-          <DialogDescription>{editing ? t('dialog.editDescription') : t('dialog.addDescription')}</DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" id="monitor-form" onSubmit={handleSubmit}>
-          <div className="space-y-1">
-            <Label htmlFor="monitor-name">{t('form.name')}</Label>
-            <Input
-              id="monitor-name"
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('namePlaceholder')}
-              required
-              value={name}
-            />
-          </div>
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>{editing ? t('dialog.editTitle') : t('dialog.addTitle')}</DialogTitle>
+        <DialogDescription>{editing ? t('dialog.editDescription') : t('dialog.addDescription')}</DialogDescription>
+      </DialogHeader>
+      <form className="space-y-4" id="monitor-form" onSubmit={handleSubmit}>
+        <div className="space-y-1">
+          <Label htmlFor="monitor-name">{t('form.name')}</Label>
+          <Input
+            id="monitor-name"
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('namePlaceholder')}
+            required
+            value={name}
+          />
+        </div>
 
-          {!editing && (
+        {!editing && (
+          <div className="space-y-1">
+            <Label htmlFor="monitor-type">{t('form.type')}</Label>
+            <Select
+              items={MONITOR_TYPES}
+              onValueChange={(v) => {
+                setMonitorType(toMonitorType(v))
+                setConfig({})
+              }}
+              value={monitorType}
+            >
+              <SelectTrigger id="monitor-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MONITOR_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <Label htmlFor="monitor-target">{t('form.target')}</Label>
+          <Input
+            aria-invalid={targetError ? true : undefined}
+            id="monitor-target"
+            onChange={(e) => {
+              setTarget(e.target.value)
+              if (targetError) {
+                setTargetError(null)
+              }
+            }}
+            placeholder={getTargetPlaceholder(activeMonitorType)}
+            required
+            value={target}
+          />
+          {activeMonitorType === 'whois' && (
             <div className="space-y-1">
-              <Label htmlFor="monitor-type">{t('form.type')}</Label>
-              <Select
-                items={MONITOR_TYPES}
-                onValueChange={(v) => {
-                  setMonitorType(v as MonitorType)
-                  setConfig({})
-                }}
-                value={monitorType}
-              >
-                <SelectTrigger id="monitor-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MONITOR_TYPES.map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <p className="text-muted-foreground text-xs">{t('whoisConfig.targetHint')}</p>
+              {normalizedWhoisTarget && (
+                <p className="text-muted-foreground text-xs">
+                  {t('whoisConfig.targetPreview', { target: normalizedWhoisTarget })}
+                </p>
+              )}
+              {showUnsupportedWhoisHint && (
+                <p className="text-amber-600 text-xs dark:text-amber-400">{t('whoisConfig.unsupportedTldHint')}</p>
+              )}
+              {targetError && <p className="text-destructive text-xs">{targetError}</p>}
             </div>
           )}
+        </div>
 
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label htmlFor="monitor-target">{t('form.target')}</Label>
+            <Label htmlFor="monitor-interval">{t('form.interval')}</Label>
             <Input
-              aria-invalid={targetError ? true : undefined}
-              id="monitor-target"
-              onChange={(e) => {
-                setTarget(e.target.value)
-                if (targetError) {
-                  setTargetError(null)
-                }
-              }}
-              placeholder={getTargetPlaceholder(activeMonitorType)}
-              required
-              value={target}
+              id="monitor-interval"
+              min={10}
+              onChange={(e) => setIntervalVal(Number(e.target.value) || 300)}
+              type="number"
+              value={interval}
             />
-            {activeMonitorType === 'whois' && (
-              <div className="space-y-1">
-                <p className="text-muted-foreground text-xs">{t('whoisConfig.targetHint')}</p>
-                {normalizedWhoisTarget && (
-                  <p className="text-muted-foreground text-xs">
-                    {t('whoisConfig.targetPreview', { target: normalizedWhoisTarget })}
-                  </p>
-                )}
-                {showUnsupportedWhoisHint && (
-                  <p className="text-amber-600 text-xs dark:text-amber-400">{t('whoisConfig.unsupportedTldHint')}</p>
-                )}
-                {targetError && <p className="text-destructive text-xs">{targetError}</p>}
-              </div>
-            )}
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="monitor-interval">{t('form.interval')}</Label>
-              <Input
-                id="monitor-interval"
-                min={10}
-                onChange={(e) => setIntervalVal(Number(e.target.value) || 300)}
-                type="number"
-                value={interval}
-              />
-            </div>
-            <div className="flex items-end gap-2 pb-1">
-              {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
-              <label className="flex items-center gap-2 text-sm">
-                <Switch checked={enabled} onCheckedChange={setEnabled} />
-                {t('form.enabled')}
-              </label>
-            </div>
+          <div className="flex items-end gap-2 pb-1">
+            {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={enabled} onCheckedChange={setEnabled} />
+              {t('form.enabled')}
+            </label>
           </div>
+        </div>
 
-          <TypeConfigFields config={config} onChange={setConfig} t={t} type={activeMonitorType} />
-        </form>
-        <DialogFooter>
-          <Button disabled={pending} form="monitor-form" type="submit">
-            {editing ? tCommon('actions.save') : tCommon('actions.create')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <TypeConfigFields config={config} onChange={setConfig} t={t} type={activeMonitorType} />
+      </form>
+      <DialogFooter>
+        <Button disabled={pending} form="monitor-form" type="submit">
+          {editing ? tCommon('actions.save') : tCommon('actions.create')}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   )
 }
 

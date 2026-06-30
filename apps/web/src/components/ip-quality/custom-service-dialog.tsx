@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -266,47 +266,45 @@ export function parseExistingRules(service: UnlockService | null | undefined): U
 }
 
 export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      {open && (
+        <CustomServiceDialogContent
+          key={service?.id ?? 'new-custom-service'}
+          onOpenChange={onOpenChange}
+          service={service}
+        />
+      )}
+    </Dialog>
+  )
+}
+
+function CustomServiceDialogContent({
+  onOpenChange,
+  service
+}: {
+  onOpenChange: (open: boolean) => void
+  service?: UnlockService | null
+}) {
   const { t } = useTranslation('ip-quality')
   const isEdit = Boolean(service)
   const createMutation = useCreateService()
   const updateMutation = useUpdateService()
   const isPending = createMutation.isPending || updateMutation.isPending
+  const request = parseRequest(service)
 
-  const [name, setName] = useState('')
-  const [category, setCategory] = useState('streaming')
-  const [popularity, setPopularity] = useState(50)
-  const [url, setUrl] = useState('')
-  const [method, setMethod] = useState('GET')
-  const [timeoutMs, setTimeoutMs] = useState(DEFAULT_TIMEOUT_MS)
-  const [headers, setHeaders] = useState<HeaderRow[]>([])
-  const [rules, setRules] = useState<RuleEntry[]>([{ uid: nextUid(), rule: defaultRule() }])
-
-  // Re-seed the form whenever the dialog opens or the edited service changes.
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-    if (service) {
-      const request = parseRequest(service)
-      setName(service.name)
-      setCategory(service.category)
-      setPopularity(service.popularity)
-      setUrl(request.url)
-      setMethod(request.method)
-      setTimeoutMs(request.timeout_ms)
-      setHeaders(request.headers.map(([headerName, value]) => ({ uid: nextUid(), name: headerName, value })))
-      setRules(parseExistingRules(service).map((rule) => ({ uid: nextUid(), rule })))
-    } else {
-      setName('')
-      setCategory('streaming')
-      setPopularity(50)
-      setUrl('')
-      setMethod('GET')
-      setTimeoutMs(DEFAULT_TIMEOUT_MS)
-      setHeaders([])
-      setRules([{ uid: nextUid(), rule: defaultRule() }])
-    }
-  }, [open, service])
+  const [name, setName] = useState(service?.name ?? '')
+  const [category, setCategory] = useState(service?.category ?? 'streaming')
+  const [popularity, setPopularity] = useState(service?.popularity ?? 50)
+  const [url, setUrl] = useState(request.url)
+  const [method, setMethod] = useState(request.method)
+  const [timeoutMs, setTimeoutMs] = useState(request.timeout_ms)
+  const [headers, setHeaders] = useState<HeaderRow[]>(() =>
+    request.headers.map(([headerName, value]) => ({ uid: nextUid(), name: headerName, value }))
+  )
+  const [rules, setRules] = useState<RuleEntry[]>(() =>
+    parseExistingRules(service).map((rule) => ({ uid: nextUid(), rule }))
+  )
 
   const updateRule = (uid: string, rule: UnlockRule) => {
     setRules((prev) => prev.map((entry) => (entry.uid === uid ? { ...entry, rule } : entry)))
@@ -389,176 +387,174 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
   }
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? t('dialog_edit_title') : t('dialog_create_title')}</DialogTitle>
-        </DialogHeader>
-        <form className="flex min-h-0 flex-col" onSubmit={handleSubmit}>
-          <DialogBody className="flex flex-col gap-4">
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>{isEdit ? t('dialog_edit_title') : t('dialog_create_title')}</DialogTitle>
+      </DialogHeader>
+      <form className="flex min-h-0 flex-col" onSubmit={handleSubmit}>
+        <DialogBody className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="ipq-name">{t('dialog_name')}</Label>
+            <Input
+              autoComplete="off"
+              id="ipq-name"
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('dialog_name_placeholder')}
+              required
+              value={name}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ipq-name">{t('dialog_name')}</Label>
+              <Label htmlFor="ipq-category">{t('dialog_category')}</Label>
+              <Select
+                items={Object.fromEntries(CATEGORY_ORDER.map((c) => [c, categoryLabel(c)]))}
+                onValueChange={(v) => setCategory(v ?? 'streaming')}
+                value={category}
+              >
+                <SelectTrigger className="w-full" id="ipq-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_ORDER.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {categoryLabel(c)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="ipq-popularity">{t('dialog_popularity')}</Label>
               <Input
-                autoComplete="off"
-                id="ipq-name"
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('dialog_name_placeholder')}
-                required
-                value={name}
+                id="ipq-popularity"
+                max={100}
+                min={0}
+                onChange={(e) => setPopularity(toNumber(e.target.value))}
+                type="number"
+                value={popularity}
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-category">{t('dialog_category')}</Label>
-                <Select
-                  items={Object.fromEntries(CATEGORY_ORDER.map((c) => [c, categoryLabel(c)]))}
-                  onValueChange={(v) => setCategory(v ?? 'streaming')}
-                  value={category}
-                >
-                  <SelectTrigger className="w-full" id="ipq-category">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORY_ORDER.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {categoryLabel(c)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-popularity">{t('dialog_popularity')}</Label>
-                <Input
-                  id="ipq-popularity"
-                  max={100}
-                  min={0}
-                  onChange={(e) => setPopularity(toNumber(e.target.value))}
-                  type="number"
-                  value={popularity}
-                />
-              </div>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="ipq-url">{t('dialog_url')}</Label>
+            <Input
+              autoComplete="off"
+              id="ipq-url"
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder={t('dialog_url_placeholder')}
+              required
+              value={url}
+            />
+          </div>
 
+          <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ipq-url">{t('dialog_url')}</Label>
+              <Label htmlFor="ipq-method">{t('dialog_method')}</Label>
+              <Select onValueChange={(v) => setMethod(v ?? 'GET')} value={method}>
+                <SelectTrigger className="w-full" id="ipq-method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {METHOD_OPTIONS.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="ipq-timeout">{t('dialog_timeout')}</Label>
               <Input
-                autoComplete="off"
-                id="ipq-url"
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={t('dialog_url_placeholder')}
-                required
-                value={url}
+                id="ipq-timeout"
+                min={100}
+                onChange={(e) => setTimeoutMs(toNumber(e.target.value))}
+                type="number"
+                value={timeoutMs}
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-method">{t('dialog_method')}</Label>
-                <Select onValueChange={(v) => setMethod(v ?? 'GET')} value={method}>
-                  <SelectTrigger className="w-full" id="ipq-method">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {METHOD_OPTIONS.map((m) => (
-                      <SelectItem key={m} value={m}>
-                        {m}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-timeout">{t('dialog_timeout')}</Label>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label>{t('dialog_headers')}</Label>
+              <Button
+                onClick={() => setHeaders((prev) => [...prev, { uid: nextUid(), name: '', value: '' }])}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <PlusIcon />
+                {t('dialog_add_header')}
+              </Button>
+            </div>
+            {headers.map((header) => (
+              <div className="flex items-center gap-2" data-testid="header-row" key={header.uid}>
                 <Input
-                  id="ipq-timeout"
-                  min={100}
-                  onChange={(e) => setTimeoutMs(toNumber(e.target.value))}
-                  type="number"
-                  value={timeoutMs}
+                  aria-label={t('dialog_header_name_aria')}
+                  onChange={(e) => updateHeader(header.uid, { name: e.target.value })}
+                  placeholder={t('dialog_header_name_placeholder')}
+                  value={header.name}
                 />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label>{t('dialog_headers')}</Label>
+                <Input
+                  aria-label={t('dialog_header_value_aria')}
+                  onChange={(e) => updateHeader(header.uid, { value: e.target.value })}
+                  placeholder={t('dialog_header_value_placeholder')}
+                  value={header.value}
+                />
                 <Button
-                  onClick={() => setHeaders((prev) => [...prev, { uid: nextUid(), name: '', value: '' }])}
-                  size="sm"
+                  aria-label={t('dialog_remove_header')}
+                  onClick={() => removeHeader(header.uid)}
+                  size="icon-sm"
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                 >
-                  <PlusIcon />
-                  {t('dialog_add_header')}
+                  <Trash2Icon />
                 </Button>
               </div>
-              {headers.map((header) => (
-                <div className="flex items-center gap-2" data-testid="header-row" key={header.uid}>
-                  <Input
-                    aria-label={t('dialog_header_name_aria')}
-                    onChange={(e) => updateHeader(header.uid, { name: e.target.value })}
-                    placeholder={t('dialog_header_name_placeholder')}
-                    value={header.name}
-                  />
-                  <Input
-                    aria-label={t('dialog_header_value_aria')}
-                    onChange={(e) => updateHeader(header.uid, { value: e.target.value })}
-                    placeholder={t('dialog_header_value_placeholder')}
-                    value={header.value}
-                  />
-                  <Button
-                    aria-label={t('dialog_remove_header')}
-                    onClick={() => removeHeader(header.uid)}
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Trash2Icon />
-                  </Button>
-                </div>
-              ))}
-            </div>
+            ))}
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label>{t('dialog_rules')}</Label>
-                <Button
-                  onClick={() => setRules((prev) => [...prev, { uid: nextUid(), rule: defaultRule() }])}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  <PlusIcon />
-                  {t('dialog_add_rule')}
-                </Button>
-              </div>
-              {rules.map((entry, index) => (
-                <RuleRow
-                  canMoveDown={index < rules.length - 1}
-                  canMoveUp={index > 0}
-                  index={index}
-                  key={entry.uid}
-                  onChange={(r) => updateRule(entry.uid, r)}
-                  onMove={(dir) => moveRule(entry.uid, dir)}
-                  onRemove={() => removeRule(entry.uid)}
-                  rule={entry.rule}
-                  t={t}
-                />
-              ))}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label>{t('dialog_rules')}</Label>
+              <Button
+                onClick={() => setRules((prev) => [...prev, { uid: nextUid(), rule: defaultRule() }])}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <PlusIcon />
+                {t('dialog_add_rule')}
+              </Button>
             </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
-              {t('dialog_cancel')}
-            </Button>
-            <Button disabled={isPending || name.trim().length === 0 || url.trim().length === 0} type="submit">
-              {isEdit ? t('dialog_save') : t('dialog_create')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            {rules.map((entry, index) => (
+              <RuleRow
+                canMoveDown={index < rules.length - 1}
+                canMoveUp={index > 0}
+                index={index}
+                key={entry.uid}
+                onChange={(r) => updateRule(entry.uid, r)}
+                onMove={(dir) => moveRule(entry.uid, dir)}
+                onRemove={() => removeRule(entry.uid)}
+                rule={entry.rule}
+                t={t}
+              />
+            ))}
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+            {t('dialog_cancel')}
+          </Button>
+          <Button disabled={isPending || name.trim().length === 0 || url.trim().length === 0} type="submit">
+            {isEdit ? t('dialog_save') : t('dialog_create')}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   )
 }

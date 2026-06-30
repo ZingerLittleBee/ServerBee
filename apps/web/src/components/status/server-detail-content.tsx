@@ -136,7 +136,7 @@ function useMetricSeries(serverId: string, range: TimeRange, isAdminVariant: boo
   const adminQuery = useServerRecords(serverId, range.hours, range.interval, {
     enabled: isAdminVariant && !isRealtime
   })
-  const publicQuery = useQuery<PublicMetricsPoint[]>({
+  const { data: publicMetrics } = useQuery<PublicMetricsPoint[]>({
     queryKey: ['public-status', 'server', serverId, 'metrics', range.hours, range.interval],
     queryFn: () => {
       const { from, to } = buildIsoWindow(range.hours)
@@ -147,7 +147,7 @@ function useMetricSeries(serverId: string, range: TimeRange, isAdminVariant: boo
     enabled: !isAdminVariant && serverId.length > 0,
     refetchInterval: 60_000
   })
-  return { adminRecords: adminQuery.data, publicMetrics: publicQuery.data }
+  return { adminRecords: adminQuery.data, publicMetrics }
 }
 
 function useAdminGpuRecords(serverId: string, range: TimeRange, isAdminVariant: boolean, isRealtime: boolean) {
@@ -690,16 +690,16 @@ function UptimeCard({ isPublic, serverId }: { isPublic: boolean; serverId: strin
 
   // Admin viewers use the auth'd hook; public viewers fetch the redacted
   // public uptime endpoint that is gated by `show_server_detail`.
-  const adminQuery = useUptimeDaily(serverId)
-  const publicQuery = useQuery<UptimeDailyEntry[]>({
+  const { data: adminUptimeDays, isPending: isAdminPending } = useUptimeDaily(serverId)
+  const { data: publicUptimeDays, isPending: isPublicPending } = useQuery<UptimeDailyEntry[]>({
     queryKey: ['public-status', 'server', serverId, 'uptime-daily'],
     queryFn: () => api.get<UptimeDailyEntry[]>(`/api/status/servers/${serverId}/uptime-daily`),
     enabled: isPublic && serverId.length > 0,
     staleTime: 300_000
   })
 
-  const isPending = isPublic ? publicQuery.isPending : adminQuery.isPending
-  const uptimeDays = isPublic ? publicQuery.data : adminQuery.data
+  const isPending = isPublic ? isPublicPending : isAdminPending
+  const uptimeDays = isPublic ? publicUptimeDays : adminUptimeDays
 
   if (isPending) {
     return (

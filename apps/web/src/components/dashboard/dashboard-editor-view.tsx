@@ -1,5 +1,5 @@
 import { PencilIcon, PlusIcon, SaveIcon, XIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,11 @@ interface DashboardEditorViewProps {
   servers: ServerMetrics[]
 }
 
-export function DashboardEditorView({
+export function DashboardEditorView({ activeDashboardId, ...props }: DashboardEditorViewProps) {
+  return <DashboardEditorViewContent activeDashboardId={activeDashboardId} key={activeDashboardId} {...props} />
+}
+
+function DashboardEditorViewContent({
   activeDashboardId,
   dashboard,
   dashboards,
@@ -48,9 +52,6 @@ export function DashboardEditorView({
     editor.isEditing && editingWidgetId
       ? editor.draftWidgets.find((widget) => widget.id === editingWidgetId)
       : undefined
-  const cancelEditingRef = useRef(editor.cancelEditing)
-  cancelEditingRef.current = editor.cancelEditing
-
   // While a dialog is open over the live dashboard, freeze the servers snapshot.
   // The dialog backdrop applies a full-viewport backdrop-filter blur; if the grid
   // behind keeps repainting on every websocket tick, the browser re-rasterizes the
@@ -61,17 +62,6 @@ export function DashboardEditorView({
     frozenServersRef.current = servers
   }
   const gridServers = dialogOpen ? frozenServersRef.current : servers
-
-  useEffect(() => {
-    cancelEditingRef.current()
-    setPickerOpen(false)
-    setConfigOpen(false)
-    setConfigWidgetType('')
-    setEditingWidgetId(null)
-    if (activeDashboardId === '') {
-      return
-    }
-  }, [activeDashboardId])
 
   function resetViewState() {
     setPickerOpen(false)

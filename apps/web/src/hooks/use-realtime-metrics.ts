@@ -10,6 +10,15 @@ const RENDER_THROTTLE_MS = 2000
 // Persist buffers across unmounts so route switches don't lose data
 const bufferCache = new WeakMap<QueryClient, Map<string, { buffer: RealtimeDataPoint[]; lastActive: number }>>()
 
+interface RealtimeBufferState {
+  buffer: RealtimeDataPoint[]
+  lastActive: number
+  pendingRender: boolean
+  queryClient: QueryClient
+  serverId: string
+  throttleTimer: ReturnType<typeof setTimeout> | null
+}
+
 function getQueryClientBufferCache(
   queryClient: QueryClient
 ): Map<string, { buffer: RealtimeDataPoint[]; lastActive: number }> {
@@ -51,48 +60,75 @@ export function toRealtimeDataPoint(metrics: ServerMetrics): RealtimeDataPoint {
   }
 }
 
+function createRealtimeBufferState(queryClient: QueryClient, serverId: string): RealtimeBufferState {
+  const cache = getQueryClientBufferCache(queryClient)
+  const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
+  const server = servers?.find((s) => s.id === serverId)
+  const cached = cache.get(serverId)
+
+  if (!server?.online || server.last_active <= 0) {
+    return {
+      buffer: [],
+      lastActive: 0,
+      pendingRender: false,
+      queryClient,
+      serverId,
+      throttleTimer: null
+    }
+  }
+
+  if (cached && cached.buffer.length > 0) {
+    return {
+      buffer: cached.buffer,
+      lastActive: cached.lastActive,
+      pendingRender: false,
+      queryClient,
+      serverId,
+      throttleTimer: null
+    }
+  }
+
+  return {
+    buffer: [toRealtimeDataPoint(server)],
+    lastActive: server.last_active,
+    pendingRender: false,
+    queryClient,
+    serverId,
+    throttleTimer: null
+  }
+}
+
 export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
   const queryClient = useQueryClient()
-  const bufferRef = useRef<RealtimeDataPoint[]>([])
-  const lastActiveRef = useRef<number>(0)
-  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingRef = useRef(false)
+  const stateRef = useRef<RealtimeBufferState | null>(null)
   const [, setTick] = useState(0)
 
-  useEffect(() => {
-    const cache = getQueryClientBufferCache(queryClient)
-    bufferRef.current = []
-    lastActiveRef.current = 0
-    pendingRef.current = false
+  if (!stateRef.current || stateRef.current.serverId !== serverId || stateRef.current.queryClient !== queryClient) {
+    stateRef.current = createRealtimeBufferState(queryClient, serverId)
+  }
 
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state) {
+      return
+    }
+    const cache = getQueryClientBufferCache(queryClient)
     const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
     const server = servers?.find((s) => s.id === serverId)
-
-    if (server?.online && server.last_active > 0) {
-      const cached = cache.get(serverId)
-      if (cached && cached.buffer.length > 0) {
-        bufferRef.current = cached.buffer
-        lastActiveRef.current = cached.lastActive
-      } else {
-        const point = toRealtimeDataPoint(server)
-        bufferRef.current = [point]
-        lastActiveRef.current = server.last_active
-      }
-      setTick((t) => t + 1)
-    } else {
+    if (!server?.online || server.last_active <= 0) {
       cache.delete(serverId)
     }
 
     const scheduleRender = () => {
-      if (throttleTimerRef.current) {
-        pendingRef.current = true
+      if (state.throttleTimer) {
+        state.pendingRender = true
         return
       }
       setTick((t) => t + 1)
-      throttleTimerRef.current = setTimeout(() => {
-        throttleTimerRef.current = null
-        if (pendingRef.current) {
-          pendingRef.current = false
+      state.throttleTimer = setTimeout(() => {
+        state.throttleTimer = null
+        if (state.pendingRender) {
+          state.pendingRender = false
           setTick((t) => t + 1)
         }
       }, RENDER_THROTTLE_MS)
@@ -114,16 +150,16 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
         return
       }
 
-      if (server.last_active === lastActiveRef.current) {
+      if (server.last_active === state.lastActive) {
         return
       }
 
-      lastActiveRef.current = server.last_active
+      state.lastActive = server.last_active
       const point = toRealtimeDataPoint(server)
-      bufferRef.current = [...bufferRef.current, point]
+      state.buffer = [...state.buffer, point]
 
-      if (bufferRef.current.length > TRIM_THRESHOLD) {
-        bufferRef.current = bufferRef.current.slice(-MAX_BUFFER_SIZE)
+      if (state.buffer.length > TRIM_THRESHOLD) {
+        state.buffer = state.buffer.slice(-MAX_BUFFER_SIZE)
       }
 
       scheduleRender()
@@ -131,15 +167,15 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
 
     return () => {
       unsubscribe()
-      if (throttleTimerRef.current) {
-        clearTimeout(throttleTimerRef.current)
-        throttleTimerRef.current = null
+      if (state.throttleTimer) {
+        clearTimeout(state.throttleTimer)
+        state.throttleTimer = null
       }
       // Persist buffer so route switches don't lose data
-      if (bufferRef.current.length > 0) {
+      if (state.buffer.length > 0) {
         cache.set(serverId, {
-          buffer: bufferRef.current,
-          lastActive: lastActiveRef.current
+          buffer: state.buffer,
+          lastActive: state.lastActive
         })
       } else {
         cache.delete(serverId)
@@ -147,5 +183,5 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
     }
   }, [queryClient, serverId])
 
-  return bufferRef.current
+  return stateRef.current?.buffer ?? []
 }

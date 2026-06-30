@@ -27,3 +27,7 @@ class ResizeObserverMock {
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = ResizeObserverMock
 }
+
+if (typeof Element.prototype.scrollIntoView === 'undefined') {
+  Element.prototype.scrollIntoView = () => undefined
+}

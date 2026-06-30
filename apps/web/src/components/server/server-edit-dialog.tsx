@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -69,6 +69,21 @@ interface ServerEditDialogProps {
 }
 
 export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProps) {
+  return (
+    <Dialog
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          onClose()
+        }
+      }}
+      open={open}
+    >
+      {open && <ServerEditDialogContent key={server.id} onClose={onClose} server={server} />}
+    </Dialog>
+  )
+}
+
+function ServerEditDialogContent({ server, onClose }: { onClose: () => void; server: ServerResponse }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
   const [name, setName] = useState(server.name)
@@ -80,7 +95,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   // The country override field is empty unless the server already has a manual
   // override; otherwise we leave it blank and surface the auto-detected value as
   // a hint, so saving an untouched form never accidentally pins GeoIP.
-  const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
+  const [initialCountryCode] = useState(() => (server.geo_manual ? (server.country_code ?? '') : ''))
   const [countryCode, setCountryCode] = useState(initialCountryCode)
   const [price, setPrice] = useState(server.price?.toString() ?? '')
   const [billingCycle, setBillingCycle] = useState(server.billing_cycle ?? '')
@@ -91,44 +106,18 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   )
   const [trafficLimitType, setTrafficLimitType] = useState(server.traffic_limit_type ?? 'sum')
   const [billingStartDay, setBillingStartDay] = useState(server.billing_start_day?.toString() ?? '')
-  const [tagsInput, setTagsInput] = useState('')
-  const [tagsDirty, setTagsDirty] = useState(false)
+  const [tagsDraft, setTagsDraft] = useState<{ dirty: boolean; value: string }>({ dirty: false, value: '' })
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
     queryFn: () => api.get<ServerGroup[]>('/api/server-groups'),
     staleTime: 60_000,
-    enabled: open
+    enabled: true
   })
 
-  const { data: initialTags } = useServerTags(server.id, open)
+  const { data: initialTags } = useServerTags(server.id, true)
   const tagsMutation = useUpdateServerTags(server.id)
-
-  useEffect(() => {
-    if (open) {
-      setName(server.name)
-      setWeight(server.weight)
-      setHidden(server.hidden)
-      setGroupId(server.group_id ?? '')
-      setRemark(server.remark ?? '')
-      setPublicRemark(server.public_remark ?? '')
-      setCountryCode(server.geo_manual ? (server.country_code ?? '') : '')
-      setPrice(server.price?.toString() ?? '')
-      setBillingCycle(server.billing_cycle ?? '')
-      setCurrency(server.currency ?? 'USD')
-      setExpiredAt(server.expired_at?.slice(0, 10) ?? '')
-      setTrafficLimit(server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : '')
-      setTrafficLimitType(server.traffic_limit_type ?? 'sum')
-      setBillingStartDay(server.billing_start_day?.toString() ?? '')
-    }
-  }, [open, server])
-
-  useEffect(() => {
-    if (open && initialTags) {
-      setTagsInput(initialTags.join(', '))
-      setTagsDirty(false)
-    }
-  }, [open, initialTags])
+  const tagsInput = tagsDraft.dirty ? tagsDraft.value : (initialTags?.join(', ') ?? '')
 
   const mutation = useMutation({
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
@@ -172,7 +161,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       return true
     } catch (err) {
       if (initialTags) {
-        setTagsInput(initialTags.join(', '))
+        setTagsDraft({ dirty: false, value: '' })
       }
       toast.error(err instanceof Error ? err.message : t('tags_save_failed'))
       return false
@@ -192,7 +181,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       toast.error(err instanceof Error ? err.message : t('edit_failed'))
       return
     }
-    if (tagsDirty && !(await saveTags(parsed.tags))) {
+    if (tagsDraft.dirty && !(await saveTags(parsed.tags))) {
       return
     }
     toast.success(t('edit_success', { defaultValue: 'Server updated successfully' }))
@@ -200,243 +189,233 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   }
 
   return (
-    <Dialog
-      onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          onClose()
-        }
-      }}
-      open={open}
-    >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('edit_title')}</DialogTitle>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>{t('edit_title')}</DialogTitle>
+      </DialogHeader>
 
-        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
-          <DialogBody className="space-y-4">
-            {/* Basic */}
-            <fieldset className="space-y-3">
-              <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                {t('edit_basic')}
-              </legend>
-              <Field label={t('edit_name')}>
+      <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
+        <DialogBody className="space-y-4">
+          {/* Basic */}
+          <fieldset className="space-y-3">
+            <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+              {t('edit_basic')}
+            </legend>
+            <Field label={t('edit_name')}>
+              <Input
+                aria-label={t('edit_name')}
+                name="name"
+                onChange={(e) => setName(e.target.value)}
+                required
+                type="text"
+                value={name}
+              />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t('edit_weight')}>
                 <Input
-                  aria-label={t('edit_name')}
-                  name="name"
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  type="text"
-                  value={name}
+                  aria-label={t('edit_weight')}
+                  autoComplete="off"
+                  name="weight"
+                  onChange={(e) => setWeight(Number.parseInt(e.target.value, 10) || 0)}
+                  type="number"
+                  value={weight}
                 />
               </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label={t('edit_weight')}>
-                  <Input
-                    aria-label={t('edit_weight')}
-                    autoComplete="off"
-                    name="weight"
-                    onChange={(e) => setWeight(Number.parseInt(e.target.value, 10) || 0)}
-                    type="number"
-                    value={weight}
-                  />
-                </Field>
-                <Field label={t('edit_hidden')}>
-                  {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
-                  <label className="flex cursor-pointer items-center gap-2 pt-1">
-                    <Checkbox checked={hidden} onCheckedChange={(checked) => setHidden(!!checked)} />
-                    <span className="text-sm">{t('edit_hide_from_status')}</span>
-                  </label>
-                </Field>
-              </div>
-              <Field label={t('edit_group')}>
+              <Field label={t('edit_hidden')}>
+                {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
+                <label className="flex cursor-pointer items-center gap-2 pt-1">
+                  <Checkbox checked={hidden} onCheckedChange={(checked) => setHidden(!!checked)} />
+                  <span className="text-sm">{t('edit_hide_from_status')}</span>
+                </label>
+              </Field>
+            </div>
+            <Field label={t('edit_group')}>
+              <Select
+                items={[
+                  { value: '__none__', label: t('edit_no_group') },
+                  ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
+                ]}
+                onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
+                value={groupId || '__none__'}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t('edit_no_group')}</SelectItem>
+                  {groups?.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t('edit_remark')}>
+              <Input
+                aria-label={t('edit_remark')}
+                name="remark"
+                onChange={(e) => setRemark(e.target.value)}
+                placeholder={t('edit_remark_placeholder')}
+                type="text"
+                value={remark}
+              />
+            </Field>
+            <Field label={t('edit_public_remark')}>
+              <Input
+                aria-label={t('edit_public_remark')}
+                name="public_remark"
+                onChange={(e) => setPublicRemark(e.target.value)}
+                placeholder={t('edit_public_remark_placeholder')}
+                type="text"
+                value={publicRemark}
+              />
+            </Field>
+            <CountryOverrideField onChange={setCountryCode} server={server} value={countryCode} />
+            <Field label={t('tags_label')}>
+              <Input
+                aria-label={t('tags_label')}
+                name="tags"
+                onChange={(e) => {
+                  setTagsDraft({ dirty: true, value: e.target.value })
+                }}
+                placeholder={t('tags_placeholder')}
+                type="text"
+                value={tagsInput}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
+            </Field>
+          </fieldset>
+
+          {/* Billing */}
+          <fieldset className="space-y-3">
+            <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+              {t('edit_billing')}
+            </legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label={t('edit_price')}>
+                <Input
+                  aria-label={t('edit_price')}
+                  autoComplete="off"
+                  min="0"
+                  name="price"
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  type="number"
+                  value={price}
+                />
+              </Field>
+              <Field label={t('edit_currency')}>
+                <Select onValueChange={(v) => v !== null && setCurrency(v)} value={currency}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                    <SelectItem value="CNY">CNY</SelectItem>
+                    <SelectItem value="JPY">JPY</SelectItem>
+                    <SelectItem value="GBP">GBP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label={t('edit_billing_cycle')}>
                 <Select
-                  items={[
-                    { value: '__none__', label: t('edit_no_group') },
-                    ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
-                  ]}
-                  onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
-                  value={groupId || '__none__'}
+                  items={{
+                    __none__: t('edit_cycle_none'),
+                    monthly: t('edit_cycle_monthly'),
+                    quarterly: t('edit_cycle_quarterly'),
+                    yearly: t('edit_cycle_yearly')
+                  }}
+                  onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
+                  value={billingCycle || '__none__'}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">{t('edit_no_group')}</SelectItem>
-                    {groups?.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="__none__">{t('edit_cycle_none')}</SelectItem>
+                    <SelectItem value="monthly">{t('edit_cycle_monthly')}</SelectItem>
+                    <SelectItem value="quarterly">{t('edit_cycle_quarterly')}</SelectItem>
+                    <SelectItem value="yearly">{t('edit_cycle_yearly')}</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label={t('edit_remark')}>
+            </div>
+            <Field label={t('edit_expiration')}>
+              <DatePickerField ariaLabel={t('edit_expiration')} onChange={setExpiredAt} value={expiredAt} />
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t('edit_traffic_limit')}>
                 <Input
-                  aria-label={t('edit_remark')}
-                  name="remark"
-                  onChange={(e) => setRemark(e.target.value)}
-                  placeholder={t('edit_remark_placeholder')}
-                  type="text"
-                  value={remark}
-                />
-              </Field>
-              <Field label={t('edit_public_remark')}>
-                <Input
-                  aria-label={t('edit_public_remark')}
-                  name="public_remark"
-                  onChange={(e) => setPublicRemark(e.target.value)}
-                  placeholder={t('edit_public_remark_placeholder')}
-                  type="text"
-                  value={publicRemark}
-                />
-              </Field>
-              <CountryOverrideField onChange={setCountryCode} server={server} value={countryCode} />
-              <Field label={t('tags_label')}>
-                <Input
-                  aria-label={t('tags_label')}
-                  name="tags"
-                  onChange={(e) => {
-                    setTagsInput(e.target.value)
-                    setTagsDirty(true)
-                  }}
-                  placeholder={t('tags_placeholder')}
-                  type="text"
-                  value={tagsInput}
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
-              </Field>
-            </fieldset>
-
-            {/* Billing */}
-            <fieldset className="space-y-3">
-              <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                {t('edit_billing')}
-              </legend>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Field label={t('edit_price')}>
-                  <Input
-                    aria-label={t('edit_price')}
-                    autoComplete="off"
-                    min="0"
-                    name="price"
-                    onChange={(e) => setPrice(e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                    value={price}
-                  />
-                </Field>
-                <Field label={t('edit_currency')}>
-                  <Select onValueChange={(v) => v !== null && setCurrency(v)} value={currency}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="EUR">EUR</SelectItem>
-                      <SelectItem value="CNY">CNY</SelectItem>
-                      <SelectItem value="JPY">JPY</SelectItem>
-                      <SelectItem value="GBP">GBP</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label={t('edit_billing_cycle')}>
-                  <Select
-                    items={{
-                      __none__: t('edit_cycle_none'),
-                      monthly: t('edit_cycle_monthly'),
-                      quarterly: t('edit_cycle_quarterly'),
-                      yearly: t('edit_cycle_yearly')
-                    }}
-                    onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
-                    value={billingCycle || '__none__'}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">{t('edit_cycle_none')}</SelectItem>
-                      <SelectItem value="monthly">{t('edit_cycle_monthly')}</SelectItem>
-                      <SelectItem value="quarterly">{t('edit_cycle_quarterly')}</SelectItem>
-                      <SelectItem value="yearly">{t('edit_cycle_yearly')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <Field label={t('edit_expiration')}>
-                <DatePickerField ariaLabel={t('edit_expiration')} onChange={setExpiredAt} value={expiredAt} />
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label={t('edit_traffic_limit')}>
-                  <Input
-                    aria-label={t('edit_traffic_limit')}
-                    autoComplete="off"
-                    min="0"
-                    name="traffic_limit"
-                    onChange={(e) => setTrafficLimit(e.target.value)}
-                    placeholder={t('edit_unlimited')}
-                    step="0.1"
-                    type="number"
-                    value={trafficLimit}
-                  />
-                </Field>
-                <Field label={t('edit_limit_type')}>
-                  <Select
-                    items={{
-                      sum: t('edit_limit_total'),
-                      up: t('edit_limit_upload'),
-                      down: t('edit_limit_download')
-                    }}
-                    onValueChange={(v) => v !== null && setTrafficLimitType(v)}
-                    value={trafficLimitType}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sum">{t('edit_limit_total')}</SelectItem>
-                      <SelectItem value="up">{t('edit_limit_upload')}</SelectItem>
-                      <SelectItem value="down">{t('edit_limit_download')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <Field label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}>
-                <Input
-                  aria-label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}
+                  aria-label={t('edit_traffic_limit')}
                   autoComplete="off"
-                  max="28"
-                  min="1"
-                  name="billing_start_day"
-                  onChange={(e) => setBillingStartDay(e.target.value)}
-                  placeholder={t('edit_billing_start_day_placeholder', {
-                    defaultValue: 'Leave empty for natural month (1st)'
-                  })}
+                  min="0"
+                  name="traffic_limit"
+                  onChange={(e) => setTrafficLimit(e.target.value)}
+                  placeholder={t('edit_unlimited')}
+                  step="0.1"
                   type="number"
-                  value={billingStartDay}
+                  value={trafficLimit}
                 />
               </Field>
-            </fieldset>
+              <Field label={t('edit_limit_type')}>
+                <Select
+                  items={{
+                    sum: t('edit_limit_total'),
+                    up: t('edit_limit_upload'),
+                    down: t('edit_limit_download')
+                  }}
+                  onValueChange={(v) => v !== null && setTrafficLimitType(v)}
+                  value={trafficLimitType}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sum">{t('edit_limit_total')}</SelectItem>
+                    <SelectItem value="up">{t('edit_limit_upload')}</SelectItem>
+                    <SelectItem value="down">{t('edit_limit_download')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <Field label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}>
+              <Input
+                aria-label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}
+                autoComplete="off"
+                max="28"
+                min="1"
+                name="billing_start_day"
+                onChange={(e) => setBillingStartDay(e.target.value)}
+                placeholder={t('edit_billing_start_day_placeholder', {
+                  defaultValue: 'Leave empty for natural month (1st)'
+                })}
+                type="number"
+                value={billingStartDay}
+              />
+            </Field>
+          </fieldset>
 
-            {mutation.error && (
-              <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
-                {mutation.error.message || t('edit_failed')}
-              </div>
-            )}
-          </DialogBody>
+          {mutation.error && (
+            <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
+              {mutation.error.message || t('edit_failed')}
+            </div>
+          )}
+        </DialogBody>
 
-          <DialogFooter>
-            <Button onClick={onClose} type="button" variant="outline">
-              {t('common:cancel')}
-            </Button>
-            <Button disabled={mutation.isPending || tagsMutation.isPending} type="submit">
-              {mutation.isPending || tagsMutation.isPending ? t('common:saving') : t('common:save')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        <DialogFooter>
+          <Button onClick={onClose} type="button" variant="outline">
+            {t('common:cancel')}
+          </Button>
+          <Button disabled={mutation.isPending || tagsMutation.isPending} type="submit">
+            {mutation.isPending || tagsMutation.isPending ? t('common:saving') : t('common:save')}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   )
 }
 
