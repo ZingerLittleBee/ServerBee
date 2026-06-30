@@ -49,7 +49,6 @@ interface WidgetRendererProps {
 interface ErrorBoundaryProps {
   children: ReactNode
   fallback: ReactNode
-  resetKey?: string
 }
 
 interface ErrorBoundaryState {
@@ -65,12 +64,6 @@ class WidgetErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 
   static getDerivedStateFromError(): ErrorBoundaryState {
     return { hasError: true }
-  }
-
-  componentDidUpdate(prevProps: ErrorBoundaryProps) {
-    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false })
-    }
   }
 
   render() {
@@ -156,7 +149,7 @@ const MemoizedWidgetContent = memo(WidgetContent, areWidgetContentPropsEqual)
 
 export function WidgetRenderer({ widget, servers }: WidgetRendererProps) {
   return (
-    <WidgetErrorBoundary fallback={<ErrorFallback />} resetKey={`${widget.id}-${widget.config_json}`}>
+    <WidgetErrorBoundary fallback={<ErrorFallback />} key={`${widget.id}-${widget.config_json}`}>
       <MemoizedWidgetContent servers={servers} widget={widget} />
     </WidgetErrorBoundary>
   )
