@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,6 +19,67 @@ import { parseServerIds } from './status-page-config-utils'
 import { INCIDENT_SEVERITIES, INCIDENT_STATUSES } from './status-page-incident-options'
 import { StatusPageServerCheckboxItem } from './status-page-server-checkbox-item'
 
+interface IncidentFormState {
+  isPublic: boolean
+  selectedServers: string[]
+  severity: string
+  status: string
+  title: string
+}
+
+type IncidentFormAction =
+  | { type: 'reset'; value: IncidentFormState }
+  | { type: 'setIsPublic'; value: boolean }
+  | { type: 'setSeverity'; value: string }
+  | { type: 'setStatus'; value: string }
+  | { type: 'setTitle'; value: string }
+  | { type: 'toggleServer'; id: string }
+
+const EMPTY_INCIDENT_FORM: IncidentFormState = {
+  isPublic: false,
+  selectedServers: [],
+  severity: 'minor',
+  status: 'investigating',
+  title: ''
+}
+
+function incidentFormFromItem(item: IncidentItem | null): IncidentFormState {
+  if (!item) {
+    return EMPTY_INCIDENT_FORM
+  }
+  return {
+    isPublic: item.is_public,
+    selectedServers: parseServerIds(item.server_ids_json),
+    severity: item.severity,
+    status: item.status,
+    title: item.title
+  }
+}
+
+function incidentFormReducer(state: IncidentFormState, action: IncidentFormAction): IncidentFormState {
+  switch (action.type) {
+    case 'reset':
+      return action.value
+    case 'setIsPublic':
+      return { ...state, isPublic: action.value }
+    case 'setSeverity':
+      return { ...state, severity: action.value }
+    case 'setStatus':
+      return { ...state, status: action.value }
+    case 'setTitle':
+      return { ...state, title: action.value }
+    case 'toggleServer':
+      return {
+        ...state,
+        selectedServers: state.selectedServers.includes(action.id)
+          ? state.selectedServers.filter((serverId) => serverId !== action.id)
+          : [...state.selectedServers, action.id]
+      }
+    default:
+      return state
+  }
+}
+
 export function StatusPageIncidentFormDialog({
   editing,
   onClose,
@@ -35,25 +96,11 @@ export function StatusPageIncidentFormDialog({
   servers: ServerResponse[]
 }) {
   const { t } = useTranslation('settings')
-  const [title, setTitle] = useState('')
-  const [severity, setSeverity] = useState<string>('minor')
-  const [status, setStatus] = useState<string>('investigating')
-  const [selectedServers, setSelectedServers] = useState<string[]>([])
-  const [isPublic, setIsPublic] = useState(false)
+  const [state, dispatch] = useReducer(incidentFormReducer, EMPTY_INCIDENT_FORM)
 
   const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && editing) {
-      setTitle(editing.title)
-      setSeverity(editing.severity)
-      setStatus(editing.status)
-      setSelectedServers(parseServerIds(editing.server_ids_json))
-      setIsPublic(editing.is_public)
-    } else if (isOpen) {
-      setTitle('')
-      setSeverity('minor')
-      setStatus('investigating')
-      setSelectedServers([])
-      setIsPublic(false)
+    if (isOpen) {
+      dispatch({ type: 'reset', value: incidentFormFromItem(editing) })
     }
     if (!isOpen) {
       onClose()
@@ -62,21 +109,17 @@ export function StatusPageIncidentFormDialog({
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!title.trim()) {
+    if (!state.title.trim()) {
       return
     }
     const payload: CreateIncidentRequest | UpdateIncidentRequest = {
-      title: title.trim(),
-      severity,
-      status,
-      server_ids_json: selectedServers,
-      is_public: isPublic
+      title: state.title.trim(),
+      severity: state.severity,
+      status: state.status,
+      server_ids_json: state.selectedServers,
+      is_public: state.isPublic
     }
     onSubmit(payload, editing?.id)
-  }
-
-  const toggleServer = (id: string) => {
-    setSelectedServers((prev) => (prev.includes(id) ? prev.filter((serverId) => serverId !== id) : [...prev, id]))
   }
 
   return (
@@ -93,16 +136,19 @@ export function StatusPageIncidentFormDialog({
             <Label htmlFor="inc-title">{t('incidents.field_title')}</Label>
             <Input
               id="inc-title"
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => dispatch({ type: 'setTitle', value: e.target.value })}
               placeholder={t('incidents.placeholder_title')}
               required
-              value={title}
+              value={state.title}
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="inc-severity">{t('incidents.field_severity')}</Label>
-              <Select onValueChange={(value) => value && setSeverity(value)} value={severity}>
+              <Select
+                onValueChange={(value) => value && dispatch({ type: 'setSeverity', value })}
+                value={state.severity}
+              >
                 <SelectTrigger id="inc-severity">
                   <SelectValue />
                 </SelectTrigger>
@@ -117,7 +163,7 @@ export function StatusPageIncidentFormDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="inc-status">{t('incidents.field_status')}</Label>
-              <Select onValueChange={(value) => value && setStatus(value)} value={status}>
+              <Select onValueChange={(value) => value && dispatch({ type: 'setStatus', value })} value={state.status}>
                 <SelectTrigger id="inc-status">
                   <SelectValue />
                 </SelectTrigger>
@@ -136,7 +182,11 @@ export function StatusPageIncidentFormDialog({
               <Label htmlFor="inc-public">{t('incidents.field_is_public')}</Label>
               <p className="text-muted-foreground text-xs">{t('incidents.field_is_public_hint')}</p>
             </div>
-            <Switch checked={isPublic} id="inc-public" onCheckedChange={setIsPublic} />
+            <Switch
+              checked={state.isPublic}
+              id="inc-public"
+              onCheckedChange={(value) => dispatch({ type: 'setIsPublic', value })}
+            />
           </div>
           <div className="space-y-2">
             <Label>{t('incidents.field_servers')}</Label>
@@ -144,10 +194,10 @@ export function StatusPageIncidentFormDialog({
               <div className="space-y-1 p-2">
                 {servers.map((server) => (
                   <StatusPageServerCheckboxItem
-                    checked={selectedServers.includes(server.id)}
+                    checked={state.selectedServers.includes(server.id)}
                     key={server.id}
                     name={server.name}
-                    onToggle={() => toggleServer(server.id)}
+                    onToggle={() => dispatch({ type: 'toggleServer', id: server.id })}
                   />
                 ))}
               </div>

@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
@@ -23,6 +23,79 @@ import type {
 import { parseServerIds } from './status-page-config-utils'
 import { StatusPageServerCheckboxItem } from './status-page-server-checkbox-item'
 
+interface MaintenanceFormState {
+  active: boolean
+  description: string
+  endAt: string
+  isPublic: boolean
+  selectedServers: string[]
+  startAt: string
+  title: string
+}
+
+type MaintenanceFormAction =
+  | { type: 'reset'; value: MaintenanceFormState }
+  | { type: 'setActive'; value: boolean }
+  | { type: 'setDescription'; value: string }
+  | { type: 'setEndAt'; value: string }
+  | { type: 'setIsPublic'; value: boolean }
+  | { type: 'setStartAt'; value: string }
+  | { type: 'setTitle'; value: string }
+  | { type: 'toggleServer'; id: string }
+
+const EMPTY_MAINTENANCE_FORM: MaintenanceFormState = {
+  active: true,
+  description: '',
+  endAt: '',
+  isPublic: false,
+  selectedServers: [],
+  startAt: '',
+  title: ''
+}
+
+function maintenanceFormFromItem(item: MaintenanceItem | null): MaintenanceFormState {
+  if (!item) {
+    return EMPTY_MAINTENANCE_FORM
+  }
+  return {
+    active: item.active,
+    description: item.description ?? '',
+    endAt: item.end_at.slice(0, 16),
+    isPublic: item.is_public,
+    selectedServers: parseServerIds(item.server_ids_json),
+    startAt: item.start_at.slice(0, 16),
+    title: item.title
+  }
+}
+
+function maintenanceFormReducer(state: MaintenanceFormState, action: MaintenanceFormAction): MaintenanceFormState {
+  switch (action.type) {
+    case 'reset':
+      return action.value
+    case 'setActive':
+      return { ...state, active: action.value }
+    case 'setDescription':
+      return { ...state, description: action.value }
+    case 'setEndAt':
+      return { ...state, endAt: action.value }
+    case 'setIsPublic':
+      return { ...state, isPublic: action.value }
+    case 'setStartAt':
+      return { ...state, startAt: action.value }
+    case 'setTitle':
+      return { ...state, title: action.value }
+    case 'toggleServer':
+      return {
+        ...state,
+        selectedServers: state.selectedServers.includes(action.id)
+          ? state.selectedServers.filter((serverId) => serverId !== action.id)
+          : [...state.selectedServers, action.id]
+      }
+    default:
+      return state
+  }
+}
+
 export function StatusPageMaintenanceFormDialog({
   editing,
   onClose,
@@ -39,31 +112,11 @@ export function StatusPageMaintenanceFormDialog({
   servers: ServerResponse[]
 }) {
   const { t } = useTranslation('settings')
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [startAt, setStartAt] = useState('')
-  const [endAt, setEndAt] = useState('')
-  const [active, setActive] = useState(true)
-  const [selectedServers, setSelectedServers] = useState<string[]>([])
-  const [isPublic, setIsPublic] = useState(false)
+  const [state, dispatch] = useReducer(maintenanceFormReducer, EMPTY_MAINTENANCE_FORM)
 
   const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && editing) {
-      setTitle(editing.title)
-      setDescription(editing.description ?? '')
-      setStartAt(editing.start_at.slice(0, 16))
-      setEndAt(editing.end_at.slice(0, 16))
-      setActive(editing.active)
-      setSelectedServers(parseServerIds(editing.server_ids_json))
-      setIsPublic(editing.is_public)
-    } else if (isOpen) {
-      setTitle('')
-      setDescription('')
-      setStartAt('')
-      setEndAt('')
-      setActive(true)
-      setSelectedServers([])
-      setIsPublic(false)
+    if (isOpen) {
+      dispatch({ type: 'reset', value: maintenanceFormFromItem(editing) })
     }
     if (!isOpen) {
       onClose()
@@ -72,23 +125,19 @@ export function StatusPageMaintenanceFormDialog({
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!(title.trim() && startAt && endAt)) {
+    if (!(state.title.trim() && state.startAt && state.endAt)) {
       return
     }
     const payload: CreateMaintenanceRequest | UpdateMaintenanceRequest = {
-      title: title.trim(),
-      description: description.trim() || null,
-      start_at: new Date(startAt).toISOString(),
-      end_at: new Date(endAt).toISOString(),
-      active,
-      server_ids_json: selectedServers,
-      is_public: isPublic
+      title: state.title.trim(),
+      description: state.description.trim() || null,
+      start_at: new Date(state.startAt).toISOString(),
+      end_at: new Date(state.endAt).toISOString(),
+      active: state.active,
+      server_ids_json: state.selectedServers,
+      is_public: state.isPublic
     }
     onSubmit(payload, editing?.id)
-  }
-
-  const toggleServer = (id: string) => {
-    setSelectedServers((prev) => (prev.includes(id) ? prev.filter((serverId) => serverId !== id) : [...prev, id]))
   }
 
   return (
@@ -105,20 +154,20 @@ export function StatusPageMaintenanceFormDialog({
             <Label htmlFor="mnt-title">{t('maintenance.field_title')}</Label>
             <Input
               id="mnt-title"
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => dispatch({ type: 'setTitle', value: e.target.value })}
               placeholder={t('maintenance.placeholder_title')}
               required
-              value={title}
+              value={state.title}
             />
           </div>
           <div className="space-y-1">
             <Label htmlFor="mnt-desc">{t('maintenance.field_description')}</Label>
             <Textarea
               id="mnt-desc"
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => dispatch({ type: 'setDescription', value: e.target.value })}
               placeholder={t('maintenance.placeholder_description')}
               rows={2}
-              value={description}
+              value={state.description}
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -126,27 +175,27 @@ export function StatusPageMaintenanceFormDialog({
               <Label htmlFor="mnt-start">{t('maintenance.field_start')}</Label>
               <Input
                 id="mnt-start"
-                onChange={(e) => setStartAt(e.target.value)}
+                onChange={(e) => dispatch({ type: 'setStartAt', value: e.target.value })}
                 required
                 type="datetime-local"
-                value={startAt}
+                value={state.startAt}
               />
             </div>
             <div className="space-y-1">
               <Label htmlFor="mnt-end">{t('maintenance.field_end')}</Label>
               <Input
                 id="mnt-end"
-                onChange={(e) => setEndAt(e.target.value)}
+                onChange={(e) => dispatch({ type: 'setEndAt', value: e.target.value })}
                 required
                 type="datetime-local"
-                value={endAt}
+                value={state.endAt}
               />
             </div>
           </div>
           <div className="flex items-center gap-2">
             {/* biome-ignore lint/a11y/noLabelWithoutControl: Switch renders as a labelable button element */}
             <label className="flex items-center gap-2 text-sm">
-              <Switch checked={active} onCheckedChange={setActive} />
+              <Switch checked={state.active} onCheckedChange={(value) => dispatch({ type: 'setActive', value })} />
               {t('maintenance.field_active')}
             </label>
           </div>
@@ -155,7 +204,11 @@ export function StatusPageMaintenanceFormDialog({
               <Label htmlFor="mnt-public">{t('maintenance.field_is_public')}</Label>
               <p className="text-muted-foreground text-xs">{t('maintenance.field_is_public_hint')}</p>
             </div>
-            <Switch checked={isPublic} id="mnt-public" onCheckedChange={setIsPublic} />
+            <Switch
+              checked={state.isPublic}
+              id="mnt-public"
+              onCheckedChange={(value) => dispatch({ type: 'setIsPublic', value })}
+            />
           </div>
           <div className="space-y-2">
             <Label>{t('maintenance.field_servers')}</Label>
@@ -163,10 +216,10 @@ export function StatusPageMaintenanceFormDialog({
               <div className="space-y-1 p-2">
                 {servers.map((server) => (
                   <StatusPageServerCheckboxItem
-                    checked={selectedServers.includes(server.id)}
+                    checked={state.selectedServers.includes(server.id)}
                     key={server.id}
                     name={server.name}
-                    onToggle={() => toggleServer(server.id)}
+                    onToggle={() => dispatch({ type: 'toggleServer', id: server.id })}
                   />
                 ))}
               </div>
