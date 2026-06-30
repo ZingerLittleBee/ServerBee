@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
 import { CalendarIcon, Copy, Plus } from 'lucide-react'
 import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -231,6 +232,375 @@ function addServerFormReducer(state: AddServerFormState, action: AddServerFormAc
   }
 }
 
+function AddServerIssuedView({
+  installCommand,
+  issued,
+  onAnother,
+  onClose,
+  onCopy,
+  t
+}: {
+  installCommand: string
+  issued: CreateServerResponse
+  onAnother: () => void
+  onClose: () => void
+  onCopy: (value: string) => void
+  t: TFunction
+}) {
+  return (
+    <>
+      <DialogBody className="space-y-5">
+        <p className="text-muted-foreground text-sm">{t('add_server.description')}</p>
+
+        <div className="space-y-4 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
+          <p className="text-amber-600 text-sm dark:text-amber-500">{t('add_server.shown_once_warning')}</p>
+
+          <div>
+            <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.code_label')}</p>
+            <div className="flex min-w-0 items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
+                {issued.enrollment.code}
+              </code>
+              <Button
+                aria-label={t('add_server.copy')}
+                onClick={() => onCopy(issued.enrollment.code)}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <Copy className="size-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.install_command')}</p>
+            <div className="flex min-w-0 items-start gap-2">
+              <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
+                {installCommand}
+              </code>
+              <Button
+                aria-label={t('add_server.copy')}
+                onClick={() => onCopy(installCommand)}
+                size="icon"
+                type="button"
+                variant="outline"
+              >
+                <Copy className="size-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.steps_title')}</p>
+            <ol className="list-decimal space-y-1 pl-5 text-muted-foreground text-sm">
+              <li>{t('add_server.step1')}</li>
+              <li>{t('add_server.step2')}</li>
+              <li>{t('add_server.step3')}</li>
+            </ol>
+          </div>
+        </div>
+      </DialogBody>
+
+      <DialogFooter>
+        <Button onClick={onAnother} type="button" variant="outline">
+          {t('add_server.another')}
+        </Button>
+        <Button onClick={onClose} type="button">
+          {t('add_server.done')}
+        </Button>
+      </DialogFooter>
+    </>
+  )
+}
+
+function AddServerBasicFields({
+  dispatch,
+  groups,
+  state,
+  t
+}: {
+  dispatch: (action: AddServerFormAction) => void
+  groups: ServerGroup[] | undefined
+  state: AddServerFormState
+  t: TFunction
+}) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+        {t('edit_basic')}
+      </legend>
+      <Field htmlFor="add-server-name" label={t('add_server.name_label')}>
+        <Input
+          aria-label={t('add_server.name_label')}
+          autoComplete="off"
+          id="add-server-name"
+          name="name"
+          onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
+          placeholder={t('add_server.name_placeholder')}
+          required
+          type="text"
+          value={state.name}
+        />
+      </Field>
+      <Field label={t('add_server.group_label')}>
+        <Select
+          items={[
+            { value: '__none__', label: t('edit_no_group') },
+            ...(groups?.map((group) => ({ value: group.id, label: group.name })) ?? [])
+          ]}
+          onValueChange={(value) =>
+            dispatch({ type: 'patch', value: { groupId: value === '__none__' || value === null ? '' : value } })
+          }
+          value={state.groupId || '__none__'}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">{t('edit_no_group')}</SelectItem>
+            {groups?.map((group) => (
+              <SelectItem key={group.id} value={group.id}>
+                {group.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field label={t('add_server.tags_label')}>
+        <Input
+          aria-label={t('add_server.tags_label')}
+          autoComplete="off"
+          name="tags"
+          onChange={(e) => dispatch({ type: 'patch', value: { tagsInput: e.target.value } })}
+          placeholder={t('tags_placeholder')}
+          type="text"
+          value={state.tagsInput}
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
+      </Field>
+      <Field label={t('add_server.remark_label')}>
+        <Input
+          aria-label={t('add_server.remark_label')}
+          autoComplete="off"
+          name="remark"
+          onChange={(e) => dispatch({ type: 'patch', value: { remark: e.target.value } })}
+          placeholder={t('edit_remark_placeholder')}
+          type="text"
+          value={state.remark}
+        />
+      </Field>
+      <Field label={t('add_server.public_remark_label')}>
+        <Input
+          aria-label={t('add_server.public_remark_label')}
+          autoComplete="off"
+          name="public_remark"
+          onChange={(e) => dispatch({ type: 'patch', value: { publicRemark: e.target.value } })}
+          placeholder={t('edit_public_remark_placeholder')}
+          type="text"
+          value={state.publicRemark}
+        />
+      </Field>
+    </fieldset>
+  )
+}
+
+function AddServerBillingFields({
+  dispatch,
+  state,
+  t
+}: {
+  dispatch: (action: AddServerFormAction) => void
+  state: AddServerFormState
+  t: TFunction
+}) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+        {t('add_server.billing_section')}
+      </legend>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label={t('add_server.price_label')}>
+          <Input
+            aria-label={t('add_server.price_label')}
+            autoComplete="off"
+            min="0"
+            name="price"
+            onChange={(e) => dispatch({ type: 'patch', value: { price: e.target.value } })}
+            placeholder="0.00"
+            step="0.01"
+            type="number"
+            value={state.price}
+          />
+        </Field>
+        <Field label={t('add_server.currency_label')}>
+          <Select
+            onValueChange={(value) => value !== null && dispatch({ type: 'patch', value: { currency: value } })}
+            value={state.currency}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="USD">USD</SelectItem>
+              <SelectItem value="EUR">EUR</SelectItem>
+              <SelectItem value="CNY">CNY</SelectItem>
+              <SelectItem value="JPY">JPY</SelectItem>
+              <SelectItem value="GBP">GBP</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t('add_server.billing_cycle_label')}>
+          <Select
+            items={{
+              __none__: t('edit_cycle_none'),
+              monthly: t('edit_cycle_monthly'),
+              quarterly: t('edit_cycle_quarterly'),
+              yearly: t('edit_cycle_yearly')
+            }}
+            onValueChange={(value) =>
+              dispatch({
+                type: 'patch',
+                value: { billingCycle: value === '__none__' || value === null ? '' : value }
+              })
+            }
+            value={state.billingCycle || '__none__'}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">{t('edit_cycle_none')}</SelectItem>
+              <SelectItem value="monthly">{t('edit_cycle_monthly')}</SelectItem>
+              <SelectItem value="quarterly">{t('edit_cycle_quarterly')}</SelectItem>
+              <SelectItem value="yearly">{t('edit_cycle_yearly')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <Field label={t('add_server.expired_at_label')}>
+        <DatePickerField
+          ariaLabel={t('add_server.expired_at_label')}
+          onChange={(expiredAt) => dispatch({ type: 'patch', value: { expiredAt } })}
+          value={state.expiredAt}
+        />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={t('add_server.traffic_limit_label')}>
+          <Input
+            aria-label={t('add_server.traffic_limit_label')}
+            autoComplete="off"
+            min="0"
+            name="traffic_limit"
+            onChange={(e) => dispatch({ type: 'patch', value: { trafficLimit: e.target.value } })}
+            placeholder={t('edit_unlimited')}
+            step="0.1"
+            type="number"
+            value={state.trafficLimit}
+          />
+        </Field>
+        <Field label={t('add_server.traffic_limit_type_label')}>
+          <Select
+            items={{
+              sum: t('edit_limit_total'),
+              up: t('edit_limit_upload'),
+              down: t('edit_limit_download')
+            }}
+            onValueChange={(value) => value !== null && dispatch({ type: 'patch', value: { trafficLimitType: value } })}
+            value={state.trafficLimitType}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sum">{t('edit_limit_total')}</SelectItem>
+              <SelectItem value="up">{t('edit_limit_upload')}</SelectItem>
+              <SelectItem value="down">{t('edit_limit_download')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <Field label={t('add_server.billing_start_day_label')}>
+        <Input
+          aria-label={t('add_server.billing_start_day_label')}
+          autoComplete="off"
+          max="28"
+          min="1"
+          name="billing_start_day"
+          onChange={(e) => dispatch({ type: 'patch', value: { billingStartDay: e.target.value } })}
+          placeholder={t('edit_billing_start_day_placeholder', {
+            defaultValue: 'Leave empty for natural month (1st)'
+          })}
+          type="number"
+          value={state.billingStartDay}
+        />
+      </Field>
+    </fieldset>
+  )
+}
+
+function AddServerCapabilityFields({
+  highRiskCaps,
+  onReset,
+  onSelectAll,
+  onSelectNone,
+  onToggle,
+  selectedCaps,
+  standardCaps,
+  t
+}: {
+  highRiskCaps: (typeof CAPABILITIES)[number][]
+  onReset: () => void
+  onSelectAll: () => void
+  onSelectNone: () => void
+  onToggle: (key: string) => void
+  selectedCaps: Set<string>
+  standardCaps: (typeof CAPABILITIES)[number][]
+  t: TFunction
+}) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-1 flex w-full items-center justify-between gap-2">
+        <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
+          {t('add_server.caps_label')}
+        </span>
+        <span className="flex gap-2 text-xs">
+          <button className="text-muted-foreground hover:text-foreground" onClick={onReset} type="button">
+            {t('add_server.caps_reset')}
+          </button>
+          <span className="text-muted-foreground/50">·</span>
+          <button className="text-muted-foreground hover:text-foreground" onClick={onSelectAll} type="button">
+            {t('add_server.caps_select_all')}
+          </button>
+          <span className="text-muted-foreground/50">·</span>
+          <button className="text-muted-foreground hover:text-foreground" onClick={onSelectNone} type="button">
+            {t('add_server.caps_select_none')}
+          </button>
+        </span>
+      </legend>
+      <p className="text-muted-foreground text-xs">{t('add_server.caps_hint')}</p>
+      <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3">
+        <CapGroup
+          caps={standardCaps}
+          onToggle={onToggle}
+          selected={selectedCaps}
+          t={t}
+          title={t('add_server.caps_low_risk')}
+          tone="standard"
+        />
+        <CapGroup
+          caps={highRiskCaps}
+          onToggle={onToggle}
+          selected={selectedCaps}
+          t={t}
+          title={t('add_server.caps_high_risk')}
+          tone="high"
+        />
+      </div>
+    </fieldset>
+  )
+}
+
 export function AddServerDialog({ open, onClose }: { onClose: () => void; open: boolean }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
@@ -370,334 +740,31 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
         </DialogHeader>
 
         {issued ? (
-          <>
-            <DialogBody className="space-y-5">
-              <p className="text-muted-foreground text-sm">{t('add_server.description')}</p>
-
-              <div className="space-y-4 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
-                <p className="text-amber-600 text-sm dark:text-amber-500">{t('add_server.shown_once_warning')}</p>
-
-                <div>
-                  <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.code_label')}</p>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
-                      {issued.enrollment.code}
-                    </code>
-                    <Button
-                      aria-label={t('add_server.copy')}
-                      onClick={() => copy(issued.enrollment.code)}
-                      size="icon"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.install_command')}</p>
-                  <div className="flex min-w-0 items-start gap-2">
-                    <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
-                      {installCommand}
-                    </code>
-                    <Button
-                      aria-label={t('add_server.copy')}
-                      onClick={() => copy(installCommand)}
-                      size="icon"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.steps_title')}</p>
-                  <ol className="list-decimal space-y-1 pl-5 text-muted-foreground text-sm">
-                    <li>{t('add_server.step1')}</li>
-                    <li>{t('add_server.step2')}</li>
-                    <li>{t('add_server.step3')}</li>
-                  </ol>
-                </div>
-              </div>
-            </DialogBody>
-
-            <DialogFooter>
-              <Button onClick={reset} type="button" variant="outline">
-                {t('add_server.another')}
-              </Button>
-              <Button onClick={handleClose} type="button">
-                {t('add_server.done')}
-              </Button>
-            </DialogFooter>
-          </>
+          <AddServerIssuedView
+            installCommand={installCommand}
+            issued={issued}
+            onAnother={reset}
+            onClose={handleClose}
+            onCopy={copy}
+            t={t}
+          />
         ) : (
           <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
             <DialogBody className="space-y-4">
               <p className="text-muted-foreground text-sm">{t('add_server.description')}</p>
 
-              {/* Basic */}
-              <fieldset className="space-y-3">
-                <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                  {t('edit_basic')}
-                </legend>
-                <Field htmlFor="add-server-name" label={t('add_server.name_label')}>
-                  <Input
-                    aria-label={t('add_server.name_label')}
-                    autoComplete="off"
-                    id="add-server-name"
-                    name="name"
-                    onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
-                    placeholder={t('add_server.name_placeholder')}
-                    required
-                    type="text"
-                    value={state.name}
-                  />
-                </Field>
-                <Field label={t('add_server.group_label')}>
-                  <Select
-                    items={[
-                      { value: '__none__', label: t('edit_no_group') },
-                      ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
-                    ]}
-                    onValueChange={(value) =>
-                      dispatch({
-                        type: 'patch',
-                        value: { groupId: value === '__none__' || value === null ? '' : value }
-                      })
-                    }
-                    value={state.groupId || '__none__'}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">{t('edit_no_group')}</SelectItem>
-                      {groups?.map((g) => (
-                        <SelectItem key={g.id} value={g.id}>
-                          {g.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label={t('add_server.tags_label')}>
-                  <Input
-                    aria-label={t('add_server.tags_label')}
-                    autoComplete="off"
-                    name="tags"
-                    onChange={(e) => dispatch({ type: 'patch', value: { tagsInput: e.target.value } })}
-                    placeholder={t('tags_placeholder')}
-                    type="text"
-                    value={state.tagsInput}
-                  />
-                  <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
-                </Field>
-                <Field label={t('add_server.remark_label')}>
-                  <Input
-                    aria-label={t('add_server.remark_label')}
-                    autoComplete="off"
-                    name="remark"
-                    onChange={(e) => dispatch({ type: 'patch', value: { remark: e.target.value } })}
-                    placeholder={t('edit_remark_placeholder')}
-                    type="text"
-                    value={state.remark}
-                  />
-                </Field>
-                <Field label={t('add_server.public_remark_label')}>
-                  <Input
-                    aria-label={t('add_server.public_remark_label')}
-                    autoComplete="off"
-                    name="public_remark"
-                    onChange={(e) => dispatch({ type: 'patch', value: { publicRemark: e.target.value } })}
-                    placeholder={t('edit_public_remark_placeholder')}
-                    type="text"
-                    value={state.publicRemark}
-                  />
-                </Field>
-              </fieldset>
-
-              {/* Billing */}
-              <fieldset className="space-y-3">
-                <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                  {t('add_server.billing_section')}
-                </legend>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label={t('add_server.price_label')}>
-                    <Input
-                      aria-label={t('add_server.price_label')}
-                      autoComplete="off"
-                      min="0"
-                      name="price"
-                      onChange={(e) => dispatch({ type: 'patch', value: { price: e.target.value } })}
-                      placeholder="0.00"
-                      step="0.01"
-                      type="number"
-                      value={state.price}
-                    />
-                  </Field>
-                  <Field label={t('add_server.currency_label')}>
-                    <Select
-                      onValueChange={(value) =>
-                        value !== null && dispatch({ type: 'patch', value: { currency: value } })
-                      }
-                      value={state.currency}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="USD">USD</SelectItem>
-                        <SelectItem value="EUR">EUR</SelectItem>
-                        <SelectItem value="CNY">CNY</SelectItem>
-                        <SelectItem value="JPY">JPY</SelectItem>
-                        <SelectItem value="GBP">GBP</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label={t('add_server.billing_cycle_label')}>
-                    <Select
-                      items={{
-                        __none__: t('edit_cycle_none'),
-                        monthly: t('edit_cycle_monthly'),
-                        quarterly: t('edit_cycle_quarterly'),
-                        yearly: t('edit_cycle_yearly')
-                      }}
-                      onValueChange={(value) =>
-                        dispatch({
-                          type: 'patch',
-                          value: { billingCycle: value === '__none__' || value === null ? '' : value }
-                        })
-                      }
-                      value={state.billingCycle || '__none__'}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">{t('edit_cycle_none')}</SelectItem>
-                        <SelectItem value="monthly">{t('edit_cycle_monthly')}</SelectItem>
-                        <SelectItem value="quarterly">{t('edit_cycle_quarterly')}</SelectItem>
-                        <SelectItem value="yearly">{t('edit_cycle_yearly')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-                <Field label={t('add_server.expired_at_label')}>
-                  <DatePickerField
-                    ariaLabel={t('add_server.expired_at_label')}
-                    onChange={(expiredAt) => dispatch({ type: 'patch', value: { expiredAt } })}
-                    value={state.expiredAt}
-                  />
-                </Field>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label={t('add_server.traffic_limit_label')}>
-                    <Input
-                      aria-label={t('add_server.traffic_limit_label')}
-                      autoComplete="off"
-                      min="0"
-                      name="traffic_limit"
-                      onChange={(e) => dispatch({ type: 'patch', value: { trafficLimit: e.target.value } })}
-                      placeholder={t('edit_unlimited')}
-                      step="0.1"
-                      type="number"
-                      value={state.trafficLimit}
-                    />
-                  </Field>
-                  <Field label={t('add_server.traffic_limit_type_label')}>
-                    <Select
-                      items={{
-                        sum: t('edit_limit_total'),
-                        up: t('edit_limit_upload'),
-                        down: t('edit_limit_download')
-                      }}
-                      onValueChange={(value) =>
-                        value !== null && dispatch({ type: 'patch', value: { trafficLimitType: value } })
-                      }
-                      value={state.trafficLimitType}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sum">{t('edit_limit_total')}</SelectItem>
-                        <SelectItem value="up">{t('edit_limit_upload')}</SelectItem>
-                        <SelectItem value="down">{t('edit_limit_download')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-                <Field label={t('add_server.billing_start_day_label')}>
-                  <Input
-                    aria-label={t('add_server.billing_start_day_label')}
-                    autoComplete="off"
-                    max="28"
-                    min="1"
-                    name="billing_start_day"
-                    onChange={(e) => dispatch({ type: 'patch', value: { billingStartDay: e.target.value } })}
-                    placeholder={t('edit_billing_start_day_placeholder', {
-                      defaultValue: 'Leave empty for natural month (1st)'
-                    })}
-                    type="number"
-                    value={state.billingStartDay}
-                  />
-                </Field>
-              </fieldset>
-
-              {/* Capabilities */}
-              <fieldset className="space-y-2">
-                <legend className="mb-1 flex w-full items-center justify-between gap-2">
-                  <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                    {t('add_server.caps_label')}
-                  </span>
-                  <span className="flex gap-2 text-xs">
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={resetCapsToDefault}
-                      type="button"
-                    >
-                      {t('add_server.caps_reset')}
-                    </button>
-                    <span className="text-muted-foreground/50">·</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={selectAllCaps}
-                      type="button"
-                    >
-                      {t('add_server.caps_select_all')}
-                    </button>
-                    <span className="text-muted-foreground/50">·</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={selectNoCaps}
-                      type="button"
-                    >
-                      {t('add_server.caps_select_none')}
-                    </button>
-                  </span>
-                </legend>
-                <p className="text-muted-foreground text-xs">{t('add_server.caps_hint')}</p>
-                <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3">
-                  <CapGroup
-                    caps={standardCaps}
-                    onToggle={toggleCap}
-                    selected={state.selectedCaps}
-                    t={t}
-                    title={t('add_server.caps_low_risk')}
-                    tone="standard"
-                  />
-                  <CapGroup
-                    caps={highRiskCaps}
-                    onToggle={toggleCap}
-                    selected={state.selectedCaps}
-                    t={t}
-                    title={t('add_server.caps_high_risk')}
-                    tone="high"
-                  />
-                </div>
-              </fieldset>
+              <AddServerBasicFields dispatch={dispatch} groups={groups} state={state} t={t} />
+              <AddServerBillingFields dispatch={dispatch} state={state} t={t} />
+              <AddServerCapabilityFields
+                highRiskCaps={highRiskCaps}
+                onReset={resetCapsToDefault}
+                onSelectAll={selectAllCaps}
+                onSelectNone={selectNoCaps}
+                onToggle={toggleCap}
+                selectedCaps={state.selectedCaps}
+                standardCaps={standardCaps}
+                t={t}
+              />
 
               <p className="text-muted-foreground text-xs">{t('add_server.ttl_tip')}</p>
             </DialogBody>
