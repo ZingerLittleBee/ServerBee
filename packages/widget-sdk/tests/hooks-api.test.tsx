@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
-import { createElement } from 'react'
+import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApiMutation, useApiQuery } from '../src/hooks/escape-hatch'
 import { createWidgetRuntime, resetRuntime } from '../src/runtime-context'
@@ -17,14 +17,17 @@ describe('api hooks', () => {
       themeStore: () => ({ mode: 'light', cssVar: () => '' }),
       onConfigUpdate: () => {}
     })
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: { hello: 'world' } })
-    }) as any
+    global.fetch = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ data: { hello: 'world' } }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200
+      })
+    )
   })
 
-  const wrapper = ({ children }: any) => createElement(QueryClientProvider, { client: qc, children })
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  )
 
   it('useApiQuery unwraps {data}', async () => {
     const { result } = renderHook(() => useApiQuery<{ hello: string }>('/api/test'), { wrapper })
