@@ -17,12 +17,26 @@ import { useMDXComponents } from '@/components/mdx'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
 import { source } from '@/lib/source'
 
+function getDocsContentPath(lang: string, slugs: string[]): string {
+  return `${lang}/${slugs.length > 0 ? slugs.join('/') : 'index'}.mdx`
+}
+
 export const Route = createFileRoute('/$lang/docs/$')({
   component: Page,
   loader: async ({ params }) => {
     const slugs = params._splat?.split('/') ?? []
-    const data = await serverLoader({ data: { slugs, lang: params.lang } })
-    await clientLoader.preload(data.path)
+    const path = getDocsContentPath(params.lang, slugs)
+    const preloadResult = clientLoader.preload(path).then(
+      () => null,
+      (error: unknown) => error
+    )
+    const [data, preloadError] = await Promise.all([
+      serverLoader({ data: { slugs, lang: params.lang } }),
+      preloadResult
+    ])
+    if (preloadError) {
+      throw preloadError
+    }
     return data
   }
 })
@@ -41,7 +55,7 @@ const serverLoader = createServerFn({
 
     return {
       slugs: page.slugs,
-      path: page.path,
+      path: getDocsContentPath(lang, page.slugs),
       lang,
       pageTree: await source.serializePageTree(pageTree)
     }
