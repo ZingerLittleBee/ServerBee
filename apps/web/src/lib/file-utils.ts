@@ -164,7 +164,3 @@ export function fileIcon(fileType: string, name: string): string {
 export function joinPath(dir: string, name: string): string {
   return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`
 }
-
-export function getFileName(path: string): string {
-  return path.split('/').pop() ?? path
-}
