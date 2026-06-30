@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, FolderPlus, RefreshCw, Upload } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { FileBreadcrumb } from '@/components/file/file-breadcrumb'
@@ -37,6 +37,77 @@ interface ContextMenuState {
   position: { x: number; y: number }
 }
 
+interface FilesPageState {
+  contextMenu: ContextMenuState | null
+  deleteConfirm: FileEntry | null
+  mkdirOpen: boolean
+  renameEntry: FileEntry | null
+  selectedFile: FileEntry | null
+  uploadOpen: boolean
+}
+
+type FilesPageAction =
+  | { type: 'confirmDelete'; entry: FileEntry }
+  | { type: 'deleteFinished'; path: string }
+  | { type: 'navigatePath' }
+  | { type: 'renamedSelectedFile'; oldPath: string; newPath: string }
+  | { type: 'setContextMenu'; value: ContextMenuState | null }
+  | { type: 'setDeleteConfirm'; value: FileEntry | null }
+  | { type: 'setMkdirOpen'; value: boolean }
+  | { type: 'setRenameEntry'; value: FileEntry | null }
+  | { type: 'setSelectedFile'; value: FileEntry | null }
+  | { type: 'setUploadOpen'; value: boolean }
+
+const INITIAL_FILES_PAGE_STATE: FilesPageState = {
+  contextMenu: null,
+  deleteConfirm: null,
+  mkdirOpen: false,
+  renameEntry: null,
+  selectedFile: null,
+  uploadOpen: false
+}
+
+function filesPageReducer(state: FilesPageState, action: FilesPageAction): FilesPageState {
+  switch (action.type) {
+    case 'confirmDelete':
+      return { ...state, deleteConfirm: action.entry }
+    case 'deleteFinished':
+      return {
+        ...state,
+        deleteConfirm: null,
+        selectedFile: state.selectedFile?.path === action.path ? null : state.selectedFile
+      }
+    case 'navigatePath':
+      return { ...state, selectedFile: null }
+    case 'renamedSelectedFile':
+      if (state.selectedFile?.path !== action.oldPath) {
+        return state
+      }
+      return {
+        ...state,
+        selectedFile: {
+          ...state.selectedFile,
+          name: action.newPath.split('/').pop() ?? state.selectedFile.name,
+          path: action.newPath
+        }
+      }
+    case 'setContextMenu':
+      return { ...state, contextMenu: action.value }
+    case 'setDeleteConfirm':
+      return { ...state, deleteConfirm: action.value }
+    case 'setMkdirOpen':
+      return { ...state, mkdirOpen: action.value }
+    case 'setRenameEntry':
+      return { ...state, renameEntry: action.value }
+    case 'setSelectedFile':
+      return { ...state, selectedFile: action.value }
+    case 'setUploadOpen':
+      return { ...state, uploadOpen: action.value }
+    default:
+      return state
+  }
+}
+
 function FilesPage() {
   const { t } = useTranslation('file')
   const { serverId } = Route.useParams()
@@ -45,12 +116,7 @@ function FilesPage() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [selectedFile, setSelectedFile] = useState<FileEntry | null>(null)
-  const [uploadOpen, setUploadOpen] = useState(false)
-  const [mkdirOpen, setMkdirOpen] = useState(false)
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
-  const [deleteConfirm, setDeleteConfirm] = useState<FileEntry | null>(null)
-  const [renameEntry, setRenameEntry] = useState<FileEntry | null>(null)
+  const [state, dispatch] = useReducer(filesPageReducer, INITIAL_FILES_PAGE_STATE)
 
   const { data: server } = useServer(serverId)
   const fileDisabled =
@@ -64,20 +130,17 @@ function FilesPage() {
   const handleNavigate = useCallback(
     (path: string) => {
       navigate({ search: { path } })
-      setSelectedFile(null)
+      dispatch({ type: 'navigatePath' })
     },
     [navigate]
   )
 
   const handleFileSelect = useCallback((entry: FileEntry) => {
-    setSelectedFile(entry)
+    dispatch({ type: 'setSelectedFile', value: entry })
   }, [])
 
   const handleContextMenu = useCallback((entry: FileEntry, event: React.MouseEvent) => {
-    setContextMenu({
-      entry,
-      position: { x: event.clientX, y: event.clientY }
-    })
+    dispatch({ type: 'setContextMenu', value: { entry, position: { x: event.clientX, y: event.clientY } } })
   }, [])
 
   const handleRefresh = () => {
@@ -98,33 +161,31 @@ function FilesPage() {
   )
 
   const handleDelete = useCallback((entry: FileEntry) => {
-    setDeleteConfirm(entry)
+    dispatch({ type: 'confirmDelete', entry })
   }, [])
 
   const confirmDelete = () => {
-    if (!deleteConfirm) {
+    if (!state.deleteConfirm) {
       return
     }
+    const deletePath = state.deleteConfirm.path
     deleteMutation.mutate(
-      { path: deleteConfirm.path, recursive: deleteConfirm.file_type === 'Directory' },
+      { path: deletePath, recursive: state.deleteConfirm.file_type === 'Directory' },
       {
         onSuccess: () => {
           toast.success(t('delete'))
-          if (selectedFile?.path === deleteConfirm.path) {
-            setSelectedFile(null)
-          }
-          setDeleteConfirm(null)
+          dispatch({ type: 'deleteFinished', path: deletePath })
         },
         onError: (err) => {
           toast.error(err instanceof Error ? err.message : t('delete_failed'))
-          setDeleteConfirm(null)
+          dispatch({ type: 'setDeleteConfirm', value: null })
         }
       }
     )
   }
 
   const handleRename = useCallback((entry: FileEntry) => {
-    setRenameEntry(entry)
+    dispatch({ type: 'setRenameEntry', value: entry })
   }, [])
 
   const handleCopyPath = useCallback(
@@ -159,13 +220,23 @@ function FilesPage() {
             <FileBreadcrumb onNavigate={handleNavigate} path={currentPath} />
             <div className="flex flex-wrap gap-1 sm:ml-auto">
               {isAdmin && (
-                <Button aria-label={t('upload')} onClick={() => setUploadOpen(true)} size="sm" variant="outline">
+                <Button
+                  aria-label={t('upload')}
+                  onClick={() => dispatch({ type: 'setUploadOpen', value: true })}
+                  size="sm"
+                  variant="outline"
+                >
                   <Upload className="size-3.5" />
                   <span className="hidden sm:inline">{t('upload')}</span>
                 </Button>
               )}
               {isAdmin && (
-                <Button aria-label={t('new_folder')} onClick={() => setMkdirOpen(true)} size="sm" variant="outline">
+                <Button
+                  aria-label={t('new_folder')}
+                  onClick={() => dispatch({ type: 'setMkdirOpen', value: true })}
+                  size="sm"
+                  variant="outline"
+                >
                   <FolderPlus className="size-3.5" />
                   <span className="hidden sm:inline">{t('new_folder')}</span>
                 </Button>
@@ -199,24 +270,24 @@ function FilesPage() {
 
             {/* Preview/Editor panel - hidden on small screens */}
             <div className="hidden min-w-0 flex-1 md:block">
-              <FilePreview entry={selectedFile} readOnly={!isAdmin} serverId={serverId} />
+              <FilePreview entry={state.selectedFile} readOnly={!isAdmin} serverId={serverId} />
             </div>
           </div>
         </>
       )}
 
       {/* Mobile preview overlay */}
-      {selectedFile && (
+      {state.selectedFile && (
         <div className="fixed inset-0 z-40 flex flex-col bg-background md:hidden">
           <div className="flex min-w-0 items-center gap-2 border-b px-3 py-2 sm:px-4">
-            <Button onClick={() => setSelectedFile(null)} size="sm" variant="ghost">
+            <Button onClick={() => dispatch({ type: 'setSelectedFile', value: null })} size="sm" variant="ghost">
               <ArrowLeft aria-hidden="true" className="size-4" />
               {t('back_to_server')}
             </Button>
-            <span className="truncate text-sm">{selectedFile.name}</span>
+            <span className="truncate text-sm">{state.selectedFile.name}</span>
           </div>
           <div className="min-h-0 flex-1">
-            <FilePreview entry={selectedFile} readOnly={!isAdmin} serverId={serverId} />
+            <FilePreview entry={state.selectedFile} readOnly={!isAdmin} serverId={serverId} />
           </div>
         </div>
       )}
@@ -225,37 +296,39 @@ function FilesPage() {
       <TransferBar />
 
       {/* Context menu */}
-      {contextMenu && (
+      {state.contextMenu && (
         <FileContextMenu
-          entry={contextMenu.entry}
+          entry={state.contextMenu.entry}
           isAdmin={isAdmin}
-          onClose={() => setContextMenu(null)}
+          onClose={() => dispatch({ type: 'setContextMenu', value: null })}
           onCopyPath={handleCopyPath}
           onDelete={handleDelete}
           onDownload={handleDownload}
           onRename={handleRename}
-          position={contextMenu.position}
+          position={state.contextMenu.position}
         />
       )}
 
       {/* Dialogs */}
       <FileUploadDialog
         currentPath={currentPath}
-        onClose={() => setUploadOpen(false)}
-        open={uploadOpen}
+        onClose={() => dispatch({ type: 'setUploadOpen', value: false })}
+        open={state.uploadOpen}
         serverId={serverId}
       />
-      <MkdirDialog currentPath={currentPath} onClose={() => setMkdirOpen(false)} open={mkdirOpen} serverId={serverId} />
+      <MkdirDialog
+        currentPath={currentPath}
+        onClose={() => dispatch({ type: 'setMkdirOpen', value: false })}
+        open={state.mkdirOpen}
+        serverId={serverId}
+      />
       <RenameDialog
-        entry={renameEntry}
-        onClose={() => setRenameEntry(null)}
+        entry={state.renameEntry}
+        onClose={() => dispatch({ type: 'setRenameEntry', value: null })}
         onRenamed={(oldPath, newPath) => {
-          if (selectedFile?.path === oldPath) {
-            const newName = newPath.split('/').pop() ?? selectedFile.name
-            setSelectedFile({ ...selectedFile, path: newPath, name: newName })
-          }
+          dispatch({ type: 'renamedSelectedFile', oldPath, newPath })
         }}
-        open={renameEntry !== null}
+        open={state.renameEntry !== null}
         serverId={serverId}
       />
 
@@ -263,18 +336,20 @@ function FilesPage() {
       <Dialog
         onOpenChange={(open) => {
           if (!open) {
-            setDeleteConfirm(null)
+            dispatch({ type: 'setDeleteConfirm', value: null })
           }
         }}
-        open={deleteConfirm !== null}
+        open={state.deleteConfirm !== null}
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('confirm_delete_title')}</DialogTitle>
           </DialogHeader>
-          <p className="text-muted-foreground text-sm">{t('confirm_delete', { name: deleteConfirm?.name ?? '' })}</p>
+          <p className="text-muted-foreground text-sm">
+            {t('confirm_delete', { name: state.deleteConfirm?.name ?? '' })}
+          </p>
           <DialogFooter>
-            <Button onClick={() => setDeleteConfirm(null)} variant="outline">
+            <Button onClick={() => dispatch({ type: 'setDeleteConfirm', value: null })} variant="outline">
               {t('cancel')}
             </Button>
             <Button disabled={deleteMutation.isPending} onClick={confirmDelete} variant="destructive">
