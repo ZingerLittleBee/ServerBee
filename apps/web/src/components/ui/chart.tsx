@@ -5,7 +5,8 @@ import {
   createContext,
   type ReactNode,
   use,
-  useId
+  useId,
+  useMemo
 } from 'react'
 import { Legend, type LegendProps, ResponsiveContainer, Tooltip } from 'recharts'
 import { cn } from '@/lib/utils'
@@ -48,9 +49,10 @@ function ChartContainer({
 }) {
   const uniqueId = useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, '')}`
+  const contextValue = useMemo(() => ({ config }), [config])
 
   return (
-    <ChartContext.Provider value={{ config }}>
+    <ChartContext.Provider value={contextValue}>
       <div
         className={cn(
           "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-sector]:outline-hidden [&_.recharts-surface]:outline-hidden",
