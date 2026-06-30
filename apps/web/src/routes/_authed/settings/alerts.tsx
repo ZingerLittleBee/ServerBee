@@ -175,7 +175,8 @@ function AlertsPage() {
       trigger_mode: string
     }) => api.post<AlertRule>('/api/alert-rules', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['alert-rules'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['alert-rule-states'] }).catch(() => undefined)
       resetForm()
       toast.success(t('alerts.created'))
     },
@@ -187,7 +188,8 @@ function AlertsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/alert-rules/${id}`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['alert-rules'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['alert-rule-states'] }).catch(() => undefined)
       toast.success(t('alerts.deleted'))
     },
     onError: (err) => {
@@ -199,17 +201,14 @@ function AlertsPage() {
     mutationFn: ({ enabled, id }: { enabled: boolean; id: string }) =>
       api.put<AlertRule>(`/api/alert-rules/${id}`, { enabled }),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['alert-rules'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['alert-rule-states'] }).catch(() => undefined)
       toast.success(t('alerts.updated'))
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : t('alerts.update_failed'))
     }
   })
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['alert-rules'] }).catch(() => undefined)
-  }
 
   const resetForm = () => {
     setName('')

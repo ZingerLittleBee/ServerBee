@@ -41,6 +41,7 @@ function TwoFactorSection() {
   const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
   const [setupData, setSetupData] = useState<TotpSetupResponse | null>(null)
+  const [setupPending, setSetupPending] = useState(false)
   const [verifyCode, setVerifyCode] = useState('')
 
   const { data: status, isLoading } = useQuery<TotpStatusResponse>({
@@ -48,16 +49,21 @@ function TwoFactorSection() {
     queryFn: () => api.get<TotpStatusResponse>('/api/auth/2fa/status')
   })
 
-  const setupMutation = useMutation({
-    mutationFn: () => api.post<TotpSetupResponse>('/api/auth/2fa/setup'),
-    onSuccess: (data) => {
+  const handleSetup = async () => {
+    if (setupPending) {
+      return
+    }
+    setSetupPending(true)
+    try {
+      const data = await api.post<TotpSetupResponse>('/api/auth/2fa/setup')
       setSetupData(data)
       toast.success(t('security.toast_2fa_setup'))
-    },
-    onError: (err) => {
+    } catch (err) {
       toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
+    } finally {
+      setSetupPending(false)
     }
-  })
+  }
 
   const enableMutation = useMutation({
     mutationFn: (code: string) => api.post('/api/auth/2fa/enable', { code }),
@@ -227,7 +233,7 @@ function TwoFactorSection() {
       {!(status?.enabled || setupData) && (
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm">{t('security.two_factor_description')}</p>
-          <Button disabled={setupMutation.isPending} onClick={() => setupMutation.mutate()}>
+          <Button disabled={setupPending} onClick={handleSetup}>
             <Shield aria-hidden="true" className="size-4" />
             {t('security.setup_2fa')}
           </Button>
@@ -242,19 +248,26 @@ function ChangePasswordSection() {
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [changePending, setChangePending] = useState(false)
+  const [changeError, setChangeError] = useState<Error | null>(null)
 
-  const mutation = useMutation({
-    mutationFn: (payload: { new_password: string; old_password: string }) => api.put('/api/auth/password', payload),
-    onSuccess: () => {
+  const handlePasswordChange = async (payload: { new_password: string; old_password: string }) => {
+    setChangePending(true)
+    setChangeError(null)
+    try {
+      await api.put('/api/auth/password', payload)
       setOldPassword('')
       setNewPassword('')
       setConfirmPassword('')
       toast.success(t('security.toast_password_changed'))
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(t('common:errors.operation_failed'))
+      setChangeError(error)
+      toast.error(error.message)
+    } finally {
+      setChangePending(false)
     }
-  })
+  }
 
   const passwordsMatch = newPassword === confirmPassword
 
@@ -266,7 +279,7 @@ function ChangePasswordSection() {
       toast.error(t('security.password_mismatch'))
       return
     }
-    mutation.mutate({ old_password: oldPassword, new_password: newPassword })
+    handlePasswordChange({ old_password: oldPassword, new_password: newPassword }).catch(() => undefined)
   }
 
   return (
@@ -319,12 +332,12 @@ function ChangePasswordSection() {
           )}
         </div>
 
-        {mutation.error && (
-          <p className="text-destructive text-sm">{mutation.error.message || t('security.change_failed')}</p>
+        {changeError && (
+          <p className="text-destructive text-sm">{changeError.message || t('security.change_failed')}</p>
         )}
 
-        <Button disabled={mutation.isPending || !passwordsMatch || newPassword.length === 0} type="submit">
-          {mutation.isPending ? t('security.changing') : t('security.change_password')}
+        <Button disabled={changePending || !passwordsMatch || newPassword.length === 0} type="submit">
+          {changePending ? t('security.changing') : t('security.change_password')}
         </Button>
       </form>
     </div>

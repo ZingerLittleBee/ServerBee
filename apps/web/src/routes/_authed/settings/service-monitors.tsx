@@ -666,14 +666,10 @@ export function ServiceMonitorsPage() {
     queryFn: () => api.get<ServiceMonitor[]>('/api/service-monitors')
   })
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['service-monitors'] }).catch(() => undefined)
-  }
-
   const createMutation = useMutation({
     mutationFn: (input: CreateInput) => api.post<ServiceMonitor>('/api/service-monitors', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['service-monitors'] }).catch(() => undefined)
       setDialogOpen(false)
       toast.success(t('toast.created'))
     },
@@ -686,7 +682,7 @@ export function ServiceMonitorsPage() {
     mutationFn: ({ id, input }: { id: string; input: UpdateInput }) =>
       api.put<ServiceMonitor>(`/api/service-monitors/${id}`, input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['service-monitors'] }).catch(() => undefined)
       setDialogOpen(false)
       setEditing(null)
       toast.success(t('toast.updated'))
@@ -699,7 +695,7 @@ export function ServiceMonitorsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/service-monitors/${id}`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['service-monitors'] }).catch(() => undefined)
       toast.success(t('toast.deleted'))
     },
     onError: (err) => {
@@ -710,7 +706,7 @@ export function ServiceMonitorsPage() {
   const triggerMutation = useMutation({
     mutationFn: (id: string) => api.post(`/api/service-monitors/${id}/check`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['service-monitors'] }).catch(() => undefined)
       toast.success(t('toast.checkTriggered'))
     },
     onError: (err) => {
@@ -722,7 +718,7 @@ export function ServiceMonitorsPage() {
     mutationFn: ({ enabled, id }: { enabled: boolean; id: string }) =>
       api.put<ServiceMonitor>(`/api/service-monitors/${id}`, { enabled }),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['service-monitors'] }).catch(() => undefined)
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : t('toast.toggleFailed'))

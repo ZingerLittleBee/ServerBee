@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { ChevronDown, ChevronRight, Play, Terminal } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
@@ -48,6 +48,7 @@ function TasksPage() {
 
 function OneshotTaskPanel() {
   const { t } = useTranslation(['settings', 'common'])
+  const queryClient = useQueryClient()
   const [command, setCommand] = useState('')
   const [selectedServerIds, setSelectedServerIds] = useState<string[]>([])
   const [timeout, setTimeout] = useState(30)
@@ -63,6 +64,7 @@ function OneshotTaskPanel() {
       api.post<TaskResponse>('/api/tasks', input),
     onSuccess: (data) => {
       setExpandedTask(data.id)
+      queryClient.invalidateQueries({ queryKey: ['task-results', data.id] }).catch(() => undefined)
     }
   })
 

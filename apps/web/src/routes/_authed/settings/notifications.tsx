@@ -303,7 +303,8 @@ function NotificationsPage() {
       notify_type: string
     }) => api.post<Notification>('/api/notifications', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['notification-groups'] }).catch(() => undefined)
       resetForm()
       toast.success(t('notifications.toast_created'))
     },
@@ -339,7 +340,8 @@ function NotificationsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/notifications/${id}`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['notification-groups'] }).catch(() => undefined)
       toast.success(t('notifications.toast_deleted'))
     },
     onError: (err) => {
@@ -350,6 +352,7 @@ function NotificationsPage() {
   const testMutation = useMutation({
     mutationFn: (id: string) => api.post(`/api/notifications/${id}/test`),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
       toast.success(t('notifications.toast_test_sent'))
     },
     onError: (err) => {
@@ -368,7 +371,8 @@ function NotificationsPage() {
     mutationFn: (input: { name: string; notification_ids: string[] }) =>
       api.post<NotificationGroup>('/api/notification-groups', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['notification-groups'] }).catch(() => undefined)
       resetGroupForm()
       toast.success(t('notifications.toast_group_created'))
     },
@@ -394,18 +398,14 @@ function NotificationsPage() {
   const deleteGroupMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/notification-groups/${id}`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['notification-groups'] }).catch(() => undefined)
       toast.success(t('notifications.toast_group_deleted'))
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : t('notifications.group_delete_failed'))
     }
   })
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['notifications'] }).catch(() => undefined)
-    queryClient.invalidateQueries({ queryKey: ['notification-groups'] }).catch(() => undefined)
-  }
 
   const resetForm = () => {
     setName('')

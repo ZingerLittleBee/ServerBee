@@ -680,14 +680,10 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
     queryFn: () => api.get<IncidentItem[]>('/api/incidents')
   })
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['incidents'] }).catch(() => undefined)
-  }
-
   const createMutation = useMutation({
     mutationFn: (input: CreateIncidentRequest) => api.post('/api/incidents', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['incidents'] }).catch(() => undefined)
       setDialogOpen(false)
       toast.success(t('incidents.created'))
     },
@@ -697,7 +693,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
   const updateMutation = useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateIncidentRequest }) => api.put(`/api/incidents/${id}`, input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['incidents'] }).catch(() => undefined)
       setDialogOpen(false)
       setEditing(null)
       toast.success(t('incidents.updated'))
@@ -708,7 +704,7 @@ function IncidentsTab({ servers }: { servers: ServerResponse[] }) {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/incidents/${id}`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['incidents'] }).catch(() => undefined)
       toast.success(t('incidents.deleted'))
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))
@@ -1046,14 +1042,10 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
     queryFn: () => api.get<MaintenanceItem[]>('/api/maintenances')
   })
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['maintenances'] }).catch(() => undefined)
-  }
-
   const createMutation = useMutation({
     mutationFn: (input: CreateMaintenanceRequest) => api.post('/api/maintenances', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['maintenances'] }).catch(() => undefined)
       setDialogOpen(false)
       toast.success(t('maintenance.created'))
     },
@@ -1064,7 +1056,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
     mutationFn: ({ id, input }: { id: string; input: UpdateMaintenanceRequest }) =>
       api.put(`/api/maintenances/${id}`, input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['maintenances'] }).catch(() => undefined)
       setDialogOpen(false)
       setEditing(null)
       toast.success(t('maintenance.updated'))
@@ -1075,7 +1067,7 @@ function MaintenanceTab({ servers }: { servers: ServerResponse[] }) {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/maintenances/${id}`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['maintenances'] }).catch(() => undefined)
       toast.success(t('maintenance.deleted'))
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : t('common:errors.failed'))

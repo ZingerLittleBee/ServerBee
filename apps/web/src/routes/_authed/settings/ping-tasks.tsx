@@ -168,25 +168,27 @@ function PingTasksPage() {
       target: string
     }) => api.post<PingTask>('/api/ping-tasks', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['ping-tasks'] }).catch(() => undefined)
       resetForm()
     }
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/ping-tasks/${id}`),
-    onSuccess: () => invalidate()
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ping-tasks'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['ping-records'] }).catch(() => undefined)
+    }
   })
 
   const toggleMutation = useMutation({
     mutationFn: ({ enabled, id }: { enabled: boolean; id: string }) =>
       api.put<PingTask>(`/api/ping-tasks/${id}`, { enabled }),
-    onSuccess: () => invalidate()
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ping-tasks'] }).catch(() => undefined)
+      queryClient.invalidateQueries({ queryKey: ['ping-records'] }).catch(() => undefined)
+    }
   })
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['ping-tasks'] }).catch(() => undefined)
-  }
 
   const resetForm = () => {
     setName('')

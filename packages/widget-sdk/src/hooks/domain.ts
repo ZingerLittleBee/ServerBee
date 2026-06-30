@@ -62,6 +62,8 @@ export function useHistory(serverId: string | null, path: string, range: string)
 
 export function useGeoIp() {
   const status = useApiQuery<{ installed: boolean; source?: string }>('/api/geoip/status')
-  const download = useApiMutation<{ success: boolean }>('POST', '/api/geoip/download')
+  const download = useApiMutation<{ success: boolean }>('POST', '/api/geoip/download', {
+    invalidateQueryKeys: [['widget-api', '/api/geoip/status']]
+  })
   return { status, download }
 }

@@ -53,15 +53,11 @@ function UsersPage() {
     queryFn: () => api.get<UserResponse[]>('/api/users')
   })
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined)
-  }
-
   const createMutation = useMutation({
     mutationFn: (input: { password: string; role: string; username: string }) =>
       api.post<UserResponse>('/api/users', input),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined)
       resetForm()
       toast.success(t('users.toast_created'))
     },
@@ -73,7 +69,7 @@ function UsersPage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, role }: { id: string; role: string }) => api.put<UserResponse>(`/api/users/${id}`, { role }),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined)
       setEditingId(null)
       toast.success(t('users.toast_role_updated'))
     },
@@ -85,7 +81,7 @@ function UsersPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/users/${id}`),
     onSuccess: () => {
-      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined)
       toast.success(t('users.toast_deleted'))
     },
     onError: (err) => {
