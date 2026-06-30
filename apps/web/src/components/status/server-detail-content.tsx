@@ -245,7 +245,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
     diskTotal
   })
 
-  const chartFormatTime = useChartTickFormatter(isRealtime, range, realtimeData)
+  const chartFormatTime = useChartTickFormatter(isRealtime, range, chartData)
   const tooltipFormatTime = useTooltipFormatter(isRealtime, range)
   const xAxisInterval = useXAxisInterval(isRealtime, range, chartData.length)
   const gpuChartData = useGpuChartData(isAdminVariant, gpuRecords, publicMetrics)
@@ -427,19 +427,26 @@ function useAggregatedChartData(args: {
   }, [adminRecords, diskTotal, isAdminVariant, isRealtime, memTotal, publicMetrics, realtimeData])
 }
 
-function useChartTickFormatter(isRealtime: boolean, range: TimeRange, realtimeData: unknown) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: realtimeData in deps forces closure rebuild on buffer updates so `lastLabel` resets before Recharts re-iterates ticks
+function formatHourMinute(time: string) {
+  const d = new Date(time)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function useChartTickFormatter(isRealtime: boolean, range: TimeRange, chartData: Record<string, unknown>[]) {
   return useMemo<((time: string) => string) | undefined>(() => {
     if (isRealtime) {
-      let lastLabel = ''
-      return (time: string) => {
-        const d = new Date(time)
-        const label = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-        if (label === lastLabel) {
-          return ''
+      const realtimeLabels = new Map<string, string>()
+      let previousLabel = ''
+      for (const point of chartData) {
+        if (typeof point.timestamp !== 'string') {
+          continue
         }
-        lastLabel = label
-        return label
+        const label = formatHourMinute(point.timestamp)
+        realtimeLabels.set(point.timestamp, label === previousLabel ? '' : label)
+        previousLabel = label
+      }
+      return (time: string) => {
+        return realtimeLabels.get(time) ?? formatHourMinute(time)
       }
     }
     if (range.hours >= 168) {
@@ -451,7 +458,7 @@ function useChartTickFormatter(isRealtime: boolean, range: TimeRange, realtimeDa
       }
     }
     return undefined
-  }, [isRealtime, realtimeData, range])
+  }, [isRealtime, chartData, range])
 }
 
 /** Recharts X-axis `interval` (stride = N+1 ticks). Returns a numeric stride for

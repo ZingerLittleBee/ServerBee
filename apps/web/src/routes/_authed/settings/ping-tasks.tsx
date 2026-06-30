@@ -50,12 +50,17 @@ const PING_CHART_CONFIG = {
   latency: { label: 'Latency', color: 'var(--chart-4)' }
 } satisfies ChartConfig
 
+function createPingRecordWindow() {
+  const now = new Date()
+  return {
+    from: new Date(now.getTime() - 24 * 3600 * 1000).toISOString(),
+    to: now.toISOString()
+  }
+}
+
 function PingResultsChart({ taskId }: { taskId: string }) {
   const { t } = useTranslation('settings')
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-compute when taskId changes
-  const now = useMemo(() => new Date(), [taskId])
-  const from = new Date(now.getTime() - 24 * 3600 * 1000).toISOString()
-  const to = now.toISOString()
+  const { from, to } = useMemo(createPingRecordWindow, [])
 
   const { data: records, isLoading } = useQuery<PingRecord[]>({
     queryKey: ['ping-records', taskId, from, to],
@@ -481,7 +486,7 @@ function PingTasksPage() {
                   </div>
                   {isExpanded && (
                     <div className="border-t bg-muted/20 px-4 py-3">
-                      <PingResultsChart taskId={task.id} />
+                      <PingResultsChart key={task.id} taskId={task.id} />
                     </div>
                   )}
                 </div>
