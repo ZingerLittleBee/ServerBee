@@ -1,6 +1,7 @@
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { deriveServerStatus, StatusDot } from './status-dot'
+import { StatusDot } from './status-dot'
+import { deriveServerStatus } from './status-dot-utils'
 
 const ANIMATE_PULSE_RE = /animate-pulse/
 const BG_EMERALD_RE = /bg-emerald-500/
@@ -13,7 +14,8 @@ describe('StatusDot', () => {
     const el = container.querySelector('[data-slot="status-dot"]')
     expect(el?.className).toMatch(ANIMATE_PULSE_RE)
     expect(el?.className).toMatch(BG_EMERALD_RE)
-    expect(el?.getAttribute('aria-label')).toBe('online')
+    expect(el?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByText('online')).toHaveClass('sr-only')
   })
 
   it('renders muted dot without pulse when status is offline', () => {
@@ -21,7 +23,8 @@ describe('StatusDot', () => {
     const el = container.querySelector('[data-slot="status-dot"]')
     expect(el?.className).not.toMatch(ANIMATE_PULSE_RE)
     expect(el?.className).toMatch(BG_MUTED_RE)
-    expect(el?.getAttribute('aria-label')).toBe('offline')
+    expect(el?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByText('offline')).toHaveClass('sr-only')
   })
 
   it('renders amber dot when status is pending', () => {
@@ -29,7 +32,8 @@ describe('StatusDot', () => {
     const el = container.querySelector('[data-slot="status-dot"]')
     expect(el?.className).not.toMatch(ANIMATE_PULSE_RE)
     expect(el?.className).toMatch(BG_AMBER_RE)
-    expect(el?.getAttribute('aria-label')).toBe('pending')
+    expect(el?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByText('pending')).toHaveClass('sr-only')
   })
 })
 

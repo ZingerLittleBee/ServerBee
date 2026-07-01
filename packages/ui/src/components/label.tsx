@@ -1,7 +1,7 @@
 import { cn } from '@serverbee/ui/lib/utils'
 import type * as React from 'react'
 
-function Label({ className, ...props }: React.ComponentProps<'label'>) {
+function Label({ className, htmlFor, ...props }: React.ComponentProps<'label'>) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: reusable component receives htmlFor via props
     <label
@@ -10,6 +10,7 @@ function Label({ className, ...props }: React.ComponentProps<'label'>) {
         className
       )}
       data-slot="label"
+      htmlFor={htmlFor}
       {...props}
     />
   )

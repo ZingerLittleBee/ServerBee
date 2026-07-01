@@ -12,7 +12,7 @@ import type { OutstandingEnrollmentSummary, RecoverRequest, RecoverResponse, Ser
 import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
 import { cn } from '@/lib/utils'
 
-const DEFAULT_CAP_KEYS = CAPABILITIES.filter((c) => hasCap(CAP_DEFAULT, c.bit)).map((c) => c.key)
+const DEFAULT_CAP_KEYS = CAPABILITIES.flatMap((c) => (hasCap(CAP_DEFAULT, c.bit) ? [c.key] : []))
 const ALL_CAP_KEYS = CAPABILITIES.map((c) => c.key)
 
 interface CapGroupProps {
@@ -139,29 +139,30 @@ interface RecoverAgentDialogProps {
 }
 
 function initialCapsFor(caps: number | null | undefined): Set<string> {
-  return new Set(CAPABILITIES.filter((c) => hasCap(caps ?? CAP_DEFAULT, c.bit)).map((c) => c.key))
+  return new Set(CAPABILITIES.flatMap((c) => (hasCap(caps ?? CAP_DEFAULT, c.bit) ? [c.key] : [])))
 }
 
 export function RecoverAgentDialog({ open, onOpenChange, server }: RecoverAgentDialogProps) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      {open && <RecoverAgentDialogContent key={server.id} onOpenChange={onOpenChange} server={server} />}
+    </Dialog>
+  )
+}
+
+function RecoverAgentDialogContent({
+  onOpenChange,
+  server
+}: {
+  onOpenChange: (open: boolean) => void
+  server: Pick<ServerResponse, 'id' | 'name' | 'capabilities' | 'outstanding_enrollment'>
+}) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
 
   const [selectedCaps, setSelectedCaps] = useState<Set<string>>(() => initialCapsFor(server.capabilities))
   const [revokeImmediately, setRevokeImmediately] = useState(true)
   const [issued, setIssued] = useState<RecoverResponse | null>(null)
-
-  // Reset internal state when the dialog closes so a fresh open never leaks the
-  // previous issued code or caps selection. We intentionally re-project caps
-  // only when the dialog closes, so server-side updates to capabilities while
-  // the dialog is open don't blow away pending user toggles.
-  const serverCaps = server.capabilities
-  useEffect(() => {
-    if (!open) {
-      setIssued(null)
-      setRevokeImmediately(true)
-      setSelectedCaps(initialCapsFor(serverCaps))
-    }
-  }, [open, serverCaps])
 
   const mutation = useMutation({
     mutationFn: (body: RecoverRequest) => api.post<RecoverResponse>(`/api/servers/${server.id}/recover`, body),
@@ -248,7 +249,6 @@ export function RecoverAgentDialog({ open, onOpenChange, server }: RecoverAgentD
   }
 
   const handleClose = () => {
-    reset()
     onOpenChange(false)
   }
 
@@ -260,182 +260,163 @@ export function RecoverAgentDialog({ open, onOpenChange, server }: RecoverAgentD
   const outstanding = server.outstanding_enrollment ?? null
 
   return (
-    <Dialog
-      onOpenChange={(next) => {
-        if (next) {
-          onOpenChange(true)
-        } else {
-          handleClose()
-        }
-      }}
-      open={open}
-    >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {t('recover_agent.title')} · <span className="font-mono">{server.name}</span>
-          </DialogTitle>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>
+          {t('recover_agent.title')} · <span className="font-mono">{server.name}</span>
+        </DialogTitle>
+      </DialogHeader>
 
-        {outstanding && <OutstandingNotice enrollment={outstanding} onClose={handleClose} serverId={server.id} />}
-        {!outstanding && issued && (
-          <>
-            <DialogBody className="space-y-5">
-              <p className="text-muted-foreground text-sm">{t('recover_agent.description')}</p>
+      {outstanding && <OutstandingNotice enrollment={outstanding} onClose={handleClose} serverId={server.id} />}
+      {!outstanding && issued && (
+        <>
+          <DialogBody className="space-y-5">
+            <p className="text-muted-foreground text-sm">{t('recover_agent.description')}</p>
 
-              <div className="space-y-4 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
-                <p className="text-amber-600 text-sm dark:text-amber-500">{t('add_server.shown_once_warning')}</p>
+            <div className="space-y-4 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
+              <p className="text-amber-600 text-sm dark:text-amber-500">{t('add_server.shown_once_warning')}</p>
 
-                <div>
-                  <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.code_label')}</p>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
-                      {issued.enrollment.code}
-                    </code>
-                    <Button
-                      aria-label={t('add_server.copy')}
-                      onClick={() => copy(issued.enrollment.code)}
-                      size="icon"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.install_command')}</p>
-                  <div className="flex min-w-0 items-start gap-2">
-                    <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
-                      {installCommand}
-                    </code>
-                    <Button
-                      aria-label={t('add_server.copy')}
-                      onClick={() => copy(installCommand)}
-                      size="icon"
-                      type="button"
-                      variant="outline"
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.steps_title')}</p>
-                  <ol className="list-decimal space-y-1 pl-5 text-muted-foreground text-sm">
-                    <li>{t('add_server.step1')}</li>
-                    <li>{t('add_server.step2')}</li>
-                    <li>{t('add_server.step3')}</li>
-                  </ol>
+              <div>
+                <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.code_label')}</p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
+                    {issued.enrollment.code}
+                  </code>
+                  <Button
+                    aria-label={t('add_server.copy')}
+                    onClick={() => copy(issued.enrollment.code)}
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Copy className="size-4" />
+                  </Button>
                 </div>
               </div>
-            </DialogBody>
 
-            <DialogFooter>
-              <Button onClick={reset} type="button" variant="outline">
-                {t('add_server.another')}
-              </Button>
-              <Button onClick={handleClose} type="button">
-                {t('add_server.done')}
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-        {!(outstanding || issued) && (
-          <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
-            <DialogBody className="space-y-4">
-              <p className="text-muted-foreground text-sm">{t('recover_agent.description')}</p>
-
-              <fieldset className="space-y-2">
-                <legend className="mb-1 flex w-full items-center justify-between gap-2">
-                  <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                    {t('recover_agent.caps_label')}
-                  </span>
-                  <span className="flex gap-2 text-xs">
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={resetCapsToDefault}
-                      type="button"
-                    >
-                      {t('add_server.caps_reset')}
-                    </button>
-                    <span className="text-muted-foreground/50">·</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={selectAllCaps}
-                      type="button"
-                    >
-                      {t('add_server.caps_select_all')}
-                    </button>
-                    <span className="text-muted-foreground/50">·</span>
-                    <button
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={selectNoCaps}
-                      type="button"
-                    >
-                      {t('add_server.caps_select_none')}
-                    </button>
-                  </span>
-                </legend>
-                <p className="text-muted-foreground text-xs">{t('recover_agent.caps_hint')}</p>
-                <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3">
-                  <CapGroup
-                    caps={standardCaps}
-                    onToggle={toggleCap}
-                    selected={selectedCaps}
-                    t={t}
-                    title={t('add_server.caps_low_risk')}
-                    tone="standard"
-                  />
-                  <CapGroup
-                    caps={highRiskCaps}
-                    onToggle={toggleCap}
-                    selected={selectedCaps}
-                    t={t}
-                    title={t('add_server.caps_high_risk')}
-                    tone="high"
-                  />
+              <div>
+                <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.install_command')}</p>
+                <div className="flex min-w-0 items-start gap-2">
+                  <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/50 px-3 py-2 font-mono text-xs">
+                    {installCommand}
+                  </code>
+                  <Button
+                    aria-label={t('add_server.copy')}
+                    onClick={() => copy(installCommand)}
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                  >
+                    <Copy className="size-4" />
+                  </Button>
                 </div>
-              </fieldset>
+              </div>
 
-              <fieldset className="space-y-2">
-                <label
-                  className="flex cursor-pointer items-center gap-2 text-sm"
-                  htmlFor="recover-agent-revoke-immediately"
-                >
-                  <Checkbox
-                    checked={revokeImmediately}
-                    id="recover-agent-revoke-immediately"
-                    onCheckedChange={(checked) => setRevokeImmediately(Boolean(checked))}
-                  />
-                  <span>{t('recover_agent.revoke_immediately')}</span>
-                </label>
-                {revokeImmediately && (
-                  <p className="pl-6 text-amber-600 text-xs dark:text-amber-500">{t('recover_agent.revoke_warning')}</p>
-                )}
-              </fieldset>
+              <div>
+                <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.steps_title')}</p>
+                <ol className="list-decimal space-y-1 pl-5 text-muted-foreground text-sm">
+                  <li>{t('add_server.step1')}</li>
+                  <li>{t('add_server.step2')}</li>
+                  <li>{t('add_server.step3')}</li>
+                </ol>
+              </div>
+            </div>
+          </DialogBody>
 
-              <p className="text-muted-foreground text-xs">{t('recover_agent.ttl_tip')}</p>
-            </DialogBody>
+          <DialogFooter>
+            <Button onClick={reset} type="button" variant="outline">
+              {t('add_server.another')}
+            </Button>
+            <Button onClick={handleClose} type="button">
+              {t('add_server.done')}
+            </Button>
+          </DialogFooter>
+        </>
+      )}
+      {!(outstanding || issued) && (
+        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
+          <DialogBody className="space-y-4">
+            <p className="text-muted-foreground text-sm">{t('recover_agent.description')}</p>
 
-            <DialogFooter>
-              <Button onClick={handleClose} type="button" variant="outline">
-                {t('common:cancel')}
-              </Button>
-              <Button
-                className={cn(mutation.isPending && 'pointer-events-none opacity-70')}
-                disabled={mutation.isPending}
-                type="submit"
+            <fieldset className="space-y-2">
+              <legend className="mb-1 flex w-full items-center justify-between gap-2">
+                <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
+                  {t('recover_agent.caps_label')}
+                </span>
+                <span className="flex gap-2 text-xs">
+                  <button
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={resetCapsToDefault}
+                    type="button"
+                  >
+                    {t('add_server.caps_reset')}
+                  </button>
+                  <span className="text-muted-foreground/50">·</span>
+                  <button className="text-muted-foreground hover:text-foreground" onClick={selectAllCaps} type="button">
+                    {t('add_server.caps_select_all')}
+                  </button>
+                  <span className="text-muted-foreground/50">·</span>
+                  <button className="text-muted-foreground hover:text-foreground" onClick={selectNoCaps} type="button">
+                    {t('add_server.caps_select_none')}
+                  </button>
+                </span>
+              </legend>
+              <p className="text-muted-foreground text-xs">{t('recover_agent.caps_hint')}</p>
+              <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3">
+                <CapGroup
+                  caps={standardCaps}
+                  onToggle={toggleCap}
+                  selected={selectedCaps}
+                  t={t}
+                  title={t('add_server.caps_low_risk')}
+                  tone="standard"
+                />
+                <CapGroup
+                  caps={highRiskCaps}
+                  onToggle={toggleCap}
+                  selected={selectedCaps}
+                  t={t}
+                  title={t('add_server.caps_high_risk')}
+                  tone="high"
+                />
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-2">
+              <label
+                className="flex cursor-pointer items-center gap-2 text-sm"
+                htmlFor="recover-agent-revoke-immediately"
               >
-                <RefreshCw aria-hidden="true" className="size-4" />
-                {mutation.isPending ? t('recover_agent.generating') : t('recover_agent.generate')}
-              </Button>
-            </DialogFooter>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
+                <Checkbox
+                  checked={revokeImmediately}
+                  id="recover-agent-revoke-immediately"
+                  onCheckedChange={(checked) => setRevokeImmediately(Boolean(checked))}
+                />
+                <span>{t('recover_agent.revoke_immediately')}</span>
+              </label>
+              {revokeImmediately && (
+                <p className="pl-6 text-amber-600 text-xs dark:text-amber-500">{t('recover_agent.revoke_warning')}</p>
+              )}
+            </fieldset>
+
+            <p className="text-muted-foreground text-xs">{t('recover_agent.ttl_tip')}</p>
+          </DialogBody>
+
+          <DialogFooter>
+            <Button onClick={handleClose} type="button" variant="outline">
+              {t('common:cancel')}
+            </Button>
+            <Button
+              className={cn(mutation.isPending && 'pointer-events-none opacity-70')}
+              disabled={mutation.isPending}
+              type="submit"
+            >
+              <RefreshCw aria-hidden="true" className="size-4" />
+              {mutation.isPending ? t('recover_agent.generating') : t('recover_agent.generate')}
+            </Button>
+          </DialogFooter>
+        </form>
+      )}
+    </DialogContent>
   )
 }

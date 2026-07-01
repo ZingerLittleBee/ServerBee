@@ -11,7 +11,7 @@ import {
   Trash2,
   X
 } from 'lucide-react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useReducer, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { LatencyChart } from '@/components/network/latency-chart'
@@ -50,7 +50,9 @@ import {
   getNetworkTargetDisplayProvider
 } from '@/lib/network-i18n'
 import type {
+  NetworkProbeAnomaly,
   NetworkProbeTarget,
+  NetworkServerSummary,
   NetworkTargetSummary,
   TracerouteHop,
   TracerouteRecordSummary
@@ -80,6 +82,66 @@ const TIME_RANGES: TimeRangeOption[] = [
   { label: '7d', value: 168 },
   { label: '30d', value: 720 }
 ]
+
+interface NetworkDetailState {
+  anomalyOpen: boolean
+  selectedRecordId: string | null
+  selectedTargetIds: Set<string>
+  showManageDialog: boolean
+  showTracerouteDialog: boolean
+  traceProtocol: TraceProtocol
+  traceRequestId: string | null
+  traceTarget: string
+  visibleTargets: Set<string> | null
+}
+
+type NetworkDetailAction =
+  | { type: 'set-anomaly-open'; value: boolean }
+  | { type: 'set-manage-dialog-open'; value: boolean }
+  | { type: 'set-selected-record-id'; value: string | null }
+  | { type: 'set-selected-target-ids'; value: Set<string> }
+  | { type: 'set-trace-protocol'; value: TraceProtocol }
+  | { type: 'set-trace-request-id'; value: string | null }
+  | { type: 'set-trace-target'; value: string }
+  | { type: 'set-traceroute-dialog-open'; value: boolean }
+  | { type: 'set-visible-targets'; value: Set<string> | null }
+
+const INITIAL_NETWORK_DETAIL_STATE: NetworkDetailState = {
+  anomalyOpen: false,
+  selectedRecordId: null,
+  selectedTargetIds: new Set(),
+  showManageDialog: false,
+  showTracerouteDialog: false,
+  traceProtocol: 'icmp',
+  traceRequestId: null,
+  traceTarget: '',
+  visibleTargets: null
+}
+
+function networkDetailReducer(state: NetworkDetailState, action: NetworkDetailAction): NetworkDetailState {
+  switch (action.type) {
+    case 'set-anomaly-open':
+      return { ...state, anomalyOpen: action.value }
+    case 'set-manage-dialog-open':
+      return { ...state, showManageDialog: action.value }
+    case 'set-selected-record-id':
+      return { ...state, selectedRecordId: action.value }
+    case 'set-selected-target-ids':
+      return { ...state, selectedTargetIds: action.value }
+    case 'set-trace-protocol':
+      return { ...state, traceProtocol: action.value }
+    case 'set-trace-request-id':
+      return { ...state, traceRequestId: action.value }
+    case 'set-trace-target':
+      return { ...state, traceTarget: action.value }
+    case 'set-traceroute-dialog-open':
+      return { ...state, showTracerouteDialog: action.value }
+    case 'set-visible-targets':
+      return { ...state, visibleTargets: action.value }
+    default:
+      return state
+  }
+}
 
 function deriveHopStats(hop: TracerouteHop, isNew: boolean) {
   const legacyRtts = [hop.rtt1, hop.rtt2, hop.rtt3].filter((v): v is number => v != null)
@@ -243,41 +305,34 @@ function HistoryRow({
   t: (key: string, opts?: Record<string, unknown>) => string
 }) {
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: list items are supplemented by explicit icon buttons
-    // biome-ignore lint/a11y/noNoninteractiveElementInteractions: history rows act as selection targets
-    <li
-      className={cn(
-        'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40',
-        isSelected && 'bg-muted'
-      )}
-      onClick={() => onSelect(record)}
-    >
-      <span className="flex-1 truncate font-mono">{record.target}</span>
-      <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
-        {record.protocol === 'legacy' ? (
-          <Tooltip>
-            <TooltipTrigger>
-              <span>legacy</span>
-            </TooltipTrigger>
-            <TooltipContent>{t('legacy_record_tooltip')}</TooltipContent>
-          </Tooltip>
-        ) : (
-          record.protocol.toUpperCase()
+    <li className="flex items-center gap-1">
+      <button
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted/40',
+          isSelected && 'bg-muted'
         )}
-      </Badge>
-      <span className="text-muted-foreground text-xs">{record.hop_count} hops</span>
-      <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at)}</span>
-      {record.has_error ? <X className="size-3 text-destructive" /> : <Check className="size-3 text-emerald-500" />}
+        onClick={() => onSelect(record)}
+        type="button"
+      >
+        <span className="flex-1 truncate font-mono">{record.target}</span>
+        <Badge variant={record.protocol === 'legacy' ? 'outline' : 'secondary'}>
+          {record.protocol === 'legacy' ? (
+            <Tooltip>
+              <TooltipTrigger>
+                <span>legacy</span>
+              </TooltipTrigger>
+              <TooltipContent>{t('legacy_record_tooltip')}</TooltipContent>
+            </Tooltip>
+          ) : (
+            record.protocol.toUpperCase()
+          )}
+        </Badge>
+        <span className="text-muted-foreground text-xs">{record.hop_count} hops</span>
+        <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at)}</span>
+        {record.has_error ? <X className="size-3 text-destructive" /> : <Check className="size-3 text-emerald-500" />}
+      </button>
       {isAdmin && (
-        <Button
-          aria-label={t('delete')}
-          onClick={(e) => {
-            e.stopPropagation()
-            onDelete(record.request_id)
-          }}
-          size="icon"
-          variant="ghost"
-        >
+        <Button aria-label={t('delete')} onClick={() => onDelete(record.request_id)} size="icon" variant="ghost">
           <Trash2 className="size-4" />
         </Button>
       )}
@@ -600,6 +655,277 @@ function TracerouteContent({
   )
 }
 
+function NetworkDetailHeader({
+  canExport,
+  isAdmin,
+  onExport,
+  onManageTargets,
+  onOpenTraceroute,
+  summary,
+  t
+}: {
+  canExport: boolean
+  isAdmin: boolean
+  onExport: () => void
+  onManageTargets: () => void
+  onOpenTraceroute: () => void
+  summary: NetworkServerSummary
+  t: (key: string, opts?: Record<string, unknown>) => string
+}) {
+  return (
+    <div className="mb-6">
+      <Link
+        className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
+        search={{ q: '' }}
+        to="/network"
+      >
+        <ArrowLeft aria-hidden="true" className="size-4" />
+        {t('back_to_overview')}
+      </Link>
+
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="font-bold text-2xl">{summary.server_name}</h1>
+          <StatusBadge status={summary.online ? 'online' : 'offline'} />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={onOpenTraceroute} size="sm" variant="outline">
+            <RouteIcon aria-hidden="true" className="mr-1 size-4" />
+            {t('traceroute')}
+          </Button>
+          {isAdmin && (
+            <Button onClick={onManageTargets} size="sm" variant="outline">
+              <Settings2 aria-hidden="true" className="mr-1 size-4" />
+              {t('manage_targets')}
+            </Button>
+          )}
+          <Button disabled={!canExport} onClick={onExport} size="sm" variant="outline">
+            <Download aria-hidden="true" className="mr-1 size-4" />
+            {t('export_csv')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface ServerInfoBarProps {
+  server: {
+    ipv4?: string | null
+    ipv6?: string | null
+    os?: string | null
+    region?: string | null
+  }
+  summary: NetworkServerSummary
+  t: (key: string, opts?: Record<string, unknown>) => string
+}
+
+function ServerInfoBar({ server, summary, t }: ServerInfoBarProps) {
+  return (
+    <div className="mb-6 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border bg-card p-3 text-muted-foreground text-sm">
+      {server.ipv4 && (
+        <span>
+          {t('server_ipv4', { defaultValue: 'IPv4' })}: {server.ipv4}
+        </span>
+      )}
+      {server.ipv6 && (
+        <span>
+          {t('server_ipv6', { defaultValue: 'IPv6' })}: {server.ipv6}
+        </span>
+      )}
+      {server.region && (
+        <span>
+          {t('server_region', { defaultValue: 'Region' })}: {server.region}
+        </span>
+      )}
+      {server.os && (
+        <span>
+          {t('server_os', { defaultValue: 'OS' })}: {server.os}
+        </span>
+      )}
+      {summary.last_probe_at && (
+        <span>
+          {t('last_probe')}:{' '}
+          {new Date(summary.last_probe_at).toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function TimeRangeControls({
+  onChange,
+  t,
+  timeRange
+}: {
+  onChange: (value: TimeRangeValue) => void
+  t: (key: string, opts?: Record<string, unknown>) => string
+  timeRange: TimeRangeValue
+}) {
+  return (
+    <div className="mb-4 flex gap-1">
+      {TIME_RANGES.map((range) => (
+        <Button
+          className={cn(timeRange === range.value && 'bg-primary text-primary-foreground')}
+          key={range.value}
+          onClick={() => onChange(range.value)}
+          size="sm"
+          variant={timeRange === range.value ? 'default' : 'outline'}
+        >
+          {range.value === 'realtime' ? t('realtime') : range.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function NetworkStatsGrid({
+  anomalies,
+  onAnomalyClick,
+  stats,
+  t
+}: {
+  anomalies: NetworkProbeAnomaly[]
+  onAnomalyClick: () => void
+  stats: { availability: number; avgLatency: number | null; targetCount: number }
+  t: (key: string, opts?: Record<string, unknown>) => string
+}) {
+  return (
+    <div className="mb-6 grid gap-4 sm:grid-cols-4">
+      <div className="rounded-lg border bg-card p-4 text-center">
+        <p className="font-mono font-semibold text-lg tabular-nums">
+          {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
+        </p>
+        <p className="text-muted-foreground text-xs">{t('avg_latency')}</p>
+      </div>
+      <div className="rounded-lg border bg-card p-4 text-center">
+        <p className="font-mono font-semibold text-lg tabular-nums">{stats.availability.toFixed(1)}%</p>
+        <p className="text-muted-foreground text-xs">{t('availability')}</p>
+      </div>
+      <div className="rounded-lg border bg-card p-4 text-center">
+        <p className="font-mono font-semibold text-lg tabular-nums">{stats.targetCount}</p>
+        <p className="text-muted-foreground text-xs">{t('targets')}</p>
+      </div>
+      <button
+        aria-label={t('anomaly_count')}
+        className={cn(
+          'cursor-pointer rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          anomalies.length > 0 &&
+            'border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
+        )}
+        onClick={onAnomalyClick}
+        type="button"
+      >
+        <p
+          className={cn(
+            'flex items-center justify-center gap-1.5 font-mono font-semibold text-lg tabular-nums',
+            anomalies.length > 0 && 'text-amber-700 dark:text-amber-400'
+          )}
+        >
+          {anomalies.length > 0 && <AlertTriangle aria-hidden="true" className="size-4" />}
+          {anomalies.length}
+        </p>
+        <p className="text-muted-foreground text-xs">{t('anomaly_count')}</p>
+      </button>
+    </div>
+  )
+}
+
+function ManageTargetsDialog({
+  allTargets,
+  getLocalizedTargetDisplayLocation,
+  getLocalizedTargetDisplayName,
+  getLocalizedTargetDisplayProvider,
+  getProbeTypeLabel,
+  isPending,
+  onDeselectAll,
+  onOpenChange,
+  onSave,
+  onSelectAll,
+  onToggleTarget,
+  open,
+  selectedTargetIds,
+  t
+}: {
+  allTargets: NetworkProbeTarget[]
+  getLocalizedTargetDisplayLocation: (target: NetworkProbeTarget) => string
+  getLocalizedTargetDisplayName: (target: NetworkProbeTarget) => string
+  getLocalizedTargetDisplayProvider: (target: NetworkProbeTarget) => string
+  getProbeTypeLabel: (probeType: string) => string
+  isPending: boolean
+  onDeselectAll: () => void
+  onOpenChange: (open: boolean) => void
+  onSave: () => void
+  onSelectAll: () => void
+  onToggleTarget: (id: string) => void
+  open: boolean
+  selectedTargetIds: Set<string>
+  t: (key: string, opts?: Record<string, unknown>) => string
+}) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="sm:max-w-lg" showCloseButton={false}>
+        <DialogHeader>
+          <div className="flex items-center justify-between">
+            <DialogTitle>{t('manage_targets')}</DialogTitle>
+            <div className="flex gap-2">
+              <Button onClick={onSelectAll} size="sm" type="button" variant="ghost">
+                {t('select_all')}
+              </Button>
+              <Button onClick={onDeselectAll} size="sm" type="button" variant="ghost">
+                {t('deselect_all')}
+              </Button>
+            </div>
+          </div>
+        </DialogHeader>
+
+        {allTargets.length === 0 ? (
+          <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
+        ) : (
+          <ScrollArea className="max-h-[70vh] rounded-md border">
+            <div className="space-y-1.5 p-3">
+              {allTargets.map((target) => (
+                // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
+                <label
+                  className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
+                  key={target.id}
+                >
+                  <Checkbox
+                    checked={selectedTargetIds.has(target.id)}
+                    onCheckedChange={() => onToggleTarget(target.id)}
+                  />
+                  <span className="flex-1 font-medium">{getLocalizedTargetDisplayName(target)}</span>
+                  {target.provider && (
+                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayProvider(target)}</span>
+                  )}
+                  {target.location && (
+                    <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayLocation(target)}</span>
+                  )}
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                    {getProbeTypeLabel(target.probe_type)}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+
+        <div className="flex gap-2">
+          <Button disabled={isPending} onClick={onSave} size="sm">
+            {t('save')}
+          </Button>
+          <DialogClose render={<Button size="sm" variant="ghost" />}>{t('cancel')}</DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function NetworkDetailPage() {
   const { i18n, t } = useTranslation('network')
   const { serverId } = Route.useParams()
@@ -620,21 +946,9 @@ export function NetworkDetailPage() {
     return 'realtime'
   }, [range])
 
-  const [visibleTargets, setVisibleTargets] = useState<Set<string> | null>(null)
-
-  // Manage Targets dialog state
-  const [showManageDialog, setShowManageDialog] = useState(false)
-  const [showTracerouteDialog, setShowTracerouteDialog] = useState(false)
-  const [anomalyOpen, setAnomalyOpen] = useState(false)
-  const [selectedTargetIds, setSelectedTargetIds] = useState<Set<string>>(new Set())
-  const selectedRef = useRef(selectedTargetIds)
-  selectedRef.current = selectedTargetIds
-
-  // Traceroute lifted state
-  const [traceTarget, setTraceTarget] = useState('')
-  const [traceProtocol, setTraceProtocol] = useState<TraceProtocol>('icmp')
-  const [traceRequestId, setTraceRequestId] = useState<string | null>(null)
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [state, dispatch] = useReducer(networkDetailReducer, INITIAL_NETWORK_DETAIL_STATE)
+  const selectedRef = useRef(state.selectedTargetIds)
+  selectedRef.current = state.selectedTargetIds
 
   const isRealtime = timeRange === 'realtime'
   const hours = isRealtime ? 1 : timeRange
@@ -678,26 +992,24 @@ export function NetworkDetailPage() {
 
   // Initialize visible targets to all when summary loads
   const effectiveVisible = useMemo(() => {
-    if (visibleTargets != null) {
-      return visibleTargets
+    if (state.visibleTargets != null) {
+      return state.visibleTargets
     }
     return new Set(targets.map((t) => t.target_id))
-  }, [visibleTargets, targets])
+  }, [state.visibleTargets, targets])
 
   const toggleTarget = useCallback(
     (targetId: string) => {
-      setVisibleTargets((prev) => {
-        const current = prev ?? new Set(targets.map((t) => t.target_id))
-        const next = new Set(current)
-        if (next.has(targetId)) {
-          next.delete(targetId)
-        } else {
-          next.add(targetId)
-        }
-        return next
-      })
+      const current = state.visibleTargets ?? new Set(targets.map((t) => t.target_id))
+      const next = new Set(current)
+      if (next.has(targetId)) {
+        next.delete(targetId)
+      } else {
+        next.add(targetId)
+      }
+      dispatch({ type: 'set-visible-targets', value: next })
     },
-    [targets]
+    [state.visibleTargets, targets]
   )
 
   const targetColorMap = useMemo(() => {
@@ -768,35 +1080,33 @@ export function NetworkDetailPage() {
   const openManageDialog = useCallback(() => {
     // Pre-select targets currently assigned to this server
     const currentIds = new Set(targets.map((t) => t.target_id))
-    setSelectedTargetIds(currentIds)
-    setShowManageDialog(true)
+    dispatch({ type: 'set-selected-target-ids', value: currentIds })
+    dispatch({ type: 'set-manage-dialog-open', value: true })
   }, [targets])
 
   const toggleSelectedTarget = useCallback((id: string) => {
-    setSelectedTargetIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
+    const next = new Set(selectedRef.current)
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      next.add(id)
+    }
+    dispatch({ type: 'set-selected-target-ids', value: next })
   }, [])
 
   const selectAllTargets = useCallback(() => {
-    setSelectedTargetIds(new Set(allTargets.map((t) => t.id)))
+    dispatch({ type: 'set-selected-target-ids', value: new Set(allTargets.map((t) => t.id)) })
   }, [allTargets])
 
   const deselectAllTargets = useCallback(() => {
-    setSelectedTargetIds(new Set())
+    dispatch({ type: 'set-selected-target-ids', value: new Set() })
   }, [])
 
   const handleSaveTargets = useCallback(() => {
     setServerTargets.mutate(Array.from(selectedRef.current), {
       onSuccess: () => {
         toast.success(t('server_targets_updated', { defaultValue: 'Server targets updated' }))
-        setShowManageDialog(false)
+        dispatch({ type: 'set-manage-dialog-open', value: false })
       },
       onError: (err) => {
         toast.error(
@@ -826,75 +1136,17 @@ export function NetworkDetailPage() {
 
   return (
     <div className="pb-6">
-      {/* Header */}
-      <div className="mb-6">
-        <Link
-          className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
-          search={{ q: '' }}
-          to="/network"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" />
-          {t('back_to_overview')}
-        </Link>
+      <NetworkDetailHeader
+        canExport={records.length > 0}
+        isAdmin={isAdmin}
+        onExport={exportCsv}
+        onManageTargets={openManageDialog}
+        onOpenTraceroute={() => dispatch({ type: 'set-traceroute-dialog-open', value: true })}
+        summary={summary}
+        t={t}
+      />
 
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="font-bold text-2xl">{summary.server_name}</h1>
-            <StatusBadge status={summary.online ? 'online' : 'offline'} />
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setShowTracerouteDialog(true)} size="sm" variant="outline">
-              <RouteIcon aria-hidden="true" className="mr-1 size-4" />
-              {t('traceroute')}
-            </Button>
-            {isAdmin && (
-              <Button onClick={openManageDialog} size="sm" variant="outline">
-                <Settings2 aria-hidden="true" className="mr-1 size-4" />
-                {t('manage_targets')}
-              </Button>
-            )}
-            <Button disabled={records.length === 0} onClick={exportCsv} size="sm" variant="outline">
-              <Download aria-hidden="true" className="mr-1 size-4" />
-              {t('export_csv')}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Server info bar */}
-      <div className="mb-6 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border bg-card p-3 text-muted-foreground text-sm">
-        {server.ipv4 && (
-          <span>
-            {t('server_ipv4', { defaultValue: 'IPv4' })}: {server.ipv4}
-          </span>
-        )}
-        {server.ipv6 && (
-          <span>
-            {t('server_ipv6', { defaultValue: 'IPv6' })}: {server.ipv6}
-          </span>
-        )}
-        {server.region && (
-          <span>
-            {t('server_region', { defaultValue: 'Region' })}: {server.region}
-          </span>
-        )}
-        {server.os && (
-          <span>
-            {t('server_os', { defaultValue: 'OS' })}: {server.os}
-          </span>
-        )}
-        {summary.last_probe_at && (
-          <span>
-            {t('last_probe')}:{' '}
-            {new Date(summary.last_probe_at).toLocaleString([], {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
-          </span>
-        )}
-      </div>
+      <ServerInfoBar server={server} summary={summary} t={t} />
 
       {/* Body — target tabs + chart + bottom stats + anomaly dialog all live
           inside `NetworkDetailContent`. We pass admin-only sub-trees via
@@ -902,69 +1154,24 @@ export function NetworkDetailPage() {
           chart/stats/range-selector noise. */}
       <NetworkDetailContent
         anomalies={anomalies}
-        anomalyOpen={anomalyOpen}
+        anomalyOpen={state.anomalyOpen}
         anomalyWindowHours={anomalyHours}
         chartSlot={
           <div className="mb-4">
             <LatencyChart hours={hours} isRealtime={isRealtime} records={records} targets={chartTargets} />
           </div>
         }
-        controlsSlot={
-          <div className="mb-4 flex gap-1">
-            {TIME_RANGES.map((tr) => (
-              <Button
-                className={cn(timeRange === tr.value && 'bg-primary text-primary-foreground')}
-                key={tr.value}
-                onClick={() => handleTimeRangeChange(tr.value)}
-                size="sm"
-                variant={timeRange === tr.value ? 'default' : 'outline'}
-              >
-                {tr.value === 'realtime' ? t('realtime') : tr.label}
-              </Button>
-            ))}
-          </div>
-        }
+        controlsSlot={<TimeRangeControls onChange={handleTimeRangeChange} t={t} timeRange={timeRange} />}
         extraStatsSlot={
-          <div className="mb-6 grid gap-4 sm:grid-cols-4">
-            <div className="rounded-lg border bg-card p-4 text-center">
-              <p className="font-mono font-semibold text-lg tabular-nums">
-                {stats.avgLatency != null ? `${stats.avgLatency.toFixed(1)} ms` : 'N/A'}
-              </p>
-              <p className="text-muted-foreground text-xs">{t('avg_latency')}</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4 text-center">
-              <p className="font-mono font-semibold text-lg tabular-nums">{stats.availability.toFixed(1)}%</p>
-              <p className="text-muted-foreground text-xs">{t('availability')}</p>
-            </div>
-            <div className="rounded-lg border bg-card p-4 text-center">
-              <p className="font-mono font-semibold text-lg tabular-nums">{stats.targetCount}</p>
-              <p className="text-muted-foreground text-xs">{t('targets')}</p>
-            </div>
-            <button
-              aria-label={t('anomaly_count')}
-              className={cn(
-                'cursor-pointer rounded-lg border bg-card p-4 text-center transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                anomalies.length > 0 &&
-                  'border-amber-300 bg-amber-50 hover:bg-amber-100 dark:border-amber-900/50 dark:bg-amber-900/20 dark:hover:bg-amber-900/30'
-              )}
-              onClick={() => setAnomalyOpen(true)}
-              type="button"
-            >
-              <p
-                className={cn(
-                  'flex items-center justify-center gap-1.5 font-mono font-semibold text-lg tabular-nums',
-                  anomalies.length > 0 && 'text-amber-700 dark:text-amber-400'
-                )}
-              >
-                {anomalies.length > 0 && <AlertTriangle aria-hidden="true" className="size-4" />}
-                {anomalies.length}
-              </p>
-              <p className="text-muted-foreground text-xs">{t('anomaly_count')}</p>
-            </button>
-          </div>
+          <NetworkStatsGrid
+            anomalies={anomalies}
+            onAnomalyClick={() => dispatch({ type: 'set-anomaly-open', value: true })}
+            stats={stats}
+            t={t}
+          />
         }
         getTargetDisplayName={getSummaryTargetDisplayName}
-        onAnomalyOpenChange={setAnomalyOpen}
+        onAnomalyOpenChange={(open) => dispatch({ type: 'set-anomaly-open', value: open })}
         onToggleTarget={toggleTarget}
         summary={summary}
         variant="admin"
@@ -972,88 +1179,44 @@ export function NetworkDetailPage() {
       />
 
       {/* Traceroute Dialog */}
-      <Dialog onOpenChange={setShowTracerouteDialog} open={showTracerouteDialog}>
+      <Dialog
+        onOpenChange={(open) => dispatch({ type: 'set-traceroute-dialog-open', value: open })}
+        open={state.showTracerouteDialog}
+      >
         <DialogContent className="h-[92vh] sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>{t('traceroute')}</DialogTitle>
           </DialogHeader>
           <TracerouteContent
-            protocol={traceProtocol}
-            selectedRecordId={selectedRecordId}
+            protocol={state.traceProtocol}
+            selectedRecordId={state.selectedRecordId}
             serverId={serverId}
-            setProtocol={setTraceProtocol}
-            setSelectedRecordId={setSelectedRecordId}
-            setTarget={setTraceTarget}
-            setTraceRequestId={setTraceRequestId}
-            target={traceTarget}
-            traceRequestId={traceRequestId}
+            setProtocol={(value) => dispatch({ type: 'set-trace-protocol', value })}
+            setSelectedRecordId={(value) => dispatch({ type: 'set-selected-record-id', value })}
+            setTarget={(value) => dispatch({ type: 'set-trace-target', value })}
+            setTraceRequestId={(value) => dispatch({ type: 'set-trace-request-id', value })}
+            target={state.traceTarget}
+            traceRequestId={state.traceRequestId}
           />
         </DialogContent>
       </Dialog>
 
-      {/* Manage Targets Dialog */}
-      <Dialog
-        onOpenChange={(open) => {
-          if (!open) {
-            setShowManageDialog(false)
-          }
-        }}
-        open={showManageDialog}
-      >
-        <DialogContent className="sm:max-w-lg" showCloseButton={false}>
-          <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle>{t('manage_targets')}</DialogTitle>
-              <div className="flex gap-2">
-                <Button onClick={selectAllTargets} size="sm" type="button" variant="ghost">
-                  {t('select_all')}
-                </Button>
-                <Button onClick={deselectAllTargets} size="sm" type="button" variant="ghost">
-                  {t('deselect_all')}
-                </Button>
-              </div>
-            </div>
-          </DialogHeader>
-
-          {allTargets.length === 0 ? (
-            <p className="py-4 text-center text-muted-foreground text-sm">{t('no_targets')}</p>
-          ) : (
-            <ScrollArea className="max-h-[70vh] rounded-md border">
-              <div className="space-y-1.5 p-3">
-                {allTargets.map((target) => (
-                  // biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element
-                  <label
-                    className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/40"
-                    key={target.id}
-                  >
-                    <Checkbox
-                      checked={selectedTargetIds.has(target.id)}
-                      onCheckedChange={() => toggleSelectedTarget(target.id)}
-                    />
-                    <span className="flex-1 font-medium">{getLocalizedTargetDisplayName(target)}</span>
-                    {target.provider && (
-                      <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayProvider(target)}</span>
-                    )}
-                    {target.location && (
-                      <span className="text-muted-foreground text-xs">{getLocalizedTargetDisplayLocation(target)}</span>
-                    )}
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
-                      {getProbeTypeLabel(target.probe_type)}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </ScrollArea>
-          )}
-
-          <div className="flex gap-2">
-            <Button disabled={setServerTargets.isPending} onClick={handleSaveTargets} size="sm">
-              {t('save')}
-            </Button>
-            <DialogClose render={<Button size="sm" variant="ghost" />}>{t('cancel')}</DialogClose>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ManageTargetsDialog
+        allTargets={allTargets}
+        getLocalizedTargetDisplayLocation={getLocalizedTargetDisplayLocation}
+        getLocalizedTargetDisplayName={getLocalizedTargetDisplayName}
+        getLocalizedTargetDisplayProvider={getLocalizedTargetDisplayProvider}
+        getProbeTypeLabel={getProbeTypeLabel}
+        isPending={setServerTargets.isPending}
+        onDeselectAll={deselectAllTargets}
+        onOpenChange={(open) => dispatch({ type: 'set-manage-dialog-open', value: open })}
+        onSave={handleSaveTargets}
+        onSelectAll={selectAllTargets}
+        onToggleTarget={toggleSelectedTarget}
+        open={state.showManageDialog}
+        selectedTargetIds={state.selectedTargetIds}
+        t={t}
+      />
     </div>
   )
 }

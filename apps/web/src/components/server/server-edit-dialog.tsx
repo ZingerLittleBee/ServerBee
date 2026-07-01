@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { TFunction } from 'i18next'
 import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -37,10 +38,10 @@ function formatIsoDate(date: Date): string {
 }
 
 function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
-  const parts = raw
-    .split(TAG_SPLIT_RE)
-    .map((t) => t.trim())
-    .filter(Boolean)
+  const parts = raw.split(TAG_SPLIT_RE).flatMap((t) => {
+    const tag = t.trim()
+    return tag ? [tag] : []
+  })
   const seen = new Set<string>()
   const deduped: string[] = []
   for (const tag of parts) {
@@ -69,66 +70,341 @@ interface ServerEditDialogProps {
 }
 
 export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProps) {
+  return (
+    <Dialog
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          onClose()
+        }
+      }}
+      open={open}
+    >
+      {open && <ServerEditDialogContent key={server.id} onClose={onClose} server={server} />}
+    </Dialog>
+  )
+}
+
+interface ServerEditState {
+  billingCycle: string
+  billingStartDay: string
+  countryCode: string
+  currency: string
+  expiredAt: string
+  groupId: string
+  hidden: boolean
+  name: string
+  price: string
+  publicRemark: string
+  remark: string
+  tagsDraft: { dirty: boolean; value: string }
+  trafficLimit: string
+  trafficLimitType: string
+  weight: number
+}
+
+interface ServerEditAction {
+  type: 'patch'
+  value: Partial<ServerEditState>
+}
+
+function serverEditStateFromServer(server: ServerResponse): ServerEditState {
+  return {
+    billingCycle: server.billing_cycle ?? '',
+    billingStartDay: server.billing_start_day?.toString() ?? '',
+    countryCode: server.geo_manual ? (server.country_code ?? '') : '',
+    currency: server.currency ?? 'USD',
+    expiredAt: server.expired_at?.slice(0, 10) ?? '',
+    groupId: server.group_id ?? '',
+    hidden: server.hidden,
+    name: server.name,
+    price: server.price?.toString() ?? '',
+    publicRemark: server.public_remark ?? '',
+    remark: server.remark ?? '',
+    tagsDraft: { dirty: false, value: '' },
+    trafficLimit: server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : '',
+    trafficLimitType: server.traffic_limit_type ?? 'sum',
+    weight: server.weight
+  }
+}
+
+function serverEditReducer(state: ServerEditState, action: ServerEditAction): ServerEditState {
+  switch (action.type) {
+    case 'patch':
+      return { ...state, ...action.value }
+    default:
+      return state
+  }
+}
+
+function ServerEditBasicFields({
+  dispatch,
+  groups,
+  server,
+  state,
+  tagsInput,
+  t
+}: {
+  dispatch: (action: ServerEditAction) => void
+  groups: ServerGroup[] | undefined
+  server: ServerResponse
+  state: ServerEditState
+  tagsInput: string
+  t: TFunction
+}) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+        {t('edit_basic')}
+      </legend>
+      <Field label={t('edit_name')}>
+        <Input
+          aria-label={t('edit_name')}
+          name="name"
+          onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
+          required
+          type="text"
+          value={state.name}
+        />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={t('edit_weight')}>
+          <Input
+            aria-label={t('edit_weight')}
+            autoComplete="off"
+            name="weight"
+            onChange={(e) => dispatch({ type: 'patch', value: { weight: Number.parseInt(e.target.value, 10) || 0 } })}
+            type="number"
+            value={state.weight}
+          />
+        </Field>
+        <Field label={t('edit_hidden')}>
+          {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
+          <label className="flex cursor-pointer items-center gap-2 pt-1">
+            <Checkbox
+              checked={state.hidden}
+              onCheckedChange={(checked) => dispatch({ type: 'patch', value: { hidden: !!checked } })}
+            />
+            <span className="text-sm">{t('edit_hide_from_status')}</span>
+          </label>
+        </Field>
+      </div>
+      <Field label={t('edit_group')}>
+        <Select
+          items={[
+            { value: '__none__', label: t('edit_no_group') },
+            ...(groups?.map((group) => ({ value: group.id, label: group.name })) ?? [])
+          ]}
+          onValueChange={(value) =>
+            dispatch({ type: 'patch', value: { groupId: value === '__none__' || value === null ? '' : value } })
+          }
+          value={state.groupId || '__none__'}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">{t('edit_no_group')}</SelectItem>
+            {groups?.map((group) => (
+              <SelectItem key={group.id} value={group.id}>
+                {group.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field label={t('edit_remark')}>
+        <Input
+          aria-label={t('edit_remark')}
+          name="remark"
+          onChange={(e) => dispatch({ type: 'patch', value: { remark: e.target.value } })}
+          placeholder={t('edit_remark_placeholder')}
+          type="text"
+          value={state.remark}
+        />
+      </Field>
+      <Field label={t('edit_public_remark')}>
+        <Input
+          aria-label={t('edit_public_remark')}
+          name="public_remark"
+          onChange={(e) => dispatch({ type: 'patch', value: { publicRemark: e.target.value } })}
+          placeholder={t('edit_public_remark_placeholder')}
+          type="text"
+          value={state.publicRemark}
+        />
+      </Field>
+      <CountryOverrideField
+        onChange={(countryCode) => dispatch({ type: 'patch', value: { countryCode } })}
+        server={server}
+        value={state.countryCode}
+      />
+      <Field label={t('tags_label')}>
+        <Input
+          aria-label={t('tags_label')}
+          name="tags"
+          onChange={(e) => dispatch({ type: 'patch', value: { tagsDraft: { dirty: true, value: e.target.value } } })}
+          placeholder={t('tags_placeholder')}
+          type="text"
+          value={tagsInput}
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
+      </Field>
+    </fieldset>
+  )
+}
+
+function ServerEditBillingFields({
+  dispatch,
+  state,
+  t
+}: {
+  dispatch: (action: ServerEditAction) => void
+  state: ServerEditState
+  t: TFunction
+}) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
+        {t('edit_billing')}
+      </legend>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label={t('edit_price')}>
+          <Input
+            aria-label={t('edit_price')}
+            autoComplete="off"
+            min="0"
+            name="price"
+            onChange={(e) => dispatch({ type: 'patch', value: { price: e.target.value } })}
+            placeholder="0.00"
+            step="0.01"
+            type="number"
+            value={state.price}
+          />
+        </Field>
+        <Field label={t('edit_currency')}>
+          <Select
+            onValueChange={(value) => value !== null && dispatch({ type: 'patch', value: { currency: value } })}
+            value={state.currency}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="USD">USD</SelectItem>
+              <SelectItem value="EUR">EUR</SelectItem>
+              <SelectItem value="CNY">CNY</SelectItem>
+              <SelectItem value="JPY">JPY</SelectItem>
+              <SelectItem value="GBP">GBP</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t('edit_billing_cycle')}>
+          <Select
+            items={{
+              __none__: t('edit_cycle_none'),
+              monthly: t('edit_cycle_monthly'),
+              quarterly: t('edit_cycle_quarterly'),
+              yearly: t('edit_cycle_yearly')
+            }}
+            onValueChange={(value) =>
+              dispatch({
+                type: 'patch',
+                value: { billingCycle: value === '__none__' || value === null ? '' : value }
+              })
+            }
+            value={state.billingCycle || '__none__'}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">{t('edit_cycle_none')}</SelectItem>
+              <SelectItem value="monthly">{t('edit_cycle_monthly')}</SelectItem>
+              <SelectItem value="quarterly">{t('edit_cycle_quarterly')}</SelectItem>
+              <SelectItem value="yearly">{t('edit_cycle_yearly')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <Field label={t('edit_expiration')}>
+        <DatePickerField
+          ariaLabel={t('edit_expiration')}
+          onChange={(expiredAt) => dispatch({ type: 'patch', value: { expiredAt } })}
+          value={state.expiredAt}
+        />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={t('edit_traffic_limit')}>
+          <Input
+            aria-label={t('edit_traffic_limit')}
+            autoComplete="off"
+            min="0"
+            name="traffic_limit"
+            onChange={(e) => dispatch({ type: 'patch', value: { trafficLimit: e.target.value } })}
+            placeholder={t('edit_unlimited')}
+            step="0.1"
+            type="number"
+            value={state.trafficLimit}
+          />
+        </Field>
+        <Field label={t('edit_limit_type')}>
+          <Select
+            items={{
+              sum: t('edit_limit_total'),
+              up: t('edit_limit_upload'),
+              down: t('edit_limit_download')
+            }}
+            onValueChange={(value) => value !== null && dispatch({ type: 'patch', value: { trafficLimitType: value } })}
+            value={state.trafficLimitType}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sum">{t('edit_limit_total')}</SelectItem>
+              <SelectItem value="up">{t('edit_limit_upload')}</SelectItem>
+              <SelectItem value="down">{t('edit_limit_download')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <Field label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}>
+        <Input
+          aria-label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}
+          autoComplete="off"
+          max="28"
+          min="1"
+          name="billing_start_day"
+          onChange={(e) => dispatch({ type: 'patch', value: { billingStartDay: e.target.value } })}
+          placeholder={t('edit_billing_start_day_placeholder', {
+            defaultValue: 'Leave empty for natural month (1st)'
+          })}
+          type="number"
+          value={state.billingStartDay}
+        />
+      </Field>
+    </fieldset>
+  )
+}
+
+function ServerEditDialogContent({ server, onClose }: { onClose: () => void; server: ServerResponse }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
-  const [name, setName] = useState(server.name)
-  const [weight, setWeight] = useState(server.weight)
-  const [hidden, setHidden] = useState(server.hidden)
-  const [groupId, setGroupId] = useState(server.group_id ?? '')
-  const [remark, setRemark] = useState(server.remark ?? '')
-  const [publicRemark, setPublicRemark] = useState(server.public_remark ?? '')
   // The country override field is empty unless the server already has a manual
   // override; otherwise we leave it blank and surface the auto-detected value as
   // a hint, so saving an untouched form never accidentally pins GeoIP.
   const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
-  const [countryCode, setCountryCode] = useState(initialCountryCode)
-  const [price, setPrice] = useState(server.price?.toString() ?? '')
-  const [billingCycle, setBillingCycle] = useState(server.billing_cycle ?? '')
-  const [currency, setCurrency] = useState(server.currency ?? 'USD')
-  const [expiredAt, setExpiredAt] = useState(server.expired_at?.slice(0, 10) ?? '')
-  const [trafficLimit, setTrafficLimit] = useState(
-    server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : ''
-  )
-  const [trafficLimitType, setTrafficLimitType] = useState(server.traffic_limit_type ?? 'sum')
-  const [billingStartDay, setBillingStartDay] = useState(server.billing_start_day?.toString() ?? '')
-  const [tagsInput, setTagsInput] = useState('')
-  const [tagsDirty, setTagsDirty] = useState(false)
+  const [state, dispatch] = useReducer(serverEditReducer, server, serverEditStateFromServer)
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
     queryFn: () => api.get<ServerGroup[]>('/api/server-groups'),
     staleTime: 60_000,
-    enabled: open
+    enabled: true
   })
 
-  const { data: initialTags } = useServerTags(server.id, open)
+  const { data: initialTags } = useServerTags(server.id, true)
   const tagsMutation = useUpdateServerTags(server.id)
-
-  useEffect(() => {
-    if (open) {
-      setName(server.name)
-      setWeight(server.weight)
-      setHidden(server.hidden)
-      setGroupId(server.group_id ?? '')
-      setRemark(server.remark ?? '')
-      setPublicRemark(server.public_remark ?? '')
-      setCountryCode(server.geo_manual ? (server.country_code ?? '') : '')
-      setPrice(server.price?.toString() ?? '')
-      setBillingCycle(server.billing_cycle ?? '')
-      setCurrency(server.currency ?? 'USD')
-      setExpiredAt(server.expired_at?.slice(0, 10) ?? '')
-      setTrafficLimit(server.traffic_limit ? (server.traffic_limit / 1024 ** 3).toString() : '')
-      setTrafficLimitType(server.traffic_limit_type ?? 'sum')
-      setBillingStartDay(server.billing_start_day?.toString() ?? '')
-    }
-  }, [open, server])
-
-  useEffect(() => {
-    if (open && initialTags) {
-      setTagsInput(initialTags.join(', '))
-      setTagsDirty(false)
-    }
-  }, [open, initialTags])
+  const tagsInput = state.tagsDraft.dirty ? state.tagsDraft.value : (initialTags?.join(', ') ?? '')
 
   const mutation = useMutation({
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
@@ -148,20 +424,20 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 
   const buildPayload = (): UpdateServerInput => {
     const payload: UpdateServerInput = {
-      name,
-      weight,
-      hidden,
-      group_id: groupId || null,
-      remark: remark || null,
-      public_remark: publicRemark || null,
-      price: price ? Number.parseFloat(price) : null,
-      billing_cycle: billingCycle || null,
-      currency: currency || null,
-      expired_at: expiredAt ? `${expiredAt}T00:00:00Z` : null,
-      traffic_limit: trafficLimit ? Math.round(Number.parseFloat(trafficLimit) * 1024 ** 3) : null,
-      traffic_limit_type: trafficLimitType || null,
-      billing_start_day: billingStartDay ? Number.parseInt(billingStartDay, 10) : null,
-      ...countryCodePatch(countryCode, initialCountryCode)
+      name: state.name,
+      weight: state.weight,
+      hidden: state.hidden,
+      group_id: state.groupId || null,
+      remark: state.remark || null,
+      public_remark: state.publicRemark || null,
+      price: state.price ? Number.parseFloat(state.price) : null,
+      billing_cycle: state.billingCycle || null,
+      currency: state.currency || null,
+      expired_at: state.expiredAt ? `${state.expiredAt}T00:00:00Z` : null,
+      traffic_limit: state.trafficLimit ? Math.round(Number.parseFloat(state.trafficLimit) * 1024 ** 3) : null,
+      traffic_limit_type: state.trafficLimitType || null,
+      billing_start_day: state.billingStartDay ? Number.parseInt(state.billingStartDay, 10) : null,
+      ...countryCodePatch(state.countryCode, initialCountryCode)
     }
     return payload
   }
@@ -172,7 +448,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       return true
     } catch (err) {
       if (initialTags) {
-        setTagsInput(initialTags.join(', '))
+        dispatch({ type: 'patch', value: { tagsDraft: { dirty: false, value: '' } } })
       }
       toast.error(err instanceof Error ? err.message : t('tags_save_failed'))
       return false
@@ -192,7 +468,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
       toast.error(err instanceof Error ? err.message : t('edit_failed'))
       return
     }
-    if (tagsDirty && !(await saveTags(parsed.tags))) {
+    if (state.tagsDraft.dirty && !(await saveTags(parsed.tags))) {
       return
     }
     toast.success(t('edit_success', { defaultValue: 'Server updated successfully' }))
@@ -200,243 +476,40 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
   }
 
   return (
-    <Dialog
-      onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          onClose()
-        }
-      }}
-      open={open}
-    >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('edit_title')}</DialogTitle>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>{t('edit_title')}</DialogTitle>
+      </DialogHeader>
 
-        <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
-          <DialogBody className="space-y-4">
-            {/* Basic */}
-            <fieldset className="space-y-3">
-              <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                {t('edit_basic')}
-              </legend>
-              <Field label={t('edit_name')}>
-                <Input
-                  aria-label={t('edit_name')}
-                  name="name"
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  type="text"
-                  value={name}
-                />
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label={t('edit_weight')}>
-                  <Input
-                    aria-label={t('edit_weight')}
-                    autoComplete="off"
-                    name="weight"
-                    onChange={(e) => setWeight(Number.parseInt(e.target.value, 10) || 0)}
-                    type="number"
-                    value={weight}
-                  />
-                </Field>
-                <Field label={t('edit_hidden')}>
-                  {/* biome-ignore lint/a11y/noLabelWithoutControl: Checkbox renders as a labelable button element */}
-                  <label className="flex cursor-pointer items-center gap-2 pt-1">
-                    <Checkbox checked={hidden} onCheckedChange={(checked) => setHidden(!!checked)} />
-                    <span className="text-sm">{t('edit_hide_from_status')}</span>
-                  </label>
-                </Field>
-              </div>
-              <Field label={t('edit_group')}>
-                <Select
-                  items={[
-                    { value: '__none__', label: t('edit_no_group') },
-                    ...(groups?.map((g) => ({ value: g.id, label: g.name })) ?? [])
-                  ]}
-                  onValueChange={(v) => setGroupId(v === '__none__' || v === null ? '' : v)}
-                  value={groupId || '__none__'}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">{t('edit_no_group')}</SelectItem>
-                    {groups?.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label={t('edit_remark')}>
-                <Input
-                  aria-label={t('edit_remark')}
-                  name="remark"
-                  onChange={(e) => setRemark(e.target.value)}
-                  placeholder={t('edit_remark_placeholder')}
-                  type="text"
-                  value={remark}
-                />
-              </Field>
-              <Field label={t('edit_public_remark')}>
-                <Input
-                  aria-label={t('edit_public_remark')}
-                  name="public_remark"
-                  onChange={(e) => setPublicRemark(e.target.value)}
-                  placeholder={t('edit_public_remark_placeholder')}
-                  type="text"
-                  value={publicRemark}
-                />
-              </Field>
-              <CountryOverrideField onChange={setCountryCode} server={server} value={countryCode} />
-              <Field label={t('tags_label')}>
-                <Input
-                  aria-label={t('tags_label')}
-                  name="tags"
-                  onChange={(e) => {
-                    setTagsInput(e.target.value)
-                    setTagsDirty(true)
-                  }}
-                  placeholder={t('tags_placeholder')}
-                  type="text"
-                  value={tagsInput}
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">{t('tags_hint')}</p>
-              </Field>
-            </fieldset>
+      <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
+        <DialogBody className="space-y-4">
+          <ServerEditBasicFields
+            dispatch={dispatch}
+            groups={groups}
+            server={server}
+            state={state}
+            t={t}
+            tagsInput={tagsInput}
+          />
+          <ServerEditBillingFields dispatch={dispatch} state={state} t={t} />
 
-            {/* Billing */}
-            <fieldset className="space-y-3">
-              <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
-                {t('edit_billing')}
-              </legend>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Field label={t('edit_price')}>
-                  <Input
-                    aria-label={t('edit_price')}
-                    autoComplete="off"
-                    min="0"
-                    name="price"
-                    onChange={(e) => setPrice(e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    type="number"
-                    value={price}
-                  />
-                </Field>
-                <Field label={t('edit_currency')}>
-                  <Select onValueChange={(v) => v !== null && setCurrency(v)} value={currency}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="EUR">EUR</SelectItem>
-                      <SelectItem value="CNY">CNY</SelectItem>
-                      <SelectItem value="JPY">JPY</SelectItem>
-                      <SelectItem value="GBP">GBP</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label={t('edit_billing_cycle')}>
-                  <Select
-                    items={{
-                      __none__: t('edit_cycle_none'),
-                      monthly: t('edit_cycle_monthly'),
-                      quarterly: t('edit_cycle_quarterly'),
-                      yearly: t('edit_cycle_yearly')
-                    }}
-                    onValueChange={(v) => setBillingCycle(v === '__none__' || v === null ? '' : v)}
-                    value={billingCycle || '__none__'}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">{t('edit_cycle_none')}</SelectItem>
-                      <SelectItem value="monthly">{t('edit_cycle_monthly')}</SelectItem>
-                      <SelectItem value="quarterly">{t('edit_cycle_quarterly')}</SelectItem>
-                      <SelectItem value="yearly">{t('edit_cycle_yearly')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <Field label={t('edit_expiration')}>
-                <DatePickerField ariaLabel={t('edit_expiration')} onChange={setExpiredAt} value={expiredAt} />
-              </Field>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label={t('edit_traffic_limit')}>
-                  <Input
-                    aria-label={t('edit_traffic_limit')}
-                    autoComplete="off"
-                    min="0"
-                    name="traffic_limit"
-                    onChange={(e) => setTrafficLimit(e.target.value)}
-                    placeholder={t('edit_unlimited')}
-                    step="0.1"
-                    type="number"
-                    value={trafficLimit}
-                  />
-                </Field>
-                <Field label={t('edit_limit_type')}>
-                  <Select
-                    items={{
-                      sum: t('edit_limit_total'),
-                      up: t('edit_limit_upload'),
-                      down: t('edit_limit_download')
-                    }}
-                    onValueChange={(v) => v !== null && setTrafficLimitType(v)}
-                    value={trafficLimitType}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sum">{t('edit_limit_total')}</SelectItem>
-                      <SelectItem value="up">{t('edit_limit_upload')}</SelectItem>
-                      <SelectItem value="down">{t('edit_limit_download')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <Field label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}>
-                <Input
-                  aria-label={t('edit_billing_start_day', { defaultValue: 'Billing Start Day' })}
-                  autoComplete="off"
-                  max="28"
-                  min="1"
-                  name="billing_start_day"
-                  onChange={(e) => setBillingStartDay(e.target.value)}
-                  placeholder={t('edit_billing_start_day_placeholder', {
-                    defaultValue: 'Leave empty for natural month (1st)'
-                  })}
-                  type="number"
-                  value={billingStartDay}
-                />
-              </Field>
-            </fieldset>
+          {mutation.error && (
+            <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
+              {mutation.error.message || t('edit_failed')}
+            </div>
+          )}
+        </DialogBody>
 
-            {mutation.error && (
-              <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
-                {mutation.error.message || t('edit_failed')}
-              </div>
-            )}
-          </DialogBody>
-
-          <DialogFooter>
-            <Button onClick={onClose} type="button" variant="outline">
-              {t('common:cancel')}
-            </Button>
-            <Button disabled={mutation.isPending || tagsMutation.isPending} type="submit">
-              {mutation.isPending || tagsMutation.isPending ? t('common:saving') : t('common:save')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        <DialogFooter>
+          <Button onClick={onClose} type="button" variant="outline">
+            {t('common:cancel')}
+          </Button>
+          <Button disabled={mutation.isPending || tagsMutation.isPending} type="submit">
+            {mutation.isPending || tagsMutation.isPending ? t('common:saving') : t('common:save')}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   )
 }
 

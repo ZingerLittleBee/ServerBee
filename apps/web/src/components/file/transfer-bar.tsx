@@ -25,20 +25,18 @@ export function TransferBar() {
   const { t } = useTranslation('file')
   const { data: transfers } = useFileTransfers()
   const cancelMutation = useCancelTransferMutation()
-  const downloadedRef = useRef<Set<string>>(new Set())
+  const downloadedRef = useRef<Set<string> | null>(null)
 
   // Auto-trigger browser download when a download transfer becomes ready
   useEffect(() => {
     if (!transfers) {
       return
     }
+    const downloaded = downloadedRef.current ?? new Set<string>()
+    downloadedRef.current = downloaded
     for (const transfer of transfers) {
-      if (
-        transfer.direction === 'download' &&
-        transfer.status === 'ready' &&
-        !downloadedRef.current.has(transfer.transfer_id)
-      ) {
-        downloadedRef.current.add(transfer.transfer_id)
+      if (transfer.direction === 'download' && transfer.status === 'ready' && !downloaded.has(transfer.transfer_id)) {
+        downloaded.add(transfer.transfer_id)
         const a = document.createElement('a')
         a.href = `/api/files/download/${transfer.transfer_id}`
         a.download = transfer.file_path.split('/').pop() ?? 'download'

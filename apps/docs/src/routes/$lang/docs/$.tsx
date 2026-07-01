@@ -11,18 +11,32 @@ import {
   MarkdownCopyButton,
   ViewOptionsPopover
 } from 'fumadocs-ui/layouts/docs/page'
-import { Suspense } from 'react'
+import { type ComponentProps, type ComponentType, Suspense } from 'react'
 
 import { useMDXComponents } from '@/components/mdx'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
 import { source } from '@/lib/source'
 
+function getDocsContentPath(lang: string, slugs: string[]): string {
+  return `${lang}/${slugs.length > 0 ? slugs.join('/') : 'index'}.mdx`
+}
+
 export const Route = createFileRoute('/$lang/docs/$')({
   component: Page,
   loader: async ({ params }) => {
     const slugs = params._splat?.split('/') ?? []
-    const data = await serverLoader({ data: { slugs, lang: params.lang } })
-    await clientLoader.preload(data.path)
+    const path = getDocsContentPath(params.lang, slugs)
+    const preloadResult = clientLoader.preload(path).then(
+      () => null,
+      (error: unknown) => error
+    )
+    const [data, preloadError] = await Promise.all([
+      serverLoader({ data: { slugs, lang: params.lang } }),
+      preloadResult
+    ])
+    if (preloadError) {
+      throw preloadError
+    }
     return data
   }
 })
@@ -41,7 +55,7 @@ const serverLoader = createServerFn({
 
     return {
       slugs: page.slugs,
-      path: page.path,
+      path: getDocsContentPath(lang, page.slugs),
       lang,
       pageTree: await source.serializePageTree(pageTree)
     }
@@ -58,26 +72,41 @@ const clientLoader = browserCollections.docs.createClientLoader({
       path: string
     }
   ) {
-    // biome-ignore lint/correctness/useHookAtTopLevel: this method is a component function used by createClientLoader
-    const components = useMDXComponents()
-    return (
-      <DocsPage toc={toc}>
-        <DocsTitle>{frontmatter.title}</DocsTitle>
-        <DocsDescription>{frontmatter.description}</DocsDescription>
-        <div className="-mt-4 flex flex-row items-center gap-2 border-b pb-6">
-          <MarkdownCopyButton markdownUrl={markdownUrl} />
-          <ViewOptionsPopover
-            githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${path}`}
-            markdownUrl={markdownUrl}
-          />
-        </div>
-        <DocsBody>
-          <MDX components={components} />
-        </DocsBody>
-      </DocsPage>
-    )
+    return <DocsClientPage Content={MDX} frontmatter={frontmatter} markdownUrl={markdownUrl} path={path} toc={toc} />
   }
 })
+
+interface DocsClientPageProps {
+  Content: ComponentType<{ components: ReturnType<typeof useMDXComponents> }>
+  frontmatter: {
+    description?: string
+    title: string
+  }
+  markdownUrl: string
+  path: string
+  toc: ComponentProps<typeof DocsPage>['toc']
+}
+
+function DocsClientPage({ Content, frontmatter, markdownUrl, path, toc }: DocsClientPageProps) {
+  const components = useMDXComponents()
+
+  return (
+    <DocsPage toc={toc}>
+      <DocsTitle>{frontmatter.title}</DocsTitle>
+      <DocsDescription>{frontmatter.description}</DocsDescription>
+      <div className="-mt-4 flex flex-row items-center gap-2 border-b pb-6">
+        <MarkdownCopyButton markdownUrl={markdownUrl} />
+        <ViewOptionsPopover
+          githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${path}`}
+          markdownUrl={markdownUrl}
+        />
+      </div>
+      <DocsBody>
+        <Content components={components} />
+      </DocsBody>
+    </DocsPage>
+  )
+}
 
 function Page() {
   const { path, pageTree, slugs, lang } = useFumadocsLoader(Route.useLoaderData())

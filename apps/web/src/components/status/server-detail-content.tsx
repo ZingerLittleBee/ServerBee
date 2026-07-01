@@ -136,7 +136,7 @@ function useMetricSeries(serverId: string, range: TimeRange, isAdminVariant: boo
   const adminQuery = useServerRecords(serverId, range.hours, range.interval, {
     enabled: isAdminVariant && !isRealtime
   })
-  const publicQuery = useQuery<PublicMetricsPoint[]>({
+  const { data: publicMetrics } = useQuery<PublicMetricsPoint[]>({
     queryKey: ['public-status', 'server', serverId, 'metrics', range.hours, range.interval],
     queryFn: () => {
       const { from, to } = buildIsoWindow(range.hours)
@@ -147,7 +147,7 @@ function useMetricSeries(serverId: string, range: TimeRange, isAdminVariant: boo
     enabled: !isAdminVariant && serverId.length > 0,
     refetchInterval: 60_000
   })
-  return { adminRecords: adminQuery.data, publicMetrics: publicQuery.data }
+  return { adminRecords: adminQuery.data, publicMetrics }
 }
 
 function useAdminGpuRecords(serverId: string, range: TimeRange, isAdminVariant: boolean, isRealtime: boolean) {
@@ -245,7 +245,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
     diskTotal
   })
 
-  const chartFormatTime = useChartTickFormatter(isRealtime, range, realtimeData)
+  const chartFormatTime = useChartTickFormatter(isRealtime, range, chartData)
   const tooltipFormatTime = useTooltipFormatter(isRealtime, range)
   const xAxisInterval = useXAxisInterval(isRealtime, range, chartData.length)
   const gpuChartData = useGpuChartData(isAdminVariant, gpuRecords, publicMetrics)
@@ -263,6 +263,10 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
     !isRealtime && chartData.some((d) => 'temperature' in d && d.temperature != null && (d.temperature as number) > 0)
   const hasDiskIo = isAdminVariant && !isRealtime && diskIoPerDiskData.length > 0
   const hasGpu = !isRealtime && gpuChartData.length > 0
+  const availableMetrics = useMemo<AvailableMetrics>(
+    () => ({ diskIo: hasDiskIo, gpu: hasGpu, temperature: hasTemperature }),
+    [hasDiskIo, hasGpu, hasTemperature]
+  )
 
   const publicMetricsSnapshot = isAdminVariant || isAdminServer(server) ? null : server.metrics
   const { netInLabel, netOutLabel, netTotalLabel } = deriveNetworkLabels(
@@ -307,20 +311,18 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
         isAdminVariant={isAdminVariant}
         metricsTab={
           <MetricsTabContent
+            availableMetrics={availableMetrics}
             chartData={chartData}
             diskIoMergedData={diskIoMergedData}
             diskIoPerDiskData={diskIoPerDiskData}
             formatTime={chartFormatTime}
             formatTooltipLabel={tooltipFormatTime}
             gpuChartData={gpuChartData}
-            hasDiskIo={hasDiskIo}
-            hasGpu={hasGpu}
-            hasTemperature={hasTemperature}
-            isPublic={isPublic}
             onRangeChange={onRangeChange}
             rangeIndex={rangeIndex}
             ranges={ranges}
             serverId={serverId}
+            variant={isPublic ? 'public' : 'admin'}
             xAxisInterval={xAxisInterval}
           />
         }
@@ -425,19 +427,26 @@ function useAggregatedChartData(args: {
   }, [adminRecords, diskTotal, isAdminVariant, isRealtime, memTotal, publicMetrics, realtimeData])
 }
 
-function useChartTickFormatter(isRealtime: boolean, range: TimeRange, realtimeData: unknown) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: realtimeData in deps forces closure rebuild on buffer updates so `lastLabel` resets before Recharts re-iterates ticks
+function formatHourMinute(time: string) {
+  const d = new Date(time)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+function useChartTickFormatter(isRealtime: boolean, range: TimeRange, chartData: Record<string, unknown>[]) {
   return useMemo<((time: string) => string) | undefined>(() => {
     if (isRealtime) {
-      let lastLabel = ''
-      return (time: string) => {
-        const d = new Date(time)
-        const label = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-        if (label === lastLabel) {
-          return ''
+      const realtimeLabels = new Map<string, string>()
+      let previousLabel = ''
+      for (const point of chartData) {
+        if (typeof point.timestamp !== 'string') {
+          continue
         }
-        lastLabel = label
-        return label
+        const label = formatHourMinute(point.timestamp)
+        realtimeLabels.set(point.timestamp, label === previousLabel ? '' : label)
+        previousLabel = label
+      }
+      return (time: string) => {
+        return realtimeLabels.get(time) ?? formatHourMinute(time)
       }
     }
     if (range.hours >= 168) {
@@ -449,7 +458,7 @@ function useChartTickFormatter(isRealtime: boolean, range: TimeRange, realtimeDa
       }
     }
     return undefined
-  }, [isRealtime, realtimeData, range])
+  }, [isRealtime, chartData, range])
 }
 
 /** Recharts X-axis `interval` (stride = N+1 ticks). Returns a numeric stride for
@@ -511,23 +520,28 @@ function useGpuChartData(
   }, [isAdminVariant, gpuRecords, publicMetrics])
 }
 
+interface AvailableMetrics {
+  diskIo: boolean
+  gpu: boolean
+  temperature: boolean
+}
+
 function MetricsTabContent({
+  availableMetrics,
   chartData,
   diskIoMergedData,
   diskIoPerDiskData,
   gpuChartData,
-  hasDiskIo,
-  hasGpu,
-  hasTemperature,
-  isPublic,
   onRangeChange,
   rangeIndex,
   ranges,
   formatTime,
   formatTooltipLabel,
   serverId,
+  variant,
   xAxisInterval
 }: {
+  availableMetrics: AvailableMetrics
   chartData: Record<string, unknown>[]
   diskIoMergedData: { read_bytes_per_sec: number; timestamp: string; write_bytes_per_sec: number }[]
   diskIoPerDiskData: {
@@ -535,20 +549,18 @@ function MetricsTabContent({
     name: string
   }[]
   gpuChartData: Record<string, unknown>[]
-  hasDiskIo: boolean
-  hasGpu: boolean
-  hasTemperature: boolean
-  isPublic: boolean
   onRangeChange?: (rangeKey: string) => void
   rangeIndex: number
   ranges: TimeRange[]
   formatTime: ((time: string) => string) | undefined
   formatTooltipLabel: ((time: string) => string) | undefined
   serverId: string
+  variant: 'admin' | 'public'
   xAxisInterval?: number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd' | 'equidistantPreserveStart'
 }) {
   const { t } = useTranslation('servers')
   const hasGpuTemp = gpuChartData.some((d) => 'gpu_temp' in d && d.gpu_temp != null)
+  const isPublic = variant === 'public'
 
   return (
     <>
@@ -632,7 +644,7 @@ function MetricsTabContent({
           xAxisInterval={xAxisInterval}
         />
 
-        {hasTemperature && (
+        {availableMetrics.temperature && (
           <MetricsChart
             color="var(--color-chart-4)"
             data={chartData}
@@ -645,7 +657,7 @@ function MetricsTabContent({
           />
         )}
 
-        {hasGpu && (
+        {availableMetrics.gpu && (
           <MetricsChart
             color="var(--color-chart-5)"
             data={gpuChartData}
@@ -660,7 +672,7 @@ function MetricsTabContent({
         )}
         {/* GPU temp series is admin-only; the public surface does not
             expose it, so we gate the chart on a non-empty data key. */}
-        {hasGpu && hasGpuTemp && (
+        {availableMetrics.gpu && hasGpuTemp && (
           <MetricsChart
             color="var(--color-chart-2)"
             data={gpuChartData}
@@ -674,7 +686,7 @@ function MetricsTabContent({
         )}
       </div>
 
-      {hasDiskIo && (
+      {availableMetrics.diskIo && (
         <DiskIoChart formatTime={formatTime} mergedData={diskIoMergedData} perDiskData={diskIoPerDiskData} />
       )}
 
@@ -690,16 +702,16 @@ function UptimeCard({ isPublic, serverId }: { isPublic: boolean; serverId: strin
 
   // Admin viewers use the auth'd hook; public viewers fetch the redacted
   // public uptime endpoint that is gated by `show_server_detail`.
-  const adminQuery = useUptimeDaily(serverId)
-  const publicQuery = useQuery<UptimeDailyEntry[]>({
+  const { data: adminUptimeDays, isPending: isAdminPending } = useUptimeDaily(serverId)
+  const { data: publicUptimeDays, isPending: isPublicPending } = useQuery<UptimeDailyEntry[]>({
     queryKey: ['public-status', 'server', serverId, 'uptime-daily'],
     queryFn: () => api.get<UptimeDailyEntry[]>(`/api/status/servers/${serverId}/uptime-daily`),
     enabled: isPublic && serverId.length > 0,
     staleTime: 300_000
   })
 
-  const isPending = isPublic ? publicQuery.isPending : adminQuery.isPending
-  const uptimeDays = isPublic ? publicQuery.data : adminQuery.data
+  const isPending = isPublic ? isPublicPending : isAdminPending
+  const uptimeDays = isPublic ? publicUptimeDays : adminUptimeDays
 
   if (isPending) {
     return (

@@ -1,4 +1,11 @@
-import { type UseMutationResult, type UseQueryResult, useMutation, useQuery } from '@tanstack/react-query'
+import {
+  type QueryKey,
+  type UseMutationResult,
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+  useQueryClient
+} from '@tanstack/react-query'
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -38,8 +45,18 @@ export function useApiQuery<T>(
   })
 }
 
-export function useApiMutation<TRes, TReq = void>(method: string, path: string): UseMutationResult<TRes, Error, TReq> {
+export function useApiMutation<TRes, TReq = void>(
+  method: string,
+  path: string,
+  opts?: { invalidateQueryKeys?: readonly QueryKey[] }
+): UseMutationResult<TRes, Error, TReq> {
+  const queryClient = useQueryClient()
   return useMutation<TRes, Error, TReq>({
-    mutationFn: (body) => request<TRes>(method, path, body)
+    mutationFn: (body) => request<TRes>(method, path, body),
+    onSuccess: () => {
+      for (const queryKey of opts?.invalidateQueryKeys ?? []) {
+        queryClient.invalidateQueries({ queryKey }).catch(() => undefined)
+      }
+    }
   })
 }

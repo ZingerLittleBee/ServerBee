@@ -2,7 +2,7 @@ import { countryCodeToFlag, countryCodeToName } from '@/lib/utils'
 
 // ISO 3166-1 alpha-2 officially assigned country/region codes. Used to populate the
 // manual country-override picker so users can choose a flag without knowing the code.
-export const COUNTRY_CODES = [
+const COUNTRY_CODES = [
   'AD',
   'AE',
   'AF',
@@ -256,7 +256,7 @@ export const COUNTRY_CODES = [
 
 // Frequently-used VPS/server locations, pinned to the top of the picker in this
 // curated priority order (not alphabetical). Must be a subset of COUNTRY_CODES.
-export const COMMON_COUNTRY_CODES = [
+const COMMON_COUNTRY_CODES = [
   'US',
   'CN',
   'HK',
@@ -294,8 +294,8 @@ export function buildCountryOptions(locale: string): CountryOptionGroups {
   })
   const commonSet = new Set<string>(COMMON_COUNTRY_CODES)
   const common = COMMON_COUNTRY_CODES.map(toOption)
-  const rest = COUNTRY_CODES.filter((code) => !commonSet.has(code))
-    .map(toOption)
-    .sort((a, b) => a.name.localeCompare(b.name, locale))
+  const rest = COUNTRY_CODES.flatMap((code) => (commonSet.has(code) ? [] : [toOption(code)])).sort((a, b) =>
+    a.name.localeCompare(b.name, locale)
+  )
   return { common, rest }
 }

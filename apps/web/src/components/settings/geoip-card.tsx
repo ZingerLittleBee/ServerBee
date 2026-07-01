@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Globe2, RefreshCw } from 'lucide-react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { SettingsRow } from '@/components/settings/settings-row'
@@ -13,6 +14,9 @@ interface GeoIpStatus {
   source?: string
   updated_at?: string
 }
+
+const GEOIP_ICON = <Globe2 className="size-4" />
+const GEOIP_LOADING_META = <Skeleton className="h-4 w-24" />
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {
@@ -71,6 +75,7 @@ export function GeoIpRow() {
   const installed = status?.installed ?? false
   const isCustom = status?.source === 'custom'
   const isPending = downloadMutation.isPending
+  const download = downloadMutation.mutate
 
   let buttonLabel = t('geoip.download')
   if (isPending) {
@@ -78,24 +83,29 @@ export function GeoIpRow() {
   } else if (installed) {
     buttonLabel = t('geoip.update')
   }
+  const action = useMemo(() => {
+    if (isCustom) {
+      return null
+    }
+    return (
+      <Button disabled={isPending} onClick={() => download()} size="sm" variant="outline">
+        {installed ? (
+          <RefreshCw className={`mr-1.5 size-4 ${isPending ? 'animate-spin' : ''}`} />
+        ) : (
+          <Download className="mr-1.5 size-4" />
+        )}
+        {buttonLabel}
+      </Button>
+    )
+  }, [buttonLabel, download, installed, isCustom, isPending])
+  const meta = useMemo(() => (isLoading ? GEOIP_LOADING_META : metaText(status, t)), [isLoading, status, t])
 
   return (
     <SettingsRow
-      action={
-        isCustom ? null : (
-          <Button disabled={isPending} onClick={() => downloadMutation.mutate()} size="sm" variant="outline">
-            {installed ? (
-              <RefreshCw className={`mr-1.5 size-4 ${isPending ? 'animate-spin' : ''}`} />
-            ) : (
-              <Download className="mr-1.5 size-4" />
-            )}
-            {buttonLabel}
-          </Button>
-        )
-      }
+      action={action}
       description={t('geoip.description')}
-      icon={<Globe2 className="size-4" />}
-      meta={isLoading ? <Skeleton className="h-4 w-24" /> : metaText(status, t)}
+      icon={GEOIP_ICON}
+      meta={meta}
       title={t('geoip.title')}
     />
   )

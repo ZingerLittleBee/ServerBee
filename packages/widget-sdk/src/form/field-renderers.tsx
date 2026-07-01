@@ -41,12 +41,13 @@ function getMetricPathSuggestions(): string[] {
   return METRIC_PATH_SUGGESTIONS
 }
 
-export function renderField(props: FieldProps) {
+export function Field(props: FieldProps) {
   const info = props.schema.introspect()
   switch (info.kind) {
     case 'string':
       return (
         <input
+          aria-label={props.label}
           id={props.id}
           onChange={(e) => props.onChange(e.target.value)}
           type="text"
@@ -56,6 +57,7 @@ export function renderField(props: FieldProps) {
     case 'number':
       return (
         <input
+          aria-label={props.label}
           id={props.id}
           onChange={(e) => props.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
           type="number"
@@ -65,6 +67,7 @@ export function renderField(props: FieldProps) {
     case 'boolean':
       return (
         <input
+          aria-label={props.label}
           checked={!!props.value}
           id={props.id}
           onChange={(e) => props.onChange(e.target.checked)}
@@ -74,7 +77,12 @@ export function renderField(props: FieldProps) {
     case 'enum': {
       const opts = (info.values ?? []) as readonly string[]
       return (
-        <select id={props.id} onChange={(e) => props.onChange(e.target.value)} value={(props.value as string) ?? ''}>
+        <select
+          aria-label={props.label}
+          id={props.id}
+          onChange={(e) => props.onChange(e.target.value)}
+          value={(props.value as string) ?? ''}
+        >
           {opts.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -86,7 +94,12 @@ export function renderField(props: FieldProps) {
     case 'serverId': {
       const servers = getRuntime().serversStore()
       return (
-        <select id={props.id} onChange={(e) => props.onChange(e.target.value)} value={(props.value as string) ?? ''}>
+        <select
+          aria-label={props.label}
+          id={props.id}
+          onChange={(e) => props.onChange(e.target.value)}
+          value={(props.value as string) ?? ''}
+        >
           <option value="">— choose —</option>
           {servers.map((s) => (
             <option key={s.id} value={s.id}>
@@ -102,6 +115,7 @@ export function renderField(props: FieldProps) {
       return (
         <>
           <input
+            aria-label={props.label}
             id={props.id}
             list={listId}
             onChange={(e) => props.onChange(e.target.value)}
@@ -111,7 +125,9 @@ export function renderField(props: FieldProps) {
           />
           <datalist id={listId}>
             {suggestions.map((path) => (
-              <option key={path} value={path} />
+              <option key={path} label={path} value={path}>
+                {path}
+              </option>
             ))}
           </datalist>
         </>
@@ -120,6 +136,7 @@ export function renderField(props: FieldProps) {
     case 'color':
       return (
         <input
+          aria-label={props.label}
           id={props.id}
           onChange={(e) => props.onChange(e.target.value)}
           type="color"
@@ -129,6 +146,7 @@ export function renderField(props: FieldProps) {
     case 'duration':
       return (
         <input
+          aria-label={props.label}
           id={props.id}
           onChange={(e) => props.onChange(e.target.value)}
           pattern="^\d+(s|m|h|d)$"
@@ -141,6 +159,7 @@ export function renderField(props: FieldProps) {
     default:
       return (
         <input
+          aria-label={props.label}
           id={props.id}
           onChange={(e) => props.onChange(e.target.value)}
           type="text"

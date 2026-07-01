@@ -1,9 +1,8 @@
 export function InstallBinaryAnim() {
   return (
-    <div
+    <figure
       aria-label="Animated demo of installing the ServerBee binary"
-      className="flex h-40 items-center justify-center"
-      role="img"
+      className="m-0 flex h-40 items-center justify-center"
     >
       <div className="relative flex flex-col items-center gap-3">
         <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-2 font-mono text-amber-300 text-xs shadow-[0_0_30px_-12px_rgba(255,179,0,0.6)]">
@@ -23,6 +22,6 @@ export function InstallBinaryAnim() {
           systemd · active
         </div>
       </div>
-    </div>
+    </figure>
   )
 }

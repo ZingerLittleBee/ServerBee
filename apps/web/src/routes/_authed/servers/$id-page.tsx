@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { getRouteApi, Link } from '@tanstack/react-router'
 import { ArrowLeft, Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,7 +21,9 @@ import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { formatBytes } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { Route, type ServerDetailTab } from './$id'
+import type { ServerDetailTab } from './server-detail-search'
+
+const routeApi = getRouteApi('/_authed/servers/$id')
 
 interface ServerWithCaps {
   agent_local_capabilities?: number | null
@@ -146,9 +148,9 @@ function ServerActionButtons({
 
 export function ServerDetailPage() {
   const { t } = useTranslation('servers')
-  const { id } = Route.useParams()
-  const { range: rangeParam, tab: tabParam } = Route.useSearch()
-  const navigate = Route.useNavigate()
+  const { id } = routeApi.useParams()
+  const { range: rangeParam, tab: tabParam } = routeApi.useSearch()
+  const navigate = routeApi.useNavigate()
   const [editOpen, setEditOpen] = useState(false)
   const [recoverOpen, setRecoverOpen] = useState(false)
   const { user } = useAuth()

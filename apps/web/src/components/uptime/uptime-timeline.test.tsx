@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
-import { buildTimelineBackground, buildTimelineGeometry, UptimeTimeline } from './uptime-timeline'
+import { UptimeTimeline } from './uptime-timeline'
+import { buildTimelineBackground, buildTimelineGeometry } from './uptime-timeline-geometry'
 
 const LEFT_PIXEL_STYLE_RE = /left: \d+(?:\.\d+)?px/
 const WIDTH_PIXEL_STYLE_RE = /width: \d+(?:\.\d+)?px/

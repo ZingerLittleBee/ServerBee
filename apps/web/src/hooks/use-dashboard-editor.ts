@@ -86,7 +86,12 @@ export function useDashboardEditor() {
 
   function deleteWidget(id: string) {
     setDraftWidgets((current) =>
-      current.filter((widget) => widget.id !== id).map((widget, index) => ({ ...widget, sort_order: index }))
+      current.reduce<DashboardWidget[]>((widgets, widget) => {
+        if (widget.id !== id) {
+          widgets.push({ ...widget, sort_order: widgets.length })
+        }
+        return widgets
+      }, [])
     )
   }
 

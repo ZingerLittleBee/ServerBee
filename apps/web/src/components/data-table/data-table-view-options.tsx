@@ -16,16 +16,20 @@ interface DataTableViewOptionsProps<TData> extends React.ComponentProps<typeof P
 
 export function DataTableViewOptions<TData>({ table, disabled, ...props }: DataTableViewOptionsProps<TData>) {
   const { t } = useTranslation('common')
+  const [open, setOpen] = React.useState(false)
+  const contentId = React.useId()
   const columns = React.useMemo(
     () => table.getAllColumns().filter((column) => typeof column.accessorFn !== 'undefined' && column.getCanHide()),
     [table]
   )
 
   return (
-    <Popover>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger
         render={
           <Button
+            aria-controls={contentId}
+            aria-expanded={open}
             aria-label={t('table.toggle_columns')}
             className="hidden h-8 font-normal lg:flex"
             disabled={disabled}
@@ -38,7 +42,7 @@ export function DataTableViewOptions<TData>({ table, disabled, ...props }: DataT
         <Settings2 className="text-muted-foreground" />
         {t('table.view_options')}
       </PopoverTrigger>
-      <PopoverContent className="w-44 p-0" {...props}>
+      <PopoverContent className="w-44 p-0" id={contentId} {...props}>
         <Command>
           <CommandInput placeholder={t('table.search_columns')} />
           <CommandList>

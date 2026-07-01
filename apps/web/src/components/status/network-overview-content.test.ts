@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { type NetworkOverviewSummary, serverHealth } from './network-overview-content'
+import type { NetworkOverviewSummary } from './network-overview-content'
+import { serverHealth } from './network-overview-health'
 
 function mk(online: boolean, targets: [number | null, number][]): NetworkOverviewSummary {
   return {

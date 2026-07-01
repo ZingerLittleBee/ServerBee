@@ -3,7 +3,7 @@ export const INSTALL_COMMAND =
 
 export type LandingLang = 'en' | 'zh'
 
-export const translations = {
+const translations = {
   en: {
     hero: {
       eyebrow: 'Open source · MIT · Built with Rust',
@@ -164,7 +164,7 @@ export const translations = {
   }
 } as const
 
-export type Translations = typeof translations
+type Translations = typeof translations
 export function t(lang: string): Translations['en'] {
   const table = translations as unknown as Record<string, Translations['en']>
   return table[lang] ?? translations.en

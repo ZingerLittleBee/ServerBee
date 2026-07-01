@@ -13,7 +13,8 @@ vi.mock('@/hooks/use-ip-quality-api', () => ({
   useUpdateService: () => ({ mutate: updateMutate, isPending: false })
 }))
 
-import { CustomServiceDialog, parseExistingRules, parseRequest, toNumber } from './custom-service-dialog'
+import { CustomServiceDialog } from './custom-service-dialog'
+import { parseExistingRules, parseRequest, toNumber } from './custom-service-dialog-utils'
 
 beforeEach(() => {
   createMutate.mockClear()

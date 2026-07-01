@@ -2,6 +2,16 @@ import { useTranslation } from 'react-i18next'
 import { useTraffic } from '@/hooks/use-traffic'
 import { cn, formatBytes } from '@/lib/utils'
 
+function getPercentColor(percent: number) {
+  if (percent >= 90) {
+    return 'text-red-500'
+  }
+  if (percent >= 70) {
+    return 'text-yellow-500'
+  }
+  return ''
+}
+
 export function TrafficProgress({ serverId }: { serverId: string }) {
   const { t } = useTranslation('servers')
   const { data } = useTraffic(serverId)
@@ -37,16 +47,6 @@ export function TrafficProgress({ serverId }: { serverId: string }) {
   const predictionPercent =
     data.prediction && limit > 0 ? Math.min((data.prediction.estimated_total / limit) * 100, 100) : null
 
-  const percentColor = (p: number) => {
-    if (p >= 90) {
-      return 'text-red-500'
-    }
-    if (p >= 70) {
-      return 'text-yellow-500'
-    }
-    return ''
-  }
-
   return (
     <div className="flex w-full min-w-48 flex-col gap-1">
       <div className="flex items-center justify-between text-muted-foreground text-xs">
@@ -56,7 +56,7 @@ export function TrafficProgress({ serverId }: { serverId: string }) {
             <span className="ml-1">({data.traffic_limit_type})</span>
           )}
         </span>
-        <span className={cn(percentColor(percent))}>{percent.toFixed(1)}%</span>
+        <span className={cn(getPercentColor(percent))}>{percent.toFixed(1)}%</span>
       </div>
       <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
         <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${percent}%` }} />

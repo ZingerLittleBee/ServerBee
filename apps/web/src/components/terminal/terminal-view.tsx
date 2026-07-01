@@ -2,7 +2,7 @@ import '@xterm/xterm/css/xterm.css'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 
 interface TerminalViewProps {
   onData: (data: string) => void
@@ -15,12 +15,16 @@ export function TerminalView({ onData, onResize, writeRef }: TerminalViewProps) 
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
 
-  const handleResize = useCallback(() => {
+  const handleData = useEffectEvent((data: string) => {
+    onData(data)
+  })
+
+  const handleResize = useEffectEvent(() => {
     if (fitAddonRef.current && terminalRef.current) {
       fitAddonRef.current.fit()
       onResize(terminalRef.current.rows, terminalRef.current.cols)
     }
-  }, [onResize])
+  })
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -66,7 +70,7 @@ export function TerminalView({ onData, onResize, writeRef }: TerminalViewProps) 
     fitAddonRef.current = fitAddon
 
     // Forward terminal input to parent
-    terminal.onData(onData)
+    terminal.onData(handleData)
 
     // Expose write function
     writeRef.current = (data: string) => {
@@ -74,7 +78,7 @@ export function TerminalView({ onData, onResize, writeRef }: TerminalViewProps) 
     }
 
     // Report initial size
-    onResize(terminal.rows, terminal.cols)
+    handleResize()
 
     // Handle container resize
     const observer = new ResizeObserver(() => {
@@ -89,7 +93,7 @@ export function TerminalView({ onData, onResize, writeRef }: TerminalViewProps) 
       fitAddonRef.current = null
       writeRef.current = null
     }
-  }, [onData, onResize, writeRef, handleResize])
+  }, [writeRef])
 
   return <div className="h-full w-full overflow-hidden rounded-md border bg-[#1a1b26] p-1" ref={containerRef} />
 }

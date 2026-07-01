@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { createContext, type ReactNode, useContext, useState } from 'react'
+import { createContext, type ReactNode, use, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { TrafficCard } from './traffic-card'
 
@@ -28,7 +28,7 @@ vi.mock('@/components/ui/tabs', () => ({
   },
   TabsList: ({ children }: { children?: ReactNode }) => <div data-testid="tabs-list">{children}</div>,
   TabsTrigger: ({ children, value }: { children?: ReactNode; value: string }) => {
-    const context = useContext(TabsContext)
+    const context = use(TabsContext)
     if (!context) {
       return null
     }
@@ -40,7 +40,7 @@ vi.mock('@/components/ui/tabs', () => ({
     )
   },
   TabsContent: ({ children, value }: { children?: ReactNode; value: string }) => {
-    const context = useContext(TabsContext)
+    const context = use(TabsContext)
     if (!context || context.value !== value) {
       return null
     }
@@ -88,7 +88,7 @@ vi.mock('recharts', () => {
 })
 
 describe('TrafficCard', () => {
-  it('renders one traffic card with tabs that switch between hourly and daily charts', () => {
+  it('renders one traffic card with tabs that switch between hourly and daily charts', async () => {
     mockUseTraffic.mockReturnValue({
       isLoading: false,
       data: {
@@ -121,7 +121,7 @@ describe('TrafficCard', () => {
     expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
     expect(screen.getByTestId('tab-content-hourly')).toBeInTheDocument()
-    const hourlyChart = screen.getByTestId('bar-chart-hourly')
+    const hourlyChart = await screen.findByTestId('bar-chart-hourly')
 
     expect(hourlyChart).toHaveAttribute('data-max-bar-size', '40')
     expect(screen.queryByTestId('bar-chart-daily')).not.toBeInTheDocument()
@@ -136,7 +136,7 @@ describe('TrafficCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Monthly' }))
 
     expect(screen.getByTestId('tab-content-daily')).toBeInTheDocument()
-    const dailyChart = screen.getByTestId('bar-chart-daily')
+    const dailyChart = await screen.findByTestId('bar-chart-daily')
 
     expect(dailyChart).toHaveAttribute('data-max-bar-size', '40')
     expect(screen.queryByTestId('bar-chart-hourly')).not.toBeInTheDocument()

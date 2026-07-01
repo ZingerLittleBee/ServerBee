@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCreateService, useUpdateService } from '@/hooks/use-ip-quality-api'
 import { CATEGORY_ORDER, categoryLabel } from '@/lib/ip-quality-constants'
 import type { UnlockMatch, UnlockRule, UnlockService, UnlockStatus } from '@/lib/ip-quality-types'
+import { defaultRule, parseExistingRules, parseRequest, toNumber } from './custom-service-dialog-utils'
 
 interface Props {
   onOpenChange: (open: boolean) => void
@@ -44,6 +45,84 @@ interface RuleEntry {
   uid: string
 }
 
+interface CustomServiceFormState {
+  category: string
+  headers: HeaderRow[]
+  method: string
+  name: string
+  popularity: number
+  rules: RuleEntry[]
+  timeoutMs: number
+  url: string
+}
+
+type CustomServiceFormAction =
+  | { type: 'addHeader' }
+  | { type: 'addRule' }
+  | { type: 'moveRule'; direction: -1 | 1; uid: string }
+  | { type: 'patch'; value: Partial<CustomServiceFormState> }
+  | { type: 'removeHeader'; uid: string }
+  | { type: 'removeRule'; uid: string }
+  | { type: 'updateHeader'; patch: Partial<HeaderRow>; uid: string }
+  | { type: 'updateRule'; rule: UnlockRule; uid: string }
+
+function customServiceFormFromService(service?: UnlockService | null): CustomServiceFormState {
+  const request = parseRequest(service)
+  return {
+    category: service?.category ?? 'streaming',
+    headers: request.headers.map(([headerName, value]) => ({ uid: nextUid(), name: headerName, value })),
+    method: request.method,
+    name: service?.name ?? '',
+    popularity: service?.popularity ?? 50,
+    rules: parseExistingRules(service).map((rule) => ({ uid: nextUid(), rule })),
+    timeoutMs: request.timeout_ms,
+    url: request.url
+  }
+}
+
+function customServiceFormReducer(
+  state: CustomServiceFormState,
+  action: CustomServiceFormAction
+): CustomServiceFormState {
+  switch (action.type) {
+    case 'addHeader':
+      return { ...state, headers: [...state.headers, { uid: nextUid(), name: '', value: '' }] }
+    case 'addRule':
+      return { ...state, rules: [...state.rules, { uid: nextUid(), rule: defaultRule() }] }
+    case 'moveRule': {
+      const index = state.rules.findIndex((entry) => entry.uid === action.uid)
+      const target = index + action.direction
+      if (index === -1 || target < 0 || target >= state.rules.length) {
+        return state
+      }
+      const rules = [...state.rules]
+      ;[rules[index], rules[target]] = [rules[target], rules[index]]
+      return { ...state, rules }
+    }
+    case 'patch':
+      return { ...state, ...action.value }
+    case 'removeHeader':
+      return { ...state, headers: state.headers.filter((header) => header.uid !== action.uid) }
+    case 'removeRule':
+      return {
+        ...state,
+        rules: state.rules.length <= 1 ? state.rules : state.rules.filter((entry) => entry.uid !== action.uid)
+      }
+    case 'updateHeader':
+      return {
+        ...state,
+        headers: state.headers.map((header) => (header.uid === action.uid ? { ...header, ...action.patch } : header))
+      }
+    case 'updateRule':
+      return {
+        ...state,
+        rules: state.rules.map((entry) => (entry.uid === action.uid ? { ...entry, rule: action.rule } : entry))
+      }
+    default:
+      return state
+  }
+}
+
 function defaultMatch(kind: MatchKind): UnlockMatch {
   switch (kind) {
     case 'status_equals':
@@ -57,20 +136,6 @@ function defaultMatch(kind: MatchKind): UnlockMatch {
     default:
       return { kind: 'status_equals', code: 200 }
   }
-}
-
-function defaultRule(): UnlockRule {
-  return { match: { kind: 'status_equals', code: 200 }, result: 'unlocked' }
-}
-
-const DEFAULT_TIMEOUT_MS = 5000
-
-// Coerce a number-input value to a valid number. `Number(...)` yields `NaN`
-// for a partially-typed `-` / `e`, and `NaN` serializes to `null`, which would
-// silently corrupt the value — fall back to 0 instead.
-export function toNumber(value: string): number {
-  const parsed = Number.parseInt(value, 10)
-  return Number.isNaN(parsed) ? 0 : parsed
 }
 
 interface RuleRowProps {
@@ -208,145 +273,65 @@ function RuleRow({ rule, index, canMoveUp, canMoveDown, onChange, onMove, onRemo
   )
 }
 
-/** A custom service's request config, parsed from the stored JSON string. */
-export interface ParsedRequest {
-  headers: [string, string][]
-  method: string
-  timeout_ms: number
-  url: string
-}
-
-/**
- * Parse a service's `request` JSON string in a single pass.
- *
- * Intentional asymmetry vs `parseExistingRules`: headers legitimately default
- * to `[]` (a custom service may send no extra headers), whereas rules always
- * default to ≥1 (a service with zero match rules can never classify a result).
- */
-export function parseRequest(service: UnlockService | null | undefined): ParsedRequest {
-  const fallback: ParsedRequest = { url: '', method: 'GET', timeout_ms: DEFAULT_TIMEOUT_MS, headers: [] }
-  if (!service?.request) {
-    return fallback
-  }
-  try {
-    const req = JSON.parse(service.request) as {
-      url?: string
-      method?: string
-      timeout_ms?: number
-      headers?: [string, string][]
-    }
-    return {
-      url: req.url ?? '',
-      method: req.method ?? 'GET',
-      timeout_ms: typeof req.timeout_ms === 'number' ? req.timeout_ms : DEFAULT_TIMEOUT_MS,
-      headers: Array.isArray(req.headers) ? req.headers : []
-    }
-  } catch {
-    return fallback
-  }
-}
-
-/**
- * Parse a service's `rules` JSON string.
- *
- * Unlike `parseRequest`'s headers (which default to `[]`), rules always fall
- * back to a single default rule — a custom service must have at least one match
- * rule to ever produce a non-failed result.
- */
-export function parseExistingRules(service: UnlockService | null | undefined): UnlockRule[] {
-  if (!service?.rules) {
-    return [defaultRule()]
-  }
-  try {
-    const parsed = JSON.parse(service.rules) as UnlockRule[]
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [defaultRule()]
-  } catch {
-    return [defaultRule()]
-  }
-}
-
 export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      {open && (
+        <CustomServiceDialogContent
+          key={service?.id ?? 'new-custom-service'}
+          onOpenChange={onOpenChange}
+          service={service}
+        />
+      )}
+    </Dialog>
+  )
+}
+
+function CustomServiceDialogContent({
+  onOpenChange,
+  service
+}: {
+  onOpenChange: (open: boolean) => void
+  service?: UnlockService | null
+}) {
   const { t } = useTranslation('ip-quality')
   const isEdit = Boolean(service)
   const createMutation = useCreateService()
   const updateMutation = useUpdateService()
   const isPending = createMutation.isPending || updateMutation.isPending
-
-  const [name, setName] = useState('')
-  const [category, setCategory] = useState('streaming')
-  const [popularity, setPopularity] = useState(50)
-  const [url, setUrl] = useState('')
-  const [method, setMethod] = useState('GET')
-  const [timeoutMs, setTimeoutMs] = useState(DEFAULT_TIMEOUT_MS)
-  const [headers, setHeaders] = useState<HeaderRow[]>([])
-  const [rules, setRules] = useState<RuleEntry[]>([{ uid: nextUid(), rule: defaultRule() }])
-
-  // Re-seed the form whenever the dialog opens or the edited service changes.
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-    if (service) {
-      const request = parseRequest(service)
-      setName(service.name)
-      setCategory(service.category)
-      setPopularity(service.popularity)
-      setUrl(request.url)
-      setMethod(request.method)
-      setTimeoutMs(request.timeout_ms)
-      setHeaders(request.headers.map(([headerName, value]) => ({ uid: nextUid(), name: headerName, value })))
-      setRules(parseExistingRules(service).map((rule) => ({ uid: nextUid(), rule })))
-    } else {
-      setName('')
-      setCategory('streaming')
-      setPopularity(50)
-      setUrl('')
-      setMethod('GET')
-      setTimeoutMs(DEFAULT_TIMEOUT_MS)
-      setHeaders([])
-      setRules([{ uid: nextUid(), rule: defaultRule() }])
-    }
-  }, [open, service])
+  const [state, dispatch] = useReducer(customServiceFormReducer, service, customServiceFormFromService)
 
   const updateRule = (uid: string, rule: UnlockRule) => {
-    setRules((prev) => prev.map((entry) => (entry.uid === uid ? { ...entry, rule } : entry)))
+    dispatch({ type: 'updateRule', uid, rule })
   }
 
   const moveRule = (uid: string, direction: -1 | 1) => {
-    setRules((prev) => {
-      const index = prev.findIndex((entry) => entry.uid === uid)
-      const target = index + direction
-      if (index === -1 || target < 0 || target >= prev.length) {
-        return prev
-      }
-      const next = [...prev]
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
+    dispatch({ type: 'moveRule', uid, direction })
   }
 
   const removeRule = (uid: string) => {
-    setRules((prev) => (prev.length <= 1 ? prev : prev.filter((entry) => entry.uid !== uid)))
+    dispatch({ type: 'removeRule', uid })
   }
 
   const updateHeader = (uid: string, patch: Partial<HeaderRow>) => {
-    setHeaders((prev) => prev.map((h) => (h.uid === uid ? { ...h, ...patch } : h)))
+    dispatch({ type: 'updateHeader', uid, patch })
   }
 
   const removeHeader = (uid: string) => {
-    setHeaders((prev) => prev.filter((h) => h.uid !== uid))
+    dispatch({ type: 'removeHeader', uid })
   }
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (name.trim().length === 0 || url.trim().length === 0) {
+    if (state.name.trim().length === 0 || state.url.trim().length === 0) {
       return
     }
 
-    const headerPairs: [string, string][] = headers
-      .filter((h) => h.name.trim().length > 0)
-      .map((h) => [h.name.trim(), h.value])
-    const rulePayload: UnlockRule[] = rules.map((entry) => entry.rule)
+    const headerPairs: [string, string][] = state.headers.flatMap((h) => {
+      const headerName = h.name.trim()
+      return headerName.length > 0 ? [[headerName, h.value]] : []
+    })
+    const rulePayload: UnlockRule[] = state.rules.map((entry) => entry.rule)
 
     const onSuccess = () => {
       toast.success(isEdit ? t('dialog_updated') : t('dialog_created'))
@@ -360,13 +345,13 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
       updateMutation.mutate(
         {
           id: service.id,
-          name: name.trim(),
-          category,
-          popularity,
-          url: url.trim(),
-          method,
+          name: state.name.trim(),
+          category: state.category,
+          popularity: state.popularity,
+          url: state.url.trim(),
+          method: state.method,
           headers: headerPairs,
-          timeout_ms: timeoutMs,
+          timeout_ms: state.timeoutMs,
           rules: rulePayload
         },
         { onSuccess, onError }
@@ -374,13 +359,13 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
     } else {
       createMutation.mutate(
         {
-          name: name.trim(),
-          category,
-          popularity,
-          url: url.trim(),
-          method,
+          name: state.name.trim(),
+          category: state.category,
+          popularity: state.popularity,
+          url: state.url.trim(),
+          method: state.method,
           headers: headerPairs,
-          timeout_ms: timeoutMs,
+          timeout_ms: state.timeoutMs,
           rules: rulePayload
         },
         { onSuccess, onError }
@@ -389,176 +374,167 @@ export function CustomServiceDialog({ open, onOpenChange, service }: Props) {
   }
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? t('dialog_edit_title') : t('dialog_create_title')}</DialogTitle>
-        </DialogHeader>
-        <form className="flex min-h-0 flex-col" onSubmit={handleSubmit}>
-          <DialogBody className="flex flex-col gap-4">
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>{isEdit ? t('dialog_edit_title') : t('dialog_create_title')}</DialogTitle>
+      </DialogHeader>
+      <form className="flex min-h-0 flex-col" onSubmit={handleSubmit}>
+        <DialogBody className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="ipq-name">{t('dialog_name')}</Label>
+            <Input
+              autoComplete="off"
+              id="ipq-name"
+              onChange={(e) => dispatch({ type: 'patch', value: { name: e.target.value } })}
+              placeholder={t('dialog_name_placeholder')}
+              required
+              value={state.name}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ipq-name">{t('dialog_name')}</Label>
+              <Label htmlFor="ipq-category">{t('dialog_category')}</Label>
+              <Select
+                items={Object.fromEntries(CATEGORY_ORDER.map((c) => [c, categoryLabel(c)]))}
+                onValueChange={(value) => dispatch({ type: 'patch', value: { category: value ?? 'streaming' } })}
+                value={state.category}
+              >
+                <SelectTrigger className="w-full" id="ipq-category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_ORDER.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {categoryLabel(c)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="ipq-popularity">{t('dialog_popularity')}</Label>
               <Input
-                autoComplete="off"
-                id="ipq-name"
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('dialog_name_placeholder')}
-                required
-                value={name}
+                id="ipq-popularity"
+                max={100}
+                min={0}
+                onChange={(e) => dispatch({ type: 'patch', value: { popularity: toNumber(e.target.value) } })}
+                type="number"
+                value={state.popularity}
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-category">{t('dialog_category')}</Label>
-                <Select
-                  items={Object.fromEntries(CATEGORY_ORDER.map((c) => [c, categoryLabel(c)]))}
-                  onValueChange={(v) => setCategory(v ?? 'streaming')}
-                  value={category}
-                >
-                  <SelectTrigger className="w-full" id="ipq-category">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORY_ORDER.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {categoryLabel(c)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-popularity">{t('dialog_popularity')}</Label>
-                <Input
-                  id="ipq-popularity"
-                  max={100}
-                  min={0}
-                  onChange={(e) => setPopularity(toNumber(e.target.value))}
-                  type="number"
-                  value={popularity}
-                />
-              </div>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="ipq-url">{t('dialog_url')}</Label>
+            <Input
+              autoComplete="off"
+              id="ipq-url"
+              onChange={(e) => dispatch({ type: 'patch', value: { url: e.target.value } })}
+              placeholder={t('dialog_url_placeholder')}
+              required
+              value={state.url}
+            />
+          </div>
 
+          <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="ipq-url">{t('dialog_url')}</Label>
+              <Label htmlFor="ipq-method">{t('dialog_method')}</Label>
+              <Select
+                onValueChange={(value) => dispatch({ type: 'patch', value: { method: value ?? 'GET' } })}
+                value={state.method}
+              >
+                <SelectTrigger className="w-full" id="ipq-method">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {METHOD_OPTIONS.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="ipq-timeout">{t('dialog_timeout')}</Label>
               <Input
-                autoComplete="off"
-                id="ipq-url"
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={t('dialog_url_placeholder')}
-                required
-                value={url}
+                id="ipq-timeout"
+                min={100}
+                onChange={(e) => dispatch({ type: 'patch', value: { timeoutMs: toNumber(e.target.value) } })}
+                type="number"
+                value={state.timeoutMs}
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-method">{t('dialog_method')}</Label>
-                <Select onValueChange={(v) => setMethod(v ?? 'GET')} value={method}>
-                  <SelectTrigger className="w-full" id="ipq-method">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {METHOD_OPTIONS.map((m) => (
-                      <SelectItem key={m} value={m}>
-                        {m}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="ipq-timeout">{t('dialog_timeout')}</Label>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label>{t('dialog_headers')}</Label>
+              <Button onClick={() => dispatch({ type: 'addHeader' })} size="sm" type="button" variant="outline">
+                <PlusIcon />
+                {t('dialog_add_header')}
+              </Button>
+            </div>
+            {state.headers.map((header) => (
+              <div className="flex items-center gap-2" data-testid="header-row" key={header.uid}>
                 <Input
-                  id="ipq-timeout"
-                  min={100}
-                  onChange={(e) => setTimeoutMs(toNumber(e.target.value))}
-                  type="number"
-                  value={timeoutMs}
+                  aria-label={t('dialog_header_name_aria')}
+                  onChange={(e) => updateHeader(header.uid, { name: e.target.value })}
+                  placeholder={t('dialog_header_name_placeholder')}
+                  value={header.name}
                 />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label>{t('dialog_headers')}</Label>
+                <Input
+                  aria-label={t('dialog_header_value_aria')}
+                  onChange={(e) => updateHeader(header.uid, { value: e.target.value })}
+                  placeholder={t('dialog_header_value_placeholder')}
+                  value={header.value}
+                />
                 <Button
-                  onClick={() => setHeaders((prev) => [...prev, { uid: nextUid(), name: '', value: '' }])}
-                  size="sm"
+                  aria-label={t('dialog_remove_header')}
+                  onClick={() => removeHeader(header.uid)}
+                  size="icon-sm"
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                 >
-                  <PlusIcon />
-                  {t('dialog_add_header')}
+                  <Trash2Icon />
                 </Button>
               </div>
-              {headers.map((header) => (
-                <div className="flex items-center gap-2" data-testid="header-row" key={header.uid}>
-                  <Input
-                    aria-label={t('dialog_header_name_aria')}
-                    onChange={(e) => updateHeader(header.uid, { name: e.target.value })}
-                    placeholder={t('dialog_header_name_placeholder')}
-                    value={header.name}
-                  />
-                  <Input
-                    aria-label={t('dialog_header_value_aria')}
-                    onChange={(e) => updateHeader(header.uid, { value: e.target.value })}
-                    placeholder={t('dialog_header_value_placeholder')}
-                    value={header.value}
-                  />
-                  <Button
-                    aria-label={t('dialog_remove_header')}
-                    onClick={() => removeHeader(header.uid)}
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Trash2Icon />
-                  </Button>
-                </div>
-              ))}
-            </div>
+            ))}
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <Label>{t('dialog_rules')}</Label>
-                <Button
-                  onClick={() => setRules((prev) => [...prev, { uid: nextUid(), rule: defaultRule() }])}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  <PlusIcon />
-                  {t('dialog_add_rule')}
-                </Button>
-              </div>
-              {rules.map((entry, index) => (
-                <RuleRow
-                  canMoveDown={index < rules.length - 1}
-                  canMoveUp={index > 0}
-                  index={index}
-                  key={entry.uid}
-                  onChange={(r) => updateRule(entry.uid, r)}
-                  onMove={(dir) => moveRule(entry.uid, dir)}
-                  onRemove={() => removeRule(entry.uid)}
-                  rule={entry.rule}
-                  t={t}
-                />
-              ))}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label>{t('dialog_rules')}</Label>
+              <Button onClick={() => dispatch({ type: 'addRule' })} size="sm" type="button" variant="outline">
+                <PlusIcon />
+                {t('dialog_add_rule')}
+              </Button>
             </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
-              {t('dialog_cancel')}
-            </Button>
-            <Button disabled={isPending || name.trim().length === 0 || url.trim().length === 0} type="submit">
-              {isEdit ? t('dialog_save') : t('dialog_create')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            {state.rules.map((entry, index) => (
+              <RuleRow
+                canMoveDown={index < state.rules.length - 1}
+                canMoveUp={index > 0}
+                index={index}
+                key={entry.uid}
+                onChange={(r) => updateRule(entry.uid, r)}
+                onMove={(dir) => moveRule(entry.uid, dir)}
+                onRemove={() => removeRule(entry.uid)}
+                rule={entry.rule}
+                t={t}
+              />
+            ))}
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+            {t('dialog_cancel')}
+          </Button>
+          <Button disabled={isPending || state.name.trim().length === 0 || state.url.trim().length === 0} type="submit">
+            {isEdit ? t('dialog_save') : t('dialog_create')}
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   )
 }

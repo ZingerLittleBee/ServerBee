@@ -3,8 +3,8 @@ import { AlertTriangle, Server, Wifi } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
-import { getCombinedSeverity } from '@/lib/network-latency-constants'
 import { cn } from '@/lib/utils'
+import { avgLatencyFromTargets, avgLossFromTargets, type Health, serverHealth } from './network-overview-health'
 
 // Both the admin (`NetworkServerSummary`) and public
 // (`PublicNetworkServerOverview`) shapes share the same field set used by this
@@ -35,51 +35,12 @@ export interface NetworkOverviewContentProps {
 // network_probe.rs `count_anomalies`); surfaced here for the card footnote.
 const ANOMALY_WINDOW_HOURS = 24
 
-type Health = 'healthy' | 'warning' | 'severe' | 'unknown' | 'offline'
-
-function avgLatencyFromTargets(targets: NetworkOverviewSummary['targets']): number | null {
-  const valid = targets.filter((t) => t.avg_latency != null)
-  if (valid.length === 0) {
-    return null
-  }
-  return valid.reduce((sum, t) => sum + (t.avg_latency ?? 0), 0) / valid.length
-}
-
-function avgLossFromTargets(targets: NetworkOverviewSummary['targets']): number | null {
-  if (targets.length === 0) {
-    return null
-  }
-  return targets.reduce((sum, t) => sum + t.packet_loss, 0) / targets.length
-}
-
 function worstTarget(targets: NetworkOverviewSummary['targets']): NetworkOverviewSummary['targets'][number] | null {
   const valid = targets.filter((t) => t.avg_latency != null)
   if (valid.length === 0) {
     return null
   }
   return valid.reduce((worst, t) => ((t.avg_latency ?? 0) > (worst.avg_latency ?? 0) ? t : worst))
-}
-
-// Whole-server health verdict from avg latency + avg loss, reusing the shared
-// severity thresholds so it stays consistent with the rest of the app.
-export function serverHealth(summary: NetworkOverviewSummary): Health {
-  if (!summary.online) {
-    return 'offline'
-  }
-  const latency = avgLatencyFromTargets(summary.targets)
-  // Online but no latency reading yet (empty targets or all probing) — keep the
-  // verdict consistent with the card's `hasData` check, which also keys on latency.
-  if (latency == null) {
-    return 'unknown'
-  }
-  const sev = getCombinedSeverity({ latencyMs: latency, lossRatio: avgLossFromTargets(summary.targets) })
-  if (sev === 'failed' || sev === 'severe') {
-    return 'severe'
-  }
-  if (sev === 'warning') {
-    return 'warning'
-  }
-  return 'healthy'
 }
 
 const HEALTH_DOT: Record<Health, string> = {

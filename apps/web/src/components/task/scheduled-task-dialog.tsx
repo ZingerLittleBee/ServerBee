@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -30,16 +30,74 @@ interface ServerInfo {
   name: string
 }
 
+interface ScheduledTaskFormState {
+  command: string
+  cronError: string
+  cronExpression: string
+  name: string
+  retryCount: number
+  retryInterval: number
+  selectedServerIds: string[]
+  timeout: number
+}
+
+type ScheduledTaskFormAction =
+  | { type: 'setCommand'; value: string }
+  | { type: 'setCronExpression'; error: string; value: string }
+  | { type: 'setName'; value: string }
+  | { type: 'setRetryCount'; value: number }
+  | { type: 'setRetryInterval'; value: number }
+  | { type: 'setSelectedServerIds'; value: string[] }
+  | { type: 'setTimeout'; value: number }
+  | { type: 'toggleServer'; id: string }
+
+function scheduledTaskFormFromTask(task?: ScheduledTask | null): ScheduledTaskFormState {
+  return {
+    command: task?.command ?? '',
+    cronError: '',
+    cronExpression: task?.cron_expression ?? '',
+    name: task?.name ?? '',
+    retryCount: task?.retry_count ?? 0,
+    retryInterval: task?.retry_interval ?? 60,
+    selectedServerIds: task?.server_ids ?? [],
+    timeout: task?.timeout ?? 300
+  }
+}
+
+function scheduledTaskFormReducer(
+  state: ScheduledTaskFormState,
+  action: ScheduledTaskFormAction
+): ScheduledTaskFormState {
+  switch (action.type) {
+    case 'setCommand':
+      return { ...state, command: action.value }
+    case 'setCronExpression':
+      return { ...state, cronError: action.error, cronExpression: action.value }
+    case 'setName':
+      return { ...state, name: action.value }
+    case 'setRetryCount':
+      return { ...state, retryCount: action.value }
+    case 'setRetryInterval':
+      return { ...state, retryInterval: action.value }
+    case 'setSelectedServerIds':
+      return { ...state, selectedServerIds: action.value }
+    case 'setTimeout':
+      return { ...state, timeout: action.value }
+    case 'toggleServer':
+      return {
+        ...state,
+        selectedServerIds: state.selectedServerIds.includes(action.id)
+          ? state.selectedServerIds.filter((serverId) => serverId !== action.id)
+          : [...state.selectedServerIds, action.id]
+      }
+    default:
+      return state
+  }
+}
+
 export function ScheduledTaskDialog({ onClose, task }: Props) {
   const { t } = useTranslation(['settings', 'common'])
-  const [name, setName] = useState(task?.name ?? '')
-  const [cronExpression, setCronExpression] = useState(task?.cron_expression ?? '')
-  const [command, setCommand] = useState(task?.command ?? '')
-  const [selectedServerIds, setSelectedServerIds] = useState<string[]>(task?.server_ids ?? [])
-  const [timeout, setTimeout] = useState(task?.timeout ?? 300)
-  const [retryCount, setRetryCount] = useState(task?.retry_count ?? 0)
-  const [retryInterval, setRetryInterval] = useState(task?.retry_interval ?? 60)
-  const [cronError, setCronError] = useState('')
+  const [state, dispatch] = useReducer(scheduledTaskFormReducer, task, scheduledTaskFormFromTask)
 
   const { data: servers } = useQuery<ServerInfo[]>({
     queryKey: ['servers-list'],
@@ -54,7 +112,10 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!(name.trim() && cronExpression.trim() && command.trim()) || selectedServerIds.length === 0) {
+    if (
+      !(state.name.trim() && state.cronExpression.trim() && state.command.trim()) ||
+      state.selectedServerIds.length === 0
+    ) {
       toast.error(t('tasks.fill_required'))
       return
     }
@@ -62,31 +123,31 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
     if (isEdit) {
       const input: UpdateScheduledTaskInput & { id: string } = {
         id: task.id,
-        name: name.trim(),
-        cron_expression: cronExpression.trim(),
-        command: command.trim(),
-        server_ids: selectedServerIds,
-        timeout,
-        retry_count: retryCount,
-        retry_interval: retryInterval
+        name: state.name.trim(),
+        cron_expression: state.cronExpression.trim(),
+        command: state.command.trim(),
+        server_ids: state.selectedServerIds,
+        timeout: state.timeout,
+        retry_count: state.retryCount,
+        retry_interval: state.retryInterval
       }
       updateMutation.mutate(input, { onSuccess: onClose })
     } else {
       const input: CreateScheduledTaskInput = {
-        name: name.trim(),
-        cron_expression: cronExpression.trim(),
-        command: command.trim(),
-        server_ids: selectedServerIds,
-        timeout,
-        retry_count: retryCount,
-        retry_interval: retryInterval
+        name: state.name.trim(),
+        cron_expression: state.cronExpression.trim(),
+        command: state.command.trim(),
+        server_ids: state.selectedServerIds,
+        timeout: state.timeout,
+        retry_count: state.retryCount,
+        retry_interval: state.retryInterval
       }
       createMutation.mutate(input, { onSuccess: onClose })
     }
   }
 
   const toggleServer = (id: string) => {
-    setSelectedServerIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]))
+    dispatch({ type: 'toggleServer', id })
   }
 
   const selectAll = () => {
@@ -96,19 +157,22 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
     const execEnabled = servers.filter((server) =>
       getEffectiveCapabilityEnabled(server.effective_capabilities, server.capabilities, CAP_EXEC)
     )
-    setSelectedServerIds(selectedServerIds.length === execEnabled.length ? [] : execEnabled.map((s) => s.id))
+    dispatch({
+      type: 'setSelectedServerIds',
+      value: state.selectedServerIds.length === execEnabled.length ? [] : execEnabled.map((server) => server.id)
+    })
   }
 
   const handleCronChange = (value: string) => {
-    setCronExpression(value)
-    setCronError('')
+    let error = ''
     if (value.trim()) {
       // Basic validation: must have 5-7 space-separated parts
       const parts = value.trim().split(CRON_SPLIT_RE)
       if (parts.length < 5 || parts.length > 7) {
-        setCronError(t('tasks.scheduled.invalid_cron', { defaultValue: 'Invalid cron expression' }))
+        error = t('tasks.scheduled.invalid_cron', { defaultValue: 'Invalid cron expression' })
       }
     }
+    dispatch({ type: 'setCronExpression', value, error })
   }
 
   const isPending = createMutation.isPending || updateMutation.isPending
@@ -129,10 +193,10 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
             </label>
             <Input
               id="task-name"
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => dispatch({ type: 'setName', value: e.target.value })}
               placeholder={t('tasks.scheduled.name_placeholder', { defaultValue: 'e.g. Daily Backup' })}
               required
-              value={name}
+              value={state.name}
             />
           </div>
 
@@ -146,9 +210,9 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
               onChange={(e) => handleCronChange(e.target.value)}
               placeholder="0 0 * * * *"
               required
-              value={cronExpression}
+              value={state.cronExpression}
             />
-            {cronError && <p className="mt-1 text-red-500 text-xs">{cronError}</p>}
+            {state.cronError && <p className="mt-1 text-red-500 text-xs">{state.cronError}</p>}
             <p className="mt-1 text-muted-foreground text-xs">
               {t('tasks.scheduled.cron_help', {
                 defaultValue: 'sec min hour day month weekday (e.g. 0 0 2 * * * = daily at 2:00 AM)'
@@ -163,11 +227,11 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
             <textarea
               className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm"
               id="task-command"
-              onChange={(e) => setCommand(e.target.value)}
+              onChange={(e) => dispatch({ type: 'setCommand', value: e.target.value })}
               placeholder={t('tasks.command_placeholder')}
               required
               rows={3}
-              value={command}
+              value={state.command}
             />
           </div>
 
@@ -179,9 +243,9 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
               <Input
                 id="task-timeout"
                 min={1}
-                onChange={(e) => setTimeout(Number.parseInt(e.target.value, 10) || 300)}
+                onChange={(e) => dispatch({ type: 'setTimeout', value: Number.parseInt(e.target.value, 10) || 300 })}
                 type="number"
-                value={timeout}
+                value={state.timeout}
               />
             </div>
             <div>
@@ -192,12 +256,12 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
                 id="task-retry"
                 max={10}
                 min={0}
-                onChange={(e) => setRetryCount(Number.parseInt(e.target.value, 10) || 0)}
+                onChange={(e) => dispatch({ type: 'setRetryCount', value: Number.parseInt(e.target.value, 10) || 0 })}
                 type="number"
-                value={retryCount}
+                value={state.retryCount}
               />
             </div>
-            {retryCount > 0 && (
+            {state.retryCount > 0 && (
               <div>
                 <label className="mb-1 block font-medium text-sm" htmlFor="task-retry-interval">
                   {t('tasks.scheduled.retry_interval', { defaultValue: 'Retry Interval (s)' })}
@@ -205,9 +269,11 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
                 <Input
                   id="task-retry-interval"
                   min={1}
-                  onChange={(e) => setRetryInterval(Number.parseInt(e.target.value, 10) || 60)}
+                  onChange={(e) =>
+                    dispatch({ type: 'setRetryInterval', value: Number.parseInt(e.target.value, 10) || 60 })
+                  }
                   type="number"
-                  value={retryInterval}
+                  value={state.retryInterval}
                 />
               </div>
             )}
@@ -240,7 +306,7 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
                         key={srv.id}
                       >
                         <Checkbox
-                          checked={selectedServerIds.includes(srv.id)}
+                          checked={state.selectedServerIds.includes(srv.id)}
                           disabled={!execEnabled}
                           onCheckedChange={() => toggleServer(srv.id)}
                         />
@@ -259,7 +325,11 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
             </Button>
             <Button
               disabled={
-                isPending || !name.trim() || !cronExpression.trim() || !command.trim() || selectedServerIds.length === 0
+                isPending ||
+                !state.name.trim() ||
+                !state.cronExpression.trim() ||
+                !state.command.trim() ||
+                state.selectedServerIds.length === 0
               }
               type="submit"
             >

@@ -144,7 +144,7 @@ export function isNewSchemaHop(hop: TracerouteHop): boolean {
   return hop.total_sent != null
 }
 
-export const PROVIDER_LABELS: Record<string, string> = {
+const PROVIDER_LABELS: Record<string, string> = {
   ct: 'China Telecom',
   cu: 'China Unicom',
   cm: 'China Mobile',

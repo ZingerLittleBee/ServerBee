@@ -38,6 +38,7 @@ const STATUS_STYLES: Record<StatusKey, { dot: string; pill: string }> = {
   down: { dot: 'bg-red-500', pill: 'bg-red-500/15 text-red-600 dark:text-red-400' },
   pending: { dot: 'bg-gray-400', pill: 'bg-muted text-muted-foreground' }
 }
+const ORDERED_STATUSES: StatusKey[] = ['down', 'degraded', 'healthy', 'pending']
 
 function getStatus(monitor: ServiceMonitor): StatusKey {
   if (monitor.last_status === null) {
@@ -78,8 +79,6 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
     return acc
   }, [filtered])
 
-  const orderedStatuses: StatusKey[] = ['down', 'degraded', 'healthy', 'pending']
-
   if (!monitors) {
     return (
       <div className="flex h-full flex-col rounded-lg border bg-card p-4">
@@ -97,7 +96,7 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
         <h3 className="font-semibold text-sm">{t('widgets.serviceStatus.title')}</h3>
         {filtered.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            {orderedStatuses.map((status) =>
+            {ORDERED_STATUSES.map((status) =>
               counts[status] > 0 ? (
                 <span
                   className={cn(

@@ -6,14 +6,19 @@ import type { ServerCostInsights } from '@/lib/api-schema'
 const REGEX_DETAIL_EXPIRED = /detail_expired/
 const REGEX_EDIT_CYCLE_MONTHLY = /edit_cycle_monthly/
 
+const routeApi = {
+  useNavigate: () => vi.fn(),
+  useParams: () => ({ id: 'server-1' }),
+  useSearch: () => ({ range: 'realtime' })
+}
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="/">{children}</a>,
   createFileRoute: () => (config: Record<string, unknown>) => ({
     ...config,
-    useNavigate: () => vi.fn(),
-    useParams: () => ({ id: 'server-1' }),
-    useSearch: () => ({ range: 'realtime' })
-  })
+    ...routeApi
+  }),
+  getRouteApi: () => routeApi
 }))
 
 vi.mock('@tanstack/react-query', () => ({

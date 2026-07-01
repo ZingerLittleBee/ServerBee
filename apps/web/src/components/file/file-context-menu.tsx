@@ -85,26 +85,29 @@ export function FileContextMenu({
       ref={menuRef}
       role="menu"
       style={{ left: position.x, top: position.y }}
+      tabIndex={-1}
     >
-      {items
-        .filter((item) => item.show)
-        .map((item) => (
-          <button
-            className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-muted ${
-              item.destructive ? 'text-destructive' : ''
-            }`}
-            key={item.label}
-            onClick={() => {
-              item.action()
-              onClose()
-            }}
-            role="menuitem"
-            type="button"
-          >
-            <item.icon aria-hidden="true" className="size-3.5" />
-            {item.label}
-          </button>
-        ))}
+      {items.flatMap((item) =>
+        item.show
+          ? [
+              <button
+                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors hover:bg-muted ${
+                  item.destructive ? 'text-destructive' : ''
+                }`}
+                key={item.label}
+                onClick={() => {
+                  item.action()
+                  onClose()
+                }}
+                role="menuitem"
+                type="button"
+              >
+                <item.icon aria-hidden="true" className="size-3.5" />
+                {item.label}
+              </button>
+            ]
+          : []
+      )}
     </div>
   )
 }

@@ -93,8 +93,8 @@ export function DataTableDateFilter<TData>({ column, title, multiple }: DataTabl
   )
 
   const onReset = React.useCallback(
-    (event: React.MouseEvent) => {
-      event.stopPropagation()
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault()
       column.setFilterValue(undefined)
     },
     [column]
@@ -166,41 +166,51 @@ export function DataTableDateFilter<TData>({ column, title, multiple }: DataTabl
   }, [selectedDates, multiple, formatDateRange, title])
 
   return (
-    <Popover>
-      <PopoverTrigger render={<Button className="border-dashed font-normal" size="sm" variant="outline" />}>
-        {hasValue ? (
-          <div
-            aria-label={`Clear ${title} filter`}
-            className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            onClick={onReset}
-            role="button"
-            tabIndex={0}
-          >
-            <XCircle />
-          </div>
-        ) : (
+    <div className="inline-flex items-center">
+      <Popover>
+        <PopoverTrigger
+          render={
+            <Button
+              className={hasValue ? 'rounded-r-none border-dashed font-normal' : 'border-dashed font-normal'}
+              size="sm"
+              variant="outline"
+            />
+          }
+        >
           <CalendarIcon />
-        )}
-        {label}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-0">
-        {multiple ? (
-          <Calendar
-            autoFocus
-            captionLayout="dropdown"
-            mode="range"
-            onSelect={onSelect}
-            selected={getIsDateRange(selectedDates) ? selectedDates : { from: undefined, to: undefined }}
-          />
-        ) : (
-          <Calendar
-            captionLayout="dropdown"
-            mode="single"
-            onSelect={onSelect}
-            selected={getIsDateRange(selectedDates) ? undefined : selectedDates[0]}
-          />
-        )}
-      </PopoverContent>
-    </Popover>
+          {label}
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-auto p-0">
+          {multiple ? (
+            <Calendar
+              autoFocus
+              captionLayout="dropdown"
+              mode="range"
+              onSelect={onSelect}
+              selected={getIsDateRange(selectedDates) ? selectedDates : { from: undefined, to: undefined }}
+            />
+          ) : (
+            <Calendar
+              captionLayout="dropdown"
+              mode="single"
+              onSelect={onSelect}
+              selected={getIsDateRange(selectedDates) ? undefined : selectedDates[0]}
+            />
+          )}
+        </PopoverContent>
+      </Popover>
+      {hasValue && (
+        <Button
+          aria-label={`Clear ${title} filter`}
+          className="-ml-px rounded-l-none border-dashed px-2"
+          onClick={onReset}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <XCircle />
+        </Button>
+      )}
+    </div>
   )
 }

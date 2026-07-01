@@ -40,7 +40,7 @@ function makePoint(value: number, lossRatio = 0): ServerCardMetricPoint {
         targetName: 'Tokyo'
       }
     ],
-    timestamp: new Date().toISOString(),
+    timestamp: new Date(Date.UTC(2026, 0, 1, 0, 0, value)).toISOString(),
     value
   }
 }
@@ -50,7 +50,7 @@ describe('NetworkSquareGrid', () => {
     observers.length = 0
   })
 
-  it('renders no more squares than the container can fit', () => {
+  it('renders all points inside the clipped grid', () => {
     // @ts-expect-error inject mock
     globalThis.ResizeObserver = TestResizeObserver
 
@@ -62,13 +62,13 @@ describe('NetworkSquareGrid', () => {
       </TooltipProvider>
     )
 
-    // Simulate a container width of 80px → fits floor((80 + 2) / 8) = 10 squares.
     act(() => {
       observers[0]?.([{ contentRect: { width: 80 } }])
     })
 
     const squares = container.querySelectorAll('[data-testid="square"]')
-    expect(squares.length).toBe(10)
+    expect(squares.length).toBe(30)
+    expect(container.firstElementChild).toHaveClass('overflow-hidden')
   })
 
   it('colors synthetic backend-history points that carry a real value', () => {

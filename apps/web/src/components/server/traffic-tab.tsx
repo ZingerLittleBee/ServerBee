@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   type ChartConfig,
@@ -11,6 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent
 } from '@/components/ui/chart'
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import { cn, formatBytes } from '@/lib/utils'

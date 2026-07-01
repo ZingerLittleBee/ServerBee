@@ -1,15 +1,15 @@
-export const LATENCY_HEALTHY_THRESHOLD_MS = 300
-export const NETWORK_FAILURE_PACKET_LOSS_RATIO = 1
+const LATENCY_HEALTHY_THRESHOLD_MS = 300
+const NETWORK_FAILURE_PACKET_LOSS_RATIO = 1
 
-export const LATENCY_UNKNOWN_TEXT_CLASS = 'text-muted-foreground'
-export const LATENCY_HEALTHY_TEXT_CLASS = 'text-emerald-600 dark:text-emerald-400'
-export const LATENCY_WARNING_TEXT_CLASS = 'text-amber-600 dark:text-amber-400'
-export const LATENCY_FAILED_TEXT_CLASS = 'text-red-600 dark:text-red-400'
+const LATENCY_UNKNOWN_TEXT_CLASS = 'text-muted-foreground'
+const LATENCY_HEALTHY_TEXT_CLASS = 'text-emerald-600 dark:text-emerald-400'
+const LATENCY_WARNING_TEXT_CLASS = 'text-amber-600 dark:text-amber-400'
+const LATENCY_FAILED_TEXT_CLASS = 'text-red-600 dark:text-red-400'
 
 export const LATENCY_UNKNOWN_BAR_COLOR = 'var(--color-muted)'
-export const LATENCY_HEALTHY_BAR_COLOR = '#10b981'
-export const LATENCY_WARNING_BAR_COLOR = '#f59e0b'
-export const LATENCY_FAILED_BAR_COLOR = '#ef4444'
+const LATENCY_HEALTHY_BAR_COLOR = '#10b981'
+const LATENCY_WARNING_BAR_COLOR = '#f59e0b'
+const LATENCY_FAILED_BAR_COLOR = '#ef4444'
 
 export type LatencyStatus = 'unknown' | 'healthy' | 'warning' | 'failed'
 
@@ -65,8 +65,8 @@ export function getLatencyBarColor(input: LatencyStatusInput): string {
   }
 }
 
-export const LOSS_WARNING_THRESHOLD_RATIO = 0.01
-export const LOSS_SEVERE_THRESHOLD_RATIO = 0.05
+const LOSS_WARNING_THRESHOLD_RATIO = 0.01
+const LOSS_SEVERE_THRESHOLD_RATIO = 0.05
 
 export type CombinedSeverity = 'unknown' | 'healthy' | 'warning' | 'severe' | 'failed'
 

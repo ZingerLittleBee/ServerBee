@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SERVER_DETAIL_TABS, type ServerDetailTab } from './server-detail-search'
 
 const LazyServerDetailPage = lazy(() => import('./$id-page').then((m) => ({ default: m.ServerDetailPage })))
 
@@ -22,9 +23,6 @@ function ServerDetailPageShell() {
     </Suspense>
   )
 }
-
-const SERVER_DETAIL_TABS = ['metrics', 'traffic', 'security', 'ip-quality'] as const
-export type ServerDetailTab = (typeof SERVER_DETAIL_TABS)[number]
 
 export const Route = createFileRoute('/_authed/servers/$id')({
   component: ServerDetailPageShell,

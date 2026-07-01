@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { Loader2, Upload } from 'lucide-react'
-import { type ChangeEvent, type FormEvent, useRef, useState } from 'react'
+import { type ChangeEvent, type FormEvent, useEffect, useReducer, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api-client'
 
@@ -19,46 +20,88 @@ interface BrandSettings {
   site_title?: string
 }
 
+interface BrandFormState {
+  faviconFile: File | null
+  faviconPreview: string | null
+  footerText: string
+  logoFile: File | null
+  logoPreview: string | null
+  siteTitle: string
+}
+
+type BrandFormAction =
+  | { type: 'brandLoaded'; brand: BrandSettings }
+  | { type: 'faviconSelected'; file: File; preview: string }
+  | { type: 'filesSaved' }
+  | { type: 'footerTextChanged'; value: string }
+  | { type: 'logoSelected'; file: File; preview: string }
+  | { type: 'siteTitleChanged'; value: string }
+
+const EMPTY_BRAND_FORM: BrandFormState = {
+  faviconFile: null,
+  faviconPreview: null,
+  footerText: '',
+  logoFile: null,
+  logoPreview: null,
+  siteTitle: ''
+}
+
+function brandFormReducer(state: BrandFormState, action: BrandFormAction): BrandFormState {
+  switch (action.type) {
+    case 'brandLoaded':
+      return {
+        ...state,
+        faviconPreview: action.brand.favicon_url ?? null,
+        footerText: action.brand.footer_text ?? '',
+        logoPreview: action.brand.logo_url ?? null,
+        siteTitle: action.brand.site_title ?? ''
+      }
+    case 'faviconSelected':
+      return { ...state, faviconFile: action.file, faviconPreview: action.preview }
+    case 'filesSaved':
+      return { ...state, faviconFile: null, logoFile: null }
+    case 'footerTextChanged':
+      return { ...state, footerText: action.value }
+    case 'logoSelected':
+      return { ...state, logoFile: action.file, logoPreview: action.preview }
+    case 'siteTitleChanged':
+      return { ...state, siteTitle: action.value }
+    default:
+      return state
+  }
+}
+
 function BrandSettingsSection() {
   const { t } = useTranslation(['settings', 'common'])
   const queryClient = useQueryClient()
   const logoInputRef = useRef<HTMLInputElement>(null)
   const faviconInputRef = useRef<HTMLInputElement>(null)
+  const brandInitializedRef = useRef(false)
 
   const { data: brand } = useQuery<BrandSettings>({
     queryKey: ['settings', 'brand'],
     queryFn: () => api.get<BrandSettings>('/api/settings/brand')
   })
 
-  const [siteTitle, setSiteTitle] = useState('')
-  const [footerText, setFooterText] = useState('')
-  const [logoPreview, setLogoPreview] = useState<string | null>(null)
-  const [faviconPreview, setFaviconPreview] = useState<string | null>(null)
-  const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [faviconFile, setFaviconFile] = useState<File | null>(null)
-  const [initialized, setInitialized] = useState(false)
+  const [form, dispatchForm] = useReducer(brandFormReducer, EMPTY_BRAND_FORM)
 
-  if (brand && !initialized) {
-    setSiteTitle(brand.site_title ?? '')
-    setFooterText(brand.footer_text ?? '')
-    if (brand.logo_url) {
-      setLogoPreview(brand.logo_url)
+  useEffect(() => {
+    if (!brand || brandInitializedRef.current) {
+      return
     }
-    if (brand.favicon_url) {
-      setFaviconPreview(brand.favicon_url)
-    }
-    setInitialized(true)
-  }
+    brandInitializedRef.current = true
+    dispatchForm({ type: 'brandLoaded', brand })
+  }, [brand])
 
   const mutation = useMutation({
     mutationFn: async (payload: BrandSettings) => {
-      if (logoFile || faviconFile) {
+      if (form.logoFile || form.faviconFile) {
         const formData = new FormData()
-        if (logoFile) {
-          formData.append('logo', logoFile)
+        if (form.logoFile) {
+          formData.append('logo', form.logoFile)
         }
-        if (faviconFile) {
-          formData.append('favicon', faviconFile)
+        if (form.faviconFile) {
+          formData.append('favicon', form.faviconFile)
         }
         formData.append('site_title', payload.site_title ?? '')
         formData.append('footer_text', payload.footer_text ?? '')
@@ -79,8 +122,7 @@ function BrandSettingsSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'brand'] }).catch(() => undefined)
-      setLogoFile(null)
-      setFaviconFile(null)
+      dispatchForm({ type: 'filesSaved' })
       toast.success(t('appearance.brand_saved'))
     },
     onError: (err) => {
@@ -96,13 +138,14 @@ function BrandSettingsSection() {
 
     const reader = new FileReader()
     reader.onloadend = () => {
-      const result = reader.result as string
+      const result = reader.result
+      if (typeof result !== 'string') {
+        return
+      }
       if (type === 'logo') {
-        setLogoPreview(result)
-        setLogoFile(file)
+        dispatchForm({ type: 'logoSelected', file, preview: result })
       } else {
-        setFaviconPreview(result)
-        setFaviconFile(file)
+        dispatchForm({ type: 'faviconSelected', file, preview: result })
       }
     }
     reader.readAsDataURL(file)
@@ -111,8 +154,8 @@ function BrandSettingsSection() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     mutation.mutate({
-      site_title: siteTitle,
-      footer_text: footerText
+      site_title: form.siteTitle,
+      footer_text: form.footerText
     })
   }
 
@@ -128,9 +171,9 @@ function BrandSettingsSection() {
           </label>
           <Input
             id="site-title"
-            onChange={(e) => setSiteTitle(e.target.value)}
+            onChange={(e) => dispatchForm({ type: 'siteTitleChanged', value: e.target.value })}
             placeholder="ServerBee"
-            value={siteTitle}
+            value={form.siteTitle}
           />
         </div>
 
@@ -140,9 +183,9 @@ function BrandSettingsSection() {
           </label>
           <Input
             id="footer-text"
-            onChange={(e) => setFooterText(e.target.value)}
+            onChange={(e) => dispatchForm({ type: 'footerTextChanged', value: e.target.value })}
             placeholder={t('appearance.footer_placeholder')}
-            value={footerText}
+            value={form.footerText}
           />
         </div>
 
@@ -151,12 +194,12 @@ function BrandSettingsSection() {
             {t('appearance.logo')}
           </label>
           <div className="flex items-center gap-3">
-            {logoPreview && (
+            {form.logoPreview && (
               <img
                 alt="Logo preview"
                 className="size-10 rounded-md border object-contain"
                 height={40}
-                src={logoPreview}
+                src={form.logoPreview}
                 width={40}
               />
             )}
@@ -180,12 +223,12 @@ function BrandSettingsSection() {
             {t('appearance.favicon')}
           </label>
           <div className="flex items-center gap-3">
-            {faviconPreview && (
+            {form.faviconPreview && (
               <img
                 alt="Favicon preview"
                 className="size-8 rounded border object-contain"
                 height={32}
-                src={faviconPreview}
+                src={form.faviconPreview}
                 width={32}
               />
             )}

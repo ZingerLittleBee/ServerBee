@@ -3,71 +3,15 @@ import { ArrowDown, ArrowUp, Clock, Cpu, HardDrive, MemoryStick, Network, Sigma 
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
-import { deriveServerStatus, StatusDot } from '@/components/server/status-dot'
+import { MetricValue } from '@/components/server/metric-value'
+import { StatusDot } from '@/components/server/status-dot'
+import { deriveServerStatus } from '@/components/server/status-dot-utils'
 import { TagChipRow } from '@/components/server/tag-chip'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
-
-function splitValueUnit(formatted: string): { unit: string | null; value: string } {
-  const lastSpace = formatted.lastIndexOf(' ')
-  if (lastSpace < 0) {
-    return { unit: null, value: formatted }
-  }
-  return { unit: formatted.slice(lastSpace + 1), value: formatted.slice(0, lastSpace) }
-}
-
-function valueClassName(value: string): string {
-  return value === '0' ? 'text-xs' : 'font-semibold text-foreground text-xs'
-}
-
-export function renderBytesValue(bytes: number): ReactNode {
-  const { value, unit } = splitValueUnit(formatBytes(bytes))
-  if (unit == null) {
-    return <span className={valueClassName(value)}>{value}</span>
-  }
-  return (
-    <>
-      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
-    </>
-  )
-}
-
-export function renderSpeedValue(bytesPerSec: number): ReactNode {
-  if (bytesPerSec <= 0) {
-    return <span className="text-xs">0</span>
-  }
-  const { value, unit } = splitValueUnit(formatSpeed(bytesPerSec))
-  if (unit == null) {
-    return <span className={valueClassName(value)}>{value}</span>
-  }
-  return (
-    <>
-      <span className={valueClassName(value)}>{value}</span> <span className="text-[9px]">{unit}</span>
-    </>
-  )
-}
-
-export function getBarColor(pct: number): string {
-  if (pct > 90) {
-    return 'bg-red-500'
-  }
-  if (pct > 70) {
-    return 'bg-amber-500'
-  }
-  return 'bg-emerald-500'
-}
-
-export function getBarTextColor(pct: number): string {
-  if (pct > 90) {
-    return 'text-red-600 dark:text-red-400'
-  }
-  if (pct > 70) {
-    return 'text-amber-600 dark:text-amber-400'
-  }
-  return 'text-foreground'
-}
+import { cn, formatUptime } from '@/lib/utils'
+import { getBarColor, getBarTextColor } from './metric-bar-colors'
 
 interface MetricBarRowProps {
   ariaLabel?: string
@@ -160,7 +104,7 @@ export function MemoryCell({ server }: { server: ServerMetrics }) {
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <MemoryStick aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {renderBytesValue(server.mem_used)} / {renderBytesValue(server.mem_total)}
+          <MetricValue kind="bytes" value={server.mem_used} /> / <MetricValue kind="bytes" value={server.mem_total} />
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{roundedPct}%</span>
       </div>
@@ -178,23 +122,23 @@ export function DiskCell({ server }: { server: ServerMetrics }) {
     <div className="grid grid-cols-[max-content_max-content] gap-x-1.5 gap-y-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
       <span className="flex h-4 items-center gap-1">
         <HardDrive aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(server.disk_used)}
+        <MetricValue kind="bytes" value={server.disk_used} />
       </span>
       <span className="flex h-4 items-center gap-1">
         <Sigma aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(server.disk_total)}
+        <MetricValue kind="bytes" value={server.disk_total} />
       </span>
       <span className="flex h-4 items-center gap-1">
         <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
           R
         </span>
-        {renderSpeedValue(server.disk_read_bytes_per_sec)}
+        <MetricValue kind="speed" value={server.disk_read_bytes_per_sec} />
       </span>
       <span className="flex h-4 items-center gap-1">
         <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted font-semibold text-foreground">
           W
         </span>
-        {renderSpeedValue(server.disk_write_bytes_per_sec)}
+        <MetricValue kind="speed" value={server.disk_write_bytes_per_sec} />
       </span>
     </div>
   )
@@ -214,11 +158,11 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
     <div className="grid grid-cols-[max-content_max-content] gap-x-1.5 gap-y-0.5 font-mono text-[10px] text-muted-foreground tabular-nums">
       <span className="flex h-4 items-center gap-1">
         <Network aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(used)}
+        <MetricValue kind="bytes" value={used} />
       </span>
       <span className="flex h-4 items-center gap-1">
         <Sigma aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
-        {renderBytesValue(limit)}
+        <MetricValue kind="bytes" value={limit} />
       </span>
       {server.online && (
         <>
@@ -226,13 +170,13 @@ export function NetworkCell({ server, entry }: NetworkCellProps) {
             <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
               <ArrowDown aria-hidden="true" className="size-2.5" />
             </span>
-            {renderSpeedValue(server.net_in_speed)}
+            <MetricValue kind="speed" value={server.net_in_speed} />
           </span>
           <span className="flex h-4 items-center gap-1">
             <span className="inline-flex size-3.5 flex-none items-center justify-center rounded-sm bg-muted text-foreground">
               <ArrowUp aria-hidden="true" className="size-2.5" />
             </span>
-            {renderSpeedValue(server.net_out_speed)}
+            <MetricValue kind="speed" value={server.net_out_speed} />
           </span>
         </>
       )}

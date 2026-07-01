@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next'
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   type ChartConfig,
@@ -9,6 +8,7 @@ import {
   ChartTooltip,
   ChartTooltipContent
 } from '@/components/ui/chart'
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { DiskIoChartPoint, DiskIoSeries } from '@/lib/disk-io'
 import { formatSpeed } from '@/lib/utils'

@@ -7,7 +7,17 @@ import {
   TrashIcon,
   UnlockIcon
 } from 'lucide-react'
-import { type ReactNode, type Ref, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ReactNode,
+  type Ref,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore
+} from 'react'
 import {
   GridLayout,
   getCompactor,
@@ -51,6 +61,7 @@ function isWidgetStatic(configJson: string): boolean {
 const MOBILE_ROW_PX = 80
 const MOBILE_BREAKPOINT = 768
 const SINGLE_COLUMN_CONTENT_WIDTH = 900
+const MOBILE_QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
 
 const WIDGET_TYPE_MAP = new Map<string, WidgetTypeDefinition>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
 
@@ -69,7 +80,7 @@ function rectsOverlap(a: Layout[number], b: Layout[number]): boolean {
 // non-colliding widget exactly where it was.
 function deoverlapLayout(layout: Layout): Layout {
   const placed: LayoutItem[] = []
-  const sorted = [...layout].sort((a, b) => a.y - b.y || a.x - b.x)
+  const sorted = layout.toSorted((a, b) => a.y - b.y || a.x - b.x)
   for (const original of sorted) {
     const item = { ...original }
     let collided = true
@@ -89,6 +100,38 @@ function deoverlapLayout(layout: Layout): Layout {
 }
 
 type InteractionState = 'dragging' | 'idle' | 'resizing'
+type ActiveInteractionState = Exclude<InteractionState, 'idle'>
+
+interface LayoutRuntimeState {
+  baseLayout: Layout
+  interactionState: InteractionState
+  liveLayout: Layout
+}
+
+type LayoutRuntimeAction =
+  | { baseLayout: Layout; layout: Layout; state: ActiveInteractionState; type: 'start-interaction' }
+  | { baseLayout: Layout; layout: Layout; type: 'commit-layout' }
+  | { baseLayout: Layout; layout: Layout; type: 'set-live-layout' }
+  | { type: 'set-idle' }
+
+function createLayoutRuntimeState(layout: Layout): LayoutRuntimeState {
+  return { baseLayout: layout, interactionState: 'idle', liveLayout: layout }
+}
+
+function layoutRuntimeReducer(state: LayoutRuntimeState, action: LayoutRuntimeAction): LayoutRuntimeState {
+  switch (action.type) {
+    case 'start-interaction':
+      return { baseLayout: action.baseLayout, interactionState: action.state, liveLayout: action.layout }
+    case 'commit-layout':
+      return { baseLayout: action.baseLayout, interactionState: 'idle', liveLayout: action.layout }
+    case 'set-live-layout':
+      return { ...state, baseLayout: action.baseLayout, liveLayout: action.layout }
+    case 'set-idle':
+      return state.interactionState === 'idle' ? state : { ...state, interactionState: 'idle' }
+    default:
+      return state
+  }
+}
 
 const resizeHandleIconMap: Record<ResizeHandleAxis, typeof MoveDiagonal2Icon> = {
   n: MoveVerticalIcon,
@@ -142,22 +185,21 @@ function renderResizeHandle(axis: ResizeHandleAxis, ref: Ref<HTMLElement>) {
   )
 }
 
+function getMobileSnapshot(): boolean {
+  return typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
+}
+
+function subscribeToMobileChanges(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return () => undefined
+  }
+  const mql = window.matchMedia(MOBILE_QUERY)
+  mql.addEventListener('change', onStoreChange)
+  return () => mql.removeEventListener('change', onStoreChange)
+}
+
 function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
-  )
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') {
-      return
-    }
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
-  }, [])
-
-  return isMobile
+  return useSyncExternalStore(subscribeToMobileChanges, getMobileSnapshot, () => false)
 }
 
 export function DashboardGrid({
@@ -236,8 +278,11 @@ export function DashboardGrid({
     return deoverlapLayout(layout)
   }, [widgets, autoUnits, width, getStrategy])
 
-  const [liveLayout, setLiveLayout] = useState<Layout>(baseLayout)
-  const [interactionState, setInteractionState] = useState<InteractionState>('idle')
+  const [{ baseLayout: liveBaseLayout, liveLayout, interactionState }, dispatchLayoutRuntime] = useReducer(
+    layoutRuntimeReducer,
+    baseLayout,
+    createLayoutRuntimeState
+  )
 
   // While editing (or actively dragging/resizing), freeze the servers snapshot fed
   // to widgets. Otherwise every websocket tick swaps the servers array reference
@@ -290,26 +335,23 @@ export function DashboardGrid({
       // De-overlap every frame: RGL's identity compactor never resolves
       // overlaps, and its idle onLayoutChange echo would otherwise re-apply the
       // raw (overlapping) persisted positions over the de-overlapped layout.
-      setLiveLayout(deoverlapLayout(next))
+      dispatchLayoutRuntime({ type: 'set-live-layout', baseLayout, layout: deoverlapLayout(next) })
     },
-    [getStrategy]
+    [baseLayout, getStrategy]
   )
-
-  // Resync the rendered layout to the widgets-derived one the moment `widgets`
-  // change while idle (e.g. after a save swaps temp ids for server ids). Doing
-  // this in render (guarded) instead of an effect avoids the stale frame that
-  // snapped widgets back to their initial positions and flickered.
-  const prevBaseRef = useRef(baseLayout)
-  if (!isInteracting && prevBaseRef.current !== baseLayout) {
-    prevBaseRef.current = baseLayout
-    setLiveLayout(baseLayout)
-  }
 
   useEffect(() => {
     if (isMobile) {
-      setInteractionState('idle')
+      dispatchLayoutRuntime({ type: 'set-idle' })
     }
   }, [isMobile])
+
+  const startInteraction = useCallback(
+    (state: ActiveInteractionState) => {
+      dispatchLayoutRuntime({ type: 'start-interaction', state, baseLayout, layout: baseLayout })
+    },
+    [baseLayout]
+  )
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
@@ -325,8 +367,6 @@ export function DashboardGrid({
 
   const commitLayoutChange = useCallback(
     (finalLayout: Layout) => {
-      setInteractionState('idle')
-
       // Per-strategy snap. For free/fixed: snap h to coarse multiples. For
       // aspect-square: apply snapOnRelease's coarse SnapPatch via applyCoarsePatch
       // (sets w and re-derives fine h via SCALE). Then re-normalize so the live
@@ -351,7 +391,7 @@ export function DashboardGrid({
         })
       })
       const resolved = deoverlapLayout(snapped)
-      setLiveLayout(resolved)
+      dispatchLayoutRuntime({ type: 'commit-layout', baseLayout, layout: resolved })
 
       const coarseLayout = resolved.map((item) => ({
         ...item,
@@ -363,14 +403,15 @@ export function DashboardGrid({
         onLayoutChange(patch)
       }
     },
-    [autoUnits, getStrategy, onLayoutChange, widgets, width]
+    [autoUnits, baseLayout, getStrategy, onLayoutChange, widgets, width]
   )
 
   const sortedWidgets = useMemo(() => {
-    return [...widgets].sort((a, b) => a.sort_order - b.sort_order)
+    return widgets.toSorted((a, b) => a.sort_order - b.sort_order)
   }, [widgets])
 
   const useSingleColumn = isMobile || (mounted && width < SINGLE_COLUMN_CONTENT_WIDTH)
+  const renderedLayout = isInteracting || liveBaseLayout === baseLayout ? liveLayout : baseLayout
 
   if (useSingleColumn) {
     return (
@@ -413,13 +454,13 @@ export function DashboardGrid({
           compactor={compactor}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
-          layout={liveLayout}
+          layout={renderedLayout}
           onDrag={(next) => updateLiveLayout(next, true)}
-          onDragStart={() => setInteractionState('dragging')}
+          onDragStart={() => startInteraction('dragging')}
           onDragStop={commitLayoutChange}
           onLayoutChange={handleLayoutChange}
           onResize={(next) => updateLiveLayout(next, true)}
-          onResizeStart={() => setInteractionState('resizing')}
+          onResizeStart={() => startInteraction('resizing')}
           onResizeStop={commitLayoutChange}
           resizeConfig={{ enabled: isEditing, handleComponent: renderResizeHandle, handles: ['s', 'e', 'se'] }}
           width={width}

@@ -1,18 +1,18 @@
+const MONITOR_PROBES = [
+  { name: 'SSL', meta: 'expires in 73d' },
+  { name: 'DNS', meta: 'A · CNAME' },
+  { name: 'HTTP', meta: '200 · keyword OK' },
+  { name: 'TCP', meta: ':443 · 18 ms' },
+  { name: 'WHOIS', meta: 'renews 2027-04' }
+]
+
 export function MonitorDotsAnim() {
-  const probes = [
-    { name: 'SSL', meta: 'expires in 73d' },
-    { name: 'DNS', meta: 'A · CNAME' },
-    { name: 'HTTP', meta: '200 · keyword OK' },
-    { name: 'TCP', meta: ':443 · 18 ms' },
-    { name: 'WHOIS', meta: 'renews 2027-04' }
-  ]
   return (
-    <div
+    <figure
       aria-label="Animated demo of service monitors"
-      className="grid h-full grid-cols-1 gap-1.5 font-mono text-xs sm:grid-cols-2"
-      role="img"
+      className="m-0 grid h-full grid-cols-1 gap-1.5 font-mono text-xs sm:grid-cols-2"
     >
-      {probes.map((p, i) => (
+      {MONITOR_PROBES.map((p, i) => (
         <div className="flex items-center justify-between rounded-md bg-white/[0.03] px-3 py-1.5" key={p.name}>
           <div className="flex items-center gap-2">
             <span
@@ -24,6 +24,6 @@ export function MonitorDotsAnim() {
           <span className="text-[10px] text-zinc-500">{p.meta}</span>
         </div>
       ))}
-    </div>
+    </figure>
   )
 }

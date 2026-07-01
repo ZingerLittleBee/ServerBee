@@ -27,7 +27,7 @@ function eventTypeBadgeVariant(eventType: string): 'default' | 'secondary' | 'ou
 export function DockerEvents({ events }: DockerEventsProps) {
   const { t } = useTranslation('docker')
   const sortedEvents = useMemo(() => {
-    return [...events].sort((a, b) => b.timestamp - a.timestamp)
+    return events.toSorted((a, b) => b.timestamp - a.timestamp)
   }, [events])
 
   if (sortedEvents.length === 0) {

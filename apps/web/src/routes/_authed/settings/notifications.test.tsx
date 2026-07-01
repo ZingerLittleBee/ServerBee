@@ -41,7 +41,8 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => config
 }))
 
-const { EmailFormFields, buildEmailPayload } = await import('./notifications')
+const { buildEmailPayload } = await import('./notification-payloads')
+const { EmailFormFields } = await import('./notifications')
 
 function noop() {
   // intentionally empty

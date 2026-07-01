@@ -1,7 +1,7 @@
 export function PingChartAnim() {
   const cells = 60
   return (
-    <div aria-label="Animated demo of network latency monitoring" className="flex h-full flex-col gap-3" role="img">
+    <figure aria-label="Animated demo of network latency monitoring" className="m-0 flex h-full flex-col gap-3">
       <div className="relative w-full flex-1 overflow-hidden rounded-lg bg-black/30">
         <svg
           aria-hidden="true"
@@ -57,6 +57,6 @@ export function PingChartAnim() {
           />
         ))}
       </div>
-    </div>
+    </figure>
   )
 }

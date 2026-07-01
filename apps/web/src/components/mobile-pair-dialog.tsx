@@ -1,4 +1,3 @@
-import { useMutation } from '@tanstack/react-query'
 import { Loader2, Plus, RefreshCw } from 'lucide-react'
 import QRCode from 'qrcode'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -25,6 +24,7 @@ export function MobilePairDialog({ onPaired }: { onPaired?: () => void }) {
   const { t } = useTranslation(['settings', 'common'])
   const [open, setOpen] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [pairPending, setPairPending] = useState(false)
   const [secondsLeft, setSecondsLeft] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -35,9 +35,13 @@ export function MobilePairDialog({ onPaired }: { onPaired?: () => void }) {
     }
   }, [])
 
-  const pairMutation = useMutation({
-    mutationFn: () => api.post<PairResponse>('/api/mobile/pair'),
-    onSuccess: async (data) => {
+  const generatePairCode = useCallback(async () => {
+    if (pairPending) {
+      return
+    }
+    setPairPending(true)
+    try {
+      const data = await api.post<PairResponse>('/api/mobile/pair')
       const qrPayload = JSON.stringify({
         type: 'serverbee_pair',
         server_url: window.location.origin,
@@ -67,18 +71,19 @@ export function MobilePairDialog({ onPaired }: { onPaired?: () => void }) {
           return prev - 1
         })
       }, 1000)
-    },
-    onError: (err) => {
+    } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to generate pairing code')
+    } finally {
+      setPairPending(false)
     }
-  })
+  }, [clearTimer, pairPending, t])
 
   const handleOpen = (isOpen: boolean) => {
     setOpen(isOpen)
     if (isOpen) {
       setQrDataUrl(null)
       setSecondsLeft(0)
-      pairMutation.mutate()
+      generatePairCode().catch(() => undefined)
     } else {
       clearTimer()
       setQrDataUrl(null)
@@ -91,7 +96,7 @@ export function MobilePairDialog({ onPaired }: { onPaired?: () => void }) {
     return () => clearTimer()
   }, [clearTimer])
 
-  const expired = secondsLeft === 0 && qrDataUrl !== null && !pairMutation.isPending
+  const expired = secondsLeft === 0 && qrDataUrl !== null && !pairPending
   const minutes = Math.floor(secondsLeft / 60)
   const seconds = secondsLeft % 60
 
@@ -108,13 +113,13 @@ export function MobilePairDialog({ onPaired }: { onPaired?: () => void }) {
         </DialogHeader>
 
         <div className="flex flex-col items-center gap-4 py-4">
-          {pairMutation.isPending && (
+          {pairPending && (
             <div className="flex size-64 items-center justify-center">
               <Loader2 className="size-8 animate-spin text-muted-foreground" />
             </div>
           )}
 
-          {qrDataUrl && !pairMutation.isPending && (
+          {qrDataUrl && !pairPending && (
             <>
               <div className="rounded-lg border bg-white p-2">
                 <img alt={t('mobile.qr_alt')} className="size-60" height={240} src={qrDataUrl} width={240} />
@@ -134,7 +139,7 @@ export function MobilePairDialog({ onPaired }: { onPaired?: () => void }) {
 
         <DialogFooter>
           {expired && (
-            <Button disabled={pairMutation.isPending} onClick={() => pairMutation.mutate()} variant="outline">
+            <Button disabled={pairPending} onClick={() => generatePairCode().catch(() => undefined)} variant="outline">
               <RefreshCw className="size-4" />
               {t('mobile.regenerate')}
             </Button>

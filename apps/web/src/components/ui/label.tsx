@@ -2,7 +2,7 @@ import type * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-function Label({ className, ...props }: React.ComponentProps<'label'>) {
+function Label({ className, htmlFor, ...props }: React.ComponentProps<'label'>) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: shadcn wrapper component - control is passed via props
     <label
@@ -11,6 +11,7 @@ function Label({ className, ...props }: React.ComponentProps<'label'>) {
         className
       )}
       data-slot="label"
+      htmlFor={htmlFor}
       {...props}
     />
   )

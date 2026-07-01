@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getDevProxyBannerState } from './dev-proxy-banner'
+import { getDevProxyBannerState } from './dev-proxy-banner-state'
 
 describe('DevProxyBanner', () => {
   it('shows the read-only warning when writes are disabled', () => {

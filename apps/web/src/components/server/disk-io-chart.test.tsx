@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { createContext, type ReactNode, useContext, useState } from 'react'
+import { createContext, type ReactNode, use, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { DiskIoChart } from './disk-io-chart'
 
@@ -25,7 +25,7 @@ vi.mock('@/components/ui/tabs', () => ({
   },
   TabsList: ({ children }: { children?: ReactNode }) => <div data-testid="tabs-list">{children}</div>,
   TabsTrigger: ({ children, value }: { children?: ReactNode; value: string }) => {
-    const context = useContext(TabsContext)
+    const context = use(TabsContext)
     if (!context) {
       return null
     }
@@ -37,7 +37,7 @@ vi.mock('@/components/ui/tabs', () => ({
     )
   },
   TabsContent: ({ children, value }: { children?: ReactNode; value: string }) => {
-    const context = useContext(TabsContext)
+    const context = use(TabsContext)
     if (!context || context.value !== value) {
       return null
     }
@@ -64,7 +64,7 @@ vi.mock('recharts', () => {
 })
 
 describe('DiskIoChart', () => {
-  it('renders merged and per-disk views', () => {
+  it('renders merged and per-disk views', async () => {
     render(
       <DiskIoChart
         mergedData={[{ timestamp: '2026-03-19T10:00:00Z', read_bytes_per_sec: 100, write_bytes_per_sec: 200 }]}
@@ -83,14 +83,14 @@ describe('DiskIoChart', () => {
 
     expect(screen.getByText('Disk I/O')).toBeInTheDocument()
     expect(screen.getByTestId('tab-content-merged')).toBeInTheDocument()
-    expect(screen.getByTestId('line-read_bytes_per_sec')).toBeInTheDocument()
-    expect(screen.getByTestId('line-write_bytes_per_sec')).toBeInTheDocument()
+    expect(await screen.findByTestId('line-read_bytes_per_sec')).toBeInTheDocument()
+    expect(await screen.findByTestId('line-write_bytes_per_sec')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Per Disk' }))
 
     expect(screen.getByTestId('tab-content-per-disk')).toBeInTheDocument()
-    expect(screen.getByText('sda')).toBeInTheDocument()
-    expect(screen.getByText('sdb')).toBeInTheDocument()
+    expect(await screen.findByText('sda')).toBeInTheDocument()
+    expect(await screen.findByText('sdb')).toBeInTheDocument()
   })
 
   it('returns null when there is no disk I/O data', () => {

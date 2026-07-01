@@ -73,13 +73,18 @@ function buildFallbackTargets(
   targetOrder: ReadonlyMap<string, number>
 ): ServerCardTooltipTarget[] {
   return targets
-    .filter(hasTargetSample)
-    .map((target) => ({
-      latency: target.avg_latency,
-      lossRatio: target.packet_loss,
-      targetId: target.target_id,
-      targetName: target.target_name
-    }))
+    .flatMap((target) =>
+      hasTargetSample(target)
+        ? [
+            {
+              latency: target.avg_latency,
+              lossRatio: target.packet_loss,
+              targetId: target.target_id,
+              targetName: target.target_name
+            }
+          ]
+        : []
+    )
     .sort((left, right) => compareTargets(left, right, targetOrder))
 }
 
@@ -114,13 +119,13 @@ function buildRealtimeState(
   bucketMap: ReadonlyMap<string, ServerCardTooltipTarget[]>,
   targetOrder: ReadonlyMap<string, number>
 ): ServerCardNetworkTrend {
-  const timestamps = [...bucketMap.keys()].sort().slice(-MAX_TREND_POINTS)
+  const timestamps = Array.from(bucketMap.keys()).toSorted().slice(-MAX_TREND_POINTS)
   // Sort each timestamp's targets once and reuse for both latency and loss points;
   // this runs in every server card's memo on every realtime network tick.
   const sortedByTimestamp = new Map(
     timestamps.map((timestamp) => [
       timestamp,
-      [...(bucketMap.get(timestamp) ?? [])].sort((left, right) => compareTargets(left, right, targetOrder))
+      (bucketMap.get(timestamp) ?? []).toSorted((left, right) => compareTargets(left, right, targetOrder))
     ])
   )
   const latencyPoints = timestamps.map((timestamp) => {

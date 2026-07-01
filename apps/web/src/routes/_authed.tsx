@@ -126,17 +126,12 @@ function AuthedLayout() {
   useWidgetModuleBootstrap(shouldConnectWs)
 
   useEffect(() => {
-    if (!shouldConnectWs) {
-      setConnectionState('disconnected')
-      return
-    }
-
-    const ws = wsRef.current
+    const ws = shouldConnectWs ? wsRef.current : null
     if (!ws) {
       setConnectionState('disconnected')
       return
     }
-    // Sync initial state
+
     setConnectionState(ws.connectionState)
     return ws.onConnectionStateChange(setConnectionState)
   }, [shouldConnectWs, wsRef])

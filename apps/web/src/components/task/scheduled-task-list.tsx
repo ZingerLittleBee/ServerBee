@@ -21,6 +21,19 @@ interface ServerInfo {
   name: string
 }
 
+function getExitCodeColor(code: number) {
+  if (code === 0) {
+    return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+  }
+  if (code === -2) {
+    return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
+  }
+  if (code === -3 || code === -4) {
+    return 'bg-orange-500/10 text-orange-600 dark:text-orange-400'
+  }
+  return 'bg-red-500/10 text-red-600 dark:text-red-400'
+}
+
 export function ScheduledTaskList() {
   const { t } = useTranslation(['settings', 'common'])
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -74,19 +87,6 @@ export function ScheduledTaskList() {
         return bTime.localeCompare(aTime)
       })
     : []
-
-  const exitCodeColor = (code: number) => {
-    if (code === 0) {
-      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-    }
-    if (code === -2) {
-      return 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'
-    }
-    if (code === -3 || code === -4) {
-      return 'bg-orange-500/10 text-orange-600 dark:text-orange-400'
-    }
-    return 'bg-red-500/10 text-red-600 dark:text-red-400'
-  }
 
   return (
     <div className="space-y-4">
@@ -234,7 +234,7 @@ export function ScheduledTaskList() {
                                   <span className="w-24 truncate font-medium">
                                     {serverNameMap.get(r.server_id) ?? r.server_id}
                                   </span>
-                                  <span className={`rounded px-1 py-0.5 ${exitCodeColor(r.exit_code)}`}>
+                                  <span className={`rounded px-1 py-0.5 ${getExitCodeColor(r.exit_code)}`}>
                                     {r.exit_code === 0 ? 'OK' : `exit ${r.exit_code}`}
                                   </span>
                                   {r.attempt > 1 && <span className="text-muted-foreground">attempt {r.attempt}</span>}

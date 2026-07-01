@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Network, RefreshCw } from 'lucide-react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { SettingsRow } from '@/components/settings/settings-row'
@@ -13,6 +14,9 @@ interface AsnStatus {
   source?: string
   updated_at?: string
 }
+
+const ASN_ICON = <Network className="size-4" />
+const ASN_LOADING_META = <Skeleton className="h-4 w-24" />
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {
@@ -71,6 +75,7 @@ export function AsnRow() {
   const installed = status?.installed ?? false
   const isCustom = status?.source === 'custom'
   const isPending = downloadMutation.isPending
+  const download = downloadMutation.mutate
 
   let buttonLabel = t('asn.download')
   if (isPending) {
@@ -78,24 +83,29 @@ export function AsnRow() {
   } else if (installed) {
     buttonLabel = t('asn.update')
   }
+  const action = useMemo(() => {
+    if (isCustom) {
+      return null
+    }
+    return (
+      <Button disabled={isPending} onClick={() => download()} size="sm" variant="outline">
+        {installed ? (
+          <RefreshCw className={`mr-1.5 size-4 ${isPending ? 'animate-spin' : ''}`} />
+        ) : (
+          <Download className="mr-1.5 size-4" />
+        )}
+        {buttonLabel}
+      </Button>
+    )
+  }, [buttonLabel, download, installed, isCustom, isPending])
+  const meta = useMemo(() => (isLoading ? ASN_LOADING_META : metaText(status, t)), [isLoading, status, t])
 
   return (
     <SettingsRow
-      action={
-        isCustom ? null : (
-          <Button disabled={isPending} onClick={() => downloadMutation.mutate()} size="sm" variant="outline">
-            {installed ? (
-              <RefreshCw className={`mr-1.5 size-4 ${isPending ? 'animate-spin' : ''}`} />
-            ) : (
-              <Download className="mr-1.5 size-4" />
-            )}
-            {buttonLabel}
-          </Button>
-        )
-      }
+      action={action}
       description={t('asn.description')}
-      icon={<Network className="size-4" />}
-      meta={isLoading ? <Skeleton className="h-4 w-24" /> : metaText(status, t)}
+      icon={ASN_ICON}
+      meta={meta}
       title={t('asn.title')}
     />
   )

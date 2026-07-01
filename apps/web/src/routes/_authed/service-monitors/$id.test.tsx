@@ -85,6 +85,14 @@ vi.mock('recharts', () => ({
   YAxis: () => null
 }))
 
+vi.mock('@/components/ui/recharts-lazy', () => ({
+  Area: () => null,
+  AreaChart: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  CartesianGrid: () => null,
+  XAxis: () => null,
+  YAxis: () => null
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     error: vi.fn(),

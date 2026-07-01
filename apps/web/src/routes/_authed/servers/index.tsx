@@ -1,30 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { LayoutGrid, ListChecks, Plus, Search, Table2, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table/data-table'
-import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
 import { AddServerDialog } from '@/components/server/add-server-dialog'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import { useCostOverview } from '@/hooks/use-cost'
@@ -40,6 +24,7 @@ import { countCleanupCandidates } from '@/lib/orphan-server-utils'
 import { cn } from '@/lib/utils'
 import { getInitialServersView } from './components/mobile-view'
 import { buildServerColumns } from './components/server-columns'
+import { ServersPageToolbar } from './components/servers-page-toolbar'
 
 export const Route = createFileRoute('/_authed/servers/')({
   component: ServersListPage,
@@ -225,74 +210,6 @@ function ServersListPage() {
     })
   }
 
-  const viewToggle = (
-    <ToggleGroup
-      multiple={false}
-      onValueChange={(value) => value.length > 0 && setViewMode(value[0] as 'table' | 'grid')}
-      size="default"
-      value={[viewMode]}
-      variant="outline"
-    >
-      <ToggleGroupItem aria-label={t('common:a11y.table_view')} value="table">
-        <Table2 className="size-4" />
-      </ToggleGroupItem>
-      <ToggleGroupItem aria-label={t('common:a11y.grid_view')} value="grid">
-        <LayoutGrid className="size-4" />
-      </ToggleGroupItem>
-    </ToggleGroup>
-  )
-
-  const cleanupButton = orphanCount > 0 && (
-    <AlertDialog>
-      <AlertDialogTrigger
-        render={
-          <Button disabled={cleanupMutation.isPending} size="default" variant="outline">
-            {t('servers:cleanup_orphans')} ({orphanCount})
-          </Button>
-        }
-      />
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('servers:cleanup_confirm_title')}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('servers:cleanup_confirm_description', { count: orphanCount })}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-          <AlertDialogAction onClick={() => cleanupMutation.mutate()} variant="destructive">
-            {t('common:delete')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
-
-  const batchDeleteButton = selectedCount > 0 && (
-    <AlertDialog>
-      <AlertDialogTrigger
-        render={
-          <Button disabled={batchDeleteMutation.isPending} size="default" variant="destructive">
-            <Trash2 aria-hidden="true" className="size-3.5" />
-            {t('servers:delete_selected', { count: selectedCount })}
-          </Button>
-        }
-      />
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-          <AlertDialogAction onClick={handleBatchDelete} variant="destructive">
-            {t('common:delete')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
-
   const toggleSelectMode = () => {
     setSelectMode((prev) => {
       if (prev) {
@@ -301,29 +218,6 @@ function ServersListPage() {
       return !prev
     })
   }
-
-  const selectModeButton = viewMode === 'table' && (
-    <Button onClick={toggleSelectMode} size="default" variant={selectMode ? 'secondary' : 'outline'}>
-      <ListChecks aria-hidden="true" className="size-4" />
-      {selectMode ? t('servers:batch_select_exit') : t('servers:batch_select')}
-    </Button>
-  )
-
-  const addServerButton = isAdmin && (
-    <Button onClick={() => setAddOpen(true)} size="default">
-      <Plus className="size-4" />
-      {t('add_server.button')}
-    </Button>
-  )
-
-  const rowActions = (
-    <>
-      {viewToggle}
-      {cleanupButton}
-      {batchDeleteButton}
-      {addServerButton}
-    </>
-  )
 
   return (
     <div
@@ -334,28 +228,23 @@ function ServersListPage() {
       ref={fillRef}
       style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
     >
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 flex-1 sm:max-w-sm">
-          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label={t('servers:search_placeholder')}
-            autoComplete="off"
-            className="pl-9"
-            name="search"
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('servers:search_placeholder')}
-            type="text"
-            value={search}
-          />
-        </div>
-        {viewMode === 'table' ? (
-          <DataTableToolbar className="w-full p-0 sm:w-auto sm:flex-1" table={table} trailingActions={selectModeButton}>
-            {rowActions}
-          </DataTableToolbar>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">{rowActions}</div>
-        )}
-      </div>
+      <ServersPageToolbar
+        batchDeletePending={batchDeleteMutation.isPending}
+        cleanupPending={cleanupMutation.isPending}
+        isAdmin={isAdmin}
+        onAddServer={() => setAddOpen(true)}
+        onBatchDelete={handleBatchDelete}
+        onCleanup={() => cleanupMutation.mutate()}
+        onSearchChange={setSearch}
+        onToggleSelectMode={toggleSelectMode}
+        onViewModeChange={setViewMode}
+        orphanCount={orphanCount}
+        search={search}
+        selectedCount={selectedCount}
+        selectMode={selectMode}
+        table={table}
+        viewMode={viewMode}
+      />
 
       {servers.length === 0 && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">

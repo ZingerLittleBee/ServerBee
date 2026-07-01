@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@tanstack/react-router": "1.166.7",
-    "@tanstack/react-router-devtools": "1.166.7",
     "@tanstack/react-start": "1.166.7",
     "fumadocs-core": "16.6.16",
     "fumadocs-mdx": "14.2.9",
@@ -35,7 +34,6 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
     "nitro": "^3.0.1-alpha.2",
-    "srvx": "^0.11.9",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^6.1.1"

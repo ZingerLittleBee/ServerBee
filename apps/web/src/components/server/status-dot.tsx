@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils'
-
-export type StatusKind = 'online' | 'offline' | 'pending'
+import type { StatusKind } from './status-dot-utils'
 
 interface StatusDotProps {
   className?: string
@@ -15,18 +14,14 @@ const TONE_BY_STATUS: Record<StatusKind, string> = {
 
 export function StatusDot({ status, className }: StatusDotProps) {
   return (
-    <span
-      aria-label={status}
-      className={cn('inline-block size-2 rounded-full', TONE_BY_STATUS[status], className)}
-      data-slot="status-dot"
-      role="img"
-    />
+    <>
+      <span className="sr-only">{status}</span>
+      <span
+        aria-hidden="true"
+        className={cn('inline-block size-2 rounded-full', TONE_BY_STATUS[status], className)}
+        data-slot="status-dot"
+        title={status}
+      />
+    </>
   )
-}
-
-export function deriveServerStatus(s: { has_token?: boolean; online: boolean }): StatusKind {
-  if (s.has_token === false) {
-    return 'pending'
-  }
-  return s.online ? 'online' : 'offline'
 }

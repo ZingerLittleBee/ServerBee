@@ -4,12 +4,13 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
 import { CompactMetric } from '@/components/server/compact-metric'
+import { MetricValue } from '@/components/server/metric-value'
 import { StatusBadge } from '@/components/server/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { RingChart } from '@/components/ui/ring-chart'
 import type { PublicServerSummary } from '@/lib/api-schema'
 import { computeTrafficQuota } from '@/lib/traffic'
-import { cn, formatBytes, formatSpeed, formatUptime } from '@/lib/utils'
+import { cn, formatBytes, formatUptime } from '@/lib/utils'
 
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) {
@@ -34,23 +35,6 @@ function metricPercent(used: number, total: number): number {
 
 function finiteMetric(value: number | null | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-function renderSpeedValue(bytesPerSec: number): ReactNode {
-  if (bytesPerSec <= 0) {
-    return '0'
-  }
-  const formatted = formatSpeed(bytesPerSec)
-  const lastSpace = formatted.lastIndexOf(' ')
-  if (lastSpace < 0) {
-    return formatted
-  }
-  return (
-    <>
-      {formatted.slice(0, lastSpace)}
-      <span className="ml-0.5 font-normal text-[10px] text-muted-foreground">{formatted.slice(lastSpace + 1)}</span>
-    </>
-  )
 }
 
 interface RingMetricProps {
@@ -176,18 +160,17 @@ export function ServerSummaryCard({ server, clickable }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/40 px-2 py-1.5">
-            <CompactMetric label={t('card_net_in_speed', { ns: 'servers' })} value={renderSpeedValue(m.net_in_speed)} />
+            <CompactMetric
+              label={t('card_net_in_speed', { ns: 'servers' })}
+              value={<MetricValue kind="speed" value={m.net_in_speed} variant="compact" />}
+            />
             <CompactMetric
               label={t('card_net_out_speed', { ns: 'servers' })}
-              value={renderSpeedValue(m.net_out_speed)}
+              value={<MetricValue kind="speed" value={m.net_out_speed} variant="compact" />}
             />
             <CompactMetric
               label={
-                <span
-                  aria-label={t('card_disk_read', { ns: 'servers' })}
-                  className="inline-flex items-center gap-1"
-                  role="img"
-                >
+                <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
                     className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
@@ -197,15 +180,11 @@ export function ServerSummaryCard({ server, clickable }: Props) {
                   {t('card_disk_read', { ns: 'servers' })}
                 </span>
               }
-              value={renderSpeedValue(m.disk_read_bytes_per_sec)}
+              value={<MetricValue kind="speed" value={m.disk_read_bytes_per_sec} variant="compact" />}
             />
             <CompactMetric
               label={
-                <span
-                  aria-label={t('card_disk_write', { ns: 'servers' })}
-                  className="inline-flex items-center gap-1"
-                  role="img"
-                >
+                <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
                     className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
@@ -215,7 +194,7 @@ export function ServerSummaryCard({ server, clickable }: Props) {
                   {t('card_disk_write', { ns: 'servers' })}
                 </span>
               }
-              value={renderSpeedValue(m.disk_write_bytes_per_sec)}
+              value={<MetricValue kind="speed" value={m.disk_write_bytes_per_sec} variant="compact" />}
             />
           </div>
 

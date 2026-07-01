@@ -54,11 +54,11 @@ function groupServices(services: MatrixService[]): CategoryGroup[] {
     byCategory.set(svc.category, list)
   }
 
-  return [...byCategory.entries()]
-    .sort(([a], [b]) => categoryRank(a) - categoryRank(b) || a.localeCompare(b))
+  return Array.from(byCategory.entries())
+    .toSorted(([a], [b]) => categoryRank(a) - categoryRank(b) || a.localeCompare(b))
     .map(([category, list]) => ({
       category,
-      services: [...list].sort((a, b) => b.popularity - a.popularity || a.name.localeCompare(b.name))
+      services: list.toSorted((a, b) => b.popularity - a.popularity || a.name.localeCompare(b.name))
     }))
 }
 

@@ -32,14 +32,6 @@ export function useFirewallBlocks(filters: FirewallBlocksFilters = {}) {
   })
 }
 
-export function useFirewallBlock(id: string | null | undefined) {
-  return useQuery({
-    queryKey: ['firewall', 'block', id],
-    queryFn: () => api.get<BlockListItem>(`/api/firewall/blocks/${id}`),
-    enabled: !!id
-  })
-}
-
 export function useFirewallStats() {
   return useQuery({
     queryKey: ['firewall', 'stats'],
