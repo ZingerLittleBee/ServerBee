@@ -1187,11 +1187,25 @@ impl Reporter {
             // Firewall blocklist variants — dispatched to the FirewallManager
             // state machine; any returned ack is sent straight back over the
             // WebSocket.
+            //
+            // The mutating variants (Sync/Add/Remove) enforce CAP_FIREWALL_BLOCK
+            // on the agent's own host, mirroring the capability gates on Exec /
+            // File / Traceroute etc. — the server is not the only trust boundary.
+            // BlocklistReset is deliberately *not* gated: it wipes ServerBee's
+            // own nft table (cleanup / disable path) and must stay reachable even
+            // after the capability is revoked, so a denied agent can still be
+            // cleaned up.
             msg @ (ServerMessage::BlocklistSync { .. }
             | ServerMessage::BlocklistAdd { .. }
             | ServerMessage::BlocklistRemove { .. }
             | ServerMessage::BlocklistReset) => {
-                if let Some(reply) = self.firewall_manager.handle(msg).await {
+                let is_reset = matches!(msg, ServerMessage::BlocklistReset);
+                let caps = capabilities.load(Ordering::SeqCst);
+                if !is_reset && !has_capability(caps, CAP_FIREWALL_BLOCK) {
+                    tracing::warn!(
+                        "Firewall blocklist mutation denied: CAP_FIREWALL_BLOCK not effective — ignoring"
+                    );
+                } else if let Some(reply) = self.firewall_manager.handle(msg).await {
                     let json = serde_json::to_string(&reply)?;
                     write.send(Message::Text(json.into())).await?;
                     tracing::debug!("Sent firewall blocklist ack");
@@ -2074,6 +2088,26 @@ mod tests {
             root_paths: vec![root.to_string_lossy().to_string()],
             ..FileConfig::default()
         }
+    }
+
+    #[tokio::test]
+    async fn test_blocklist_mutation_denied_without_firewall_capability() {
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        // All caps except firewall block — simulates a revoked capability.
+        let caps = ALL_CAPS & !CAP_FIREWALL_BLOCK;
+        let mut h = Harness::new(caps, FileConfig::default());
+        let mut sink = RecordingSink::new();
+
+        // A mutating variant must be dropped before reaching the firewall
+        // manager, so nothing is written back and no nft command runs.
+        h.dispatch(r#"{"type":"blocklist_remove","id":"x"}"#, &mut sink)
+            .await
+            .unwrap();
+        assert_eq!(
+            sink.sent_count(),
+            0,
+            "blocklist mutation must be ignored when CAP_FIREWALL_BLOCK is off"
+        );
     }
 
     #[tokio::test]
