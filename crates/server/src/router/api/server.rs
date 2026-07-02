@@ -952,6 +952,9 @@ pub async fn delete_server(
     ServerService::delete_server(&state.db, &id).await?;
     // Close any live agent connection so it doesn't linger after the row is gone.
     state.agent_manager.remove_connection(&id);
+    // Drop the cached report too: the server row is gone, so its "last known
+    // metrics" cache is dead weight (and would otherwise never be reclaimed).
+    state.agent_manager.remove_cached_report(&id);
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -995,6 +998,8 @@ pub async fn batch_delete(
     // weren't actually deleted (e.g. unknown ids in the request).
     for id in &body.ids {
         state.agent_manager.remove_connection(id);
+        // Row deleted -> drop its display cache so it isn't retained forever.
+        state.agent_manager.remove_cached_report(id);
     }
     let _ = AuditService::log(
         &state.db,

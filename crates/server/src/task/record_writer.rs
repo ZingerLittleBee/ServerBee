@@ -30,7 +30,10 @@ pub async fn run(state: Arc<AppState>) {
     loop {
         interval.tick().await;
 
-        let reports = state.agent_manager.all_latest_reports();
+        // Only flush reports for currently-connected agents. Offline agents
+        // keep their last report cached for display, but persisting it here
+        // would fabricate fresh metric/traffic rows every tick forever.
+        let reports = state.agent_manager.online_latest_reports();
         let now = Utc::now();
         flush_reports(&state.db, &reports, &mut transfer_cache, now).await;
     }

@@ -184,6 +184,26 @@ pub fn spawn_traceroute(
                 return;
             }
         };
+        // SSRF guard on the resolved address, matching ping/tcp/http probes.
+        // We check the concrete IP we are about to trace (not the hostname), so
+        // there is no DNS-rebinding window: loopback / link-local / the
+        // 169.254.169.254 metadata endpoint are rejected while RFC1918 stays
+        // allowed for legitimate internal monitoring.
+        if !serverbee_common::ssrf::is_monitor_safe_addr(addr) {
+            tracing::warn!("traceroute rejected: unsafe resolved address {addr}");
+            let _ = tx
+                .send(AgentMessage::TracerouteRoundUpdate {
+                    request_id,
+                    target,
+                    round: 0,
+                    total_rounds: 0,
+                    hops: vec![],
+                    completed: true,
+                    error: Some("Target resolves to a disallowed address".into()),
+                })
+                .await;
+            return;
+        }
         let proto = trippy_protocol_from(protocol);
         let request_id_inner = request_id.clone();
         let target_inner = target.clone();
@@ -361,6 +381,37 @@ mod tests {
             resolve_target("::1").await.unwrap(),
             "::1".parse::<IpAddr>().unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn test_spawn_traceroute_rejects_unsafe_addresses() {
+        // The cloud metadata endpoint and loopback must be refused before any
+        // probe packet is emitted; the first (and only) update is a completed
+        // error round with the disallowed-address message.
+        for unsafe_target in ["169.254.169.254", "127.0.0.1"] {
+            let (tx, mut rx) = mpsc::channel(8);
+            spawn_traceroute(
+                "req-1".to_string(),
+                unsafe_target.to_string(),
+                5,
+                TraceProtocol::Icmp,
+                tx,
+            );
+            let msg = rx.recv().await.expect("an update should be emitted");
+            match msg {
+                AgentMessage::TracerouteRoundUpdate {
+                    completed, error, ..
+                } => {
+                    assert!(completed, "unsafe target must terminate immediately");
+                    assert_eq!(
+                        error.as_deref(),
+                        Some("Target resolves to a disallowed address"),
+                        "{unsafe_target} must be rejected by the SSRF guard"
+                    );
+                }
+                other => panic!("unexpected message for {unsafe_target}: {other:?}"),
+            }
+        }
     }
 
     #[tokio::test]

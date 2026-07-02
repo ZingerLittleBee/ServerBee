@@ -142,7 +142,8 @@ impl AuthService {
         let new_session = session::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user.id.clone()),
-            token: Set(token),
+            // Store only the hash at rest; the plaintext lives in the cookie.
+            token: Set(Self::hash_session_token(&token)),
             ip: Set(params.ip.to_string()),
             user_agent: Set(params.user_agent.to_string()),
             expires_at: Set(expires_at),
@@ -151,7 +152,10 @@ impl AuthService {
             mobile_session_id: Set(None),
         };
 
-        let session_model = new_session.insert(db).await?;
+        let mut session_model = new_session.insert(db).await?;
+        // Hand the caller the plaintext token (for the Set-Cookie header). The
+        // row keeps the hash; this in-memory copy is never re-persisted.
+        session_model.token = token;
         Ok((session_model, user))
     }
 
@@ -164,7 +168,7 @@ impl AuthService {
         web_session_ttl: i64,
     ) -> Result<Option<(user::Model, session::Model)>, AppError> {
         let session = session::Entity::find()
-            .filter(session::Column::Token.eq(token))
+            .filter(session::Column::Token.eq(Self::hash_session_token(token)))
             .one(db)
             .await?;
 
@@ -214,7 +218,7 @@ impl AuthService {
     /// Delete a session by its token (logout).
     pub async fn logout(db: &DatabaseConnection, token: &str) -> Result<(), AppError> {
         session::Entity::delete_many()
-            .filter(session::Column::Token.eq(token))
+            .filter(session::Column::Token.eq(Self::hash_session_token(token)))
             .exec(db)
             .await?;
         Ok(())
@@ -379,6 +383,20 @@ impl AuthService {
         URL_SAFE_NO_PAD.encode(bytes)
     }
 
+    /// Deterministic hash of a session / mobile access token for at-rest storage.
+    ///
+    /// The `sessions.token` column stores this hash, never the plaintext, so a
+    /// leaked database snapshot (backup export, `make db-pull`) cannot be replayed
+    /// as a cookie or Bearer token. A plain SHA-256 (not argon2) is used because
+    /// lookups are by-value and the input is already a 256-bit CSPRNG token, so
+    /// there is nothing to brute-force and no salt is needed. Hex-encoded.
+    pub fn hash_session_token(token: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(token.as_bytes());
+        format!("{:x}", h.finalize())
+    }
+
     /// Generate a raw API key: "serverbee_" + 32 random bytes (base64url encoded).
     pub fn generate_api_key_raw() -> String {
         let mut bytes = [0u8; 32];
@@ -506,9 +524,11 @@ impl AuthService {
         // Resolve the caller's own mobile session to preserve (when the kept
         // session is itself a mobile one, so the active device isn't logged out
         // by its own password change). Read-only lookup, done before the txn.
-        let keep_mobile_session_id = match keep_session_token {
-            Some(token) => session::Entity::find()
-                .filter(session::Column::Token.eq(token))
+        // Sessions store the token hash, so hash the caller's token to match.
+        let keep_token_hash = keep_session_token.map(Self::hash_session_token);
+        let keep_mobile_session_id = match keep_token_hash {
+            Some(ref token_hash) => session::Entity::find()
+                .filter(session::Column::Token.eq(token_hash))
                 .one(db)
                 .await?
                 .and_then(|s| s.mobile_session_id),
@@ -533,8 +553,8 @@ impl AuthService {
         // when its token is known (web cookie / bearer flow), else revoke all.
         let mut revoke =
             session::Entity::delete_many().filter(session::Column::UserId.eq(user_id));
-        if let Some(token) = keep_session_token {
-            revoke = revoke.filter(session::Column::Token.ne(token));
+        if let Some(ref token_hash) = keep_token_hash {
+            revoke = revoke.filter(session::Column::Token.ne(token_hash));
         }
         revoke.exec(&txn).await?;
 
@@ -831,6 +851,42 @@ mod tests {
             .expect("login should succeed");
         assert_eq!(user.username, "bob");
         assert!(!session.token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_login_stores_token_hash_not_plaintext() {
+        let (db, _tmp) = setup_test_db().await;
+        AuthService::create_user(&db, "hashed", "secret123", "member")
+            .await
+            .expect("create_user should succeed");
+        let (session, _user) = AuthService::login(&db, login_params("hashed", "secret123"))
+            .await
+            .expect("login should succeed");
+
+        // The caller receives the plaintext (for the cookie), but the row must
+        // hold only the hash — a leaked snapshot must not be replayable.
+        let row = session::Entity::find_by_id(&session.id)
+            .one(&db)
+            .await
+            .expect("query session row")
+            .expect("session row should exist");
+        assert_ne!(
+            row.token, session.token,
+            "the stored token must not be the plaintext"
+        );
+        assert_eq!(
+            row.token,
+            AuthService::hash_session_token(&session.token),
+            "the stored token must be the hash of the plaintext"
+        );
+        // And the plaintext still validates (hash lookup round-trips).
+        assert!(
+            AuthService::validate_session(&db, &session.token, 3600)
+                .await
+                .expect("validate")
+                .is_some(),
+            "plaintext token must validate against the stored hash"
+        );
     }
 
     #[tokio::test]
@@ -1437,7 +1493,7 @@ mod tests {
         session::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user.id.clone()),
-            token: Set(token.clone()),
+            token: Set(AuthService::hash_session_token(&token)),
             ip: Set("127.0.0.1".into()),
             user_agent: Set("test".into()),
             expires_at: Set(now - chrono::Duration::hours(1)),
@@ -1456,7 +1512,7 @@ mod tests {
 
         // The expired row must have been cleaned up.
         let remaining = session::Entity::find()
-            .filter(session::Column::Token.eq(&token))
+            .filter(session::Column::Token.eq(AuthService::hash_session_token(&token)))
             .one(&db)
             .await
             .expect("query");
@@ -1476,7 +1532,7 @@ mod tests {
         session::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user.id.clone()),
-            token: Set(token.clone()),
+            token: Set(AuthService::hash_session_token(&token)),
             ip: Set("127.0.0.1".into()),
             user_agent: Set("test".into()),
             expires_at: Set(fixed_expiry),
@@ -1868,7 +1924,7 @@ mod tests {
         session::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user_id.to_string()),
-            token: Set(session_token.clone()),
+            token: Set(AuthService::hash_session_token(&session_token)),
             ip: Set("127.0.0.1".into()),
             user_agent: Set("phone".into()),
             expires_at: Set(now + chrono::Duration::days(30)),
