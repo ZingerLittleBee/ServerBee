@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.11] - 2026-07-03
+
+### Security
+
+- **Session and mobile access tokens are now stored hashed** -- The `sessions` table held the plaintext web session and mobile access token and looked them up by plaintext, so anyone with a database snapshot (the backup export, a `db-pull`) could replay any active row as a cookie or Bearer token until it expired -- unlike API keys, agent tokens, and refresh tokens, which were already hashed. Tokens are now stored as a SHA-256 hash and hashed again on every lookup (login validation, logout, password-change revocation, and the mobile push endpoints); the plaintext lives only in the cookie/response. A migration drops existing plaintext sessions, so web clients re-log in and mobile clients transparently refresh
+
+- **Agent traceroute now enforces the SSRF guard** -- Traceroute validated only a character whitelist and then traced whatever the target resolved to, unlike the ping/TCP/HTTP probes which all pass the shared SSRF guard. A server could push a traceroute to `169.254.169.254`, loopback, or an internal address and turn the agent into an internal-network probe. The resolved address is now rejected with the same monitor-safe policy (private RFC1918 ranges remain allowed for legitimate internal monitoring; loopback, link-local, and the cloud-metadata endpoint are blocked)
+
+- **Agent firewall blocklist mutations require the firewall capability** -- `BlocklistSync`, `BlocklistAdd`, and `BlocklistRemove` were applied to the host firewall with no capability check, while every other high-risk agent command (exec, upgrade, file, traceroute, IP quality) is gated on the current capability bitmap. The agent now enforces `CAP_FIREWALL_BLOCK` on these mutations so it is its own trust boundary; `BlocklistReset` stays ungated on purpose so a capability-revoked agent can still be cleaned up
+
+### Fixed
+
+- **Disconnected agents no longer generate phantom metrics** -- The record writer flushed its entire report cache every minute and stamped each row with the current time, but the cache was never pruned when an agent disconnected. An agent that connected once and then dropped kept producing current-looking metric and traffic rows every minute -- fabricating history and writing to the database without bound. The writer now persists only currently-connected agents, while the cache is retained so offline servers still show their last-known metrics and is purged when a server is deleted
+
+### Performance
+
+- **Retention cleanup and hourly aggregation use dedicated time indexes** -- The periodic cleanup and aggregation jobs filter the time-series tables by their time column alone, but the existing composite indexes lead with `server_id`/`task_id`, so SQLite fell back to a full table scan of the largest tables every hour inside a write transaction. A migration adds a single-column index on every time column these jobs scan (`records`, `records_hourly`, `gpu_records`, `ping_records`, `security_event`, `audit_logs`, `unlock_event`, `ip_risk_cache`, `traffic_hourly`)
+
 ## [1.0.0-alpha.10] - 2026-06-22
 
 ### Added
