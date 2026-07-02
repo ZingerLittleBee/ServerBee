@@ -152,11 +152,13 @@ impl MobileAuthService {
         };
         new_mobile_session.insert(db).await?;
 
-        // Create session row (source = "mobile", linked to mobile_session)
+        // Create session row (source = "mobile", linked to mobile_session).
+        // Store only the hash; the plaintext access token is returned to the
+        // client and validated by hashing on each request.
         let new_session = session::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             user_id: Set(user_model.id.clone()),
-            token: Set(access_token.clone()),
+            token: Set(AuthService::hash_session_token(&access_token)),
             ip: Set(ip.to_string()),
             user_agent: Set(user_agent.to_string()),
             expires_at: Set(access_expires_at),

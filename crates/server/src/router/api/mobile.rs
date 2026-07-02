@@ -239,7 +239,10 @@ pub async fn mobile_logout(
 
     // Find the session row by token to get mobile_session_id
     let session = crate::entity::session::Entity::find()
-        .filter(crate::entity::session::Column::Token.eq(&token))
+        .filter(
+            crate::entity::session::Column::Token
+                .eq(crate::service::auth::AuthService::hash_session_token(&token)),
+        )
         .one(&state.db)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -436,7 +439,10 @@ pub async fn push_register(
 
     // Find the session by bearer token
     let session = crate::entity::session::Entity::find()
-        .filter(crate::entity::session::Column::Token.eq(&token))
+        .filter(
+            crate::entity::session::Column::Token
+                .eq(crate::service::auth::AuthService::hash_session_token(&token)),
+        )
         .one(&state.db)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -519,7 +525,10 @@ pub async fn push_unregister(
     let token = extract_bearer(&headers).ok_or(AppError::Unauthorized)?;
 
     let session = crate::entity::session::Entity::find()
-        .filter(crate::entity::session::Column::Token.eq(&token))
+        .filter(
+            crate::entity::session::Column::Token
+                .eq(crate::service::auth::AuthService::hash_session_token(&token)),
+        )
         .one(&state.db)
         .await?
         .ok_or(AppError::Unauthorized)?;

@@ -78,7 +78,8 @@ async fn seed_session(state: &AppState, id: &str, user_id: &str, token: &str, mo
     session::ActiveModel {
         id: Set(id.to_string()),
         user_id: Set(user_id.to_string()),
-        token: Set(token.to_string()),
+        // Sessions store the token hash; the bearer header still carries plaintext.
+        token: Set(AuthService::hash_session_token(token)),
         ip: Set("127.0.0.1".to_string()),
         user_agent: Set("test".to_string()),
         expires_at: Set(now + ChronoDuration::days(1)),
