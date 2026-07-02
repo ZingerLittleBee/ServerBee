@@ -308,6 +308,28 @@ impl AgentManager {
             .collect()
     }
 
+    /// Cached reports for servers that are *currently connected* only.
+    ///
+    /// The record writer must persist only live data: a disconnected agent's
+    /// last report lingers in `latest_reports` (it still backs the "last known
+    /// metrics" display for offline servers), so flushing the raw cache would
+    /// stamp fresh rows with `Utc::now()` every tick for machines that are no
+    /// longer reporting, fabricating history and writing unboundedly.
+    pub fn online_latest_reports(&self) -> Vec<(String, Arc<SystemReport>)> {
+        self.latest_reports
+            .iter()
+            .filter(|entry| self.connections.contains_key(entry.key()))
+            .map(|entry| (entry.key().clone(), Arc::clone(&entry.value().report)))
+            .collect()
+    }
+
+    /// Drop the cached report for a server. Call this only when the server row
+    /// itself is gone (deletion), so the display cache doesn't outlive it. A
+    /// plain disconnect must *not* call this — the cache backs offline display.
+    pub fn remove_cached_report(&self, server_id: &str) {
+        self.latest_reports.remove(server_id);
+    }
+
     /// Get the mpsc sender for a specific agent to send commands to it.
     pub fn get_sender(&self, server_id: &str) -> Option<mpsc::Sender<ServerMessage>> {
         self.connections.get(server_id).map(|c| c.tx.clone())
@@ -909,6 +931,38 @@ mod tests {
         );
         let all = mgr.all_latest_reports();
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_online_latest_reports_excludes_disconnected() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "A".into(), tx1, test_addr());
+        mgr.add_connection("s2".into(), "B".into(), tx2, test_addr());
+        mgr.update_report("s1", SystemReport::default());
+        mgr.update_report("s2", SystemReport::default());
+
+        // s2 disconnects: its report stays cached for offline display, but the
+        // record writer must not see it (else it fabricates rows forever).
+        mgr.remove_connection("s2");
+
+        let online = mgr.online_latest_reports();
+        assert_eq!(online.len(), 1, "only the connected agent is flushed");
+        assert_eq!(online[0].0, "s1");
+
+        // Cache itself is retained so the offline server can still display its
+        // last known metrics.
+        assert!(
+            mgr.get_latest_report("s2").is_some(),
+            "disconnect keeps the display cache"
+        );
+        assert_eq!(mgr.all_latest_reports().len(), 2);
+
+        // Deleting the server row purges the cache to close the leak.
+        mgr.remove_cached_report("s2");
+        assert!(mgr.get_latest_report("s2").is_none());
+        assert_eq!(mgr.all_latest_reports().len(), 1);
     }
 
     #[test]
