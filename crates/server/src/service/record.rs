@@ -383,6 +383,39 @@ mod tests {
         .expect("insert test server should succeed");
     }
 
+    /// The retention cleanup predicate (`WHERE time < cutoff`) must resolve
+    /// through the dedicated single-column time index instead of a full table
+    /// scan, otherwise cleanup degrades linearly with table size.
+    #[tokio::test]
+    async fn cleanup_time_predicate_uses_index_not_full_scan() {
+        use sea_orm::{ConnectionTrait, Statement};
+
+        let (db, _tmp) = setup_test_db().await;
+        let cutoff = Utc::now();
+        let plan = db
+            .query_all(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Sqlite,
+                "EXPLAIN QUERY PLAN DELETE FROM records WHERE time < ?",
+                [cutoff.into()],
+            ))
+            .await
+            .expect("explain query plan should run");
+
+        let detail: String = plan
+            .iter()
+            .filter_map(|row| row.try_get::<String>("", "detail").ok())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(
+            detail.contains("idx_records_time"),
+            "cleanup must use idx_records_time, got plan: {detail}"
+        );
+        assert!(
+            !detail.contains("SCAN records") || detail.contains("USING INDEX"),
+            "cleanup must not full-scan records, got plan: {detail}"
+        );
+    }
+
     #[tokio::test]
     async fn test_save_and_query_report() {
         let (db, _tmp) = setup_test_db().await;

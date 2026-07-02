@@ -41,6 +41,7 @@ mod m20260528_000060_drop_legacy_theme_tables;
 mod m20260528_000070_dashboard_widget_module_id;
 mod m20260619_000071_add_password_changed_at;
 mod m20260621_000072_add_geo_manual;
+mod m20260702_000073_retention_time_indexes;
 
 pub struct Migrator;
 
@@ -88,6 +89,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260528_000070_dashboard_widget_module_id::Migration),
             Box::new(m20260619_000071_add_password_changed_at::Migration),
             Box::new(m20260621_000072_add_geo_manual::Migration),
+            Box::new(m20260702_000073_retention_time_indexes::Migration),
         ]
     }
 }
