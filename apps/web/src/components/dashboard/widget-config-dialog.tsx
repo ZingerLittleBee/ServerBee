@@ -920,14 +920,19 @@ function WidgetConfigDialogForm({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>{t('dialogs.widgetConfig.labels.titleOptional')}</Label>
-            <Input
-              onChange={(e) => dispatchDraft({ type: 'titleChanged', value: e.target.value })}
-              placeholder={t('dialogs.widgetConfig.placeholders.widgetTitle')}
-              value={draft.title}
-            />
-          </div>
+          {/* Only module (custom) widgets render widget.title; built-in widgets
+              draw their own contextual headers and ignore it, so offering the
+              field there is a dead control. */}
+          {isModule && (
+            <div className="space-y-1.5">
+              <Label>{t('dialogs.widgetConfig.labels.titleOptional')}</Label>
+              <Input
+                onChange={(e) => dispatchDraft({ type: 'titleChanged', value: e.target.value })}
+                placeholder={t('dialogs.widgetConfig.placeholders.widgetTitle')}
+                value={draft.title}
+              />
+            </div>
+          )}
 
           {widgetType === 'stat-number' && (
             <StatNumberForm config={draft.config as Partial<StatNumberConfig>} onChange={setConfig} t={t} />

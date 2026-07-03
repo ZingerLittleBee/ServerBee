@@ -11,6 +11,7 @@ type InlineToken =
   | { kind: 'text'; key: string; text: string }
 
 type MarkdownBlock =
+  | { content: InlineToken[]; kind: 'h1'; key: string }
   | { content: InlineToken[]; kind: 'h2'; key: string }
   | { content: InlineToken[]; kind: 'h3'; key: string }
   | { content: InlineToken[]; kind: 'paragraph'; key: string }
@@ -155,6 +156,8 @@ function parseMarkdownBlocks(content: string): MarkdownBlock[] {
       blocks.push({ content: parseInlineTokens(line.slice(4), key), key, kind: 'h3' })
     } else if (line.startsWith('## ')) {
       blocks.push({ content: parseInlineTokens(line.slice(3), key), key, kind: 'h2' })
+    } else if (line.startsWith('# ')) {
+      blocks.push({ content: parseInlineTokens(line.slice(2), key), key, kind: 'h1' })
     } else {
       blocks.push({ content: parseInlineTokens(line, key), key, kind: 'paragraph' })
     }
@@ -211,6 +214,12 @@ function MarkdownBlockView({ block }: { block: MarkdownBlock }) {
   switch (block.kind) {
     case 'break':
       return <br />
+    case 'h1':
+      return (
+        <h1>
+          <InlineTokens tokens={block.content} />
+        </h1>
+      )
     case 'h2':
       return (
         <h2>

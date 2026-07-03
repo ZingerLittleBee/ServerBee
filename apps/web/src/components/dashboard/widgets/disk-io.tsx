@@ -47,7 +47,7 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
     return buildMergedDiskIoSeries(records)
   }, [records])
 
-  const serverName = server?.name ?? 'Unknown'
+  const serverName = server?.name ?? t('metricCard.unknownServer')
 
   if (isLoading) {
     return (

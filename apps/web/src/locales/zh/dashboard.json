@@ -24,6 +24,8 @@
   "configure_widget": "配置小组件",
   "widget_title": "标题（可选）",
   "delete_widget": "删除小组件",
+  "lock_widget_position": "锁定组件位置",
+  "unlock_widget_position": "解锁组件位置",
   "new_dashboard": "新建仪表盘",
   "delete_dashboard": "删除仪表盘",
   "delete_dashboard_confirm": "确定要删除 \"{{name}}\" 吗？此操作不可撤销。",
