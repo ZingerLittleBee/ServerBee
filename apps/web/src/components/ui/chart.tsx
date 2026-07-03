@@ -66,7 +66,7 @@ function ChartContainer({
   ...props
 }: ComponentProps<'div'> & {
   config: ChartConfig
-  children: ReactNode
+  children: ComponentProps<typeof ResponsiveContainer>['children']
 }) {
   const uniqueId = useId()
   const chartId = `chart-${id || uniqueId.replace(/:/g, '')}`

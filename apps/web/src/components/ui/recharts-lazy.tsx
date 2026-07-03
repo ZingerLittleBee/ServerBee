@@ -1,28 +1,22 @@
-import { type ComponentType, createElement, lazy } from 'react'
-
-type RechartsModule = typeof import('recharts')
-type LazyRechartsComponent = ComponentType<Record<string, unknown>>
-
-function lazyRechartsComponent(name: keyof RechartsModule) {
-  return lazy(async () => {
-    const mod = await import('recharts')
-    const Component = mod[name] as LazyRechartsComponent
-
-    return {
-      default: (props: Record<string, unknown>) => createElement(Component, props)
-    }
-  })
-}
-
-export const Area = lazyRechartsComponent('Area')
-export const AreaChart = lazyRechartsComponent('AreaChart')
-export const Bar = lazyRechartsComponent('Bar')
-export const BarChart = lazyRechartsComponent('BarChart')
-export const CartesianGrid = lazyRechartsComponent('CartesianGrid')
-export const Legend = lazyRechartsComponent('Legend')
-export const Line = lazyRechartsComponent('Line')
-export const LineChart = lazyRechartsComponent('LineChart')
-export const ResponsiveContainer = lazyRechartsComponent('ResponsiveContainer')
-export const Tooltip = lazyRechartsComponent('Tooltip')
-export const XAxis = lazyRechartsComponent('XAxis')
-export const YAxis = lazyRechartsComponent('YAxis')
+// Direct re-exports of recharts components.
+//
+// These were previously wrapped in React.lazy one component at a time, but
+// recharts identifies its children (Area, XAxis, Legend, …) by component type
+// during chart composition, so per-component lazy wrappers made every chart
+// render an empty SVG shell. Chart containers introspect children — the child
+// elements must be the real recharts component types.
+// biome-ignore lint/performance/noBarrelFile: single shared entry point for recharts so a future (correct) lazy-loading strategy only touches this file
+export {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from 'recharts'
