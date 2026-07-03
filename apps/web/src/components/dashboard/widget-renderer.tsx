@@ -91,7 +91,7 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
 
   switch (widget.widget_type) {
     case 'stat-number':
-      return <StatNumberWidget config={config as unknown as StatNumberConfig} servers={servers} />
+      return <StatNumberWidget config={config as unknown as StatNumberConfig} servers={servers} title={widget.title} />
     case 'metric-card':
       return <MetricCardWidget config={config as unknown as MetricCardConfig} servers={servers} />
     case 'server-cards':
@@ -99,9 +99,9 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
     case 'gauge':
       return <GaugeWidget config={config as unknown as GaugeConfig} servers={servers} />
     case 'line-chart':
-      return <LineChartWidget config={config as unknown as LineChartConfig} servers={servers} />
+      return <LineChartWidget config={config as unknown as LineChartConfig} servers={servers} title={widget.title} />
     case 'multi-line':
-      return <MultiLineWidget config={config as unknown as MultiLineConfig} servers={servers} />
+      return <MultiLineWidget config={config as unknown as MultiLineConfig} servers={servers} title={widget.title} />
     case 'top-n':
       return <TopNWidget config={config as unknown as TopNConfig} servers={servers} />
     case 'alert-list':
@@ -137,7 +137,8 @@ function areWidgetContentPropsEqual(prev: WidgetRendererProps, next: WidgetRende
   if (
     prev.widget.id !== next.widget.id ||
     prev.widget.widget_type !== next.widget.widget_type ||
-    prev.widget.config_json !== next.widget.config_json
+    prev.widget.config_json !== next.widget.config_json ||
+    prev.widget.title !== next.widget.title
   ) {
     return false
   }

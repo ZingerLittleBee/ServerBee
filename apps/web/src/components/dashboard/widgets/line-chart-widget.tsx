@@ -17,12 +17,13 @@ import type { LineChartConfig } from '@/lib/widget-types'
 interface LineChartWidgetProps {
   config: LineChartConfig
   servers: ServerMetrics[]
+  title?: string | null
 }
 
 const DEFAULT_HOURS = 24
 const DEFAULT_INTERVAL = 'raw'
 
-export function LineChartWidget({ config, servers }: LineChartWidgetProps) {
+export function LineChartWidget({ config, servers, title }: LineChartWidgetProps) {
   const server_id = config.server_id ?? ''
   const { metric } = config
   const hours = config.hours ?? DEFAULT_HOURS
@@ -63,7 +64,7 @@ export function LineChartWidget({ config, servers }: LineChartWidgetProps) {
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
       <div className="mb-3">
-        <h3 className="font-semibold text-sm">{label}</h3>
+        <h3 className="font-semibold text-sm">{title ?? label}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
       </div>
       <div className="min-h-0 flex-1">

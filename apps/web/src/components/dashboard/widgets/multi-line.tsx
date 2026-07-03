@@ -27,6 +27,7 @@ import type { MultiLineConfig } from '@/lib/widget-types'
 interface MultiLineWidgetProps {
   config: MultiLineConfig
   servers: ServerMetrics[]
+  title?: string | null
 }
 
 const DEFAULT_HOURS = 24
@@ -101,7 +102,7 @@ function buildBucketedRows(
     })
 }
 
-export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
+export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps) {
   const { server_ids = [], metric } = config
   const hours = config.hours ?? DEFAULT_HOURS
   const interval = config.interval ?? DEFAULT_INTERVAL
@@ -177,7 +178,7 @@ export function MultiLineWidget({ config, servers }: MultiLineWidgetProps) {
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{label} Comparison</h3>
+      <h3 className="mb-3 font-semibold text-sm">{title ?? `${label} Comparison`}</h3>
       <div className="min-h-0 flex-1">
         <ChartContainer className="h-full w-full" config={chartConfig}>
           <LineChart accessibilityLayer data={chartData}>
