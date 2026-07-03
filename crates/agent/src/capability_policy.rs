@@ -1,6 +1,6 @@
 use anyhow::bail;
 use serverbee_common::constants::{
-    CAP_DEFAULT, CAP_FILE, CAP_VALID_MASK, CapabilityKey, has_capability,
+    CAP_DEFAULT, CAP_FILE, CAP_FIREWALL_BLOCK, CAP_VALID_MASK, CapabilityKey, has_capability,
 };
 
 use crate::config::{CapabilitiesConfig, FileConfig};
@@ -72,6 +72,23 @@ pub fn reconcile_file_capability(capabilities: u32, file: &FileConfig) -> u32 {
     }
 }
 
+/// Reconcile the firewall-block capability bit against the runtime nft probe.
+///
+/// The reported capability must mean "operator allows it AND the subsystem can
+/// actually serve it". `CAP_FIREWALL_BLOCK` is in `CAP_DEFAULT`, so when the
+/// nft probe fails the bit must be stripped — otherwise the server advertises
+/// a firewall the agent silently cannot enforce (blocks are accepted and
+/// counted but no rule ever lands). When the probe succeeds the computed
+/// capabilities are left untouched, so an operator's explicit
+/// `deny = ["firewall_block"]` is respected instead of being OR-ed back on.
+pub fn reconcile_firewall_capability(capabilities: u32, probe_ok: bool) -> u32 {
+    if probe_ok {
+        capabilities
+    } else {
+        capabilities & !CAP_FIREWALL_BLOCK
+    }
+}
+
 pub fn parse_capability_args<I>(args: I) -> anyhow::Result<CapabilityCliOverrides>
 where
     I: IntoIterator<Item = String>,
@@ -125,7 +142,7 @@ mod tests {
 
     use super::{
         CapabilityCliOverrides, compute_local_capabilities, parse_capability_args,
-        reconcile_file_capability,
+        reconcile_file_capability, reconcile_firewall_capability,
     };
     use crate::config::{CapabilitiesConfig, FileConfig};
 
@@ -360,6 +377,35 @@ mod tests {
         let reconciled = reconcile_file_capability(caps, &file);
         assert!(has_capability(reconciled, CAP_FILE));
         assert_eq!(reconciled, caps);
+    }
+
+    #[test]
+    fn test_reconcile_firewall_capability_strips_bit_when_probe_fails() {
+        // CAP_FIREWALL_BLOCK is in CAP_DEFAULT; a failed nft probe must strip
+        // it so the server never advertises a firewall the agent cannot
+        // enforce (blocks would be accepted but silently never applied).
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        let reconciled = reconcile_firewall_capability(CAP_DEFAULT, false);
+        assert!(!has_capability(reconciled, CAP_FIREWALL_BLOCK));
+        assert_eq!(reconciled, CAP_DEFAULT & !CAP_FIREWALL_BLOCK);
+    }
+
+    #[test]
+    fn test_reconcile_firewall_capability_keeps_bit_when_probe_succeeds() {
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        let reconciled = reconcile_firewall_capability(CAP_DEFAULT, true);
+        assert!(has_capability(reconciled, CAP_FIREWALL_BLOCK));
+        assert_eq!(reconciled, CAP_DEFAULT);
+    }
+
+    #[test]
+    fn test_reconcile_firewall_capability_respects_operator_deny() {
+        // Operator denied firewall_block in [capabilities]; a successful probe
+        // must NOT resurrect the bit (the old code OR-ed it back on).
+        use serverbee_common::constants::CAP_FIREWALL_BLOCK;
+        let denied = CAP_DEFAULT & !CAP_FIREWALL_BLOCK;
+        let reconciled = reconcile_firewall_capability(denied, true);
+        assert!(!has_capability(reconciled, CAP_FIREWALL_BLOCK));
     }
 
     #[test]

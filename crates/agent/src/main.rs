@@ -180,12 +180,15 @@ async fn main() -> anyhow::Result<()> {
     // the agent lacks CAP_NET_ADMIN, the firewall block bit stays off so the
     // server never tries to push blocklist messages at this agent.
     let firewall_local = crate::firewall::probe_local_capability().await;
+    agent_local_capabilities = crate::capability_policy::reconcile_firewall_capability(
+        agent_local_capabilities,
+        firewall_local,
+    );
     if firewall_local {
-        agent_local_capabilities |= serverbee_common::constants::CAP_FIREWALL_BLOCK;
         tracing::info!("Local firewall capability probed: nft available");
     } else {
         tracing::info!(
-            "Local firewall capability probed: nft unavailable (binary, kernel, or privileges missing)"
+            "Local firewall capability probed: nft unavailable (binary, kernel, or privileges missing); firewall block bit stays off"
         );
     }
 
