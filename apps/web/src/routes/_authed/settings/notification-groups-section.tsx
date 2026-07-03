@@ -23,8 +23,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
-  DialogTrigger
+  DialogTitle
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api-client'
@@ -176,7 +175,7 @@ export function NotificationGroupsSection({
 
   return (
     <div className="space-y-4 rounded-lg border bg-card p-6">
-      <GroupSectionHeader canCreate={!!notifications && notifications.length > 0} dispatch={dispatch} state={state} />
+      <GroupSectionHeader canCreate={!!notifications && notifications.length > 0} dispatch={dispatch} />
       <NotificationGroupDialog
         dispatch={dispatch}
         notifications={notifications}
@@ -201,33 +200,16 @@ export function NotificationGroupsSection({
   )
 }
 
-function GroupSectionHeader({
-  canCreate,
-  dispatch,
-  state
-}: {
-  canCreate: boolean
-  dispatch: Dispatch<GroupFormAction>
-  state: GroupFormState
-}) {
+function GroupSectionHeader({ canCreate, dispatch }: { canCreate: boolean; dispatch: Dispatch<GroupFormAction> }) {
   const { t } = useTranslation(['settings', 'common'])
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 className="font-semibold text-lg">{t('notifications.groups')}</h2>
-      <Dialog
-        onOpenChange={(open) => dispatch({ type: 'set-show-group-form', value: open })}
-        open={state.showGroupForm}
-      >
-        <DialogTrigger
-          disabled={!canCreate}
-          onClick={() => dispatch({ type: 'prepare-create' })}
-          render={<Button size="sm" variant="outline" />}
-        >
-          <Plus className="size-4" />
-          {t('common:add')}
-        </DialogTrigger>
-      </Dialog>
+      <Button disabled={!canCreate} onClick={() => dispatch({ type: 'prepare-create' })} size="sm" variant="outline">
+        <Plus className="size-4" />
+        {t('common:add')}
+      </Button>
     </div>
   )
 }

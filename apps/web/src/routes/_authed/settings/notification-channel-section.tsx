@@ -22,8 +22,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
-  DialogTrigger
+  DialogTitle
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -339,7 +338,7 @@ export function NotificationChannelsSection({
 
   return (
     <div className="space-y-4 rounded-lg border bg-card p-6">
-      <ChannelSectionHeader dispatch={dispatch} state={state} />
+      <ChannelSectionHeader dispatch={dispatch} />
       <NotificationChannelDialog
         apnsFileInputRef={apnsFileInputRef}
         dispatch={dispatch}
@@ -371,21 +370,16 @@ export function NotificationChannelsSection({
   )
 }
 
-function ChannelSectionHeader({ dispatch, state }: { dispatch: Dispatch<ChannelFormAction>; state: ChannelFormState }) {
+function ChannelSectionHeader({ dispatch }: { dispatch: Dispatch<ChannelFormAction> }) {
   const { t } = useTranslation(['settings', 'common'])
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 className="font-semibold text-lg">{t('notifications.channels')}</h2>
-      <Dialog onOpenChange={(open) => dispatch({ type: 'set-show-form', value: open })} open={state.showForm}>
-        <DialogTrigger
-          onClick={() => dispatch({ type: 'prepare-create' })}
-          render={<Button size="sm" variant="outline" />}
-        >
-          <Plus className="size-4" />
-          {t('common:add')}
-        </DialogTrigger>
-      </Dialog>
+      <Button onClick={() => dispatch({ type: 'prepare-create' })} size="sm" variant="outline">
+        <Plus className="size-4" />
+        {t('common:add')}
+      </Button>
     </div>
   )
 }
