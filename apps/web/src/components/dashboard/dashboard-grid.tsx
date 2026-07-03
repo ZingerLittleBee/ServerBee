@@ -420,7 +420,7 @@ export function DashboardGrid({
           const isAuto = getStrategy(widget.id).kind === 'content-height'
           const mobileHeight = widget.grid_h * MOBILE_ROW_PX
           return (
-            <div className="relative" key={widget.id}>
+            <div className="relative" data-widget-id={widget.id} key={widget.id}>
               {isEditing && (
                 <EditOverlay
                   forceVisible
@@ -468,7 +468,7 @@ export function DashboardGrid({
           {widgets.map((widget) => {
             const isAuto = getStrategy(widget.id).kind === 'content-height'
             return (
-              <div className="relative h-full" key={widget.id}>
+              <div className="relative h-full" data-widget-id={widget.id} key={widget.id}>
                 {isEditing && (
                   <EditOverlay
                     isStatic={isWidgetStatic(widget.config_json)}
