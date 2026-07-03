@@ -189,6 +189,19 @@ pub(crate) fn is_private(ip: &IpAddr) -> bool {
     }
 }
 
+/// Choose the first routable (non-loopback, non-private) address from a
+/// server's recorded `ipv4`/`ipv6` strings for GeoIP resolution, preferring
+/// IPv4. Returns `None` when neither is present, parseable, or public. Mirrors
+/// the candidate-selection used on the agent SystemInfo / IP-change paths so
+/// the download-time backfill resolves the same address a live report would.
+pub(crate) fn pick_public_ip(ipv4: Option<&str>, ipv6: Option<&str>) -> Option<IpAddr> {
+    [ipv4, ipv6]
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.parse::<IpAddr>().ok())
+        .find(|ip| !ip.is_loopback() && !is_private(ip))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,5 +362,25 @@ mod tests {
         assert!(is_private(&"febf:ffff::1".parse().unwrap()));
         // fec0:: is outside the /10 link-local range -> public.
         assert!(!is_private(&"fec0::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_pick_public_ip_prefers_public_ipv4() {
+        let ip = pick_public_ip(Some("203.0.113.5"), Some("2606:4700::1"));
+        assert_eq!(ip, Some("203.0.113.5".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_pick_public_ip_skips_private_ipv4_falls_to_ipv6() {
+        // A private LAN v4 must be skipped in favour of a public v6.
+        let ip = pick_public_ip(Some("192.168.1.10"), Some("2606:4700::1"));
+        assert_eq!(ip, Some("2606:4700::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_pick_public_ip_skips_loopback_and_unparseable() {
+        assert_eq!(pick_public_ip(Some("127.0.0.1"), None), None);
+        assert_eq!(pick_public_ip(Some("not-an-ip"), None), None);
+        assert_eq!(pick_public_ip(None, None), None);
     }
 }

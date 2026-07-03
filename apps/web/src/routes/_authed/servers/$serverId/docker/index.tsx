@@ -98,6 +98,13 @@ function DockerPage() {
 
   const hasContainers = containers && containers.length > 0
 
+  // The detail dialog must reflect live state (e.g. after a start/stop action),
+  // so resolve the currently-selected container from the live list by id rather
+  // than showing the frozen snapshot captured at click time.
+  const liveSelectedContainer = selectedContainer
+    ? (containers?.find((c) => c.id === selectedContainer.id) ?? selectedContainer)
+    : null
+
   return (
     <div>
       <div className="mb-6">
@@ -164,7 +171,7 @@ function DockerPage() {
       )}
 
       <ContainerDetailDialog
-        container={selectedContainer}
+        container={liveSelectedContainer}
         onOpenChange={(open) => {
           if (!open) {
             setSelectedContainer(null)

@@ -37,6 +37,21 @@
     "containerId": "容器 ID",
     "noPorts": "无"
   },
+  "actions": {
+    "start": "启动",
+    "stop": "停止",
+    "restart": "重启",
+    "remove": "删除",
+    "removeTitle": "删除容器？",
+    "removeConfirm": "将删除容器 \"{{name}}\"，此操作无法撤销。",
+    "removeRunningNote": "该容器正在运行，将被强制删除。",
+    "cancel": "取消",
+    "started": "容器已启动",
+    "stopped": "容器已停止",
+    "restarted": "容器已重启",
+    "removed": "容器已删除",
+    "failed": "操作失败"
+  },
   "networks": {
     "title": "Docker 网络",
     "empty": "未找到网络",
