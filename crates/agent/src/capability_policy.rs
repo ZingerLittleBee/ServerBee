@@ -1,7 +1,9 @@
 use anyhow::bail;
-use serverbee_common::constants::{CAP_DEFAULT, CAP_VALID_MASK, CapabilityKey};
+use serverbee_common::constants::{
+    CAP_DEFAULT, CAP_FILE, CAP_VALID_MASK, CapabilityKey, has_capability,
+};
 
-use crate::config::CapabilitiesConfig;
+use crate::config::{CapabilitiesConfig, FileConfig};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityCliOverrides {
@@ -49,6 +51,25 @@ pub fn compute_local_capabilities(
     let capabilities = apply_overrides(CAP_DEFAULT, &config_overrides);
     let capabilities = apply_overrides(capabilities, cli);
     Ok(capabilities & CAP_VALID_MASK)
+}
+
+/// Reconcile the `file` capability bit against the file subsystem config.
+///
+/// File management is a two-layer feature: the `file` capability bit advertises
+/// the control plane, but the agent only actually serves file requests when
+/// `[file].enabled = true` and at least one `root_path` is configured (an empty
+/// allow-list rejects every operation). If the capability is set but the
+/// subsystem is not operational, clear the bit so the server never dispatches
+/// file messages and the UI hides the file feature — instead of showing a
+/// button that fails with "File capability disabled". This mirrors the runtime
+/// firewall probe, which only advertises `CAP_FIREWALL_BLOCK` when `nft` is
+/// actually usable.
+pub fn reconcile_file_capability(capabilities: u32, file: &FileConfig) -> u32 {
+    if has_capability(capabilities, CAP_FILE) && (!file.enabled || file.root_paths.is_empty()) {
+        capabilities & !CAP_FILE
+    } else {
+        capabilities
+    }
 }
 
 pub fn parse_capability_args<I>(args: I) -> anyhow::Result<CapabilityCliOverrides>
@@ -102,8 +123,11 @@ mod tests {
         has_capability,
     };
 
-    use super::{CapabilityCliOverrides, compute_local_capabilities, parse_capability_args};
-    use crate::config::CapabilitiesConfig;
+    use super::{
+        CapabilityCliOverrides, compute_local_capabilities, parse_capability_args,
+        reconcile_file_capability,
+    };
+    use crate::config::{CapabilitiesConfig, FileConfig};
 
     fn no_cli() -> CapabilityCliOverrides {
         CapabilityCliOverrides {
@@ -293,6 +317,57 @@ mod tests {
         ])
         .expect_err("unknown deny capability name should fail");
         assert!(error.to_string().contains("unknown capability"));
+    }
+
+    #[test]
+    fn test_reconcile_file_capability_drops_bit_when_subsystem_disabled() {
+        // Capability allowed via [capabilities], but [file].enabled defaults to
+        // false: CAP_FILE must be stripped so the UI does not advertise a file
+        // feature that would fail with "File capability disabled".
+        let caps = CAP_DEFAULT | CAP_FILE;
+        let file = FileConfig {
+            enabled: false,
+            root_paths: vec!["/home".to_string()],
+            ..Default::default()
+        };
+        let reconciled = reconcile_file_capability(caps, &file);
+        assert!(!has_capability(reconciled, CAP_FILE));
+        assert_eq!(reconciled, CAP_DEFAULT);
+    }
+
+    #[test]
+    fn test_reconcile_file_capability_drops_bit_when_no_root_paths() {
+        // enabled=true but an empty root_paths allow-list rejects every file
+        // operation, so the capability is not actually usable.
+        let caps = CAP_DEFAULT | CAP_FILE;
+        let file = FileConfig {
+            enabled: true,
+            root_paths: vec![],
+            ..Default::default()
+        };
+        let reconciled = reconcile_file_capability(caps, &file);
+        assert!(!has_capability(reconciled, CAP_FILE));
+    }
+
+    #[test]
+    fn test_reconcile_file_capability_keeps_bit_when_operational() {
+        let caps = CAP_DEFAULT | CAP_FILE;
+        let file = FileConfig {
+            enabled: true,
+            root_paths: vec!["/home".to_string()],
+            ..Default::default()
+        };
+        let reconciled = reconcile_file_capability(caps, &file);
+        assert!(has_capability(reconciled, CAP_FILE));
+        assert_eq!(reconciled, caps);
+    }
+
+    #[test]
+    fn test_reconcile_file_capability_noop_when_bit_absent() {
+        // No CAP_FILE requested: an unconfigured [file] block must not matter.
+        let file = FileConfig::default();
+        let reconciled = reconcile_file_capability(CAP_DEFAULT, &file);
+        assert_eq!(reconciled, CAP_DEFAULT);
     }
 
     #[test]

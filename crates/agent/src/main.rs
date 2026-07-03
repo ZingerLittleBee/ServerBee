@@ -128,6 +128,12 @@ async fn main() -> anyhow::Result<()> {
     // truth, with CLI flags layered on top. The server cannot change these.
     let mut agent_local_capabilities =
         compute_local_capabilities(&config.capabilities, &capability_overrides)?;
+    // File management needs both the capability bit and an operational `[file]`
+    // subsystem (enabled + non-empty root_paths). Drop CAP_FILE when the
+    // subsystem is not actually usable so the server/UI never advertises a file
+    // feature that would fail with "File capability disabled" at request time.
+    agent_local_capabilities =
+        crate::capability_policy::reconcile_file_capability(agent_local_capabilities, &config.file);
 
     tracing_subscriber::fmt()
         .with_env_filter(
