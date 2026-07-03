@@ -186,7 +186,16 @@ export function useUploadFileMutation(serverId: string) {
 
       if (!response.ok) {
         const text = await response.text().catch(() => response.statusText)
-        throw new Error(text)
+        let message = text
+        try {
+          const parsed = JSON.parse(text)
+          if (typeof parsed?.error?.message === 'string' && parsed.error.message.length > 0) {
+            message = parsed.error.message
+          }
+        } catch {
+          // body is not JSON; use the raw text
+        }
+        throw new Error(message)
       }
 
       const json = await response.json()
