@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/hooks/use-auth'
@@ -33,9 +32,9 @@ function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && err.message.includes('2fa_required')) {
         setNeeds2FA(true)
-      } else {
-        toast.error(err instanceof Error ? err.message : t('login_failed'))
       }
+      // Other failures surface through the inline error box below, which
+      // extracts the human-readable message instead of the raw JSON body.
     }
   }
 
