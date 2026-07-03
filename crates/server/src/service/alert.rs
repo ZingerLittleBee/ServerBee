@@ -825,7 +825,14 @@ impl AlertService {
                 rule_name: rule.name.clone(),
                 rule_id: rule.id.clone(),
                 event: "triggered".to_string(),
-                message: format!("Alert rule '{}' triggered", rule.name),
+                message: {
+                    let cond = describe_rule_items(&rule.rules_json);
+                    if cond.is_empty() {
+                        format!("Alert rule '{}' triggered", rule.name)
+                    } else {
+                        format!("Alert rule '{}' triggered ({cond})", rule.name)
+                    }
+                },
                 time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
                 ..Default::default()
             };
@@ -859,7 +866,14 @@ impl AlertService {
             rule_name: rule.name.clone(),
             rule_id: rule.id.clone(),
             event: "resolved".to_string(),
-            message: format!("Alert rule '{}' resolved", rule.name),
+            message: {
+                let cond = describe_rule_items(&rule.rules_json);
+                if cond.is_empty() {
+                    format!("Alert rule '{}' resolved", rule.name)
+                } else {
+                    format!("Alert rule '{}' resolved ({cond})", rule.name)
+                }
+            },
             time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
             ..Default::default()
         };
@@ -1242,6 +1256,32 @@ fn extract_metric(rec: &record::Model, rule_type: &str) -> f64 {
     }
 }
 
+/// Render a compact human summary of a rule's conditions for notification
+/// bodies, e.g. `cpu >= 90 for 60s` or `offline for 120s; load1 >= 4`.
+/// Returns an empty string when `rules_json` cannot be parsed, so callers can
+/// fall back to the rule name alone.
+fn describe_rule_items(rules_json: &str) -> String {
+    let Ok(items) = serde_json::from_str::<Vec<AlertRuleItem>>(rules_json) else {
+        return String::new();
+    };
+    items
+        .iter()
+        .map(|item| {
+            let mut desc = match (item.min, item.max) {
+                (Some(min), Some(max)) => format!("{} in {min}..{max}", item.rule_type),
+                (Some(min), None) => format!("{} >= {min}", item.rule_type),
+                (None, Some(max)) => format!("{} >= {max}", item.rule_type),
+                (None, None) => item.rule_type.clone(),
+            };
+            if let Some(d) = item.duration {
+                desc.push_str(&format!(" for {d}s"));
+            }
+            desc
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 #[cfg(test)]
 /// Pure helper: evaluate whether a single metric value exceeds the threshold
 /// defined by `min` and `max` bounds, using the same logic as `check_threshold`.
@@ -1269,6 +1309,26 @@ fn majority_exceeded(exceeded_count: usize, total: usize) -> bool {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
+
+    // ── describe_rule_items: notification condition summary ──
+
+    #[test]
+    fn test_describe_rule_items_threshold_with_duration() {
+        let json = r#"[{"rule_type":"cpu","max":90.0,"duration":60}]"#;
+        assert_eq!(describe_rule_items(json), "cpu >= 90 for 60s");
+    }
+
+    #[test]
+    fn test_describe_rule_items_multiple_and_range() {
+        let json =
+            r#"[{"rule_type":"cpu","min":10.0,"max":90.0},{"rule_type":"offline","duration":120}]"#;
+        assert_eq!(describe_rule_items(json), "cpu in 10..90; offline for 120s");
+    }
+
+    #[test]
+    fn test_describe_rule_items_invalid_json_is_empty() {
+        assert_eq!(describe_rule_items("not json"), "");
+    }
 
     /// Build a minimal `record::Model` with the given field values.
     fn make_record(cpu: f64, mem_used: i64, load1: f64) -> record::Model {
