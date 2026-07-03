@@ -51,6 +51,7 @@ export interface TransferInfo {
   bytes_transferred: number
   created_at_secs_ago: number
   direction: string
+  error?: string | null
   file_path: string
   file_size: number | null
   server_id: number

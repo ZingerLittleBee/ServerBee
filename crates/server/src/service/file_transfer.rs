@@ -41,6 +41,15 @@ impl TransferStatus {
             TransferStatus::Failed(_) => "failed",
         }
     }
+
+    /// The failure reason for a `Failed` transfer, so the UI can explain *why*
+    /// a transfer failed (e.g. a deny-pattern hit) instead of a bare "failed".
+    pub fn error_reason(&self) -> Option<&str> {
+        match self {
+            TransferStatus::Failed(reason) if !reason.is_empty() => Some(reason.as_str()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -68,6 +77,9 @@ pub struct TransferInfo {
     pub file_size: Option<u64>,
     pub bytes_transferred: u64,
     pub status: String,
+    /// Human-readable failure reason when `status == "failed"`; omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     pub created_at_secs_ago: u64,
 }
 
@@ -137,6 +149,7 @@ impl FileTransferManager {
             file_size: meta.file_size,
             bytes_transferred: meta.bytes_transferred,
             status: meta.status.as_str().to_string(),
+            error: meta.status.error_reason().map(str::to_string),
             created_at_secs_ago: meta.created_at.elapsed().as_secs(),
         })
     }
@@ -243,6 +256,7 @@ impl FileTransferManager {
                     file_size: meta.file_size,
                     bytes_transferred: meta.bytes_transferred,
                     status: meta.status.as_str().to_string(),
+                    error: meta.status.error_reason().map(str::to_string),
                     created_at_secs_ago: meta.created_at.elapsed().as_secs(),
                 }
             })
@@ -262,6 +276,7 @@ impl FileTransferManager {
                     file_size: meta.file_size,
                     bytes_transferred: meta.bytes_transferred,
                     status: meta.status.as_str().to_string(),
+                    error: meta.status.error_reason().map(str::to_string),
                     created_at_secs_ago: meta.created_at.elapsed().as_secs(),
                 }
             })
@@ -402,8 +417,22 @@ mod tests {
         mgr.mark_failed(&id, "Disk full".into());
         let info = mgr.get(&id).unwrap();
         assert_eq!(info.status, "failed");
+        // The failure reason must reach the API DTO so the UI can explain why
+        // (e.g. a deny-pattern hit) instead of a bare "failed".
+        assert_eq!(info.error.as_deref(), Some("Disk full"));
 
         mgr.remove(&id);
+    }
+
+    #[test]
+    fn test_error_reason_only_for_nonempty_failed() {
+        assert_eq!(TransferStatus::Pending.error_reason(), None);
+        assert_eq!(TransferStatus::Ready.error_reason(), None);
+        assert_eq!(TransferStatus::Failed(String::new()).error_reason(), None);
+        assert_eq!(
+            TransferStatus::Failed("denied".into()).error_reason(),
+            Some("denied")
+        );
     }
 
     #[test]
