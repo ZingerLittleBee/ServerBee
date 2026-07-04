@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
 import type { CreateIncidentRequest, IncidentItem, ServerResponse, UpdateIncidentRequest } from '@/lib/api-schema'
+import { formatDateShort } from '@/lib/format'
 import { StatusPageIncidentFormDialog } from './status-page-incident-form-dialog'
 import { StatusPageIncidentUpdateDialog } from './status-page-incident-update-dialog'
 
@@ -137,7 +138,7 @@ export function StatusPageIncidentsTab({ servers }: { servers: ServerResponse[] 
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
-                    {new Date(incident.created_at).toLocaleDateString()}
+                    {formatDateShort(incident.created_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">

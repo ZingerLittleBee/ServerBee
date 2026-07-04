@@ -7,6 +7,7 @@ import { SettingsRow } from '@/components/settings/settings-row'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
+import { formatDateShort } from '@/lib/format'
 
 interface AsnStatus {
   file_size?: number
@@ -40,7 +41,7 @@ function metaText(status: AsnStatus | undefined, t: (key: string) => string): st
     parts.push(formatBytes(status.file_size))
   }
   if (status.updated_at) {
-    parts.push(`${t('asn.updated')} ${new Date(status.updated_at).toLocaleDateString()}`)
+    parts.push(`${t('asn.updated')} ${formatDateShort(status.updated_at)}`)
   }
   if (status.source === 'custom') {
     parts.push(t('asn.custom_file'))

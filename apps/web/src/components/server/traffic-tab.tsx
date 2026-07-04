@@ -13,6 +13,7 @@ import {
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
+import { formatDateShort } from '@/lib/format'
 import { cn, formatBytes } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -106,11 +107,11 @@ function CycleOverviewCard({ cycle, t }: { cycle: CycleData['current']; t: (key:
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <div>
             <span className="text-muted-foreground">{t('traffic_start')}</span>{' '}
-            <span className="font-medium">{new Date(cycle.start).toLocaleDateString()}</span>
+            <span className="font-medium">{formatDateShort(cycle.start)}</span>
           </div>
           <div>
             <span className="text-muted-foreground">{t('traffic_end')}</span>{' '}
-            <span className="font-medium">{new Date(cycle.end).toLocaleDateString()}</span>
+            <span className="font-medium">{formatDateShort(cycle.end)}</span>
           </div>
         </div>
 

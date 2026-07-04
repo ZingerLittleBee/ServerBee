@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicNetworkServerDetail } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 
 export const Route = createFileRoute('/status/network/$serverId')({
   component: PublicNetworkDetailPage
@@ -87,7 +88,7 @@ function PublicNetworkDetailPage() {
           {summary.last_probe_at && (
             <span>
               {t('last_probe')}:{' '}
-              {new Date(summary.last_probe_at).toLocaleString([], {
+              {formatDateTime(summary.last_probe_at, {
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',

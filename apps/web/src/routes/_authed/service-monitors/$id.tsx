@@ -12,6 +12,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/re
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
 
 export const Route = createFileRoute('/_authed/service-monitors/$id')({
   component: ServiceMonitorDetailPage
@@ -125,7 +126,7 @@ function StatsRow({ records, t }: { records: ServiceMonitorRecord[]; t: (key: st
           <CardTitle className="text-muted-foreground text-xs">{t('stats.lastCheck')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="font-bold text-sm">{stats.lastCheck ? new Date(stats.lastCheck).toLocaleString() : '--'}</p>
+          <p className="font-bold text-sm">{stats.lastCheck ? formatDateTime(stats.lastCheck) : '--'}</p>
         </CardContent>
       </Card>
     </div>
@@ -175,7 +176,7 @@ function ResponseTimeChart({ records, t }: { records: ServiceMonitorRecord[]; t:
           <ChartTooltip
             content={
               <ChartTooltipContent
-                labelFormatter={(label) => new Date(String(label)).toLocaleString([], { hour12: false })}
+                labelFormatter={(label) => formatDateTime(String(label), { hour12: false })}
                 valueFormatter={(v) => `${Number(v).toFixed(1)} ms`}
               />
             }
@@ -403,7 +404,7 @@ function HistoryTable({ records, t }: { records: ServiceMonitorRecord[]; t: (key
         <TableBody>
           {records.map((record) => (
             <TableRow key={record.id}>
-              <TableCell className="text-xs">{new Date(record.time).toLocaleString()}</TableCell>
+              <TableCell className="text-xs">{formatDateTime(record.time)}</TableCell>
               <TableCell>
                 {record.success ? (
                   <span className="inline-flex items-center gap-1 text-emerald-600 text-xs dark:text-emerald-400">

@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
 import { CAP_EXEC, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
+import { formatDateTime } from '@/lib/format'
 
 export const Route = createFileRoute('/_authed/settings/tasks')({
   component: TasksPage
@@ -225,8 +226,7 @@ function OneshotTaskPanel() {
                 <code>{createMutation.data.command}</code>
               </p>
               <p className="text-muted-foreground text-xs">
-                {new Date(createMutation.data.created_at).toLocaleString()} | {createMutation.data.server_ids.length}{' '}
-                server(s)
+                {formatDateTime(createMutation.data.created_at)} | {createMutation.data.server_ids.length} server(s)
               </p>
             </div>
             {expandedTask === createMutation.data.id ? (

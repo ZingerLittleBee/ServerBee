@@ -25,6 +25,7 @@ import type {
   ServerResponse,
   UpdateMaintenanceRequest
 } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 import { StatusPageMaintenanceFormDialog } from './status-page-maintenance-form-dialog'
 
 export function StatusPageMaintenanceTab({ servers }: { servers: ServerResponse[] }) {
@@ -126,11 +127,9 @@ export function StatusPageMaintenanceTab({ servers }: { servers: ServerResponse[
                 <TableRow key={maintenance.id}>
                   <TableCell className="font-medium">{maintenance.title}</TableCell>
                   <TableCell className="text-muted-foreground text-xs">
-                    {new Date(maintenance.start_at).toLocaleString()}
+                    {formatDateTime(maintenance.start_at)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {new Date(maintenance.end_at).toLocaleString()}
-                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs">{formatDateTime(maintenance.end_at)}</TableCell>
                   <TableCell>
                     <Badge variant={maintenance.active ? 'default' : 'secondary'}>
                       {maintenance.active ? t('common:enable') : t('common:disable')}

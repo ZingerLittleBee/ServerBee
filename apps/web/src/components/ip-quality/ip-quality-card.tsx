@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { PublicIpQualitySnapshot } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 import type { IpQualitySnapshotData } from '@/lib/ip-quality-types'
 import { cn } from '@/lib/utils'
 
@@ -107,7 +108,7 @@ export function IpQualityCard(props: Props) {
             <Badge variant="secondary">{ipTypeLabel}</Badge>
             {country && <span className="text-muted-foreground text-xs">{country}</span>}
           </div>
-          <FieldRow label={t('card_checked_at')} value={new Date(checkedAt).toLocaleString()} />
+          <FieldRow label={t('card_checked_at')} value={formatDateTime(checkedAt)} />
         </CardContent>
       </Card>
     )

@@ -32,6 +32,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
 
 export const Route = createFileRoute('/_authed/settings/service-monitors')({
   component: ServiceMonitorsPage
@@ -842,9 +843,7 @@ export function ServiceMonitorsPage() {
                       />
                     </TableCell>
                     <TableCell className="text-muted-foreground text-xs">
-                      {monitor.last_checked_at
-                        ? new Date(monitor.last_checked_at).toLocaleString()
-                        : tCommon('status.never')}
+                      {monitor.last_checked_at ? formatDateTime(monitor.last_checked_at) : tCommon('status.never')}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">

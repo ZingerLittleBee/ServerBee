@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { CHART_COLORS } from '@/lib/chart-colors'
+import { formatDateTime } from '@/lib/format'
 import type { NetworkProbeRecord } from '@/lib/network-types'
 
 interface TargetInfo {
@@ -129,7 +130,7 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
       return (label: string) => formatDateTimeMDHM(label)
     }
     return (label: string) =>
-      new Date(label).toLocaleString([], {
+      formatDateTime(label, {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
