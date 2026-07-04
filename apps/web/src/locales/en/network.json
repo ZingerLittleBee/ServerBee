@@ -164,6 +164,11 @@
   "history_empty": "No history yet.",
   "legacy_record_tooltip": "Recorded by a pre-trippy agent; actual probe protocol unknown.",
   "delete": "Delete",
+  "recent_hops": "{{count}} hops",
+  "recent_just_now": "just now",
+  "recent_minutes_ago": "{{count}}m ago",
+  "recent_hours_ago": "{{count}}h ago",
+  "recent_days_ago": "{{count}}d ago",
 
   "latency_title": "Latency (ms)",
   "latency_inbound": "Inbound",

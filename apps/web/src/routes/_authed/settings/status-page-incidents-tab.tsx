@@ -123,11 +123,13 @@ export function StatusPageIncidentsTab({ servers }: { servers: ServerResponse[] 
                   <TableCell className="font-medium">{incident.title}</TableCell>
                   <TableCell>
                     <Badge variant={incident.severity === 'critical' ? 'destructive' : 'secondary'}>
-                      {incident.severity}
+                      {t(`incidents.severity_${incident.severity}`, { defaultValue: incident.severity })}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={incident.status === 'resolved' ? 'default' : 'outline'}>{incident.status}</Badge>
+                    <Badge variant={incident.status === 'resolved' ? 'default' : 'outline'}>
+                      {t(`incidents.status_${incident.status}`, { defaultValue: incident.status })}
+                    </Badge>
                   </TableCell>
                   <TableCell>
                     <Badge variant={incident.is_public ? 'default' : 'secondary'}>

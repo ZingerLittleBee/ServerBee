@@ -15,7 +15,7 @@ describe('StatusDot', () => {
     expect(el?.className).toMatch(ANIMATE_PULSE_RE)
     expect(el?.className).toMatch(BG_EMERALD_RE)
     expect(el?.getAttribute('aria-hidden')).toBe('true')
-    expect(screen.getByText('online')).toHaveClass('sr-only')
+    expect(screen.getByText('Online')).toHaveClass('sr-only')
   })
 
   it('renders muted dot without pulse when status is offline', () => {
@@ -24,7 +24,7 @@ describe('StatusDot', () => {
     expect(el?.className).not.toMatch(ANIMATE_PULSE_RE)
     expect(el?.className).toMatch(BG_MUTED_RE)
     expect(el?.getAttribute('aria-hidden')).toBe('true')
-    expect(screen.getByText('offline')).toHaveClass('sr-only')
+    expect(screen.getByText('Offline')).toHaveClass('sr-only')
   })
 
   it('renders amber dot when status is pending', () => {
@@ -33,7 +33,7 @@ describe('StatusDot', () => {
     expect(el?.className).not.toMatch(ANIMATE_PULSE_RE)
     expect(el?.className).toMatch(BG_AMBER_RE)
     expect(el?.getAttribute('aria-hidden')).toBe('true')
-    expect(screen.getByText('pending')).toHaveClass('sr-only')
+    expect(screen.getByText('Pending')).toHaveClass('sr-only')
   })
 })
 

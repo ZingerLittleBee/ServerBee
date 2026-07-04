@@ -198,9 +198,9 @@ export function AlertRuleForm({
     { label: t('alerts.metric_transfer_out'), value: 'transfer_out_cycle' },
     { label: t('alerts.metric_transfer_total'), value: 'transfer_all_cycle' },
     { label: t('alerts.metric_expiration'), value: 'expiration' },
-    { label: 'Network Latency', value: 'network_latency' },
-    { label: 'Network Packet Loss', value: 'network_packet_loss' },
-    { label: 'IP Changed', value: 'ip_changed' },
+    { label: t('alerts.metric_network_latency'), value: 'network_latency' },
+    { label: t('alerts.metric_network_packet_loss'), value: 'network_packet_loss' },
+    { label: t('alerts.metric_ip_changed'), value: 'ip_changed' },
     { label: t('alerts.metric_capability_granted'), value: 'capability_grant_detected' }
   ]
 

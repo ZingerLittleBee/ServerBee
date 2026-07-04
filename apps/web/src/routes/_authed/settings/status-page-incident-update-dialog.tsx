@@ -50,6 +50,8 @@ export function StatusPageIncidentUpdateDialog({
     addUpdateMutation.mutate({ message: message.trim(), status })
   }
 
+  const statusItems = Object.fromEntries(INCIDENT_STATUSES.map((v) => [v, t(`incidents.status_${v}`)]))
+
   return (
     <Dialog
       onOpenChange={(isOpen) => {
@@ -67,7 +69,7 @@ export function StatusPageIncidentUpdateDialog({
         <form className="space-y-4" id="incident-update-form" onSubmit={handleSubmit}>
           <div className="space-y-1">
             <Label htmlFor="upd-status">{t('incidents.field_status')}</Label>
-            <Select onValueChange={(value) => value && setStatus(value)} value={status}>
+            <Select items={statusItems} onValueChange={(value) => value && setStatus(value)} value={status}>
               <SelectTrigger id="upd-status">
                 <SelectValue />
               </SelectTrigger>

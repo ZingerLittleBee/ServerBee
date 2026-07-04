@@ -214,6 +214,6 @@ describe('ServerCard', () => {
 
   it('renders StatusBadge', () => {
     renderCard(makeServer({ online: false }))
-    expect(screen.getByText('offline')).toBeDefined()
+    expect(screen.getByText('common:status.offline')).toBeDefined()
   })
 })

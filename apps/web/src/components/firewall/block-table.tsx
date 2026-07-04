@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { Trash2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -23,6 +24,22 @@ function formatTime(value: string | null | undefined): string {
     return value
   }
   return d.toLocaleString()
+}
+
+function scopeLabel(t: TFunction, coverType: BlockListItem['cover_type']): string {
+  if (coverType === 'include') {
+    return t('add.scope_include', { defaultValue: 'Selected servers' })
+  }
+  if (coverType === 'exclude') {
+    return t('add.scope_exclude', { defaultValue: 'All except selected' })
+  }
+  return t('add.scope_all', { defaultValue: 'All servers' })
+}
+
+function originLabel(t: TFunction, origin: BlockListItem['origin']): string {
+  return origin === 'auto'
+    ? t('filter.origin_auto', { defaultValue: 'Auto' })
+    : t('filter.origin_manual', { defaultValue: 'Manual' })
 }
 
 export function BlockTable({ onDelete, originFilter, targetQuery }: Props) {
@@ -79,16 +96,16 @@ export function BlockTable({ onDelete, originFilter, targetQuery }: Props) {
                 <TableRow data-testid="firewall-block-row" key={block.id}>
                   <TableCell className="font-mono text-xs">{block.target}</TableCell>
                   <TableCell className="font-mono text-xs">v{block.family}</TableCell>
-                  <TableCell className="text-xs">{block.cover_type}</TableCell>
+                  <TableCell className="text-xs">{scopeLabel(t, block.cover_type)}</TableCell>
                   <TableCell>
                     <span
-                      className={`rounded px-1.5 py-0.5 font-mono text-xs ${
+                      className={`rounded px-1.5 py-0.5 text-xs ${
                         block.origin === 'auto'
                           ? 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200'
                           : 'bg-muted text-muted-foreground'
                       }`}
                     >
-                      {block.origin}
+                      {originLabel(t, block.origin)}
                     </span>
                   </TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground text-xs">

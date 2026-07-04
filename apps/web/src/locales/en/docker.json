@@ -21,6 +21,15 @@
     "running": "Running",
     "stopped": "Stopped"
   },
+  "state": {
+    "created": "Created",
+    "restarting": "Restarting",
+    "running": "Running",
+    "removing": "Removing",
+    "paused": "Paused",
+    "exited": "Exited",
+    "dead": "Dead"
+  },
   "table": {
     "name": "Name",
     "image": "Image",
