@@ -164,6 +164,11 @@
   "history_empty": "暂无历史",
   "legacy_record_tooltip": "由旧版 Agent 生成，实际协议未知",
   "delete": "删除",
+  "recent_hops": "{{count}} 跳",
+  "recent_just_now": "刚刚",
+  "recent_minutes_ago": "{{count}} 分钟前",
+  "recent_hours_ago": "{{count}} 小时前",
+  "recent_days_ago": "{{count}} 天前",
 
   "latency_title": "延迟 (ms)",
   "latency_inbound": "入站",
