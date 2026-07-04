@@ -1,5 +1,6 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { DataTable } from '@/components/ui/data-table'
 import type { NetworkProbeAnomaly } from '@/lib/network-types'
@@ -36,7 +37,7 @@ function formatTimestamp(ts: string): string {
   })
 }
 
-function getColumns(t: (key: string) => string): ColumnDef<NetworkProbeAnomaly>[] {
+function getColumns(t: TFunction): ColumnDef<NetworkProbeAnomaly>[] {
   return [
     {
       accessorKey: 'timestamp',
@@ -67,7 +68,7 @@ function getColumns(t: (key: string) => string): ColumnDef<NetworkProbeAnomaly>[
                 : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
             )}
           >
-            {row.original.anomaly_type}
+            {t(`anomaly_${row.original.anomaly_type}`, { defaultValue: row.original.anomaly_type })}
           </span>
         )
       }
