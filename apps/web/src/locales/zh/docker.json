@@ -21,6 +21,15 @@
     "running": "运行中",
     "stopped": "已停止"
   },
+  "state": {
+    "created": "已创建",
+    "restarting": "重启中",
+    "running": "运行中",
+    "removing": "移除中",
+    "paused": "已暂停",
+    "exited": "已退出",
+    "dead": "已终止"
+  },
   "table": {
     "name": "名称",
     "image": "镜像",
