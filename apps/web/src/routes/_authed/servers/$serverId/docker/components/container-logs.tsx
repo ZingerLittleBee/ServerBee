@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { stripAnsi } from '@/lib/ansi'
 import { cn } from '@/lib/utils'
 import { useDockerLogs } from '../hooks/use-docker-logs'
 
@@ -80,7 +81,7 @@ export function ContainerLogs({ serverId, containerId }: ContainerLogsProps) {
                 key={`${String(idx)}-${entry.stream}-${entry.timestamp ?? ''}`}
               >
                 {entry.timestamp && <span className="mr-2 text-muted-foreground">{entry.timestamp}</span>}
-                {entry.message}
+                {stripAnsi(entry.message)}
               </code>
             ))}
           </pre>
