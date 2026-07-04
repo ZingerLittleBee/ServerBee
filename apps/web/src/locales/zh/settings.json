@@ -267,6 +267,7 @@
   "tasks.select_all": "全选",
   "tasks.no_servers": "无可用服务器",
   "tasks.execute_count": "执行（{{count}} 台服务器）",
+  "tasks.server_count": "{{count}} 台服务器",
   "tasks.waiting": "等待结果…",
   "tasks.skipped": "已跳过",
   "tasks.exit_code": "退出码 {{code}}",

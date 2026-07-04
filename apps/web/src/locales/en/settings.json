@@ -267,6 +267,7 @@
   "tasks.select_all": "Select All",
   "tasks.no_servers": "No servers available",
   "tasks.execute_count": "Execute ({{count}} server{{plural}})",
+  "tasks.server_count": "{{count}} server(s)",
   "tasks.waiting": "Waiting for results…",
   "tasks.skipped": "skipped",
   "tasks.exit_code": "exit {{code}}",
