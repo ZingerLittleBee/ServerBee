@@ -32,6 +32,8 @@
 
   "network_in": "Network In",
   "network_out": "Network Out",
+  "network_total": "Network total",
+  "network_limit": "Network limit",
   "uptime": "Uptime",
   "maintenance": "Maintenance",
   "online_status": "Online",

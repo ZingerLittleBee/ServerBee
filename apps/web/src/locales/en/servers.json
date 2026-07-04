@@ -296,6 +296,8 @@
   "detail_kernel_label": "Kernel:",
   "detail_region_label": "Region:",
   "detail_agent_label": "Agent: v{{version}}",
+  "detail_processes": "Processes",
+  "detail_connections": "Connections",
 
   "uptime_title": "Uptime (90 days)",
   "metrics_tab": "Metrics",

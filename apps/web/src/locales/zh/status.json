@@ -32,6 +32,8 @@
 
   "network_in": "入站网络",
   "network_out": "出站网络",
+  "network_total": "总流量",
+  "network_limit": "流量限额",
   "uptime": "运行时间",
   "maintenance": "维护",
   "online_status": "在线",
