@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration as StdDuration;
 
 use chrono::{Duration, Timelike, Utc};
@@ -941,8 +941,23 @@ fn traffic_bytes(spec: DemoServerSpec, point: usize, multiplier: usize) -> i64 {
     (20 + wave(seed + multiplier, point, 900) as i64) * 1024 * 1024
 }
 
+/// Wall-clock timestamp (seconds) captured the first time a live demo sample is
+/// requested, i.e. roughly the demo process start. Anchors `live_sample_index`
+/// so it counts ticks elapsed since startup instead of the absolute Unix epoch.
+fn demo_epoch_secs() -> i64 {
+    static EPOCH: OnceLock<i64> = OnceLock::new();
+    *EPOCH.get_or_init(|| Utc::now().timestamp())
+}
+
+/// Number of ~3s ticks elapsed since the demo process started, offset per
+/// server for visual variety. This must stay small and monotonic: `build_report`
+/// multiplies `sample` into both `uptime` and the cumulative `net_*_transfer`
+/// counters. Feeding the raw Unix timestamp here (~5.8e8) inflated uptimes to
+/// centuries and transfer counters to exabytes, which then overflowed i64 in the
+/// traffic aggregator (`compute_delta`) and 500'd the traffic endpoints.
 fn live_sample_index(offset: usize) -> usize {
-    ((Utc::now().timestamp() / 3).max(0) as usize).saturating_add(offset * 11)
+    let elapsed = (Utc::now().timestamp() - demo_epoch_secs()).max(0);
+    (elapsed / 3) as usize + offset * 11
 }
 
 fn current_hour() -> chrono::DateTime<Utc> {
