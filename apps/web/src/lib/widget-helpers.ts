@@ -1,6 +1,7 @@
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { ServerMetricRecord, UptimeDailyEntry } from '@/lib/api-schema'
 import { parseDiskIoJson } from './disk-io'
+import { formatDateTime } from './format'
 
 // --- Shared metric labels ---
 
@@ -95,8 +96,7 @@ export function formatChartTime(time: string): string {
 }
 
 export function formatChartDateTime(time: string): string {
-  const date = new Date(time)
-  return date.toLocaleString([], {
+  return formatDateTime(time, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',

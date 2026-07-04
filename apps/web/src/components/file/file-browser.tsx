@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { FileEntry } from '@/hooks/use-file-api'
 import { fileIcon } from '@/lib/file-utils'
+import { formatDateTime } from '@/lib/format'
 import { formatBytes } from '@/lib/utils'
 
 interface FileBrowserProps {
@@ -45,7 +46,7 @@ function formatModified(ts: number): string {
   if (ts <= 0) {
     return '-'
   }
-  return new Date(ts * 1000).toLocaleString(undefined, {
+  return formatDateTime(ts * 1000, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

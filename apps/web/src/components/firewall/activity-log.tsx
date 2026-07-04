@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
 import type { AuditListResponse } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 
 /**
  * Firewall activity log. The shared audit-logs endpoint does not yet accept
@@ -57,7 +58,7 @@ export function FirewallActivityLog() {
               entries.map((entry) => (
                 <TableRow key={entry.id}>
                   <TableCell className="whitespace-nowrap font-mono text-xs">
-                    {new Date(entry.created_at).toLocaleString()}
+                    {formatDateTime(entry.created_at)}
                   </TableCell>
                   <TableCell>
                     <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{entry.action}</span>

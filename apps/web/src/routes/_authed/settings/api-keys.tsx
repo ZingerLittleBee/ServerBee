@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ApiKeyResponse } from '@/lib/api-schema'
+import { formatDateShort } from '@/lib/format'
 
 export const Route = createFileRoute('/_authed/settings/api-keys')({
   component: ApiKeysPage
@@ -169,7 +170,7 @@ function ApiKeysPage() {
                         {'\u2026'}
                       </span>
                       <span>
-                        {t('api_keys.created')} {new Date(apiKey.created_at).toLocaleDateString()}
+                        {t('api_keys.created')} {formatDateShort(apiKey.created_at)}
                       </span>
                     </div>
                   </div>

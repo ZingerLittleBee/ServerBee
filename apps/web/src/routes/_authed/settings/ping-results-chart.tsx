@@ -6,6 +6,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/re
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { PingRecord } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 
 const PING_CHART_CONFIG = {
   latency: { label: 'Latency', color: 'var(--chart-4)' }
@@ -71,7 +72,7 @@ export function PingResultsChart({ taskId }: { taskId: string }) {
           <ChartTooltip
             content={
               <ChartTooltipContent
-                labelFormatter={(label) => new Date(String(label)).toLocaleString([], { hour12: false })}
+                labelFormatter={(label) => formatDateTime(String(label), { hour12: false })}
                 valueFormatter={(value) => `${value.toFixed(1)}ms`}
               />
             }

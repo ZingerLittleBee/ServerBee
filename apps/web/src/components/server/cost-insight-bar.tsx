@@ -4,6 +4,7 @@ import { TrafficProgress } from '@/components/server/traffic-progress'
 import { useCostInsights } from '@/hooks/use-cost'
 import type { ResourceValue, ServerCostInsights, ServerResponse } from '@/lib/api-schema'
 import { formatCostAmount, formatCostRate, getCostAdvisoryKey, getCostInvalidReasonKey } from '@/lib/cost'
+import { formatDateShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 type CostInsightServer = Pick<
@@ -167,8 +168,8 @@ function ExpiryStatus({ expiredAt }: { expiredAt?: string | null }) {
   return (
     <span className={cn(expiryColor)}>
       {isExpired
-        ? `${t('detail_expired')} ${expiryDate.toLocaleDateString()}`
-        : `${t('detail_expires')} ${expiryDate.toLocaleDateString()}`}
+        ? `${t('detail_expired')} ${formatDateShort(expiryDate)}`
+        : `${t('detail_expires')} ${formatDateShort(expiryDate)}`}
       {!isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
     </span>
   )

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { SecurityEventDto } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 import { EventTypeBadge, SeverityBadge } from './severity-badge'
 
 interface Props {
@@ -18,7 +19,7 @@ function formatTime(value: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) {
     return value
   }
-  return d.toLocaleString()
+  return formatDateTime(d)
 }
 
 export function SecurityEventDetailDrawer({ event, onOpenChange }: Props) {

@@ -43,6 +43,7 @@ import {
 import { useNetworkChartRecords } from '@/hooks/use-network-chart-records'
 import { useTracerouteStream } from '@/hooks/use-traceroute-stream'
 import { CHART_COLORS } from '@/lib/chart-colors'
+import { formatDateTime } from '@/lib/format'
 import {
   getNetworkProbeTypeLabel,
   getNetworkTargetDisplayLocation,
@@ -746,7 +747,7 @@ function ServerInfoBar({ server, summary, t }: ServerInfoBarProps) {
       {summary.last_probe_at && (
         <span>
           {t('last_probe')}:{' '}
-          {new Date(summary.last_probe_at).toLocaleString([], {
+          {formatDateTime(summary.last_probe_at, {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
