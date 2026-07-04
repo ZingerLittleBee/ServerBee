@@ -1,5 +1,8 @@
 {
   "page_title": "Security Events",
+  "toast": {
+    "attack_detected": "Security event detected from {{ip}}"
+  },
   "placeholder_overview": "Loading security overview…",
   "per_server_title": "Server Security Events",
   "per_server": {
