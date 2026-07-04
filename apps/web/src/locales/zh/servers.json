@@ -296,6 +296,8 @@
   "detail_kernel_label": "内核：",
   "detail_region_label": "地区：",
   "detail_agent_label": "Agent: v{{version}}",
+  "detail_processes": "进程",
+  "detail_connections": "连接",
 
   "uptime_title": "运行时间（90 天）",
   "metrics_tab": "指标",
