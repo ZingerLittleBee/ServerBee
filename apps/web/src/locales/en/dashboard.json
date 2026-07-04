@@ -40,6 +40,12 @@
   "module_not_installed_id": "Widget module \"{{id}}\" not installed",
   "module_config_invalid": "Widget config invalid: {{message}}",
   "module_config_no_fields": "This module exposes no configurable fields.",
+  "toast_created": "Dashboard created",
+  "toast_create_failed": "Failed to create dashboard",
+  "toast_updated": "Dashboard updated",
+  "toast_update_failed": "Failed to update dashboard",
+  "toast_deleted": "Dashboard deleted",
+  "toast_delete_failed": "Failed to delete dashboard",
   "widgetPicker": {
     "categories": {
       "Real-time": "Real-time",
@@ -155,6 +161,8 @@
     },
     "serverMap": {
       "title": "Server Map",
+      "serverCount_one": "{{count}} server",
+      "serverCount_other": "{{count}} servers",
       "empty": {
         "noGeoIP": "GeoIP database not installed",
         "noLocationData": "No server location data available"
@@ -175,6 +183,15 @@
       "empty": {
         "noData": "No disk I/O data available"
       }
+    },
+    "topN": {
+      "title": "Top {{metric}}",
+      "empty": {
+        "noServers": "No online servers"
+      }
+    },
+    "multiLine": {
+      "title": "{{metric}} Comparison"
     },
     "common": {
       "labels": {
@@ -202,7 +219,8 @@
         "optionalLabel": "Override label"
       },
       "empty": {
-        "noServers": "No servers available"
+        "noServers": "No servers available",
+        "serverNotFound": "Server not found"
       }
     },
     "networkLatency": {

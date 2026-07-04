@@ -1,5 +1,13 @@
 {
   "backToServer": "返回服务器",
+  "overview": {
+    "running": "运行中",
+    "stopped": "已停止",
+    "totalCpu": "总 CPU",
+    "totalMemory": "总内存",
+    "dockerVersion": "Docker 版本",
+    "unknown": "未知"
+  },
   "containers": {
     "title": "容器",
     "searchPlaceholder": "搜索容器...",

@@ -1,4 +1,5 @@
 import { Activity, Box, Cpu, HardDrive, Square } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatBytes } from '@/lib/utils'
 import type { DockerContainer, DockerContainerStats } from '../types'
@@ -10,6 +11,7 @@ interface DockerOverviewProps {
 }
 
 export function DockerOverview({ containers, stats, dockerVersion }: DockerOverviewProps) {
+  const { t } = useTranslation('docker')
   const running = containers.filter((c) => c.state === 'running').length
   const stopped = containers.filter((c) => c.state !== 'running').length
 
@@ -22,7 +24,7 @@ export function DockerOverview({ containers, stats, dockerVersion }: DockerOverv
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground text-sm">
             <Box aria-hidden="true" className="size-4" />
-            Running
+            {t('overview.running')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -34,7 +36,7 @@ export function DockerOverview({ containers, stats, dockerVersion }: DockerOverv
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground text-sm">
             <Square aria-hidden="true" className="size-4" />
-            Stopped
+            {t('overview.stopped')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -46,7 +48,7 @@ export function DockerOverview({ containers, stats, dockerVersion }: DockerOverv
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground text-sm">
             <Cpu aria-hidden="true" className="size-4" />
-            Total CPU
+            {t('overview.totalCpu')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -58,7 +60,7 @@ export function DockerOverview({ containers, stats, dockerVersion }: DockerOverv
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground text-sm">
             <HardDrive aria-hidden="true" className="size-4" />
-            Total Memory
+            {t('overview.totalMemory')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -70,11 +72,11 @@ export function DockerOverview({ containers, stats, dockerVersion }: DockerOverv
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground text-sm">
             <Activity aria-hidden="true" className="size-4" />
-            Docker Version
+            {t('overview.dockerVersion')}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="font-mono font-semibold text-lg tabular-nums">{dockerVersion ?? 'Unknown'}</p>
+          <p className="font-mono font-semibold text-lg tabular-nums">{dockerVersion ?? t('overview.unknown')}</p>
         </CardContent>
       </Card>
     </div>

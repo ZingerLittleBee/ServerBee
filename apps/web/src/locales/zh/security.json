@@ -1,5 +1,8 @@
 {
   "page_title": "安全事件",
+  "toast": {
+    "attack_detected": "检测到来自 {{ip}} 的安全事件"
+  },
   "placeholder_overview": "正在加载安全概览…",
   "per_server_title": "服务器安全事件",
   "per_server": {

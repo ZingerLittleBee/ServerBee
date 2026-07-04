@@ -1,22 +1,33 @@
+import i18next from 'i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { ServerMetricRecord, UptimeDailyEntry } from '@/lib/api-schema'
 import { parseDiskIoJson } from './disk-io'
+import { activeLocale, formatDateTime } from './format'
 
 // --- Shared metric labels ---
 
-export const METRIC_LABELS: Record<string, string> = {
-  cpu: 'CPU',
-  memory: 'Memory',
-  disk: 'Disk',
-  swap: 'Swap',
-  load1: 'Load (1m)',
-  load5: 'Load (5m)',
-  load15: 'Load (15m)',
-  net_in: 'Network In',
-  net_out: 'Network Out',
-  bandwidth: 'Bandwidth',
-  network: 'Network',
-  disk_io: 'Disk I/O'
+// Maps a metric id to its localized label key in the `dashboard` namespace
+// (see `common.metrics.*` in the dashboard locale files).
+const METRIC_LABEL_KEYS: Record<string, string> = {
+  cpu: 'common.metrics.cpu',
+  memory: 'common.metrics.memory',
+  disk: 'common.metrics.disk',
+  swap: 'common.metrics.swap',
+  load1: 'common.metrics.load1m',
+  load5: 'common.metrics.load5m',
+  load15: 'common.metrics.load15m',
+  net_in: 'common.metrics.networkIn',
+  net_out: 'common.metrics.networkOut',
+  bandwidth: 'common.metrics.bandwidth',
+  network: 'common.metrics.network',
+  disk_io: 'common.metrics.diskIo'
+}
+
+// Resolves a metric id to its localized display label. Pass a `t` bound to the
+// `dashboard` namespace (e.g. from `useTranslation('dashboard')`).
+export function metricLabel(metric: string, t: (key: string) => string): string {
+  const key = METRIC_LABEL_KEYS[metric]
+  return key ? t(key) : metric
 }
 
 export const METRIC_UNITS: Record<string, string> = {
@@ -95,8 +106,7 @@ export function formatChartTime(time: string): string {
 }
 
 export function formatChartDateTime(time: string): string {
-  const date = new Date(time)
-  return date.toLocaleString([], {
+  return formatDateTime(time, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -107,21 +117,22 @@ export function formatChartDateTime(time: string): string {
 
 export function formatRelativeTime(input: string | number | null): string {
   if (input === null) {
-    return 'Never'
+    return i18next.t('status.never')
   }
   const ms = typeof input === 'number' ? input * 1000 : new Date(input).getTime()
   const diff = Math.max(0, Math.floor((Date.now() - ms) / 1000))
+  const rtf = new Intl.RelativeTimeFormat(activeLocale(), { numeric: 'always', style: 'narrow' })
 
   if (diff < 60) {
-    return `${diff}s ago`
+    return rtf.format(-diff, 'second')
   }
   if (diff < 3600) {
-    return `${Math.floor(diff / 60)}m ago`
+    return rtf.format(-Math.floor(diff / 60), 'minute')
   }
   if (diff < 86_400) {
-    return `${Math.floor(diff / 3600)}h ago`
+    return rtf.format(-Math.floor(diff / 3600), 'hour')
   }
-  return `${Math.floor(diff / 86_400)}d ago`
+  return rtf.format(-Math.floor(diff / 86_400), 'day')
 }
 
 // --- JSON config parsing ---
@@ -187,22 +198,26 @@ export function formatUptimeTooltip(entry: UptimeDailyEntry): {
   percentage: string
 } {
   if (entry.total_minutes === 0) {
+    const noData = i18next.t('status:uptime_no_data')
     return {
       date: entry.date,
-      percentage: 'No data',
-      duration: 'No data',
-      incidents: 'No data'
+      percentage: noData,
+      duration: noData,
+      incidents: noData
     }
   }
   const pct = (entry.online_minutes / entry.total_minutes) * 100
   const downMinutes = entry.total_minutes - entry.online_minutes
   const hours = Math.floor(downMinutes / 60)
   const mins = Math.round(downMinutes % 60)
-  const duration = hours > 0 ? `${hours}h ${mins}m downtime` : `${mins}m downtime`
+  const duration =
+    hours > 0
+      ? i18next.t('status:uptime_downtime_hours', { hours, mins })
+      : i18next.t('status:uptime_downtime_minutes', { mins })
   return {
     date: entry.date,
     percentage: `${pct.toFixed(2)}%`,
     duration,
-    incidents: `${entry.downtime_incidents} incident${entry.downtime_incidents !== 1 ? 's' : ''}`
+    incidents: i18next.t('status:uptime_incidents', { count: entry.downtime_incidents })
   }
 }

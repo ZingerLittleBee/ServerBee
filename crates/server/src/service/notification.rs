@@ -412,12 +412,12 @@ impl NotificationService {
                     .body(body)
                     .send()
                     .await
-                    .map_err(|e| AppError::Internal(format!("Webhook request failed: {e}")))?;
+                    .map_err(|e| AppError::BadGateway(format!("Webhook request failed: {e}")))?;
 
                 if !resp.status().is_success() {
                     let status = resp.status();
                     let text = resp.text().await.unwrap_or_default();
-                    return Err(AppError::Internal(format!(
+                    return Err(AppError::BadGateway(format!(
                         "Webhook returned {status}: {text}"
                     )));
                 }
@@ -434,11 +434,11 @@ impl NotificationService {
                     }))
                     .send()
                     .await
-                    .map_err(|e| AppError::Internal(format!("Telegram request failed: {e}")))?;
+                    .map_err(|e| AppError::BadGateway(format!("Telegram request failed: {e}")))?;
 
                 if !resp.status().is_success() {
                     let text = resp.text().await.unwrap_or_default();
-                    return Err(AppError::Internal(format!("Telegram API error: {text}")));
+                    return Err(AppError::BadGateway(format!("Telegram API error: {text}")));
                 }
             }
             ChannelConfig::Bark {
@@ -458,11 +458,11 @@ impl NotificationService {
                     .get(&url)
                     .send()
                     .await
-                    .map_err(|e| AppError::Internal(format!("Bark request failed: {e}")))?;
+                    .map_err(|e| AppError::BadGateway(format!("Bark request failed: {e}")))?;
 
                 if !resp.status().is_success() {
                     let text = resp.text().await.unwrap_or_default();
-                    return Err(AppError::Internal(format!("Bark error: {text}")));
+                    return Err(AppError::BadGateway(format!("Bark error: {text}")));
                 }
             }
             ChannelConfig::Email { from, to } => {
@@ -491,7 +491,7 @@ impl NotificationService {
                     .json(&body)
                     .send()
                     .await
-                    .map_err(|e| AppError::Internal(format!("Resend request failed: {e}")))?;
+                    .map_err(|e| AppError::BadGateway(format!("Resend request failed: {e}")))?;
 
                 if !resp.status().is_success() {
                     let status = resp.status();
@@ -504,7 +504,7 @@ impl NotificationService {
                                 .map(|s| s.to_string())
                         })
                         .unwrap_or_else(|| raw.clone());
-                    return Err(AppError::Internal(format!(
+                    return Err(AppError::BadGateway(format!(
                         "Resend API error ({status}): {message}"
                     )));
                 }

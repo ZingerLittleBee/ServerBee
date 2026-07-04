@@ -8,6 +8,8 @@
   "detail_loading": "正在加载服务器详情…",
   "detail_not_found": "未找到该服务器或未公开展示。",
   "detail_back": "返回状态页",
+  "detail_processes": "进程",
+  "detail_connections": "连接",
   "ungrouped": "未分组",
   "unknown": "未知",
   "cpu": "CPU",
@@ -58,6 +60,10 @@
   "uptime_degraded": "性能下降",
   "uptime_down": "故障",
   "uptime_no_data": "暂无数据",
+  "uptime_downtime_hours": "故障 {{hours}} 小时 {{mins}} 分钟",
+  "uptime_downtime_minutes": "故障 {{mins}} 分钟",
+  "uptime_incidents_one": "{{count}} 次故障",
+  "uptime_incidents_other": "{{count}} 次故障",
 
   "theme.label": "主题",
   "theme.follow_admin": "跟随后台默认"

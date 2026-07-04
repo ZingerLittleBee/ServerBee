@@ -13,6 +13,7 @@ import {
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
+import { formatDateShort } from '@/lib/format'
 import { cn, formatBytes } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -47,15 +48,13 @@ interface DailyItem {
 // Chart configs
 // ---------------------------------------------------------------------------
 
-const dailyConfig = {
-  bytes_in: { label: 'Inbound', color: 'var(--chart-1)' },
-  bytes_out: { label: 'Outbound', color: 'var(--chart-2)' }
-} satisfies ChartConfig
-
-const historyConfig = {
-  bytes_in: { label: 'Inbound', color: 'var(--chart-1)' },
-  bytes_out: { label: 'Outbound', color: 'var(--chart-2)' }
-} satisfies ChartConfig
+// Localized Inbound/Outbound series labels, shared by both traffic charts.
+function trafficChartConfig(t: (key: string) => string): ChartConfig {
+  return {
+    bytes_in: { label: t('traffic_inbound'), color: 'var(--chart-1)' },
+    bytes_out: { label: t('traffic_outbound'), color: 'var(--chart-2)' }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Time range options
@@ -106,11 +105,11 @@ function CycleOverviewCard({ cycle, t }: { cycle: CycleData['current']; t: (key:
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           <div>
             <span className="text-muted-foreground">{t('traffic_start')}</span>{' '}
-            <span className="font-medium">{new Date(cycle.start).toLocaleDateString()}</span>
+            <span className="font-medium">{formatDateShort(cycle.start)}</span>
           </div>
           <div>
             <span className="text-muted-foreground">{t('traffic_end')}</span>{' '}
-            <span className="font-medium">{new Date(cycle.end).toLocaleDateString()}</span>
+            <span className="font-medium">{formatDateShort(cycle.end)}</span>
           </div>
         </div>
 
@@ -156,6 +155,7 @@ function CycleOverviewCard({ cycle, t }: { cycle: CycleData['current']; t: (key:
 
 function DailyTrendChart({ serverId, t }: { serverId: string; t: (key: string) => string }) {
   const [dayRange, setDayRange] = useState<DayRange>(30)
+  const dailyConfig = useMemo(() => trafficChartConfig(t), [t])
 
   const fromDate = useMemo(() => {
     const d = new Date()
@@ -258,6 +258,7 @@ function HistoryCycleChart({ history, t }: { history: CycleData['history']; t: (
     bytes_in: h.bytes_in,
     bytes_out: h.bytes_out
   }))
+  const historyConfig = trafficChartConfig(t)
 
   return (
     <Card>

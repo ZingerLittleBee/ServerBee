@@ -8,6 +8,8 @@
   "detail_loading": "Loading server detail…",
   "detail_not_found": "Server not found or not publicly visible.",
   "detail_back": "Back to status",
+  "detail_processes": "Processes",
+  "detail_connections": "Connections",
   "ungrouped": "Ungrouped",
   "unknown": "Unknown",
   "cpu": "CPU",
@@ -58,6 +60,10 @@
   "uptime_degraded": "Degraded",
   "uptime_down": "Down",
   "uptime_no_data": "No data",
+  "uptime_downtime_hours": "{{hours}}h {{mins}}m downtime",
+  "uptime_downtime_minutes": "{{mins}}m downtime",
+  "uptime_incidents_one": "{{count}} incident",
+  "uptime_incidents_other": "{{count}} incidents",
 
   "theme.label": "Theme",
   "theme.follow_admin": "Follow admin default"

@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
 import type { DockerContainer, DockerContainerStats } from '../types'
 import { ContainerLogs } from './container-logs'
 import { ContainerStats } from './container-stats'
@@ -52,7 +53,7 @@ function formatPortMapping(container: DockerContainer): string {
 }
 
 function formatCreatedDate(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleString()
+  return formatDateTime(timestamp * 1000)
 }
 
 export function ContainerDetailDialog({ container, serverId, stats, open, onOpenChange }: ContainerDetailDialogProps) {

@@ -5,6 +5,7 @@ import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
 import type { DockerVolume } from '../types'
 
 interface DockerVolumesDialogProps {
@@ -17,7 +18,7 @@ function formatCreatedDate(dateStr: string | null, t: (key: string) => string): 
   if (!dateStr) {
     return t('common.notAvailable')
   }
-  return new Date(dateStr).toLocaleString()
+  return formatDateTime(dateStr)
 }
 
 export function DockerVolumesDialog({ serverId, open, onOpenChange }: DockerVolumesDialogProps) {

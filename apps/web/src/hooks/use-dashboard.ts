@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { api } from '@/lib/api-client'
 import type { Dashboard, DashboardWithWidgets } from '@/lib/widget-types'
@@ -61,20 +62,22 @@ export function useDashboard(id: string) {
 
 export function useCreateDashboard() {
   const queryClient = useQueryClient()
+  const { t } = useTranslation('dashboard')
   return useMutation({
     mutationFn: (input: CreateDashboardInput) => api.post<Dashboard>('/api/dashboards', input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboards'] })
-      toast.success('Dashboard created')
+      toast.success(t('toast_created'))
     },
     onError: () => {
-      toast.error('Failed to create dashboard')
+      toast.error(t('toast_create_failed'))
     }
   })
 }
 
 export function useUpdateDashboard() {
   const queryClient = useQueryClient()
+  const { t } = useTranslation('dashboard')
   return useMutation({
     mutationFn: ({ id, ...input }: { id: string } & UpdateDashboardInput) =>
       api.put<DashboardWithWidgets>(`/api/dashboards/${id}`, input),
@@ -84,24 +87,25 @@ export function useUpdateDashboard() {
         queryClient.setQueryData(['dashboards', 'default'], updated)
       }
       queryClient.invalidateQueries({ queryKey: ['dashboards'] })
-      toast.success('Dashboard updated')
+      toast.success(t('toast_updated'))
     },
     onError: () => {
-      toast.error('Failed to update dashboard')
+      toast.error(t('toast_update_failed'))
     }
   })
 }
 
 export function useDeleteDashboard() {
   const queryClient = useQueryClient()
+  const { t } = useTranslation('dashboard')
   return useMutation({
     mutationFn: (id: string) => api.delete(`/api/dashboards/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboards'] })
-      toast.success('Dashboard deleted')
+      toast.success(t('toast_deleted'))
     },
     onError: () => {
-      toast.error('Failed to delete dashboard')
+      toast.error(t('toast_delete_failed'))
     }
   })
 }

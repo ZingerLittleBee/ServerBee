@@ -157,6 +157,7 @@ fn audit_error_reason(error: &AppError) -> Option<&str> {
         | AppError::RequestTimeout(message)
         | AppError::Validation(message)
         | AppError::TooManyRequests(message)
+        | AppError::BadGateway(message)
         | AppError::Internal(message) => Some(message.as_str()),
         AppError::Unauthorized => None,
         AppError::Domain { message, .. } => Some(message.as_str()),

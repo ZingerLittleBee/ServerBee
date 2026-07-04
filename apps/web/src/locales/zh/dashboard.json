@@ -40,6 +40,12 @@
   "module_not_installed_id": "组件模块 \"{{id}}\" 未安装",
   "module_config_invalid": "组件配置无效：{{message}}",
   "module_config_no_fields": "该模块没有可配置字段。",
+  "toast_created": "仪表盘已创建",
+  "toast_create_failed": "创建仪表盘失败",
+  "toast_updated": "仪表盘已更新",
+  "toast_update_failed": "更新仪表盘失败",
+  "toast_deleted": "仪表盘已删除",
+  "toast_delete_failed": "删除仪表盘失败",
   "widgetPicker": {
     "categories": {
       "Real-time": "实时",
@@ -155,6 +161,8 @@
     },
     "serverMap": {
       "title": "服务器地图",
+      "serverCount_one": "{{count}} 台服务器",
+      "serverCount_other": "{{count}} 台服务器",
       "empty": {
         "noGeoIP": "GeoIP 数据库未安装",
         "noLocationData": "暂无服务器位置数据"
@@ -175,6 +183,15 @@
       "empty": {
         "noData": "暂无磁盘 I/O 数据"
       }
+    },
+    "topN": {
+      "title": "{{metric}} 排行",
+      "empty": {
+        "noServers": "暂无在线服务器"
+      }
+    },
+    "multiLine": {
+      "title": "{{metric}} 对比"
     },
     "common": {
       "labels": {
@@ -202,7 +219,8 @@
         "optionalLabel": "覆盖默认标签"
       },
       "empty": {
-        "noServers": "暂无可用服务器"
+        "noServers": "暂无可用服务器",
+        "serverNotFound": "未找到服务器"
       }
     },
     "networkLatency": {

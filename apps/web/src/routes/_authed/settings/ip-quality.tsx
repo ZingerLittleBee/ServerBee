@@ -20,9 +20,18 @@ import { IpQualityCatalogTab } from './ip-quality-catalog-tab'
 import { IpQualityDeleteDialog } from './ip-quality-delete-dialog'
 import { IpQualitySettingsTab } from './ip-quality-settings-tab'
 
+const IP_QUALITY_TABS = ['catalog', 'settings'] as const
+type IpQualityTab = (typeof IP_QUALITY_TABS)[number]
+
+function isIpQualityTab(value: unknown): value is IpQualityTab {
+  return typeof value === 'string' && IP_QUALITY_TABS.some((tab) => tab === value)
+}
+
 export const Route = createFileRoute('/_authed/settings/ip-quality')({
-  validateSearch: (search: Record<string, unknown>) => ({
-    tab: (search.tab as string) || 'catalog'
+  // Coerce an unrecognized tab param to the default; passing it through
+  // matches no TabsContent and renders a blank page (see network-probes).
+  validateSearch: (search: Record<string, unknown>): { tab: IpQualityTab } => ({
+    tab: isIpQualityTab(search.tab) ? search.tab : 'catalog'
   }),
   component: IpQualitySettingsPage
 })

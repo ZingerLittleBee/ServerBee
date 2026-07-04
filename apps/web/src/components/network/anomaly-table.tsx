@@ -3,6 +3,7 @@ import { getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { DataTable } from '@/components/ui/data-table'
+import { formatDateTime } from '@/lib/format'
 import type { NetworkProbeAnomaly } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 
@@ -27,8 +28,7 @@ function formatAnomalyValue(type: string, value: number): string {
 }
 
 function formatTimestamp(ts: string): string {
-  const date = new Date(ts)
-  return date.toLocaleString([], {
+  return formatDateTime(ts, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',

@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AlertRule, AlertRuleItem, AlertStateResponse } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 
 // Maps backend threshold rule_type enums to their existing `alerts.metric_*`
 // locale keys. Mirrors the option list in alert-rule-form.tsx so the rule list
@@ -205,7 +206,7 @@ function AlertRuleStates({ states }: { states: AlertStateResponse[] | undefined 
               <span className="text-muted-foreground">
                 {state.resolved ? t('alerts.resolved') : `${t('alerts.triggered')} (${state.count}x)`}
                 {' · '}
-                {new Date(state.first_triggered_at).toLocaleString()}
+                {formatDateTime(state.first_triggered_at)}
               </span>
             </div>
           ))}

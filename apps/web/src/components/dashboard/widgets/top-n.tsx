@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn, formatBytes } from '@/lib/utils'
-import { extractLiveMetric, METRIC_LABELS } from '@/lib/widget-helpers'
+import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { TopNConfig } from '@/lib/widget-types'
 
 interface TopNWidgetProps {
@@ -21,14 +22,8 @@ function getBarColor(rank: number): string {
   return colors[rank % colors.length]
 }
 
-const TOP_N_LABELS: Record<string, string> = {
-  cpu: 'Top CPU',
-  memory: 'Top Memory',
-  disk: 'Top Disk',
-  bandwidth: 'Top Bandwidth'
-}
-
 export function TopNWidget({ config, servers }: TopNWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const { metric, sort = 'desc' } = config
   const count = config.count ?? 5
 
@@ -52,7 +47,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
     return 100
   }, [ranked, metric])
 
-  const title = TOP_N_LABELS[metric] ?? `Top ${METRIC_LABELS[metric] ?? metric}`
+  const title = t('widgets.topN.title', { metric: metricLabel(metric, t) })
 
   return (
     <div className="flex h-full flex-col justify-center rounded-lg border bg-card">
@@ -82,7 +77,9 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
             )
           })}
           {ranked.length === 0 && (
-            <div className="flex items-center justify-center py-4 text-muted-foreground text-xs">No online servers</div>
+            <div className="flex items-center justify-center py-4 text-muted-foreground text-xs">
+              {t('widgets.topN.empty.noServers')}
+            </div>
           )}
         </div>
       </div>

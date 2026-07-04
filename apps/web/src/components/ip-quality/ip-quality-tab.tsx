@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCheckNow, useIpQualityEvents, useIpQualityServer, useIpQualityServices } from '@/hooks/use-ip-quality-api'
 import { CAP_IP_QUALITY, hasCap } from '@/lib/capabilities'
+import { formatDateTime } from '@/lib/format'
 import type { UnlockStatus } from '@/lib/ip-quality-types'
 
 interface Props {
@@ -140,7 +141,7 @@ export function IpQualityTab({ serverId, serverName, capabilities, agentLocalCap
                               </span>
                             </td>
                             <td className="px-3 py-2 text-muted-foreground text-xs">
-                              {new Date(event.changed_at).toLocaleString()}
+                              {formatDateTime(event.changed_at)}
                             </td>
                           </tr>
                         )

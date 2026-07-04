@@ -14,6 +14,7 @@ import {
   useUpdateScheduledTask
 } from '@/hooks/use-scheduled-tasks'
 import { api } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
 import { ScheduledTaskDialog } from './scheduled-task-dialog'
 
 interface ServerInfo {
@@ -151,8 +152,7 @@ export function ScheduledTaskList() {
                       <span>{task.server_ids.length} server(s)</span>
                       {task.next_run_at && (
                         <span>
-                          {t('tasks.scheduled.next_run', { defaultValue: 'Next' })}:{' '}
-                          {new Date(task.next_run_at).toLocaleString()}
+                          {t('tasks.scheduled.next_run', { defaultValue: 'Next' })}: {formatDateTime(task.next_run_at)}
                         </span>
                       )}
                     </div>
@@ -219,7 +219,7 @@ export function ScheduledTaskList() {
                           <div className="px-4 py-2" key={runId}>
                             <div className="mb-1 flex items-center gap-2 text-xs">
                               <span className="text-muted-foreground">
-                                {triggerTime ? new Date(triggerTime).toLocaleString() : '—'}
+                                {triggerTime ? formatDateTime(triggerTime) : '—'}
                               </span>
                               <span
                                 className={`rounded px-1.5 py-0.5 ${allOk ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'}`}

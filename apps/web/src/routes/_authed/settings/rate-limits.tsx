@@ -21,6 +21,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
+import { formatDateTime } from '@/lib/format'
 
 type RateLimitScope = 'login' | 'register'
 
@@ -74,7 +75,7 @@ function formatTimestamp(iso: string): string {
   if (Number.isNaN(date.getTime())) {
     return iso
   }
-  return date.toLocaleString()
+  return formatDateTime(date)
 }
 
 function RateLimitsPage() {

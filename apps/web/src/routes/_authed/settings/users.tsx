@@ -31,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
 import type { UserResponse } from '@/lib/api-schema'
+import { formatDateShort } from '@/lib/format'
 
 export const Route = createFileRoute('/_authed/settings/users')({
   component: UsersPage
@@ -279,10 +280,10 @@ function UsersPage() {
                           onClick={() => dispatch({ type: 'startEditing', id: user.id, role: user.role })}
                           type="button"
                         >
-                          {user.role}
+                          {user.role === 'admin' ? t('users.role_admin') : t('users.role_member')}
                         </button>
                         {' · '}
-                        {t('users.created')} {new Date(user.created_at).toLocaleDateString()}
+                        {t('users.created')} {formatDateShort(user.created_at)}
                       </span>
                     )}
                   </p>

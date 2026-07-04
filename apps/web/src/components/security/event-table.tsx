@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { SecurityEventDto } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 import { EventTypeBadge, SeverityBadge } from './severity-badge'
 
 interface Props {
@@ -27,7 +28,7 @@ function formatTime(value: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) {
     return value
   }
-  return d.toLocaleString()
+  return formatDateTime(d)
 }
 
 export function SecurityEventTable({

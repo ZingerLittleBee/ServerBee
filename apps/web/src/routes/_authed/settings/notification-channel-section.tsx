@@ -275,7 +275,13 @@ export function NotificationChannelsSection({
       toast.success(t('notifications.toast_test_sent'))
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : t('notifications.test_failed'), { duration: 8000 })
+      // Keep a localized headline; the raw delivery detail (e.g. "Webhook
+      // request failed: ...") is an upstream/technical string and stays in the
+      // description so the user still sees why their channel could not be reached.
+      toast.error(t('notifications.test_failed'), {
+        description: err instanceof Error ? err.message : undefined,
+        duration: 8000
+      })
     }
   })
 

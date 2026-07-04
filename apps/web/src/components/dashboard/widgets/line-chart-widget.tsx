@@ -6,13 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { formatBytes } from '@/lib/utils'
-import {
-  extractRecordMetric,
-  formatChartTime,
-  isNetworkMetric,
-  METRIC_LABELS,
-  METRIC_UNITS
-} from '@/lib/widget-helpers'
+import { extractRecordMetric, formatChartTime, isNetworkMetric, METRIC_UNITS, metricLabel } from '@/lib/widget-helpers'
 import type { LineChartConfig } from '@/lib/widget-types'
 
 interface LineChartWidgetProps {
@@ -45,7 +39,7 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
     }))
   }, [records, metric, server])
 
-  const label = METRIC_LABELS[metric] ?? metric
+  const label = metricLabel(metric, t)
   const unit = METRIC_UNITS[metric] ?? ''
   const serverName = server?.name ?? t('metricCard.unknownServer')
   const isNetwork = isNetworkMetric(metric)

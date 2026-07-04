@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
+import { formatDateShort } from '@/lib/format'
 
 interface MobileDevice {
   created_at: string
@@ -56,7 +57,7 @@ function formatRelativeTime(dateStr: string | null, t: (key: string, options?: {
   if (diffDays < 30) {
     return t('mobile.time_days_ago', { count: diffDays })
   }
-  return date.toLocaleDateString()
+  return formatDateShort(date)
 }
 
 function MobileDevicesPage() {
@@ -131,7 +132,7 @@ function MobileDevicesPage() {
                       <p className="font-medium text-sm">{device.device_name || t('mobile.unknown_device')}</p>
                       <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground text-xs">
                         <span>
-                          {t('mobile.paired')} {new Date(device.created_at).toLocaleDateString()}
+                          {t('mobile.paired')} {formatDateShort(device.created_at)}
                         </span>
                         <span>
                           {t('mobile.last_active')} {formatRelativeTime(device.last_used_at, t)}

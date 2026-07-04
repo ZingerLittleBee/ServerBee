@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { AuditListResponse, AuditLogEntry, AuditOptionsResponse } from '@/lib/api-schema'
+import { formatDateTime } from '@/lib/format'
 
 interface AuditClearResponse {
   deleted: number
@@ -90,9 +91,7 @@ function AuditLogsPage() {
         accessorKey: 'created_at',
         header: t('audit.col_time'),
         cell: ({ getValue }) => (
-          <span className="whitespace-nowrap text-muted-foreground">
-            {new Date(getValue<string>()).toLocaleString()}
-          </span>
+          <span className="whitespace-nowrap text-muted-foreground">{formatDateTime(getValue<string>())}</span>
         ),
         enableSorting: false
       },
