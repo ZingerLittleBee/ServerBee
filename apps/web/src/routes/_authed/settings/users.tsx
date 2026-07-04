@@ -279,7 +279,7 @@ function UsersPage() {
                           onClick={() => dispatch({ type: 'startEditing', id: user.id, role: user.role })}
                           type="button"
                         >
-                          {user.role}
+                          {user.role === 'admin' ? t('users.role_admin') : t('users.role_member')}
                         </button>
                         {' · '}
                         {t('users.created')} {new Date(user.created_at).toLocaleDateString()}
