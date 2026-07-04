@@ -119,5 +119,10 @@
     "go_previous_page": "上一页",
     "go_next_page": "下一页",
     "go_last_page": "末页"
+  },
+  "not_found": {
+    "title": "页面未找到",
+    "description": "你访问的页面不存在或已被移动。",
+    "back_home": "返回首页"
   }
 }
