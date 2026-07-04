@@ -184,6 +184,15 @@
         "noData": "No disk I/O data available"
       }
     },
+    "topN": {
+      "title": "Top {{metric}}",
+      "empty": {
+        "noServers": "No online servers"
+      }
+    },
+    "multiLine": {
+      "title": "{{metric}} Comparison"
+    },
     "common": {
       "labels": {
         "metric": "Metric",
@@ -210,7 +219,8 @@
         "optionalLabel": "Override label"
       },
       "empty": {
-        "noServers": "No servers available"
+        "noServers": "No servers available",
+        "serverNotFound": "Server not found"
       }
     },
     "networkLatency": {

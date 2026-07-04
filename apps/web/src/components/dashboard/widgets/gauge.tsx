@@ -1,7 +1,8 @@
 import { Activity, Cpu, Gauge as GaugeIcon, HardDrive, MemoryStick, Network } from 'lucide-react'
 import { useId, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
-import { extractLiveMetric, METRIC_LABELS } from '@/lib/widget-helpers'
+import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { GaugeConfig } from '@/lib/widget-types'
 
 interface GaugeWidgetProps {
@@ -79,6 +80,7 @@ function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle
 }
 
 export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const gradientId = useId()
   const server_id = config.server_id ?? ''
   const { metric } = config
@@ -96,12 +98,12 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
   if (!server) {
     return (
       <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
-        Server not found
+        {t('widgets.common.empty.serverNotFound')}
       </div>
     )
   }
 
-  const label = config.label ?? METRIC_LABELS[metric] ?? metric
+  const label = config.label ?? metricLabel(metric, t)
   const gradient = getGaugeGradient(value)
   const Icon = getMetricIcon(metric)
 

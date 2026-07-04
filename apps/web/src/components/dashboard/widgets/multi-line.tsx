@@ -1,5 +1,6 @@
 import { useQueries } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   type ChartConfig,
   ChartContainer,
@@ -19,8 +20,8 @@ import {
   formatChartDateTime,
   formatChartTime,
   isNetworkMetric,
-  METRIC_LABELS,
-  METRIC_UNITS
+  METRIC_UNITS,
+  metricLabel
 } from '@/lib/widget-helpers'
 import type { MultiLineConfig } from '@/lib/widget-types'
 
@@ -103,6 +104,7 @@ function buildBucketedRows(
 }
 
 export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const { server_ids = [], metric } = config
   const hours = config.hours ?? DEFAULT_HOURS
   const interval = config.interval ?? DEFAULT_INTERVAL
@@ -165,7 +167,7 @@ export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps
     [queries, server_ids, metric, serverMap, hours]
   )
 
-  const label = METRIC_LABELS[metric] ?? metric
+  const label = metricLabel(metric, t)
 
   if (isLoading) {
     return (
@@ -178,7 +180,7 @@ export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps
 
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{title ?? `${label} Comparison`}</h3>
+      <h3 className="mb-3 font-semibold text-sm">{title ?? t('widgets.multiLine.title', { metric: label })}</h3>
       <div className="min-h-0 flex-1">
         <ChartContainer className="h-full w-full" config={chartConfig}>
           <LineChart accessibilityLayer data={chartData}>
