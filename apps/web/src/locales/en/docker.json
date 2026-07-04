@@ -1,5 +1,13 @@
 {
   "backToServer": "Back to server",
+  "overview": {
+    "running": "Running",
+    "stopped": "Stopped",
+    "totalCpu": "Total CPU",
+    "totalMemory": "Total Memory",
+    "dockerVersion": "Docker Version",
+    "unknown": "Unknown"
+  },
   "containers": {
     "title": "Containers",
     "searchPlaceholder": "Search containers...",
