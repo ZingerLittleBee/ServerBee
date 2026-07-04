@@ -122,6 +122,9 @@ export function StatusPageIncidentFormDialog({
     onSubmit(payload, editing?.id)
   }
 
+  const severityItems = Object.fromEntries(INCIDENT_SEVERITIES.map((v) => [v, t(`incidents.severity_${v}`)]))
+  const statusItems = Object.fromEntries(INCIDENT_STATUSES.map((v) => [v, t(`incidents.status_${v}`)]))
+
   return (
     <Dialog onOpenChange={handleOpenChange} open={open}>
       <DialogContent className="sm:max-w-lg">
@@ -146,6 +149,7 @@ export function StatusPageIncidentFormDialog({
             <div className="space-y-1">
               <Label htmlFor="inc-severity">{t('incidents.field_severity')}</Label>
               <Select
+                items={severityItems}
                 onValueChange={(value) => value && dispatch({ type: 'setSeverity', value })}
                 value={state.severity}
               >
@@ -163,7 +167,11 @@ export function StatusPageIncidentFormDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="inc-status">{t('incidents.field_status')}</Label>
-              <Select onValueChange={(value) => value && dispatch({ type: 'setStatus', value })} value={state.status}>
+              <Select
+                items={statusItems}
+                onValueChange={(value) => value && dispatch({ type: 'setStatus', value })}
+                value={state.status}
+              >
                 <SelectTrigger id="inc-status">
                   <SelectValue />
                 </SelectTrigger>
