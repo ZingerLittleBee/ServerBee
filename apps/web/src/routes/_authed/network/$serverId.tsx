@@ -211,18 +211,18 @@ function HopRow({ hop }: { hop: TracerouteHop }) {
   )
 }
 
-function formatRelativeTime(unixMs: number): string {
+function formatRelativeTime(unixMs: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const diff = Date.now() - unixMs
   if (diff < 60_000) {
-    return 'just now'
+    return t('recent_just_now')
   }
   if (diff < 3_600_000) {
-    return `${Math.floor(diff / 60_000)}m ago`
+    return t('recent_minutes_ago', { count: Math.floor(diff / 60_000) })
   }
   if (diff < 86_400_000) {
-    return `${Math.floor(diff / 3_600_000)}h ago`
+    return t('recent_hours_ago', { count: Math.floor(diff / 3_600_000) })
   }
-  return `${Math.floor(diff / 86_400_000)}d ago`
+  return t('recent_days_ago', { count: Math.floor(diff / 86_400_000) })
 }
 
 interface TracerouteRunFormProps {
@@ -327,8 +327,8 @@ function HistoryRow({
             record.protocol.toUpperCase()
           )}
         </Badge>
-        <span className="text-muted-foreground text-xs">{record.hop_count} hops</span>
-        <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at)}</span>
+        <span className="text-muted-foreground text-xs">{t('recent_hops', { count: record.hop_count })}</span>
+        <span className="text-muted-foreground text-xs">{formatRelativeTime(record.started_at, t)}</span>
         {record.has_error ? <X className="size-3 text-destructive" /> : <Check className="size-3 text-emerald-500" />}
       </button>
       {isAdmin && (
