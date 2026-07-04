@@ -8,6 +8,8 @@
   "detail_loading": "正在加载服务器详情…",
   "detail_not_found": "未找到该服务器或未公开展示。",
   "detail_back": "返回状态页",
+  "detail_processes": "进程",
+  "detail_connections": "连接",
   "ungrouped": "未分组",
   "unknown": "未知",
   "cpu": "CPU",
