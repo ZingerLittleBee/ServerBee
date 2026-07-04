@@ -184,6 +184,15 @@
         "noData": "暂无磁盘 I/O 数据"
       }
     },
+    "topN": {
+      "title": "{{metric}} 排行",
+      "empty": {
+        "noServers": "暂无在线服务器"
+      }
+    },
+    "multiLine": {
+      "title": "{{metric}} 对比"
+    },
     "common": {
       "labels": {
         "metric": "指标",
@@ -210,7 +219,8 @@
         "optionalLabel": "覆盖默认标签"
       },
       "empty": {
-        "noServers": "暂无可用服务器"
+        "noServers": "暂无可用服务器",
+        "serverNotFound": "未找到服务器"
       }
     },
     "networkLatency": {

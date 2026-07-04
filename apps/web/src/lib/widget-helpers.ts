@@ -6,19 +6,28 @@ import { activeLocale, formatDateTime } from './format'
 
 // --- Shared metric labels ---
 
-export const METRIC_LABELS: Record<string, string> = {
-  cpu: 'CPU',
-  memory: 'Memory',
-  disk: 'Disk',
-  swap: 'Swap',
-  load1: 'Load (1m)',
-  load5: 'Load (5m)',
-  load15: 'Load (15m)',
-  net_in: 'Network In',
-  net_out: 'Network Out',
-  bandwidth: 'Bandwidth',
-  network: 'Network',
-  disk_io: 'Disk I/O'
+// Maps a metric id to its localized label key in the `dashboard` namespace
+// (see `common.metrics.*` in the dashboard locale files).
+const METRIC_LABEL_KEYS: Record<string, string> = {
+  cpu: 'common.metrics.cpu',
+  memory: 'common.metrics.memory',
+  disk: 'common.metrics.disk',
+  swap: 'common.metrics.swap',
+  load1: 'common.metrics.load1m',
+  load5: 'common.metrics.load5m',
+  load15: 'common.metrics.load15m',
+  net_in: 'common.metrics.networkIn',
+  net_out: 'common.metrics.networkOut',
+  bandwidth: 'common.metrics.bandwidth',
+  network: 'common.metrics.network',
+  disk_io: 'common.metrics.diskIo'
+}
+
+// Resolves a metric id to its localized display label. Pass a `t` bound to the
+// `dashboard` namespace (e.g. from `useTranslation('dashboard')`).
+export function metricLabel(metric: string, t: (key: string) => string): string {
+  const key = METRIC_LABEL_KEYS[metric]
+  return key ? t(key) : metric
 }
 
 export const METRIC_UNITS: Record<string, string> = {
