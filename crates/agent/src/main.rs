@@ -18,6 +18,7 @@ mod terminal;
 mod traceroute;
 mod upgrade;
 
+use std::io::IsTerminal;
 use std::sync::OnceLock;
 
 use tracing_subscriber::EnvFilter;
@@ -135,7 +136,12 @@ async fn main() -> anyhow::Result<()> {
     agent_local_capabilities =
         crate::capability_policy::reconcile_file_capability(agent_local_capabilities, &config.file);
 
+    // Only emit ANSI color codes when stdout is an interactive terminal.
+    // Under Docker, systemd/journald, or a redirected log file stdout is a
+    // pipe, and unconditional ANSI litters those sinks (and the web Docker log
+    // viewer) with raw escape sequences like `\x1b[2m`.
     tracing_subscriber::fmt()
+        .with_ansi(std::io::stdout().is_terminal())
         .with_env_filter(
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| config.log.level.parse().unwrap_or_else(|_| "info".into())),
