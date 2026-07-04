@@ -19,9 +19,20 @@ import { NetworkProbeSettingsTab } from './network-probe-settings-tab'
 import { NetworkProbeTargetDialog, type TargetFormData } from './network-probe-target-dialog'
 import { NetworkProbeTargetsTab } from './network-probe-targets-tab'
 
+const NETWORK_PROBE_TABS = ['targets', 'settings'] as const
+type NetworkProbeTab = (typeof NETWORK_PROBE_TABS)[number]
+
+function isNetworkProbeTab(value: unknown): value is NetworkProbeTab {
+  return typeof value === 'string' && NETWORK_PROBE_TABS.some((tab) => tab === value)
+}
+
 export const Route = createFileRoute('/_authed/settings/network-probes')({
-  validateSearch: (search: Record<string, unknown>) => ({
-    tab: (search.tab as string) || 'targets'
+  // Validate the tab param against the known set. Falling back only on an
+  // empty value (the previous behavior) let an unrecognized value like
+  // `?tab=global` pass through, matching no TabsContent and rendering a blank
+  // page. Mirror the status-pages route, which coerces unknown values.
+  validateSearch: (search: Record<string, unknown>): { tab: NetworkProbeTab } => ({
+    tab: isNetworkProbeTab(search.tab) ? search.tab : 'targets'
   }),
   component: NetworkProbeSettingsPage
 })
