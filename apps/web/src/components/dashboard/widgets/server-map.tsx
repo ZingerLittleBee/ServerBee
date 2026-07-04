@@ -139,7 +139,7 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
                   strokeWidth={0.5}
                 >
                   <title>
-                    {group.name}: {group.count} server{group.count > 1 ? 's' : ''}
+                    {group.name}: {t('widgets.serverMap.serverCount', { count: group.count })}
                     {'\n'}
                     {group.serverNames.join(', ')}
                   </title>
