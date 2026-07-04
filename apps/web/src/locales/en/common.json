@@ -120,5 +120,10 @@
     "go_previous_page": "Go to previous page",
     "go_next_page": "Go to next page",
     "go_last_page": "Go to last page"
+  },
+  "not_found": {
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist or has been moved.",
+    "back_home": "Back to home"
   }
 }
