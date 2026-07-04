@@ -49,12 +49,21 @@
     "detector": "Detector",
     "empty": "No security events in this range.",
     "load_more": "Load more",
-    "loading_more": "Loading…"
+    "loading_more": "Loading…",
+    "row_actions": "Row actions",
+    "action_block_source_ip": "Block source IP"
   },
-  "drawer": {
-    "title": "Event details",
-    "evidence": "Evidence",
-    "external_lookup": "Look up IP on VirusTotal"
+  "detail": {
+    "title": "Security Event Detail",
+    "first_seen": "First seen from this source",
+    "source_ip": "Source IP",
+    "source_port": "Source Port",
+    "username": "Username",
+    "detector": "Detector",
+    "started_at": "Started",
+    "ended_at": "Ended",
+    "virustotal_link": "Look up on VirusTotal",
+    "evidence": "Evidence"
   },
   "tab": {
     "recent_label": "Most recent 50 security events on this server",
@@ -84,6 +93,7 @@
     "field_exclude_users": "Exclude users (comma-separated)",
     "field_exclude_cidrs": "Exclude CIDRs (comma-separated)",
     "field_dedupe": "Dedupe window (seconds)",
+    "field_auto_block": "Auto-block source IP on every match",
     "cancel": "Cancel",
     "create": "Create rule",
     "creating": "Creating…",

@@ -49,12 +49,21 @@
     "detector": "检测源",
     "empty": "时间范围内没有安全事件。",
     "load_more": "加载更多",
-    "loading_more": "加载中…"
+    "loading_more": "加载中…",
+    "row_actions": "行操作",
+    "action_block_source_ip": "封禁来源 IP"
   },
-  "drawer": {
-    "title": "事件详情",
-    "evidence": "证据",
-    "external_lookup": "在 VirusTotal 查询 IP"
+  "detail": {
+    "title": "安全事件详情",
+    "first_seen": "首次来自此来源",
+    "source_ip": "来源 IP",
+    "source_port": "来源端口",
+    "username": "用户名",
+    "detector": "检测源",
+    "started_at": "开始时间",
+    "ended_at": "结束时间",
+    "virustotal_link": "在 VirusTotal 查询",
+    "evidence": "证据"
   },
   "tab": {
     "recent_label": "本机最近 50 条安全事件",
@@ -84,6 +93,7 @@
     "field_exclude_users": "排除用户（逗号分隔）",
     "field_exclude_cidrs": "排除 CIDR（逗号分隔）",
     "field_dedupe": "去重窗口（秒）",
+    "field_auto_block": "每次匹配时自动封禁来源 IP",
     "cancel": "取消",
     "create": "创建规则",
     "creating": "正在创建…",
