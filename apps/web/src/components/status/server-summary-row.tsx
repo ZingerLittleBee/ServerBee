@@ -234,6 +234,7 @@ function ServerName({ server, clickable }: { clickable: boolean; server: PublicS
 }
 
 export function ServerSummaryRow({ server, clickable, thresholds }: Props) {
+  const { t } = useTranslation('servers')
   const metrics = server.metrics
   const uptimePct = computeAggregateUptime(server.uptime_daily) ?? server.uptime_percent
   const memoryPct = metrics ? metricPercent(metrics.mem_used, metrics.mem_total) : 0
@@ -248,7 +249,7 @@ export function ServerSummaryRow({ server, clickable, thresholds }: Props) {
           <ResourceMetric
             icon={<Cpu aria-hidden="true" />}
             pct={metrics.cpu}
-            value={`load ${metrics.load_1.toFixed(2)}`}
+            value={`${t('card_load')} ${metrics.load_1.toFixed(2)}`}
           />
         ) : (
           <EmptyMetric />
