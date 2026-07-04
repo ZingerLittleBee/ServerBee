@@ -20,13 +20,13 @@ const DOT_TONE: Record<StatusKind, string> = {
 }
 
 const LABEL_KEY: Record<StatusKind, string> = {
-  online: 'online',
-  offline: 'offline',
+  online: 'common:status.online',
+  offline: 'common:status.offline',
   pending: 'servers:card_pending.pending_label'
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const { t } = useTranslation(['servers'])
+  const { t } = useTranslation(['servers', 'common'])
   return (
     <span
       className={cn(
