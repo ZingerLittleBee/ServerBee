@@ -131,6 +131,7 @@
 
   "detail_back": "返回仪表盘",
   "detail_edit": "编辑",
+  "detail_recover_agent": "恢复 Agent",
   "card_actions": "服务器操作",
   "detail_terminal": "终端",
   "detail_files": "文件",
@@ -240,6 +241,7 @@
   "edit_cycle_quarterly": "季付",
   "edit_cycle_yearly": "年付",
   "edit_expiration": "到期日期",
+  "edit_expiration_placeholder": "YYYY-MM-DD",
   "edit_traffic_limit": "流量限制 (GB)",
   "edit_unlimited": "不限",
   "edit_limit_type": "限制类型",
@@ -247,6 +249,7 @@
   "edit_limit_upload": "仅上传",
   "edit_limit_download": "仅下载",
   "edit_failed": "更新服务器失败",
+  "edit_success": "服务器更新成功",
   "tags_label": "标签",
   "tags_hint": "使用逗号或空格分隔，最多 8 个标签，每个 16 字符以内",
   "tags_placeholder": "prod, db, web",
