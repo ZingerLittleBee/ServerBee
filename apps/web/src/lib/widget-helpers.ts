@@ -1,7 +1,8 @@
+import i18next from 'i18next'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { ServerMetricRecord, UptimeDailyEntry } from '@/lib/api-schema'
 import { parseDiskIoJson } from './disk-io'
-import { formatDateTime } from './format'
+import { activeLocale, formatDateTime } from './format'
 
 // --- Shared metric labels ---
 
@@ -107,21 +108,22 @@ export function formatChartDateTime(time: string): string {
 
 export function formatRelativeTime(input: string | number | null): string {
   if (input === null) {
-    return 'Never'
+    return i18next.t('status.never')
   }
   const ms = typeof input === 'number' ? input * 1000 : new Date(input).getTime()
   const diff = Math.max(0, Math.floor((Date.now() - ms) / 1000))
+  const rtf = new Intl.RelativeTimeFormat(activeLocale(), { numeric: 'always', style: 'narrow' })
 
   if (diff < 60) {
-    return `${diff}s ago`
+    return rtf.format(-diff, 'second')
   }
   if (diff < 3600) {
-    return `${Math.floor(diff / 60)}m ago`
+    return rtf.format(-Math.floor(diff / 60), 'minute')
   }
   if (diff < 86_400) {
-    return `${Math.floor(diff / 3600)}h ago`
+    return rtf.format(-Math.floor(diff / 3600), 'hour')
   }
-  return `${Math.floor(diff / 86_400)}d ago`
+  return rtf.format(-Math.floor(diff / 86_400), 'day')
 }
 
 // --- JSON config parsing ---
@@ -187,22 +189,26 @@ export function formatUptimeTooltip(entry: UptimeDailyEntry): {
   percentage: string
 } {
   if (entry.total_minutes === 0) {
+    const noData = i18next.t('status:uptime_no_data')
     return {
       date: entry.date,
-      percentage: 'No data',
-      duration: 'No data',
-      incidents: 'No data'
+      percentage: noData,
+      duration: noData,
+      incidents: noData
     }
   }
   const pct = (entry.online_minutes / entry.total_minutes) * 100
   const downMinutes = entry.total_minutes - entry.online_minutes
   const hours = Math.floor(downMinutes / 60)
   const mins = Math.round(downMinutes % 60)
-  const duration = hours > 0 ? `${hours}h ${mins}m downtime` : `${mins}m downtime`
+  const duration =
+    hours > 0
+      ? i18next.t('status:uptime_downtime_hours', { hours, mins })
+      : i18next.t('status:uptime_downtime_minutes', { mins })
   return {
     date: entry.date,
     percentage: `${pct.toFixed(2)}%`,
     duration,
-    incidents: `${entry.downtime_incidents} incident${entry.downtime_incidents !== 1 ? 's' : ''}`
+    incidents: i18next.t('status:uptime_incidents', { count: entry.downtime_incidents })
   }
 }
