@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  type ChartConfig,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
@@ -72,15 +71,6 @@ function compareServers(a: TrafficOverviewItem, b: TrafficOverviewItem, field: S
   }
   return dir === 'asc' ? cmp : -cmp
 }
-
-// ---------------------------------------------------------------------------
-// Chart config
-// ---------------------------------------------------------------------------
-
-const trendConfig = {
-  bytes_in: { label: 'Inbound', color: 'var(--chart-1)' },
-  bytes_out: { label: 'Outbound', color: 'var(--chart-2)' }
-} satisfies ChartConfig
 
 // ---------------------------------------------------------------------------
 // Stat Card
@@ -215,6 +205,14 @@ export function TrafficPage() {
     queryFn: () => api.get<DailyTrafficItem[]>('/api/traffic/overview/daily?days=30'),
     staleTime: 60_000
   })
+
+  const trendConfig = useMemo(
+    () => ({
+      bytes_in: { label: t('traffic_inbound'), color: 'var(--chart-1)' },
+      bytes_out: { label: t('traffic_outbound'), color: 'var(--chart-2)' }
+    }),
+    [t]
+  )
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
