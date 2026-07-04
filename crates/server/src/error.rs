@@ -50,6 +50,14 @@ pub enum AppError {
     Validation(String),
     #[error("Request timeout: {0}")]
     RequestTimeout(String),
+    /// An upstream/external dependency (webhook target, push provider, mail
+    /// API, etc.) failed or was unreachable. This is not a ServerBee fault, so
+    /// it must not surface as "Internal error" (500) — that misleads the user
+    /// into thinking the server broke when their own config or a third party is
+    /// at fault. The message is bare (no prefix) because delivery messages are
+    /// already self-descriptive (e.g. "Webhook request failed: ...").
+    #[error("{0}")]
+    BadGateway(String),
     #[error("Internal error: {0}")]
     Internal(String),
     #[error("{message}")]
@@ -73,6 +81,7 @@ impl IntoResponse for AppError {
             AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT".to_string(), None),
             AppError::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR".to_string(), None),
             AppError::RequestTimeout(_) => (StatusCode::REQUEST_TIMEOUT, "REQUEST_TIMEOUT".to_string(), None),
+            AppError::BadGateway(_) => (StatusCode::BAD_GATEWAY, "BAD_GATEWAY".to_string(), None),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR".to_string(), None),
             AppError::Domain { status, code, details, .. } => (status, code.to_string(), details),
         };
@@ -143,6 +152,21 @@ mod tests {
         let body = to_bytes(resp.into_body(), 1024).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(json["error"]["message"], "Bad request: foo");
+    }
+
+    #[tokio::test]
+    async fn bad_gateway_maps_to_502_with_bare_message() {
+        // Upstream/external delivery failures (webhook, push, mail) must be 502,
+        // not 500 "Internal error", and carry the self-descriptive message
+        // verbatim so the user learns it is their endpoint that is unreachable.
+        let err = AppError::BadGateway("Webhook request failed: connection refused".to_string());
+        let resp = err.into_response();
+        assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"]["code"], "BAD_GATEWAY");
+        assert_eq!(json["error"]["message"], "Webhook request failed: connection refused");
     }
 
     #[tokio::test]
