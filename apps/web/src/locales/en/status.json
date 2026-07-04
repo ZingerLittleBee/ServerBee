@@ -58,6 +58,10 @@
   "uptime_degraded": "Degraded",
   "uptime_down": "Down",
   "uptime_no_data": "No data",
+  "uptime_downtime_hours": "{{hours}}h {{mins}}m downtime",
+  "uptime_downtime_minutes": "{{mins}}m downtime",
+  "uptime_incidents_one": "{{count}} incident",
+  "uptime_incidents_other": "{{count}} incidents",
 
   "theme.label": "Theme",
   "theme.follow_admin": "Follow admin default"
