@@ -13,18 +13,24 @@ export const Route = createFileRoute('/_authed/settings/appearance')({
   component: AppearancePage
 })
 
+// Mirrors the server BrandConfig (crates/server/src/router/api/brand.rs): the
+// API returns `logo_path`/`favicon_path` (URLs like `/api/brand/logo`), NOT
+// `*_url`. Files are uploaded via dedicated multipart POST endpoints, then the
+// paths are persisted with a JSON PUT.
 interface BrandSettings {
-  favicon_url?: string
-  footer_text?: string
-  logo_url?: string
-  site_title?: string
+  favicon_path?: string | null
+  footer_text?: string | null
+  logo_path?: string | null
+  site_title?: string | null
 }
 
 interface BrandFormState {
   faviconFile: File | null
+  faviconPath: string | null
   faviconPreview: string | null
   footerText: string
   logoFile: File | null
+  logoPath: string | null
   logoPreview: string | null
   siteTitle: string
 }
@@ -32,16 +38,18 @@ interface BrandFormState {
 type BrandFormAction =
   | { type: 'brandLoaded'; brand: BrandSettings }
   | { type: 'faviconSelected'; file: File; preview: string }
-  | { type: 'filesSaved' }
+  | { type: 'filesSaved'; faviconPath: string | null; logoPath: string | null }
   | { type: 'footerTextChanged'; value: string }
   | { type: 'logoSelected'; file: File; preview: string }
   | { type: 'siteTitleChanged'; value: string }
 
 const EMPTY_BRAND_FORM: BrandFormState = {
   faviconFile: null,
+  faviconPath: null,
   faviconPreview: null,
   footerText: '',
   logoFile: null,
+  logoPath: null,
   logoPreview: null,
   siteTitle: ''
 }
@@ -51,15 +59,23 @@ function brandFormReducer(state: BrandFormState, action: BrandFormAction): Brand
     case 'brandLoaded':
       return {
         ...state,
-        faviconPreview: action.brand.favicon_url ?? null,
+        faviconPath: action.brand.favicon_path ?? null,
+        faviconPreview: action.brand.favicon_path ?? null,
         footerText: action.brand.footer_text ?? '',
-        logoPreview: action.brand.logo_url ?? null,
+        logoPath: action.brand.logo_path ?? null,
+        logoPreview: action.brand.logo_path ?? null,
         siteTitle: action.brand.site_title ?? ''
       }
     case 'faviconSelected':
       return { ...state, faviconFile: action.file, faviconPreview: action.preview }
     case 'filesSaved':
-      return { ...state, faviconFile: null, logoFile: null }
+      return {
+        ...state,
+        faviconFile: null,
+        faviconPath: action.faviconPath,
+        logoFile: null,
+        logoPath: action.logoPath
+      }
     case 'footerTextChanged':
       return { ...state, footerText: action.value }
     case 'logoSelected':
@@ -69,6 +85,30 @@ function brandFormReducer(state: BrandFormState, action: BrandFormAction): Brand
     default:
       return state
   }
+}
+
+// Upload a brand image to its dedicated multipart endpoint (field name "file",
+// PNG/ICO only — validated server-side) and return the served path.
+async function uploadBrandImage(kind: 'favicon' | 'logo', file: File): Promise<string> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetch(`/api/settings/brand/${kind}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText)
+    let message = text
+    try {
+      message = JSON.parse(text)?.error?.message || text
+    } catch {
+      // body is not JSON; use the raw text
+    }
+    throw new Error(message)
+  }
+  const json = await response.json()
+  return (json?.data?.path as string | undefined) ?? `/api/brand/${kind}`
 }
 
 function BrandSettingsSection() {
@@ -94,35 +134,30 @@ function BrandSettingsSection() {
   }, [brand])
 
   const mutation = useMutation({
-    mutationFn: async (payload: BrandSettings) => {
-      if (form.logoFile || form.faviconFile) {
-        const formData = new FormData()
-        if (form.logoFile) {
-          formData.append('logo', form.logoFile)
-        }
-        if (form.faviconFile) {
-          formData.append('favicon', form.faviconFile)
-        }
-        formData.append('site_title', payload.site_title ?? '')
-        formData.append('footer_text', payload.footer_text ?? '')
-
-        const response = await fetch('/api/settings/brand', {
-          method: 'PUT',
-          credentials: 'include',
-          body: formData
-        })
-        if (!response.ok) {
-          const text = await response.text().catch(() => response.statusText)
-          throw new Error(text)
-        }
-        return
+    mutationFn: async () => {
+      // Upload any newly selected images first (each endpoint persists its own
+      // path server-side), then write the full config in one JSON PUT that
+      // preserves the existing logo/favicon paths so a title-only edit no longer
+      // wipes a previously uploaded logo.
+      let logoPath = form.logoPath
+      let faviconPath = form.faviconPath
+      if (form.logoFile) {
+        logoPath = await uploadBrandImage('logo', form.logoFile)
       }
-
-      return api.put('/api/settings/brand', payload)
+      if (form.faviconFile) {
+        faviconPath = await uploadBrandImage('favicon', form.faviconFile)
+      }
+      await api.put('/api/settings/brand', {
+        site_title: form.siteTitle,
+        footer_text: form.footerText,
+        logo_path: logoPath,
+        favicon_path: faviconPath
+      })
+      return { faviconPath, logoPath }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'brand'] }).catch(() => undefined)
-      dispatchForm({ type: 'filesSaved' })
+      dispatchForm({ type: 'filesSaved', faviconPath: result.faviconPath, logoPath: result.logoPath })
       toast.success(t('appearance.brand_saved'))
     },
     onError: (err) => {
@@ -153,10 +188,7 @@ function BrandSettingsSection() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-    mutation.mutate({
-      site_title: form.siteTitle,
-      footer_text: form.footerText
-    })
+    mutation.mutate()
   }
 
   return (
@@ -208,7 +240,7 @@ function BrandSettingsSection() {
               {t('appearance.upload_logo')}
             </Button>
             <input
-              accept="image/*"
+              accept=".png,.ico,image/png,image/x-icon"
               className="hidden"
               id="logo-upload"
               onChange={(e) => handleFileChange(e, 'logo')}
@@ -216,6 +248,7 @@ function BrandSettingsSection() {
               type="file"
             />
           </div>
+          <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
         </div>
 
         <div className="space-y-1.5">
@@ -237,7 +270,7 @@ function BrandSettingsSection() {
               {t('appearance.upload_favicon')}
             </Button>
             <input
-              accept="image/*"
+              accept=".png,.ico,image/png,image/x-icon"
               className="hidden"
               id="favicon-upload"
               onChange={(e) => handleFileChange(e, 'favicon')}
@@ -245,6 +278,7 @@ function BrandSettingsSection() {
               type="file"
             />
           </div>
+          <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
         </div>
 
         {mutation.error && (
