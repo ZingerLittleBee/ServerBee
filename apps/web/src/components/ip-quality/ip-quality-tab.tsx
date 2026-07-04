@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { IpQualityCard } from '@/components/ip-quality/ip-quality-card'
 import { UnlockMatrix } from '@/components/ip-quality/unlock-matrix'
+import { UnlockStatusBadge } from '@/components/ip-quality/unlock-status-badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCheckNow, useIpQualityEvents, useIpQualityServer, useIpQualityServices } from '@/hooks/use-ip-quality-api'
 import { CAP_IP_QUALITY, hasCap } from '@/lib/capabilities'
+import type { UnlockStatus } from '@/lib/ip-quality-types'
 
 interface Props {
   /** Bitmap allowed by the running agent process (null when agent has not reported yet). */
@@ -131,9 +133,11 @@ export function IpQualityTab({ serverId, serverName, capabilities, agentLocalCap
                           <tr className="border-b last:border-b-0" key={event.id}>
                             <td className="px-3 py-2 font-medium">{service?.name ?? event.service_id}</td>
                             <td className="px-3 py-2 text-muted-foreground">
-                              <span className="capitalize">{event.old_status}</span>
-                              <span className="mx-1">→</span>
-                              <span className="capitalize">{event.new_status}</span>
+                              <span className="inline-flex items-center gap-1">
+                                <UnlockStatusBadge status={event.old_status as UnlockStatus} />
+                                <span>→</span>
+                                <UnlockStatusBadge status={event.new_status as UnlockStatus} />
+                              </span>
                             </td>
                             <td className="px-3 py-2 text-muted-foreground text-xs">
                               {new Date(event.changed_at).toLocaleString()}
