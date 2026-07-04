@@ -16,6 +16,33 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AlertRule, AlertRuleItem, AlertStateResponse } from '@/lib/api-schema'
 
+// Maps backend threshold rule_type enums to their existing `alerts.metric_*`
+// locale keys. Mirrors the option list in alert-rule-form.tsx so the rule list
+// shows the same localized metric names as the editor.
+const METRIC_KEY: Record<string, string> = {
+  cpu: 'alerts.metric_cpu',
+  memory: 'alerts.metric_memory',
+  swap: 'alerts.metric_swap',
+  disk: 'alerts.metric_disk',
+  load1: 'alerts.metric_load1',
+  load5: 'alerts.metric_load5',
+  load15: 'alerts.metric_load15',
+  tcp_conn: 'alerts.metric_tcp',
+  udp_conn: 'alerts.metric_udp',
+  process: 'alerts.metric_processes',
+  net_in_speed: 'alerts.metric_net_in',
+  net_out_speed: 'alerts.metric_net_out',
+  temperature: 'alerts.metric_temperature',
+  gpu: 'alerts.metric_gpu',
+  network_latency: 'alerts.metric_network_latency',
+  network_packet_loss: 'alerts.metric_network_packet_loss'
+}
+
+function metricLabel(ruleType: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const key = METRIC_KEY[ruleType]
+  return key ? t(key) : ruleType
+}
+
 function formatRuleItem(item: AlertRuleItem, t: (key: string, options?: Record<string, unknown>) => string): string {
   if (item.rule_type === 'offline') {
     return `${t('alerts.display_offline')} ${item.duration ?? 60}s`
@@ -24,24 +51,28 @@ function formatRuleItem(item: AlertRuleItem, t: (key: string, options?: Record<s
     return t('alerts.display_expires', { count: item.duration ?? 7 })
   }
   if (item.rule_type === 'ip_changed') {
-    return 'IP Changed'
+    return t('alerts.metric_ip_changed')
   }
   if (item.rule_type === 'capability_grant_detected') {
     return t('alerts.metric_capability_granted')
   }
   if (item.cycle_limit) {
-    return t('alerts.display_transfer', { value: item.cycle_limit, period: item.cycle_interval ?? 'month' })
+    return t('alerts.display_transfer', {
+      value: item.cycle_limit,
+      period: t(`alerts.period_${item.cycle_interval ?? 'month'}`)
+    })
   }
+  const label = metricLabel(item.rule_type, t)
   if (item.min && item.max) {
-    return `${item.rule_type} [${item.min}, ${item.max}]`
+    return `${label} [${item.min}, ${item.max}]`
   }
   if (item.min) {
-    return `${item.rule_type} >= ${item.min}`
+    return `${label} >= ${item.min}`
   }
   if (item.max) {
-    return `${item.rule_type} >= ${item.max}`
+    return `${label} >= ${item.max}`
   }
-  return item.rule_type
+  return label
 }
 
 export function AlertRulesList({
@@ -112,7 +143,8 @@ export function AlertRulesList({
                     </button>
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    {items.map((item) => formatRuleItem(item, t)).join(' AND ')} | {rule.trigger_mode}
+                    {items.map((item) => formatRuleItem(item, t)).join(' AND ')} |{' '}
+                    {t(`alerts.trigger_${rule.trigger_mode}`, { defaultValue: rule.trigger_mode })}
                   </p>
                 </div>
               </div>

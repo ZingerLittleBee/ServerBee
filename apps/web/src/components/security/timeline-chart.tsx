@@ -25,21 +25,6 @@ interface TimelinePoint {
   ssh_login: number
 }
 
-const chartConfig = {
-  ssh_brute_force: {
-    label: 'Brute Force',
-    color: 'var(--chart-1, #dc2626)'
-  },
-  port_scan: {
-    label: 'Port Scan',
-    color: 'var(--chart-2, #ea580c)'
-  },
-  ssh_login: {
-    label: 'SSH Login',
-    color: 'var(--chart-3, #2563eb)'
-  }
-} satisfies ChartConfig
-
 function toDay(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) {
@@ -50,6 +35,15 @@ function toDay(iso: string): string {
 
 export function SecurityTimelineChart({ events, isLoading }: Props) {
   const { t } = useTranslation('security')
+
+  const chartConfig = useMemo<ChartConfig>(
+    () => ({
+      ssh_brute_force: { label: t('event_type.ssh_brute_force'), color: 'var(--chart-1, #dc2626)' },
+      port_scan: { label: t('event_type.port_scan'), color: 'var(--chart-2, #ea580c)' },
+      ssh_login: { label: t('event_type.ssh_login'), color: 'var(--chart-3, #2563eb)' }
+    }),
+    [t]
+  )
 
   const data = useMemo<TimelinePoint[]>(() => {
     const buckets = new Map<string, TimelinePoint>()
@@ -77,11 +71,7 @@ export function SecurityTimelineChart({ events, isLoading }: Props) {
   if (isLoading) {
     body = <Skeleton className="h-[240px] w-full" />
   } else if (data.length === 0) {
-    body = (
-      <p className="py-10 text-center text-muted-foreground text-sm">
-        {t('chart.empty', { defaultValue: 'No data to display' })}
-      </p>
-    )
+    body = <p className="py-10 text-center text-muted-foreground text-sm">{t('timeline.empty')}</p>
   } else {
     body = (
       <ChartContainer className="h-[240px] w-full" config={chartConfig}>
@@ -102,7 +92,7 @@ export function SecurityTimelineChart({ events, isLoading }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t('chart.title', { defaultValue: 'Events over time' })}</CardTitle>
+        <CardTitle>{t('timeline.title')}</CardTitle>
       </CardHeader>
       <CardContent>{body}</CardContent>
     </Card>

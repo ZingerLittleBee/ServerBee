@@ -61,7 +61,8 @@
     "view_all": "View all"
   },
   "timeline": {
-    "title": "Events over time"
+    "title": "Events over time",
+    "empty": "No data to display"
   },
   "preset": {
     "section_title": "Security presets",
