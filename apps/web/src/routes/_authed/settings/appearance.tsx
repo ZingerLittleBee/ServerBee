@@ -228,7 +228,7 @@ function BrandSettingsSection() {
           <div className="flex items-center gap-3">
             {form.logoPreview && (
               <img
-                alt="Logo preview"
+                alt={t('appearance.logo_preview')}
                 className="size-10 rounded-md border object-contain"
                 height={40}
                 src={form.logoPreview}
@@ -258,7 +258,7 @@ function BrandSettingsSection() {
           <div className="flex items-center gap-3">
             {form.faviconPreview && (
               <img
-                alt="Favicon preview"
+                alt={t('appearance.favicon_preview')}
                 className="size-8 rounded border object-contain"
                 height={32}
                 src={form.faviconPreview}
