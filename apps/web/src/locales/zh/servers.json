@@ -89,6 +89,8 @@
   "no_servers_description": "服务器通过 Agent 连接后将显示在此处",
   "col_name": "名称",
   "col_status": "状态",
+  "col_select_all": "全选",
+  "col_select_row": "选择此行",
   "status_online": "在线",
   "status_offline": "离线",
   "col_cpu": "CPU",

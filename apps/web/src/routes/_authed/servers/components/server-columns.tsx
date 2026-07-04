@@ -49,14 +49,14 @@ export function buildServerColumns({
       enableSorting: false,
       header: ({ table }) => (
         <Checkbox
-          aria-label="Select all"
+          aria-label={t('col_select_all')}
           checked={table.getIsAllPageRowsSelected()}
           onCheckedChange={(checked) => table.toggleAllPageRowsSelected(!!checked)}
         />
       ),
       cell: ({ row }) => (
         <Checkbox
-          aria-label="Select row"
+          aria-label={t('col_select_row')}
           checked={row.getIsSelected()}
           onCheckedChange={(checked) => row.toggleSelected(!!checked)}
         />

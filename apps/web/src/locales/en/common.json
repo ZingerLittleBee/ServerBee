@@ -102,6 +102,8 @@
   "capability_disabled_desc": "This capability is disabled on the agent. Capabilities are owned by the agent host — enable it in the [capabilities] section of the agent config file and restart the agent.",
   "table": {
     "view_options": "View",
+    "reset": "Reset",
+    "reset_filters": "Reset filters",
     "toggle_columns": "Toggle columns",
     "search_columns": "Search columns\u2026",
     "no_columns_found": "No columns found.",

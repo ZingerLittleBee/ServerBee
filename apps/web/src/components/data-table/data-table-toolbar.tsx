@@ -3,6 +3,7 @@
 import type { Column, Table } from '@tanstack/react-table'
 import { X } from 'lucide-react'
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { DataTableDateFilter } from '@/components/data-table/data-table-date-filter'
 import { DataTableFacetedFilter } from '@/components/data-table/data-table-faceted-filter'
@@ -24,6 +25,7 @@ export function DataTableToolbar<TData>({
   trailingActions,
   ...props
 }: DataTableToolbarProps<TData>) {
+  const { t } = useTranslation('common')
   const isFiltered = table.getState().columnFilters.length > 0
 
   const columns = React.useMemo(() => table.getAllColumns().filter((column) => column.getCanFilter()), [table])
@@ -45,14 +47,14 @@ export function DataTableToolbar<TData>({
         ))}
         {isFiltered && (
           <Button
-            aria-label="Reset filters"
+            aria-label={t('table.reset_filters')}
             className="h-8 border-dashed"
             onClick={onReset}
             size="sm"
             variant="outline"
           >
             <X />
-            Reset
+            {t('table.reset')}
           </Button>
         )}
         <DataTableViewOptions align="start" table={table} />

@@ -89,6 +89,8 @@
   "no_servers_description": "Servers will appear here once they connect via the agent",
   "col_name": "Name",
   "col_status": "Status",
+  "col_select_all": "Select all",
+  "col_select_row": "Select row",
   "status_online": "Online",
   "status_offline": "Offline",
   "col_cpu": "CPU",

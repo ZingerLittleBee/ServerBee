@@ -98,6 +98,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate()
   const { isMobile } = useSidebar()
   const isAdmin = user?.role === 'admin'
+  const roleLabel = user?.role ? t(isAdmin ? 'users.role_admin' : 'users.role_member', { ns: 'settings' }) : ''
   const currentLang = (i18n.resolvedLanguage ?? i18n.language).startsWith('zh') ? 'zh' : 'en'
 
   const handleLogout = async () => {
@@ -164,7 +165,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user?.username ?? 'User'}</span>
-                  <span className="truncate text-xs capitalize">{user?.role ?? ''}</span>
+                  <span className="truncate text-xs">{roleLabel}</span>
                 </div>
                 <ChevronsUpDown className="ml-auto size-4" />
               </DropdownMenuTrigger>
@@ -182,7 +183,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       </Avatar>
                       <div className="grid flex-1 text-left text-sm leading-tight">
                         <span className="truncate font-medium">{user?.username ?? 'User'}</span>
-                        <span className="truncate text-xs capitalize">{user?.role ?? ''}</span>
+                        <span className="truncate text-xs">{roleLabel}</span>
                       </div>
                     </div>
                   </DropdownMenuLabel>
