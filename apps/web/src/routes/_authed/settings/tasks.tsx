@@ -226,7 +226,8 @@ function OneshotTaskPanel() {
                 <code>{createMutation.data.command}</code>
               </p>
               <p className="text-muted-foreground text-xs">
-                {formatDateTime(createMutation.data.created_at)} | {createMutation.data.server_ids.length} server(s)
+                {formatDateTime(createMutation.data.created_at)} |{' '}
+                {t('tasks.server_count', { count: createMutation.data.server_ids.length })}
               </p>
             </div>
             {expandedTask === createMutation.data.id ? (
