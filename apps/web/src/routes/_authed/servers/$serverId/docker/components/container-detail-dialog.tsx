@@ -178,7 +178,9 @@ export function ContainerDetailDialog({ container, serverId, stats, open, onOpen
               <div>
                 <p className="text-muted-foreground text-xs">{t('detail.status')}</p>
                 <div className="mt-0.5 flex items-center gap-2">
-                  <Badge variant={container.state === 'running' ? 'default' : 'secondary'}>{container.state}</Badge>
+                  <Badge variant={container.state === 'running' ? 'default' : 'secondary'}>
+                    {t(`state.${container.state}`, { defaultValue: container.state })}
+                  </Badge>
                   <span className="text-muted-foreground text-sm">{container.status}</span>
                 </div>
               </div>

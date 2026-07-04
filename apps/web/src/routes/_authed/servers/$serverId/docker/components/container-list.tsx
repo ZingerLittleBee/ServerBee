@@ -131,7 +131,9 @@ export function ContainerList({ containers, stats, onSelect }: ContainerListProp
                     <TableCell className="font-medium">{container.name}</TableCell>
                     <TableCell className="max-w-[200px] truncate text-muted-foreground">{container.image}</TableCell>
                     <TableCell>
-                      <Badge variant={container.state === 'running' ? 'default' : 'secondary'}>{container.state}</Badge>
+                      <Badge variant={container.state === 'running' ? 'default' : 'secondary'}>
+                        {t(`state.${container.state}`, { defaultValue: container.state })}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
                       {containerStats ? `${containerStats.cpu_percent.toFixed(1)}%` : '-'}
