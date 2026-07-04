@@ -307,6 +307,7 @@
   "appearance.upload_logo": "上传 Logo",
   "appearance.favicon": "网站图标",
   "appearance.upload_favicon": "上传图标",
+  "appearance.image_hint": "PNG 或 ICO，最大 512KB",
   "appearance.brand_saved": "品牌设置已保存",
   "appearance.save_failed": "保存品牌设置失败",
 
