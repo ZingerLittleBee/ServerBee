@@ -61,7 +61,8 @@
     "view_all": "查看全部"
   },
   "timeline": {
-    "title": "事件时序"
+    "title": "事件时序",
+    "empty": "暂无数据"
   },
   "preset": {
     "section_title": "安全预设",
