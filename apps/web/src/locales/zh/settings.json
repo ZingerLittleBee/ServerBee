@@ -405,6 +405,11 @@
   "maintenance.field_is_public_hint": "开启后，此维护窗口对所有访问 /status 的用户可见。",
   "maintenance.is_public_yes": "公开",
   "maintenance.is_public_no": "内部",
+  "maintenance.placeholder_title": "计划服务器维护",
+  "maintenance.placeholder_description": "可选说明",
+  "maintenance.create_failed": "创建维护失败",
+  "maintenance.update_failed": "更新维护失败",
+  "maintenance.delete_failed": "删除维护失败",
 
   "mobile.title": "移动设备",
   "mobile.devices": "已配对设备",
