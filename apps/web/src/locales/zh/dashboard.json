@@ -40,6 +40,12 @@
   "module_not_installed_id": "组件模块 \"{{id}}\" 未安装",
   "module_config_invalid": "组件配置无效：{{message}}",
   "module_config_no_fields": "该模块没有可配置字段。",
+  "toast_created": "仪表盘已创建",
+  "toast_create_failed": "创建仪表盘失败",
+  "toast_updated": "仪表盘已更新",
+  "toast_update_failed": "更新仪表盘失败",
+  "toast_deleted": "仪表盘已删除",
+  "toast_delete_failed": "删除仪表盘失败",
   "widgetPicker": {
     "categories": {
       "Real-time": "实时",
