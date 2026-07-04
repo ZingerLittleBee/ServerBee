@@ -290,5 +290,7 @@
     "avg": "24H 均值",
     "unknownServer": "未知服务器",
     "unknownMetric": "未配置指标"
-  }
+  },
+  "rename_dashboard": "重命名仪表盘",
+  "rename": "重命名"
 }

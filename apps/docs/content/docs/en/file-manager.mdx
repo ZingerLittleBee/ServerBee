@@ -17,6 +17,8 @@ File Manager must be enabled at two layers, **both on the agent host** — capab
 1. **`file` capability** -- the `file` capability is off by default. Add it to the agent's `[capabilities]` allow list (or pass `--allow-cap file`). See [Capabilities](/en/docs/capabilities).
 2. **File subsystem policy** -- set `[file].enabled = true` and configure at least one allowed root path.
 
+Both layers must be satisfied before the agent advertises the capability: if `file` is allowed but the subsystem is disabled (or `root_paths` is empty), the agent drops `file` from its reported capabilities at startup, so the server and UI never show a File Manager that cannot serve requests.
+
 Example `agent.toml`:
 
 ```toml

@@ -81,7 +81,13 @@ export function TransferBar() {
                   />
                 </div>
               )}
-              <span className="text-muted-foreground">{statusLabel(transfer.status, t)}</span>
+              <span
+                className={transfer.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}
+                title={transfer.status === 'failed' && transfer.error ? transfer.error : undefined}
+              >
+                {statusLabel(transfer.status, t)}
+                {transfer.status === 'failed' && transfer.error ? `: ${transfer.error}` : ''}
+              </span>
               {(transfer.status === 'pending' || transfer.status === 'in_progress') && (
                 <Button
                   aria-label={t('cancel_transfer')}

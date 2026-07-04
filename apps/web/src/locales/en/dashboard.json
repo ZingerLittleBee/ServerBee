@@ -290,5 +290,7 @@
     "avg": "24H AVG",
     "unknownServer": "Unknown server",
     "unknownMetric": "Metric not configured"
-  }
+  },
+  "rename_dashboard": "Rename Dashboard",
+  "rename": "Rename"
 }

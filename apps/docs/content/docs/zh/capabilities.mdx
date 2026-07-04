@@ -52,6 +52,7 @@ Agent 按如下方式计算自身的能力位图：
 1. 从内置默认集合开始（`CAP_DEFAULT = 1852`）。
 2. 应用配置文件 `[capabilities]` 段 —— `allow` 增加位，`deny` 移除位。在这一层中 `deny` 优先于 `allow`。
 3. 在其上应用 CLI `--allow-cap` / `--deny-cap` 参数，用于临时覆盖。CLI 层优先于配置层。
+4. 与子系统可用性对账：`file` 仅在 `[file].enabled = true` 且至少配置一个 `root_path` 时保留；`firewall_block` 在启动时的 `nft` 探测失败（缺少二进制、内核支持或权限）时被剔除。上报的能力始终意味着 Agent 真正能提供该功能。
 
 未知的能力键名在启动时会直接报错，因此拼写错误会快速失败，而不是悄悄丢掉某个能力。
 

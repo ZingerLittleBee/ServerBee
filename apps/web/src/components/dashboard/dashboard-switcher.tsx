@@ -1,4 +1,4 @@
-import { LayoutDashboard, PlusIcon, Star, TrashIcon } from 'lucide-react'
+import { LayoutDashboard, PencilIcon, PlusIcon, Star, TrashIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -29,7 +29,9 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
   const { t } = useTranslation('dashboard')
   const [newDialogOpen, setNewDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [newName, setNewName] = useState('')
+  const [renameName, setRenameName] = useState('')
 
   const createDashboard = useCreateDashboard()
   const deleteDashboard = useDeleteDashboard()
@@ -79,6 +81,22 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
     updateDashboard.mutate({ id: currentId, is_default: true })
   }
 
+  const handleRename = () => {
+    const name = renameName.trim()
+    if (!(currentId && name) || name === current?.name) {
+      setRenameDialogOpen(false)
+      return
+    }
+    updateDashboard.mutate(
+      { id: currentId, name },
+      {
+        onSuccess: () => {
+          setRenameDialogOpen(false)
+        }
+      }
+    )
+  }
+
   return (
     <div className="flex items-center gap-2">
       <LayoutDashboard className="size-5 text-muted-foreground" />
@@ -115,6 +133,21 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
           variant="ghost"
         >
           <Star className="size-4" />
+        </Button>
+      )}
+
+      {isAdmin && current && (
+        <Button
+          aria-label={t('rename_dashboard')}
+          onClick={() => {
+            setRenameName(current.name)
+            setRenameDialogOpen(true)
+          }}
+          size="icon-sm"
+          title={t('rename_dashboard')}
+          variant="ghost"
+        >
+          <PencilIcon className="size-4" />
         </Button>
       )}
 
@@ -163,6 +196,30 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
           <DialogFooter>
             <Button disabled={!newName.trim() || createDashboard.isPending} onClick={handleCreate}>
               {t('create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename dashboard dialog */}
+      <Dialog onOpenChange={setRenameDialogOpen} open={renameDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('rename_dashboard')}</DialogTitle>
+          </DialogHeader>
+          <Input
+            onChange={(e) => setRenameName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleRename()
+              }
+            }}
+            placeholder={t('dashboard_name_placeholder')}
+            value={renameName}
+          />
+          <DialogFooter>
+            <Button disabled={!renameName.trim() || updateDashboard.isPending} onClick={handleRename}>
+              {t('rename')}
             </Button>
           </DialogFooter>
         </DialogContent>

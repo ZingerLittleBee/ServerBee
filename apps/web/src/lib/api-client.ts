@@ -28,16 +28,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!response.ok) {
     const text = await response.text().catch(() => response.statusText)
     let code: string | undefined
+    let message = text
     try {
       const parsed = JSON.parse(text)
       code = parsed?.error?.code
+      // Surface the human-readable message from the `{ error: { code, message } }`
+      // envelope instead of the raw JSON body, so error UIs render a clean string.
+      if (typeof parsed?.error?.message === 'string' && parsed.error.message.length > 0) {
+        message = parsed.error.message
+      }
     } catch {
-      // body is not JSON; leave code undefined
+      // body is not JSON; leave code undefined and use the raw text as the message
     }
     if (code === 'MUST_CHANGE_PASSWORD' && window.location.pathname !== '/onboarding') {
       window.location.assign('/onboarding')
     }
-    throw new ApiError(text, response.status, code)
+    throw new ApiError(message, response.status, code)
   }
 
   if (response.status === 204) {

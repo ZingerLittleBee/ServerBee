@@ -17,6 +17,8 @@ icon: FolderOpen
 1. **`file` 能力**：`file` 能力默认关闭。在 Agent 的 `[capabilities]` allow 列表中加入它（或传 `--allow-cap file`）。见 [功能开关](/zh/docs/capabilities)。
 2. **文件子系统策略**：设置 `[file].enabled = true`，并配置至少一个允许访问的根目录。
 
+两层条件同时满足后，Agent 才会对外上报 `file` 能力：如果只允许了 `file` 而子系统未启用（或 `root_paths` 为空），Agent 会在启动时从上报能力中剔除 `file`，Server 和 UI 因此不会展示一个无法实际工作的文件管理器。
+
 示例 `agent.toml`：
 
 ```toml

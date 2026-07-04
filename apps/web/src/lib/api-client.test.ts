@@ -91,4 +91,23 @@ describe('error handling', () => {
       expect((e as ApiError).message).toBe('Server error')
     }
   })
+
+  it('extracts the human message and code from the { error } envelope', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      statusText: 'Forbidden',
+      text: async () => JSON.stringify({ error: { code: 'FORBIDDEN', message: 'Forbidden: File capability disabled' } })
+    })
+    try {
+      await api.get('/api/files/srv/list')
+      expect.unreachable('should have thrown')
+    } catch (e) {
+      expect(e).toBeInstanceOf(ApiError)
+      expect((e as ApiError).status).toBe(403)
+      expect((e as ApiError).code).toBe('FORBIDDEN')
+      // The rendered message must be the clean string, not the raw JSON body.
+      expect((e as ApiError).message).toBe('Forbidden: File capability disabled')
+    }
+  })
 })

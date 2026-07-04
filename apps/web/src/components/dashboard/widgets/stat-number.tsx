@@ -7,6 +7,7 @@ import type { StatNumberConfig } from '@/lib/widget-types'
 interface StatNumberWidgetProps {
   config: StatNumberConfig
   servers: ServerMetrics[]
+  title?: string | null
 }
 
 const METRIC_ICONS: Record<string, typeof Server> = {
@@ -99,13 +100,13 @@ const METRIC_LABELS: Record<string, string> = {
   health: 'healthy'
 }
 
-export function StatNumberWidget({ config, servers }: StatNumberWidgetProps) {
+export function StatNumberWidget({ config, servers, title }: StatNumberWidgetProps) {
   const { t } = useTranslation('dashboard')
   const { metric } = config
   const Icon = METRIC_ICONS[metric] ?? Server
   const metricStyles = METRIC_STYLES[metric] ?? METRIC_STYLES.server_count
   const result = computeMetric(metric, servers, t)
-  const label = config.label ?? t(METRIC_LABELS[metric] ?? metric)
+  const label = title ?? config.label ?? t(METRIC_LABELS[metric] ?? metric)
 
   return (
     <div

@@ -59,7 +59,8 @@ export function useDashboardEditor() {
     setDraftWidgets((current) => mergeLayoutPatch(current, patch))
   }
 
-  function addWidget({ configJson, dashboardId, gridH, gridW, moduleId, title, widgetType }: AddWidgetInput) {
+  function addWidget({ configJson, dashboardId, gridH, gridW, moduleId, title, widgetType }: AddWidgetInput): string {
+    const id = `temp-${crypto.randomUUID()}`
     setDraftWidgets((current) => {
       const defaults = getWidgetTypeDefaults(widgetType)
       const newWidget: DashboardWidget = {
@@ -70,7 +71,7 @@ export function useDashboardEditor() {
         grid_w: gridW ?? defaults.grid_w,
         grid_x: 0,
         grid_y: Number.POSITIVE_INFINITY,
-        id: `temp-${crypto.randomUUID()}`,
+        id,
         module_id: moduleId ?? null,
         sort_order: current.length,
         title,
@@ -78,6 +79,7 @@ export function useDashboardEditor() {
       }
       return normalizeNewWidgetPlacement(current, newWidget)
     })
+    return id
   }
 
   function updateWidget(id: string, changes: UpdateWidgetChanges) {

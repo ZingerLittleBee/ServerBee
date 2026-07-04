@@ -52,6 +52,7 @@ An agent computes its capability bitmask as:
 1. Start from the built-in default set (`CAP_DEFAULT = 1852`).
 2. Apply the config file `[capabilities]` block — `allow` adds bits, `deny` removes bits. Within this layer, `deny` wins over `allow`.
 3. Apply CLI `--allow-cap` / `--deny-cap` flags on top, for ad-hoc overrides. The CLI layer wins over the config layer.
+4. Reconcile against subsystem availability: `file` is dropped unless `[file].enabled = true` with at least one `root_path`, and `firewall_block` is dropped when the startup `nft` probe fails (binary, kernel, or privileges missing). A reported capability always means the agent can actually serve it.
 
 Unknown capability keys are a hard error at startup, so a typo fails fast rather than silently dropping a capability.
 

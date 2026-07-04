@@ -1,5 +1,5 @@
 import { PencilIcon, PlusIcon, SaveIcon, XIcon } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { WidgetInput } from '@/hooks/use-dashboard'
@@ -42,6 +42,21 @@ function DashboardEditorViewContent({
   const [configOpen, setConfigOpen] = useState(false)
   const [configWidgetType, setConfigWidgetType] = useState('')
   const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null)
+  const [pendingScrollId, setPendingScrollId] = useState<string | null>(null)
+
+  // New widgets are appended below every existing row, which can land outside
+  // the viewport — bring the widget into view once it has rendered.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: editor.draftWidgets retriggers the lookup after the grid renders the new widget
+  useEffect(() => {
+    if (!pendingScrollId) {
+      return
+    }
+    const element = document.querySelector(`[data-widget-id="${CSS.escape(pendingScrollId)}"]`)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setPendingScrollId(null)
+    }
+  }, [pendingScrollId, editor.draftWidgets])
 
   const isDashboardReady = dashboard?.id === activeDashboardId
   const isDashboardLoading = activeDashboardId !== '' && !isDashboardReady
@@ -98,7 +113,7 @@ function DashboardEditorViewContent({
       // around hard-coded form variants per builtin widget type).
       if (isDashboardReady && dashboard) {
         const sizing = selection.manifest.sizing
-        editor.addWidget({
+        const addedId = editor.addWidget({
           dashboardId: dashboard.id,
           widgetType: 'module',
           moduleId: selection.moduleId,
@@ -107,6 +122,7 @@ function DashboardEditorViewContent({
           gridW: sizing.defaultW ?? 4,
           gridH: sizing.defaultH ?? 3
         })
+        setPendingScrollId(addedId)
       }
       return
     }
@@ -139,12 +155,13 @@ function DashboardEditorViewContent({
         config_json: configJson
       })
     } else if (isDashboardReady && dashboard) {
-      editor.addWidget({
+      const addedId = editor.addWidget({
         dashboardId: dashboard.id,
         widgetType: configWidgetType,
         title: title || null,
         configJson
       })
+      setPendingScrollId(addedId)
     }
 
     resetViewState()
