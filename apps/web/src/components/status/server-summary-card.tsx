@@ -118,7 +118,7 @@ export function ServerSummaryCard({ server, clickable }: Props) {
             <RingMetric
               color={getRingColor(m.cpu, 'var(--color-chart-1)')}
               label={t('cpu')}
-              subText={`load ${m.load_1.toFixed(2)}`}
+              subText={`${t('card_load', { ns: 'servers' })} ${m.load_1.toFixed(2)}`}
               value={m.cpu}
             />
             <RingMetric
