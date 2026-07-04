@@ -27,6 +27,7 @@ import {
   useContainerWidth
 } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { cn } from '@/lib/utils'
@@ -512,7 +513,8 @@ function EditOverlay({
   onEdit: () => void
   onToggleStatic?: () => void
 }) {
-  const toggleStaticLabel = isStatic ? 'Unlock widget position' : 'Lock widget position'
+  const { t } = useTranslation('dashboard')
+  const toggleStaticLabel = isStatic ? t('unlock_widget_position') : t('lock_widget_position')
 
   return (
     <div
@@ -537,27 +539,27 @@ function EditOverlay({
         </Button>
       )}
       <Button
-        aria-label="Configure widget"
+        aria-label={t('configure_widget')}
         className="size-7"
         onClick={(e) => {
           e.stopPropagation()
           onEdit()
         }}
         size="icon-sm"
-        title="Configure widget"
+        title={t('configure_widget')}
         variant="outline"
       >
         <PencilIcon className="size-3.5" />
       </Button>
       <Button
-        aria-label="Delete widget"
+        aria-label={t('delete_widget')}
         className="size-7"
         onClick={(e) => {
           e.stopPropagation()
           onDelete()
         }}
         size="icon-sm"
-        title="Delete widget"
+        title={t('delete_widget')}
         variant="destructive"
       >
         <TrashIcon className="size-3.5" />

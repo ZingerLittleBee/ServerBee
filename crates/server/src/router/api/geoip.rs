@@ -97,9 +97,16 @@ pub async fn geoip_download(
 
     match result {
         Ok(service) => {
-            let mut guard = state.geoip.write().unwrap();
-            *guard = Some(service);
+            {
+                let mut guard = state.geoip.write().unwrap();
+                *guard = Some(service);
+            }
             state.geoip_downloading.store(false, Ordering::SeqCst);
+            // Retroactively resolve geo for already-connected servers. Without
+            // this, the live lookup only re-runs on agent reconnect or a public
+            // IP change, so the server map would stay blank right after the
+            // operator enables GeoIP.
+            backfill_server_geo(&state).await;
             ok(GeoIpDownloadResponse {
                 success: true,
                 message: "GeoIP database installed successfully".to_string(),
@@ -113,6 +120,52 @@ pub async fn geoip_download(
             })
         }
     }
+}
+
+/// Re-resolve `region`/`country_code` for every server that has a public IP on
+/// record and no manual geo override, using the freshly-installed database.
+/// Best-effort: logs and continues on per-server errors so a single bad row
+/// never fails the whole download. Manually-pinned servers (`geo_manual`) are
+/// left untouched, matching the live agent update path.
+async fn backfill_server_geo(state: &AppState) {
+    use crate::entity::server;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+
+    let servers = match server::Entity::find().all(&state.db).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("GeoIP backfill: failed to list servers: {e}");
+            return;
+        }
+    };
+
+    let mut updated: u32 = 0;
+    for model in servers {
+        if model.geo_manual {
+            continue;
+        }
+        let Some(ip) = geoip::pick_public_ip(model.ipv4.as_deref(), model.ipv6.as_deref()) else {
+            continue;
+        };
+        let geo = {
+            let guard = state.geoip.read().unwrap();
+            match guard.as_ref() {
+                Some(service) => service.lookup(ip),
+                // Database was cleared out from under us; nothing to backfill.
+                None => return,
+            }
+        };
+        let server_id = model.id.clone();
+        let mut active: server::ActiveModel = model.into();
+        active.region = Set(geo.region);
+        active.country_code = Set(geo.country_code);
+        active.updated_at = Set(chrono::Utc::now());
+        match active.update(&state.db).await {
+            Ok(_) => updated += 1,
+            Err(e) => tracing::error!("GeoIP backfill: failed to update {server_id}: {e}"),
+        }
+    }
+    tracing::info!("GeoIP backfill: resolved geo for {updated} server(s)");
 }
 
 pub fn read_router() -> Router<Arc<AppState>> {

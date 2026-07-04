@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,6 +25,7 @@ const DEFAULT_HOURS = 24
 const DEFAULT_INTERVAL = 'raw'
 
 export function LineChartWidget({ config, servers, title }: LineChartWidgetProps) {
+  const { t } = useTranslation('dashboard')
   const server_id = config.server_id ?? ''
   const { metric } = config
   const hours = config.hours ?? DEFAULT_HOURS
@@ -45,7 +47,7 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
 
   const label = METRIC_LABELS[metric] ?? metric
   const unit = METRIC_UNITS[metric] ?? ''
-  const serverName = server?.name ?? 'Unknown'
+  const serverName = server?.name ?? t('metricCard.unknownServer')
   const isNetwork = isNetworkMetric(metric)
 
   const chartConfig = {

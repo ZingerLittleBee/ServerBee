@@ -17,4 +17,11 @@ describe('MarkdownContent', () => {
     expect(screen.getByText('<script>alert(1)</script>')).toBeInTheDocument()
     expect(container.querySelector('script')).toBeNull()
   })
+
+  it('renders level-1 headings (# ) instead of leaving raw markdown', () => {
+    render(<MarkdownContent content={'# Heading One\nbody'} />)
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Heading One' })).toBeInTheDocument()
+    expect(screen.queryByText('# Heading One')).not.toBeInTheDocument()
+  })
 })

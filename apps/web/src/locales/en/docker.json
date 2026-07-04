@@ -37,6 +37,21 @@
     "containerId": "Container ID",
     "noPorts": "None"
   },
+  "actions": {
+    "start": "Start",
+    "stop": "Stop",
+    "restart": "Restart",
+    "remove": "Remove",
+    "removeTitle": "Remove container?",
+    "removeConfirm": "This will remove \"{{name}}\". This action cannot be undone.",
+    "removeRunningNote": "The container is running and will be force-removed.",
+    "cancel": "Cancel",
+    "started": "Container started",
+    "stopped": "Container stopped",
+    "restarted": "Container restarted",
+    "removed": "Container removed",
+    "failed": "Action failed"
+  },
   "networks": {
     "title": "Docker Networks",
     "empty": "No networks found",

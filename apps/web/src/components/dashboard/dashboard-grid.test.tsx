@@ -146,9 +146,9 @@ describe('DashboardGrid', () => {
       />
     )
 
-    expect(screen.getAllByLabelText('Lock widget position')).toHaveLength(2)
-    expect(screen.getAllByLabelText('Configure widget')).toHaveLength(2)
-    expect(screen.getAllByLabelText('Delete widget')).toHaveLength(2)
+    expect(screen.getAllByLabelText('lock_widget_position')).toHaveLength(2)
+    expect(screen.getAllByLabelText('configure_widget')).toHaveLength(2)
+    expect(screen.getAllByLabelText('delete_widget')).toHaveLength(2)
   })
 
   it('renders single-column list on mobile (width < 768)', () => {

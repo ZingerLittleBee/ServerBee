@@ -227,13 +227,15 @@ describe('WidgetConfigDialog', () => {
     expect(screen.getByText('No additional configuration needed.')).toBeInTheDocument()
   })
 
-  it('renders title input for all widget types', () => {
+  it('does not render the title input for built-in widget types', () => {
+    // Built-in widgets draw their own headers and ignore widget.title, so the
+    // title field is only offered for module widgets (asserted below).
     render(
       <WidgetConfigDialog onOpenChange={noop} onSubmit={noop} open servers={mockServers as never} widgetType="gauge" />
     )
 
-    expect(screen.getByText('Title (optional)')).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('Widget title')).toBeInTheDocument()
+    expect(screen.queryByText('Title (optional)')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Widget title')).not.toBeInTheDocument()
   })
 
   it('shows Edit Widget title when editing existing widget', () => {
@@ -392,6 +394,8 @@ describe('WidgetConfigDialog', () => {
         />
       )
 
+      // Module widgets render widget.title, so they keep the title input
+      expect(screen.getByText('Title (optional)')).toBeInTheDocument()
       // The renderer surfaces the field label
       expect(screen.getByText('Label')).toBeInTheDocument()
       // Existing value is loaded into the input
