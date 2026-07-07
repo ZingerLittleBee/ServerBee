@@ -4,6 +4,7 @@ import { ArrowLeft, Container, FileText, Pencil, Terminal as TerminalIcon } from
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
+import { NetworkTab } from '@/components/network/network-tab'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { RecoverAgentDialog } from '@/components/server/recover-agent-dialog'
@@ -262,6 +263,13 @@ export function ServerDetailPage() {
 
       <ServerDetailContent
         activeTab={tabParam ?? 'metrics'}
+        networkTab={
+          <NetworkTab
+            onRangeChange={(rangeKey) => navigate({ search: (prev) => ({ ...prev, range: rangeKey }) })}
+            rangeKey={rangeParam}
+            serverId={id}
+          />
+        }
         onRangeChange={(rangeKey) => navigate({ search: (prev) => ({ ...prev, range: rangeKey }) })}
         onTabChange={(tab) => navigate({ search: (prev) => ({ ...prev, tab: tab as ServerDetailTab }) })}
         rangeKey={rangeParam}

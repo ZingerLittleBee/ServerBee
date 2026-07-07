@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
+import { PublicNetworkTab } from '@/components/network/public-network-tab'
 import { StatusBadge } from '@/components/server/status-badge'
 import { ServerDetailContent } from '@/components/status/server-detail-content'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -12,20 +13,27 @@ import { api } from '@/lib/api-client'
 import type { PublicServerDetail } from '@/lib/api-schema'
 import { formatBytes } from '@/lib/utils'
 
+const PUBLIC_SERVER_DETAIL_TABS = ['metrics', 'network'] as const
+type PublicServerDetailTab = (typeof PUBLIC_SERVER_DETAIL_TABS)[number]
+
 interface PublicServerDetailSearch {
   range?: string
+  tab?: PublicServerDetailTab
 }
 
 export const Route = createFileRoute('/status/server/$serverId')({
   component: PublicServerDetailPage,
   validateSearch: (search: Record<string, unknown>): PublicServerDetailSearch => ({
-    range: typeof search.range === 'string' ? search.range : undefined
+    range: typeof search.range === 'string' ? search.range : undefined,
+    ...(PUBLIC_SERVER_DETAIL_TABS.includes(search.tab as PublicServerDetailTab)
+      ? { tab: search.tab as PublicServerDetailTab }
+      : {})
   })
 })
 
 function PublicServerDetailPage() {
   const { serverId } = Route.useParams()
-  const { range: rangeParam } = Route.useSearch()
+  const { range: rangeParam, tab: tabParam } = Route.useSearch()
   const navigate = useNavigate()
   const { t } = useTranslation('status')
   const { data: config } = usePublicStatusConfig()
@@ -35,6 +43,7 @@ function PublicServerDetailPage() {
   const range = rangeParam
 
   const detailEnabled = config?.show_server_detail !== false
+  const networkEnabled = config?.show_network !== false
   const { data, isLoading, error } = useQuery({
     queryKey: ['public-status', 'server', serverId],
     queryFn: () => api.get<PublicServerDetail>(`/api/status/servers/${serverId}`),
@@ -74,6 +83,10 @@ function PublicServerDetailPage() {
     )
   }
 
+  // If the network toggle is off, a `?tab=network` deep link falls back to
+  // metrics instead of selecting a trigger that does not exist.
+  const activeTab = networkEnabled && tabParam === 'network' ? 'network' : 'metrics'
+
   return (
     <div className="pb-6">
       <div className="mb-6">
@@ -95,12 +108,24 @@ function PublicServerDetailPage() {
       </div>
 
       <ServerDetailContent
+        activeTab={activeTab}
+        networkTab={networkEnabled ? <PublicNetworkTab serverId={serverId} /> : undefined}
         onRangeChange={(rangeKey) => {
           navigate({
             to: '/status/server/$serverId',
             params: { serverId },
-            search: { range: rangeKey },
+            search: { range: rangeKey, ...(tabParam !== undefined ? { tab: tabParam } : {}) },
             replace: true
+          })
+        }}
+        onTabChange={(tab) => {
+          navigate({
+            to: '/status/server/$serverId',
+            params: { serverId },
+            search: {
+              ...(rangeParam !== undefined ? { range: rangeParam } : {}),
+              tab: tab as PublicServerDetailTab
+            }
           })
         }}
         rangeKey={range}

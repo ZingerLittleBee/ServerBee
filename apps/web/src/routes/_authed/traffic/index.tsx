@@ -87,7 +87,7 @@ function StatCard({
 }) {
   return (
     <Card>
-      <CardContent className="flex items-center gap-4 pt-4">
+      <CardContent className="flex items-center gap-4">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
           <Icon className="size-5 text-muted-foreground" />
         </div>

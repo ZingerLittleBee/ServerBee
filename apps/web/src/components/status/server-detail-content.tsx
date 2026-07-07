@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Activity, BarChart3, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type * as React from 'react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -62,6 +62,11 @@ export interface ServerDetailContentProps {
   /** Currently selected detail tab. When provided (admin), the tabs become
    *  URL-controlled; the public surface omits it and stays uncontrolled. */
   activeTab?: string
+  /** Content for the Network tab. When provided, a Network trigger is added
+   *  after Metrics. Admin passes the full network-quality experience; the
+   *  public surface passes the redacted summary view (gated on the status
+   *  page `show_network` toggle). */
+  networkTab?: React.ReactNode
   /** Called by range buttons when the viewer picks a new historical window. */
   onRangeChange?: (rangeKey: string) => void
   /** Called when the viewer switches detail tabs. */
@@ -219,7 +224,7 @@ function deriveNetworkLabels(
 }
 
 export function ServerDetailContent(props: ServerDetailContentProps) {
-  const { activeTab, rangeKey, server, serverId, onRangeChange, onTabChange, variant } = props
+  const { activeTab, networkTab, rangeKey, server, serverId, onRangeChange, onTabChange, variant } = props
   const { t } = useTranslation('servers')
   const isPublic = variant === 'public'
   const isAdminVariant = !isPublic
@@ -281,13 +286,16 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
     (adminServer.price != null || adminServer.expired_at != null || adminServer.traffic_limit != null)
   const billingCycle = adminServer?.billing_cycle ?? null
 
-  return (
-    <>
+  // The billing/network/uptime overview blocks live inside the metrics tab so
+  // the tab bar can sit at the very top of the page; metrics is the default
+  // tab, so they are still the first thing a viewer sees.
+  const metricsOverview = (
+    <div className="mt-4">
       {isAdminVariant && hasBilling && adminServer && <CostInsightBar server={adminServer} serverId={serverId} />}
 
       {/* Network bar — admin: WS-driven live data. Public: snapshot from
           PublicServerDetail.metrics. In both cases we render placeholders
-          before data is available so the tabs below do not shift down. */}
+          before data is available so the content below does not shift down. */}
       <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
         <span className="text-muted-foreground">
           {t('detail_network_in')} <span className="font-medium text-foreground">{netInLabel}</span>
@@ -303,13 +311,18 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
       </div>
 
       <UptimeCard isPublic={isPublic} serverId={serverId} />
+    </div>
+  )
 
-      <DetailTabs
-        activeTab={activeTab}
-        adminServer={adminServer}
-        billingCycle={billingCycle}
-        isAdminVariant={isAdminVariant}
-        metricsTab={
+  return (
+    <DetailTabs
+      activeTab={activeTab}
+      adminServer={adminServer}
+      billingCycle={billingCycle}
+      isAdminVariant={isAdminVariant}
+      metricsTab={
+        <>
+          {metricsOverview}
           <MetricsTabContent
             availableMetrics={availableMetrics}
             chartData={chartData}
@@ -325,11 +338,12 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
             variant={isPublic ? 'public' : 'admin'}
             xAxisInterval={xAxisInterval}
           />
-        }
-        onTabChange={onTabChange}
-        serverId={serverId}
-      />
-    </>
+        </>
+      }
+      networkTab={networkTab}
+      onTabChange={onTabChange}
+      serverId={serverId}
+    />
   )
 }
 
@@ -339,6 +353,7 @@ function DetailTabs({
   billingCycle,
   isAdminVariant,
   metricsTab,
+  networkTab,
   onTabChange,
   serverId
 }: {
@@ -347,17 +362,23 @@ function DetailTabs({
   billingCycle: string | null
   isAdminVariant: boolean
   metricsTab: React.ReactNode
+  networkTab?: React.ReactNode
   onTabChange?: (tab: string) => void
   serverId: string
 }) {
   const { t } = useTranslation('servers')
   return (
     <Tabs
-      className="mt-6"
       {...(activeTab === undefined ? { defaultValue: 'metrics' } : { onValueChange: onTabChange, value: activeTab })}
     >
       <TabsList>
         <TabsTrigger value="metrics">{t('metrics_tab')}</TabsTrigger>
+        {networkTab != null && (
+          <TabsTrigger value="network">
+            <Activity aria-hidden="true" className="mr-1 size-3.5" />
+            {t('network:tab_title')}
+          </TabsTrigger>
+        )}
         {isAdminVariant && billingCycle && (
           <TabsTrigger value="traffic">
             <BarChart3 aria-hidden="true" className="mr-1 size-3.5" />
@@ -379,6 +400,8 @@ function DetailTabs({
       </TabsList>
 
       <TabsContent value="metrics">{metricsTab}</TabsContent>
+
+      {networkTab != null && <TabsContent value="network">{networkTab}</TabsContent>}
 
       {isAdminVariant && billingCycle && (
         <TabsContent value="traffic">

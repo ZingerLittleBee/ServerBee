@@ -10,6 +10,10 @@ import '@/lib/i18n'
 import { router } from './router'
 import { mountRuntimeBridge } from './widgets-runtime/runtime-bridge'
 
+if (import.meta.env.DEV) {
+  import('react-grab')
+}
+
 const queryClient = new QueryClient({
   // Surface load failures globally. Without this, a failed query that a component
   // only branches on via isLoading/data silently renders an empty/zero state,

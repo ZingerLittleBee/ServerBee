@@ -48,6 +48,10 @@ vi.mock('@/components/server/agent-version-section', () => ({
   )
 }))
 
+vi.mock('@/components/network/network-tab', () => ({
+  NetworkTab: () => <div data-testid="network-tab">network</div>
+}))
+
 vi.mock('@/components/server/capabilities-dialog', () => ({
   CapabilitiesDialog: () => <div>capabilities</div>
 }))

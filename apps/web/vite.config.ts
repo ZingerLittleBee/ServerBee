@@ -9,7 +9,8 @@ import { builtinWidgetsPlugin } from './vite-plugins/builtin-widgets'
 
 const apiRuntimePattern = /^\/api\//
 const pwaRuntimePattern = /^\/pwa-/
-const routeFileIgnorePattern = 'components|hooks|types\\.ts|\\.test\\.(ts|tsx)$|-page\\.tsx$'
+const routeFileIgnorePattern =
+  'components|hooks|types\\.ts|\\.test\\.(ts|tsx)$|-page\\.tsx$|-(form|dialog|section|tab|list|chart|item|toggle|buttons|options|payloads|search|utils)\\.tsx?$'
 
 function requireProdProxyEnv(env: Record<string, string>, name: string) {
   const value = env[name]?.trim()
