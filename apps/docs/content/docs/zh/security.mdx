@@ -68,6 +68,10 @@ client_secret = "your-github-client-secret"
 - 点击 **Unlink** 可以解除 OAuth 账号关联
 - 如果 `allow_registration = false`（默认），OAuth 首次登录不会自动创建新用户，需要管理员先创建用户再关联
 
+<Callout type="warn">
+仅当 OAuth 提供商本身受控（自建 OIDC 或组织内部 IdP）时才应开启 `allow_registration = true`。自动创建的账号为 Member 角色，可读取**全部**监控数据（含安全事件与公网 IP）。若配合 GitHub 等公共提供商开启，等于向该提供商的所有用户开放这些数据。
+</Callout>
+
 ### 登录流程
 
 1. 在登录页面点击 OAuth 提供商按钮（如 "Login with GitHub"）
