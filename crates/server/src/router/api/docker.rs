@@ -11,9 +11,9 @@ use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
+use crate::service::capability_gate::require_capability;
 use crate::service::docker::DockerService;
 use crate::service::high_risk_audit::DockerViewResource;
-use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::CAP_DOCKER;
 use serverbee_common::docker_types::*;
@@ -136,14 +136,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
 
 /// Guard: checks both capability bit (CAP_DOCKER) and runtime feature ("docker").
 async fn require_docker(state: &AppState, server_id: &str) -> Result<(), AppError> {
-    let server = ServerService::get_server(&state.db, server_id).await?;
-    let caps = server.capabilities as u32;
-    if let Some(reason) = state
-        .agent_manager
-        .capability_denied_reason(server_id, caps, CAP_DOCKER)
-    {
-        return Err(AppError::Forbidden(reason.into()));
-    }
+    require_capability(state, server_id, CAP_DOCKER).await?;
     if !state.agent_manager.has_feature(server_id, "docker") {
         return Err(AppError::Forbidden(
             "Docker is not available on this server".into(),
@@ -308,33 +301,20 @@ async fn get_info(
     let info = if let Some(info) = state.agent_manager.get_docker_info(&id) {
         info
     } else {
-        let msg_id = uuid::Uuid::new_v4().to_string();
-        let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-        let sender = state
+        let response = state
             .agent_manager
-            .get_sender(&id)
-            .ok_or(AppError::NotFound("Server offline".into()))?;
-        sender
-            .send(ServerMessage::DockerGetInfo {
-                msg_id: msg_id.clone(),
+            .request(&id, Duration::from_secs(30), |msg_id| {
+                ServerMessage::DockerGetInfo { msg_id }
             })
-            .await
-            .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+            .await?;
 
-        match tokio::time::timeout(Duration::from_secs(30), rx).await {
-            Ok(Ok(AgentMessage::DockerInfo { info, .. })) => info,
-            Ok(Ok(AgentMessage::DockerUnavailable { .. })) => {
+        match response {
+            AgentMessage::DockerInfo { info, .. } => info,
+            AgentMessage::DockerUnavailable { .. } => {
                 return Err(docker_unavailable_error());
             }
-            Ok(Ok(_)) => {
+            _ => {
                 return Err(AppError::Internal("Unexpected response from agent".into()));
-            }
-            Ok(Err(_)) => return Err(AppError::Internal("Agent disconnected".into())),
-            Err(_) => {
-                return Err(AppError::RequestTimeout(
-                    "Agent did not respond within 30s".into(),
-                ));
             }
         }
     };
@@ -381,22 +361,17 @@ async fn get_events(
     .to_string();
     // For events, we only need the server to exist and have the capability.
     // The server doesn't need to be online (events are persisted in DB).
-    let server = ServerService::get_server(&state.db, &id).await?;
-    let caps = server.capabilities as u32;
-    if let Some(reason) = state
-        .agent_manager
-        .capability_denied_reason(&id, caps, CAP_DOCKER)
-    {
+    if let Err(error) = require_capability(&state, &id, CAP_DOCKER).await {
         log_docker_view(
             &state,
             &current_user.user_id,
             &ip,
             &id,
             DockerViewResource::Events,
-            Some(reason.to_string()),
+            Some(docker_audit_reason(&error)),
         )
         .await;
-        return Err(AppError::Forbidden(reason.into()));
+        return Err(error);
     }
 
     let events = DockerService::get_events(&state.db, &id, params.limit)
@@ -453,22 +428,15 @@ async fn get_networks(
         return Err(error);
     }
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let response = state
         .agent_manager
-        .get_sender(&id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::DockerListNetworks {
-            msg_id: msg_id.clone(),
+        .request(&id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::DockerListNetworks { msg_id }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await?;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerNetworks { networks, .. })) => {
+    match response {
+        AgentMessage::DockerNetworks { networks, .. } => {
             log_docker_view(
                 &state,
                 &current_user.user_id,
@@ -480,12 +448,8 @@ async fn get_networks(
             .await;
             ok(NetworksResponse { networks })
         }
-        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        AgentMessage::DockerUnavailable { .. } => Err(docker_unavailable_error()),
+        _ => Err(AppError::Internal("Unexpected response from agent".into())),
     }
 }
 
@@ -528,22 +492,15 @@ async fn get_volumes(
         return Err(error);
     }
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let response = state
         .agent_manager
-        .get_sender(&id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::DockerListVolumes {
-            msg_id: msg_id.clone(),
+        .request(&id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::DockerListVolumes { msg_id }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await?;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerVolumes { volumes, .. })) => {
+    match response {
+        AgentMessage::DockerVolumes { volumes, .. } => {
             log_docker_view(
                 &state,
                 &current_user.user_id,
@@ -555,12 +512,8 @@ async fn get_volumes(
             .await;
             ok(VolumesResponse { volumes })
         }
-        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        AgentMessage::DockerUnavailable { .. } => Err(docker_unavailable_error()),
+        _ => Err(AppError::Internal("Unexpected response from agent".into())),
     }
 }
 
@@ -606,24 +559,10 @@ async fn container_action(
     let action_label = format!("{:?}", body.action);
     let container_id = cid.clone();
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
-        .agent_manager
-        .get_sender(&id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::DockerContainerAction {
-            msg_id: msg_id.clone(),
-            container_id: cid,
-            action: body.action,
-        })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
-
-    // Audit the mutating container action (best-effort). Logged once the
-    // command was dispatched to the agent, regardless of execution result.
+    // Audit the mutating container action (best-effort) before awaiting the
+    // agent's reply, so the trail survives a crash mid-wait and precedes
+    // execution. Requests that never reach a live agent are audited too — for
+    // a high-risk mutation an extra row beats a missing one.
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -635,15 +574,23 @@ async fn container_action(
     )
     .await;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerActionResult { success, error, .. })) => {
+    let result = state
+        .agent_manager
+        .request(&id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::DockerContainerAction {
+                msg_id,
+                container_id: cid,
+                action: body.action,
+            }
+        })
+        .await;
+
+    match result {
+        Ok(AgentMessage::DockerActionResult { success, error, .. }) => {
             ok(ActionResultResponse { success, error })
         }
-        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        Ok(AgentMessage::DockerUnavailable { .. }) => Err(docker_unavailable_error()),
+        Ok(_) => Err(AppError::Internal("Unexpected response from agent".into())),
+        Err(e) => Err(e.into()),
     }
 }

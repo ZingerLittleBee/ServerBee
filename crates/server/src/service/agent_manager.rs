@@ -11,7 +11,37 @@ use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant};
 use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
 
+use crate::error::AppError;
 use crate::state::AppState;
+
+/// Error taxonomy for a request/reply exchange with an agent. Callers match on
+/// intent (offline vs timeout); the HTTP mapping lives in the `From<AppError>`
+/// impl so routes can simply use `?`.
+#[derive(Debug)]
+pub enum AgentRequestError {
+    /// No live WS connection for this server.
+    Offline,
+    /// The outbound channel to the agent closed mid-send.
+    SendFailed,
+    /// The agent disconnected before replying.
+    Disconnected,
+    /// No reply within the deadline.
+    Timeout(std::time::Duration),
+}
+
+impl From<AgentRequestError> for AppError {
+    fn from(err: AgentRequestError) -> Self {
+        match err {
+            AgentRequestError::Offline => AppError::NotFound("Server offline".into()),
+            AgentRequestError::SendFailed => AppError::Internal("Failed to send to agent".into()),
+            AgentRequestError::Disconnected => AppError::Internal("Agent disconnected".into()),
+            AgentRequestError::Timeout(timeout) => AppError::RequestTimeout(format!(
+                "Agent did not respond within {}s",
+                timeout.as_secs()
+            )),
+        }
+    }
+}
 
 /// Sum per-device disk I/O rates into a single (read, write) pair for broadcast.
 pub(crate) fn aggregate_disk_io(report: &SystemReport) -> (u64, u64) {
@@ -465,6 +495,55 @@ impl AgentManager {
     /// Returns a oneshot receiver that will receive the agent's response.
     pub fn register_pending_request(&self, msg_id: String) -> oneshot::Receiver<AgentMessage> {
         self.register_pending_request_with_ttl(msg_id, std::time::Duration::from_secs(60))
+    }
+
+    /// Send a request to an agent and await its correlated reply.
+    ///
+    /// Owns the whole request/reply choreography: generates the correlation id,
+    /// registers the pending slot, resolves the agent's sender, sends, and
+    /// enforces the deadline. `build_msg` receives the generated id and must
+    /// embed it in the outbound message so the agent's reply can be matched.
+    pub async fn request(
+        &self,
+        server_id: &str,
+        timeout: std::time::Duration,
+        build_msg: impl FnOnce(String) -> ServerMessage,
+    ) -> Result<AgentMessage, AgentRequestError> {
+        let msg_id = uuid::Uuid::new_v4().to_string();
+        self.request_with_id(server_id, msg_id, timeout, build_msg)
+            .await
+    }
+
+    /// Like [`Self::request`], but with a caller-supplied correlation id (e.g.
+    /// scheduled tasks encode task/run/attempt into it).
+    pub async fn request_with_id(
+        &self,
+        server_id: &str,
+        msg_id: String,
+        timeout: std::time::Duration,
+        build_msg: impl FnOnce(String) -> ServerMessage,
+    ) -> Result<AgentMessage, AgentRequestError> {
+        let sender = self
+            .get_sender(server_id)
+            .ok_or(AgentRequestError::Offline)?;
+        // TTL is a backstop above the await deadline; failure paths below
+        // remove the slot eagerly so the sweep never has to.
+        let rx = self.register_pending_request_with_ttl(
+            msg_id.clone(),
+            timeout + std::time::Duration::from_secs(10),
+        );
+        if sender.send(build_msg(msg_id.clone())).await.is_err() {
+            self.pending_requests.remove(&msg_id);
+            return Err(AgentRequestError::SendFailed);
+        }
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(message)) => Ok(message),
+            Ok(Err(_)) => Err(AgentRequestError::Disconnected),
+            Err(_) => {
+                self.pending_requests.remove(&msg_id);
+                Err(AgentRequestError::Timeout(timeout))
+            }
+        }
     }
 
     /// Dispatch a response from the agent to a pending HTTP request.
@@ -1207,6 +1286,96 @@ mod tests {
         mgr.cleanup_expired_requests();
         assert!(!mgr.has_pending_request("short"));
         assert!(mgr.has_pending_request("long"));
+    }
+
+    #[tokio::test]
+    async fn test_request_offline() {
+        let (mgr, _brx) = make_manager();
+        let result = mgr
+            .request("nope", std::time::Duration::from_secs(1), |msg_id| {
+                ServerMessage::FileStat {
+                    msg_id,
+                    path: "/".into(),
+                }
+            })
+            .await;
+        assert!(matches!(result, Err(AgentRequestError::Offline)));
+    }
+
+    #[tokio::test]
+    async fn test_request_round_trip() {
+        let (mgr, _brx) = make_manager();
+        let (tx, mut agent_rx) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+
+        let request_fut = mgr.request("s1", std::time::Duration::from_secs(5), |msg_id| {
+            ServerMessage::FileStat {
+                msg_id,
+                path: "/tmp".into(),
+            }
+        });
+        let responder_fut = async {
+            let msg = agent_rx.recv().await.expect("agent should receive request");
+            let ServerMessage::FileStat { msg_id, .. } = msg else {
+                panic!("unexpected outbound message");
+            };
+            assert!(mgr.dispatch_pending_response(
+                &msg_id,
+                AgentMessage::FileOpResult {
+                    msg_id: msg_id.clone(),
+                    success: true,
+                    error: None,
+                },
+            ));
+        };
+        let (result, ()) = tokio::join!(request_fut, responder_fut);
+        match result {
+            Ok(AgentMessage::FileOpResult { success, .. }) => assert!(success),
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_timeout_removes_pending_slot() {
+        let (mgr, _brx) = make_manager();
+        let (tx, _agent_rx) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+
+        let result = mgr
+            .request_with_id(
+                "s1",
+                "corr-1".into(),
+                std::time::Duration::from_millis(10),
+                |msg_id| ServerMessage::FileStat {
+                    msg_id,
+                    path: "/".into(),
+                },
+            )
+            .await;
+        assert!(matches!(result, Err(AgentRequestError::Timeout(_))));
+        assert!(!mgr.has_pending_request("corr-1"));
+    }
+
+    #[tokio::test]
+    async fn test_request_send_failure_removes_pending_slot() {
+        let (mgr, _brx) = make_manager();
+        let (tx, agent_rx) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+        drop(agent_rx);
+
+        let result = mgr
+            .request_with_id(
+                "s1",
+                "corr-2".into(),
+                std::time::Duration::from_secs(1),
+                |msg_id| ServerMessage::FileStat {
+                    msg_id,
+                    path: "/".into(),
+                },
+            )
+            .await;
+        assert!(matches!(result, Err(AgentRequestError::SendFailed)));
+        assert!(!mgr.has_pending_request("corr-2"));
     }
 
     #[test]

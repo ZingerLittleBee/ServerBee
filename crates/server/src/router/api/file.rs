@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::service::audit::AuditService;
+use crate::service::capability_gate::require_capability_online;
 use crate::service::file_transfer::{TransferDirection, TransferInfo};
-use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::{CAP_FILE, MAX_FILE_CHUNK_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
@@ -148,37 +148,11 @@ fn agent_error(msg: String) -> AppError {
     }
 }
 
-fn audit_error_reason(error: &AppError) -> Option<&str> {
-    match error {
-        AppError::Forbidden(message)
-        | AppError::BadRequest(message)
-        | AppError::NotFound(message)
-        | AppError::Conflict(message)
-        | AppError::RequestTimeout(message)
-        | AppError::Validation(message)
-        | AppError::TooManyRequests(message)
-        | AppError::BadGateway(message)
-        | AppError::Internal(message) => Some(message.as_str()),
-        AppError::Unauthorized => None,
-        AppError::Domain { message, .. } => Some(message.as_str()),
-    }
-}
-
 /// Validate that the server exists, has CAP_FILE capability, and is online.
-/// Returns the server model on success.
 async fn validate_file_access(state: &AppState, server_id: &str) -> Result<(), AppError> {
-    let server = ServerService::get_server(&state.db, server_id).await?;
-    let caps = server.capabilities as u32;
-    if let Some(reason) = state
-        .agent_manager
-        .capability_denied_reason(server_id, caps, CAP_FILE)
-    {
-        return Err(AppError::Forbidden(reason.into()));
-    }
-    if !state.agent_manager.is_online(server_id) {
-        return Err(AppError::NotFound("Server offline".into()));
-    }
-    Ok(())
+    require_capability_online(state, server_id, CAP_FILE)
+        .await
+        .map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -206,33 +180,24 @@ async fn list_files(
 ) -> Result<Json<ApiResponse<ListFilesResponse>>, AppError> {
     validate_file_access(&state, &server_id).await?;
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let response = state
         .agent_manager
-        .get_sender(&server_id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::FileList {
-            msg_id: msg_id.clone(),
-            path: body.path,
+        .request(&server_id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::FileList {
+                msg_id,
+                path: body.path,
+            }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await?;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileListResult { entries, error, .. })) => {
+    match response {
+        AgentMessage::FileListResult { entries, error, .. } => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
             ok(ListFilesResponse { entries })
         }
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        _ => Err(AppError::Internal("Unexpected response from agent".into())),
     }
 }
 
@@ -257,34 +222,25 @@ async fn stat_file(
 ) -> Result<Json<ApiResponse<StatResponse>>, AppError> {
     validate_file_access(&state, &server_id).await?;
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let response = state
         .agent_manager
-        .get_sender(&server_id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::FileStat {
-            msg_id: msg_id.clone(),
-            path: body.path,
+        .request(&server_id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::FileStat {
+                msg_id,
+                path: body.path,
+            }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await?;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileStatResult { entry, error, .. })) => {
+    match response {
+        AgentMessage::FileStatResult { entry, error, .. } => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
             let entry = entry.ok_or(AppError::Internal("No entry returned".into()))?;
             ok(StatResponse { entry })
         }
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        _ => Err(AppError::Internal("Unexpected response from agent".into())),
     }
 }
 
@@ -322,7 +278,7 @@ async fn read_file(
         let detail = serde_json::json!({
             "server_id": server_id,
             "path": path,
-            "deny_reason": audit_error_reason(&error),
+            "deny_reason": error.audit_reason(),
         })
         .to_string();
         let _ = AuditService::log(
@@ -336,24 +292,19 @@ async fn read_file(
         return Err(error);
     }
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let response = state
         .agent_manager
-        .get_sender(&server_id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::FileRead {
-            msg_id: msg_id.clone(),
-            path: path.clone(),
-            max_size: MAX_FILE_CHUNK_SIZE as u64, // 384KB — stays under WS limit after base64
+        .request(&server_id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::FileRead {
+                msg_id,
+                path: path.clone(),
+                max_size: MAX_FILE_CHUNK_SIZE as u64, // 384KB — stays under WS limit after base64
+            }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await?;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileReadResult { content, error, .. })) => {
+    match response {
+        AgentMessage::FileReadResult { content, error, .. } => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
@@ -379,11 +330,7 @@ async fn read_file(
             .await;
             ok(ReadResponse { content })
         }
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        _ => Err(AppError::Internal("Unexpected response from agent".into())),
     }
 }
 
@@ -507,34 +454,25 @@ async fn write_file(
 ) -> Result<Json<ApiResponse<SuccessResponse>>, AppError> {
     validate_file_access(&state, &server_id).await?;
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let result = match state
         .agent_manager
-        .get_sender(&server_id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::FileWrite {
-            msg_id: msg_id.clone(),
-            path: body.path.clone(),
-            content: body.content,
+        .request(&server_id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::FileWrite {
+                msg_id,
+                path: body.path.clone(),
+                content: body.content,
+            }
         })
         .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
-
-    let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
+    {
+        Ok(AgentMessage::FileOpResult { success, error, .. }) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        Ok(_) => Err(AppError::Internal("Unexpected response from agent".into())),
+        Err(e) => Err(e.into()),
     };
 
     // Audit log (fire-and-forget)
@@ -585,34 +523,25 @@ async fn delete_file(
 ) -> Result<Json<ApiResponse<SuccessResponse>>, AppError> {
     validate_file_access(&state, &server_id).await?;
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let result = match state
         .agent_manager
-        .get_sender(&server_id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::FileDelete {
-            msg_id: msg_id.clone(),
-            path: body.path.clone(),
-            recursive: body.recursive,
+        .request(&server_id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::FileDelete {
+                msg_id,
+                path: body.path.clone(),
+                recursive: body.recursive,
+            }
         })
         .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
-
-    let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
+    {
+        Ok(AgentMessage::FileOpResult { success, error, .. }) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        Ok(_) => Err(AppError::Internal("Unexpected response from agent".into())),
+        Err(e) => Err(e.into()),
     };
 
     let ip = extract_client_ip(
@@ -663,33 +592,24 @@ async fn mkdir(
 ) -> Result<Json<ApiResponse<SuccessResponse>>, AppError> {
     validate_file_access(&state, &server_id).await?;
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let result = match state
         .agent_manager
-        .get_sender(&server_id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::FileMkdir {
-            msg_id: msg_id.clone(),
-            path: body.path.clone(),
+        .request(&server_id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::FileMkdir {
+                msg_id,
+                path: body.path.clone(),
+            }
         })
         .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
-
-    let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
+    {
+        Ok(AgentMessage::FileOpResult { success, error, .. }) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        Ok(_) => Err(AppError::Internal("Unexpected response from agent".into())),
+        Err(e) => Err(e.into()),
     };
 
     let ip = extract_client_ip(
@@ -739,34 +659,25 @@ async fn move_file(
 ) -> Result<Json<ApiResponse<SuccessResponse>>, AppError> {
     validate_file_access(&state, &server_id).await?;
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let result = match state
         .agent_manager
-        .get_sender(&server_id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::FileMove {
-            msg_id: msg_id.clone(),
-            from: body.from.clone(),
-            to: body.to.clone(),
+        .request(&server_id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::FileMove {
+                msg_id,
+                from: body.from.clone(),
+                to: body.to.clone(),
+            }
         })
         .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
-
-    let result = match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::FileOpResult { success, error, .. })) => {
+    {
+        Ok(AgentMessage::FileOpResult { success, error, .. }) => {
             if let Some(e) = error {
                 return Err(agent_error(e));
             }
             ok(SuccessResponse { success })
         }
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        Ok(_) => Err(AppError::Internal("Unexpected response from agent".into())),
+        Err(e) => Err(e.into()),
     };
 
     let ip = extract_client_ip(
@@ -825,7 +736,7 @@ async fn start_download(
         let detail = serde_json::json!({
             "server_id": server_id,
             "path": body.path,
-            "deny_reason": audit_error_reason(&error),
+            "deny_reason": error.audit_reason(),
         })
         .to_string();
         let _ = AuditService::log(

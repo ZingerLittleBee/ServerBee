@@ -4,6 +4,7 @@ pub mod apns;
 pub mod asn;
 pub mod audit;
 pub mod auth;
+pub mod capability_gate;
 pub mod checker;
 pub mod config;
 pub mod cost;

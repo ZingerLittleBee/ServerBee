@@ -62,33 +62,18 @@ async fn docker_logs_ws_handler(
             if !state.agent_manager.is_online(&server_id) {
                 return (axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response();
             }
-            // Check Docker capability
-            match crate::service::server::ServerService::get_server(&state.db, &server_id).await {
-                Ok(server) => {
-                    if let Some(reason) = state.agent_manager.capability_denied_reason(
-                        &server_id,
-                        server.capabilities as u32,
-                        CAP_DOCKER,
-                    ) {
-                        let detail = serde_json::json!({
-                            "server_id": server_id,
-                            "deny_reason": reason,
-                        })
-                        .to_string();
-                        let _ = AuditService::log(
-                            &state.db,
-                            &user_id,
-                            "docker_logs_subscribe_denied",
-                            Some(&detail),
-                            &ip,
-                        )
-                        .await;
-                        return (axum::http::StatusCode::FORBIDDEN, reason).into_response();
-                    }
-                }
-                Err(_) => {
-                    return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
+            // Check Docker capability (denials are audited by the gate)
+            if let Err(error) = crate::service::capability_gate::require_capability_audited(
+                &state,
+                &server_id,
+                CAP_DOCKER,
+                &user_id,
+                &ip,
+                "docker_logs_subscribe_denied",
+            )
+            .await
+            {
+                return error.into_response();
             }
             ws.max_message_size(MAX_WS_MESSAGE_SIZE)
                 .on_upgrade(move |socket| {

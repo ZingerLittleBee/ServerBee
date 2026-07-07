@@ -69,6 +69,26 @@ pub enum AppError {
     },
 }
 
+impl AppError {
+    /// Bare error message for audit-log `deny_reason` details (no status-code
+    /// prefix). `None` for `Unauthorized`, which is deliberately opaque.
+    pub fn audit_reason(&self) -> Option<&str> {
+        match self {
+            AppError::Forbidden(message)
+            | AppError::BadRequest(message)
+            | AppError::NotFound(message)
+            | AppError::Conflict(message)
+            | AppError::RequestTimeout(message)
+            | AppError::Validation(message)
+            | AppError::TooManyRequests(message)
+            | AppError::BadGateway(message)
+            | AppError::Internal(message) => Some(message.as_str()),
+            AppError::Unauthorized => None,
+            AppError::Domain { message, .. } => Some(message.as_str()),
+        }
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let message = self.to_string();
