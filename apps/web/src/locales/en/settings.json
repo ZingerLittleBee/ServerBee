@@ -59,6 +59,8 @@
   "users.password_hint": "Password (min 6 chars)",
   "users.role_member": "Member",
   "users.role_admin": "Admin",
+  "users.role_hint_member": "Members can view monitoring data for all servers — including security events and public IPs — but have no write or control access. To show only selected servers to outsiders, use a status page instead.",
+  "users.role_hint_admin": "Admins have full control over the entire system, including terminals, file access, and user management.",
   "users.no_users": "No users found",
   "users.two_factor": "2FA",
   "users.role_label": "Role:",
