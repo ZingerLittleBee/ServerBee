@@ -49,6 +49,7 @@ function PublicNetworkOverviewPage() {
       data={data?.servers ?? []}
       isLoading={isLoading}
       onSearchChange={setSearch}
+      publicDetailTabEnabled={config?.show_server_detail !== false}
       search={search}
       variant="public"
     />

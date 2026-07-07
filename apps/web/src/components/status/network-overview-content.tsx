@@ -27,6 +27,10 @@ export interface NetworkOverviewContentProps {
   data: NetworkOverviewSummary[]
   isLoading?: boolean
   onSearchChange: (q: string) => void
+  /** Public only: when the status page exposes the server detail page, cards
+   *  deep-link to its Network tab; otherwise they fall back to the standalone
+   *  public network detail page (kept for `show_server_detail=false` setups). */
+  publicDetailTabEnabled?: boolean
   search: string
   variant: 'admin' | 'public'
 }
@@ -124,7 +128,15 @@ function StatCard({
   )
 }
 
-function ServerNetworkCard({ summary, variant }: { summary: NetworkOverviewSummary; variant: 'admin' | 'public' }) {
+function ServerNetworkCard({
+  publicDetailTabEnabled,
+  summary,
+  variant
+}: {
+  publicDetailTabEnabled?: boolean
+  summary: NetworkOverviewSummary
+  variant: 'admin' | 'public'
+}) {
   const { t } = useTranslation('network')
   const health = serverHealth(summary)
   const latency = avgLatencyFromTargets(summary.targets)
@@ -191,6 +203,13 @@ function ServerNetworkCard({ summary, variant }: { summary: NetworkOverviewSumma
   )
 
   if (variant === 'public') {
+    if (publicDetailTabEnabled) {
+      return (
+        <Link params={{ serverId: summary.server_id }} search={{ tab: 'network' }} to="/status/server/$serverId">
+          {body}
+        </Link>
+      )
+    }
     return (
       <Link params={{ serverId: summary.server_id }} to="/status/network/$serverId">
         {body}
@@ -199,7 +218,7 @@ function ServerNetworkCard({ summary, variant }: { summary: NetworkOverviewSumma
   }
 
   return (
-    <Link params={{ serverId: summary.server_id }} search={{ range: '1' }} to="/network/$serverId">
+    <Link params={{ id: summary.server_id }} search={{ range: '1h', tab: 'network' }} to="/servers/$id">
       {body}
     </Link>
   )
@@ -209,6 +228,7 @@ export function NetworkOverviewContent({
   data,
   isLoading,
   onSearchChange,
+  publicDetailTabEnabled,
   search,
   variant
 }: NetworkOverviewContentProps) {
@@ -298,7 +318,12 @@ export function NetworkOverviewContent({
       {!isLoading && filtered.length > 0 && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((summary) => (
-            <ServerNetworkCard key={summary.server_id} summary={summary} variant={variant} />
+            <ServerNetworkCard
+              key={summary.server_id}
+              publicDetailTabEnabled={publicDetailTabEnabled}
+              summary={summary}
+              variant={variant}
+            />
           ))}
         </div>
       )}

@@ -22,6 +22,10 @@ export const Route = createFileRoute('/status/network/$serverId')({
 // shown in the overview card lines up with what's inside.
 const PUBLIC_ANOMALY_WINDOW_HOURS = 24
 
+// This standalone page is the fallback for status pages configured with
+// `show_server_detail=false` but `show_network=true`. When the server detail
+// page is available we redirect into its Network tab instead, so the network
+// data has a single canonical home (see ADR 0001).
 function PublicNetworkDetailPage() {
   const { serverId } = Route.useParams()
   const { t } = useTranslation('network')
@@ -30,25 +34,38 @@ function PublicNetworkDetailPage() {
   const [anomalyOpen, setAnomalyOpen] = useState(false)
 
   const networkEnabled = config?.show_network !== false
+  const detailEnabled = config?.show_server_detail !== false
+  const isStandalone = config !== undefined && networkEnabled && !detailEnabled
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['public-status', 'network', serverId],
     queryFn: () => api.get<PublicNetworkServerDetail>(`/api/status/network/${serverId}`),
     refetchInterval: 30_000,
-    enabled: networkEnabled && serverId.length > 0,
+    enabled: isStandalone && serverId.length > 0,
     retry: false
   })
 
   useEffect(() => {
-    if (config && config.show_network === false) {
-      navigate({ to: '/status', replace: true })
+    if (!config) {
+      return
     }
-  }, [config, navigate])
+    if (config.show_network === false) {
+      navigate({ to: '/status', replace: true })
+      return
+    }
+    if (detailEnabled) {
+      navigate({
+        to: '/status/server/$serverId',
+        params: { serverId },
+        search: { tab: 'network' },
+        replace: true
+      })
+    }
+  }, [config, detailEnabled, navigate, serverId])
 
-  if (config?.show_network === false) {
-    return null
-  }
-
-  if (isLoading) {
+  // Wait for the config before choosing between redirect and standalone so we
+  // never flash the standalone page on sites that will redirect.
+  if (!isStandalone || isLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-48" />
