@@ -1100,17 +1100,21 @@ async fn trigger_upgrade(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     use serverbee_common::constants::CAP_UPGRADE;
 
-    let server = ServerService::get_server(&state.db, &id).await?;
-    // Capabilities are agent-owned: gate on the live agent-reported value
-    // (falling back to the persisted mirror only when no agent has connected),
-    // not on the stored mirror directly.
-    if let Some(reason) =
-        state
-            .agent_manager
-            .capability_denied_reason(&id, server.capabilities as u32, CAP_UPGRADE)
-    {
-        return Err(AppError::Forbidden(reason.into()));
-    }
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    crate::service::capability_gate::require_capability_audited(
+        &state,
+        &id,
+        CAP_UPGRADE,
+        &current_user.user_id,
+        &ip,
+        "server_upgrade_denied",
+    )
+    .await?;
 
     let version = normalize_version(&body.version);
 
@@ -1152,12 +1156,6 @@ async fn trigger_upgrade(
 
     // Audit the upgrade trigger (best-effort). Remote code is delivered to the
     // agent here, so the actor and target version belong in the trail.
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
-        &headers,
-        &state.config.server.trusted_proxies,
-    )
-    .to_string();
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,

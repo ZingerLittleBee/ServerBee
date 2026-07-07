@@ -12,9 +12,9 @@ use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::agent_manager::AgentRequestError;
 use crate::service::audit::AuditService;
+use crate::service::capability_gate::require_capability;
 use crate::service::docker::DockerService;
 use crate::service::high_risk_audit::DockerViewResource;
-use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::CAP_DOCKER;
 use serverbee_common::docker_types::*;
@@ -137,14 +137,7 @@ pub fn write_router() -> Router<Arc<AppState>> {
 
 /// Guard: checks both capability bit (CAP_DOCKER) and runtime feature ("docker").
 async fn require_docker(state: &AppState, server_id: &str) -> Result<(), AppError> {
-    let server = ServerService::get_server(&state.db, server_id).await?;
-    let caps = server.capabilities as u32;
-    if let Some(reason) = state
-        .agent_manager
-        .capability_denied_reason(server_id, caps, CAP_DOCKER)
-    {
-        return Err(AppError::Forbidden(reason.into()));
-    }
+    require_capability(state, server_id, CAP_DOCKER).await?;
     if !state.agent_manager.has_feature(server_id, "docker") {
         return Err(AppError::Forbidden(
             "Docker is not available on this server".into(),
@@ -369,22 +362,17 @@ async fn get_events(
     .to_string();
     // For events, we only need the server to exist and have the capability.
     // The server doesn't need to be online (events are persisted in DB).
-    let server = ServerService::get_server(&state.db, &id).await?;
-    let caps = server.capabilities as u32;
-    if let Some(reason) = state
-        .agent_manager
-        .capability_denied_reason(&id, caps, CAP_DOCKER)
-    {
+    if let Err(error) = require_capability(&state, &id, CAP_DOCKER).await {
         log_docker_view(
             &state,
             &current_user.user_id,
             &ip,
             &id,
             DockerViewResource::Events,
-            Some(reason.to_string()),
+            Some(docker_audit_reason(&error)),
         )
         .await;
-        return Err(AppError::Forbidden(reason.into()));
+        return Err(error);
     }
 
     let events = DockerService::get_events(&state.db, &id, params.limit)

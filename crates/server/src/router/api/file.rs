@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::service::audit::AuditService;
+use crate::service::capability_gate::require_capability_online;
 use crate::service::file_transfer::{TransferDirection, TransferInfo};
-use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::{CAP_FILE, MAX_FILE_CHUNK_SIZE};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
@@ -148,37 +148,11 @@ fn agent_error(msg: String) -> AppError {
     }
 }
 
-fn audit_error_reason(error: &AppError) -> Option<&str> {
-    match error {
-        AppError::Forbidden(message)
-        | AppError::BadRequest(message)
-        | AppError::NotFound(message)
-        | AppError::Conflict(message)
-        | AppError::RequestTimeout(message)
-        | AppError::Validation(message)
-        | AppError::TooManyRequests(message)
-        | AppError::BadGateway(message)
-        | AppError::Internal(message) => Some(message.as_str()),
-        AppError::Unauthorized => None,
-        AppError::Domain { message, .. } => Some(message.as_str()),
-    }
-}
-
 /// Validate that the server exists, has CAP_FILE capability, and is online.
-/// Returns the server model on success.
 async fn validate_file_access(state: &AppState, server_id: &str) -> Result<(), AppError> {
-    let server = ServerService::get_server(&state.db, server_id).await?;
-    let caps = server.capabilities as u32;
-    if let Some(reason) = state
-        .agent_manager
-        .capability_denied_reason(server_id, caps, CAP_FILE)
-    {
-        return Err(AppError::Forbidden(reason.into()));
-    }
-    if !state.agent_manager.is_online(server_id) {
-        return Err(AppError::NotFound("Server offline".into()));
-    }
-    Ok(())
+    require_capability_online(state, server_id, CAP_FILE)
+        .await
+        .map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +278,7 @@ async fn read_file(
         let detail = serde_json::json!({
             "server_id": server_id,
             "path": path,
-            "deny_reason": audit_error_reason(&error),
+            "deny_reason": error.audit_reason(),
         })
         .to_string();
         let _ = AuditService::log(
@@ -762,7 +736,7 @@ async fn start_download(
         let detail = serde_json::json!({
             "server_id": server_id,
             "path": body.path,
-            "deny_reason": audit_error_reason(&error),
+            "deny_reason": error.audit_reason(),
         })
         .to_string();
         let _ = AuditService::log(
