@@ -92,13 +92,21 @@ impl UserService {
     }
 
     /// Update a user's role and optionally reset their password.
+    ///
+    /// Runs entirely in one transaction so the last-admin guard's count and
+    /// the mutation cannot interleave with a concurrent demotion/deletion —
+    /// two racing requests could otherwise both pass the count check and
+    /// leave the system with zero admins, a state `init_admin` cannot recover
+    /// (it only re-bootstraps an empty users table).
     pub async fn update_user(
         db: &DatabaseConnection,
         id: &str,
         input: UpdateUserInput,
     ) -> Result<user::Model, AppError> {
+        let txn = db.begin().await?;
+
         let user = user::Entity::find_by_id(id)
-            .one(db)
+            .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
@@ -110,7 +118,7 @@ impl UserService {
             if user.role == "admin" && role != "admin" {
                 let admin_count = user::Entity::find()
                     .filter(user::Column::Role.eq("admin"))
-                    .count(db)
+                    .count(&txn)
                     .await?;
                 if admin_count <= 1 {
                     return Err(AppError::BadRequest(
@@ -133,35 +141,39 @@ impl UserService {
         }
         active.updated_at = Set(now);
 
+        let updated = active.update(&txn).await?;
+
         // If an admin reset this user's password, revoke all their existing
         // sessions so a previously issued (possibly stolen) session cannot
         // outlive the reset. This includes the mobile auth path, whose refresh
         // secret lives in `mobile_session` (a separate table); an admin reset
-        // unconditionally drops all of the target user's mobile sessions. The
-        // update + revocation run in one transaction so the reset can't commit
+        // unconditionally drops all of the target user's mobile sessions.
+        // Sharing the surrounding transaction means the reset can't commit
         // while sessions stay live.
-        let updated = if password_reset {
-            let txn = db.begin().await?;
-            let updated = active.update(&txn).await?;
+        if password_reset {
             session::Entity::delete_many()
                 .filter(session::Column::UserId.eq(id))
                 .exec(&txn)
                 .await?;
             AuthService::revoke_user_mobile_sessions(&txn, id, None).await?;
-            txn.commit().await?;
-            updated
-        } else {
-            active.update(db).await?
-        };
+        }
+
+        txn.commit().await?;
 
         Ok(updated)
     }
 
     /// Delete a user along with their sessions and API keys.
     /// Refuses to delete the last admin.
+    ///
+    /// Runs entirely in one transaction: the last-admin guard's count cannot
+    /// interleave with a concurrent demotion/deletion (see `update_user`),
+    /// and the multi-table cleanup is atomic.
     pub async fn delete_user(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
+        let txn = db.begin().await?;
+
         let user = user::Entity::find_by_id(id)
-            .one(db)
+            .one(&txn)
             .await?
             .ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
 
@@ -169,7 +181,7 @@ impl UserService {
         if user.role == "admin" {
             let admin_count = user::Entity::find()
                 .filter(user::Column::Role.eq("admin"))
-                .count(db)
+                .count(&txn)
                 .await?;
             if admin_count <= 1 {
                 return Err(AppError::BadRequest(
@@ -181,23 +193,25 @@ impl UserService {
         // Clean up sessions
         session::Entity::delete_many()
             .filter(session::Column::UserId.eq(id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Clean up API keys
         api_key::Entity::delete_many()
             .filter(api_key::Column::UserId.eq(id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Clean up OAuth accounts
         oauth_account::Entity::delete_many()
             .filter(oauth_account::Column::UserId.eq(id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Delete the user
-        user::Entity::delete_by_id(id).exec(db).await?;
+        user::Entity::delete_by_id(id).exec(&txn).await?;
+
+        txn.commit().await?;
 
         Ok(())
     }
