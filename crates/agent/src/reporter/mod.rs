@@ -1,3 +1,6 @@
+mod file_ops;
+mod wire;
+
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -13,6 +16,8 @@ use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
+
+use wire::send_msg;
 
 use crate::collector::Collector;
 use crate::config::AgentConfig;
@@ -251,8 +256,7 @@ impl Reporter {
             agent_local_capabilities: Some(effective_caps),
             temporary: initial_temporary.clone(),
         };
-        let json = serde_json::to_string(&info_msg)?;
-        write.send(Message::Text(json.into())).await?;
+        send_msg(&mut write, &info_msg).await?;
         tracing::info!("Sent SystemInfo");
 
         // Ping probe manager
@@ -356,14 +360,12 @@ impl Reporter {
                 _ = report_interval.tick() => {
                     let report = collector.collect();
                     let msg = AgentMessage::Report(report);
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &msg).await?;
                     tracing::debug!("Sent report");
                 }
                 Some(ping_result) = ping_rx.recv() => {
                     let msg = AgentMessage::PingResult(ping_result);
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &msg).await?;
                     tracing::debug!("Sent PingResult");
                 }
                 Some(cmd_msg) = cmd_result_rx.recv() => {
@@ -376,13 +378,11 @@ impl Reporter {
                             unlock_checker.notify_ip_changed(new_ip);
                         }
                     }
-                    let json = serde_json::to_string(&cmd_msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &cmd_msg).await?;
                     tracing::debug!("Sent background command result");
                 }
                 Some(grant_msg) = grant_rx.recv() => {
-                    let json = serde_json::to_string(&grant_msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &grant_msg).await?;
                     tracing::debug!("Sent CapabilitiesChanged");
                 }
                 Some(run_result) = unlock_result_rx.recv() => {
@@ -391,8 +391,7 @@ impl Reporter {
                         results: run_result.results,
                         checked_at: run_result.checked_at,
                     };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &msg).await?;
                     tracing::debug!("Sent UnlockResults");
                 }
                 Some(external_msg) = async {
@@ -401,8 +400,7 @@ impl Reporter {
                         None => std::future::pending::<Option<AgentMessage>>().await,
                     }
                 } => {
-                    let json = serde_json::to_string(&external_msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &external_msg).await?;
                     tracing::debug!("Sent external agent message");
                 }
                 Some(term_event) = term_rx.recv() => {
@@ -424,8 +422,7 @@ impl Reporter {
                             }
                         }
                     };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &msg).await?;
                 }
                 Some(first_result) = network_probe_rx.recv() => {
                     let mut results = vec![first_result];
@@ -435,20 +432,17 @@ impl Reporter {
                     }
                     let count = results.len();
                     let msg = AgentMessage::NetworkProbeResults { results };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &msg).await?;
                     tracing::debug!("Sent NetworkProbeResults ({count} results)");
                 }
                 Some(file_event) = file_rx.recv() => {
                     let msg: AgentMessage = file_event.into();
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &msg).await?;
                     tracing::debug!("Sent file event");
                 }
                 // Docker messages from DockerManager background tasks
                 Some(docker_msg) = docker_rx.recv() => {
-                    let json = serde_json::to_string(&docker_msg)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(&mut write, &docker_msg).await?;
                     tracing::debug!("Sent Docker message");
                 }
                 // Docker stats polling (uses separate interval to avoid borrow conflicts)
@@ -508,8 +502,7 @@ impl Reporter {
                                     let msg = AgentMessage::FeaturesUpdate {
                                         features: vec!["docker".to_string()],
                                     };
-                                    let json = serde_json::to_string(&msg)?;
-                                    write.send(Message::Text(json.into())).await?;
+                                    send_msg(&mut write, &msg).await?;
                                 }
                                 Err(e) => {
                                     tracing::debug!("Docker still not available: {e}");
@@ -604,8 +597,7 @@ impl Reporter {
 
         match msg {
             ServerMessage::Ping => {
-                let pong = serde_json::to_string(&AgentMessage::Pong)?;
-                write.send(Message::Text(pong.into())).await?;
+                send_msg(write, &AgentMessage::Pong).await?;
                 tracing::debug!("Responded to Ping with Pong");
             }
             ServerMessage::Exec {
@@ -615,18 +607,8 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_EXEC) {
-                    let denied_reason = CapabilityDeniedReason::AgentCapabilityDisabled;
                     tracing::warn!("Exec denied: capability disabled (task_id={task_id})");
-                    let denied = AgentMessage::CapabilityDenied {
-                        msg_id: Some(task_id),
-                        session_id: None,
-                        capability: "exec".to_string(),
-                        reason: denied_reason,
-                    };
-                    let tx = cmd_result_tx.clone();
-                    tokio::spawn(async move {
-                        let _ = tx.send(denied).await;
-                    });
+                    spawn_capability_denied(cmd_result_tx, Some(task_id), "exec");
                     return Ok(());
                 }
                 tracing::info!("Executing command (task_id={task_id}): {command}");
@@ -686,16 +668,8 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_UPGRADE) {
-                    let denied_reason = CapabilityDeniedReason::AgentCapabilityDisabled;
                     tracing::warn!("Upgrade denied: capability disabled");
-                    let denied = AgentMessage::CapabilityDenied {
-                        msg_id: None,
-                        session_id: None,
-                        capability: "upgrade".to_string(),
-                        reason: denied_reason,
-                    };
-                    let json = serde_json::to_string(&denied)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(write, &capability_denied_msg(None, "upgrade")).await?;
                     return Ok(());
                 }
 
@@ -751,20 +725,10 @@ impl Reporter {
             } => {
                 let caps = capabilities.load(Ordering::SeqCst);
                 if !has_capability(caps, CAP_PING_ICMP) {
-                    let denied_reason = CapabilityDeniedReason::AgentCapabilityDisabled;
                     tracing::warn!(
                         "Traceroute denied: capability disabled (request_id={request_id})"
                     );
-                    let denied = AgentMessage::CapabilityDenied {
-                        msg_id: Some(request_id),
-                        session_id: None,
-                        capability: "ping_icmp".to_string(),
-                        reason: denied_reason,
-                    };
-                    let tx = cmd_result_tx.clone();
-                    tokio::spawn(async move {
-                        let _ = tx.send(denied).await;
-                    });
+                    spawn_capability_denied(cmd_result_tx, Some(request_id), "ping_icmp");
                     return Ok(());
                 }
 
@@ -807,334 +771,21 @@ impl Reporter {
                     cmd_result_tx.clone(),
                 );
             }
-            // --- File management messages ---
-            ServerMessage::FileList { msg_id, path } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let msg = AgentMessage::FileListResult {
-                        msg_id,
-                        path,
-                        entries: vec![],
-                        error: Some("File capability disabled".into()),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                let result = file_manager.list_dir(&path).await;
-                let msg = match result {
-                    Ok(entries) => AgentMessage::FileListResult {
-                        msg_id,
-                        path,
-                        entries,
-                        error: None,
-                    },
-                    Err(e) => AgentMessage::FileListResult {
-                        msg_id,
-                        path,
-                        entries: vec![],
-                        error: Some(e.to_string()),
-                    },
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-            }
-            ServerMessage::FileStat { msg_id, path } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let msg = AgentMessage::FileStatResult {
-                        msg_id,
-                        entry: None,
-                        error: Some("File capability disabled".into()),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                let result = file_manager.stat(&path).await;
-                let msg = match result {
-                    Ok(entry) => AgentMessage::FileStatResult {
-                        msg_id,
-                        entry: Some(entry),
-                        error: None,
-                    },
-                    Err(e) => AgentMessage::FileStatResult {
-                        msg_id,
-                        entry: None,
-                        error: Some(e.to_string()),
-                    },
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-            }
-            ServerMessage::FileRead {
-                msg_id,
-                path,
-                max_size,
-            } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let msg = AgentMessage::FileReadResult {
-                        msg_id,
-                        content: None,
-                        error: Some("File capability disabled".into()),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                let result = file_manager.read_file(&path, max_size).await;
-                let msg = match result {
-                    Ok(content) => AgentMessage::FileReadResult {
-                        msg_id,
-                        content: Some(content),
-                        error: None,
-                    },
-                    Err(e) => AgentMessage::FileReadResult {
-                        msg_id,
-                        content: None,
-                        error: Some(e.to_string()),
-                    },
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-            }
-            ServerMessage::FileWrite {
-                msg_id,
-                path,
-                content,
-            } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let result = AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some("File capability disabled".into()),
-                    };
-                    let json = serde_json::to_string(&result)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                let result = file_manager.write_file(&path, &content).await;
-                let msg = match result {
-                    Ok(()) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: true,
-                        error: None,
-                    },
-                    Err(e) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some(e.to_string()),
-                    },
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-            }
-            ServerMessage::FileDelete {
-                msg_id,
-                path,
-                recursive,
-            } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let result = AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some("File capability disabled".into()),
-                    };
-                    let json = serde_json::to_string(&result)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                let result = file_manager.delete(&path, recursive).await;
-                let msg = match result {
-                    Ok(()) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: true,
-                        error: None,
-                    },
-                    Err(e) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some(e.to_string()),
-                    },
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-            }
-            ServerMessage::FileMkdir { msg_id, path } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let result = AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some("File capability disabled".into()),
-                    };
-                    let json = serde_json::to_string(&result)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                let result = file_manager.mkdir(&path).await;
-                let msg = match result {
-                    Ok(()) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: true,
-                        error: None,
-                    },
-                    Err(e) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some(e.to_string()),
-                    },
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-            }
-            ServerMessage::FileMove { msg_id, from, to } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let result = AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some("File capability disabled".into()),
-                    };
-                    let json = serde_json::to_string(&result)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                let result = file_manager.rename_path(&from, &to).await;
-                let msg = match result {
-                    Ok(()) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: true,
-                        error: None,
-                    },
-                    Err(e) => AgentMessage::FileOpResult {
-                        msg_id,
-                        success: false,
-                        error: Some(e.to_string()),
-                    },
-                };
-                let json = serde_json::to_string(&msg)?;
-                write.send(Message::Text(json.into())).await?;
-            }
-            ServerMessage::FileDownloadStart { transfer_id, path } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let msg = AgentMessage::FileDownloadError {
-                        transfer_id,
-                        error: "File capability disabled".into(),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                file_manager.start_download(transfer_id, path, file_tx.clone());
-            }
-            ServerMessage::FileDownloadCancel { transfer_id } => {
-                file_manager.cancel_download(&transfer_id);
-            }
-            ServerMessage::FileUploadStart {
-                transfer_id,
-                path,
-                size,
-            } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let msg = AgentMessage::FileUploadError {
-                        transfer_id,
-                        error: "File capability disabled".into(),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                match file_manager
-                    .start_upload(transfer_id.clone(), path, size)
-                    .await
-                {
-                    Ok(()) => {
-                        let msg = AgentMessage::FileUploadAck {
-                            transfer_id,
-                            offset: 0,
-                        };
-                        let json = serde_json::to_string(&msg)?;
-                        write.send(Message::Text(json.into())).await?;
-                    }
-                    Err(e) => {
-                        let msg = AgentMessage::FileUploadError {
-                            transfer_id,
-                            error: e.to_string(),
-                        };
-                        let json = serde_json::to_string(&msg)?;
-                        write.send(Message::Text(json.into())).await?;
-                    }
-                }
-            }
-            ServerMessage::FileUploadChunk {
-                transfer_id,
-                offset,
-                data,
-            } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let msg = AgentMessage::FileUploadError {
-                        transfer_id: transfer_id.clone(),
-                        error: "File capability disabled".into(),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                match file_manager
-                    .receive_chunk(&transfer_id, offset, &data)
-                    .await
-                {
-                    Ok(new_offset) => {
-                        let msg = AgentMessage::FileUploadAck {
-                            transfer_id,
-                            offset: new_offset,
-                        };
-                        let json = serde_json::to_string(&msg)?;
-                        write.send(Message::Text(json.into())).await?;
-                    }
-                    Err(e) => {
-                        let msg = AgentMessage::FileUploadError {
-                            transfer_id,
-                            error: e.to_string(),
-                        };
-                        let json = serde_json::to_string(&msg)?;
-                        write.send(Message::Text(json.into())).await?;
-                    }
-                }
-            }
-            ServerMessage::FileUploadEnd { transfer_id } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
-                    let msg = AgentMessage::FileUploadError {
-                        transfer_id: transfer_id.clone(),
-                        error: "File capability disabled".into(),
-                    };
-                    let json = serde_json::to_string(&msg)?;
-                    write.send(Message::Text(json.into())).await?;
-                    return Ok(());
-                }
-                match file_manager.finish_upload(&transfer_id).await {
-                    Ok(()) => {
-                        let msg = AgentMessage::FileUploadComplete { transfer_id };
-                        let json = serde_json::to_string(&msg)?;
-                        write.send(Message::Text(json.into())).await?;
-                    }
-                    Err(e) => {
-                        let msg = AgentMessage::FileUploadError {
-                            transfer_id,
-                            error: e.to_string(),
-                        };
-                        let json = serde_json::to_string(&msg)?;
-                        write.send(Message::Text(json.into())).await?;
-                    }
-                }
+            // --- File management messages --- (gate + reply shapes live in file_ops)
+            msg @ (ServerMessage::FileList { .. }
+            | ServerMessage::FileStat { .. }
+            | ServerMessage::FileRead { .. }
+            | ServerMessage::FileWrite { .. }
+            | ServerMessage::FileDelete { .. }
+            | ServerMessage::FileMkdir { .. }
+            | ServerMessage::FileMove { .. }
+            | ServerMessage::FileDownloadStart { .. }
+            | ServerMessage::FileDownloadCancel { .. }
+            | ServerMessage::FileUploadStart { .. }
+            | ServerMessage::FileUploadChunk { .. }
+            | ServerMessage::FileUploadEnd { .. }) => {
+                file_ops::handle_file_message(msg, write, file_manager, file_tx, capabilities)
+                    .await?;
             }
             // --- Docker messages ---
             ServerMessage::DockerStartStats { interval_secs } => {
@@ -1147,8 +798,7 @@ impl Reporter {
                 } else {
                     tracing::warn!("DockerStartStats received but Docker is not available");
                     let unavailable = AgentMessage::DockerUnavailable { msg_id: None };
-                    let json = serde_json::to_string(&unavailable)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(write, &unavailable).await?;
                 }
             }
             ServerMessage::DockerStopStats => {
@@ -1180,8 +830,7 @@ impl Reporter {
                     let unavailable = AgentMessage::DockerUnavailable {
                         msg_id: docker_request_msg_id(&msg),
                     };
-                    let json = serde_json::to_string(&unavailable)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(write, &unavailable).await?;
                 }
             }
             // Firewall blocklist variants — dispatched to the FirewallManager
@@ -1206,8 +855,7 @@ impl Reporter {
                         "Firewall blocklist mutation denied: CAP_FIREWALL_BLOCK not effective — ignoring"
                     );
                 } else if let Some(reply) = self.firewall_manager.handle(msg).await {
-                    let json = serde_json::to_string(&reply)?;
-                    write.send(Message::Text(json.into())).await?;
+                    send_msg(write, &reply).await?;
                     tracing::debug!("Sent firewall blocklist ack");
                 }
             }
@@ -1263,12 +911,35 @@ impl Reporter {
         if *docker_available {
             *docker_available = false;
             let msg = AgentMessage::FeaturesUpdate { features: vec![] };
-            let json = serde_json::to_string(&msg)?;
-            write.send(Message::Text(json.into())).await?;
+            send_msg(write, &msg).await?;
         }
 
         Ok(())
     }
+}
+
+/// Build the standard agent-local capability denial message.
+fn capability_denied_msg(msg_id: Option<String>, capability: &str) -> AgentMessage {
+    AgentMessage::CapabilityDenied {
+        msg_id,
+        session_id: None,
+        capability: capability.to_string(),
+        reason: serverbee_common::constants::CapabilityDeniedReason::AgentCapabilityDisabled,
+    }
+}
+
+/// Queue a capability denial onto the outbound channel without blocking the
+/// read loop.
+fn spawn_capability_denied(
+    tx: &mpsc::Sender<AgentMessage>,
+    msg_id: Option<String>,
+    capability: &str,
+) {
+    let denied = capability_denied_msg(msg_id, capability);
+    let tx = tx.clone();
+    tokio::spawn(async move {
+        let _ = tx.send(denied).await;
+    });
 }
 
 fn docker_request_msg_id(msg: &ServerMessage) -> Option<String> {
