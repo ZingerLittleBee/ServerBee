@@ -13,7 +13,11 @@ ServerBee supports multiple users across two roles:
 | Role | Permissions |
 |------|-------------|
 | **Admin** | Full management: users, server config, alert rules, notifications, audit logs, etc. |
-| **Member** | Read-only: view Dashboard, server details, Ping results |
+| **Member** | Read-only access to **all** servers' monitoring data — dashboards, server details, Ping results, security events, public IPs — plus self-service settings (own password, 2FA, API key list, mobile devices) |
+
+<Callout type="warn">
+Member visibility is fleet-wide; there is no per-server scoping. A member account is for trusted collaborators only. To show selected servers to outsiders (e.g., customers), use a [status page](/en/docs/status-page) instead.
+</Callout>
 
 ### Managing Users
 
@@ -22,6 +26,16 @@ Go to Settings → Users:
 - **Create user**: Enter username, password, and role
 - **Edit role**: Change a user's role (Admin/Member)
 - **Delete user**: Remove a user account (cannot delete the last Admin)
+
+### Recovering a Lost Admin Account
+
+There is no password-recovery flow (self-hosted deployments have no mail channel), and passwords are argon2 hashes that cannot be hand-edited into the database. If the only admin credential (password or 2FA device) is lost:
+
+1. Stop the server.
+2. Run `sqlite3 /path/to/serverbee.db "DELETE FROM users;"`.
+3. Start the server — with an empty users table it re-creates the `admin` user and prints a fresh one-time password banner in the startup log.
+
+This removes **all** user accounts, and their API keys stop working. Monitoring data, servers, and configuration are untouched.
 
 ### API Endpoints
 

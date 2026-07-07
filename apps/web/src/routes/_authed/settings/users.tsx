@@ -202,6 +202,9 @@ function UsersPage() {
                   <SelectItem value="admin">{t('users.role_admin')}</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-muted-foreground text-xs">
+                {state.newRole === 'admin' ? t('users.role_hint_admin') : t('users.role_hint_member')}
+              </p>
               {createMutation.error && <p className="text-destructive text-sm">{createMutation.error.message}</p>}
             </form>
             <DialogFooter>

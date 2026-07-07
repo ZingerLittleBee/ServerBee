@@ -943,6 +943,23 @@
         }
       }
     },
+    "Admins have full control over the entire system, including terminals, file access, and user management.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admins have full control over the entire system, including terminals, file access, and user management."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理员拥有整个系统的完全控制权，包括终端、文件访问和用户管理。"
+          }
+        }
+      }
+    },
     "Advanced": {
       "extractionState": "manual",
       "localizations": {
@@ -6993,6 +7010,23 @@
         }
       }
     },
+    "Members can view all servers' monitoring data — including security events and public IPs — with no write access.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Members can view all servers' monitoring data — including security events and public IPs — with no write access."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成员可查看所有服务器的全部监控数据（含安全事件与公网 IP），但没有任何写入或操作权限。"
+          }
+        }
+      }
+    },
     "Memory": {
       "extractionState": "manual",
       "localizations": {
@@ -12446,6 +12480,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "标题"
+          }
+        }
+      }
+    },
+    "To show only selected servers to outsiders, use a status page instead.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To show only selected servers to outsiders, use a status page instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如需仅向外部人员展示部分服务器，请使用状态页。"
           }
         }
       }

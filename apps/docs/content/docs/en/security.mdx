@@ -68,6 +68,10 @@ client_secret = "your-github-client-secret"
 - Click **Unlink** to disconnect an OAuth account
 - If `allow_registration = false` (default), first-time OAuth logins do not create new users — an admin must create the user first
 
+<Callout type="warn">
+Enable `allow_registration = true` only when the OAuth provider itself is access-controlled (self-hosted OIDC or an org-internal IdP). Auto-created accounts get the Member role, which can read **all** monitoring data — including security events and public IPs. With a public provider such as GitHub, enabling it grants that access to every user of the provider.
+</Callout>
+
 ### Login Flow
 
 1. Click an OAuth provider button on the login page (e.g., "Login with GitHub")

@@ -59,6 +59,8 @@
   "users.password_hint": "密码（最少 6 位）",
   "users.role_member": "普通成员",
   "users.role_admin": "管理员",
+  "users.role_hint_member": "普通成员可查看所有服务器的全部监控数据（含安全事件与公网 IP），但没有任何写入或操作权限。如需仅向外部人员展示部分服务器，请使用状态页。",
+  "users.role_hint_admin": "管理员拥有整个系统的完全控制权，包括终端、文件访问和用户管理。",
   "users.no_users": "暂无用户",
   "users.two_factor": "2FA",
   "users.role_label": "角色：",
