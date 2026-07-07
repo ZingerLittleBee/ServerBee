@@ -36,8 +36,8 @@ This document records the design decisions confirmed during the review, one per 
 
 **Follow-ups (cheap, disclosure-only):**
 
-- [ ] Create-user dialog: the `member` role option must state that members can see **all** servers' monitoring data (including security events and public IPs) with no write access.
-- [ ] User-management docs page: state the same boundary and point to status pages for external/partial exposure.
+- [x] Create-user dialog: the `member` role option must state that members can see **all** servers' monitoring data (including security events and public IPs) with no write access.
+- [x] User-management docs page: state the same boundary and point to status pages for external/partial exposure.
 
 ## Decision 2 — No forced password change for admin-created users
 
@@ -67,7 +67,7 @@ This document records the design decisions confirmed during the review, one per 
 
 **Follow-ups:**
 
-- [ ] ENV.md `SERVERBEE_OAUTH__ALLOW_REGISTRATION` row and the OAuth docs page must warn: enable only when the OAuth provider itself is access-controlled (self-hosted OIDC / org-internal IdP). Enabling it with a public provider (e.g., GitHub) grants every user of that provider full read access to all monitoring data, including security events and public IPs.
+- [x] ENV.md `SERVERBEE_OAUTH__ALLOW_REGISTRATION` row and the OAuth docs page must warn: enable only when the OAuth provider itself is access-controlled (self-hosted OIDC / org-internal IdP). Enabling it with a public provider (e.g., GitHub) grants every user of that provider full read access to all monitoring data, including security events and public IPs.
 
 ## Verified clean — no credential leakage to members
 
@@ -79,7 +79,7 @@ Checked during the review, no action needed: `ServerResponse` deliberately exclu
 
 **Decision:** Fix. Wrap the guard count and the mutation in a single transaction in both paths (`update_user` role-demotion branch, `delete_user`). SQLite serializes write transactions, so the second concurrent request re-reads `admin_count = 1` inside its transaction and is correctly rejected. No new concepts or config; `delete_user`'s multi-table cleanup should have been transactional anyway.
 
-**Status:** To implement (part of this review's follow-up batch).
+**Status:** Implemented — `update_user` and `delete_user` each run guard + mutation in one transaction.
 
 ## Decision 6 — Admin lockout recovery is documented, not built
 
@@ -91,7 +91,7 @@ Checked during the review, no action needed: `ServerResponse` deliberately exclu
 
 **Follow-ups:**
 
-- [ ] Add a "Lost admin access" recovery section to the docs (troubleshooting/FAQ area, CN+EN).
+- [x] Add a "Lost admin access" recovery section to the docs (Admin Guide, CN+EN).
 
 ## Summary of outcomes
 
