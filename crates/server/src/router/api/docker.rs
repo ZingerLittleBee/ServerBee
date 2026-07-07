@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
+use crate::service::agent_manager::AgentRequestError;
 use crate::service::audit::AuditService;
 use crate::service::docker::DockerService;
 use crate::service::high_risk_audit::DockerViewResource;
@@ -308,33 +309,20 @@ async fn get_info(
     let info = if let Some(info) = state.agent_manager.get_docker_info(&id) {
         info
     } else {
-        let msg_id = uuid::Uuid::new_v4().to_string();
-        let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-        let sender = state
+        let response = state
             .agent_manager
-            .get_sender(&id)
-            .ok_or(AppError::NotFound("Server offline".into()))?;
-        sender
-            .send(ServerMessage::DockerGetInfo {
-                msg_id: msg_id.clone(),
+            .request(&id, Duration::from_secs(30), |msg_id| {
+                ServerMessage::DockerGetInfo { msg_id }
             })
-            .await
-            .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+            .await?;
 
-        match tokio::time::timeout(Duration::from_secs(30), rx).await {
-            Ok(Ok(AgentMessage::DockerInfo { info, .. })) => info,
-            Ok(Ok(AgentMessage::DockerUnavailable { .. })) => {
+        match response {
+            AgentMessage::DockerInfo { info, .. } => info,
+            AgentMessage::DockerUnavailable { .. } => {
                 return Err(docker_unavailable_error());
             }
-            Ok(Ok(_)) => {
+            _ => {
                 return Err(AppError::Internal("Unexpected response from agent".into()));
-            }
-            Ok(Err(_)) => return Err(AppError::Internal("Agent disconnected".into())),
-            Err(_) => {
-                return Err(AppError::RequestTimeout(
-                    "Agent did not respond within 30s".into(),
-                ));
             }
         }
     };
@@ -453,22 +441,15 @@ async fn get_networks(
         return Err(error);
     }
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let response = state
         .agent_manager
-        .get_sender(&id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::DockerListNetworks {
-            msg_id: msg_id.clone(),
+        .request(&id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::DockerListNetworks { msg_id }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await?;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerNetworks { networks, .. })) => {
+    match response {
+        AgentMessage::DockerNetworks { networks, .. } => {
             log_docker_view(
                 &state,
                 &current_user.user_id,
@@ -480,12 +461,8 @@ async fn get_networks(
             .await;
             ok(NetworksResponse { networks })
         }
-        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        AgentMessage::DockerUnavailable { .. } => Err(docker_unavailable_error()),
+        _ => Err(AppError::Internal("Unexpected response from agent".into())),
     }
 }
 
@@ -528,22 +505,15 @@ async fn get_volumes(
         return Err(error);
     }
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let response = state
         .agent_manager
-        .get_sender(&id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::DockerListVolumes {
-            msg_id: msg_id.clone(),
+        .request(&id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::DockerListVolumes { msg_id }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await?;
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerVolumes { volumes, .. })) => {
+    match response {
+        AgentMessage::DockerVolumes { volumes, .. } => {
             log_docker_view(
                 &state,
                 &current_user.user_id,
@@ -555,12 +525,8 @@ async fn get_volumes(
             .await;
             ok(VolumesResponse { volumes })
         }
-        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        AgentMessage::DockerUnavailable { .. } => Err(docker_unavailable_error()),
+        _ => Err(AppError::Internal("Unexpected response from agent".into())),
     }
 }
 
@@ -606,44 +572,41 @@ async fn container_action(
     let action_label = format!("{:?}", body.action);
     let container_id = cid.clone();
 
-    let msg_id = uuid::Uuid::new_v4().to_string();
-    let rx = state.agent_manager.register_pending_request(msg_id.clone());
-
-    let sender = state
+    let result = state
         .agent_manager
-        .get_sender(&id)
-        .ok_or(AppError::NotFound("Server offline".into()))?;
-    sender
-        .send(ServerMessage::DockerContainerAction {
-            msg_id: msg_id.clone(),
-            container_id: cid,
-            action: body.action,
+        .request(&id, Duration::from_secs(30), |msg_id| {
+            ServerMessage::DockerContainerAction {
+                msg_id,
+                container_id: cid,
+                action: body.action,
+            }
         })
-        .await
-        .map_err(|_| AppError::Internal("Failed to send to agent".into()))?;
+        .await;
 
     // Audit the mutating container action (best-effort). Logged once the
     // command was dispatched to the agent, regardless of execution result.
-    let _ = AuditService::log(
-        &state.db,
-        &current_user.user_id,
-        "docker_container_action",
-        Some(&format!(
-            "server_id={id} container={container_id} action={action_label}"
-        )),
-        &ip,
-    )
-    .await;
+    if !matches!(
+        result,
+        Err(AgentRequestError::Offline | AgentRequestError::SendFailed)
+    ) {
+        let _ = AuditService::log(
+            &state.db,
+            &current_user.user_id,
+            "docker_container_action",
+            Some(&format!(
+                "server_id={id} container={container_id} action={action_label}"
+            )),
+            &ip,
+        )
+        .await;
+    }
 
-    match tokio::time::timeout(Duration::from_secs(30), rx).await {
-        Ok(Ok(AgentMessage::DockerActionResult { success, error, .. })) => {
+    match result {
+        Ok(AgentMessage::DockerActionResult { success, error, .. }) => {
             ok(ActionResultResponse { success, error })
         }
-        Ok(Ok(AgentMessage::DockerUnavailable { .. })) => Err(docker_unavailable_error()),
-        Ok(Ok(_)) => Err(AppError::Internal("Unexpected response from agent".into())),
-        Ok(Err(_)) => Err(AppError::Internal("Agent disconnected".into())),
-        Err(_) => Err(AppError::RequestTimeout(
-            "Agent did not respond within 30s".into(),
-        )),
+        Ok(AgentMessage::DockerUnavailable { .. }) => Err(docker_unavailable_error()),
+        Ok(_) => Err(AppError::Internal("Unexpected response from agent".into())),
+        Err(e) => Err(e.into()),
     }
 }

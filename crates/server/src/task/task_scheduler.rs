@@ -10,6 +10,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::entity::{task, task_result};
+use crate::service::agent_manager::AgentRequestError;
 use crate::service::audit::AuditService;
 use crate::service::high_risk_audit::ExecAuditContext;
 use crate::state::AppState;
@@ -246,66 +247,19 @@ async fn execute_for_server(
         let correlation_id = build_correlation_id(task_id, run_id, server_id, attempt);
         let started_at = Utc::now();
 
-        // Check agent online
-        let sender = match state.agent_manager.get_sender(server_id) {
-            Some(tx) => tx,
-            None => {
-                let _ = write_result(
-                    &state.db,
-                    task_id,
-                    run_id,
-                    server_id,
-                    attempt,
-                    started_at,
-                    -3,
-                    "Server offline",
-                )
-                .await;
-                if attempt < max_attempts {
-                    continue;
-                } else {
-                    break;
-                }
-            }
-        };
-
-        // Register pending request with TTL
-        let rx = state.agent_manager.register_pending_request_with_ttl(
-            correlation_id.clone(),
-            std::time::Duration::from_secs(timeout_secs + 10),
-        );
-
-        // Send Exec
-        let send_result = sender
-            .send(ServerMessage::Exec {
-                task_id: correlation_id,
-                command: command.to_string(),
-                timeout: Some(timeout_secs as u32),
-            })
-            .await;
-
-        if send_result.is_err() {
-            let _ = write_result(
-                &state.db,
-                task_id,
-                run_id,
-                server_id,
-                attempt,
-                started_at,
-                -3,
-                "Dispatch failed",
-            )
-            .await;
-            if attempt < max_attempts {
-                continue;
-            } else {
-                break;
-            }
-        }
-
-        // Wait for response, but abort if the task is cancelled (deleted/disabled)
+        // Send Exec and await the correlated TaskResult, aborting if the task
+        // is cancelled (deleted/disabled)
         let result = tokio::select! {
-            r = tokio::time::timeout(timeout_duration, rx) => r,
+            r = state.agent_manager.request_with_id(
+                server_id,
+                correlation_id,
+                timeout_duration,
+                |msg_id| ServerMessage::Exec {
+                    task_id: msg_id,
+                    command: command.to_string(),
+                    timeout: Some(timeout_secs as u32),
+                },
+            ) => r,
             _ = token.cancelled() => {
                 break;
             }
@@ -318,7 +272,7 @@ async fn execute_for_server(
         }
 
         match result {
-            Ok(Ok(AgentMessage::TaskResult { result, .. })) => {
+            Ok(AgentMessage::TaskResult { result, .. }) => {
                 let _ = write_result(
                     &state.db,
                     task_id,
@@ -334,6 +288,32 @@ async fn execute_for_server(
                     break;
                 }
                 // Non-zero: continue to retry if attempts remain
+            }
+            Err(AgentRequestError::Offline) => {
+                let _ = write_result(
+                    &state.db,
+                    task_id,
+                    run_id,
+                    server_id,
+                    attempt,
+                    started_at,
+                    -3,
+                    "Server offline",
+                )
+                .await;
+            }
+            Err(AgentRequestError::SendFailed) => {
+                let _ = write_result(
+                    &state.db,
+                    task_id,
+                    run_id,
+                    server_id,
+                    attempt,
+                    started_at,
+                    -3,
+                    "Dispatch failed",
+                )
+                .await;
             }
             _ => {
                 // Timeout or channel error
