@@ -32,7 +32,12 @@ struct UsersView: View {
                 Button { showCreate = true } label: { Image(systemName: "person.badge.plus") }
             }
         }
-        .task { await viewModel.load(apiClient: apiClient) }
+        .task {
+            #if DEBUG
+            if UITestSupport.autoPresent == "users-create" { showCreate = true }
+            #endif
+            await viewModel.load(apiClient: apiClient)
+        }
         .refreshable { await viewModel.load(apiClient: apiClient) }
         .sheet(isPresented: $showCreate) { CreateUserSheet(viewModel: viewModel) }
         .sheet(item: $editing) { user in
@@ -76,6 +81,15 @@ private struct CreateUserSheet: View {
         !username.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 8 && !working
     }
 
+    private var roleHint: String {
+        if role == "admin" {
+            return String(localized: "Admins have full control over the entire system, including terminals, file access, and user management.")
+        }
+        let visibility = String(localized: "Members can view all servers' monitoring data — including security events and public IPs — with no write access.")
+        let pointer = String(localized: "To show only selected servers to outsiders, use a status page instead.")
+        return "\(visibility) \(pointer)"
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -85,12 +99,16 @@ private struct CreateUserSheet: View {
                         .autocorrectionDisabled()
                     SecureField(String(localized: "Password (min 8)"), text: $password)
                 }
-                Section(String(localized: "Role")) {
+                Section {
                     Picker(String(localized: "Role"), selection: $role) {
                         Text(String(localized: "Member")).tag("member")
                         Text(String(localized: "Admin")).tag("admin")
                     }
                     .pickerStyle(.segmented)
+                } header: {
+                    Text("Role")
+                } footer: {
+                    Text(roleHint)
                 }
                 if let error {
                     Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.serverOffline) }

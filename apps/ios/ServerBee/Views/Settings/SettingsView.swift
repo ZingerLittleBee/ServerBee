@@ -17,7 +17,7 @@ struct SettingsView: View {
 
     /// DEBUG-only value-routed admin destinations, used by the launch hook to
     /// push a sub-screen without the cliclick harness scrolling the list.
-    enum AdminRoute: Hashable { case networkProbes, ipQuality, statusPage }
+    enum AdminRoute: Hashable { case networkProbes, ipQuality, statusPage, users }
     #endif
 
     var body: some View {
@@ -40,6 +40,7 @@ struct SettingsView: View {
                 case .networkProbes: NetworkProbeConfigView(isAdmin: isAdmin)
                 case .ipQuality: IpQualityConfigView(isAdmin: isAdmin)
                 case .statusPage: StatusPageConfigView(isAdmin: isAdmin)
+                case .users: UsersView()
                 }
             }
             .task {
@@ -47,6 +48,7 @@ struct SettingsView: View {
                 case "network-probes": debugPath.append(AdminRoute.networkProbes)
                 case "ip-quality": debugPath.append(AdminRoute.ipQuality)
                 case "status-page": debugPath.append(AdminRoute.statusPage)
+                case "users": debugPath.append(AdminRoute.users)
                 default: break
                 }
             }
