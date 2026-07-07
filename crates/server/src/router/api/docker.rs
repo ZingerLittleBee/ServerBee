@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
-use crate::service::agent_manager::AgentRequestError;
 use crate::service::audit::AuditService;
 use crate::service::capability_gate::require_capability;
 use crate::service::docker::DockerService;
@@ -560,6 +559,21 @@ async fn container_action(
     let action_label = format!("{:?}", body.action);
     let container_id = cid.clone();
 
+    // Audit the mutating container action (best-effort) before awaiting the
+    // agent's reply, so the trail survives a crash mid-wait and precedes
+    // execution. Requests that never reach a live agent are audited too — for
+    // a high-risk mutation an extra row beats a missing one.
+    let _ = AuditService::log(
+        &state.db,
+        &current_user.user_id,
+        "docker_container_action",
+        Some(&format!(
+            "server_id={id} container={container_id} action={action_label}"
+        )),
+        &ip,
+    )
+    .await;
+
     let result = state
         .agent_manager
         .request(&id, Duration::from_secs(30), |msg_id| {
@@ -570,24 +584,6 @@ async fn container_action(
             }
         })
         .await;
-
-    // Audit the mutating container action (best-effort). Logged once the
-    // command was dispatched to the agent, regardless of execution result.
-    if !matches!(
-        result,
-        Err(AgentRequestError::Offline | AgentRequestError::SendFailed)
-    ) {
-        let _ = AuditService::log(
-            &state.db,
-            &current_user.user_id,
-            "docker_container_action",
-            Some(&format!(
-                "server_id={id} container={container_id} action={action_label}"
-            )),
-            &ip,
-        )
-        .await;
-    }
 
     match result {
         Ok(AgentMessage::DockerActionResult { success, error, .. }) => {
