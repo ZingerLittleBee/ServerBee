@@ -10,6 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::middleware::auth::resolve_ws_connection;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::high_risk_audit::DockerLogsAuditContext;
@@ -35,14 +36,15 @@ async fn docker_logs_ws_handler(
     )
     .to_string();
 
-    // Auth: session cookie or API key
-    let user = validate_auth(&state, &headers).await;
-    match user {
-        Some((user_id, role, mobile_expires)) => {
+    // Shared credential policy lives in `middleware::auth`; this adapter only
+    // applies Docker-specific rules (admin role, agent online, capability).
+    match resolve_ws_connection(&headers, &state).await {
+        Some(conn) => {
+            let user_id = conn.user.user_id;
             // Docker log streaming exposes sensitive container output
             // (env vars, connection strings, tokens), so it is admin-only,
             // consistent with terminal access.
-            if role != "admin" {
+            if conn.user.role != "admin" {
                 let detail = serde_json::json!({
                     "server_id": server_id,
                     "deny_reason": "role_forbidden",
@@ -77,87 +79,11 @@ async fn docker_logs_ws_handler(
             }
             ws.max_message_size(MAX_WS_MESSAGE_SIZE)
                 .on_upgrade(move |socket| {
-                    handle_docker_logs_ws(socket, state, server_id, user_id, ip, mobile_expires)
+                    handle_docker_logs_ws(socket, state, server_id, user_id, ip, conn.mobile_expires)
                 })
         }
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
-}
-
-/// Returns `(user_id, role, mobile_expires)` on success.
-///
-/// `mobile_expires` is `Some(expires_at)` only for a non-web (mobile) Bearer
-/// session, whose lifetime is fixed (no sliding renewal). The handler uses it to
-/// force-close the WS when the token expires mid-session, matching the browser
-/// WS. Web sessions (sliding expiry) and API keys never expire the socket and
-/// yield `None`.
-async fn validate_auth(
-    state: &Arc<AppState>,
-    headers: &HeaderMap,
-) -> Option<(String, String, Option<chrono::DateTime<chrono::Utc>>)> {
-    use crate::service::auth::AuthService;
-
-    // Try session cookie (always web source → no mobile expiry)
-    if let Some(token) = extract_session_cookie(headers)
-        && let Ok(Some((user, _session))) =
-            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
-        && !user.must_change_password
-    {
-        return Some((user.id, user.role, None));
-    }
-
-    // Try API key header (no expiry)
-    if let Some(key) = extract_api_key(headers)
-        && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
-        && !user.must_change_password
-    {
-        return Some((user.id, user.role, None));
-    }
-
-    // Try Bearer token (may be a mobile session with a fixed expiry)
-    if let Some(token) = extract_bearer_token(headers)
-        && let Ok(Some((user, session))) =
-            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
-        && !user.must_change_password
-    {
-        let mobile_expires = if session.source != "web" {
-            Some(session.expires_at)
-        } else {
-            None
-        };
-        return Some((user.id, user.role, mobile_expires));
-    }
-
-    None
-}
-
-fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("cookie")?
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|cookie| {
-            let cookie = cookie.trim();
-            cookie.strip_prefix("session_token=").map(|v| v.to_string())
-        })
-}
-
-fn extract_api_key(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("x-api-key")?
-        .to_str()
-        .ok()
-        .map(|s| s.to_string())
-}
-
-fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("authorization")?
-        .to_str()
-        .ok()?
-        .strip_prefix("Bearer ")
-        .map(|s| s.to_string())
 }
 
 /// Browser -> Server messages for docker logs
