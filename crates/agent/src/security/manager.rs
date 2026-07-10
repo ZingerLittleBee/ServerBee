@@ -16,6 +16,7 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::capability_grants::CapabilityAuthority;
 use crate::config::SecurityConfig;
 use crate::security::conntrack_watcher::{self, ConntrackEvent};
 use crate::security::first_seen_store::FirstSeenStore;
@@ -129,6 +130,45 @@ impl SecurityManager {
     /// For tests/diagnostics: number of spawned background tasks.
     pub fn handle_count(&self) -> usize {
         self.handles.len()
+    }
+
+    /// Supervise the pipeline against the capability authority.
+    ///
+    /// Starts the pipeline when `CAP_SECURITY_EVENTS` is (or becomes)
+    /// effective — including via a temporary grant at any point in the
+    /// agent's lifetime — and stops it when the capability expires or is
+    /// revoked, so a bounded grant tears its running work down. Replaces the
+    /// old start-once-at-boot wiring, which could neither start on a later
+    /// grant nor stop on expiry.
+    pub fn spawn_supervised(
+        cfg: SecurityConfig,
+        authority: Arc<CapabilityAuthority>,
+        tx: mpsc::Sender<AgentMessage>,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut state = authority.subscribe_state();
+            let mut running: Option<SecurityManager> = None;
+            loop {
+                let wanted = has_capability(*state.borrow_and_update(), CAP_SECURITY_EVENTS);
+                if wanted && running.is_none() {
+                    match Self::start(cfg.clone(), authority.effective(), tx.clone()).await {
+                        Ok(m) => running = Some(m),
+                        Err(e) => tracing::warn!(
+                            error = %e,
+                            "SecurityManager failed to start; will retry on next capability change"
+                        ),
+                    }
+                } else if !wanted && running.take().is_some() {
+                    // Dropping the manager aborts its pipeline tasks.
+                    tracing::info!(
+                        "security pipeline stopped: CAP_SECURITY_EVENTS no longer effective"
+                    );
+                }
+                if state.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
     }
 }
 

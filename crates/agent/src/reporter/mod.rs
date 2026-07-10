@@ -3,7 +3,7 @@ mod wire;
 
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -19,6 +19,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use wire::send_msg;
 
+use crate::capability_grants::CapabilityAuthority;
 use crate::collector::Collector;
 use crate::config::AgentConfig;
 use crate::docker::DockerManager;
@@ -41,17 +42,21 @@ static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 pub struct Reporter {
     config: AgentConfig,
     fingerprint: String,
-    agent_local_capabilities: u32,
+    capabilities: Arc<CapabilityAuthority>,
     firewall_manager: Arc<FirewallManager>,
 }
 
 impl Reporter {
-    pub fn new(config: AgentConfig, fingerprint: String, agent_local_capabilities: u32) -> Self {
+    pub fn new(
+        config: AgentConfig,
+        fingerprint: String,
+        capabilities: Arc<CapabilityAuthority>,
+    ) -> Self {
         let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
         Self {
             config,
             fingerprint,
-            agent_local_capabilities,
+            capabilities,
             firewall_manager,
         }
     }
@@ -137,19 +142,12 @@ impl Reporter {
 
         tracing::info!("Connecting to {}...", build_ws_url(&self.config)?);
 
-        // Fold any active temporary grants into the initial effective caps so the
-        // first SystemInfo already reflects grants that survived a restart.
-        let base_caps = self.agent_local_capabilities;
-        let grants_path = self.config.capabilities.grants_path();
-        let now0 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        let grant_store0 = crate::capability_grants::CapabilityGrantStore::load(&grants_path);
-        let effective_caps =
-            (base_caps | grant_store0.active_bits(now0, base_caps)) & serverbee_common::constants::CAP_VALID_MASK;
-        let initial_temporary = grant_store0.active_grants(now0, base_caps);
-        let capabilities = Arc::new(AtomicU32::new(effective_caps));
+        // The process-wide authority already folds active temporary grants
+        // into the effective caps, so the first SystemInfo reflects grants
+        // that survived a restart.
+        let capabilities = Arc::clone(&self.capabilities);
+        let effective_caps = capabilities.effective();
+        let initial_temporary = capabilities.active_grants();
 
         let request = build_ws_request(&self.config)?;
         let (ws_stream, _response) = connect_async(request).await?;
@@ -283,7 +281,7 @@ impl Reporter {
         // arm of the select! loop below.
         {
             use serverbee_common::constants::CAP_IP_QUALITY;
-            if has_capability(capabilities.load(Ordering::SeqCst), CAP_IP_QUALITY) {
+            if capabilities.has(CAP_IP_QUALITY) {
                 let seed_ip = initial_ipv4.clone().or_else(|| initial_ipv6.clone());
                 // Only seed when we have a non-empty interface-derived IP.
                 // If neither is available the checker stays at None and will be
@@ -301,24 +299,10 @@ impl Reporter {
         // Channel for background command execution results.
         let (cmd_result_tx, mut cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
 
-        // Capability grant supervisor: re-reads the grants file and pushes
-        // CapabilitiesChanged through `grant_tx` (forwarded onto the WS below).
-        let (grant_tx, mut grant_rx) = mpsc::channel::<AgentMessage>(8);
-        {
-            let grants_path = grants_path.clone();
-            let caps = Arc::clone(&capabilities);
-            let tx = grant_tx.clone();
-            tokio::spawn(async move {
-                crate::capability_grants::supervisor::run_grant_supervisor(
-                    grants_path,
-                    base_caps,
-                    caps,
-                    tx,
-                    std::time::Duration::from_secs(3),
-                )
-                .await;
-            });
-        }
+        // Capability transitions from the process-wide authority: each one is
+        // forwarded to the server as CapabilitiesChanged, after reconciling
+        // in-flight work owned by this connection.
+        let mut transition_rx = capabilities.subscribe_transitions();
 
         // Fire-and-forget: refine the just-sent SystemInfo IPs with an
         // externally-observed public IP. If discovery yields something
@@ -372,7 +356,7 @@ impl Reporter {
                     // Intercept IpChanged to notify the UnlockChecker before forwarding.
                     if let AgentMessage::IpChanged { ref ipv4, ref ipv6, .. } = cmd_msg {
                         use serverbee_common::constants::CAP_IP_QUALITY;
-                        if has_capability(capabilities.load(Ordering::SeqCst), CAP_IP_QUALITY) {
+                        if capabilities.has(CAP_IP_QUALITY) {
                             // Prefer IPv4 egress; fall back to IPv6.
                             let new_ip = ipv4.clone().or_else(|| ipv6.clone());
                             unlock_checker.notify_ip_changed(new_ip);
@@ -381,9 +365,49 @@ impl Reporter {
                     send_msg(&mut write, &cmd_msg).await?;
                     tracing::debug!("Sent background command result");
                 }
-                Some(grant_msg) = grant_rx.recv() => {
-                    send_msg(&mut write, &grant_msg).await?;
-                    tracing::debug!("Sent CapabilitiesChanged");
+                transition = transition_rx.recv() => {
+                    match transition {
+                        Ok(t) => {
+                            // Reconcile in-flight work before announcing: a
+                            // revoked or expired terminal capability must tear
+                            // down live PTY sessions, not just block new ones.
+                            if !has_capability(t.effective, CAP_TERMINAL) {
+                                for session_id in terminal_manager.close_all() {
+                                    let msg = AgentMessage::TerminalError {
+                                        session_id,
+                                        error: "Terminal capability revoked or expired".to_string(),
+                                    };
+                                    send_msg(&mut write, &msg).await?;
+                                }
+                            }
+                            let msg = AgentMessage::CapabilitiesChanged {
+                                msg_id: uuid::Uuid::new_v4().to_string(),
+                                capabilities: t.effective,
+                                temporary: t.temporary,
+                                changes: t.changes,
+                            };
+                            send_msg(&mut write, &msg).await?;
+                            tracing::debug!("Sent CapabilitiesChanged");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            // Missed transitions: resync the server with the
+                            // current snapshot (change events for the missed
+                            // steps are lost, but state converges).
+                            tracing::warn!("capability transitions lagged by {n}; resyncing");
+                            let msg = AgentMessage::CapabilitiesChanged {
+                                msg_id: uuid::Uuid::new_v4().to_string(),
+                                capabilities: capabilities.effective(),
+                                temporary: capabilities.active_grants(),
+                                changes: Vec::new(),
+                            };
+                            send_msg(&mut write, &msg).await?;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            // The authority lives as long as the process; a
+                            // closed channel means shutdown is underway.
+                            return Ok(());
+                        }
+                    }
                 }
                 Some(run_result) = unlock_result_rx.recv() => {
                     let msg = AgentMessage::UnlockResults {
@@ -574,7 +598,7 @@ impl Reporter {
         terminal_manager: &mut TerminalManager,
         network_prober: &mut NetworkProber,
         cmd_result_tx: &mpsc::Sender<AgentMessage>,
-        capabilities: &Arc<AtomicU32>,
+        capabilities: &CapabilityAuthority,
         file_manager: &FileManager,
         file_tx: &mpsc::Sender<FileEvent>,
         docker_manager: &mut Option<DockerManager>,
@@ -605,8 +629,7 @@ impl Reporter {
                 command,
                 timeout,
             } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_EXEC) {
+                if !capabilities.has(CAP_EXEC) {
                     tracing::warn!("Exec denied: capability disabled (task_id={task_id})");
                     spawn_capability_denied(cmd_result_tx, Some(task_id), "exec");
                     return Ok(());
@@ -666,8 +689,7 @@ impl Reporter {
                 job_id,
                 ..
             } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_UPGRADE) {
+                if !capabilities.has(CAP_UPGRADE) {
                     tracing::warn!("Upgrade denied: capability disabled");
                     send_msg(write, &capability_denied_msg(None, "upgrade")).await?;
                     return Ok(());
@@ -723,8 +745,7 @@ impl Reporter {
                 max_hops,
                 protocol,
             } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !has_capability(caps, CAP_PING_ICMP) {
+                if !capabilities.has(CAP_PING_ICMP) {
                     tracing::warn!(
                         "Traceroute denied: capability disabled (request_id={request_id})"
                     );
@@ -849,8 +870,7 @@ impl Reporter {
             | ServerMessage::BlocklistRemove { .. }
             | ServerMessage::BlocklistReset) => {
                 let is_reset = matches!(msg, ServerMessage::BlocklistReset);
-                let caps = capabilities.load(Ordering::SeqCst);
-                if !is_reset && !has_capability(caps, CAP_FIREWALL_BLOCK) {
+                if !is_reset && !capabilities.has(CAP_FIREWALL_BLOCK) {
                     tracing::warn!(
                         "Firewall blocklist mutation denied: CAP_FIREWALL_BLOCK not effective — ignoring"
                     );
@@ -860,8 +880,7 @@ impl Reporter {
                 }
             }
             ServerMessage::IpQualitySync { services, interval_hours } => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if has_capability(caps, CAP_IP_QUALITY) {
+                if capabilities.has(CAP_IP_QUALITY) {
                     tracing::info!(
                         "Received IpQualitySync: {} services, interval={}h",
                         services.len(),
@@ -875,8 +894,7 @@ impl Reporter {
                 }
             }
             ServerMessage::IpQualityRunNow => {
-                let caps = capabilities.load(Ordering::SeqCst);
-                if has_capability(caps, CAP_IP_QUALITY) {
+                if capabilities.has(CAP_IP_QUALITY) {
                     tracing::info!("Received IpQualityRunNow");
                     unlock_checker.run_now();
                 } else {
@@ -1650,7 +1668,7 @@ mod tests {
     /// plus the receiver ends so background senders never see a closed channel.
     struct Harness {
         reporter: Reporter,
-        capabilities: Arc<AtomicU32>,
+        capabilities: Arc<CapabilityAuthority>,
         ping_manager: PingManager,
         terminal_manager: TerminalManager,
         network_prober: NetworkProber,
@@ -1686,8 +1704,8 @@ mod tests {
                 security: SecurityConfig::default(),
                 capabilities: CapabilitiesConfig::default(),
             };
-            let reporter = Reporter::new(config, "fp".to_string(), caps);
-            let capabilities = Arc::new(AtomicU32::new(caps));
+            let capabilities = CapabilityAuthority::fixed(caps);
+            let reporter = Reporter::new(config, "fp".to_string(), Arc::clone(&capabilities));
 
             let (ping_tx, _ping_rx) = mpsc::channel(16);
             let ping_manager = PingManager::new(ping_tx, Arc::clone(&capabilities));
@@ -2810,7 +2828,7 @@ mod tests {
         // returns Ok.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2855,7 +2873,7 @@ mod tests {
         // the fake server reads off the wire.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2890,7 +2908,7 @@ mod tests {
         // agent Pong over the real socket.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2919,7 +2937,7 @@ mod tests {
         // select! loop.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2968,7 +2986,7 @@ mod tests {
         // receive-dispatch path for a "silent" variant plus the Close arm.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2999,7 +3017,7 @@ mod tests {
         // Ok(()) (the normal-reconnect signal), not an error.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3033,7 +3051,7 @@ mod tests {
         // Drop the listener so the port refuses connections.
         drop(listener);
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
         let connect = connect.expect("connect should fail fast, not hang");
@@ -3052,7 +3070,7 @@ mod tests {
         // is bounded by an outer timeout that aborts the never-returning task.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         // Server: accept two connections; each time send Welcome, read
         // SystemInfo, then close. Signal each successful handshake.
@@ -3131,7 +3149,7 @@ mod tests {
         // the loop.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3164,7 +3182,7 @@ mod tests {
         // No WS frame results; we confirm liveness with Ping->Pong.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3202,7 +3220,7 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_TERMINAL;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3261,6 +3279,110 @@ mod tests {
         assert!(matches!(pong, AgentMessage::Pong));
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_e2e_terminal_grant_expiry_tears_down_live_session() {
+        // A live PTY session opened under a temporary terminal grant must be
+        // torn down when the grant expires: the reconcile step in the
+        // transition arm closes the session (TerminalError over the WS) and
+        // the CapabilitiesChanged announcement drops the terminal bit.
+        use crate::capability_grants::store::GrantRecord;
+
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let base = ALL_CAPS & !serverbee_common::constants::CAP_TERMINAL;
+
+        // Seed a grant that expires shortly after the session is opened.
+        let config = e2e_config(&addr, tmp.path());
+        let grants_path = config.capabilities.grants_path();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let mut store = crate::capability_grants::store::CapabilityGrantStore::load(&grants_path);
+        store.upsert(
+            GrantRecord {
+                cap: "terminal".into(),
+                granted_at: now,
+                // Generous window: the PTY must be observably started before
+                // the grant expires, even on a loaded CI machine.
+                expires_at: now + 5,
+                granted_by: "root".into(),
+                reason: Some("e2e".into()),
+            },
+            now,
+        );
+        store.flush().unwrap();
+
+        let authority = CapabilityAuthority::new(base, grants_path);
+        tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(100)));
+        let mut reporter = Reporter::new(config, "fp".to_string(), authority);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let info = handshake_collect_system_info(&mut ws).await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::TerminalOpen {
+                    session_id: "term-live".to_string(),
+                    rows: 24,
+                    cols: 80,
+                },
+            )
+            .await;
+            // The grant is active, so the PTY actually starts.
+            let _started = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::TerminalStarted { session_id } if session_id == "term-live")
+            })
+            .await;
+            // On expiry the reconcile step closes the session...
+            let err = read_agent_until(&mut ws, |m| {
+                matches!(
+                    m,
+                    AgentMessage::TerminalError { session_id, error }
+                        if session_id == "term-live" && error.contains("capability")
+                )
+            })
+            .await;
+            // ...and the transition is announced without the terminal bit.
+            let changed = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::CapabilitiesChanged { .. })
+            })
+            .await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            (info, err, changed)
+        });
+
+        let (info, _err, changed) = drive_e2e(&mut reporter, server, Duration::from_secs(15)).await;
+
+        // The initial SystemInfo carried the granted terminal capability.
+        match info {
+            AgentMessage::SystemInfo {
+                agent_local_capabilities,
+                ..
+            } => assert_eq!(
+                agent_local_capabilities,
+                Some(ALL_CAPS),
+                "grant must be folded into the caps reported at connect"
+            ),
+            other => panic!("expected SystemInfo, got {other:?}"),
+        }
+        match changed {
+            AgentMessage::CapabilitiesChanged {
+                capabilities,
+                changes,
+                ..
+            } => {
+                assert_eq!(capabilities, base, "expiry must drop the terminal bit");
+                assert!(
+                    changes.iter().any(|c| c.cap == "terminal"),
+                    "the transition must carry the terminal change event"
+                );
+            }
+            other => panic!("expected CapabilitiesChanged, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
     async fn test_e2e_dispatch_blocklist_reset_forwards_ack() {
         // BlocklistReset routes into the FirewallManager and forwards its
@@ -3269,7 +3391,7 @@ mod tests {
         // ack, so the dispatcher always emits exactly one reply frame.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3295,7 +3417,7 @@ mod tests {
         // `nft` but the manager still returns a (failed-state) ack frame.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3325,7 +3447,7 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_FILE;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3371,7 +3493,7 @@ mod tests {
         let state = tempfile::tempdir().unwrap();
         let mut config = e2e_config(&addr, state.path());
         config.file = enabled_file_cfg(&root);
-        let mut reporter = Reporter::new(config, "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(config, "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let dest = root.join("upload.bin");
         let dest_s = dest.to_string_lossy().to_string();
@@ -3413,7 +3535,7 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_EXEC;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3459,7 +3581,7 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_UPGRADE;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), caps);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3502,7 +3624,7 @@ mod tests {
         // channel and forwarded over the WS. No traceroute subprocess spawns.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3544,7 +3666,7 @@ mod tests {
         // running, proven by a subsequent Ping->Pong.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3572,7 +3694,7 @@ mod tests {
         // dispatching application messages via a ServerMessage::Ping->Pong.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), ALL_CAPS);
+        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;

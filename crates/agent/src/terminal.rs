@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
-use serverbee_common::constants::{CAP_TERMINAL, MAX_TERMINAL_SESSIONS, has_capability};
+use serverbee_common::constants::{CAP_TERMINAL, MAX_TERMINAL_SESSIONS};
 use tokio::sync::mpsc;
+
+use crate::capability_grants::CapabilityAuthority;
 
 /// Message sent from terminal sessions back to the reporter.
 pub enum TerminalEvent {
@@ -28,11 +29,14 @@ struct PtySession {
 pub struct TerminalManager {
     sessions: HashMap<String, PtySession>,
     event_tx: mpsc::Sender<TerminalEvent>,
-    capabilities: Arc<AtomicU32>,
+    capabilities: Arc<CapabilityAuthority>,
 }
 
 impl TerminalManager {
-    pub fn new(event_tx: mpsc::Sender<TerminalEvent>, capabilities: Arc<AtomicU32>) -> Self {
+    pub fn new(
+        event_tx: mpsc::Sender<TerminalEvent>,
+        capabilities: Arc<CapabilityAuthority>,
+    ) -> Self {
         Self {
             sessions: HashMap::new(),
             event_tx,
@@ -42,8 +46,7 @@ impl TerminalManager {
 
     /// Open a new terminal session with the given dimensions.
     pub fn open(&mut self, session_id: String, rows: u16, cols: u16) {
-        let caps = self.capabilities.load(Ordering::SeqCst);
-        if !has_capability(caps, CAP_TERMINAL) {
+        if !self.capabilities.has(CAP_TERMINAL) {
             tracing::warn!("Terminal denied: capability disabled (session={session_id})");
             let tx = self.event_tx.clone();
             let sid = session_id;
@@ -340,7 +343,7 @@ mod tests {
     async fn open_denied_without_capability_emits_error() {
         let (tx, mut rx) = mpsc::channel(64);
         // No CAP_TERMINAL bit set.
-        let caps = Arc::new(AtomicU32::new(0));
+        let caps = CapabilityAuthority::fixed(0);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "denied".to_string();
@@ -375,7 +378,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn open_emits_started_and_tracks_session() {
         let (tx, mut rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "started".to_string();
@@ -406,7 +409,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn open_duplicate_session_id_is_noop() {
         let (tx, mut rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "dup".to_string();
@@ -449,7 +452,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn open_beyond_max_sessions_emits_error() {
         let (tx, mut rx) = mpsc::channel(128);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         // Fill up to the cap.
@@ -504,7 +507,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn write_input_valid_keeps_session() {
         let (tx, mut rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "write".to_string();
@@ -533,7 +536,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn write_input_invalid_base64_is_noop() {
         let (tx, mut rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "bad-b64".to_string();
@@ -560,7 +563,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn write_input_unknown_session_is_noop() {
         let (tx, _rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         // No session opened: hits the `None` branch of get_mut.
@@ -572,7 +575,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn resize_existing_session_succeeds() {
         let (tx, mut rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "resize".to_string();
@@ -597,7 +600,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn resize_unknown_session_is_noop() {
         let (tx, _rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         // Hits the `None` branch of get_mut in resize().
@@ -609,7 +612,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn close_unknown_session_is_noop() {
         let (tx, _rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         // `sessions.remove` returns None -> the `if let Some` body is skipped.
@@ -622,7 +625,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn close_all_returns_ids_and_clears_sessions() {
         let (tx, mut rx) = mpsc::channel(128);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let ids = ["a", "b"];
@@ -672,7 +675,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn close_all_empty_returns_empty() {
         let (tx, _rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         assert!(mgr.close_all().is_empty());
@@ -681,7 +684,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn close_reaps_child_process() {
         let (tx, _rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "reap-test".to_string();
@@ -730,7 +733,7 @@ mod tests {
     async fn open_denied_with_other_capability_only() {
         let (tx, mut rx) = mpsc::channel(64);
         // A different bit is on (CAP_EXEC), but CAP_TERMINAL is absent.
-        let caps = Arc::new(AtomicU32::new(CAP_EXEC));
+        let caps = CapabilityAuthority::fixed(CAP_EXEC);
         let mut mgr = TerminalManager::new(tx, caps);
 
         let sid = "other-cap".to_string();
@@ -759,17 +762,17 @@ mod tests {
         }
     }
 
-    /// The capability is re-read from the shared atomic on every `open()` call:
+    /// The capability is re-read from the authority on every `open()` call:
     /// revoking CAP_TERMINAL after construction (e.g. capability revocation)
     /// must deny a subsequent open without spawning a PTY.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn open_respects_runtime_capability_revocation() {
         let (tx, mut rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, Arc::clone(&caps));
 
-        // Revoke the terminal capability through the shared handle before opening.
-        caps.store(0, Ordering::SeqCst);
+        // Revoke the terminal capability through the shared authority before opening.
+        caps.set_effective_for_test(0);
 
         let sid = "revoked".to_string();
         mgr.open(sid.clone(), 24, 80);
@@ -800,7 +803,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn write_input_empty_base64_unknown_session_is_noop() {
         let (tx, _rx) = mpsc::channel(64);
-        let caps = Arc::new(AtomicU32::new(CAP_TERMINAL));
+        let caps = CapabilityAuthority::fixed(CAP_TERMINAL);
         let mut mgr = TerminalManager::new(tx, caps);
 
         // "" is valid base64 for an empty byte slice; session does not exist.

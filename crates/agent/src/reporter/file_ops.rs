@@ -5,16 +5,14 @@
 //! one reply-shape rule for denials. `FileDownloadCancel` is exempt: cancel
 //! must always work so a revoked agent can still be cleaned up.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-
 use futures_util::SinkExt;
-use serverbee_common::constants::{CAP_FILE, has_capability};
+use serverbee_common::constants::CAP_FILE;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::wire::send_msg;
+use crate::capability_grants::CapabilityAuthority;
 use crate::file_manager::{FileEvent, FileManager};
 
 const DISABLED: &str = "File capability disabled";
@@ -25,7 +23,7 @@ pub(super) async fn handle_file_message<S>(
     write: &mut S,
     file_manager: &FileManager,
     file_tx: &mpsc::Sender<FileEvent>,
-    capabilities: &Arc<AtomicU32>,
+    capabilities: &CapabilityAuthority,
 ) -> anyhow::Result<()>
 where
     S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -37,8 +35,7 @@ where
         return Ok(());
     }
 
-    let caps = capabilities.load(Ordering::SeqCst);
-    if !has_capability(caps, CAP_FILE) || !file_manager.is_enabled() {
+    if !capabilities.has(CAP_FILE) || !file_manager.is_enabled() {
         if let Some(reply) = capability_disabled_reply(msg) {
             send_msg(write, &reply).await?;
         }

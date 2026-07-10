@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -10,6 +9,8 @@ use serverbee_common::types::{NetworkProbeResultData, NetworkProbeTarget};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
+
+use crate::capability_grants::CapabilityAuthority;
 
 use crate::probe_utils::{probe_http, probe_icmp_batch, probe_tcp};
 
@@ -26,11 +27,14 @@ struct RunningTask {
 pub struct NetworkProber {
     tasks: HashMap<String, RunningTask>,
     tx: mpsc::Sender<NetworkProbeResultData>,
-    capabilities: Arc<AtomicU32>,
+    capabilities: Arc<CapabilityAuthority>,
 }
 
 impl NetworkProber {
-    pub fn new(tx: mpsc::Sender<NetworkProbeResultData>, capabilities: Arc<AtomicU32>) -> Self {
+    pub fn new(
+        tx: mpsc::Sender<NetworkProbeResultData>,
+        capabilities: Arc<CapabilityAuthority>,
+    ) -> Self {
         Self {
             tasks: HashMap::new(),
             tx,
@@ -45,7 +49,7 @@ impl NetworkProber {
     /// are (re)started.
     pub fn sync(&mut self, targets: Vec<NetworkProbeTarget>, interval: u32, packet_count: u32) {
         // Filter by current capability bitmap
-        let caps = self.capabilities.load(Ordering::SeqCst);
+        let caps = self.capabilities.effective();
         let targets: Vec<_> = targets
             .into_iter()
             .filter(|t| {
@@ -354,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn test_network_prober_sync_stops_removed_tasks() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP);
         let mut prober = NetworkProber::new(tx, caps);
 
         let targets = vec![NetworkProbeTarget {
@@ -375,7 +379,7 @@ mod tests {
     async fn test_network_prober_capability_filter() {
         let (tx, _rx) = mpsc::channel(16);
         // Only TCP capability enabled
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut prober = NetworkProber::new(tx, caps);
 
         let targets = vec![
@@ -546,7 +550,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_restarts_when_interval_changes() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
@@ -565,7 +569,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_restarts_when_packet_count_changes() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
@@ -581,7 +585,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_restarts_when_target_address_changes() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
@@ -598,7 +602,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_restarts_when_probe_type_changes() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP | CAP_PING_HTTP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
@@ -618,7 +622,7 @@ mod tests {
         // We can't compare handle identity, but the task count and config stay
         // stable across the unchanged sync.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);
@@ -635,7 +639,7 @@ mod tests {
     #[tokio::test]
     async fn test_sync_adds_and_keeps_multiple_targets() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP | CAP_PING_HTTP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(
@@ -671,7 +675,7 @@ mod tests {
     async fn test_sync_filters_all_when_no_capabilities() {
         // Zero capability bitmap -> every target is filtered out.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(0));
+        let caps = CapabilityAuthority::fixed(0);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(
@@ -690,7 +694,7 @@ mod tests {
     async fn test_sync_filters_unknown_probe_type() {
         // An unknown probe_type maps to None -> filtered out even with full caps.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(vec![target("weird", "dns", "example.com")], 60, 3);
@@ -700,7 +704,7 @@ mod tests {
     #[tokio::test]
     async fn test_stop_all_clears_tasks() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut prober = NetworkProber::new(tx, caps);
 
         prober.sync(vec![target("t1", "tcp", "1.1.1.1:80")], 60, 3);

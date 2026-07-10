@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
@@ -8,6 +7,7 @@ use serverbee_common::constants::{has_capability, probe_type_to_cap};
 use serverbee_common::types::{PingResult, PingTaskConfig};
 use tokio::sync::mpsc;
 
+use crate::capability_grants::CapabilityAuthority;
 use crate::probe_utils;
 
 /// Manages running ping probe tasks. Each task runs on its own interval
@@ -15,11 +15,14 @@ use crate::probe_utils;
 pub struct PingManager {
     tasks: HashMap<String, tokio::task::JoinHandle<()>>,
     result_tx: mpsc::Sender<PingResult>,
-    capabilities: Arc<AtomicU32>,
+    capabilities: Arc<CapabilityAuthority>,
 }
 
 impl PingManager {
-    pub fn new(result_tx: mpsc::Sender<PingResult>, capabilities: Arc<AtomicU32>) -> Self {
+    pub fn new(
+        result_tx: mpsc::Sender<PingResult>,
+        capabilities: Arc<CapabilityAuthority>,
+    ) -> Self {
         Self {
             tasks: HashMap::new(),
             result_tx,
@@ -31,7 +34,7 @@ impl PingManager {
     /// Stops tasks no longer in the list, starts new ones, restarts changed ones.
     pub fn sync(&mut self, configs: Vec<PingTaskConfig>) {
         // Filter by capability bitmap
-        let caps = self.capabilities.load(Ordering::SeqCst);
+        let caps = self.capabilities.effective();
         let configs: Vec<_> = configs
             .into_iter()
             .filter(|c| {
@@ -191,7 +194,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_manager_new_starts_empty() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_ICMP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_ICMP);
         let manager = PingManager::new(tx, caps);
         assert_eq!(manager.tasks.len(), 0);
     }
@@ -200,7 +203,7 @@ mod tests {
     async fn test_ping_manager_sync_starts_filtered_tasks() {
         let (tx, _rx) = mpsc::channel(16);
         // Only TCP capability enabled.
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut manager = PingManager::new(tx, caps);
 
         let configs = vec![
@@ -222,7 +225,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_manager_sync_filters_unknown_probe_type() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP);
         let mut manager = PingManager::new(tx, caps);
 
         // Unknown probe type maps to None -> filtered out.
@@ -233,7 +236,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_manager_sync_filters_all_when_no_caps() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(0));
+        let caps = CapabilityAuthority::fixed(0);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![
@@ -246,7 +249,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_manager_sync_stops_removed_tasks() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![config("tcp1", "tcp", "1.1.1.1:80", 30)]);
@@ -260,7 +263,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_manager_sync_restarts_running_task() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![config("tcp1", "tcp", "1.1.1.1:80", 30)]);
@@ -278,7 +281,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_manager_sync_keeps_unrelated_and_adds_new() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP | CAP_PING_HTTP);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![
@@ -308,7 +311,7 @@ mod tests {
         // the loop only sends after a tick, we instead drive the finished-handle
         // branch by aborting via stop_all then re-syncing.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![config("tcp1", "tcp", "1.1.1.1:80", 30)]);
@@ -333,7 +336,7 @@ mod tests {
     #[tokio::test]
     async fn test_ping_manager_stop_all_clears_tasks() {
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_TCP | CAP_PING_HTTP);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![
@@ -454,7 +457,7 @@ mod tests {
         // probe_type_to_cap only maps lowercase "icmp"/"tcp"/"http"; an
         // uppercase variant maps to None and is filtered out even with all caps.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![
@@ -469,7 +472,7 @@ mod tests {
         // Exactly one capability bit set: only the matching probe_type survives,
         // exercising has_capability against a single-bit mask for every type.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(CAP_PING_HTTP));
+        let caps = CapabilityAuthority::fixed(CAP_PING_HTTP);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![
@@ -488,7 +491,7 @@ mod tests {
         // An empty probe_type string maps to None (catch-all in
         // probe_type_to_cap) and is dropped regardless of the capability mask.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(u32::MAX));
+        let caps = CapabilityAuthority::fixed(u32::MAX);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![config("blank", "", "1.1.1.1", 30)]);
@@ -500,7 +503,7 @@ mod tests {
         // u32::MAX enables every bit, so all three valid probe types pass the
         // capability filter together.
         let (tx, _rx) = mpsc::channel(16);
-        let caps = Arc::new(AtomicU32::new(u32::MAX));
+        let caps = CapabilityAuthority::fixed(u32::MAX);
         let mut manager = PingManager::new(tx, caps);
 
         manager.sync(vec![
