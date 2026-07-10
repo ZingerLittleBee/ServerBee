@@ -5,9 +5,7 @@ use std::time::Instant;
 use chrono::Utc;
 use tokio::sync::Semaphore;
 
-use crate::service::checker;
-use crate::service::maintenance::MaintenanceService;
-use crate::service::notification::{NotificationService, NotifyContext};
+use crate::service::monitor_check::CheckOutcome;
 use crate::service::service_monitor::ServiceMonitorService;
 use crate::state::AppState;
 
@@ -62,7 +60,20 @@ pub async fn run(state: Arc<AppState>) {
                     Err(_) => return,
                 };
 
-                execute_check(&state, &monitor).await;
+                match state
+                    .monitor_check_runner
+                    .run_check(&state.db, &state.config, &monitor.id)
+                    .await
+                {
+                    Ok(CheckOutcome::Completed(_)) => {}
+                    Ok(CheckOutcome::AlreadyRunning) => tracing::debug!(
+                        "Skipping check for '{}': previous check still running",
+                        monitor.name
+                    ),
+                    Err(e) => {
+                        tracing::error!("Service monitor check failed for {}: {e}", monitor.id);
+                    }
+                }
             });
         }
     }
@@ -131,151 +142,13 @@ pub(crate) fn select_due_monitors(
     due_monitors
 }
 
-/// Execute a single monitor check: run the checker, insert the record, update state,
-/// and send notifications if needed.
-pub(crate) async fn execute_check(
-    state: &AppState,
-    monitor: &crate::entity::service_monitor::Model,
-) {
-    let config: serde_json::Value = serde_json::from_str(&monitor.config_json).unwrap_or_default();
-
-    let result = checker::run_check(&monitor.monitor_type, &monitor.target, &config).await;
-
-    // Insert the record
-    if let Err(e) = ServiceMonitorService::insert_record(
-        &state.db,
-        &monitor.id,
-        result.success,
-        result.latency,
-        result.detail.clone(),
-        result.error.clone(),
-    )
-    .await
-    {
-        tracing::error!(
-            "Failed to insert service monitor record for {}: {e}",
-            monitor.id
-        );
-        return;
-    }
-
-    // Calculate new consecutive failure count
-    let consecutive_failures = if result.success {
-        0
-    } else {
-        monitor.consecutive_failures + 1
-    };
-
-    // Update monitor state
-    if let Err(e) = ServiceMonitorService::update_check_state(
-        &state.db,
-        &monitor.id,
-        result.success,
-        consecutive_failures,
-    )
-    .await
-    {
-        tracing::error!("Failed to update check state for {}: {e}", monitor.id);
-        return;
-    }
-
-    // Determine if we need to send notifications
-    let was_failing = monitor.last_status == Some(false);
-
-    // Skip notifications if any associated server is in maintenance
-    let in_maintenance = if let Some(ref server_ids_json) = monitor.server_ids_json {
-        let server_ids: Vec<String> = serde_json::from_str(server_ids_json).unwrap_or_default();
-        let mut any_in_maintenance = false;
-        for sid in &server_ids {
-            if MaintenanceService::is_in_maintenance(&state.db, sid)
-                .await
-                .unwrap_or(false)
-            {
-                any_in_maintenance = true;
-                break;
-            }
-        }
-        any_in_maintenance
-    } else {
-        false
-    };
-
-    if in_maintenance {
-        tracing::debug!(
-            "Skipping notification for service monitor '{}': associated server in maintenance",
-            monitor.name
-        );
-        return;
-    }
-
-    // Failure notification: consecutive failures exceeded retry_count
-    if !result.success
-        && consecutive_failures > monitor.retry_count
-        && let Some(ref group_id) = monitor.notification_group_id
-    {
-        let error_msg = result.error.as_deref().unwrap_or("Unknown error");
-        let ctx = NotifyContext {
-            server_name: monitor.name.clone(),
-            server_id: monitor.id.clone(),
-            rule_name: format!("{} ({})", monitor.name, monitor.monitor_type),
-            event: "triggered".to_string(),
-            message: format!(
-                "Service monitor '{}' failed after {} consecutive failures: {}",
-                monitor.name, consecutive_failures, error_msg
-            ),
-            time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-            ..Default::default()
-        };
-
-        if let Err(e) =
-            NotificationService::send_group(&state.db, &state.config, group_id, &ctx).await
-        {
-            tracing::error!(
-                "Failed to send failure notification for {}: {e}",
-                monitor.name
-            );
-        }
-    }
-
-    // Recovery notification: was failing, now succeeded
-    if result.success
-        && was_failing
-        && let Some(ref group_id) = monitor.notification_group_id
-    {
-        let ctx = NotifyContext {
-            server_name: monitor.name.clone(),
-            server_id: monitor.id.clone(),
-            rule_name: format!("{} ({})", monitor.name, monitor.monitor_type),
-            event: "recovered".to_string(),
-            message: format!(
-                "Service monitor '{}' has recovered after {} consecutive failures",
-                monitor.name, monitor.consecutive_failures
-            ),
-            time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
-            ..Default::default()
-        };
-
-        if let Err(e) =
-            NotificationService::send_group(&state.db, &state.config, group_id, &ctx).await
-        {
-            tracing::error!(
-                "Failed to send recovery notification for {}: {e}",
-                monitor.name
-            );
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    // `super::*` already brings `ServiceMonitorService`, `HashMap`, `Instant`,
-    // `Utc`, and `AppState` into scope from the parent module.
+    // `super::*` already brings `HashMap`, `Instant`, and `Utc` into scope
+    // from the parent module.
     use super::*;
-    use crate::config::AppConfig;
     use crate::entity::service_monitor;
-    use crate::test_utils::setup_test_db;
     use chrono::TimeZone;
-    use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
     /// Fixed wall-clock instant used so scheduling math is deterministic.
     fn fixed_now() -> chrono::DateTime<Utc> {
@@ -305,38 +178,6 @@ mod tests {
             created_at: fixed_now(),
             updated_at: fixed_now(),
         }
-    }
-
-    /// Insert a monitor row so `execute_check` can write a record and update state.
-    async fn insert_monitor(
-        db: &DatabaseConnection,
-        id: &str,
-        monitor_type: &str,
-        target: &str,
-        retry_count: i32,
-        last_status: Option<bool>,
-        consecutive_failures: i32,
-    ) -> service_monitor::Model {
-        service_monitor::ActiveModel {
-            id: Set(id.to_string()),
-            name: Set(format!("monitor-{id}")),
-            monitor_type: Set(monitor_type.to_string()),
-            target: Set(target.to_string()),
-            interval: Set(60),
-            config_json: Set("{}".to_string()),
-            notification_group_id: Set(None),
-            retry_count: Set(retry_count),
-            server_ids_json: Set(None),
-            enabled: Set(true),
-            last_status: Set(last_status),
-            consecutive_failures: Set(consecutive_failures),
-            last_checked_at: Set(None),
-            created_at: Set(fixed_now()),
-            updated_at: Set(fixed_now()),
-        }
-        .insert(db)
-        .await
-        .expect("insert monitor should succeed")
     }
 
     // ---- select_due_monitors (pure scheduler core) ----
@@ -428,83 +269,6 @@ mod tests {
         assert!(due.is_empty());
     }
 
-    // ---- execute_check (full DB side-effect path) ----
-
-    #[tokio::test]
-    async fn execute_check_writes_failure_record_for_offline_target() {
-        let (db, _tmp) = setup_test_db().await;
-        // Invalid TCP target ("no-port") fails fast and offline (no network).
-        insert_monitor(&db, "mon-fail", "tcp", "no-port-here", 1, None, 0).await;
-        let state = AppState::new(db, AppConfig::default()).await.unwrap();
-
-        let monitor = ServiceMonitorService::get(&state.db, "mon-fail")
-            .await
-            .unwrap();
-        execute_check(&state, &monitor).await;
-
-        // A failure record was written.
-        let records = ServiceMonitorService::get_records(&state.db, "mon-fail", None, None, None)
-            .await
-            .unwrap();
-        assert_eq!(records.len(), 1);
-        assert!(!records[0].success);
-        assert!(
-            records[0].error.is_some(),
-            "offline check should record an error message"
-        );
-
-        // Monitor state advanced: last_status=false, consecutive_failures bumped to 1.
-        let updated = ServiceMonitorService::get(&state.db, "mon-fail")
-            .await
-            .unwrap();
-        assert_eq!(updated.last_status, Some(false));
-        assert_eq!(updated.consecutive_failures, 1);
-        assert!(updated.last_checked_at.is_some());
-    }
-
-    #[tokio::test]
-    async fn execute_check_accumulates_consecutive_failures() {
-        let (db, _tmp) = setup_test_db().await;
-        // Seed a monitor that has already failed once.
-        insert_monitor(&db, "mon-fail2", "tcp", "no-port-here", 1, Some(false), 1).await;
-        let state = AppState::new(db, AppConfig::default()).await.unwrap();
-
-        let monitor = ServiceMonitorService::get(&state.db, "mon-fail2")
-            .await
-            .unwrap();
-        execute_check(&state, &monitor).await;
-
-        // The failure count increments from the monitor's prior value (1 -> 2).
-        let updated = ServiceMonitorService::get(&state.db, "mon-fail2")
-            .await
-            .unwrap();
-        assert_eq!(updated.consecutive_failures, 2);
-        assert_eq!(updated.last_status, Some(false));
-    }
-
-    #[tokio::test]
-    async fn execute_check_handles_unknown_monitor_type() {
-        let (db, _tmp) = setup_test_db().await;
-        // Unknown type returns a deterministic failure without any network call.
-        insert_monitor(&db, "mon-unknown", "bogus", "whatever", 1, None, 0).await;
-        let state = AppState::new(db, AppConfig::default()).await.unwrap();
-
-        let monitor = ServiceMonitorService::get(&state.db, "mon-unknown")
-            .await
-            .unwrap();
-        execute_check(&state, &monitor).await;
-
-        let records = ServiceMonitorService::get_records(&state.db, "mon-unknown", None, None, None)
-            .await
-            .unwrap();
-        assert_eq!(records.len(), 1);
-        assert!(!records[0].success);
-        assert!(
-            records[0]
-                .error
-                .as_deref()
-                .unwrap_or_default()
-                .contains("Unknown monitor type")
-        );
-    }
+    // The full check transition (record/state writes, overlap guard,
+    // notifications) is owned and tested by `service::monitor_check`.
 }

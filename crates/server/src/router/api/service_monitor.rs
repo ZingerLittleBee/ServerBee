@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::entity::{service_monitor, service_monitor_record};
 use crate::error::{ApiResponse, AppError, ok};
-use crate::service::checker;
+use crate::service::monitor_check::CheckOutcome;
 use crate::service::service_monitor::{
     CreateServiceMonitor, ServiceMonitorService, UpdateServiceMonitor,
 };
@@ -204,6 +204,7 @@ async fn get_records(
     responses(
         (status = 200, description = "Check result", body = service_monitor_record::Model),
         (status = 404, description = "Not found"),
+        (status = 409, description = "A check for this monitor is already running"),
     ),
     security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
 )]
@@ -211,37 +212,14 @@ async fn trigger_check(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<service_monitor_record::Model>>, AppError> {
-    let monitor = ServiceMonitorService::get(&state.db, &id).await?;
-
-    let config: serde_json::Value = serde_json::from_str(&monitor.config_json).unwrap_or_default();
-
-    let result = checker::run_check(&monitor.monitor_type, &monitor.target, &config).await;
-
-    // Insert the record
-    let record = ServiceMonitorService::insert_record(
-        &state.db,
-        &monitor.id,
-        result.success,
-        result.latency,
-        result.detail,
-        result.error,
-    )
-    .await?;
-
-    // Update monitor state
-    let consecutive_failures = if result.success {
-        0
-    } else {
-        monitor.consecutive_failures + 1
-    };
-
-    ServiceMonitorService::update_check_state(
-        &state.db,
-        &monitor.id,
-        record.success,
-        consecutive_failures,
-    )
-    .await?;
-
-    ok(record)
+    match state
+        .monitor_check_runner
+        .run_check(&state.db, &state.config, &id)
+        .await?
+    {
+        CheckOutcome::Completed(record) => ok(record),
+        CheckOutcome::AlreadyRunning => Err(AppError::Conflict(format!(
+            "A check for monitor {id} is already running"
+        ))),
+    }
 }

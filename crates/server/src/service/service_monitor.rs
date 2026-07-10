@@ -298,8 +298,11 @@ impl ServiceMonitorService {
     }
 
     /// Update runtime state columns after a check completes.
-    pub async fn update_check_state(
-        db: &DatabaseConnection,
+    ///
+    /// Generic over the connection so `monitor_check` can commit it in the
+    /// same transaction as the record insert.
+    pub async fn update_check_state<C: ConnectionTrait>(
+        db: &C,
         id: &str,
         success: bool,
         consecutive_failures: i32,
@@ -322,8 +325,11 @@ impl ServiceMonitorService {
     }
 
     /// Insert a check result record.
-    pub async fn insert_record(
-        db: &DatabaseConnection,
+    ///
+    /// Generic over the connection so `monitor_check` can commit it in the
+    /// same transaction as the state update.
+    pub async fn insert_record<C: ConnectionTrait>(
+        db: &C,
         monitor_id: &str,
         success: bool,
         latency: Option<f64>,

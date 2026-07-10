@@ -17,6 +17,7 @@ use crate::service::geoip::GeoIpService;
 use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
+use crate::service::monitor_check::MonitorCheckRunner;
 use crate::service::firewall::FirewallService;
 use crate::service::security::SecurityService;
 use crate::service::task_scheduler::TaskScheduler;
@@ -114,6 +115,10 @@ pub struct AppState {
     pub exec_audit_contexts: DashMap<String, ExecAuditContext>,
     /// DNS PTR enricher for traceroute hops (shared across requests).
     pub traceroute_enricher: crate::service::traceroute_enrich::TracerouteEnricher,
+    /// Owns the service-monitor check transition (overlap guard, transactional
+    /// record/state write, maintenance gate, notifications) for both the
+    /// scheduler and the manual HTTP trigger.
+    pub monitor_check_runner: MonitorCheckRunner,
 }
 
 static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -264,6 +269,7 @@ impl AppState {
             docker_logs_audit_contexts: DashMap::new(),
             exec_audit_contexts: DashMap::new(),
             traceroute_enricher,
+            monitor_check_runner: MonitorCheckRunner::new(),
         }))
     }
 }

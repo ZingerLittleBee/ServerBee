@@ -22,6 +22,7 @@ pub mod ip_quality;
 pub mod ip_risk;
 pub mod maintenance;
 pub mod mobile_auth;
+pub mod monitor_check;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
