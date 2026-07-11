@@ -11,24 +11,17 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicServerDetail } from '@/lib/api-schema'
+import {
+  type PublicServerDetailTab,
+  parsePublicServerDetailSearch,
+  publicNetworkHome,
+  resolvePublicActiveTab
+} from '@/lib/server-detail-nav'
 import { formatBytes } from '@/lib/utils'
-
-const PUBLIC_SERVER_DETAIL_TABS = ['metrics', 'network'] as const
-type PublicServerDetailTab = (typeof PUBLIC_SERVER_DETAIL_TABS)[number]
-
-interface PublicServerDetailSearch {
-  range?: string
-  tab?: PublicServerDetailTab
-}
 
 export const Route = createFileRoute('/status/server/$serverId')({
   component: PublicServerDetailPage,
-  validateSearch: (search: Record<string, unknown>): PublicServerDetailSearch => ({
-    range: typeof search.range === 'string' ? search.range : undefined,
-    ...(PUBLIC_SERVER_DETAIL_TABS.includes(search.tab as PublicServerDetailTab)
-      ? { tab: search.tab as PublicServerDetailTab }
-      : {})
-  })
+  validateSearch: parsePublicServerDetailSearch
 })
 
 function PublicServerDetailPage() {
@@ -43,7 +36,7 @@ function PublicServerDetailPage() {
   const range = rangeParam
 
   const detailEnabled = config?.show_server_detail !== false
-  const networkEnabled = config?.show_network !== false
+  const networkEnabled = publicNetworkHome(config) !== 'hidden'
   const { data, isLoading, error } = useQuery({
     queryKey: ['public-status', 'server', serverId],
     queryFn: () => api.get<PublicServerDetail>(`/api/status/servers/${serverId}`),
@@ -83,9 +76,7 @@ function PublicServerDetailPage() {
     )
   }
 
-  // If the network toggle is off, a `?tab=network` deep link falls back to
-  // metrics instead of selecting a trigger that does not exist.
-  const activeTab = networkEnabled && tabParam === 'network' ? 'network' : 'metrics'
+  const activeTab = resolvePublicActiveTab(tabParam, networkEnabled)
 
   return (
     <div className="pb-6">

@@ -6,6 +6,7 @@ import { NetworkOverviewContent } from '@/components/status/network-overview-con
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicNetworkOverview } from '@/lib/api-schema'
+import { publicNetworkHome } from '@/lib/server-detail-nav'
 
 export const Route = createFileRoute('/status/network/')({
   component: PublicNetworkOverviewPage
@@ -17,22 +18,22 @@ function PublicNetworkOverviewPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
 
-  const networkEnabled = config?.show_network !== false
+  const networkHome = publicNetworkHome(config)
   const { data, isLoading, error } = useQuery({
     queryKey: ['public-status', 'network', 'overview'],
     queryFn: () => api.get<PublicNetworkOverview>('/api/status/network'),
     refetchInterval: 30_000,
-    enabled: networkEnabled,
+    enabled: networkHome !== 'hidden',
     retry: false
   })
 
   useEffect(() => {
-    if (config && config.show_network === false) {
+    if (networkHome === 'hidden') {
       navigate({ to: '/status', replace: true })
     }
-  }, [config, navigate])
+  }, [networkHome, navigate])
 
-  if (config?.show_network === false) {
+  if (networkHome === 'hidden') {
     return null
   }
 
@@ -49,7 +50,7 @@ function PublicNetworkOverviewPage() {
       data={data?.servers ?? []}
       isLoading={isLoading}
       onSearchChange={setSearch}
-      publicDetailTabEnabled={config?.show_server_detail !== false}
+      publicDetailTabEnabled={networkHome !== 'standalone'}
       search={search}
       variant="public"
     />

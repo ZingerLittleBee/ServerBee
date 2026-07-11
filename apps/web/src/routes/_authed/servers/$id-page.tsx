@@ -20,9 +20,9 @@ import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
 import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { useLiveServers } from '@/lib/server-catalog'
+import type { ServerDetailTab } from '@/lib/server-detail-nav'
 import { formatBytes } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import type { ServerDetailTab } from './server-detail-search'
 
 const routeApi = getRouteApi('/_authed/servers/$id')
 

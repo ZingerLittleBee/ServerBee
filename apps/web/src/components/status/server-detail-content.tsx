@@ -26,15 +26,9 @@ import type {
 } from '@/lib/api-schema'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { type ServerMetrics, useLiveServers } from '@/lib/server-catalog'
+import { rangesForVariant, resolveRange, type TimeRange } from '@/lib/server-detail-nav'
 import { cn, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
-
-interface TimeRange {
-  hours: number
-  interval: string
-  key: string
-  label: string
-}
 
 interface GpuRecordAggregated {
   gpu_usage_avg: number
@@ -43,20 +37,6 @@ interface GpuRecordAggregated {
   temperature_avg: number
   time: string
 }
-
-const ADMIN_TIME_RANGES: TimeRange[] = [
-  { key: 'realtime', label: 'range_realtime', hours: 0, interval: 'realtime' },
-  { key: '1h', label: 'range_1h', hours: 1, interval: 'raw' },
-  { key: '6h', label: 'range_6h', hours: 6, interval: 'raw' },
-  { key: '24h', label: 'range_24h', hours: 24, interval: 'raw' },
-  { key: '7d', label: 'range_7d', hours: 168, interval: 'hourly' },
-  { key: '30d', label: 'range_30d', hours: 720, interval: 'hourly' }
-]
-
-// Public variant cannot rely on WS-driven realtime metrics, so realtime is
-// dropped; everything else mirrors the admin range options because the
-// public metrics endpoint accepts the same `interval` query parameter.
-const PUBLIC_TIME_RANGES: TimeRange[] = ADMIN_TIME_RANGES.filter((r) => r.key !== 'realtime')
 
 export interface ServerDetailContentProps {
   /** Currently selected detail tab. When provided (admin), the tabs become
@@ -83,12 +63,6 @@ function isAdminServer(server: ServerResponse | PublicServerDetail): server is S
   // ServerResponse always carries the `ipv4` key (even if null) because it's
   // the unredacted entity row; PublicServerDetail omits the field entirely.
   return 'ipv4' in server
-}
-
-function resolveRange(rangeKey: string | undefined, ranges: TimeRange[]) {
-  const idx = ranges.findIndex((tr) => tr.key === rangeKey)
-  const rangeIndex = idx >= 0 ? idx : 0
-  return { range: ranges[rangeIndex], rangeIndex }
 }
 
 function buildIsoWindow(hours: number) {
@@ -221,7 +195,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
   const { t } = useTranslation('servers')
   const isPublic = variant === 'public'
   const isAdminVariant = !isPublic
-  const ranges = isPublic ? PUBLIC_TIME_RANGES : ADMIN_TIME_RANGES
+  const ranges = rangesForVariant(variant)
   const { range, rangeIndex } = resolveRange(rangeKey, ranges)
   const isRealtime = range.key === 'realtime'
 
