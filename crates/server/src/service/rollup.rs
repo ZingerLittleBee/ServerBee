@@ -48,8 +48,9 @@ pub enum RollupAgg {
     Avg,
     /// `CAST(AVG(col) AS INTEGER)` — integer gauges.
     AvgInt,
-    /// `CAST(MAX(col) AS INTEGER)` — cumulative counters keep the window-end
-    /// value instead of a meaningless average.
+    /// `CAST(MAX(col) AS INTEGER)` — cumulative counters keep the window
+    /// maximum (equal to the window-end value while the counter grows
+    /// monotonically) instead of a meaningless average.
     MaxInt,
 }
 
@@ -178,13 +179,15 @@ pub const METRIC_COLUMNS: &[MetricColumn] = &[
     },
 ];
 
-/// Metric value an alert rule reads from a raw record. Unknown rule types
-/// read 0.0 (the legacy fallback) so a misconfigured rule never fires.
-pub fn alert_metric(rec: &record::Model, rule_type: &str) -> f64 {
+/// Metric value an alert rule reads from a raw record. `None` for unknown
+/// rule types and the deliberately non-alertable columns (`alert_rule_type:
+/// None`), so such rules cannot fire — not even a `min <= 0` threshold that
+/// a 0.0 fallback would satisfy.
+pub fn alert_metric(rec: &record::Model, rule_type: &str) -> Option<f64> {
     METRIC_COLUMNS
         .iter()
         .find(|c| c.alert_rule_type == Some(rule_type))
-        .map_or(0.0, |c| (c.read)(rec))
+        .map(|c| (c.read)(rec))
 }
 
 /// Build the hourly rollup upsert. Placeholders: bucket time, window start,
@@ -326,11 +329,17 @@ mod tests {
         }
     }
 
+    #[track_caller]
+    fn assert_metric(rec: &record::Model, rule_type: &str, expected: f64) {
+        let value = alert_metric(rec, rule_type).expect("alertable rule type");
+        assert!((value - expected).abs() < f64::EPSILON);
+    }
+
     #[test]
     fn alert_metric_reads_direct_columns() {
         let rec = make_record(85.5, 4_000_000, 1.2);
-        assert!((alert_metric(&rec, "cpu") - 85.5).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "load1") - 1.2).abs() < f64::EPSILON);
+        assert_metric(&rec, "cpu", 85.5);
+        assert_metric(&rec, "load1", 1.2);
     }
 
     /// Aliased rule types ("memory", "process", "gpu"…) resolve through the
@@ -338,21 +347,23 @@ mod tests {
     #[test]
     fn alert_metric_resolves_rule_type_aliases() {
         let rec = make_record(50.0, 8_000_000, 0.0);
-        assert!((alert_metric(&rec, "memory") - 8_000_000.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "process") - 200.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "gpu") - 40.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "tcp_conn") - 100.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "udp_conn") - 50.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "temperature") - 55.0).abs() < f64::EPSILON);
+        assert_metric(&rec, "memory", 8_000_000.0);
+        assert_metric(&rec, "process", 200.0);
+        assert_metric(&rec, "gpu", 40.0);
+        assert_metric(&rec, "tcp_conn", 100.0);
+        assert_metric(&rec, "udp_conn", 50.0);
+        assert_metric(&rec, "temperature", 55.0);
     }
 
     /// Unknown rule types and the deliberately non-alertable transfer
-    /// counters read 0.0 so such rules can never fire.
+    /// counters resolve to `None` so such rules can never fire — even a
+    /// degenerate `min <= 0` threshold gets no value to compare against.
     #[test]
-    fn alert_metric_unknown_and_non_alertable_read_zero() {
+    fn alert_metric_unknown_and_non_alertable_resolve_to_none() {
         let rec = make_record(99.0, 0, 0.0);
-        assert!((alert_metric(&rec, "nonexistent") - 0.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "net_in_transfer") - 0.0).abs() < f64::EPSILON);
+        assert_eq!(alert_metric(&rec, "nonexistent"), None);
+        assert_eq!(alert_metric(&rec, "net_in_transfer"), None);
+        assert_eq!(alert_metric(&rec, "net_out_transfer"), None);
     }
 
     #[test]
@@ -365,21 +376,22 @@ mod tests {
         rec.load15 = 3.5;
         rec.net_in_speed = 111;
         rec.net_out_speed = 222;
-        assert!((alert_metric(&rec, "swap") - 1024.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "disk") - 2048.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "load5") - 2.5).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "load15") - 3.5).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "net_in_speed") - 111.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "net_out_speed") - 222.0).abs() < f64::EPSILON);
+        assert_metric(&rec, "swap", 1024.0);
+        assert_metric(&rec, "disk", 2048.0);
+        assert_metric(&rec, "load5", 2.5);
+        assert_metric(&rec, "load15", 3.5);
+        assert_metric(&rec, "net_in_speed", 111.0);
+        assert_metric(&rec, "net_out_speed", 222.0);
     }
 
     #[test]
     fn alert_metric_none_temperature_and_gpu_read_zero() {
-        // None temperature/gpu must coerce to 0.0 via unwrap_or.
+        // Absent sensors are an alertable column reading 0.0 (Some), not an
+        // unknown rule type (None).
         let mut rec = make_record(0.0, 0, 0.0);
         rec.temperature = None;
         rec.gpu_usage = None;
-        assert!((alert_metric(&rec, "temperature") - 0.0).abs() < f64::EPSILON);
-        assert!((alert_metric(&rec, "gpu") - 0.0).abs() < f64::EPSILON);
+        assert_metric(&rec, "temperature", 0.0);
+        assert_metric(&rec, "gpu", 0.0);
     }
 }

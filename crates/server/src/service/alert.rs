@@ -1031,7 +1031,11 @@ async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertR
     let total = records.len();
 
     for rec in &records {
-        let value = rollup::alert_metric(rec, &item.rule_type);
+        // Unresolvable rule types (unknown, or non-alertable transfer
+        // counters) contribute no sample, so such rules never reach 70%.
+        let Some(value) = rollup::alert_metric(rec, &item.rule_type) else {
+            continue;
+        };
         let exceeds = match (item.min, item.max) {
             (Some(min), Some(max)) => value >= min && value <= max,
             (Some(min), None) => value >= min,
