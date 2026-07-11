@@ -505,7 +505,7 @@ function MetricsTabContent({
             domain={[0, 100]}
             formatTime={formatTime}
             formatTooltipLabel={formatTooltipLabel}
-            title={t('chart_gpu')}
+            title={t('chart_gpu_usage')}
             unit="%"
             xAxisInterval={xAxisInterval}
           />
