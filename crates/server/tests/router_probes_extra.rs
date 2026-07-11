@@ -12,6 +12,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     AgentReader, AgentSink, connect_agent, create_server, http_client, login_admin,
     login_as_new_user, recv_agent_text, register_agent, send_system_info, start_test_server,
 };
@@ -50,8 +51,7 @@ async fn recv_until(reader: &mut AgentReader, expected: &str) -> Value {
         match ty {
             // First-connect noise a default agent always receives; unrelated to
             // the request under test, so it is ignored.
-            "ping_tasks_sync" | "network_probe_sync" | "blocklist_reset" | "blocklist_sync"
-            | "blocklist_add" | "blocklist_remove" | "ip_quality_sync" => {}
+            noise if is_first_connect_noise(Some(noise)) => {}
             other => panic!("unexpected agent command while awaiting `{expected}`: {other}"),
         }
     }

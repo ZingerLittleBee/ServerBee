@@ -36,6 +36,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     connect_agent, create_server, http_client, login_admin, login_as_new_user, recv_agent_text,
     register_agent, send_system_info, start_test_server, AgentSink, AgentReader,
 };
@@ -69,15 +70,7 @@ async fn online_agent(base_url: &str, token: &str, caps: u32) -> (AgentSink, Age
             Ok(msg) => {
                 let ty = msg["type"].as_str().unwrap_or_default();
                 // Ignore the expected first-connect control-plane sync frames.
-                if matches!(
-                    ty,
-                    "ping_tasks_sync"
-                        | "network_probe_sync"
-                        | "blocklist_reset"
-                        | "blocklist_sync"
-                        | "blocklist_add"
-                        | "blocklist_remove"
-                ) {
+                if is_first_connect_noise(Some(ty)) {
                     continue;
                 }
                 // Anything else is unexpected this early; keep draining anyway.

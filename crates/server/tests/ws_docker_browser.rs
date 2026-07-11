@@ -31,6 +31,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     connect_agent, http_client, login_admin, login_as_new_user, recv_agent_text, register_agent,
     start_test_server, AgentReader, AgentSink,
 };
@@ -77,20 +78,6 @@ async fn send_agent_frame(sink: &mut AgentSink, frame: Value) {
     sink.send(tungstenite::Message::Text(frame.to_string().into()))
         .await
         .expect("send agent frame");
-}
-
-/// First-connect pushes a default agent must tolerate and ignore.
-fn is_ignorable_push(msg_type: Option<&str>) -> bool {
-    matches!(
-        msg_type,
-        Some("ping_tasks_sync")
-            | Some("network_probe_sync")
-            | Some("ip_quality_sync")
-            | Some("blocklist_reset")
-            | Some("blocklist_sync")
-            | Some("blocklist_add")
-            | Some("blocklist_remove")
-    )
 }
 
 /// Drain frames the server pushes right after the SystemInfo handshake; returns
@@ -226,7 +213,7 @@ async fn agent_recv_until_types(
         let Some(msg_type) = parsed["type"].as_str() else {
             continue;
         };
-        if is_ignorable_push(Some(msg_type)) {
+        if is_first_connect_noise(Some(msg_type)) {
             continue;
         }
         if expected.contains(&msg_type) && !seen.iter().any(|s| s == msg_type) {
@@ -291,7 +278,7 @@ async fn docker_logs_relay_subscribe_logs_and_unsubscribe() {
                         let _ = tx.send(msg.clone()).await;
                         return;
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     Some(_other) => {}
                     None => {}
                 }

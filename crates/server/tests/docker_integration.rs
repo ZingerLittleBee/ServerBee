@@ -15,6 +15,9 @@ use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 
+mod common;
+use common::is_first_connect_noise;
+
 async fn start_test_server() -> (String, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = tmp.path().to_str().unwrap().to_string();
@@ -409,13 +412,7 @@ async fn test_docker_info_endpoint_requests_agent_when_cache_empty() {
                 // A default agent reports CAP_FIREWALL_BLOCK, so the first-connect
                 // path also pushes blocklist reset/sync. These are unrelated to the
                 // docker flow under test and are ignored.
-                Some("ping_tasks_sync")
-                | Some("network_probe_sync")
-                | Some("ip_quality_sync")
-                | Some("blocklist_reset")
-                | Some("blocklist_sync")
-                | Some("blocklist_add")
-                | Some("blocklist_remove") => {}
+                noise if is_first_connect_noise(noise) => {}
                 Some(other) => panic!("Unexpected agent command: {other}"),
                 None => {}
             }
@@ -787,13 +784,7 @@ async fn test_docker_unavailable_fails_pending_request_and_clears_feature_state(
                 // A default agent reports CAP_FIREWALL_BLOCK, so the first-connect
                 // path also pushes blocklist reset/sync. These are unrelated to the
                 // docker flow under test and are ignored.
-                Some("ping_tasks_sync")
-                | Some("network_probe_sync")
-                | Some("ip_quality_sync")
-                | Some("blocklist_reset")
-                | Some("blocklist_sync")
-                | Some("blocklist_add")
-                | Some("blocklist_remove") => {}
+                noise if is_first_connect_noise(noise) => {}
                 Some(other) => panic!("Unexpected agent command: {other}"),
                 None => {}
             }

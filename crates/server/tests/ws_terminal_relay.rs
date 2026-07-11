@@ -46,6 +46,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     connect_agent, http_client, login_admin, recv_agent_text, register_agent, send_system_info,
     start_test_server, AgentReader, AgentSink,
 };
@@ -145,20 +146,6 @@ async fn send_agent_frame(sink: &mut AgentSink, frame: Value) {
         .expect("send agent frame");
 }
 
-/// First-connect pushes a default/terminal agent must tolerate and ignore.
-fn is_ignorable_push(msg_type: Option<&str>) -> bool {
-    matches!(
-        msg_type,
-        Some("ping_tasks_sync")
-            | Some("network_probe_sync")
-            | Some("ip_quality_sync")
-            | Some("blocklist_reset")
-            | Some("blocklist_sync")
-            | Some("blocklist_add")
-            | Some("blocklist_remove")
-    )
-}
-
 /// Drain frames the server pushes right after the SystemInfo handshake, until
 /// the inbound stream is quiet for `quiet_ms`.
 async fn drain_first_connect_pushes(reader: &mut AgentReader, quiet_ms: u64) {
@@ -245,7 +232,7 @@ async fn terminal_ws_relays_session_started_output_and_input_resize() {
                     Some("terminal_close") => {
                         return (session_id, got_input, got_resize);
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     _ => {}
                 }
             }
@@ -349,7 +336,7 @@ async fn terminal_ws_relays_agent_error_to_browser() {
                         .await;
                     }
                     Some("terminal_close") => return,
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     _ => {}
                 }
             }
