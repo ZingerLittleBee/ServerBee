@@ -4,14 +4,12 @@ use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::middleware::auth::resolve_ws_connection;
-use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::high_risk_audit::DockerLogsAuditContext;
 use crate::state::AppState;
@@ -29,60 +27,32 @@ async fn docker_logs_ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
+    // Docker log streaming exposes sensitive container output (env vars,
+    // connection strings, tokens), so it is admin-only like the terminal;
+    // the shared gate audits denials under `docker_logs_subscribe_denied`.
+    match super::session::admin_capability_gate(
+        &state,
         &headers,
-        &state.config.server.trusted_proxies,
+        &ConnectInfo(addr),
+        &server_id,
+        CAP_DOCKER,
+        "docker_logs_subscribe_denied",
     )
-    .to_string();
-
-    // Shared credential policy lives in `middleware::auth`; this adapter only
-    // applies Docker-specific rules (admin role, agent online, capability).
-    match resolve_ws_connection(&headers, &state).await {
-        Some(conn) => {
-            let user_id = conn.user.user_id;
-            // Docker log streaming exposes sensitive container output
-            // (env vars, connection strings, tokens), so it is admin-only,
-            // consistent with terminal access.
-            if conn.user.role != "admin" {
-                let detail = serde_json::json!({
-                    "server_id": server_id,
-                    "deny_reason": "role_forbidden",
-                })
-                .to_string();
-                let _ = AuditService::log(
-                    &state.db,
-                    &user_id,
-                    "docker_logs_subscribe_denied",
-                    Some(&detail),
-                    &ip,
+    .await
+    {
+        Ok(gate) => ws
+            .max_message_size(MAX_WS_MESSAGE_SIZE)
+            .on_upgrade(move |socket| {
+                handle_docker_logs_ws(
+                    socket,
+                    state,
+                    server_id,
+                    gate.user_id,
+                    gate.ip,
+                    gate.mobile_expires,
                 )
-                .await;
-                return axum::http::StatusCode::FORBIDDEN.into_response();
-            }
-            // Check agent is online
-            if !state.agent_manager.is_online(&server_id) {
-                return (axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response();
-            }
-            // Check Docker capability (denials are audited by the gate)
-            if let Err(error) = crate::service::capability_gate::require_capability_audited(
-                &state,
-                &server_id,
-                CAP_DOCKER,
-                &user_id,
-                &ip,
-                "docker_logs_subscribe_denied",
-            )
-            .await
-            {
-                return error.into_response();
-            }
-            ws.max_message_size(MAX_WS_MESSAGE_SIZE)
-                .on_upgrade(move |socket| {
-                    handle_docker_logs_ws(socket, state, server_id, user_id, ip, conn.mobile_expires)
-                })
-        }
-        None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
+            }),
+        Err(response) => response,
     }
 }
 
@@ -227,16 +197,7 @@ async fn handle_docker_logs_ws(
                     }
                 }
             }
-            // Mobile token expiry: force-close when a fixed-lifetime mobile token
-            // expires mid-session (web sessions / API keys never trip this arm).
-            () = async {
-                if let Some(exp) = mobile_expires {
-                    let dur = (exp - chrono::Utc::now()).to_std().unwrap_or_default();
-                    tokio::time::sleep(dur).await;
-                } else {
-                    std::future::pending::<()>().await;
-                }
-            } => {
+            () = super::session::mobile_token_expired(mobile_expires) => {
                 tracing::debug!("Docker logs session {session_id} mobile token expired, closing");
                 break "token_expired";
             }

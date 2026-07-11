@@ -4,14 +4,12 @@ use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::middleware::auth::resolve_ws_connection;
-use crate::router::utils::extract_client_ip;
 use crate::service::agent_manager::TerminalSessionEvent;
 use crate::service::audit::AuditService;
 use crate::service::high_risk_audit::TerminalAuditContext;
@@ -30,57 +28,29 @@ async fn terminal_ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
+    // Terminal is admin-only and needs the terminal capability; the shared
+    // gate audits denials under `terminal_open_denied`.
+    match super::session::admin_capability_gate(
+        &state,
         &headers,
-        &state.config.server.trusted_proxies,
+        &ConnectInfo(addr),
+        &server_id,
+        serverbee_common::constants::CAP_TERMINAL,
+        "terminal_open_denied",
     )
-    .to_string();
-
-    // Shared credential policy lives in `middleware::auth`; this adapter only
-    // applies terminal-specific rules (admin role, agent online, capability).
-    match resolve_ws_connection(&headers, &state).await {
-        Some(conn) => {
-            let user_id = conn.user.user_id;
-            // Terminal access is admin-only
-            if conn.user.role != "admin" {
-                let detail = serde_json::json!({
-                    "server_id": server_id,
-                    "deny_reason": "role_forbidden",
-                })
-                .to_string();
-                let _ = AuditService::log(
-                    &state.db,
-                    &user_id,
-                    "terminal_open_denied",
-                    Some(&detail),
-                    &ip,
-                )
-                .await;
-                return axum::http::StatusCode::FORBIDDEN.into_response();
-            }
-            // Check agent is online
-            if !state.agent_manager.is_online(&server_id) {
-                return (axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response();
-            }
-            // Check terminal capability (denials are audited by the gate)
-            if let Err(error) = crate::service::capability_gate::require_capability_audited(
-                &state,
-                &server_id,
-                serverbee_common::constants::CAP_TERMINAL,
-                &user_id,
-                &ip,
-                "terminal_open_denied",
+    .await
+    {
+        Ok(gate) => ws.max_message_size(MAX_WS_MESSAGE_SIZE).on_upgrade(move |socket| {
+            handle_terminal_ws(
+                socket,
+                state,
+                server_id,
+                gate.user_id,
+                gate.ip,
+                gate.mobile_expires,
             )
-            .await
-            {
-                return error.into_response();
-            }
-            ws.max_message_size(MAX_WS_MESSAGE_SIZE).on_upgrade(move |socket| {
-                handle_terminal_ws(socket, state, server_id, user_id, ip, conn.mobile_expires)
-            })
-        }
-        None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
+        }),
+        Err(response) => response,
     }
 }
 
@@ -255,16 +225,7 @@ async fn handle_terminal_ws(
                 close_reason = "idle_timeout".to_string();
                 break;
             }
-            // Mobile token expiry: force-close when a fixed-lifetime mobile token
-            // expires mid-session (web sessions / API keys never trip this arm).
-            () = async {
-                if let Some(exp) = mobile_expires {
-                    let dur = (exp - chrono::Utc::now()).to_std().unwrap_or_default();
-                    tokio::time::sleep(dur).await;
-                } else {
-                    std::future::pending::<()>().await;
-                }
-            } => {
+            () = super::session::mobile_token_expired(mobile_expires) => {
                 tracing::debug!("Terminal session {session_id} mobile token expired, closing");
                 let msg = serde_json::json!({"type": "error", "error": "Session token expired"});
                 let _ = ws_sink.send(Message::Text(msg.to_string().into())).await;

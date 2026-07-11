@@ -115,15 +115,7 @@ async fn handle_browser_ws(
                     }
                 }
             }
-            // Mobile token expiry: auto-close when the token expires
-            _ = async {
-                if let Some(exp) = mobile_expires {
-                    let dur = (exp - chrono::Utc::now()).to_std().unwrap_or_default();
-                    tokio::time::sleep(dur).await;
-                } else {
-                    std::future::pending::<()>().await;
-                }
-            } => {
+            () = super::session::mobile_token_expired(mobile_expires) => {
                 tracing::debug!("Mobile WS token expired, closing connection");
                 let _ = ws_sink.send(Message::Close(Some(axum::extract::ws::CloseFrame {
                     code: 4001,
