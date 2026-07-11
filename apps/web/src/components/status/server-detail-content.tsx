@@ -36,7 +36,7 @@ import {
 } from '@/lib/metric-chart-model'
 import { useLiveServers } from '@/lib/server-catalog'
 import { type RangeKey, rangesForVariant, resolveRange, type TimeRange } from '@/lib/server-detail-nav'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn, formatBytes, isoWindow } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 
 export interface ServerDetailContentProps {
@@ -66,14 +66,6 @@ function isAdminServer(server: ServerResponse | PublicServerDetail): server is S
   return 'ipv4' in server
 }
 
-function buildIsoWindow(hours: number) {
-  const now = new Date()
-  return {
-    from: new Date(now.getTime() - hours * 3600 * 1000).toISOString(),
-    to: now.toISOString()
-  }
-}
-
 // Fetches the historical metric series, branching on variant. Admin uses the
 // auth'd `useServerRecords` (includes disk-io + temperature blobs); public
 // hits `/api/status/servers/{id}/metrics` which returns the normalised
@@ -85,7 +77,7 @@ function useMetricSeries(serverId: string, range: TimeRange, isAdminVariant: boo
   const { data: publicMetrics } = useQuery<PublicMetricsPoint[]>({
     queryKey: ['public-status', 'server', serverId, 'metrics', range.hours, range.interval],
     queryFn: () => {
-      const { from, to } = buildIsoWindow(range.hours)
+      const { from, to } = isoWindow(range.hours)
       return api.get<PublicMetricsPoint[]>(
         `/api/status/servers/${serverId}/metrics?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&interval=${encodeURIComponent(range.interval)}`
       )
@@ -100,7 +92,7 @@ function useAdminGpuRecords(serverId: string, range: TimeRange, isAdminVariant: 
   return useQuery<GpuRecordAggregated[]>({
     queryKey: ['servers', serverId, 'gpu-records', range.hours],
     queryFn: () => {
-      const { from, to } = buildIsoWindow(range.hours)
+      const { from, to } = isoWindow(range.hours)
       return api.get<GpuRecordAggregated[]>(
         `/api/servers/${serverId}/gpu-records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
       )

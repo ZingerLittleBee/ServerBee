@@ -11,6 +11,7 @@ import type {
   TracerouteResponse,
   TracerouteResult
 } from '@/lib/network-types'
+import { isoWindow } from '@/lib/utils'
 
 export function useNetworkTargets() {
   return useQuery<NetworkProbeTarget[]>({
@@ -46,9 +47,7 @@ export function useNetworkRecords(serverId: string, hours: number, options?: { t
   return useQuery<NetworkProbeRecord[]>({
     queryKey: ['servers', serverId, 'network-probes', 'records', hours, options?.targetId],
     queryFn: () => {
-      const now = new Date()
-      const from = new Date(now.getTime() - hours * 3600 * 1000).toISOString()
-      const to = now.toISOString()
+      const { from, to } = isoWindow(hours)
       let url = `/api/servers/${serverId}/network-probes/records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
       if (options?.targetId) {
         url += `&target_id=${encodeURIComponent(options.targetId)}`
@@ -64,9 +63,7 @@ export function useNetworkAnomalies(serverId: string, hours: number) {
   return useQuery<NetworkProbeAnomaly[]>({
     queryKey: ['servers', serverId, 'network-probes', 'anomalies', hours],
     queryFn: () => {
-      const now = new Date()
-      const from = new Date(now.getTime() - hours * 3600 * 1000).toISOString()
-      const to = now.toISOString()
+      const { from, to } = isoWindow(hours)
       return api.get(
         `/api/servers/${serverId}/network-probes/anomalies?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
       )
