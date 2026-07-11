@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { subscribeBrowserMessage } from '@/hooks/use-servers-ws'
 import type { NetworkProbeResultData } from '@/lib/network-types'
 
 const MAX_POINTS = 200
@@ -13,13 +14,13 @@ export function useNetworkRealtime(serverId: string) {
   const dataRef = useRef<RealtimeData>({})
 
   const handleUpdate = useCallback(
-    (event: Event) => {
-      const detail = (event as CustomEvent).detail
-      if (detail.server_id !== serverId) {
+    (msg: Record<string, unknown>) => {
+      if (msg.server_id !== serverId) {
         return
       }
 
-      const results: NetworkProbeResultData[] = detail.results
+      // handleWsMessage validated the shape before dispatching.
+      const results = msg.results as NetworkProbeResultData[]
       const newData = { ...dataRef.current }
 
       for (const result of results) {
@@ -36,10 +37,7 @@ export function useNetworkRealtime(serverId: string) {
     [serverId]
   )
 
-  useEffect(() => {
-    window.addEventListener('network-probe-update', handleUpdate)
-    return () => window.removeEventListener('network-probe-update', handleUpdate)
-  }, [handleUpdate])
+  useEffect(() => subscribeBrowserMessage('network_probe_update', handleUpdate), [handleUpdate])
 
   const reset = useCallback(() => {
     dataRef.current = {}

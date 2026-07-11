@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
-import { handleWsMessage } from './use-servers-ws'
+import { handleWsMessage, subscribeBrowserMessage } from './use-servers-ws'
 
 describe('handleWsMessage upgrade messages', () => {
   it('hydrates upgrade jobs from full_sync', () => {
@@ -90,5 +90,38 @@ describe('handleWsMessage upgrade messages', () => {
     expect(job?.error).toBe('install failed')
     expect(job?.backup_path).toBe('/tmp/backup')
     expect(job?.finished_at).not.toBeNull()
+  })
+})
+
+describe('handleWsMessage network probe updates', () => {
+  it('dispatches validated network_probe_update frames to subscribers', () => {
+    const queryClient = new QueryClient()
+    const received: Array<Record<string, unknown>> = []
+    const unsubscribe = subscribeBrowserMessage('network_probe_update', (msg) => received.push(msg))
+
+    handleWsMessage(
+      {
+        type: 'network_probe_update',
+        server_id: 's1',
+        results: [{ latency_ms: 12, target_id: 't1' }]
+      },
+      queryClient
+    )
+
+    unsubscribe()
+    expect(received).toHaveLength(1)
+    expect(received[0].server_id).toBe('s1')
+  })
+
+  it('drops malformed network_probe_update frames before dispatch', () => {
+    const queryClient = new QueryClient()
+    const received: Array<Record<string, unknown>> = []
+    const unsubscribe = subscribeBrowserMessage('network_probe_update', (msg) => received.push(msg))
+
+    handleWsMessage({ results: [null], server_id: 's1', type: 'network_probe_update' }, queryClient)
+    handleWsMessage({ results: [{}], type: 'network_probe_update' }, queryClient)
+
+    unsubscribe()
+    expect(received).toHaveLength(0)
   })
 })

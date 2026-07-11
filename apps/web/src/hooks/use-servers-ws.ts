@@ -406,12 +406,7 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
       ) {
         break
       }
-      const msg = raw as WsMessage & { type: 'network_probe_update' }
-      window.dispatchEvent(
-        new CustomEvent('network-probe-update', {
-          detail: { server_id: msg.server_id, results: msg.results }
-        })
-      )
+      dispatchToSubscribers('network_probe_update', raw)
       break
     }
     case 'docker_update':
