@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import type { SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
 import type { IpQualitySnapshotData, ServerIpQualityData, UnlockResultDto, UnlockStatus } from '@/lib/ip-quality-types'
 import type { NetworkProbeResultData } from '@/lib/network-types'
-import { projectServerCatalog, type ServerMetrics } from '@/lib/server-catalog'
+import { type LiveMetrics, projectServerCatalog, type ServerMetrics } from '@/lib/server-catalog'
 import { WsClient } from '@/lib/ws-client'
 import type {
   DockerContainer,
@@ -20,7 +20,7 @@ const MAX_SECURITY_EVENTS_IN_CACHE = 200
 
 type WsMessage =
   | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[] }
-  | { type: 'update'; servers: ServerMetrics[] }
+  | { type: 'update'; servers: LiveMetrics[] }
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
   | {

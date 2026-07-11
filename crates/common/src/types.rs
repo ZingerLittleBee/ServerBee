@@ -236,6 +236,40 @@ fn default_has_token() -> bool {
     true
 }
 
+/// Partial projection of a server carried by `BrowserMessage::Update`.
+///
+/// Contains only the fields an agent report can actually populate. Static
+/// facts (`mem_total`, `os`, `tags`, ...) are unknown at report time — they
+/// travel in the full `ServerStatus` via `FullSync` and REST, and clients keep
+/// their cached values when merging an update. Field names serialize
+/// identically to `ServerStatus`, so older clients decode an update as a
+/// status whose static keys are simply absent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiveMetrics {
+    pub id: String,
+    pub online: bool,
+    pub last_active: i64,
+    pub uptime: u64,
+    pub cpu: f64,
+    pub mem_used: i64,
+    pub swap_used: i64,
+    pub disk_used: i64,
+    pub net_in_speed: i64,
+    pub net_out_speed: i64,
+    pub net_in_transfer: i64,
+    pub net_out_transfer: i64,
+    pub load1: f64,
+    pub load5: f64,
+    pub load15: f64,
+    pub tcp_conn: i32,
+    pub udp_conn: i32,
+    pub process_count: i32,
+    #[serde(default)]
+    pub disk_read_bytes_per_sec: u64,
+    #[serde(default)]
+    pub disk_write_bytes_per_sec: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum FileType {

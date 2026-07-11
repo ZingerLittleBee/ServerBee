@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { OutstandingEnrollmentSummary, ServerResponse } from '@/lib/api-schema'
 import {
   invalidateServerDetail,
+  type LiveMetrics,
   projectServerCatalog,
   readLiveServers,
   refreshServerCatalog,
@@ -138,6 +139,32 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   }
 }
 
+function makeLiveMetrics(overrides: Partial<LiveMetrics> = {}): LiveMetrics {
+  return {
+    cpu: 42,
+    disk_read_bytes_per_sec: 100,
+    disk_used: 125_000,
+    disk_write_bytes_per_sec: 50,
+    id: 'server-1',
+    last_active: 1000,
+    load1: 1,
+    load5: 0.8,
+    load15: 0.6,
+    mem_used: 16_000,
+    net_in_speed: 1000,
+    net_in_transfer: 10_000,
+    net_out_speed: 500,
+    net_out_transfer: 5000,
+    online: true,
+    process_count: 120,
+    swap_used: 100,
+    tcp_conn: 30,
+    udp_conn: 5,
+    uptime: 3600,
+    ...overrides
+  }
+}
+
 const OUTSTANDING_ENROLLMENT: OutstandingEnrollmentSummary = {
   code_prefix: 'abcdef',
   created_at: '2026-07-11T00:00:00Z',
@@ -192,7 +219,7 @@ describe('server catalog projection', () => {
     expect(readServerDetail(queryClient, 'server-1')).toEqual(cleared)
   })
 
-  it('updates runtime metrics without letting WS placeholders erase REST or mutation-owned fields', () => {
+  it('merges live-only update frames while REST and mutation-owned static fields survive', () => {
     const queryClient = createQueryClient()
     const rest = makeRestServer({
       has_token: false,
@@ -204,26 +231,7 @@ describe('server catalog projection', () => {
     projectServerCatalog(queryClient, { kind: 'tags_changed', serverId: rest.id, tags: ['prod', 'edge'] })
     projectServerCatalog(queryClient, {
       kind: 'ws_update',
-      servers: [
-        makeMetrics({
-          country_code: null,
-          cpu: 91,
-          cpu_cores: null,
-          cpu_name: null,
-          disk_total: 0,
-          features: [],
-          group_id: null,
-          has_token: true,
-          mem_total: 0,
-          mem_used: 24_000,
-          name: 'Stale Agent Name',
-          os: null,
-          outstanding_enrollment: null,
-          region: null,
-          swap_total: 0,
-          tags: []
-        })
-      ]
+      servers: [makeLiveMetrics({ cpu: 91, mem_used: 24_000 })]
     })
 
     expect(readLiveServers(queryClient)?.[0]).toMatchObject({
@@ -244,6 +252,14 @@ describe('server catalog projection', () => {
       swap_total: 4000,
       tags: ['prod', 'edge']
     })
+  })
+
+  it('drops update frames until full sync or REST seeds the catalog', () => {
+    const queryClient = createQueryClient()
+
+    projectServerCatalog(queryClient, { kind: 'ws_update', servers: [makeLiveMetrics()] })
+
+    expect(readLiveServers(queryClient)).toBeUndefined()
   })
 
   it('uses full sync as authoritative membership and static state while preserving out-of-band metadata', () => {

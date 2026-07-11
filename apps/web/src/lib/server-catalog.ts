@@ -13,47 +13,56 @@ interface CatalogQueryOptions {
   enabled?: boolean
 }
 
-export interface ServerMetrics {
-  agent_local_capabilities?: number | null
-  agent_version?: string | null
-  capabilities?: number
-  country_code: string | null
+/**
+ * Partial projection carried by WS `update` frames. Mirrors the Rust
+ * `LiveMetrics` wire type: only fields an agent report can populate. Static
+ * facts (`mem_total`, `os`, `tags`, ...) never appear here — they arrive via
+ * `full_sync`/REST and the cached values must survive an update merge.
+ */
+export interface LiveMetrics {
   cpu: number
-  cpu_cores?: number | null
-  cpu_name: string | null
   disk_read_bytes_per_sec: number
-  disk_total: number
   disk_used: number
   disk_write_bytes_per_sec: number
-  effective_capabilities?: number | null
-  features?: string[]
-  group_id: string | null
-  has_token?: boolean
   id: string
   last_active: number
   load1: number
   load5: number
   load15: number
-  mem_total: number
   mem_used: number
-  name: string
   net_in_speed: number
   net_in_transfer: number
   net_out_speed: number
   net_out_transfer: number
   online: boolean
+  process_count: number
+  swap_used: number
+  tcp_conn: number
+  udp_conn: number
+  uptime: number
+}
+
+export interface ServerMetrics extends LiveMetrics {
+  agent_local_capabilities?: number | null
+  agent_version?: string | null
+  capabilities?: number
+  country_code: string | null
+  cpu_cores?: number | null
+  cpu_name: string | null
+  disk_total: number
+  effective_capabilities?: number | null
+  features?: string[]
+  group_id: string | null
+  has_token?: boolean
+  mem_total: number
+  name: string
   os: string | null
   outstanding_enrollment?: OutstandingEnrollmentSummary | null
-  process_count: number
   protocol_version?: number
   region: string | null
   swap_total: number
-  swap_used: number
   tags?: string[]
-  tcp_conn: number
   temporary?: TemporaryGrant[]
-  udp_conn: number
-  uptime: number
 }
 
 export type ServerCatalogEvent =
@@ -68,7 +77,7 @@ export type ServerCatalogEvent =
     }
   | { kind: 'tags_changed'; serverId: string; tags: string[] }
   | { kind: 'ws_full_sync'; servers: ServerMetrics[] }
-  | { kind: 'ws_update'; servers: ServerMetrics[] }
+  | { kind: 'ws_update'; servers: LiveMetrics[] }
   | { kind: 'online_changed'; online: boolean; serverId: string }
   | {
       agentLocalCapabilities: number | null | undefined
@@ -185,32 +194,11 @@ function projectFullSyncServerToRest(current: ServerResponse, server: ServerMetr
   }
 }
 
-function mergeWsServerUpdate(current: ServerMetrics, incoming: ServerMetrics): ServerMetrics {
-  return {
-    ...current,
-    cpu: incoming.cpu,
-    disk_read_bytes_per_sec: incoming.disk_read_bytes_per_sec,
-    disk_used: incoming.disk_used,
-    disk_write_bytes_per_sec: incoming.disk_write_bytes_per_sec,
-    last_active: incoming.last_active,
-    load1: incoming.load1,
-    load5: incoming.load5,
-    load15: incoming.load15,
-    mem_used: incoming.mem_used,
-    net_in_speed: incoming.net_in_speed,
-    net_in_transfer: incoming.net_in_transfer,
-    net_out_speed: incoming.net_out_speed,
-    net_out_transfer: incoming.net_out_transfer,
-    online: incoming.online,
-    process_count: incoming.process_count,
-    swap_used: incoming.swap_used,
-    tcp_conn: incoming.tcp_conn,
-    udp_conn: incoming.udp_conn,
-    uptime: incoming.uptime
-  }
+function mergeWsServerUpdate(current: ServerMetrics, incoming: LiveMetrics): ServerMetrics {
+  return { ...current, ...incoming }
 }
 
-function mergeWsUpdate(current: ServerMetrics[], incoming: ServerMetrics[]): ServerMetrics[] {
+function mergeWsUpdate(current: ServerMetrics[], incoming: LiveMetrics[]): ServerMetrics[] {
   const incomingById = new Map(incoming.map((server) => [server.id, server]))
   return current.map((server) => {
     const update = incomingById.get(server.id)
@@ -427,8 +415,10 @@ export function projectServerCatalog(queryClient: QueryClient, event: ServerCata
       return
     }
     case 'ws_update': {
+      // An update is a partial projection and can never seed the catalog:
+      // until full_sync/REST provides the static fields, drop it.
       queryClient.setQueryData<ServerMetrics[]>(LIVE_SERVERS_KEY, (current) =>
-        current ? mergeWsUpdate(current, event.servers) : [...event.servers]
+        current ? mergeWsUpdate(current, event.servers) : current
       )
       return
     }

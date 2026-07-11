@@ -9,7 +9,7 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant};
-use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
+use serverbee_common::types::{LiveMetrics, SystemReport, TracerouteHop};
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -247,26 +247,15 @@ impl AgentManager {
 
         let (disk_read_bytes_per_sec, disk_write_bytes_per_sec) = aggregate_disk_io(&report);
 
-        // Build a ServerStatus for the broadcast. Static fields (mem_total, disk_total,
-        // os, cpu_name, etc.) are not available here -- set them to defaults since the
-        // browser can merge with REST data.
-        let status = ServerStatus {
+        let metrics = LiveMetrics {
             id: server_id.to_string(),
-            name: self
-                .connections
-                .get(server_id)
-                .map(|c| c.server_name.clone())
-                .unwrap_or_default(),
             online: true,
             last_active: chrono::Utc::now().timestamp(),
             uptime: report.uptime,
             cpu: report.cpu,
             mem_used: report.mem_used,
-            mem_total: 0,
             swap_used: report.swap_used,
-            swap_total: 0,
             disk_used: report.disk_used,
-            disk_total: 0,
             net_in_speed: report.net_in_speed,
             net_out_speed: report.net_out_speed,
             net_in_transfer: report.net_in_transfer,
@@ -277,22 +266,12 @@ impl AgentManager {
             tcp_conn: report.tcp_conn,
             udp_conn: report.udp_conn,
             process_count: report.process_count,
-            cpu_name: None,
-            os: None,
-            region: None,
-            country_code: None,
-            group_id: None,
-            features: vec![],
             disk_read_bytes_per_sec,
             disk_write_bytes_per_sec,
-            tags: Vec::new(),
-            cpu_cores: None,
-            has_token: true,
-            outstanding_enrollment: None,
         };
 
         let _ = self.browser_tx.send(BrowserMessage::Update {
-            servers: vec![status],
+            servers: vec![metrics],
         });
 
         // Cache the report
@@ -985,6 +964,55 @@ mod tests {
         let cached = mgr.get_latest_report("s1").unwrap();
         assert!((cached.cpu - 42.5).abs() < f64::EPSILON);
         assert_eq!(cached.mem_used, 8_000_000_000);
+    }
+
+    /// Update frames are a partial projection: static facts must be absent
+    /// from the wire entirely, so clients keep their cached values on merge
+    /// instead of having them stomped by zero placeholders.
+    #[test]
+    fn test_update_report_broadcast_omits_static_fields() {
+        let (mgr, mut rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+        let _ = rx.try_recv(); // ServerOnline
+
+        mgr.update_report(
+            "s1",
+            SystemReport {
+                cpu: 42.5,
+                swap_used: 1024,
+                ..Default::default()
+            },
+        );
+
+        let msg = rx.try_recv().unwrap();
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "update");
+        let server = &json["servers"][0];
+        assert_eq!(server["id"], "s1");
+        assert!((server["cpu"].as_f64().unwrap() - 42.5).abs() < f64::EPSILON);
+        assert_eq!(server["swap_used"], 1024);
+        for key in [
+            "name",
+            "mem_total",
+            "swap_total",
+            "disk_total",
+            "cpu_name",
+            "os",
+            "region",
+            "country_code",
+            "group_id",
+            "features",
+            "tags",
+            "cpu_cores",
+            "has_token",
+            "outstanding_enrollment",
+        ] {
+            assert!(
+                server.get(key).is_none(),
+                "update frame must not carry static field `{key}`"
+            );
+        }
     }
 
     #[test]
