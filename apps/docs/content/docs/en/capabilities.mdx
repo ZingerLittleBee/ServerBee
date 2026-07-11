@@ -138,6 +138,7 @@ Grants are persisted to `<state_dir>/capability_grants.json` (default `/var/lib/
 - **Survives restarts** — if the agent restarts mid-window, the grant is reloaded and remains active for the rest of its original window.
 - **Expires at the original deadline** — restarting does not extend a grant. A grant for `30m` expires 30 minutes after it was issued regardless of how many times the agent restarts in between.
 - **Fails safe to OFF** — if the grants file is missing, empty, corrupt, or written by an unknown schema version, the agent treats it as "no grants" and the capability stays off. A temporary grant can never *strengthen* the permanent set; it can only flip an otherwise-off bit on for its window.
+- **Expiry bounds running work, not just new requests** — when a `terminal` grant expires or is revoked, live terminal sessions opened under it are closed immediately (the browser sees the session end), and a `security_events` grant starts the agent's security pipeline the moment it becomes effective and stops it when the window closes — including grants issued while the agent was already running.
 
 ### What the server sees
 
