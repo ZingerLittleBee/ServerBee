@@ -170,6 +170,37 @@ impl RecordService {
         }
     }
 
+    /// Raw records for a server within the trailing `window`, newest first.
+    /// The shared read path for alert evaluation: consumers sampling "recent
+    /// metrics" go through here so a storage change cannot silently detach
+    /// them from what the recorder writes.
+    pub async fn query_recent(
+        db: &DatabaseConnection,
+        server_id: &str,
+        window: Duration,
+    ) -> Result<Vec<record::Model>, AppError> {
+        let since = Utc::now() - window;
+        Ok(record::Entity::find()
+            .filter(record::Column::ServerId.eq(server_id))
+            .filter(record::Column::Time.gte(since))
+            .order_by_desc(record::Column::Time)
+            .all(db)
+            .await?)
+    }
+
+    /// Time of the most recent raw record for a server, if any.
+    pub async fn latest_record_time(
+        db: &DatabaseConnection,
+        server_id: &str,
+    ) -> Result<Option<DateTime<Utc>>, AppError> {
+        Ok(record::Entity::find()
+            .filter(record::Column::ServerId.eq(server_id))
+            .order_by_desc(record::Column::Time)
+            .one(db)
+            .await?
+            .map(|r| r.time))
+    }
+
     /// Query GPU history records for a server within a time range.
     pub async fn query_gpu_history(
         db: &DatabaseConnection,

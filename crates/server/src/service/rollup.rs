@@ -11,6 +11,8 @@
 
 use chrono::{DateTime, Duration, Utc};
 
+use crate::entity::record;
+
 /// Longest range the raw table serves under `interval = "auto"`; longer
 /// ranges read the hourly rollup.
 pub const RAW_WINDOW_MAX_HOURS: i64 = 24;
@@ -68,28 +70,122 @@ pub struct MetricColumn {
     pub name: &'static str,
     /// How the raw samples fold into the hourly bucket.
     pub agg: RollupAgg,
+    /// Alert `rule_type` that reads this column; `None` marks columns that
+    /// cannot be alerted on (cumulative transfer counters).
+    pub alert_rule_type: Option<&'static str>,
+    /// Typed accessor backing the alert read path; nullable columns read 0.
+    pub read: fn(&record::Model) -> f64,
 }
 
 /// The scalar metric columns, in physical column order. Order matters: the
 /// generated INSERT lists columns in this order.
 pub const METRIC_COLUMNS: &[MetricColumn] = &[
-    MetricColumn { name: "cpu", agg: RollupAgg::Avg },
-    MetricColumn { name: "mem_used", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "swap_used", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "disk_used", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "net_in_speed", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "net_out_speed", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "net_in_transfer", agg: RollupAgg::MaxInt },
-    MetricColumn { name: "net_out_transfer", agg: RollupAgg::MaxInt },
-    MetricColumn { name: "load1", agg: RollupAgg::Avg },
-    MetricColumn { name: "load5", agg: RollupAgg::Avg },
-    MetricColumn { name: "load15", agg: RollupAgg::Avg },
-    MetricColumn { name: "tcp_conn", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "udp_conn", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "process_count", agg: RollupAgg::AvgInt },
-    MetricColumn { name: "temperature", agg: RollupAgg::Avg },
-    MetricColumn { name: "gpu_usage", agg: RollupAgg::Avg },
+    MetricColumn {
+        name: "cpu",
+        agg: RollupAgg::Avg,
+        alert_rule_type: Some("cpu"),
+        read: |r| r.cpu,
+    },
+    MetricColumn {
+        name: "mem_used",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("memory"),
+        read: |r| r.mem_used as f64,
+    },
+    MetricColumn {
+        name: "swap_used",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("swap"),
+        read: |r| r.swap_used as f64,
+    },
+    MetricColumn {
+        name: "disk_used",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("disk"),
+        read: |r| r.disk_used as f64,
+    },
+    MetricColumn {
+        name: "net_in_speed",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("net_in_speed"),
+        read: |r| r.net_in_speed as f64,
+    },
+    MetricColumn {
+        name: "net_out_speed",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("net_out_speed"),
+        read: |r| r.net_out_speed as f64,
+    },
+    MetricColumn {
+        name: "net_in_transfer",
+        agg: RollupAgg::MaxInt,
+        alert_rule_type: None,
+        read: |r| r.net_in_transfer as f64,
+    },
+    MetricColumn {
+        name: "net_out_transfer",
+        agg: RollupAgg::MaxInt,
+        alert_rule_type: None,
+        read: |r| r.net_out_transfer as f64,
+    },
+    MetricColumn {
+        name: "load1",
+        agg: RollupAgg::Avg,
+        alert_rule_type: Some("load1"),
+        read: |r| r.load1,
+    },
+    MetricColumn {
+        name: "load5",
+        agg: RollupAgg::Avg,
+        alert_rule_type: Some("load5"),
+        read: |r| r.load5,
+    },
+    MetricColumn {
+        name: "load15",
+        agg: RollupAgg::Avg,
+        alert_rule_type: Some("load15"),
+        read: |r| r.load15,
+    },
+    MetricColumn {
+        name: "tcp_conn",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("tcp_conn"),
+        read: |r| r.tcp_conn as f64,
+    },
+    MetricColumn {
+        name: "udp_conn",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("udp_conn"),
+        read: |r| r.udp_conn as f64,
+    },
+    MetricColumn {
+        name: "process_count",
+        agg: RollupAgg::AvgInt,
+        alert_rule_type: Some("process"),
+        read: |r| r.process_count as f64,
+    },
+    MetricColumn {
+        name: "temperature",
+        agg: RollupAgg::Avg,
+        alert_rule_type: Some("temperature"),
+        read: |r| r.temperature.unwrap_or(0.0),
+    },
+    MetricColumn {
+        name: "gpu_usage",
+        agg: RollupAgg::Avg,
+        alert_rule_type: Some("gpu"),
+        read: |r| r.gpu_usage.unwrap_or(0.0),
+    },
 ];
+
+/// Metric value an alert rule reads from a raw record. Unknown rule types
+/// read 0.0 (the legacy fallback) so a misconfigured rule never fires.
+pub fn alert_metric(rec: &record::Model, rule_type: &str) -> f64 {
+    METRIC_COLUMNS
+        .iter()
+        .find(|c| c.alert_rule_type == Some(rule_type))
+        .map_or(0.0, |c| (c.read)(rec))
+}
 
 /// Build the hourly rollup upsert. Placeholders: bucket time, window start,
 /// window end (in that order).
@@ -203,5 +299,87 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), METRIC_COLUMNS.len());
+    }
+
+    fn make_record(cpu: f64, mem_used: i64, load1: f64) -> record::Model {
+        record::Model {
+            id: 1,
+            server_id: "srv-1".to_string(),
+            time: Utc::now(),
+            cpu,
+            mem_used,
+            swap_used: 0,
+            disk_used: 0,
+            net_in_speed: 0,
+            net_out_speed: 0,
+            net_in_transfer: 0,
+            net_out_transfer: 0,
+            load1,
+            load5: 0.0,
+            load15: 0.0,
+            tcp_conn: 100,
+            udp_conn: 50,
+            process_count: 200,
+            temperature: Some(55.0),
+            gpu_usage: Some(40.0),
+            disk_io_json: None,
+        }
+    }
+
+    #[test]
+    fn alert_metric_reads_direct_columns() {
+        let rec = make_record(85.5, 4_000_000, 1.2);
+        assert!((alert_metric(&rec, "cpu") - 85.5).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "load1") - 1.2).abs() < f64::EPSILON);
+    }
+
+    /// Aliased rule types ("memory", "process", "gpu"…) resolve through the
+    /// descriptor's alert_rule_type, not the column name.
+    #[test]
+    fn alert_metric_resolves_rule_type_aliases() {
+        let rec = make_record(50.0, 8_000_000, 0.0);
+        assert!((alert_metric(&rec, "memory") - 8_000_000.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "process") - 200.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "gpu") - 40.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "tcp_conn") - 100.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "udp_conn") - 50.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "temperature") - 55.0).abs() < f64::EPSILON);
+    }
+
+    /// Unknown rule types and the deliberately non-alertable transfer
+    /// counters read 0.0 so such rules can never fire.
+    #[test]
+    fn alert_metric_unknown_and_non_alertable_read_zero() {
+        let rec = make_record(99.0, 0, 0.0);
+        assert!((alert_metric(&rec, "nonexistent") - 0.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "net_in_transfer") - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn alert_metric_remaining_variants() {
+        // Exercise every alertable column not covered by the tests above.
+        let mut rec = make_record(0.0, 0, 0.0);
+        rec.swap_used = 1024;
+        rec.disk_used = 2048;
+        rec.load5 = 2.5;
+        rec.load15 = 3.5;
+        rec.net_in_speed = 111;
+        rec.net_out_speed = 222;
+        assert!((alert_metric(&rec, "swap") - 1024.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "disk") - 2048.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "load5") - 2.5).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "load15") - 3.5).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "net_in_speed") - 111.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "net_out_speed") - 222.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn alert_metric_none_temperature_and_gpu_read_zero() {
+        // None temperature/gpu must coerce to 0.0 via unwrap_or.
+        let mut rec = make_record(0.0, 0, 0.0);
+        rec.temperature = None;
+        rec.gpu_usage = None;
+        assert!((alert_metric(&rec, "temperature") - 0.0).abs() < f64::EPSILON);
+        assert!((alert_metric(&rec, "gpu") - 0.0).abs() < f64::EPSILON);
     }
 }
