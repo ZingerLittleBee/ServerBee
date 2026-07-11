@@ -437,3 +437,53 @@ async fn update_server_geo(
     active.update(db).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::IpChange;
+
+    fn change(old: Option<&str>, new: Option<&str>) -> IpChange {
+        IpChange {
+            old_ipv4: old.map(str::to_string),
+            new_ipv4: new.map(str::to_string),
+            old_ipv6: None,
+            new_ipv6: None,
+            old_remote_addr: None,
+            new_remote_addr: None,
+        }
+    }
+
+    /// First population (None → Some) happens on every fresh registration: it
+    /// must drive the alert/broadcast path but never the audit trail.
+    #[test]
+    fn first_population_changes_without_being_a_transition() {
+        let c = change(None, Some("1.2.3.4"));
+        assert!(c.changed());
+        assert!(!c.is_transition());
+    }
+
+    /// A real address move (Some → different Some) drives both paths.
+    #[test]
+    fn address_move_is_a_transition() {
+        let c = change(Some("1.2.3.4"), Some("5.6.7.8"));
+        assert!(c.changed());
+        assert!(c.is_transition());
+    }
+
+    /// Losing an address (Some → None) is a transition too — it must be
+    /// audited, not mistaken for first population.
+    #[test]
+    fn address_loss_is_a_transition() {
+        let c = change(Some("1.2.3.4"), None);
+        assert!(c.changed());
+        assert!(c.is_transition());
+    }
+
+    #[test]
+    fn identical_addresses_are_no_change_at_all() {
+        let c = change(Some("1.2.3.4"), Some("1.2.3.4"));
+        assert!(!c.changed());
+        assert!(!c.is_transition());
+        assert!(!change(None, None).changed());
+    }
+}
