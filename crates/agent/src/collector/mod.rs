@@ -55,6 +55,10 @@ impl<S: MetricsSource> Collector<S> {
 
     pub fn collect(&mut self) -> SystemReport {
         self.source.refresh();
+        // prev_time is stamped before the counters are read inside
+        // assemble_report, so the window is measured refresh-to-refresh
+        // rather than read-to-read. The µs-level skew this introduces is
+        // absorbed by the 1s elapsed clamp below.
         let elapsed = self.prev_time.elapsed().as_secs_f64();
         self.prev_time = Instant::now();
         self.assemble_report(elapsed)
