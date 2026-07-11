@@ -26,7 +26,7 @@ import type {
 } from '@/lib/api-schema'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
 import { type ServerMetrics, useLiveServers } from '@/lib/server-catalog'
-import { rangesForVariant, resolveRange, type TimeRange } from '@/lib/server-detail-nav'
+import { type RangeKey, rangesForVariant, resolveRange, type TimeRange } from '@/lib/server-detail-nav'
 import { cn, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 
@@ -48,7 +48,7 @@ export interface ServerDetailContentProps {
    *  page `show_network` toggle). */
   networkTab?: React.ReactNode
   /** Called by range buttons when the viewer picks a new historical window. */
-  onRangeChange?: (rangeKey: string) => void
+  onRangeChange?: (rangeKey: RangeKey) => void
   /** Called when the viewer switches detail tabs. */
   onTabChange?: (tab: string) => void
   /** Currently selected range key from the URL or local state. */
@@ -539,7 +539,7 @@ function MetricsTabContent({
     name: string
   }[]
   gpuChartData: Record<string, unknown>[]
-  onRangeChange?: (rangeKey: string) => void
+  onRangeChange?: (rangeKey: RangeKey) => void
   rangeIndex: number
   ranges: TimeRange[]
   formatTime: ((time: string) => string) | undefined

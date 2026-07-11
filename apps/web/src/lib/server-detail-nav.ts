@@ -19,20 +19,20 @@ export type PublicServerDetailTab = (typeof PUBLIC_SERVER_DETAIL_TABS)[number]
 
 /** Admin detail search: `range` always present (default realtime); `tab` kept
  * optional so old `/servers/$id` links (range only) stay valid. */
-export function parseServerDetailSearch(search: Record<string, unknown>): { range: string; tab?: ServerDetailTab } {
-  const range = (search.range as string) || 'realtime'
+export function parseServerDetailSearch(search: Record<string, unknown>): { range: RangeKey; tab?: ServerDetailTab } {
+  const range = isRangeKey(search.range) ? search.range : 'realtime'
   return SERVER_DETAIL_TABS.includes(search.tab as ServerDetailTab)
     ? { range, tab: search.tab as ServerDetailTab }
     : { range }
 }
 
-/** Public detail search: both params optional; unknown tabs are dropped. */
+/** Public detail search: both params optional; unknown ranges and tabs are dropped. */
 export function parsePublicServerDetailSearch(search: Record<string, unknown>): {
-  range?: string
+  range?: RangeKey
   tab?: PublicServerDetailTab
 } {
   return {
-    range: typeof search.range === 'string' ? search.range : undefined,
+    range: isRangeKey(search.range) ? search.range : undefined,
     ...(PUBLIC_SERVER_DETAIL_TABS.includes(search.tab as PublicServerDetailTab)
       ? { tab: search.tab as PublicServerDetailTab }
       : {})
@@ -50,14 +50,21 @@ export function resolvePublicActiveTab(
 
 // --- Range catalogs ----------------------------------------------------------
 
+const RANGE_KEYS = ['realtime', '1h', '6h', '24h', '7d', '30d'] as const
+export type RangeKey = (typeof RANGE_KEYS)[number]
+
+function isRangeKey(value: unknown): value is RangeKey {
+  return (RANGE_KEYS as readonly unknown[]).includes(value)
+}
+
 export interface TimeRange {
   hours: number
   interval: string
-  key: string
+  key: RangeKey
   label: string
 }
 
-export const ADMIN_TIME_RANGES: TimeRange[] = [
+const ADMIN_TIME_RANGES: TimeRange[] = [
   { key: 'realtime', label: 'range_realtime', hours: 0, interval: 'realtime' },
   { key: '1h', label: 'range_1h', hours: 1, interval: 'raw' },
   { key: '6h', label: 'range_6h', hours: 6, interval: 'raw' },
@@ -69,7 +76,7 @@ export const ADMIN_TIME_RANGES: TimeRange[] = [
 // Public variant cannot rely on WS-driven realtime metrics, so realtime is
 // dropped; everything else mirrors the admin range options because the
 // public metrics endpoint accepts the same `interval` query parameter.
-export const PUBLIC_TIME_RANGES: TimeRange[] = ADMIN_TIME_RANGES.filter((r) => r.key !== 'realtime')
+const PUBLIC_TIME_RANGES: TimeRange[] = ADMIN_TIME_RANGES.filter((r) => r.key !== 'realtime')
 
 export function rangesForVariant(variant: 'admin' | 'public'): TimeRange[] {
   return variant === 'public' ? PUBLIC_TIME_RANGES : ADMIN_TIME_RANGES
@@ -86,8 +93,8 @@ export function resolveRange(rangeKey: string | undefined, ranges: TimeRange[]) 
 /** The retired standalone network page counted hours in its `range` param
  * ('1' | '6' | ...); detail URLs use metrics-style keys. Used by the legacy
  * `/network/$serverId` redirect so old bookmarks land on the right window. */
-export function legacyNetworkRangeToRangeKey(range: string): string {
-  const mapping: Record<string, string> = {
+export function legacyNetworkRangeToRangeKey(range: string): RangeKey {
+  const mapping: Record<string, RangeKey> = {
     realtime: 'realtime',
     '1': '1h',
     '6': '6h',

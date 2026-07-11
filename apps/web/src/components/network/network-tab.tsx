@@ -19,6 +19,7 @@ import { CHART_COLORS } from '@/lib/chart-colors'
 import { formatDateTime } from '@/lib/format'
 import { getNetworkTargetDisplayName } from '@/lib/network-i18n'
 import type { NetworkProbeAnomaly, NetworkTargetSummary } from '@/lib/network-types'
+import type { RangeKey } from '@/lib/server-detail-nav'
 import { cn } from '@/lib/utils'
 
 // The network tab shares the server-detail `range` search param, which uses
@@ -35,7 +36,7 @@ const RANGE_KEYS = ['realtime', '1h', '6h', '24h', '7d', '30d'] as const
 
 export interface NetworkTabProps {
   /** Called when the viewer picks a new range; keys are metrics-style. */
-  onRangeChange?: (rangeKey: string) => void
+  onRangeChange?: (rangeKey: RangeKey) => void
   /** Metrics-style range key from the shared `range` search param. */
   rangeKey?: string
   serverId: string
@@ -86,7 +87,7 @@ function TimeRangeControls({
   rangeKey,
   t
 }: {
-  onChange: (rangeKey: string) => void
+  onChange: (rangeKey: RangeKey) => void
   rangeKey: string
   t: (key: string, opts?: Record<string, unknown>) => string
 }) {
