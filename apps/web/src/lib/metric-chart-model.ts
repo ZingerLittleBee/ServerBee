@@ -41,6 +41,92 @@ export type MetricChartRow = {
   timestamp: string
 }
 
+/**
+ * Display spec for one metric chart. Everything the Metrics tab needs to
+ * render a series — data key, label, color, unit, domain, byte formatting,
+ * data source and availability gate — lives in this one table, so adding a
+ * chart means adding a row here instead of a hand-written JSX block.
+ */
+export interface MetricChartSpec {
+  /** Format axis ticks and tooltip values with formatBytes. */
+  bytes?: boolean
+  /** CSS color value for the area series. */
+  color: string
+  /** Row key in the chart data. */
+  dataKey: string
+  domain?: [number, number]
+  /** Availability gate; ungated charts always render. */
+  gate?: 'gpu' | 'gpuTemp' | 'temperature'
+  /** i18n key in the `servers` namespace. */
+  labelKey: string
+  /** Which row array feeds the chart. */
+  source: 'gpu' | 'metrics'
+  unit?: string
+}
+
+export const METRIC_CHART_SPECS: MetricChartSpec[] = [
+  {
+    color: 'var(--color-chart-1)',
+    dataKey: 'cpu',
+    domain: [0, 100],
+    labelKey: 'chart_cpu',
+    source: 'metrics',
+    unit: '%'
+  },
+  {
+    color: 'var(--color-chart-2)',
+    dataKey: 'memory_pct',
+    domain: [0, 100],
+    labelKey: 'chart_memory',
+    source: 'metrics',
+    unit: '%'
+  },
+  {
+    color: 'var(--color-chart-3)',
+    dataKey: 'disk_pct',
+    domain: [0, 100],
+    labelKey: 'chart_disk',
+    source: 'metrics',
+    unit: '%'
+  },
+  { bytes: true, color: 'var(--color-chart-4)', dataKey: 'net_in_speed', labelKey: 'chart_net_in', source: 'metrics' },
+  {
+    bytes: true,
+    color: 'var(--color-chart-5)',
+    dataKey: 'net_out_speed',
+    labelKey: 'chart_net_out',
+    source: 'metrics'
+  },
+  { color: 'var(--color-chart-1)', dataKey: 'load1', labelKey: 'chart_load', source: 'metrics' },
+  {
+    color: 'var(--color-chart-4)',
+    dataKey: 'temperature',
+    gate: 'temperature',
+    labelKey: 'chart_temperature',
+    source: 'metrics',
+    unit: '°C'
+  },
+  {
+    color: 'var(--color-chart-5)',
+    dataKey: 'gpu_usage',
+    domain: [0, 100],
+    gate: 'gpu',
+    labelKey: 'chart_gpu_usage',
+    source: 'gpu',
+    unit: '%'
+  },
+  // GPU temp is admin-only: the public surface never populates gpu_temp, so
+  // the gpuTemp gate (non-empty data key) keeps the chart off that surface.
+  {
+    color: 'var(--color-chart-2)',
+    dataKey: 'gpu_temp',
+    gate: 'gpuTemp',
+    labelKey: 'chart_gpu_temp',
+    source: 'gpu',
+    unit: '°C'
+  }
+]
+
 /** The one percentage guard: a missing/zero total renders as 0%, never NaN/Infinity. */
 export function pct(used: number, total: number): number {
   return total > 0 ? (used / total) * 100 : 0

@@ -29,6 +29,8 @@ import {
   buildGpuChartRows,
   deriveNetworkLabels,
   type GpuRecordAggregated,
+  METRIC_CHART_SPECS,
+  type MetricChartSpec,
   makeTickFormatter,
   makeTooltipFormatter,
   toMetricChartRow,
@@ -401,6 +403,13 @@ function MetricsTabContent({
   const { t } = useTranslation('servers')
   const hasGpuTemp = gpuChartData.some((d) => 'gpu_temp' in d && d.gpu_temp != null)
   const isPublic = variant === 'public'
+  const gates: Record<NonNullable<MetricChartSpec['gate']>, boolean> = {
+    gpu: availableMetrics.gpu,
+    // GPU temp series is admin-only; the public surface does not expose it,
+    // so the gate also requires a non-empty data key.
+    gpuTemp: availableMetrics.gpu && hasGpuTemp,
+    temperature: availableMetrics.temperature
+  }
 
   return (
     <>
@@ -419,111 +428,22 @@ function MetricsTabContent({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <MetricsChart
-          color="var(--color-chart-1)"
-          data={chartData}
-          dataKey="cpu"
-          domain={[0, 100]}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_cpu')}
-          unit="%"
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-2)"
-          data={chartData}
-          dataKey="memory_pct"
-          domain={[0, 100]}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_memory')}
-          unit="%"
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-3)"
-          data={chartData}
-          dataKey="disk_pct"
-          domain={[0, 100]}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_disk')}
-          unit="%"
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-4)"
-          data={chartData}
-          dataKey="net_in_speed"
-          formatTick={(v) => formatBytes(v)}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          formatValue={(v) => formatBytes(v)}
-          title={t('chart_net_in')}
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-5)"
-          data={chartData}
-          dataKey="net_out_speed"
-          formatTick={(v) => formatBytes(v)}
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          formatValue={(v) => formatBytes(v)}
-          title={t('chart_net_out')}
-          xAxisInterval={xAxisInterval}
-        />
-        <MetricsChart
-          color="var(--color-chart-1)"
-          data={chartData}
-          dataKey="load1"
-          formatTime={formatTime}
-          formatTooltipLabel={formatTooltipLabel}
-          title={t('chart_load')}
-          xAxisInterval={xAxisInterval}
-        />
-
-        {availableMetrics.temperature && (
+        {METRIC_CHART_SPECS.filter((spec) => !spec.gate || gates[spec.gate]).map((spec) => (
           <MetricsChart
-            color="var(--color-chart-4)"
-            data={chartData}
-            dataKey="temperature"
+            color={spec.color}
+            data={spec.source === 'gpu' ? gpuChartData : chartData}
+            dataKey={spec.dataKey}
+            domain={spec.domain}
+            formatTick={spec.bytes ? formatBytes : undefined}
             formatTime={formatTime}
             formatTooltipLabel={formatTooltipLabel}
-            title={t('chart_temperature')}
-            unit="°C"
+            formatValue={spec.bytes ? formatBytes : undefined}
+            key={spec.dataKey}
+            title={t(spec.labelKey)}
+            unit={spec.unit}
             xAxisInterval={xAxisInterval}
           />
-        )}
-
-        {availableMetrics.gpu && (
-          <MetricsChart
-            color="var(--color-chart-5)"
-            data={gpuChartData}
-            dataKey="gpu_usage"
-            domain={[0, 100]}
-            formatTime={formatTime}
-            formatTooltipLabel={formatTooltipLabel}
-            title={t('chart_gpu_usage')}
-            unit="%"
-            xAxisInterval={xAxisInterval}
-          />
-        )}
-        {/* GPU temp series is admin-only; the public surface does not
-            expose it, so we gate the chart on a non-empty data key. */}
-        {availableMetrics.gpu && hasGpuTemp && (
-          <MetricsChart
-            color="var(--color-chart-2)"
-            data={gpuChartData}
-            dataKey="gpu_temp"
-            formatTime={formatTime}
-            formatTooltipLabel={formatTooltipLabel}
-            title={t('chart_gpu_temp')}
-            unit="°C"
-            xAxisInterval={xAxisInterval}
-          />
-        )}
+        ))}
       </div>
 
       {availableMetrics.diskIo && (

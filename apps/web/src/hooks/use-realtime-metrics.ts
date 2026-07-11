@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { pct } from '@/lib/metric-chart-model'
+import { type MetricChartRow, pct } from '@/lib/metric-chart-model'
 import { readLiveServers, type ServerMetrics, subscribeLiveServers } from '@/lib/server-catalog'
 
 const MAX_BUFFER_SIZE = 200
@@ -31,19 +31,9 @@ function getQueryClientBufferCache(
   return cache
 }
 
-export interface RealtimeDataPoint {
-  cpu: number
-  disk_pct: number
-  load1: number
-  load5: number
-  load15: number
-  memory_pct: number
-  net_in_speed: number
-  net_in_transfer: number
-  net_out_speed: number
-  net_out_transfer: number
-  timestamp: string
-}
+/** Realtime points are ordinary chart rows: the WS feed and the records API
+ * converge on one row shape so every chart reads the same keys. */
+export type RealtimeDataPoint = MetricChartRow
 
 export function toRealtimeDataPoint(metrics: ServerMetrics): RealtimeDataPoint {
   return {
