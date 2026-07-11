@@ -5,11 +5,13 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{alert_rule, alert_state, network_probe_record, record, server};
+use crate::entity::{alert_rule, alert_state, network_probe_record, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
+use crate::service::record::RecordService;
+use crate::service::rollup;
 
 /// Rule types that are event-driven (not evaluated on a polling interval).
 const EVENT_DRIVEN_RULE_TYPES: &[&str] = &[
@@ -761,7 +763,11 @@ impl AlertService {
                     let duration = item.duration.unwrap_or(60) as u64;
                     !agent_manager.is_online(server_id) && {
                         // Check how long the server has been offline by looking at last record
-                        match get_last_record_time(db, server_id).await {
+                        match RecordService::latest_record_time(db, server_id)
+                            .await
+                            .ok()
+                            .flatten()
+                        {
                             Some(last) => {
                                 let elapsed = (Utc::now() - last).num_seconds().max(0) as u64;
                                 elapsed >= duration
@@ -1011,30 +1017,8 @@ async fn resolve_servers(
     }
 }
 
-async fn get_last_record_time(
-    db: &DatabaseConnection,
-    server_id: &str,
-) -> Option<chrono::DateTime<Utc>> {
-    record::Entity::find()
-        .filter(record::Column::ServerId.eq(server_id))
-        .order_by_desc(record::Column::Time)
-        .one(db)
-        .await
-        .ok()
-        .flatten()
-        .map(|r| r.time)
-}
-
 async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertRuleItem) -> bool {
-    let ten_min_ago = Utc::now() - Duration::minutes(10);
-
-    let records = match record::Entity::find()
-        .filter(record::Column::ServerId.eq(server_id))
-        .filter(record::Column::Time.gte(ten_min_ago))
-        .order_by_desc(record::Column::Time)
-        .all(db)
-        .await
-    {
+    let records = match RecordService::query_recent(db, server_id, Duration::minutes(10)).await {
         Ok(r) => r,
         Err(_) => return false,
     };
@@ -1047,7 +1031,11 @@ async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertR
     let total = records.len();
 
     for rec in &records {
-        let value = extract_metric(rec, &item.rule_type);
+        // Unresolvable rule types (unknown, or non-alertable transfer
+        // counters) contribute no sample, so such rules never reach 70%.
+        let Some(value) = rollup::alert_metric(rec, &item.rule_type) else {
+            continue;
+        };
         let exceeds = match (item.min, item.max) {
             (Some(min), Some(max)) => value >= min && value <= max,
             (Some(min), None) => value >= min,
@@ -1232,30 +1220,6 @@ async fn check_network_packet_loss(
     }
 }
 
-fn extract_metric(rec: &record::Model, rule_type: &str) -> f64 {
-    match rule_type {
-        "cpu" => rec.cpu,
-        "memory" => {
-            // We need mem_total for percentage but we don't have it in the record.
-            // Return raw mem_used as bytes. The threshold should be set accordingly.
-            rec.mem_used as f64
-        }
-        "swap" => rec.swap_used as f64,
-        "disk" => rec.disk_used as f64,
-        "load1" => rec.load1,
-        "load5" => rec.load5,
-        "load15" => rec.load15,
-        "tcp_conn" => rec.tcp_conn as f64,
-        "udp_conn" => rec.udp_conn as f64,
-        "process" => rec.process_count as f64,
-        "net_in_speed" => rec.net_in_speed as f64,
-        "net_out_speed" => rec.net_out_speed as f64,
-        "temperature" => rec.temperature.unwrap_or(0.0),
-        "gpu" => rec.gpu_usage.unwrap_or(0.0),
-        _ => 0.0,
-    }
-}
-
 /// Render a compact human summary of a rule's conditions for notification
 /// bodies, e.g. `cpu >= 90 for 60s` or `offline for 120s; load1 >= 4`.
 /// Returns an empty string when `rules_json` cannot be parsed, so callers can
@@ -1308,6 +1272,7 @@ fn majority_exceeded(exceeded_count: usize, total: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entity::record;
     use chrono::{TimeZone, Utc};
 
     // ── describe_rule_items: notification condition summary ──
@@ -1328,32 +1293,6 @@ mod tests {
     #[test]
     fn test_describe_rule_items_invalid_json_is_empty() {
         assert_eq!(describe_rule_items("not json"), "");
-    }
-
-    /// Build a minimal `record::Model` with the given field values.
-    fn make_record(cpu: f64, mem_used: i64, load1: f64) -> record::Model {
-        record::Model {
-            id: 1,
-            server_id: "srv-1".to_string(),
-            time: Utc::now(),
-            cpu,
-            mem_used,
-            swap_used: 0,
-            disk_used: 0,
-            net_in_speed: 0,
-            net_out_speed: 0,
-            net_in_transfer: 0,
-            net_out_transfer: 0,
-            load1,
-            load5: 0.0,
-            load15: 0.0,
-            tcp_conn: 100,
-            udp_conn: 50,
-            process_count: 200,
-            temperature: Some(55.0),
-            gpu_usage: Some(40.0),
-            disk_io_json: None,
-        }
     }
 
     // ── T2-1: threshold above ──
@@ -1446,55 +1385,6 @@ mod tests {
             "0/0 (no samples) should NOT meet threshold"
         );
         assert!(majority_exceeded(1, 1), "1/1 = 100% should meet threshold");
-    }
-
-    // ── T2-4: extract_metric ──
-
-    #[test]
-    fn test_extract_metric_cpu() {
-        let rec = make_record(85.5, 4_000_000, 1.2);
-        assert!((extract_metric(&rec, "cpu") - 85.5).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_extract_metric_memory() {
-        let rec = make_record(50.0, 8_000_000, 0.0);
-        assert!((extract_metric(&rec, "memory") - 8_000_000.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_extract_metric_load() {
-        let rec = make_record(0.0, 0, std::f64::consts::PI);
-        assert!((extract_metric(&rec, "load1") - std::f64::consts::PI).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_extract_metric_temperature() {
-        let rec = make_record(0.0, 0, 0.0);
-        assert!((extract_metric(&rec, "temperature") - 55.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_extract_metric_gpu() {
-        let rec = make_record(0.0, 0, 0.0);
-        assert!((extract_metric(&rec, "gpu") - 40.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_extract_metric_connections() {
-        let rec = make_record(0.0, 0, 0.0);
-        assert!((extract_metric(&rec, "tcp_conn") - 100.0).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "udp_conn") - 50.0).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "process") - 200.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_extract_metric_unknown_type() {
-        let rec = make_record(99.0, 0, 0.0);
-        assert!(
-            (extract_metric(&rec, "nonexistent") - 0.0).abs() < f64::EPSILON,
-            "unknown metric type should return 0.0"
-        );
     }
 
     // ── T2-5: AlertRuleItem serialization round-trip ──
@@ -2123,36 +2013,6 @@ mod tests {
         assert!(p.exclude_cidrs.is_empty());
     }
 
-    // ── extract_metric: remaining variants ──
-
-    #[test]
-    fn test_extract_metric_remaining_variants() {
-        // Exercise every metric branch not covered by the existing tests.
-        let mut rec = make_record(0.0, 0, 0.0);
-        rec.swap_used = 1024;
-        rec.disk_used = 2048;
-        rec.load5 = 2.5;
-        rec.load15 = 3.5;
-        rec.net_in_speed = 111;
-        rec.net_out_speed = 222;
-        assert!((extract_metric(&rec, "swap") - 1024.0).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "disk") - 2048.0).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "load5") - 2.5).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "load15") - 3.5).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "net_in_speed") - 111.0).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "net_out_speed") - 222.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn test_extract_metric_temperature_and_gpu_none() {
-        // None temperature/gpu must coerce to 0.0 via unwrap_or.
-        let mut rec = make_record(0.0, 0, 0.0);
-        rec.temperature = None;
-        rec.gpu_usage = None;
-        assert!((extract_metric(&rec, "temperature") - 0.0).abs() < f64::EPSILON);
-        assert!((extract_metric(&rec, "gpu") - 0.0).abs() < f64::EPSILON);
-    }
-
     // ── AlertRuleAction serde round-trip ──
 
     #[test]
@@ -2624,13 +2484,16 @@ mod tests {
         assert_eq!(all.len(), 2);
     }
 
-    // ── get_last_record_time ──
+    // ── latest_record_time (shared RecordService reader) ──
 
     #[tokio::test]
-    async fn test_get_last_record_time_picks_latest_and_none() {
+    async fn test_latest_record_time_picks_latest_and_none() {
         let (db, _tmp) = setup_test_db().await;
         // No records => None.
-        assert!(get_last_record_time(&db, "srv-1").await.is_none());
+        assert!(RecordService::latest_record_time(&db, "srv-1")
+            .await
+            .expect("query should succeed")
+            .is_none());
 
         let older = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let newer = Utc.with_ymd_and_hms(2026, 1, 1, 1, 0, 0).unwrap();
@@ -2638,7 +2501,10 @@ mod tests {
         insert_record(&db, "srv-1", newer, 20.0).await;
 
         // Returns the most recent record's time.
-        let last = get_last_record_time(&db, "srv-1").await.expect("some");
+        let last = RecordService::latest_record_time(&db, "srv-1")
+            .await
+            .expect("query should succeed")
+            .expect("some");
         assert_eq!(last, newer);
     }
 

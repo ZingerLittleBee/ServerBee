@@ -24,35 +24,16 @@ fn is_high_risk_cap(cap: &str) -> bool {
     matches!(cap, "terminal" | "exec" | "file" | "docker")
 }
 
-/// Effective capabilities for inbound-data gating. The hot-path cache is
-/// populated once the agent sends `SystemInfo` on the current connection;
-/// before that, fall back to the DB row.
-async fn effective_caps_or_db(state: &Arc<AppState>, server_id: &str) -> u32 {
-    match state.agent_manager.get_effective_capabilities(server_id) {
-        Some(c) => c,
-        None => {
-            use crate::entity::server;
-            use sea_orm::EntityTrait;
-            server::Entity::find_by_id(server_id)
-                .one(&state.db)
-                .await
-                .ok()
-                .flatten()
-                .and_then(|s| u32::try_from(s.capabilities).ok())
-                .unwrap_or(0)
-        }
-    }
-}
-
-/// Re-check `cap` before accepting inbound agent data. On denial, writes a
-/// `denied_action` audit row and returns false.
+/// Re-check `cap` before accepting inbound agent data (the priority rule —
+/// live report first, mirror fallback — lives in capability_gate). On denial,
+/// writes a `denied_action` audit row and returns false.
 async fn gate_inbound_data(
     state: &Arc<AppState>,
     server_id: &str,
     cap: u32,
     denied_action: &str,
 ) -> bool {
-    let caps = effective_caps_or_db(state, server_id).await;
+    let caps = crate::service::capability_gate::effective_capabilities(state, server_id).await;
     if has_capability(caps, cap) {
         return true;
     }
@@ -184,6 +165,22 @@ pub(super) async fn on_capabilities_changed(
         ServerService::update_capabilities_mirror(&state.db, server_id, capabilities).await
     {
         tracing::error!("Failed to mirror capabilities for {server_id}: {e}");
+    }
+
+    // Deliberately a full-domain reconcile even though only the ping and
+    // firewall projections read capabilities: capability changes are rare,
+    // and "capability change ⇒ every domain converges" is a simpler invariant
+    // to trust than tracking which projections are capability-sensitive.
+    if let Err(error) = state
+        .agent_desired_state
+        .reconcile_connection(server_id)
+        .await
+    {
+        tracing::warn!(
+            server_id,
+            error = %error,
+            "capability-change desired-state reconcile was incomplete"
+        );
     }
 
     // Resolve display name + originating IP for the audit trail. Neither

@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -11,6 +10,7 @@ use serverbee_common::types::{FileEntry, FileType};
 use tokio::sync::mpsc;
 
 use crate::config::FileConfig;
+use crate::capability_grants::CapabilityAuthority;
 
 /// Events produced by background file transfer tasks, sent to the reporter loop.
 #[allow(clippy::enum_variant_names)]
@@ -75,13 +75,13 @@ pub struct FileManager {
     /// Pre-canonicalized root paths, computed once at construction time.
     canonical_roots: Vec<PathBuf>,
     #[allow(dead_code)] // stored for future per-method capability checks
-    capabilities: Arc<AtomicU32>,
+    capabilities: Arc<CapabilityAuthority>,
     active_downloads: DashMap<String, DownloadState>,
     active_uploads: DashMap<String, UploadState>,
 }
 
 impl FileManager {
-    pub fn new(config: FileConfig, capabilities: Arc<AtomicU32>) -> Self {
+    pub fn new(config: FileConfig, capabilities: Arc<CapabilityAuthority>) -> Self {
         let canonical_roots: Vec<PathBuf> = config
             .root_paths
             .iter()
@@ -733,8 +733,7 @@ async fn download_file(
 mod tests {
     use super::*;
     use serverbee_common::constants::CAP_FILE;
-    use std::sync::atomic::AtomicU32;
-    use tempfile::TempDir;
+        use tempfile::TempDir;
 
     fn make_config(root: &str) -> FileConfig {
         FileConfig {
@@ -753,7 +752,7 @@ mod tests {
     }
 
     fn make_manager(config: FileConfig) -> FileManager {
-        let caps = Arc::new(AtomicU32::new(CAP_FILE));
+        let caps = CapabilityAuthority::fixed(CAP_FILE);
         FileManager::new(config, caps)
     }
 
@@ -1154,7 +1153,7 @@ mod tests {
                 "passwd".into(),
             ],
         };
-        let caps = Arc::new(AtomicU32::new(u32::MAX));
+        let caps = CapabilityAuthority::fixed(u32::MAX);
         let mgr = FileManager::new(config, caps);
 
         let f1 = tmp1.path().join("a.txt");

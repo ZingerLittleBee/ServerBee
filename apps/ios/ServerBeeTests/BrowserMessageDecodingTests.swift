@@ -95,6 +95,61 @@ final class BrowserMessageDecodingTests: XCTestCase {
         XCTAssertEqual(servers[0].country, "US")
     }
 
+    /// Regression: since ADR-0002 the server's `update` frame carries the
+    /// LiveMetrics partial projection — `id` + `name` plus live fields only,
+    /// with every static key (mem_total, os, tags, has_token, ...) absent.
+    /// `id` and `name` are the only keys this decoder requires; if either
+    /// requirement grows, shipped builds silently drop every update frame.
+    func test_decode_update_acceptsLiveMetricsPartialProjection() throws {
+        let json = """
+        {
+          "type": "update",
+          "servers": [
+            {
+              "id": "s1",
+              "name": "srv-agent-name",
+              "online": true,
+              "last_active": 1779834851,
+              "uptime": 123456,
+              "cpu": 42.5,
+              "mem_used": 4294967296,
+              "swap_used": 1024,
+              "disk_used": 10737418240,
+              "net_in_speed": 12345,
+              "net_out_speed": 67890,
+              "net_in_transfer": 111,
+              "net_out_transfer": 222,
+              "load1": 1.25,
+              "load5": 0.8,
+              "load15": 0.6,
+              "tcp_conn": 34,
+              "udp_conn": 5,
+              "process_count": 128,
+              "disk_read_bytes_per_sec": 100,
+              "disk_write_bytes_per_sec": 50
+            }
+          ]
+        }
+        """
+        let msg = try decode(json)
+        guard case .update(let servers) = msg else {
+            return XCTFail("Expected .update, got \(msg)")
+        }
+
+        XCTAssertEqual(servers[0].id, "s1")
+        XCTAssertEqual(servers[0].cpuUsage, 42.5)
+        XCTAssertEqual(servers[0].swapUsed, 1024)
+        XCTAssertEqual(servers[0].uptime, 123_456)
+        // Static facts are absent from the wire: they must decode to nil so
+        // merge(from:) keeps the values already learned from full_sync/REST.
+        XCTAssertNil(servers[0].memoryTotal)
+        XCTAssertNil(servers[0].swapTotal)
+        XCTAssertNil(servers[0].diskTotal)
+        XCTAssertNil(servers[0].os)
+        XCTAssertNil(servers[0].tags)
+        XCTAssertNil(servers[0].hasToken)
+    }
+
     /// Regression: the live browser WS frame sends `last_active` as a Unix epoch
     /// **integer** (and includes swap/transfer/disk-io/tags/has_token). The old
     /// decoder typed `last_active` as String, which threw `typeMismatch` and

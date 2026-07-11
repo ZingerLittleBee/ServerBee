@@ -587,7 +587,7 @@ pub enum BrowserMessage {
         upgrades: Vec<UpgradeJobDto>,
     },
     Update {
-        servers: Vec<crate::types::ServerStatus>,
+        servers: Vec<crate::types::LiveMetrics>,
     },
     ServerOnline {
         server_id: String,

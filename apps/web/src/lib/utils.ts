@@ -47,6 +47,16 @@ export function countryCodeToName(code: string | null | undefined, locale = 'en'
   }
 }
 
+/** ISO `{from, to}` window ending now and reaching `hours` back — the query
+ * window shape every records/anomalies endpoint expects. */
+export function isoWindow(hours: number): { from: string; to: string } {
+  const now = new Date()
+  return {
+    from: new Date(now.getTime() - hours * 3600 * 1000).toISOString(),
+    to: now.toISOString()
+  }
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes <= 0 || !Number.isFinite(bytes)) {
     return '0 B'

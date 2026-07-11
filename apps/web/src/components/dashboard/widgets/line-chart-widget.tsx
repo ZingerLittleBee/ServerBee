@@ -4,7 +4,7 @@ import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } f
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { formatBytes } from '@/lib/utils'
 import { extractRecordMetric, formatChartTime, isNetworkMetric, METRIC_UNITS, metricLabel } from '@/lib/widget-helpers'
 import type { LineChartConfig } from '@/lib/widget-types'

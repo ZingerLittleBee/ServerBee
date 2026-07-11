@@ -138,6 +138,7 @@ Grants are persisted to `<state_dir>/capability_grants.json` (default `/var/lib/
 - **Survives restarts** — if the agent restarts mid-window, the grant is reloaded and remains active for the rest of its original window.
 - **Expires at the original deadline** — restarting does not extend a grant. A grant for `30m` expires 30 minutes after it was issued regardless of how many times the agent restarts in between.
 - **Fails safe to OFF** — if the grants file is missing, empty, corrupt, or written by an unknown schema version, the agent treats it as "no grants" and the capability stays off. A temporary grant can never *strengthen* the permanent set; it can only flip an otherwise-off bit on for its window.
+- **Expiry bounds running work, not just new requests** — when a `terminal` grant expires or is revoked, live terminal sessions opened under it are closed immediately (the browser sees the session end), and a `security_events` grant starts the agent's security pipeline the moment it becomes effective and stops it when the window closes — including grants issued while the agent was already running.
 
 ### What the server sees
 
@@ -146,6 +147,7 @@ When a grant becomes active (or expires/is revoked), the agent re-reports its ef
 - The change is mirrored into `servers.capabilities` and broadcast to browsers, so the UI updates in real time.
 - The transition is written to the [audit log](/en/docs/admin) as `capability_temporarily_granted`, `capability_grant_expired`, or `capability_grant_revoked`.
 - A temporary grant of a **high-risk** capability (`terminal`, `exec`, `file`, or `docker`) also evaluates the event-driven `capability_grant_detected` [alert rule](/en/docs/alerts). Expiry, revoke, and low-risk grants are audited but do not fire an alert.
+- Everything the agent executes for the server is re-synced against the new capability set: ping tasks are re-filtered, network probe targets and IP-quality services are re-pushed, and the firewall blocklist is reset (and re-sent only while `firewall_block` is still effective). Revoking a ping capability stops those probes immediately, and revoking `firewall_block` removes ServerBee's nftables rules from the host without waiting for a reconnect.
 
 <Callout type="warn">
 A grant issued while the agent is **disconnected** from the server is applied locally and shows up on reconnect, but it does **not** produce a `granted` audit entry or alert. The server only sees the post-reconnect capability state, not the moment of transition, so it cannot distinguish a freshly-granted capability from one that was already active. Plan around this if you rely on the alert as a tripwire.

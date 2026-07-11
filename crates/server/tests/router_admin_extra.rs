@@ -153,13 +153,8 @@ async fn run_scheduled_task_dispatches_to_agent_and_persists_result() {
                     .await;
                     return;
                 }
-                // First-connect noise from a default agent: ignore.
-                Some("ping_tasks_sync")
-                | Some("network_probe_sync")
-                | Some("blocklist_reset")
-                | Some("blocklist_sync")
-                | Some("blocklist_add")
-                | Some("blocklist_remove") => {}
+                // First-connect noise from a default agent (and anything else
+                // unrelated to the scheduled run): ignore.
                 _ => {}
             }
         }

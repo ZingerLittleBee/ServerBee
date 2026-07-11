@@ -1,5 +1,6 @@
 //! `SystemInfo` / `IpChanged` handling: agent identity, GeoIP resolution,
-//! capability mirroring, IP-change detection, and reconnect-time firewall sync.
+//! capability mirroring, IP-change detection, and connection-time desired-state
+//! reconciliation.
 
 use std::sync::Arc;
 
@@ -35,6 +36,111 @@ fn resolve_public_ip(
         .into_iter()
         .flatten()
         .find(|ip| !ip.is_loopback() && !geoip::is_private(ip))
+}
+
+/// A detected change of a server's externally visible addresses.
+struct IpChange {
+    old_ipv4: Option<String>,
+    new_ipv4: Option<String>,
+    old_ipv6: Option<String>,
+    new_ipv6: Option<String>,
+    old_remote_addr: Option<String>,
+    new_remote_addr: Option<String>,
+}
+
+impl IpChange {
+    /// Any difference at all, including first population (`None` → `Some`).
+    /// Drives the alert check and the browser broadcast.
+    fn changed(&self) -> bool {
+        self.old_ipv4 != self.new_ipv4
+            || self.old_ipv6 != self.new_ipv6
+            || self.old_remote_addr != self.new_remote_addr
+    }
+
+    /// A real transition (`Some` → different value) on at least one field.
+    /// Drives the audit trail: first population happens on every fresh
+    /// registration and must not spam the audit log.
+    fn is_transition(&self) -> bool {
+        fn transitioned(old: &Option<String>, new: &Option<String>) -> bool {
+            old.is_some() && old != new
+        }
+        transitioned(&self.old_ipv4, &self.new_ipv4)
+            || transitioned(&self.old_ipv6, &self.new_ipv6)
+            || transitioned(&self.old_remote_addr, &self.new_remote_addr)
+    }
+
+    fn detail(&self, server_id: &str) -> String {
+        let mut parts = Vec::new();
+        if self.old_ipv4 != self.new_ipv4 {
+            parts.push(format!("ipv4 {:?} -> {:?}", self.old_ipv4, self.new_ipv4));
+        }
+        if self.old_ipv6 != self.new_ipv6 {
+            parts.push(format!("ipv6 {:?} -> {:?}", self.old_ipv6, self.new_ipv6));
+        }
+        if self.old_remote_addr != self.new_remote_addr {
+            parts.push(format!(
+                "remote {:?} -> {:?}",
+                self.old_remote_addr, self.new_remote_addr
+            ));
+        }
+        format!("IP changed for server {server_id}: {}", parts.join(", "))
+    }
+}
+
+/// The single reaction to a detected IP change, shared by the `SystemInfo`
+/// and `IpChanged` paths: audit trail, alert event rules, browser broadcast.
+/// Persistence stays with the caller — `SystemInfo` persists the whole
+/// identity row via `update_system_info`, `IpChanged` updates just the IP
+/// columns — so this function must never write address columns itself.
+async fn apply_ip_change(state: &Arc<AppState>, server_id: &str, change: IpChange) {
+    if !change.changed() {
+        return;
+    }
+
+    if change.is_transition() {
+        let detail = change.detail(server_id);
+        tracing::info!("{detail}");
+
+        let audit_ip = change
+            .new_remote_addr
+            .clone()
+            .or_else(|| {
+                state
+                    .agent_manager
+                    .get_remote_addr(server_id)
+                    .map(|a| a.ip().to_string())
+            })
+            .unwrap_or_default();
+        if let Err(e) =
+            AuditService::log(&state.db, "system", "ip_changed", Some(&detail), &audit_ip).await
+        {
+            tracing::error!("Failed to write audit log for IP change: {e}");
+        }
+    }
+
+    if let Err(e) = AlertService::check_event_rules(
+        &state.db,
+        &state.config,
+        &state.alert_state_manager,
+        server_id,
+        "ip_changed",
+    )
+    .await
+    {
+        tracing::error!("Failed to check event rules for IP change: {e}");
+    }
+
+    state
+        .agent_manager
+        .broadcast_browser(BrowserMessage::ServerIpChanged {
+            server_id: server_id.to_string(),
+            old_ipv4: change.old_ipv4,
+            new_ipv4: change.new_ipv4,
+            old_ipv6: change.old_ipv6,
+            new_ipv6: change.new_ipv6,
+            old_remote_addr: change.old_remote_addr,
+            new_remote_addr: change.new_remote_addr,
+        });
 }
 
 pub(super) async fn on_system_info(
@@ -76,61 +182,19 @@ pub(super) async fn on_system_info(
         .map(|a| a.ip().to_string());
 
     if let Ok(srv) = ServerService::get_server(&state.db, server_id).await {
-        let old_remote_addr = srv.last_remote_addr.clone();
-        let old_ipv4 = srv.ipv4.clone();
-        let old_ipv6 = srv.ipv6.clone();
-
-        // Check if remote_addr changed
-        if let Some(ref new_addr) = current_remote_addr
-            && let Some(ref old_addr) = old_remote_addr
-            && old_addr != new_addr
-        {
-            tracing::info!("Server {server_id} remote address changed: {old_addr} -> {new_addr}");
-            if let Err(e) = AuditService::log(
-                &state.db,
-                "system",
-                "ip_changed",
-                Some(&format!(
-                    "Remote address changed from {old_addr} to {new_addr} for server {server_id}"
-                )),
-                new_addr,
-            )
-            .await
-            {
-                tracing::error!("Failed to write audit log for IP change: {e}");
-            }
-        }
-
-        // Check if agent-reported IPs changed
-        let ipv4_changed = old_ipv4 != info.ipv4;
-        let ipv6_changed = old_ipv6 != info.ipv6;
-        let remote_changed = old_remote_addr.as_ref() != current_remote_addr.as_ref();
-
-        if ipv4_changed || ipv6_changed || remote_changed {
-            if let Err(e) = AlertService::check_event_rules(
-                &state.db,
-                &state.config,
-                &state.alert_state_manager,
-                server_id,
-                "ip_changed",
-            )
-            .await
-            {
-                tracing::error!("Failed to check event rules for IP change: {e}");
-            }
-
-            state
-                .agent_manager
-                .broadcast_browser(BrowserMessage::ServerIpChanged {
-                    server_id: server_id.to_string(),
-                    old_ipv4,
-                    new_ipv4: info.ipv4.clone(),
-                    old_ipv6,
-                    new_ipv6: info.ipv6.clone(),
-                    old_remote_addr,
-                    new_remote_addr: current_remote_addr.clone(),
-                });
-        }
+        apply_ip_change(
+            state,
+            server_id,
+            IpChange {
+                old_ipv4: srv.ipv4.clone(),
+                new_ipv4: info.ipv4.clone(),
+                old_ipv6: srv.ipv6.clone(),
+                new_ipv6: info.ipv6.clone(),
+                old_remote_addr: srv.last_remote_addr.clone(),
+                new_remote_addr: current_remote_addr.clone(),
+            },
+        )
+        .await;
 
         // Always update last_remote_addr
         if let Some(ref addr) = current_remote_addr
@@ -233,30 +297,16 @@ pub(super) async fn on_system_info(
         }
     }
 
-    // Firewall blocklist: on every fresh SystemInfo, drop whatever the
-    // agent may have leftover from a previous boot, then resend the
-    // authoritative set. Gated on capability + protocol version.
+    if let Err(error) = state
+        .agent_desired_state
+        .reconcile_connection(server_id)
+        .await
     {
-        use serverbee_common::constants::{CAP_FIREWALL_BLOCK, has_capability};
-        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
-
-        let caps = state
-            .agent_manager
-            .get_effective_capabilities(server_id)
-            .unwrap_or(0);
-        if has_capability(caps, CAP_FIREWALL_BLOCK) && agent_pv >= FIREWALL_MIN_PROTOCOL {
-            state
-                .firewall
-                .push_reset_to(server_id, &state.agent_manager)
-                .await;
-            if let Err(e) = state
-                .firewall
-                .push_sync_to(server_id, &state.agent_manager)
-                .await
-            {
-                tracing::warn!(server_id, error = %e, "firewall sync push failed");
-            }
-        }
+        tracing::warn!(
+            server_id,
+            error = %error,
+            "connection desired-state reconcile was incomplete"
+        );
     }
 }
 
@@ -282,10 +332,8 @@ pub(super) async fn on_ip_changed(
         Ok(srv) => {
             let old_ipv4 = srv.ipv4.clone();
             let old_ipv6 = srv.ipv6.clone();
-            let ipv4_changed = old_ipv4 != ipv4;
-            let ipv6_changed = old_ipv6 != ipv6;
 
-            if ipv4_changed || ipv6_changed {
+            if old_ipv4 != ipv4 || old_ipv6 != ipv6 {
                 // Update ipv4/ipv6 in DB
                 if let Err(e) = update_server_ips(&state.db, server_id, &ipv4, &ipv6).await {
                     tracing::error!("Failed to update IPs for {server_id}: {e}");
@@ -310,47 +358,19 @@ pub(super) async fn on_ip_changed(
                     }
                 }
 
-                let detail = format!(
-                    "IP changed for server {server_id}: ipv4 {:?} -> {:?}, ipv6 {:?} -> {:?}",
-                    old_ipv4, ipv4, old_ipv6, ipv6
-                );
-                tracing::info!("{detail}");
-
-                let remote_ip = state
-                    .agent_manager
-                    .get_remote_addr(server_id)
-                    .map(|a| a.ip().to_string())
-                    .unwrap_or_default();
-                if let Err(e) =
-                    AuditService::log(&state.db, "system", "ip_changed", Some(&detail), &remote_ip)
-                        .await
-                {
-                    tracing::error!("Failed to write audit log for IP change: {e}");
-                }
-
-                if let Err(e) = AlertService::check_event_rules(
-                    &state.db,
-                    &state.config,
-                    &state.alert_state_manager,
+                apply_ip_change(
+                    state,
                     server_id,
-                    "ip_changed",
-                )
-                .await
-                {
-                    tracing::error!("Failed to check event rules for IP change: {e}");
-                }
-
-                state
-                    .agent_manager
-                    .broadcast_browser(BrowserMessage::ServerIpChanged {
-                        server_id: server_id.to_string(),
+                    IpChange {
                         old_ipv4,
                         new_ipv4: ipv4,
                         old_ipv6,
                         new_ipv6: ipv6,
                         old_remote_addr: None,
                         new_remote_addr: None,
-                    });
+                    },
+                )
+                .await;
             }
         }
         Err(e) => {
@@ -416,4 +436,54 @@ async fn update_server_geo(
     active.updated_at = Set(chrono::Utc::now());
     active.update(db).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::IpChange;
+
+    fn change(old: Option<&str>, new: Option<&str>) -> IpChange {
+        IpChange {
+            old_ipv4: old.map(str::to_string),
+            new_ipv4: new.map(str::to_string),
+            old_ipv6: None,
+            new_ipv6: None,
+            old_remote_addr: None,
+            new_remote_addr: None,
+        }
+    }
+
+    /// First population (None → Some) happens on every fresh registration: it
+    /// must drive the alert/broadcast path but never the audit trail.
+    #[test]
+    fn first_population_changes_without_being_a_transition() {
+        let c = change(None, Some("1.2.3.4"));
+        assert!(c.changed());
+        assert!(!c.is_transition());
+    }
+
+    /// A real address move (Some → different Some) drives both paths.
+    #[test]
+    fn address_move_is_a_transition() {
+        let c = change(Some("1.2.3.4"), Some("5.6.7.8"));
+        assert!(c.changed());
+        assert!(c.is_transition());
+    }
+
+    /// Losing an address (Some → None) is a transition too — it must be
+    /// audited, not mistaken for first population.
+    #[test]
+    fn address_loss_is_a_transition() {
+        let c = change(Some("1.2.3.4"), None);
+        assert!(c.changed());
+        assert!(c.is_transition());
+    }
+
+    #[test]
+    fn identical_addresses_are_no_change_at_all() {
+        let c = change(Some("1.2.3.4"), Some("1.2.3.4"));
+        assert!(!c.changed());
+        assert!(!c.is_transition());
+        assert!(!change(None, None).changed());
+    }
 }

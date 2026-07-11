@@ -11,6 +11,7 @@ use serverbee_server::dev_demo;
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
+use serverbee_server::service::task_scheduler;
 use serverbee_server::state::AppState;
 use serverbee_server::task;
 
@@ -117,7 +118,7 @@ async fn main() -> anyhow::Result<()> {
     let s = state.clone();
     tokio::spawn(async move { task::alert_evaluator::run(s).await });
     let s = state.clone();
-    tokio::spawn(async move { task::task_scheduler::run(s).await });
+    tokio::spawn(async move { task_scheduler::restore_and_start(s).await });
     let s = state.clone();
     tokio::spawn(async move { task::service_monitor_checker::run(s).await });
     let s = state.clone();

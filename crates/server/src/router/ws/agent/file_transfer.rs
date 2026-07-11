@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use crate::service::agent_manager::AgentManager;
 use crate::state::AppState;
 use serverbee_common::protocol::AgentMessage;
 
@@ -100,7 +101,7 @@ pub(super) fn on_upload_ack(
     msg: &AgentMessage,
 ) {
     state.file_transfers.update_progress(transfer_id, offset);
-    let ack_key = format!("upload-ack-{transfer_id}");
+    let ack_key = AgentManager::upload_ack_key(transfer_id);
     state
         .agent_manager
         .dispatch_pending_response(&ack_key, msg.clone());
@@ -108,7 +109,7 @@ pub(super) fn on_upload_ack(
 
 pub(super) fn on_upload_complete(state: &Arc<AppState>, transfer_id: &str, msg: &AgentMessage) {
     state.file_transfers.mark_ready(transfer_id);
-    let complete_key = format!("upload-complete-{transfer_id}");
+    let complete_key = AgentManager::upload_complete_key(transfer_id);
     state
         .agent_manager
         .dispatch_pending_response(&complete_key, msg.clone());
@@ -124,8 +125,8 @@ pub(super) fn on_upload_error(
         .file_transfers
         .mark_failed(transfer_id, error.to_string());
     // The HTTP handler may be waiting on either an ack or complete key — try both.
-    let ack_key = format!("upload-ack-{transfer_id}");
-    let complete_key = format!("upload-complete-{transfer_id}");
+    let ack_key = AgentManager::upload_ack_key(transfer_id);
+    let complete_key = AgentManager::upload_complete_key(transfer_id);
     if !state
         .agent_manager
         .dispatch_pending_response(&complete_key, msg.clone())

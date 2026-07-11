@@ -11,9 +11,9 @@ import {
 } from '@/components/ui/chart'
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerMetricRecord } from '@/lib/api-schema'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { formatBytes } from '@/lib/utils'
 import {
   extractRecordMetric,

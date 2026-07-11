@@ -8,17 +8,13 @@ import { SecurityAlertPresets } from '@/components/security/alert-presets'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import type { AlertRule, AlertStateResponse, NotificationGroup } from '@/lib/api-schema'
+import { useServerList } from '@/lib/server-catalog'
 import { AlertRuleForm, type CreateAlertRuleInput } from './alert-rule-form'
 import { AlertRulesList } from './alert-rules-list'
 
 export const Route = createFileRoute('/_authed/settings/alerts')({
   component: AlertsPage
 })
-
-interface Server {
-  id: string
-  name: string
-}
 
 function AlertsPage() {
   const { t } = useTranslation(['settings', 'common'])
@@ -37,11 +33,7 @@ function AlertsPage() {
     queryFn: () => api.get<NotificationGroup[]>('/api/notification-groups')
   })
 
-  const { data: servers } = useQuery<Server[]>({
-    queryKey: ['servers'],
-    queryFn: () => api.get<Server[]>('/api/servers'),
-    enabled: showForm
-  })
+  const { data: servers } = useServerList({ enabled: showForm })
 
   const { data: states } = useQuery<AlertStateResponse[]>({
     queryKey: ['alert-rule-states', expandedRuleId],

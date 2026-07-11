@@ -14,17 +14,11 @@ import { api } from '@/lib/api-client'
 import type { TaskResponse, TaskResult } from '@/lib/api-schema'
 import { CAP_EXEC, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { formatDateTime } from '@/lib/format'
+import { useServerList } from '@/lib/server-catalog'
 
 export const Route = createFileRoute('/_authed/settings/tasks')({
   component: TasksPage
 })
-
-interface ServerInfo {
-  capabilities?: number
-  effective_capabilities?: number | null
-  id: string
-  name: string
-}
 
 function TasksPage() {
   const { t } = useTranslation(['settings', 'common'])
@@ -55,10 +49,7 @@ function OneshotTaskPanel() {
   const [timeout, setTimeout] = useState(30)
   const [expandedTask, setExpandedTask] = useState<string | null>(null)
 
-  const { data: servers } = useQuery<ServerInfo[]>({
-    queryKey: ['servers-list'],
-    queryFn: () => api.get<ServerInfo[]>('/api/servers')
-  })
+  const { data: servers } = useServerList()
 
   const createMutation = useMutation({
     mutationFn: (input: { command: string; server_ids: string[]; timeout: number }) =>

@@ -12,9 +12,7 @@ import * as JsxRuntime from 'react/jsx-runtime'
 // biome-ignore lint/performance/noNamespaceImport: shim requires full namespace
 import * as ReactDOM from 'react-dom'
 import { toast } from 'sonner'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
-
-const SERVERS_QUERY_KEY = ['servers'] as const
+import { readLiveServers, type ServerMetrics, subscribeLiveServers } from '@/lib/server-catalog'
 
 export interface BridgeInputs {
   onConfigUpdate?: (instanceId: string, patch: Record<string, unknown>) => void
@@ -47,7 +45,7 @@ interface ServerSummariesCache {
 function makeServerSummariesGetter(queryClient: QueryClient): () => ServerSummary[] {
   let cache: ServerSummariesCache = { raw: undefined, summaries: [] }
   return () => {
-    const raw = queryClient.getQueryData<ServerMetrics[]>(SERVERS_QUERY_KEY)
+    const raw = readLiveServers(queryClient)
     if (raw === cache.raw) {
       return cache.summaries
     }
@@ -59,24 +57,13 @@ function makeServerSummariesGetter(queryClient: QueryClient): () => ServerSummar
 
 function makeServerByIdGetter(queryClient: QueryClient): (id: string) => unknown {
   return (id: string) => {
-    const raw = queryClient.getQueryData<ServerMetrics[]>(SERVERS_QUERY_KEY)
+    const raw = readLiveServers(queryClient)
     return raw?.find((s) => s.id === id)
   }
 }
 
 function makeSubscribeServers(queryClient: QueryClient): (cb: () => void) => () => void {
-  return (cb: () => void) => {
-    const unsub = queryClient.getQueryCache().subscribe((event) => {
-      // We only care about updates to the ['servers'] cache. The cache emits
-      // a flurry of events (added/removed/updated/observers); filter to those
-      // that mutate the data for our queryKey.
-      const key = event.query.queryKey
-      if (Array.isArray(key) && key.length >= 1 && key[0] === SERVERS_QUERY_KEY[0]) {
-        cb()
-      }
-    })
-    return unsub
-  }
+  return (cb: () => void) => subscribeLiveServers(queryClient, cb)
 }
 
 interface ThemeWatcher {

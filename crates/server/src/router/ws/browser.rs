@@ -11,8 +11,8 @@ use futures_util::{SinkExt, StreamExt};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
 use crate::entity::{agent_enrollment, server_tag};
+use crate::middleware::auth::resolve_ws_connection;
 use crate::service::agent_manager::aggregate_disk_io;
-use crate::service::auth::AuthService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
@@ -28,86 +28,18 @@ async fn browser_ws_handler(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // Validate auth: try session cookie first, then API key, then Bearer token
-    let auth = validate_browser_auth(&state, &headers).await;
-    match auth {
-        Some((_user_id, is_admin, mobile_expires)) => ws
-            .max_message_size(MAX_WS_MESSAGE_SIZE)
-            .on_upgrade(move |socket| handle_browser_ws(socket, state, is_admin, mobile_expires)),
+    // Shared credential policy (precedence, session source, mobile expiry)
+    // lives in `middleware::auth`; this adapter only maps the verdict onto
+    // the browser WS protocol.
+    match resolve_ws_connection(&headers, &state).await {
+        Some(conn) => {
+            let is_admin = conn.user.role == "admin";
+            ws.max_message_size(MAX_WS_MESSAGE_SIZE).on_upgrade(move |socket| {
+                handle_browser_ws(socket, state, is_admin, conn.mobile_expires)
+            })
+        }
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
-}
-
-/// Returns `Some((user_id, mobile_expires))` on success.
-/// `mobile_expires` is `Some(expires_at)` when authenticated via a non-web session
-/// (Bearer token from mobile), so the WS connection can be auto-closed on expiry.
-/// For web sessions and API keys, `mobile_expires` is `None` (they use sliding expiry
-/// or never expire respectively).
-async fn validate_browser_auth(
-    state: &Arc<AppState>,
-    headers: &HeaderMap,
-) -> Option<(String, bool, Option<chrono::DateTime<chrono::Utc>>)> {
-    // Try session cookie (always web source → no mobile expiry)
-    if let Some(token) = extract_session_cookie(headers)
-        && let Ok(Some((user, _session))) =
-            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
-        && !user.must_change_password
-    {
-        return Some((user.id, user.role == "admin", None));
-    }
-
-    // Try API key header (no expiry)
-    if let Some(key) = extract_api_key(headers)
-        && let Ok(Some(user)) = AuthService::validate_api_key(&state.db, &key).await
-        && !user.must_change_password
-    {
-        return Some((user.id, user.role == "admin", None));
-    }
-
-    // Try Bearer token (may be a mobile session with a fixed expiry)
-    if let Some(token) = extract_bearer_token(headers)
-        && let Ok(Some((user, session))) =
-            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl).await
-        && !user.must_change_password
-    {
-        let mobile_expires = if session.source != "web" {
-            Some(session.expires_at)
-        } else {
-            None
-        };
-        return Some((user.id, user.role == "admin", mobile_expires));
-    }
-
-    None
-}
-
-fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("cookie")?
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|cookie| {
-            let cookie = cookie.trim();
-            cookie.strip_prefix("session_token=").map(|v| v.to_string())
-        })
-}
-
-fn extract_api_key(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("x-api-key")?
-        .to_str()
-        .ok()
-        .map(|s| s.to_string())
-}
-
-fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get("authorization")?
-        .to_str()
-        .ok()?
-        .strip_prefix("Bearer ")
-        .map(|s| s.to_string())
 }
 
 async fn handle_browser_ws(
@@ -183,15 +115,7 @@ async fn handle_browser_ws(
                     }
                 }
             }
-            // Mobile token expiry: auto-close when the token expires
-            _ = async {
-                if let Some(exp) = mobile_expires {
-                    let dur = (exp - chrono::Utc::now()).to_std().unwrap_or_default();
-                    tokio::time::sleep(dur).await;
-                } else {
-                    std::future::pending::<()>().await;
-                }
-            } => {
+            () = super::session::mobile_token_expired(mobile_expires) => {
                 tracing::debug!("Mobile WS token expired, closing connection");
                 let _ = ws_sink.send(Message::Close(Some(axum::extract::ws::CloseFrame {
                     code: 4001,
@@ -422,4 +346,3 @@ async fn send_browser_message(
     let text = serde_json::to_string(msg).map_err(axum::Error::new)?;
     sink.send(Message::Text(text.into())).await
 }
-

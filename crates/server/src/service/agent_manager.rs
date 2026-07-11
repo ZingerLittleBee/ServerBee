@@ -9,7 +9,7 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant};
-use serverbee_common::types::{ServerStatus, SystemReport, TracerouteHop};
+use serverbee_common::types::{LiveMetrics, SystemReport, TracerouteHop};
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -247,10 +247,7 @@ impl AgentManager {
 
         let (disk_read_bytes_per_sec, disk_write_bytes_per_sec) = aggregate_disk_io(&report);
 
-        // Build a ServerStatus for the broadcast. Static fields (mem_total, disk_total,
-        // os, cpu_name, etc.) are not available here -- set them to defaults since the
-        // browser can merge with REST data.
-        let status = ServerStatus {
+        let metrics = LiveMetrics {
             id: server_id.to_string(),
             name: self
                 .connections
@@ -262,11 +259,8 @@ impl AgentManager {
             uptime: report.uptime,
             cpu: report.cpu,
             mem_used: report.mem_used,
-            mem_total: 0,
             swap_used: report.swap_used,
-            swap_total: 0,
             disk_used: report.disk_used,
-            disk_total: 0,
             net_in_speed: report.net_in_speed,
             net_out_speed: report.net_out_speed,
             net_in_transfer: report.net_in_transfer,
@@ -277,22 +271,12 @@ impl AgentManager {
             tcp_conn: report.tcp_conn,
             udp_conn: report.udp_conn,
             process_count: report.process_count,
-            cpu_name: None,
-            os: None,
-            region: None,
-            country_code: None,
-            group_id: None,
-            features: vec![],
             disk_read_bytes_per_sec,
             disk_write_bytes_per_sec,
-            tags: Vec::new(),
-            cpu_cores: None,
-            has_token: true,
-            outstanding_enrollment: None,
         };
 
         let _ = self.browser_tx.send(BrowserMessage::Update {
-            servers: vec![status],
+            servers: vec![metrics],
         });
 
         // Cache the report
@@ -473,6 +457,21 @@ impl AgentManager {
         let _ = self.browser_tx.send(msg);
     }
 
+    /// Pending-request key for a streaming upload's ack exchanges. Uploads
+    /// cannot use the one-shot `request()` seam (init-ack, per-chunk ack and
+    /// complete are separate exchanges over one transfer id), so the HTTP
+    /// producer and the WS consumer must form identical keys — the format
+    /// lives here and nowhere else.
+    pub fn upload_ack_key(transfer_id: &str) -> String {
+        format!("upload-ack-{transfer_id}")
+    }
+
+    /// Pending-request key for a streaming upload's completion. See
+    /// [`Self::upload_ack_key`].
+    pub fn upload_complete_key(transfer_id: &str) -> String {
+        format!("upload-complete-{transfer_id}")
+    }
+
     /// Register a pending request for HTTP→WS relay with a custom TTL.
     /// Returns a oneshot receiver that will receive the agent's response.
     pub fn register_pending_request_with_ttl(
@@ -632,21 +631,26 @@ impl AgentManager {
         self.get_agent_local_capabilities(server_id)
     }
 
+    /// The one encoding of the capability priority rule: the live
+    /// agent-reported bitmask decides, and `mirror_caps` (the persisted
+    /// `servers.capabilities` mirror) fills the brief window before the
+    /// agent's first `SystemInfo` (or while it is offline). Every "is this
+    /// capability effective" answer must resolve through here.
+    pub fn effective_capabilities_or(&self, server_id: &str, mirror_caps: u32) -> u32 {
+        self.get_agent_local_capabilities(server_id)
+            .unwrap_or(mirror_caps)
+    }
+
     /// Returns `Some(reason)` when `cap_bit` is NOT available on the agent, or
-    /// `None` when it is allowed. `mirror_caps` is the persisted
-    /// `servers.capabilities` mirror, used as a fallback for the brief window
-    /// before the agent's first `SystemInfo` (or while it is offline). The
-    /// reason is always agent-side: the server has no say in capabilities.
+    /// `None` when it is allowed. The reason is always agent-side: the server
+    /// has no say in capabilities.
     pub fn capability_denied_reason(
         &self,
         server_id: &str,
         mirror_caps: u32,
         cap_bit: u32,
     ) -> Option<&'static str> {
-        let caps = self
-            .get_agent_local_capabilities(server_id)
-            .unwrap_or(mirror_caps);
-        if has_capability(caps, cap_bit) {
+        if has_capability(self.effective_capabilities_or(server_id, mirror_caps), cap_bit) {
             None
         } else {
             Some("agent_capability_disabled")
@@ -985,6 +989,57 @@ mod tests {
         let cached = mgr.get_latest_report("s1").unwrap();
         assert!((cached.cpu - 42.5).abs() < f64::EPSILON);
         assert_eq!(cached.mem_used, 8_000_000_000);
+    }
+
+    /// Update frames are a partial projection: static facts must be absent
+    /// from the wire entirely, so clients keep their cached values on merge
+    /// instead of having them stomped by zero placeholders.
+    #[test]
+    fn test_update_report_broadcast_omits_static_fields() {
+        let (mgr, mut rx) = make_manager();
+        let (tx, _) = mpsc::channel(1);
+        mgr.add_connection("s1".into(), "Srv".into(), tx, test_addr());
+        let _ = rx.try_recv(); // ServerOnline
+
+        mgr.update_report(
+            "s1",
+            SystemReport {
+                cpu: 42.5,
+                swap_used: 1024,
+                ..Default::default()
+            },
+        );
+
+        let msg = rx.try_recv().unwrap();
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "update");
+        let server = &json["servers"][0];
+        assert_eq!(server["id"], "s1");
+        // `id` and `name` are the only keys shipped iOS decoders require; a
+        // frame missing either is dropped wholesale on old builds.
+        assert_eq!(server["name"], "Srv");
+        assert!((server["cpu"].as_f64().unwrap() - 42.5).abs() < f64::EPSILON);
+        assert_eq!(server["swap_used"], 1024);
+        for key in [
+            "mem_total",
+            "swap_total",
+            "disk_total",
+            "cpu_name",
+            "os",
+            "region",
+            "country_code",
+            "group_id",
+            "features",
+            "tags",
+            "cpu_cores",
+            "has_token",
+            "outstanding_enrollment",
+        ] {
+            assert!(
+                server.get(key).is_none(),
+                "update frame must not carry static field `{key}`"
+            );
+        }
     }
 
     #[test]

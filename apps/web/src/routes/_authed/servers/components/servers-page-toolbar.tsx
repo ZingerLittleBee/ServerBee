@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 
 export function ServersPageToolbar({
   batchDeletePending,

@@ -1,11 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { DashboardEditorView } from '@/components/dashboard/dashboard-editor-view'
 import { useAuth } from '@/hooks/use-auth'
 import { useDashboard, useDashboards, useDefaultDashboard, useUpdateDashboard } from '@/hooks/use-dashboard'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { withMockServers } from '@/lib/dev-mock-servers'
+import { useLiveServers } from '@/lib/server-catalog'
 
 export const Route = createFileRoute('/_authed/')({
   component: DashboardPage
@@ -15,13 +14,7 @@ export function DashboardPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  const { data: rawServers = [] } = useQuery<ServerMetrics[]>({
-    queryKey: ['servers'],
-    queryFn: () => [],
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false
-  })
+  const { data: rawServers = [] } = useLiveServers()
   const servers = useMemo(() => withMockServers(rawServers), [rawServers])
 
   const { data: dashboards = [] } = useDashboards()

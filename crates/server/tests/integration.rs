@@ -4358,9 +4358,12 @@ mod firewall_tests {
     }
 
     /// Drain messages from `reader` until a `system_info` `Ack` for `msg_id`
-    /// is observed. Returns every non-ack message read along the way (in
-    /// order) so the caller can inspect post-connect server pushes such as
-    /// `BlocklistReset` / `BlocklistSync`.
+    /// is observed, then keep draining until the socket stays quiet for a
+    /// beat (the post-connect reconcile pushes arrive back-to-back). Returns
+    /// every non-ack message read along the way (in order) so the caller can
+    /// inspect post-connect server pushes such as `BlocklistReset` /
+    /// `BlocklistSync`, without hard-coding how many sync frames a connect
+    /// currently produces.
     async fn drain_through_ack(
         reader: &mut futures_util::stream::SplitStream<
             tokio_tungstenite::WebSocketStream<
@@ -4368,17 +4371,22 @@ mod firewall_tests {
             >,
         >,
         msg_id: &str,
-        extra_after_ack: usize,
     ) -> Vec<serde_json::Value> {
         let mut collected: Vec<serde_json::Value> = Vec::new();
         let mut acked = false;
-        let mut extra_remaining = extra_after_ack;
         loop {
-            let msg = tokio::time::timeout(Duration::from_secs(3), reader.next())
-                .await
-                .expect("timeout waiting for ws message")
-                .expect("ws closed")
-                .expect("ws read error");
+            let timeout = if acked {
+                // Post-ack pushes are emitted by the same handler in one
+                // burst; a quiet gap this long means the connect flow is done.
+                Duration::from_millis(800)
+            } else {
+                Duration::from_secs(3)
+            };
+            let msg = match tokio::time::timeout(timeout, reader.next()).await {
+                Ok(msg) => msg.expect("ws closed").expect("ws read error"),
+                Err(_) if acked => break,
+                Err(_) => panic!("timeout waiting for ws message"),
+            };
             let text = match msg {
                 tungstenite::Message::Text(t) => t.to_string(),
                 tungstenite::Message::Ping(_) | tungstenite::Message::Pong(_) => continue,
@@ -4387,18 +4395,9 @@ mod firewall_tests {
             let parsed: serde_json::Value = serde_json::from_str(&text).expect("parse json");
             if parsed["type"] == "ack" && parsed["msg_id"] == msg_id {
                 acked = true;
-                if extra_remaining == 0 {
-                    break;
-                }
                 continue;
             }
             collected.push(parsed);
-            if acked {
-                extra_remaining -= 1;
-                if extra_remaining == 0 {
-                    break;
-                }
-            }
         }
         collected
     }
@@ -4451,9 +4450,9 @@ mod firewall_tests {
             serverbee_common::constants::PROTOCOL_VERSION,
         )
         .await;
-        // First-connect path issues an extra BlocklistReset+BlocklistSync after
-        // the ack. Drain through both extras to leave the stream clean.
-        let _ = drain_through_ack(&mut reader, "pb-1", 2).await;
+        // AgentReady reconciliation pushes follow the ack (ping/network/IP
+        // quality sync, BlocklistReset+BlocklistSync); drain them all.
+        let _ = drain_through_ack(&mut reader, "pb-1").await;
 
         // Now POST a block and assert the agent receives BlocklistAdd.
         let resp = admin
@@ -4572,7 +4571,7 @@ mod firewall_tests {
         )
         .await;
 
-        let extras = drain_through_ack(&mut reader, "connect-sync", 2).await;
+        let extras = drain_through_ack(&mut reader, "connect-sync").await;
         // Reset, then Sync are appended after the ack handler runs.
         let types: Vec<&str> = extras
             .iter()
@@ -4609,7 +4608,7 @@ mod firewall_tests {
             serverbee_common::constants::PROTOCOL_VERSION,
         )
         .await;
-        let _drain = drain_through_ack(&mut reader, "ack-1", 2).await;
+        let _drain = drain_through_ack(&mut reader, "ack-1").await;
 
         let resp = admin
             .post(format!("{}/api/firewall/blocks", base_url))
@@ -4683,7 +4682,7 @@ mod firewall_tests {
             1,
         )
         .await;
-        let extras = drain_through_ack(&mut reader, "old-1", 0).await;
+        let extras = drain_through_ack(&mut reader, "old-1").await;
         let types: Vec<&str> = extras
             .iter()
             .map(|m| m["type"].as_str().unwrap_or(""))

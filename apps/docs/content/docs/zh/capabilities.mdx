@@ -138,6 +138,7 @@ serverbee-agent grants
 - **跨重启存活** —— 若 Agent 在时间窗中重启，授予会被重新加载，并在原始时间窗内保持生效。
 - **在原始截止时刻过期** —— 重启不会延长授予。`30m` 的授予在发起后 30 分钟过期，无论期间 Agent 重启多少次。
 - **失败时安全归零（OFF）** —— 若 grants 文件缺失、为空、损坏，或由未知 schema 版本写入，Agent 会将其视作「无授予」，对应能力保持关闭。临时授予永远不会*增强*永久能力集，它只能在自己的时间窗内把一个原本关闭的位翻为开启。
+- **过期约束的是运行中的工作，而不只是新请求** —— `terminal` 授予过期或被撤销时，在该授予下打开的终端会话会被立即关闭（浏览器端会看到会话结束）；`security_events` 授予生效的那一刻就会启动 Agent 的安全事件管道，时间窗结束时将其停止 —— 包括在 Agent 已运行期间发起的授予。
 
 ### Server 看到什么
 
@@ -146,6 +147,7 @@ serverbee-agent grants
 - 变更会镜像到 `servers.capabilities` 并广播给浏览器，UI 实时更新。
 - 该转换会写入 [审计日志](/zh/docs/admin)，动作为 `capability_temporarily_granted`、`capability_grant_expired` 或 `capability_grant_revoked`。
 - 对**高危**能力（`terminal`、`exec`、`file`、`docker`）的临时授予还会评估事件驱动的 `capability_grant_detected` [告警规则](/zh/docs/alerts)。过期、撤销以及低风险授予会被审计，但不触发告警。
+- Agent 为该服务器执行的全部工作会按新的能力集重新同步：ping 任务重新过滤、网络探测目标与 IP 质量服务重新下发、防火墙黑名单先重置（仅当 `firewall_block` 仍生效时才会重新推送）。撤销 ping 能力会立即停止对应探测；撤销 `firewall_block` 会立刻移除 ServerBee 在主机上的 nftables 规则，无需等待重连。
 
 <Callout type="warn">
 在 Agent 与 Server **断连**期间发起的授予，会在本地生效并在重连后展示出来，但**不会**产生 `granted` 审计记录或告警。Server 只能看到重连后的能力状态，看不到转换发生的瞬间，因此无法区分「刚刚授予」与「本就生效」的能力。若你把该告警当作触发器（tripwire）使用，请考虑这一点。

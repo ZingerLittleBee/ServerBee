@@ -55,28 +55,48 @@ fn is_onboarding_whitelisted(method: &axum::http::Method, path: &str) -> bool {
     )
 }
 
-/// Resolve the authenticated user (if any) from a request's headers.
+/// Identity plus lifetime facts for an authenticated connection.
 ///
-/// Tries, in order: session cookie, `X-API-Key` header, `Bearer` token.
-/// Returns `None` when no credential is present or none validates.
+/// Long-lived transports (WebSockets) need more than the user: they must know
+/// when a fixed-lifetime credential expires so they can close the connection
+/// mid-stream. Short-lived HTTP requests simply ignore `mobile_expires`.
+#[derive(Debug, Clone)]
+pub struct AuthenticatedConnection {
+    pub user: CurrentUser,
+    /// Fixed expiry of the authenticating session when it is a non-web
+    /// (mobile) session, whatever header carried it. Web sessions renew on
+    /// use (sliding expiry) and API keys never expire, so both yield `None`.
+    pub mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Resolve the authenticated connection (if any) from a request's headers.
 ///
-/// This is the single, shared credential-parsing routine. Both
-/// `auth_middleware` (which enforces auth) and public routes that need
-/// optional auth (e.g. the public status page's IP masking) call it, so the
-/// security-sensitive parsing logic never drifts between copies.
-pub async fn resolve_optional_user(
+/// Tries, in order: session cookie, `X-API-Key` header, `Bearer` token. The
+/// first credential that validates decides the identity and lifetime; later
+/// rungs are only consulted when earlier ones are absent or invalid. Returns
+/// `None` when no credential validates.
+///
+/// This is the single, shared credential policy. HTTP middleware, public
+/// routes with optional auth, and every WebSocket handler resolve through it,
+/// so precedence, session-source, and expiry semantics never drift between
+/// copies.
+pub async fn resolve_connection(
     headers: &HeaderMap,
     state: &AppState,
-) -> Option<CurrentUser> {
+) -> Option<AuthenticatedConnection> {
+    let session_ttl = state.config.auth.session_ttl;
+
     // Try session cookie
     if let Some(token) = extract_session_cookie(headers)
-        && let Some((user, _session)) =
-            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
-                .await
-                .ok()
-                .flatten()
+        && let Some((user, session)) = AuthService::validate_session(&state.db, &token, session_ttl)
+            .await
+            .ok()
+            .flatten()
     {
-        return Some(CurrentUser::from(user));
+        return Some(AuthenticatedConnection {
+            user: CurrentUser::from(user),
+            mobile_expires: mobile_expiry(&session),
+        });
     }
 
     // Try API key header
@@ -86,21 +106,54 @@ pub async fn resolve_optional_user(
             .ok()
             .flatten()
     {
-        return Some(CurrentUser::from(user));
+        return Some(AuthenticatedConnection {
+            user: CurrentUser::from(user),
+            mobile_expires: None,
+        });
     }
 
     // Try Bearer token
     if let Some(token) = extract_bearer_token(headers)
-        && let Some((user, _session)) =
-            AuthService::validate_session(&state.db, &token, state.config.auth.session_ttl)
-                .await
-                .ok()
-                .flatten()
+        && let Some((user, session)) = AuthService::validate_session(&state.db, &token, session_ttl)
+            .await
+            .ok()
+            .flatten()
     {
-        return Some(CurrentUser::from(user));
+        return Some(AuthenticatedConnection {
+            user: CurrentUser::from(user),
+            mobile_expires: mobile_expiry(&session),
+        });
     }
 
     None
+}
+
+/// A non-web session has a fixed lifetime (no sliding renewal), so its expiry
+/// is a fact the transport must enforce; web sessions yield `None`.
+fn mobile_expiry(session: &crate::entity::session::Model) -> Option<chrono::DateTime<chrono::Utc>> {
+    (session.source != "web").then_some(session.expires_at)
+}
+
+/// Resolve the authenticated user for a WebSocket upgrade.
+///
+/// Same credential policy as [`resolve_connection`], plus the WS-specific
+/// rule: a user flagged `must_change_password` is rejected outright, because
+/// the onboarding flow cannot be completed over a WebSocket.
+pub async fn resolve_ws_connection(
+    headers: &HeaderMap,
+    state: &AppState,
+) -> Option<AuthenticatedConnection> {
+    resolve_connection(headers, state)
+        .await
+        .filter(|conn| !conn.user.must_change_password)
+}
+
+/// Resolve the authenticated user (if any) from a request's headers.
+///
+/// Identity-only view of [`resolve_connection`] for callers that do not care
+/// about connection lifetime (HTTP middleware, optional-auth public routes).
+pub async fn resolve_optional_user(headers: &HeaderMap, state: &AppState) -> Option<CurrentUser> {
+    resolve_connection(headers, state).await.map(|c| c.user)
 }
 
 pub async fn auth_middleware(
@@ -140,7 +193,8 @@ pub async fn require_admin(req: Request, next: Next) -> Response {
     next.run(req).await
 }
 
-fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
+/// Extract the `session_token` value from the Cookie header, if present.
+pub(crate) fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
     headers
         .get("cookie")?
         .to_str()
@@ -152,7 +206,8 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
         })
 }
 
-fn extract_api_key(headers: &HeaderMap) -> Option<String> {
+/// Extract the raw API key from the `X-API-Key` header, if present.
+pub(crate) fn extract_api_key(headers: &HeaderMap) -> Option<String> {
     headers
         .get("x-api-key")?
         .to_str()
@@ -160,7 +215,8 @@ fn extract_api_key(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+/// Extract the bearer token from the Authorization header, if present.
+pub(crate) fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     headers
         .get("authorization")?
         .to_str()
@@ -255,5 +311,127 @@ mod tests {
         assert!(!is_onboarding_whitelisted(&Method::POST, "/auth/me"));
         assert!(!is_onboarding_whitelisted(&Method::GET, "/servers"));
         assert!(!is_onboarding_whitelisted(&Method::GET, "/api/auth/me"));
+    }
+
+    // ── resolve_connection / resolve_ws_connection (shared credential policy) ──
+
+    mod resolve {
+        use super::*;
+        use crate::config::AppConfig;
+        use crate::entity::{session, user};
+        use crate::service::auth::AuthService;
+        use crate::test_utils::setup_test_db;
+        use chrono::Utc;
+        use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+
+        /// Seed a session row and return its plaintext token.
+        async fn seed_session(
+            db: &DatabaseConnection,
+            user_id: &str,
+            source: &str,
+            expires_at: chrono::DateTime<Utc>,
+        ) -> String {
+            let token = AuthService::generate_session_token();
+            session::ActiveModel {
+                id: Set(uuid::Uuid::new_v4().to_string()),
+                user_id: Set(user_id.to_string()),
+                token: Set(AuthService::hash_session_token(&token)),
+                ip: Set("127.0.0.1".into()),
+                user_agent: Set("test".into()),
+                expires_at: Set(expires_at),
+                created_at: Set(Utc::now()),
+                source: Set(source.to_string()),
+                mobile_session_id: Set(None),
+            }
+            .insert(db)
+            .await
+            .expect("seed session");
+            token
+        }
+
+        #[tokio::test]
+        async fn cookie_takes_precedence_over_bearer() {
+            let (db, _tmp) = setup_test_db().await;
+            let cookie_user = AuthService::create_user(&db, "cookie-user", "pass1234", "admin")
+                .await
+                .unwrap();
+            let bearer_user = AuthService::create_user(&db, "bearer-user", "pass1234", "member")
+                .await
+                .unwrap();
+            let far = Utc::now() + chrono::Duration::hours(1);
+            let cookie_tok = seed_session(&db, &cookie_user.id, "web", far).await;
+            let bearer_tok = seed_session(&db, &bearer_user.id, "web", far).await;
+            let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                "cookie",
+                HeaderValue::from_str(&format!("session_token={cookie_tok}")).unwrap(),
+            );
+            headers.insert(
+                "authorization",
+                HeaderValue::from_str(&format!("Bearer {bearer_tok}")).unwrap(),
+            );
+
+            let conn = resolve_connection(&headers, &state).await.unwrap();
+            assert_eq!(conn.user.username, "cookie-user");
+        }
+
+        #[tokio::test]
+        async fn mobile_bearer_session_carries_fixed_expiry() {
+            let (db, _tmp) = setup_test_db().await;
+            let user = AuthService::create_user(&db, "mob", "pass1234", "member")
+                .await
+                .unwrap();
+            let fixed = Utc::now() + chrono::Duration::hours(24);
+            let token = seed_session(&db, &user.id, "mobile", fixed).await;
+            let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+            let headers = headers_with("authorization", &format!("Bearer {token}"));
+            let conn = resolve_connection(&headers, &state).await.unwrap();
+            assert_eq!(
+                conn.mobile_expires.map(|e| e.timestamp()),
+                Some(fixed.timestamp()),
+                "non-web session must expose its fixed expiry"
+            );
+        }
+
+        #[tokio::test]
+        async fn web_session_has_no_fixed_expiry() {
+            let (db, _tmp) = setup_test_db().await;
+            let user = AuthService::create_user(&db, "webby", "pass1234", "member")
+                .await
+                .unwrap();
+            let token =
+                seed_session(&db, &user.id, "web", Utc::now() + chrono::Duration::hours(1)).await;
+            let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+            let headers = headers_with(
+                "cookie",
+                &format!("session_token={token}"),
+            );
+            let conn = resolve_connection(&headers, &state).await.unwrap();
+            assert!(conn.mobile_expires.is_none());
+        }
+
+        #[tokio::test]
+        async fn ws_rejects_must_change_password_user() {
+            let (db, _tmp) = setup_test_db().await;
+            let user = AuthService::create_user(&db, "flagged", "pass1234", "admin")
+                .await
+                .unwrap();
+            let mut active: user::ActiveModel = user.clone().into();
+            active.must_change_password = Set(true);
+            active.update(&db).await.unwrap();
+            let token =
+                seed_session(&db, &user.id, "web", Utc::now() + chrono::Duration::hours(1)).await;
+            let state = AppState::new(db, AppConfig::default()).await.unwrap();
+
+            let headers = headers_with("cookie", &format!("session_token={token}"));
+            // HTTP resolution still authenticates (middleware whitelists the
+            // onboarding routes); the WS view rejects outright.
+            assert!(resolve_connection(&headers, &state).await.is_some());
+            assert!(resolve_ws_connection(&headers, &state).await.is_none());
+        }
     }
 }

@@ -275,3 +275,22 @@ pub async fn send_system_info(
         }
     }
 }
+
+/// First-connect pushes the server emits to a default agent right after the
+/// SystemInfo handshake: the desired-state syncs (ping tasks, network probes,
+/// IP quality) plus the firewall blocklist frames. Agent responders in tests
+/// must tolerate and ignore all of them — they are unrelated to whatever flow
+/// a given test exercises, and this single predicate is the one place to
+/// extend when a new first-connect sync frame is introduced.
+pub fn is_first_connect_noise(msg_type: Option<&str>) -> bool {
+    matches!(
+        msg_type,
+        Some("ping_tasks_sync")
+            | Some("network_probe_sync")
+            | Some("ip_quality_sync")
+            | Some("blocklist_reset")
+            | Some("blocklist_sync")
+            | Some("blocklist_add")
+            | Some("blocklist_remove")
+    )
+}

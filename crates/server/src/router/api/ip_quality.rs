@@ -6,6 +6,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use crate::error::{ApiResponse, AppError, ok};
+use crate::service::agent_reconcile::AgentDesiredStateDomain;
 use crate::service::ip_quality::{
     CreateCustomServiceInput, IpQualityService, IpQualitySettingDto, ServerIpQualityData,
     UnlockEventDto, UpdateServiceInput,
@@ -39,35 +40,6 @@ pub fn write_router() -> Router<Arc<AppState>> {
         )
         .route("/ip-quality/settings", put(update_settings))
         .route("/ip-quality/servers/{id}/check", post(check_server))
-}
-
-// ---------------------------------------------------------------------------
-// IpQualitySync re-broadcast helper
-// ---------------------------------------------------------------------------
-
-/// Re-send `IpQualitySync` to every currently-online agent.
-///
-/// Spec §4 requires `IpQualitySync` to be pushed on connect, on catalog
-/// change, and on settings change. The WS handler covers the connect case;
-/// this helper covers catalog/settings mutations so a change reaches already
-/// connected agents without waiting for them to reconnect. Mirrors how
-/// `network_probe.rs` re-broadcasts `NetworkProbeSync` after a mutation.
-async fn broadcast_ip_quality_sync(state: &Arc<AppState>) -> Result<(), AppError> {
-    let services = IpQualityService::enabled_service_defs(&state.db).await?;
-    let setting = IpQualityService::get_setting(&state.db).await?;
-
-    for server_id in state.agent_manager.connected_server_ids() {
-        if let Some(tx) = state.agent_manager.get_sender(&server_id) {
-            let _ = tx
-                .send(ServerMessage::IpQualitySync {
-                    services: services.clone(),
-                    interval_hours: setting.check_interval_hours as u32,
-                })
-                .await;
-        }
-    }
-
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -196,9 +168,10 @@ async fn create_service(
     Json(input): Json<CreateCustomServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::create_custom_service(&state.db, input).await?;
-    if let Err(e) = broadcast_ip_quality_sync(&state).await {
-        tracing::warn!("IpQualitySync broadcast failed: {e}");
-    }
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok(service)
 }
 
@@ -220,9 +193,10 @@ async fn update_service(
     Json(input): Json<UpdateServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::update_service(&state.db, &id, input).await?;
-    if let Err(e) = broadcast_ip_quality_sync(&state).await {
-        tracing::warn!("IpQualitySync broadcast failed: {e}");
-    }
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok(service)
 }
 
@@ -243,9 +217,10 @@ async fn delete_service(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     IpQualityService::delete_service(&state.db, &id).await?;
-    if let Err(e) = broadcast_ip_quality_sync(&state).await {
-        tracing::warn!("IpQualitySync broadcast failed: {e}");
-    }
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok("ok")
 }
 
@@ -265,11 +240,11 @@ async fn update_settings(
     State(state): State<Arc<AppState>>,
     Json(input): Json<IpQualitySettingDto>,
 ) -> Result<Json<ApiResponse<IpQualitySettingDto>>, AppError> {
-    let setting =
-        IpQualityService::update_setting(&state.db, input.check_interval_hours).await?;
-    if let Err(e) = broadcast_ip_quality_sync(&state).await {
-        tracing::warn!("IpQualitySync broadcast failed: {e}");
-    }
+    let setting = IpQualityService::update_setting(&state.db, input.check_interval_hours).await?;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok(setting)
 }
 
@@ -298,11 +273,8 @@ async fn check_server(
     // capability. The agent would silently ignore the message, giving the UI
     // false success. Capabilities are agent-owned, so the only fix is to edit
     // the agent's config file (or CLI flags) on the host.
-    let agent_has = state
-        .agent_manager
-        .get_agent_local_capabilities(&id)
-        .map(|caps| has_capability(caps, CAP_IP_QUALITY))
-        .unwrap_or(false);
+    let caps = crate::service::capability_gate::effective_capabilities(&state, &id).await;
+    let agent_has = has_capability(caps, CAP_IP_QUALITY);
 
     if !agent_has {
         return Err(AppError::Conflict(
@@ -337,7 +309,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broadcast_ip_quality_sync_reaches_online_agents() {
+    async fn reconcile_ip_quality_reaches_online_agents() {
         let (db, _tmp) = setup_test_db().await;
         let state = AppState::new(db, AppConfig::default()).await.unwrap();
 
@@ -347,7 +319,11 @@ mod tests {
             .agent_manager
             .add_connection("srv-online".into(), "Online".into(), tx, test_addr());
 
-        broadcast_ip_quality_sync(&state).await.unwrap();
+        state
+            .agent_desired_state
+            .reconcile_connected(AgentDesiredStateDomain::IpQuality)
+            .await
+            .unwrap();
 
         // The online agent should receive an IpQualitySync with the 9 seeded
         // built-in services and the default 12h interval.
@@ -369,12 +345,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn broadcast_ip_quality_sync_with_no_agents_is_noop() {
+    async fn reconcile_ip_quality_with_no_agents_is_noop() {
         let (db, _tmp) = setup_test_db().await;
         let state = AppState::new(db, AppConfig::default()).await.unwrap();
 
         // No connected agents — must succeed without error.
-        broadcast_ip_quality_sync(&state).await.unwrap();
+        state
+            .agent_desired_state
+            .reconcile_connected(AgentDesiredStateDomain::IpQuality)
+            .await
+            .unwrap();
     }
 
     // -----------------------------------------------------------------------

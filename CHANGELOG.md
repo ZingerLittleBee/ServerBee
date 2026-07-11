@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **WebSocket handlers share the HTTP credential policy** -- The browser, terminal, and Docker-logs WebSocket endpoints each carried a private copy of the credential ladder (cookie → API key → Bearer), so precedence, forced-password, and mobile-expiry rules could silently drift between four copies. All transports now resolve through one shared policy in the auth middleware. Two edge cases tightened along the way: a user flagged for a forced password change can no longer fall through from their session cookie to a weaker credential on WebSocket upgrades, and a fixed-lifetime mobile session now enforces its expiry on long-lived sockets whichever header carried it
+
+### Fixed
+
+- **Manual service-monitor checks follow the full check policy** -- The "Check now" endpoint assembled the check transition through its own code path: the result record and the monitor state were written in two separate statements, a slow check could overlap the scheduled one for the same monitor, and the maintenance gate and notifications were skipped entirely -- a manual success after failures cleared the failing state and permanently swallowed the recovery notification. Both callers now execute one shared transition: record and state commit atomically, a concurrent check for the same monitor is refused with `409 Conflict`, and failure/recovery notifications fire under the same maintenance-window rules regardless of who triggered the check
+
+- **Temporary capability grants now bound running work** -- A temporary `terminal` grant's expiry blocked new sessions but left live PTY sessions running indefinitely, and the security-events pipeline was started once at boot from the permanent capability set, so a temporary `security_events` grant could never start it (nor could a persisted grant enable it across a restart) and expiry never stopped it. Capability state is now owned by one process-wide authority on the agent: expiry or revocation closes live terminal sessions immediately, and the security pipeline starts and stops as the capability becomes effective or lapses
+
+- **Capability changes now resync everything the agent executes for the server** -- When an agent reported a capability change mid-connection (a grant expiring, a config edit followed by `SIGHUP`), the server updated its mirror but never re-derived what the agent should be running: a host that revoked its ping capabilities kept executing the last-synced ping task list, and a revoked firewall capability left ServerBee's nftables entries in place until the next reconnect. Every capability change now triggers a full desired-state reconcile -- ping tasks, network probes, IP-quality services, and the firewall blocklist are re-filtered against the new capability set and pushed (or reset) immediately
+
+- **Editing a network probe target now reaches connected agents** -- Creating or deleting a global probe target and changing the probe settings pushed a fresh `NetworkProbeSync`, but editing an existing target's address or type did not, so connected agents kept probing the old target until they reconnected. Target updates now push the refreshed target list like every other probe mutation
+
+- **A failed firewall blocklist reset is no longer recorded as done** -- When an agent acknowledged a blocklist reset with `ok=false` (for example `nft` missing or permission denied), the server cleared its record of what the agent had applied anyway, so operators saw the host as wiped while the rules stayed live. A successful ack is now the only evidence that clears the per-server apply state; a failed ack keeps the last-known state visible and the wipe is retried on the next connection reconcile
+
 ## [1.0.0-alpha.11] - 2026-07-03
 
 ### Security

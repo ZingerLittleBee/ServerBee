@@ -15,6 +15,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     AgentReader, AgentSink, connect_agent, http_client, login_admin, login_as_new_user,
     recv_agent_text, register_agent, send_system_info, start_test_server,
 };
@@ -38,20 +39,6 @@ async fn connect_agent_with_caps(
     assert_eq!(welcome["type"], "welcome", "first agent frame should be welcome");
     send_system_info(&mut sink, &mut reader, "file-system-info", Some(caps)).await;
     (sink, reader)
-}
-
-/// First-connect pushes a default agent (which reports CAP_FIREWALL_BLOCK) must
-/// tolerate and ignore. These are unrelated to the file flow under test.
-fn is_ignorable_push(msg_type: Option<&str>) -> bool {
-    matches!(
-        msg_type,
-        Some("ping_tasks_sync")
-            | Some("network_probe_sync")
-            | Some("blocklist_reset")
-            | Some("blocklist_sync")
-            | Some("blocklist_add")
-            | Some("blocklist_remove")
-    )
 }
 
 /// Spawn a responder that waits for a single forwarded request whose `type`
@@ -81,7 +68,7 @@ where
                         .expect("send file-op response");
                     return;
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -647,7 +634,7 @@ async fn test_start_download_happy_path() {
                     assert_eq!(msg["path"], "/var/log/syslog");
                     return msg["transfer_id"].as_str().map(str::to_string);
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -785,7 +772,7 @@ async fn test_upload_file_happy_path() {
                     .expect("send upload_complete");
                     return;
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }

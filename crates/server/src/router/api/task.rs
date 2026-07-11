@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Extension, Path, Query, State};
@@ -8,17 +7,17 @@ use axum::{Json, Router};
 use chrono::Utc;
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-use crate::entity::{server, task, task_result};
+use crate::entity::{task, task_result};
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::high_risk_audit::ExecAuditContext;
+use crate::service::task_scheduler::{
+    self as task_lifecycle, CreateTaskRequest, UpdateTaskRequest,
+};
 use crate::state::AppState;
-use serverbee_common::constants::CAP_EXEC;
-use serverbee_common::protocol::ServerMessage;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -29,41 +28,6 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/tasks/{id}/results", get(get_task_results))
         .route("/tasks/{id}/run", post(run_task))
-}
-
-// --- Request / Response types ---
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct CreateTaskRequest {
-    pub command: String,
-    pub server_ids: Vec<String>,
-    #[serde(default)]
-    pub timeout: Option<u32>,
-    /// "oneshot" (default) or "scheduled"
-    #[serde(default = "default_oneshot")]
-    pub task_type: String,
-    pub name: Option<String>,
-    pub cron_expression: Option<String>,
-    #[serde(default)]
-    pub retry_count: Option<i32>,
-    #[serde(default)]
-    pub retry_interval: Option<i32>,
-}
-
-fn default_oneshot() -> String {
-    "oneshot".to_string()
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct UpdateTaskRequest {
-    pub name: Option<String>,
-    pub command: Option<String>,
-    pub server_ids: Option<Vec<String>>,
-    pub cron_expression: Option<String>,
-    pub enabled: Option<bool>,
-    pub timeout: Option<i32>,
-    pub retry_count: Option<i32>,
-    pub retry_interval: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -156,119 +120,24 @@ pub async fn create_task(
     headers: HeaderMap,
     Json(input): Json<CreateTaskRequest>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, AppError> {
-    if input.server_ids.is_empty() {
-        return Err(AppError::Validation(
-            "server_ids cannot be empty".to_string(),
-        ));
-    }
-    if input.command.trim().is_empty() {
-        return Err(AppError::Validation("command cannot be empty".to_string()));
-    }
-
-    let is_scheduled = input.task_type == "scheduled";
-
-    if is_scheduled {
-        let cron = input.cron_expression.as_deref().ok_or_else(|| {
-            AppError::Validation("cron_expression is required for scheduled tasks".into())
-        })?;
-        // Validate cron expression
-        cron::Schedule::from_str(cron)
-            .map_err(|e| AppError::Validation(format!("Invalid cron expression: {e}")))?;
-    }
-
-    // Validate numeric bounds
-    if matches!(input.timeout, Some(0)) {
-        return Err(AppError::Validation("timeout must be > 0".into()));
-    }
-    if let Some(rc) = input.retry_count
-        && !(0..=10).contains(&rc)
-    {
-        return Err(AppError::Validation(
-            "retry_count must be between 0 and 10".into(),
-        ));
-    }
-    if matches!(input.retry_interval, Some(ri) if ri < 1) {
-        return Err(AppError::Validation("retry_interval must be >= 1".into()));
-    }
-
-    let task_id = Uuid::new_v4().to_string();
-    let now = Utc::now();
     let ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
         &state.config.server.trusted_proxies,
     )
     .to_string();
-    let server_ids_json = serde_json::to_string(&input.server_ids)
-        .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?;
-
-    // Compute next_run_at using the configured scheduler timezone
-    let tz: chrono_tz::Tz = state
-        .task_scheduler
-        .timezone()
-        .parse()
-        .unwrap_or(chrono_tz::UTC);
-    let next_run = input.cron_expression.as_deref().and_then(|c| {
-        cron::Schedule::from_str(c)
-            .ok()
-            .and_then(|s| s.upcoming(tz).next().map(|dt| dt.with_timezone(&Utc)))
-    });
-
-    let new_task = task::ActiveModel {
-        id: Set(task_id.clone()),
-        command: Set(input.command.clone()),
-        server_ids_json: Set(server_ids_json),
-        created_by: Set(current_user.user_id.clone()),
-        task_type: Set(input.task_type.clone()),
-        name: Set(input.name.clone()),
-        cron_expression: Set(input.cron_expression.clone()),
-        enabled: Set(true),
-        timeout: Set(input.timeout.map(|t| t as i32)),
-        retry_count: Set(input.retry_count.unwrap_or(0)),
-        retry_interval: Set(input.retry_interval.unwrap_or(60)),
-        last_run_at: NotSet,
-        next_run_at: Set(next_run),
-        created_at: Set(now),
-    };
-    let task_model = new_task.insert(&state.db).await?;
-
-    if is_scheduled {
-        // Register cron job in scheduler; rollback DB row on failure
-        if let Err(e) = state
-            .task_scheduler
-            .add_job(&task_model, state.clone())
-            .await
-        {
-            let _ = task::Entity::delete_by_id(&task_id).exec(&state.db).await;
-            return Err(e);
-        }
-        tracing::info!("Scheduled task {} registered", task_id);
-    } else {
-        // One-shot: dispatch immediately
-        dispatch_oneshot(
-            &state,
-            &task_id,
-            &input.command,
-            &input.server_ids,
-            input.timeout,
-            &current_user.user_id,
-            &ip,
-        )
-        .await?;
-    }
-
-    // Audit task creation (best-effort). One-shot dispatch audits exec
-    // separately; this records the task definition itself for both kinds.
+    let audit_detail = format!(
+        "type={} name={} command={}",
+        input.task_type,
+        input.name.as_deref().unwrap_or("?"),
+        input.command
+    );
+    let task_model = task_lifecycle::create_task(&state, input, &current_user.user_id, &ip).await?;
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
         "task_created",
-        Some(&format!(
-            "task_id={task_id} type={} name={} command={}",
-            input.task_type,
-            input.name.as_deref().unwrap_or("?"),
-            input.command
-        )),
+        Some(&format!("task_id={} {audit_detail}", task_model.id)),
         &ip,
     )
     .await;
@@ -318,97 +187,7 @@ pub async fn update_task(
     Path(id): Path<String>,
     Json(input): Json<UpdateTaskRequest>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, AppError> {
-    let existing = task::Entity::find_by_id(&id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task {id} not found")))?;
-
-    let existing_backup = existing.clone();
-    let mut model: task::ActiveModel = existing.into();
-
-    if let Some(name) = input.name {
-        model.name = Set(Some(name));
-    }
-    if let Some(command) = input.command {
-        model.command = Set(command);
-    }
-    if let Some(server_ids) = &input.server_ids {
-        let json = serde_json::to_string(server_ids)
-            .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?;
-        model.server_ids_json = Set(json);
-    }
-    if let Some(cron) = &input.cron_expression {
-        cron::Schedule::from_str(cron)
-            .map_err(|e| AppError::Validation(format!("Invalid cron expression: {e}")))?;
-        // Recompute next_run_at using configured timezone
-        let tz: chrono_tz::Tz = state
-            .task_scheduler
-            .timezone()
-            .parse()
-            .unwrap_or(chrono_tz::UTC);
-        let next = cron::Schedule::from_str(cron)
-            .ok()
-            .and_then(|s| s.upcoming(tz).next().map(|dt| dt.with_timezone(&Utc)));
-        model.cron_expression = Set(Some(cron.clone()));
-        model.next_run_at = Set(next);
-    }
-    if let Some(enabled) = input.enabled {
-        model.enabled = Set(enabled);
-        // When resuming a paused task, recompute next_run_at so the UI shows a fresh time
-        if enabled {
-            let cron_expr = input
-                .cron_expression
-                .as_deref()
-                .or(existing_backup.cron_expression.as_deref());
-            if let Some(cron) = cron_expr {
-                let tz: chrono_tz::Tz = state
-                    .task_scheduler
-                    .timezone()
-                    .parse()
-                    .unwrap_or(chrono_tz::UTC);
-                let next = cron::Schedule::from_str(cron)
-                    .ok()
-                    .and_then(|s| s.upcoming(tz).next().map(|dt| dt.with_timezone(&Utc)));
-                model.next_run_at = Set(next);
-            }
-        }
-    }
-    if let Some(timeout) = input.timeout {
-        if timeout < 1 {
-            return Err(AppError::Validation("timeout must be >= 1".into()));
-        }
-        model.timeout = Set(Some(timeout));
-    }
-    if let Some(retry_count) = input.retry_count {
-        if !(0..=10).contains(&retry_count) {
-            return Err(AppError::Validation(
-                "retry_count must be between 0 and 10".into(),
-            ));
-        }
-        model.retry_count = Set(retry_count);
-    }
-    if let Some(retry_interval) = input.retry_interval {
-        if retry_interval < 1 {
-            return Err(AppError::Validation("retry_interval must be >= 1".into()));
-        }
-        model.retry_interval = Set(retry_interval);
-    }
-
-    let updated = model.update(&state.db).await?;
-
-    // Sync scheduler; on failure, restore the original row
-    if updated.task_type == "scheduled"
-        && let Err(e) = state
-            .task_scheduler
-            .update_job(&updated, state.clone())
-            .await
-    {
-        let rollback: task::ActiveModel = existing_backup.into();
-        let _ = rollback.update(&state.db).await;
-        return Err(e);
-    }
-
-    // Audit the update (best-effort) once the row and scheduler are in sync.
+    let updated = task_lifecycle::update_task(&state, &id, input).await?;
     let ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
@@ -444,17 +223,7 @@ pub async fn delete_task(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    // Cancel active run and remove from scheduler first (idempotent, safe to call even if not registered)
-    state.task_scheduler.remove_job(&id).await?;
-    // Delete DB rows — if this fails, the scheduler job is already gone (acceptable:
-    // next server restart will simply not re-register the task since it was removed from scheduler)
-    task_result::Entity::delete_many()
-        .filter(task_result::Column::TaskId.eq(&id))
-        .exec(&state.db)
-        .await?;
-    task::Entity::delete_by_id(&id).exec(&state.db).await?;
-
-    // Audit the deletion (best-effort) after the rows are gone.
+    task_lifecycle::delete_task(&state, &id).await?;
     let ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
@@ -491,45 +260,22 @@ pub async fn run_task(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<TaskResponse>>, AppError> {
-    // Validate task exists and is scheduled type
-    let task_model = task::Entity::find_by_id(&id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("Task {id} not found")))?;
-
-    if task_model.task_type != "scheduled" {
-        return Err(AppError::BadRequest(
-            "Only scheduled tasks can be manually triggered".into(),
-        ));
-    }
-
     let ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
         &state.config.server.trusted_proxies,
     )
     .to_string();
-    let started = crate::task::task_scheduler::execute_scheduled_task(
+    let updated = task_lifecycle::run_now(
         &state,
         &id,
-        true,
         Some(ExecAuditContext {
             user_id: current_user.user_id.clone(),
             ip,
         }),
     )
     .await;
-    if !started {
-        return Err(AppError::Conflict(
-            "Task is currently running, try again later".into(),
-        ));
-    }
-    // Re-fetch to get updated last_run_at
-    let updated = task::Entity::find_by_id(&id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Task not found".into()))?;
-    ok(updated.into())
+    ok(updated?.into())
 }
 
 #[utoipa::path(
@@ -553,107 +299,6 @@ pub async fn get_task_results(
         .all(&state.db)
         .await?;
     ok(results)
-}
-
-// --- Helper ---
-
-async fn dispatch_oneshot(
-    state: &Arc<AppState>,
-    task_id: &str,
-    command: &str,
-    server_ids: &[String],
-    timeout: Option<u32>,
-    user_id: &str,
-    ip: &str,
-) -> Result<(), AppError> {
-    let servers = server::Entity::find()
-        .filter(server::Column::Id.is_in(server_ids.iter().cloned()))
-        .all(&state.db)
-        .await?;
-
-    let mut capable = Vec::new();
-    let mut disabled = Vec::new();
-    for sid in server_ids {
-        let configured_caps = servers
-            .iter()
-            .find(|s| s.id == *sid)
-            .map(|s| s.capabilities as u32)
-            .unwrap_or(0);
-
-        if let Some(reason) =
-            state
-                .agent_manager
-                .capability_denied_reason(sid, configured_caps, CAP_EXEC)
-        {
-            disabled.push((sid.as_str(), exec_capability_denied_output(reason), reason));
-        } else {
-            capable.push(sid);
-        }
-    }
-
-    let now = Utc::now();
-    for (sid, output, deny_reason) in &disabled {
-        let result = task_result::ActiveModel {
-            id: NotSet,
-            task_id: Set(task_id.to_string()),
-            server_id: Set((*sid).to_string()),
-            output: Set((*output).to_string()),
-            exit_code: Set(-2),
-            run_id: Set(None),
-            attempt: Set(1),
-            started_at: Set(None),
-            finished_at: Set(now),
-        };
-        result.insert(&state.db).await?;
-        let detail = serde_json::json!({
-            "server_id": sid,
-            "task_id": task_id,
-            "command": command,
-            "deny_reason": deny_reason,
-        })
-        .to_string();
-        let _ = AuditService::log(&state.db, user_id, "exec_denied", Some(&detail), ip).await;
-    }
-
-    let mut dispatched = 0;
-    for sid in &capable {
-        if let Some(tx) = state.agent_manager.get_sender(sid) {
-            let msg = ServerMessage::Exec {
-                task_id: task_id.to_string(),
-                command: command.to_string(),
-                timeout,
-            };
-            if tx.send(msg).await.is_ok() {
-                dispatched += 1;
-                let detail = serde_json::json!({
-                    "server_id": sid,
-                    "task_id": task_id,
-                    "command": command,
-                    "timeout": timeout,
-                })
-                .to_string();
-                let _ =
-                    AuditService::log(&state.db, user_id, "exec_started", Some(&detail), ip).await;
-            }
-        }
-    }
-
-    tracing::info!(
-        "Task {} dispatched to {}/{} agents",
-        task_id,
-        dispatched,
-        server_ids.len()
-    );
-    Ok(())
-}
-
-pub(crate) fn exec_capability_denied_output(reason: &str) -> &'static str {
-    match reason {
-        "agent_capability_disabled" => {
-            "Capability denied: exec is disabled in the agent's config (capabilities are agent-owned)"
-        }
-        _ => "Capability denied: exec disabled",
-    }
 }
 
 #[cfg(test)]
@@ -701,7 +346,9 @@ mod audit_tests {
     async fn delete_task_writes_audit_log() {
         let (db, _tmp) = setup_test_db().await;
         insert_oneshot_task(&db, "task-del").await;
-        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
 
         let res = delete_task(
             State(state.clone()),
@@ -726,7 +373,9 @@ mod audit_tests {
     async fn update_task_writes_audit_log() {
         let (db, _tmp) = setup_test_db().await;
         insert_oneshot_task(&db, "task-upd").await;
-        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
 
         let res = update_task(
             State(state.clone()),

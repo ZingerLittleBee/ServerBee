@@ -1,24 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-import type { ServerResponse, UptimeDailyEntry } from '@/lib/api-schema'
+import type { UptimeDailyEntry } from '@/lib/api-schema'
+import { useServerDetail } from '@/lib/server-catalog'
+import { isoWindow } from '@/lib/utils'
 
 type ServerRecord = import('@/lib/api-schema').ServerMetricRecord
 
 export function useServer(id: string) {
-  return useQuery<ServerResponse>({
-    queryKey: ['servers', id],
-    queryFn: () => api.get<ServerResponse>(`/api/servers/${id}`),
-    enabled: !!id && id.length > 0
-  })
+  return useServerDetail(id)
 }
 
 export function useServerRecords(id: string, hours: number, interval: string, options?: { enabled?: boolean }) {
   return useQuery<ServerRecord[]>({
     queryKey: ['servers', id, 'records', hours, interval],
     queryFn: () => {
-      const now = new Date()
-      const from = new Date(now.getTime() - hours * 3600 * 1000).toISOString()
-      const to = now.toISOString()
+      const { from, to } = isoWindow(hours)
       return api.get<ServerRecord[]>(
         `/api/servers/${id}/records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&interval=${encodeURIComponent(interval)}`
       )

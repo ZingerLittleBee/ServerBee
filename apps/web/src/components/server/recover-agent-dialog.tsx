@@ -6,10 +6,10 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { ApiError, api } from '@/lib/api-client'
 import type { OutstandingEnrollmentSummary, RecoverRequest, RecoverResponse, ServerResponse } from '@/lib/api-schema'
 import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
+import { projectServerCatalog } from '@/lib/server-catalog'
 import { cn } from '@/lib/utils'
 
 const DEFAULT_CAP_KEYS = CAPABILITIES.flatMap((c) => (hasCap(CAP_DEFAULT, c.bit) ? [c.key] : []))
@@ -81,12 +81,12 @@ function OutstandingNotice({ enrollment, onClose, serverId }: OutstandingNoticeP
     mutationFn: () => api.delete<void>(`/api/agent/enrollments/${enrollment.id}`),
     onSuccess: () => {
       toast.success(t('recover_agent.revoked'))
-      // ['servers'] is a WS-fed cache (queryFn: () => []) — invalidating it
-      // would wipe the visible list. Clear the row's outstanding_enrollment
-      // locally; WS will reconcile any drift.
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-        prev?.map((s) => (s.id === serverId ? { ...s, outstanding_enrollment: null } : s))
-      )
+      projectServerCatalog(queryClient, {
+        kind: 'enrollment_changed',
+        serverId,
+        outstandingEnrollment: null,
+        tokenRevoked: false
+      })
     },
     onError: (err: unknown) => {
       const message = err instanceof ApiError || err instanceof Error ? err.message : t('recover_agent.revoke_failed')
@@ -168,11 +168,6 @@ function RecoverAgentDialogContent({
     mutationFn: (body: RecoverRequest) => api.post<RecoverResponse>(`/api/servers/${server.id}/recover`, body),
     onSuccess: (data, variables) => {
       setIssued(data)
-      // Patch ['servers'] in place — invalidating it would wipe the WS-fed
-      // cache (queryFn: () => []) and unmount this dialog's host card.
-      // If `revoke_immediately`, the server row also returned to pending: its
-      // token_hash was cleared and the agent WS was kicked, so reflect
-      // has_token=false / online=false until the agent re-enrolls.
       const revoked = variables.revoke_immediately
       const newOutstanding = {
         id: data.enrollment.id,
@@ -180,17 +175,12 @@ function RecoverAgentDialogContent({
         expires_at: data.enrollment.expires_at,
         created_at: new Date().toISOString()
       }
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-        prev?.map((s) =>
-          s.id === server.id
-            ? {
-                ...s,
-                outstanding_enrollment: newOutstanding,
-                ...(revoked ? { has_token: false, online: false } : {})
-              }
-            : s
-        )
-      )
+      projectServerCatalog(queryClient, {
+        kind: 'enrollment_changed',
+        serverId: server.id,
+        outstandingEnrollment: newOutstanding,
+        tokenRevoked: revoked
+      })
     },
     onError: (err: unknown) => {
       const message = err instanceof ApiError || err instanceof Error ? err.message : t('recover_agent.generate_failed')

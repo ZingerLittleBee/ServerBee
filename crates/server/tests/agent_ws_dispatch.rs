@@ -40,6 +40,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     connect_agent, http_client, login_admin, login_as_new_user, recv_agent_text, register_agent,
     send_system_info, start_test_server, AgentReader, AgentSink,
 };
@@ -58,22 +59,6 @@ async fn send_agent_frame(sink: &mut AgentSink, frame: Value) {
     sink.send(tungstenite::Message::Text(frame.to_string().into()))
         .await
         .expect("send agent frame");
-}
-
-/// First-connect pushes that a default agent must tolerate and ignore. These
-/// (ping/network/IP-quality sync + firewall blocklist messages) are unrelated to
-/// the dispatch arms under test.
-fn is_ignorable_push(msg_type: Option<&str>) -> bool {
-    matches!(
-        msg_type,
-        Some("ping_tasks_sync")
-            | Some("network_probe_sync")
-            | Some("ip_quality_sync")
-            | Some("blocklist_reset")
-            | Some("blocklist_sync")
-            | Some("blocklist_add")
-            | Some("blocklist_remove")
-    )
 }
 
 /// Drain any frames the server pushes right after the SystemInfo handshake.
@@ -206,7 +191,7 @@ async fn test_traceroute_round_update_completed_persists_and_is_queryable() {
                         send_agent_frame(&mut sink, reply).await;
                         return;
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     Some(_other) => {}
                     None => {}
                 }
@@ -305,7 +290,7 @@ async fn test_traceroute_round_update_progression_then_complete() {
                         .await;
                         return;
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     Some(_other) => {}
                     None => {}
                 }
@@ -507,7 +492,7 @@ async fn test_legacy_traceroute_result_records_legacy_protocol() {
                         .await;
                         return;
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     Some(_other) => {}
                     None => {}
                 }
@@ -595,7 +580,7 @@ async fn test_upgrade_progress_is_acked() {
                         assert_eq!(ack["msg_id"], "up-prog-1");
                         return;
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     Some(_other) => {}
                     None => {}
                 }
@@ -651,7 +636,7 @@ async fn test_upgrade_result_acks_and_clears_running_job() {
                         // agent ONLINE. The server's Ack for this result arrives
                         // as a later frame the loop simply ignores.
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     Some(_other) => {}
                     None => {}
                 }
@@ -724,7 +709,7 @@ async fn test_capability_denied_upgrade_marks_job_failed() {
                         // (returning here would drop the socket → agent offline →
                         // the retrigger 404s instead of returning the expected 200).
                     }
-                    other if is_ignorable_push(other) => {}
+                    other if is_first_connect_noise(other) => {}
                     Some(_other) => {}
                     None => {}
                 }

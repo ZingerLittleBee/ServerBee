@@ -6,18 +6,23 @@ mod load;
 mod memory;
 mod network;
 mod process;
+mod source;
 mod temperature;
 pub mod virtualization;
 
 use std::time::Instant;
 
 use serverbee_common::types::{SystemInfo, SystemReport};
-use sysinfo::{Networks, ProcessRefreshKind, ProcessesToUpdate, System};
 
-pub struct Collector {
-    sys: System,
-    networks: Networks,
-    prev_disk_io: std::collections::HashMap<String, disk_io::DiskCounters>,
+use source::{MetricsSource, SysinfoSource};
+
+/// Report assembly over a [`MetricsSource`]: rate differencing for the
+/// cumulative network counters, the elapsed-window guard, and the
+/// temperature/GPU enable gating live here — the source only reads the host.
+/// Production code uses the default `SysinfoSource`; tests inject a fake to
+/// drive every assembly path with arbitrary readings.
+pub struct Collector<S: MetricsSource = SysinfoSource> {
+    source: S,
     prev_net_in: u64,
     prev_net_out: u64,
     prev_time: Instant,
@@ -25,16 +30,21 @@ pub struct Collector {
     enable_gpu: bool,
 }
 
-impl Collector {
+impl Collector<SysinfoSource> {
     pub fn new(enable_temperature: bool, enable_gpu: bool) -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_all();
-        let networks = Networks::new_with_refreshed_list();
-        let (net_in, net_out) = network::total_bytes(&networks);
+        Self::with_source(SysinfoSource::new(), enable_temperature, enable_gpu)
+    }
+
+    pub fn system_info(&self) -> SystemInfo {
+        self.source.system_info()
+    }
+}
+
+impl<S: MetricsSource> Collector<S> {
+    fn with_source(source: S, enable_temperature: bool, enable_gpu: bool) -> Self {
+        let (net_in, net_out) = source.net_total_bytes();
         Self {
-            sys,
-            networks,
-            prev_disk_io: std::collections::HashMap::new(),
+            source,
             prev_net_in: net_in,
             prev_net_out: net_out,
             prev_time: Instant::now(),
@@ -44,74 +54,66 @@ impl Collector {
     }
 
     pub fn collect(&mut self) -> SystemReport {
-        self.sys.refresh_cpu_usage();
-        self.sys.refresh_memory();
-        self.sys.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing(),
-        );
-        self.networks.refresh(true);
+        self.source.refresh();
+        // prev_time is stamped before the counters are read inside
+        // assemble_report, so the window is measured refresh-to-refresh
+        // rather than read-to-read. The µs-level skew this introduces is
+        // absorbed by the 1s elapsed clamp below.
+        let elapsed = self.prev_time.elapsed().as_secs_f64();
+        self.prev_time = Instant::now();
+        self.assemble_report(elapsed)
+    }
 
-        let elapsed = self.prev_time.elapsed().as_secs_f64().max(1.0);
-        let (net_in, net_out) = network::total_bytes(&self.networks);
+    /// Fold one refreshed sample into a report. Split from [`Self::collect`]
+    /// so tests control the elapsed window directly.
+    fn assemble_report(&mut self, elapsed: f64) -> SystemReport {
+        // Guard the rate denominator: a sub-second (or clock-skewed) window
+        // must not inflate speeds or divide by zero.
+        let elapsed = elapsed.max(1.0);
+
+        // Cumulative counters difference into per-second rates; saturating_sub
+        // absorbs counter resets (interface re-enumeration, rollover) as a
+        // zero-speed sample instead of a negative one.
+        let (net_in, net_out) = self.source.net_total_bytes();
         let net_in_speed = (net_in.saturating_sub(self.prev_net_in) as f64 / elapsed) as i64;
         let net_out_speed = (net_out.saturating_sub(self.prev_net_out) as f64 / elapsed) as i64;
 
         self.prev_net_in = net_in;
         self.prev_net_out = net_out;
-        self.prev_time = Instant::now();
 
-        let disk_io = disk_io::collect(elapsed, &mut self.prev_disk_io);
+        let disk_io = self.source.disk_io(elapsed);
 
         let temperature = if self.enable_temperature {
-            temperature::get_temperature()
+            self.source.temperature()
         } else {
             None
         };
 
+        let (load1, load5, load15) = self.source.load_averages();
+
         SystemReport {
-            cpu: cpu::usage(&self.sys),
-            mem_used: memory::mem_used(&self.sys),
-            swap_used: memory::swap_used(&self.sys),
-            disk_used: disk::used(),
+            cpu: self.source.cpu_usage(),
+            mem_used: self.source.mem_used(),
+            swap_used: self.source.swap_used(),
+            disk_used: self.source.disk_used(),
             net_in_speed,
             net_out_speed,
             net_in_transfer: net_in as i64,
             net_out_transfer: net_out as i64,
-            load1: load::load1(),
-            load5: load::load5(),
-            load15: load::load15(),
-            tcp_conn: process::tcp_connections(),
-            udp_conn: process::udp_connections(),
-            process_count: process::count(&self.sys),
-            uptime: System::uptime(),
+            load1,
+            load5,
+            load15,
+            tcp_conn: self.source.tcp_connections(),
+            udp_conn: self.source.udp_connections(),
+            process_count: self.source.process_count(),
+            uptime: self.source.uptime(),
             disk_io,
             temperature,
             gpu: if self.enable_gpu {
-                gpu::get_gpu_report()
+                self.source.gpu()
             } else {
                 None
             },
-        }
-    }
-
-    pub fn system_info(&self) -> SystemInfo {
-        SystemInfo {
-            protocol_version: 0,
-            cpu_name: cpu::name(&self.sys),
-            cpu_cores: cpu::cores(&self.sys),
-            cpu_arch: cpu::arch(),
-            os: System::long_os_version().unwrap_or_default(),
-            kernel_version: System::kernel_version().unwrap_or_default(),
-            mem_total: memory::mem_total(&self.sys),
-            swap_total: memory::swap_total(&self.sys),
-            disk_total: disk::total(),
-            ipv4: None,
-            ipv6: None,
-            virtualization: virtualization::detect(),
-            agent_version: serverbee_common::constants::VERSION.to_string(),
-            features: Vec::new(),
         }
     }
 }
@@ -120,64 +122,189 @@ impl Collector {
 mod tests;
 
 #[cfg(test)]
-mod branch_tests {
+mod assembly_tests {
+    use super::source::MetricsSource;
     use super::*;
+    use serverbee_common::types::{DiskIo, GpuInfo, GpuReport};
 
-    #[test]
-    fn collect_with_temperature_disabled_yields_none() {
-        // When `enable_temperature` is false the collector skips the sensor read
-        // entirely and reports `temperature: None` (the disabled branch in
-        // `Collector::collect`).
-        let mut collector = Collector::new(false, false);
-        let report = collector.collect();
-        assert!(report.temperature.is_none());
+    /// Test adapter: every reading is a plain field, so assembly paths can be
+    /// driven with arbitrary host states.
+    struct FakeSource {
+        cpu: f64,
+        mem_used: i64,
+        swap_used: i64,
+        disk_used: i64,
+        net_totals: (u64, u64),
+        loads: (f64, f64, f64),
+        tcp: i32,
+        udp: i32,
+        processes: i32,
+        uptime: u64,
+        disk_io: Option<Vec<DiskIo>>,
+        temperature: Option<f64>,
+        gpu: Option<GpuReport>,
+        refreshes: u32,
     }
 
-    #[test]
-    fn collect_with_gpu_enabled_does_not_panic() {
-        // With `enable_gpu` true the collector invokes `gpu::get_gpu_report()`.
-        // Without the `gpu` cargo feature (the default, and the case on CI hosts
-        // with no NVIDIA GPU) this returns None, but the branch must be reached
-        // and must not panic. When a report is present, validate its invariants.
-        let mut collector = Collector::new(false, true);
-        let report = collector.collect();
-        if let Some(gpu) = report.gpu {
-            assert_eq!(gpu.count as usize, gpu.detailed_info.len());
-            assert!(gpu.average_usage.is_finite());
+    impl Default for FakeSource {
+        fn default() -> Self {
+            Self {
+                cpu: 12.5,
+                mem_used: 1024,
+                swap_used: 256,
+                disk_used: 4096,
+                net_totals: (10_000, 20_000),
+                loads: (0.5, 0.4, 0.3),
+                tcp: 7,
+                udp: 3,
+                processes: 42,
+                uptime: 3600,
+                disk_io: None,
+                temperature: Some(55.0),
+                gpu: Some(GpuReport {
+                    count: 1,
+                    average_usage: 30.0,
+                    detailed_info: vec![GpuInfo {
+                        name: "FakeGPU".to_string(),
+                        mem_total: 8000,
+                        mem_used: 2000,
+                        utilization: 30.0,
+                        temperature: 60.0,
+                    }],
+                }),
+                refreshes: 0,
+            }
         }
     }
 
-    #[test]
-    fn collect_report_field_invariants() {
-        // Cross-field invariants on a freshly collected report: connection and
-        // network counters are non-negative and load averages are finite.
-        let mut collector = Collector::new(false, false);
-        let report = collector.collect();
-        assert!(report.tcp_conn >= 0);
-        assert!(report.udp_conn >= 0);
-        assert!(report.net_in_transfer >= 0);
-        assert!(report.net_out_transfer >= 0);
-        assert!(report.net_in_speed >= 0);
-        assert!(report.net_out_speed >= 0);
-        assert!(report.load1 >= 0.0 && report.load1.is_finite());
-        assert!(report.load5 >= 0.0 && report.load5.is_finite());
-        assert!(report.load15 >= 0.0 && report.load15.is_finite());
-        assert!(report.swap_used >= 0);
+    impl MetricsSource for FakeSource {
+        fn refresh(&mut self) {
+            self.refreshes += 1;
+        }
+        fn cpu_usage(&self) -> f64 {
+            self.cpu
+        }
+        fn mem_used(&self) -> i64 {
+            self.mem_used
+        }
+        fn swap_used(&self) -> i64 {
+            self.swap_used
+        }
+        fn disk_used(&self) -> i64 {
+            self.disk_used
+        }
+        fn net_total_bytes(&self) -> (u64, u64) {
+            self.net_totals
+        }
+        fn load_averages(&self) -> (f64, f64, f64) {
+            self.loads
+        }
+        fn tcp_connections(&self) -> i32 {
+            self.tcp
+        }
+        fn udp_connections(&self) -> i32 {
+            self.udp
+        }
+        fn process_count(&self) -> i32 {
+            self.processes
+        }
+        fn uptime(&self) -> u64 {
+            self.uptime
+        }
+        fn disk_io(&mut self, _elapsed: f64) -> Option<Vec<DiskIo>> {
+            self.disk_io.clone()
+        }
+        fn temperature(&self) -> Option<f64> {
+            self.temperature
+        }
+        fn gpu(&self) -> Option<GpuReport> {
+            self.gpu.clone()
+        }
+    }
+
+    fn make_collector(source: FakeSource) -> Collector<FakeSource> {
+        Collector::with_source(source, true, true)
     }
 
     #[test]
-    fn system_info_static_assembly_fields() {
-        // Assert the `system_info` assembly fields not covered by the existing
-        // populated-fields test (arch, agent version, protocol version, and the
-        // default-empty optional/ip/feature fields).
-        let collector = Collector::new(false, false);
-        let info = collector.system_info();
-        assert!(!info.cpu_arch.is_empty());
-        assert!(!info.agent_version.is_empty());
-        assert_eq!(info.protocol_version, 0);
-        assert!(info.ipv4.is_none());
-        assert!(info.ipv6.is_none());
-        assert!(info.features.is_empty());
-        assert!(info.swap_total >= 0);
+    fn net_speeds_difference_cumulative_counters_over_elapsed() {
+        // prev seeded from the constructor reading (10k/20k); the next sample
+        // adds 30k/60k over a 10s window -> 3k/6k per second.
+        let mut c = make_collector(FakeSource::default());
+        c.source.net_totals = (40_000, 80_000);
+        let report = c.assemble_report(10.0);
+        assert_eq!(report.net_in_speed, 3_000);
+        assert_eq!(report.net_out_speed, 6_000);
+        assert_eq!(report.net_in_transfer, 40_000);
+        assert_eq!(report.net_out_transfer, 80_000);
+    }
+
+    #[test]
+    fn counter_reset_saturates_to_zero_speed() {
+        // A counter that went backwards (interface re-enumeration) must read
+        // as a zero-speed sample, never a negative rate.
+        let mut c = make_collector(FakeSource::default());
+        c.source.net_totals = (500, 700);
+        let report = c.assemble_report(5.0);
+        assert_eq!(report.net_in_speed, 0);
+        assert_eq!(report.net_out_speed, 0);
+        // The new (lower) totals still become the baseline for the next window.
+        c.source.net_totals = (1_500, 1_700);
+        let next = c.assemble_report(1.0);
+        assert_eq!(next.net_in_speed, 1_000);
+        assert_eq!(next.net_out_speed, 1_000);
+    }
+
+    #[test]
+    fn sub_second_elapsed_is_clamped_to_one_second() {
+        // elapsed 0.0 (or any sub-second window) divides by 1.0: finite,
+        // non-inflated speeds.
+        let mut c = make_collector(FakeSource::default());
+        c.source.net_totals = (10_100, 20_200);
+        let report = c.assemble_report(0.0);
+        assert_eq!(report.net_in_speed, 100);
+        assert_eq!(report.net_out_speed, 200);
+    }
+
+    #[test]
+    fn disabled_temperature_and_gpu_are_gated_to_none() {
+        // The source has readings, but disabled collection must report None —
+        // the gate lives in assembly, not in the source.
+        let mut c = Collector::with_source(FakeSource::default(), false, false);
+        let report = c.assemble_report(1.0);
+        assert!(report.temperature.is_none());
+        assert!(report.gpu.is_none());
+    }
+
+    #[test]
+    fn enabled_temperature_and_gpu_pass_through() {
+        let mut c = make_collector(FakeSource::default());
+        let report = c.assemble_report(1.0);
+        assert_eq!(report.temperature, Some(55.0));
+        assert_eq!(report.gpu.as_ref().map(|g| g.count), Some(1));
+    }
+
+    #[test]
+    fn gauges_pass_through_untransformed() {
+        let mut c = make_collector(FakeSource::default());
+        let report = c.assemble_report(1.0);
+        assert!((report.cpu - 12.5).abs() < f64::EPSILON);
+        assert_eq!(report.mem_used, 1024);
+        assert_eq!(report.swap_used, 256);
+        assert_eq!(report.disk_used, 4096);
+        assert!((report.load1 - 0.5).abs() < f64::EPSILON);
+        assert!((report.load15 - 0.3).abs() < f64::EPSILON);
+        assert_eq!(report.tcp_conn, 7);
+        assert_eq!(report.udp_conn, 3);
+        assert_eq!(report.process_count, 42);
+        assert_eq!(report.uptime, 3600);
+    }
+
+    #[test]
+    fn collect_refreshes_the_source_before_sampling() {
+        let mut c = make_collector(FakeSource::default());
+        let _ = c.collect();
+        let _ = c.collect();
+        assert_eq!(c.source.refreshes, 2);
     }
 }

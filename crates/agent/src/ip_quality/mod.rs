@@ -4,14 +4,15 @@ pub mod rule_engine;
 pub mod ssrf;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use chrono::Utc;
-use serverbee_common::constants::{CAP_IP_QUALITY, has_capability};
+use serverbee_common::constants::CAP_IP_QUALITY;
 use serverbee_common::protocol::{UnlockResultData, UnlockServiceDef, UnlockStatus};
 use tokio::sync::{Mutex, Semaphore, mpsc, watch};
 use tokio::task::JoinHandle;
+use crate::capability_grants::CapabilityAuthority;
 
 /// Maximum number of services probed concurrently within a single run.
 const MAX_UNLOCK_CONCURRENT: usize = 5;
@@ -46,7 +47,7 @@ pub struct UnlockChecker {
     /// Watch channel sender for IP changes (watch: only the latest value matters).
     ip_changed_tx: watch::Sender<Option<String>>,
     /// Agent-local capabilities bitmap (shared, immutable at runtime).
-    capabilities: Arc<AtomicU32>,
+    capabilities: Arc<CapabilityAuthority>,
     /// Whether the post-connect initial run has been scheduled. The first
     /// `IpQualitySync` carrying services triggers one immediate run so probes
     /// don't wait a full `interval_hours` — essential on stable-IP hosts where
@@ -61,7 +62,7 @@ impl UnlockChecker {
     ///
     /// `result_tx` receives a `RunResult` each time a run completes.
     pub fn new(
-        capabilities: Arc<AtomicU32>,
+        capabilities: Arc<CapabilityAuthority>,
         result_tx: mpsc::Sender<RunResult>,
     ) -> Self {
         let services = Arc::new(Mutex::new(Vec::new()));
@@ -110,7 +111,7 @@ impl UnlockChecker {
     /// sends the sync when the capability is effective, but we guard here too
     /// as defence-in-depth).
     pub async fn sync(&self, services: Vec<UnlockServiceDef>, interval_hours: u32) {
-        if !has_capability(self.capabilities.load(Ordering::SeqCst), CAP_IP_QUALITY) {
+        if !self.capabilities.has(CAP_IP_QUALITY) {
             tracing::debug!("IpQualitySync received but CAP_IP_QUALITY not effective — ignoring");
             return;
         }
@@ -135,7 +136,7 @@ impl UnlockChecker {
 
     /// Trigger an immediate check outside the regular schedule.
     pub fn run_now(&self) {
-        if !has_capability(self.capabilities.load(Ordering::SeqCst), CAP_IP_QUALITY) {
+        if !self.capabilities.has(CAP_IP_QUALITY) {
             tracing::debug!(
                 "IpQualityRunNow received but CAP_IP_QUALITY not effective — ignoring"
             );
@@ -318,7 +319,7 @@ async fn run_scheduler(
     interval_hours: Arc<Mutex<u32>>,
     mut run_now_rx: mpsc::Receiver<()>,
     mut ip_changed_rx: watch::Receiver<Option<String>>,
-    capabilities: Arc<AtomicU32>,
+    capabilities: Arc<CapabilityAuthority>,
     result_tx: mpsc::Sender<RunResult>,
 ) {
     // The last IP value the scheduler has acted on. Updated only by the
@@ -371,7 +372,7 @@ async fn run_scheduler(
         }
 
         // Re-check capability before each run.
-        if !has_capability(capabilities.load(Ordering::SeqCst), CAP_IP_QUALITY) {
+        if !capabilities.has(CAP_IP_QUALITY) {
             tracing::debug!("UnlockChecker: CAP_IP_QUALITY not effective, skipping run");
             continue;
         }
@@ -406,7 +407,7 @@ async fn run_scheduler(
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU32, AtomicUsize};
+    use std::sync::atomic::AtomicUsize;
 
     use serverbee_common::constants::CAP_IP_QUALITY;
     use serverbee_common::protocol::{UnlockServiceDef, UnlockStatus};
@@ -414,8 +415,8 @@ mod tests {
 
     use super::*;
 
-    fn make_caps(bits: u32) -> Arc<AtomicU32> {
-        Arc::new(AtomicU32::new(bits))
+    fn make_caps(bits: u32) -> Arc<CapabilityAuthority> {
+        CapabilityAuthority::fixed(bits)
     }
 
     fn stub_builtin(id: &str, key: &str) -> UnlockServiceDef {

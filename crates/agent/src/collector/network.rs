@@ -2,7 +2,7 @@ use sysinfo::Networks;
 
 pub fn total_bytes(networks: &Networks) -> (u64, u64) {
     let (mut total_in, mut total_out) = (0u64, 0u64);
-    for (_name, data) in networks.iter() {
+    for data in networks.values() {
         total_in += data.total_received();
         total_out += data.total_transmitted();
     }
@@ -30,7 +30,7 @@ mod tests {
         // equals manual aggregation over the same snapshot.
         let mut sum_in = 0u64;
         let mut sum_out = 0u64;
-        for (_name, data) in networks.iter() {
+        for data in networks.values() {
             sum_in += data.total_received();
             sum_out += data.total_transmitted();
         }

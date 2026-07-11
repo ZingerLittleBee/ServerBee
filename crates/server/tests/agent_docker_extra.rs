@@ -18,6 +18,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     connect_agent, http_client, login_admin, login_as_new_user, recv_agent_text, register_agent,
     start_test_server, AgentReader, AgentSink,
 };
@@ -66,21 +67,6 @@ async fn send_docker_system_info(sink: &mut AgentSink, reader: &mut AgentReader,
             break;
         }
     }
-}
-
-/// Drain the first-connect pushes the server emits to a default agent. These
-/// (ping/network sync + firewall blocklist messages) are unrelated to the
-/// docker flow under test, so they must be ignored by every agent responder.
-fn is_first_connect_noise(msg_type: Option<&str>) -> bool {
-    matches!(
-        msg_type,
-        Some("ping_tasks_sync")
-            | Some("network_probe_sync")
-            | Some("blocklist_reset")
-            | Some("blocklist_sync")
-            | Some("blocklist_add")
-            | Some("blocklist_remove")
-    )
 }
 
 // ---------------------------------------------------------------------------

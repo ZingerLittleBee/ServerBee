@@ -319,8 +319,8 @@ impl Modify for SecurityAddon {
             crate::service::alert::AlertEventResponse,
             crate::router::api::alert::AlertEventDetailResponse,
             // tasks
-            crate::router::api::task::CreateTaskRequest,
-            crate::router::api::task::UpdateTaskRequest,
+            crate::service::task_scheduler::CreateTaskRequest,
+            crate::service::task_scheduler::UpdateTaskRequest,
             crate::router::api::task::TaskResponse,
             // dashboards
             crate::entity::dashboard::Model,

@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "generate:api-types": "cargo run --manifest-path ../../Cargo.toml --example dump_openapi > openapi.json && npx openapi-typescript openapi.json -o src/lib/api-types.ts"
+    "generate:api-types": "cargo run --manifest-path ../../Cargo.toml --example dump_openapi > openapi.json && npx openapi-typescript openapi.json -o src/lib/api-types.ts",
+    "generate:capabilities": "cargo run --manifest-path ../../Cargo.toml --example dump_capabilities_ts > src/lib/capability-bits.generated.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

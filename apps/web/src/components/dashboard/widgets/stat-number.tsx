@@ -1,6 +1,6 @@
 import { Activity, Cpu, MemoryStick, Server, Wifi } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
 import type { StatNumberConfig } from '@/lib/widget-types'
 

@@ -1,4 +1,4 @@
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 
 const STORAGE_KEY = 'serverbee-mock-servers'
 const GIB = 1024 ** 3

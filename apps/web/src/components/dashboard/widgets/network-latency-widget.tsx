@@ -4,8 +4,8 @@ import { LatencyChart } from '@/components/network/latency-chart'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkServerSummary } from '@/hooks/use-network-api'
 import { useNetworkChartRecords } from '@/hooks/use-network-chart-records'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { CHART_COLORS } from '@/lib/chart-colors'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import type { NetworkLatencyConfig } from '@/lib/widget-types'
 
 interface NetworkLatencyWidgetProps {

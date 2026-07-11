@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { type ColumnDef, getCoreRowModel, type Table, useReactTable } from '@tanstack/react-table'
 import { Check, Minus, Search, ShieldAlert } from 'lucide-react'
@@ -8,7 +7,6 @@ import { TemporaryBadge } from '@/components/server/temporary-badge'
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import {
   CAPABILITIES,
   classifyCapability,
@@ -16,6 +14,7 @@ import {
   RISK_TEXT_CLASS,
   temporaryGrantFor
 } from '@/lib/capabilities'
+import { type ServerMetrics, useLiveServers } from '@/lib/server-catalog'
 
 export const Route = createFileRoute('/_authed/settings/capabilities')({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -69,16 +68,8 @@ export function CapabilitiesPage() {
   const { q: search } = Route.useSearch()
   const navigate = Route.useNavigate()
 
-  // The ['servers'] cache is fed by the global WebSocket layer. Capabilities are
-  // agent-owned and reported by the agent over that channel, so this page is a
-  // read-only mirror of what each agent has enabled in its config file.
-  const { data: servers = [], isLoading } = useQuery<ServerInfo[]>({
-    queryKey: ['servers'],
-    queryFn: () => [],
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false
-  })
+  // Capabilities are agent-owned and reported over the global WebSocket.
+  const { data: servers = [], isLoading } = useLiveServers()
 
   const filtered = useMemo(
     () => servers.filter((s) => s.name.toLowerCase().includes(search.toLowerCase())),

@@ -238,26 +238,28 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // Start the security pipeline before connecting; it owns a long-lived
-    // mpsc::Sender that the reporter forwards over the WebSocket.
+    // Process-wide capability authority: owns the effective bitmask (base +
+    // temporary grants) and drives every transition. Consumers gate on it;
+    // its transition loop runs for the agent's lifetime.
+    let capabilities = crate::capability_grants::CapabilityAuthority::new(
+        agent_local_capabilities,
+        config.capabilities.grants_path(),
+    );
+    tokio::spawn(std::sync::Arc::clone(&capabilities).run(std::time::Duration::from_secs(3)));
+
+    // Security pipeline, supervised against the authority so a temporary
+    // security-events grant can start it and its expiry stops it. It owns a
+    // long-lived mpsc::Sender that the reporter forwards over the WebSocket.
     let (security_tx, security_rx) = tokio::sync::mpsc::channel::<
         serverbee_common::protocol::AgentMessage,
     >(128);
-    let _security_manager = match SecurityManager::start(
+    let _security_supervisor = SecurityManager::spawn_supervised(
         config.security.clone(),
-        agent_local_capabilities,
+        std::sync::Arc::clone(&capabilities),
         security_tx,
-    )
-    .await
-    {
-        Ok(m) => Some(m),
-        Err(e) => {
-            tracing::warn!(error = %e, "SecurityManager failed to start; continuing without it");
-            None
-        }
-    };
+    );
 
-    let mut reporter = Reporter::new(config, machine_fingerprint, agent_local_capabilities);
+    let mut reporter = Reporter::new(config, machine_fingerprint, capabilities);
     reporter.run_with_external(Some(security_rx)).await;
     Ok(())
 }

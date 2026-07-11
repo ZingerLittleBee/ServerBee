@@ -10,6 +10,7 @@ import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicNetworkServerDetail } from '@/lib/api-schema'
 import { formatDateTime } from '@/lib/format'
+import { publicNetworkHome } from '@/lib/server-detail-nav'
 
 export const Route = createFileRoute('/status/network/$serverId')({
   component: PublicNetworkDetailPage
@@ -33,9 +34,8 @@ function PublicNetworkDetailPage() {
   const navigate = useNavigate()
   const [anomalyOpen, setAnomalyOpen] = useState(false)
 
-  const networkEnabled = config?.show_network !== false
-  const detailEnabled = config?.show_server_detail !== false
-  const isStandalone = config !== undefined && networkEnabled && !detailEnabled
+  const networkHome = publicNetworkHome(config)
+  const isStandalone = networkHome === 'standalone'
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['public-status', 'network', serverId],
@@ -46,14 +46,11 @@ function PublicNetworkDetailPage() {
   })
 
   useEffect(() => {
-    if (!config) {
-      return
-    }
-    if (config.show_network === false) {
+    if (networkHome === 'hidden') {
       navigate({ to: '/status', replace: true })
       return
     }
-    if (detailEnabled) {
+    if (networkHome === 'tab') {
       navigate({
         to: '/status/server/$serverId',
         params: { serverId },
@@ -61,7 +58,7 @@ function PublicNetworkDetailPage() {
         replace: true
       })
     }
-  }, [config, detailEnabled, navigate, serverId])
+  }, [networkHome, navigate, serverId])
 
   // Wait for the config before choosing between redirect and standalone so we
   // never flash the standalone page on sites that will redirect.

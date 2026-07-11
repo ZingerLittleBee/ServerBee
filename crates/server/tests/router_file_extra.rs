@@ -22,6 +22,7 @@
 mod common;
 
 use common::{
+    is_first_connect_noise,
     AgentReader, AgentSink, connect_agent, http_client, login_admin, login_as_new_user,
     recv_agent_text, register_agent, send_system_info, start_test_server,
 };
@@ -44,21 +45,6 @@ async fn connect_agent_with_caps(
     assert_eq!(welcome["type"], "welcome", "first agent frame should be welcome");
     send_system_info(&mut sink, &mut reader, "file-extra-system-info", Some(caps)).await;
     (sink, reader)
-}
-
-/// First-connect pushes the server emits to a default agent that the file flow
-/// has no interest in. Ignore them so protocol drift on the real commands still
-/// surfaces loudly.
-fn is_ignorable_push(msg_type: Option<&str>) -> bool {
-    matches!(
-        msg_type,
-        Some("ping_tasks_sync")
-            | Some("network_probe_sync")
-            | Some("blocklist_reset")
-            | Some("blocklist_sync")
-            | Some("blocklist_add")
-            | Some("blocklist_remove")
-    )
 }
 
 /// Spawn a responder that waits for one forwarded request whose `type` equals
@@ -86,7 +72,7 @@ where
                         .expect("send file-op response");
                     return;
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -410,7 +396,7 @@ async fn test_delete_dir_recursive_happy_path() {
                     .expect("send file_op_result");
                     return;
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -576,7 +562,7 @@ async fn test_download_full_lifecycle_streams_bytes() {
                     }
                     return;
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -660,7 +646,7 @@ async fn test_download_by_id_not_ready_is_400() {
             let msg = recv_agent_text(&mut reader).await;
             match msg["type"].as_str() {
                 Some("file_download_start") => return,
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -708,7 +694,7 @@ async fn test_download_by_id_cross_user_is_404() {
             let msg = recv_agent_text(&mut reader).await;
             match msg["type"].as_str() {
                 Some("file_download_start") => return,
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -778,7 +764,7 @@ async fn test_list_then_cancel_owned_download_transfer() {
                     }
                     return;
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }
@@ -943,7 +929,7 @@ async fn test_upload_agent_rejects_start_is_400() {
                     .expect("send upload_error");
                     return;
                 }
-                other if is_ignorable_push(other) => {}
+                other if is_first_connect_noise(other) => {}
                 Some(other) => panic!("unexpected agent command: {other}"),
                 None => {}
             }

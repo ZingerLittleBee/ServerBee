@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { ServerMetricRecord } from '@/lib/api-schema'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { useMetricSeries } from './use-metric-series'
 
 function record(time: string, cpu: number): ServerMetricRecord {

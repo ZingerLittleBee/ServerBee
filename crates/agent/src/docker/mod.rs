@@ -6,21 +6,21 @@ pub mod volumes;
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use bollard::Docker;
-use serverbee_common::constants::{CAP_DOCKER, has_capability};
+use serverbee_common::constants::CAP_DOCKER;
 use serverbee_common::docker_types::DockerAction;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::Interval;
+use crate::capability_grants::CapabilityAuthority;
 
 pub struct DockerManager {
     docker: Docker,
     agent_tx: mpsc::Sender<AgentMessage>,
-    capabilities: Arc<AtomicU32>,
+    capabilities: Arc<CapabilityAuthority>,
     stats_interval: Option<Interval>,
     log_sessions: HashMap<String, JoinHandle<()>>,
     event_stream_handle: Option<JoinHandle<()>>,
@@ -32,7 +32,7 @@ impl DockerManager {
     /// Attempt to connect to the local Docker daemon.
     pub fn try_new(
         agent_tx: mpsc::Sender<AgentMessage>,
-        capabilities: Arc<AtomicU32>,
+        capabilities: Arc<CapabilityAuthority>,
     ) -> anyhow::Result<Self> {
         let docker = Docker::connect_with_local_defaults()?;
         Ok(Self {
@@ -87,8 +87,7 @@ impl DockerManager {
 
     /// Check whether the Docker capability is currently enabled.
     fn is_capable(&self) -> bool {
-        let caps = self.capabilities.load(Ordering::SeqCst);
-        has_capability(caps, CAP_DOCKER)
+        self.capabilities.has(CAP_DOCKER)
     }
 
     /// Dispatch a Docker-related server message.
@@ -434,7 +433,7 @@ mod tests {
         let manager = DockerManager {
             docker,
             agent_tx: tx,
-            capabilities: Arc::new(AtomicU32::new(caps)),
+            capabilities: CapabilityAuthority::fixed(caps),
             stats_interval: None,
             log_sessions: HashMap::new(),
             event_stream_handle: None,
@@ -476,7 +475,7 @@ mod tests {
         // Toggling the shared atomic flips the capability result without rebuilding
         let (manager, _rx) = make_manager(0);
         assert!(!manager.is_capable());
-        manager.capabilities.store(CAP_DOCKER, Ordering::SeqCst);
+        manager.capabilities.set_effective_for_test(CAP_DOCKER);
         assert!(manager.is_capable());
     }
 

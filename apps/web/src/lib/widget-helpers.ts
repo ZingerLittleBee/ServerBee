@@ -1,6 +1,6 @@
 import i18next from 'i18next'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { ServerMetricRecord, UptimeDailyEntry } from '@/lib/api-schema'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { parseDiskIoJson } from './disk-io'
 import { activeLocale, formatDateTime } from './format'
 

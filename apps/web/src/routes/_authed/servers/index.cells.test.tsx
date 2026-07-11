@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import {
   CpuCell,
   DiskCell,

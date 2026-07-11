@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { StatNumberWidget } from './stat-number'
 
 const translations: Record<string, string> = {

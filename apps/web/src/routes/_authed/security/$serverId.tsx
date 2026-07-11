@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,19 +7,14 @@ import { SecurityKpiCards } from '@/components/security/kpi-cards'
 import { SecurityTimelineChart } from '@/components/security/timeline-chart'
 import { Button } from '@/components/ui/button'
 import { useSecurityEvents } from '@/hooks/use-security-events'
-import { api } from '@/lib/api-client'
 import type { SecurityEventDto } from '@/lib/api-schema'
+import { useServerDetail } from '@/lib/server-catalog'
 
 export const Route = createFileRoute('/_authed/security/$serverId')({
   component: SecurityServerPage
 })
 
 type RangeKey = '24h' | '7d' | '30d'
-
-interface ServerLite {
-  id: string
-  name: string
-}
 
 const RANGE_HOURS: Record<RangeKey, number> = {
   '24h': 24,
@@ -41,10 +35,7 @@ function SecurityServerPage() {
   const since = useMemo(() => computeSince(range), [range])
   const eventsQuery = useSecurityEvents({ server_id: serverId, since, limit: 100 })
 
-  const { data: server } = useQuery<ServerLite>({
-    queryKey: ['server', 'lite', serverId],
-    queryFn: () => api.get<ServerLite>(`/api/servers/${serverId}`)
-  })
+  const { data: server } = useServerDetail(serverId)
 
   const events = useMemo(() => {
     const out: SecurityEventDto[] = []

@@ -1,5 +1,5 @@
 import { Component, memo, type ReactNode, useMemo } from 'react'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { parseConfig } from '@/lib/widget-helpers'
 import type {
   AlertListConfig,

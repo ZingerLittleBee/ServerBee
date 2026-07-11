@@ -4,9 +4,9 @@ import { ArrowLeft, Container, HardDrive, Network } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import { CAP_DOCKER, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
+import { useLiveServers, useServerDetail } from '@/lib/server-catalog'
 import { ContainerDetailDialog } from './components/container-detail-dialog'
 import { ContainerList } from './components/container-list'
 import { DockerEvents } from './components/docker-events'
@@ -27,28 +27,12 @@ function DockerPage() {
   const [networksOpen, setNetworksOpen] = useState(false)
   const [volumesOpen, setVolumesOpen] = useState(false)
 
-  const { data: liveServers } = useQuery<ServerMetrics[]>({
-    queryKey: ['servers'],
-    queryFn: () => [],
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false
-  })
+  const { data: liveServers } = useLiveServers()
   const liveServer = liveServers?.find((s) => s.id === serverId)
   const wsDockerAvailable = liveServer?.features?.includes('docker') ?? false
 
   // Server detail is the source of truth for capability gating and a fallback for features.
-  const { data: serverDetail } = useQuery({
-    queryKey: ['servers', serverId],
-    queryFn: () =>
-      api.get<{
-        capabilities?: number
-        effective_capabilities?: number | null
-        features?: string[]
-      }>(`/api/servers/${serverId}`),
-    enabled: serverId.length > 0,
-    staleTime: 30_000
-  })
+  const { data: serverDetail } = useServerDetail(serverId)
 
   const dockerCapabilityEnabled = getEffectiveCapabilityEnabled(
     serverDetail?.effective_capabilities,

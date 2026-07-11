@@ -1,54 +1,25 @@
-export const CAP_TERMINAL = 1
-export const CAP_EXEC = 2
-export const CAP_UPGRADE = 4
-export const CAP_PING_ICMP = 8
-export const CAP_PING_TCP = 16
-export const CAP_PING_HTTP = 32
-export const CAP_FILE = 64
-export const CAP_DOCKER = 128
-export const CAP_SECURITY_EVENTS = 256
-export const CAP_FIREWALL_BLOCK = 512
-export const CAP_IP_QUALITY = 1024
+// Bit definitions and metadata are generated from the Rust
+// ALL_CAPABILITIES table (bun run generate:capabilities); the helpers
+// below are hand-written web logic on top of them.
+import { CAP_DEFAULT, CAPABILITIES, type CapabilityRisk } from './capability-bits.generated'
 
-// Mirrors CAP_DEFAULT in crates/common/src/constants.rs (1852):
-// upgrade + ICMP/TCP/HTTP ping + security events + firewall blocklist + IP quality.
-export const CAP_DEFAULT = 1852
-
-export const CAPABILITIES = [
-  { bit: CAP_TERMINAL, key: 'terminal', labelKey: 'cap_terminal' as const, risk: 'high' as const },
-  { bit: CAP_EXEC, key: 'exec', labelKey: 'cap_exec' as const, risk: 'high' as const },
-  { bit: CAP_UPGRADE, key: 'upgrade', labelKey: 'cap_upgrade' as const, risk: 'low' as const },
-  { bit: CAP_PING_ICMP, key: 'ping_icmp', labelKey: 'cap_ping_icmp' as const, risk: 'low' as const },
-  { bit: CAP_PING_TCP, key: 'ping_tcp', labelKey: 'cap_ping_tcp' as const, risk: 'low' as const },
-  { bit: CAP_PING_HTTP, key: 'ping_http', labelKey: 'cap_ping_http' as const, risk: 'low' as const },
-  { bit: CAP_FILE, key: 'file', labelKey: 'cap_file' as const, risk: 'high' as const },
-  { bit: CAP_DOCKER, key: 'docker', labelKey: 'cap_docker' as const, risk: 'high' as const },
-  {
-    bit: CAP_SECURITY_EVENTS,
-    key: 'security_events',
-    labelKey: 'cap_security_events' as const,
-    risk: 'low' as const
-  },
-  {
-    bit: CAP_FIREWALL_BLOCK,
-    key: 'firewall_block',
-    labelKey: 'cap_firewall_block' as const,
-    // Medium, not high: the agent can only add/remove IPs in its own dedicated
-    // nft blocklist set (see crates/agent/src/firewall) — it can't exec code,
-    // read files, or flush the host firewall, and guardrails reject self-lockout
-    // ranges. Mirrors the Rust risk_level in crates/common/src/constants.rs.
-    risk: 'medium' as const
-  },
-  {
-    bit: CAP_IP_QUALITY,
-    key: 'ip_quality',
-    labelKey: 'cap_ip_quality' as const,
-    // Mirrors the Rust risk_level in crates/common/src/constants.rs.
-    risk: 'medium' as const
-  }
-] as const
-
-export type CapabilityRisk = (typeof CAPABILITIES)[number]['risk']
+// biome-ignore lint/performance/noBarrelFile: capabilities.ts stays the single public surface — the generated bit definitions re-export through it so import sites don't need to know about codegen
+export {
+  CAP_DEFAULT,
+  CAP_DOCKER,
+  CAP_EXEC,
+  CAP_FILE,
+  CAP_FIREWALL_BLOCK,
+  CAP_IP_QUALITY,
+  CAP_PING_HTTP,
+  CAP_PING_ICMP,
+  CAP_PING_TCP,
+  CAP_SECURITY_EVENTS,
+  CAP_TERMINAL,
+  CAP_UPGRADE,
+  CAPABILITIES,
+  type CapabilityRisk
+} from './capability-bits.generated'
 
 // i18n keys (servers namespace) for each risk tier's badge label. Single source
 // so the settings table and the capabilities dialog stay in sync.

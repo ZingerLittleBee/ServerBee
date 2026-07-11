@@ -29,7 +29,7 @@ import {
 import 'react-grid-layout/css/styles.css'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn } from '@/lib/utils'
 import type { DashboardWidget, SizingStrategy, WidgetTypeDefinition } from '@/lib/widget-types'
 import { WIDGET_TYPES } from '@/lib/widget-types'

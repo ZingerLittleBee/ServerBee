@@ -14,15 +14,11 @@ use tokio::sync::mpsc;
 
 use crate::router::utils::extract_client_ip;
 use crate::service::auth::AuthService;
-use crate::service::ip_quality::IpQualityService;
-use crate::service::network_probe::NetworkProbeService;
-use crate::service::ping::PingService;
 use crate::service::record::RecordService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
 use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
-use serverbee_common::types::NetworkProbeTarget as NetworkProbeTargetDto;
 
 mod docker;
 mod file_transfer;
@@ -181,63 +177,6 @@ async fn handle_agent_ws(
             .update_agent_local_capabilities(&server_id, server_capabilities as u32);
         connection_id
     };
-
-    // Send current ping tasks to the newly connected agent
-    PingService::sync_tasks_to_agent(&state.db, &state.agent_manager, &server_id).await;
-
-    // Send network probe sync to the newly connected agent
-    match NetworkProbeService::get_server_targets(&state.db, &server_id).await {
-        Ok(targets) => match NetworkProbeService::get_setting(&state.db).await {
-            Ok(setting) => {
-                let target_dtos: Vec<NetworkProbeTargetDto> = targets
-                    .into_iter()
-                    .map(|t| NetworkProbeTargetDto {
-                        target_id: t.id,
-                        name: t.name,
-                        target: t.target,
-                        probe_type: t.probe_type,
-                    })
-                    .collect();
-                if let Some(tx) = state.agent_manager.get_sender(&server_id) {
-                    let _ = tx
-                        .send(ServerMessage::NetworkProbeSync {
-                            targets: target_dtos,
-                            interval: setting.interval,
-                            packet_count: setting.packet_count,
-                        })
-                        .await;
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to get network probe setting for {server_id}: {e}");
-            }
-        },
-        Err(e) => {
-            tracing::error!("Failed to get network probe targets for {server_id}: {e}");
-        }
-    }
-
-    // Send IP quality sync to the newly connected agent (mirrors NetworkProbeSync)
-    match IpQualityService::enabled_service_defs(&state.db).await {
-        Ok(services) => match IpQualityService::get_setting(&state.db).await {
-            Ok(setting) => {
-                if let Some(tx) = state.agent_manager.get_sender(&server_id) {
-                    let _ = tx
-                        .send(ServerMessage::IpQualitySync {
-                            services,
-                            interval_hours: setting.check_interval_hours as u32,
-                        })
-                        .await;
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to get IP quality setting for {server_id}: {e}");
-            }
-        },
-        Err(e) => {
-            tracing::error!("Failed to get IP quality service defs for {server_id}: {e}");
-        }
-    }
 
     tracing::info!("Agent {server_id} connected from {remote_addr}");
 

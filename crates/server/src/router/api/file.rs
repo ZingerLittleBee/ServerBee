@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
+use crate::service::agent_manager::AgentManager;
 use crate::service::audit::AuditService;
 use crate::service::capability_gate::require_capability_online;
 use crate::service::file_transfer::{TransferDirection, TransferInfo};
@@ -911,7 +912,7 @@ async fn upload_file(
     })?;
 
     // Register pending request for the initial ack
-    let init_ack_key = format!("upload-ack-{transfer_id}");
+    let init_ack_key = AgentManager::upload_ack_key(&transfer_id);
     let init_ack_rx = state
         .agent_manager
         .register_pending_request(init_ack_key.clone());
@@ -988,7 +989,7 @@ async fn upload_file(
         let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
 
         // Register pending request for the ack (one at a time since upload is sequential)
-        let ack_msg_id = format!("upload-ack-{transfer_id}");
+        let ack_msg_id = AgentManager::upload_ack_key(&transfer_id);
         let ack_rx = state
             .agent_manager
             .register_pending_request(ack_msg_id.clone());
@@ -1059,7 +1060,7 @@ async fn upload_file(
         .map_err(|_| AppError::Internal("Failed to send upload end".into()))?;
 
     // Wait for upload complete or error
-    let complete_msg_id = format!("upload-complete-{transfer_id}");
+    let complete_msg_id = AgentManager::upload_complete_key(&transfer_id);
     let complete_rx = state
         .agent_manager
         .register_pending_request(complete_msg_id);

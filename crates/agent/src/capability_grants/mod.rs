@@ -1,8 +1,8 @@
+pub mod authority;
 pub mod cli;
 pub mod store;
-pub mod supervisor;
 
-pub use store::CapabilityGrantStore;
+pub use authority::CapabilityAuthority;
 
 /// Parse a human duration (`90s`, `30m`, `2h`, `1d`) into seconds. Must be a
 /// positive integer followed by a single unit char. Footgun-guard only.

@@ -147,17 +147,9 @@ impl RecordService {
         to: DateTime<Utc>,
         interval: &str,
     ) -> Result<QueryHistoryResult, AppError> {
-        let use_hourly = match interval {
-            "raw" => false,
-            "hourly" => true,
-            _ => {
-                // "auto" mode
-                let duration = to - from;
-                duration > Duration::hours(24)
-            }
-        };
+        let table = super::rollup::select_history_table(interval, from, to);
 
-        if use_hourly {
+        if table == super::rollup::HistoryTable::Hourly {
             let records = record_hourly::Entity::find()
                 .filter(record_hourly::Column::ServerId.eq(server_id))
                 .filter(record_hourly::Column::Time.gte(from))
@@ -176,6 +168,37 @@ impl RecordService {
                 .await?;
             Ok(QueryHistoryResult::Raw(records))
         }
+    }
+
+    /// Raw records for a server within the trailing `window`, newest first.
+    /// The shared read path for alert evaluation: consumers sampling "recent
+    /// metrics" go through here so a storage change cannot silently detach
+    /// them from what the recorder writes.
+    pub async fn query_recent(
+        db: &DatabaseConnection,
+        server_id: &str,
+        window: Duration,
+    ) -> Result<Vec<record::Model>, AppError> {
+        let since = Utc::now() - window;
+        Ok(record::Entity::find()
+            .filter(record::Column::ServerId.eq(server_id))
+            .filter(record::Column::Time.gte(since))
+            .order_by_desc(record::Column::Time)
+            .all(db)
+            .await?)
+    }
+
+    /// Time of the most recent raw record for a server, if any.
+    pub async fn latest_record_time(
+        db: &DatabaseConnection,
+        server_id: &str,
+    ) -> Result<Option<DateTime<Utc>>, AppError> {
+        Ok(record::Entity::find()
+            .filter(record::Column::ServerId.eq(server_id))
+            .order_by_desc(record::Column::Time)
+            .one(db)
+            .await?
+            .map(|r| r.time))
     }
 
     /// Query GPU history records for a server within a time range.
@@ -211,51 +234,10 @@ impl RecordService {
         let hour_start_str = hour_start.to_rfc3339_opts(SecondsFormat::AutoSi, false);
         let hour_end_str = hour_end.to_rfc3339_opts(SecondsFormat::AutoSi, false);
 
-        // SQL aggregation for numeric columns with upsert
-        let sql = "INSERT INTO records_hourly \
-            (server_id, time, cpu, mem_used, swap_used, disk_used, \
-             net_in_speed, net_out_speed, net_in_transfer, net_out_transfer, \
-             load1, load5, load15, tcp_conn, udp_conn, process_count, \
-             temperature, gpu_usage) \
-            SELECT \
-                server_id, \
-                ?, \
-                AVG(cpu), \
-                CAST(AVG(mem_used) AS INTEGER), \
-                CAST(AVG(swap_used) AS INTEGER), \
-                CAST(AVG(disk_used) AS INTEGER), \
-                CAST(AVG(net_in_speed) AS INTEGER), \
-                CAST(AVG(net_out_speed) AS INTEGER), \
-                CAST(MAX(net_in_transfer) AS INTEGER), \
-                CAST(MAX(net_out_transfer) AS INTEGER), \
-                AVG(load1), \
-                AVG(load5), \
-                AVG(load15), \
-                CAST(AVG(tcp_conn) AS INTEGER), \
-                CAST(AVG(udp_conn) AS INTEGER), \
-                CAST(AVG(process_count) AS INTEGER), \
-                AVG(temperature), \
-                AVG(gpu_usage) \
-            FROM records \
-            WHERE time >= ? AND time < ? \
-            GROUP BY server_id \
-            ON CONFLICT(server_id, time) DO UPDATE SET \
-                cpu = excluded.cpu, \
-                mem_used = excluded.mem_used, \
-                swap_used = excluded.swap_used, \
-                disk_used = excluded.disk_used, \
-                net_in_speed = excluded.net_in_speed, \
-                net_out_speed = excluded.net_out_speed, \
-                net_in_transfer = excluded.net_in_transfer, \
-                net_out_transfer = excluded.net_out_transfer, \
-                load1 = excluded.load1, \
-                load5 = excluded.load5, \
-                load15 = excluded.load15, \
-                tcp_conn = excluded.tcp_conn, \
-                udp_conn = excluded.udp_conn, \
-                process_count = excluded.process_count, \
-                temperature = excluded.temperature, \
-                gpu_usage = excluded.gpu_usage";
+        // Scalar columns roll up in SQL; the statement is generated from the
+        // rollup-policy descriptor so column list and aggregation choices have
+        // a single owner (see service::rollup).
+        let sql = super::rollup::aggregate_hourly_sql();
 
         let result = db
             .execute(Statement::from_sql_and_values(
@@ -350,6 +332,18 @@ impl RecordService {
 pub enum QueryHistoryResult {
     Raw(Vec<record::Model>),
     Hourly(Vec<record_hourly::Model>),
+}
+
+impl QueryHistoryResult {
+    /// Rows in the raw-row shape regardless of resolution (the two tables
+    /// share one column set). For consumers that don't care which table
+    /// served the query.
+    pub fn into_rows(self) -> Vec<record::Model> {
+        match self {
+            QueryHistoryResult::Raw(rows) => rows,
+            QueryHistoryResult::Hourly(rows) => rows.into_iter().map(Into::into).collect(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1285,49 +1279,6 @@ mod tests {
         // Verify the Hourly variant can be constructed
         let hourly: QueryHistoryResult = QueryHistoryResult::Hourly(vec![]);
         assert!(matches!(hourly, QueryHistoryResult::Hourly(v) if v.is_empty()));
-    }
-
-    /// The interval auto-selection logic: <=24h => raw, >24h => hourly.
-    /// Extracted from `query_history` so we can verify it without DB.
-    #[test]
-    fn test_interval_selection_logic() {
-        let now = Utc::now();
-
-        // Within 24 hours => should use raw
-        let from_recent = now - Duration::hours(12);
-        let duration_recent = now - from_recent;
-        let use_hourly_recent = duration_recent > Duration::hours(24);
-        assert!(!use_hourly_recent, "12h range should select raw");
-
-        // Exactly 24 hours => should use raw (not >24h)
-        let from_exact = now - Duration::hours(24);
-        let duration_exact = now - from_exact;
-        let use_hourly_exact = duration_exact > Duration::hours(24);
-        assert!(
-            !use_hourly_exact,
-            "24h range should select raw (not strictly greater)"
-        );
-
-        // More than 24 hours => should use hourly
-        let from_old = now - Duration::hours(48);
-        let duration_old = now - from_old;
-        let use_hourly_old = duration_old > Duration::hours(24);
-        assert!(use_hourly_old, "48h range should select hourly");
-
-        // Explicit interval overrides
-        let explicit_raw = match "raw" {
-            "raw" => false,
-            "hourly" => true,
-            _ => unreachable!(),
-        };
-        assert!(!explicit_raw, "explicit 'raw' should use raw");
-
-        let explicit_hourly = match "hourly" {
-            "raw" => false,
-            "hourly" => true,
-            _ => unreachable!(),
-        };
-        assert!(explicit_hourly, "explicit 'hourly' should use hourly");
     }
 
     /// Verify the retention cutoff calculation used in cleanup_expired.
