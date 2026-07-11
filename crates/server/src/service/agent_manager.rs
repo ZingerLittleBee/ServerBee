@@ -457,6 +457,21 @@ impl AgentManager {
         let _ = self.browser_tx.send(msg);
     }
 
+    /// Pending-request key for a streaming upload's ack exchanges. Uploads
+    /// cannot use the one-shot `request()` seam (init-ack, per-chunk ack and
+    /// complete are separate exchanges over one transfer id), so the HTTP
+    /// producer and the WS consumer must form identical keys — the format
+    /// lives here and nowhere else.
+    pub fn upload_ack_key(transfer_id: &str) -> String {
+        format!("upload-ack-{transfer_id}")
+    }
+
+    /// Pending-request key for a streaming upload's completion. See
+    /// [`Self::upload_ack_key`].
+    pub fn upload_complete_key(transfer_id: &str) -> String {
+        format!("upload-complete-{transfer_id}")
+    }
+
     /// Register a pending request for HTTP→WS relay with a custom TTL.
     /// Returns a oneshot receiver that will receive the agent's response.
     pub fn register_pending_request_with_ttl(
