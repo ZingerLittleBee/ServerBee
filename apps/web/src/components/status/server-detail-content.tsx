@@ -25,18 +25,19 @@ import type {
   UptimeDailyEntry
 } from '@/lib/api-schema'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
-import { type ServerMetrics, useLiveServers } from '@/lib/server-catalog'
+import {
+  buildGpuChartRows,
+  deriveNetworkLabels,
+  type GpuRecordAggregated,
+  makeTickFormatter,
+  makeTooltipFormatter,
+  toMetricChartRow,
+  xAxisStride
+} from '@/lib/metric-chart-model'
+import { useLiveServers } from '@/lib/server-catalog'
 import { type RangeKey, rangesForVariant, resolveRange, type TimeRange } from '@/lib/server-detail-nav'
 import { cn, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
-
-interface GpuRecordAggregated {
-  gpu_usage_avg: number
-  mem_total_avg: number
-  mem_used_avg: number
-  temperature_avg: number
-  time: string
-}
 
 export interface ServerDetailContentProps {
   /** Currently selected detail tab. When provided (admin), the tabs become
@@ -70,40 +71,6 @@ function buildIsoWindow(hours: number) {
   return {
     from: new Date(now.getTime() - hours * 3600 * 1000).toISOString(),
     to: now.toISOString()
-  }
-}
-
-function adminRecordToChartRow(r: ServerMetricRecord, memTotal: number, diskTotal: number) {
-  return {
-    timestamp: r.time,
-    cpu: r.cpu,
-    memory_pct: memTotal ? (r.mem_used / memTotal) * 100 : 0,
-    disk_pct: diskTotal ? (r.disk_used / diskTotal) * 100 : 0,
-    net_in_speed: r.net_in_speed,
-    net_out_speed: r.net_out_speed,
-    net_in_transfer: r.net_in_transfer,
-    net_out_transfer: r.net_out_transfer,
-    load1: r.load1,
-    load5: r.load5,
-    load15: r.load15,
-    temperature: r.temperature
-  }
-}
-
-function publicPointToChartRow(p: PublicMetricsPoint, memTotal: number, diskTotal: number) {
-  return {
-    timestamp: p.time,
-    cpu: p.cpu,
-    memory_pct: memTotal ? (p.mem_used / memTotal) * 100 : 0,
-    disk_pct: diskTotal ? (p.disk_used / diskTotal) * 100 : 0,
-    net_in_speed: p.net_in_speed,
-    net_out_speed: p.net_out_speed,
-    net_in_transfer: p.net_in_transfer,
-    net_out_transfer: p.net_out_transfer,
-    load1: p.load1,
-    load5: p.load5,
-    load15: p.load15,
-    temperature: p.temperature
   }
 }
 
@@ -149,45 +116,6 @@ function useAdminGpuRecords(serverId: string, range: TimeRange, isAdminVariant: 
 function useLiveServerMetrics(serverId: string, isAdminVariant: boolean) {
   const { data: liveServers } = useLiveServers({ enabled: isAdminVariant })
   return liveServers?.find((s) => s.id === serverId)
-}
-
-interface NetworkLabels {
-  netInLabel: string
-  netOutLabel: string
-  netTotalLabel: string | null
-}
-
-function deriveNetworkLabels(
-  isAdminVariant: boolean,
-  liveData: ServerMetrics | undefined,
-  publicMetricsSnapshot: PublicServerDetail['metrics'] | null
-): NetworkLabels {
-  if (isAdminVariant) {
-    if (!liveData) {
-      return { netInLabel: '—', netOutLabel: '—', netTotalLabel: '—' }
-    }
-    const inBytes = liveData.net_in_transfer ?? 0
-    const outBytes = liveData.net_out_transfer ?? 0
-    return {
-      netInLabel: formatBytes(inBytes),
-      netOutLabel: formatBytes(outBytes),
-      netTotalLabel: formatBytes(inBytes + outBytes)
-    }
-  }
-  if (!publicMetricsSnapshot) {
-    return { netInLabel: '—', netOutLabel: '—', netTotalLabel: null }
-  }
-  // Use cumulative transfer (not the instantaneous *_speed rate) so the public
-  // bar matches the admin bar: the `detail_network_in/out/total` labels describe a
-  // total amount transferred, and formatBytes renders bytes — feeding a rate here
-  // mislabelled "1.2 MB/s" as a cumulative "1.2 MB".
-  const inBytes = publicMetricsSnapshot.net_in_transfer
-  const outBytes = publicMetricsSnapshot.net_out_transfer
-  return {
-    netInLabel: formatBytes(inBytes),
-    netOutLabel: formatBytes(outBytes),
-    netTotalLabel: formatBytes(inBytes + outBytes)
-  }
 }
 
 export function ServerDetailContent(props: ServerDetailContentProps) {
@@ -411,79 +339,22 @@ function useAggregatedChartData(args: {
       if (isRealtime) {
         return realtimeData as Record<string, unknown>[]
       }
-      return (adminRecords ?? []).map((r) => adminRecordToChartRow(r, memTotal, diskTotal))
+      return (adminRecords ?? []).map((r) => toMetricChartRow(r, memTotal, diskTotal))
     }
-    return (publicMetrics ?? []).map((p) => publicPointToChartRow(p, memTotal, diskTotal))
+    return (publicMetrics ?? []).map((p) => toMetricChartRow(p, memTotal, diskTotal))
   }, [adminRecords, diskTotal, isAdminVariant, isRealtime, memTotal, publicMetrics, realtimeData])
 }
 
-function formatHourMinute(time: string) {
-  const d = new Date(time)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
 function useChartTickFormatter(isRealtime: boolean, range: TimeRange, chartData: Record<string, unknown>[]) {
-  return useMemo<((time: string) => string) | undefined>(() => {
-    if (isRealtime) {
-      const realtimeLabels = new Map<string, string>()
-      let previousLabel = ''
-      for (const point of chartData) {
-        if (typeof point.timestamp !== 'string') {
-          continue
-        }
-        const label = formatHourMinute(point.timestamp)
-        realtimeLabels.set(point.timestamp, label === previousLabel ? '' : label)
-        previousLabel = label
-      }
-      return (time: string) => {
-        return realtimeLabels.get(time) ?? formatHourMinute(time)
-      }
-    }
-    if (range.hours >= 168) {
-      return (time: string) => {
-        const d = new Date(time)
-        const mm = String(d.getMonth() + 1).padStart(2, '0')
-        const dd = String(d.getDate()).padStart(2, '0')
-        return `${mm}-${dd}`
-      }
-    }
-    return undefined
-  }, [isRealtime, chartData, range])
+  return useMemo(() => makeTickFormatter(isRealtime, range.hours, chartData), [isRealtime, chartData, range])
 }
 
-/** Recharts X-axis `interval` (stride = N+1 ticks). Returns a numeric stride for
- * long ranges so the auto-generated tick labels do not overlap on narrow viewports.
- * 7d/30d hourly buckets produce 168 / 720 samples — labelling every one collapses
- * into illegible overlap, so we target roughly 8 evenly spaced labels. */
 function useXAxisInterval(isRealtime: boolean, range: TimeRange, dataLength: number) {
-  return useMemo<number | undefined>(() => {
-    if (isRealtime) {
-      return 0
-    }
-    if (range.hours >= 168 && dataLength > 0) {
-      const targetLabels = 8
-      return Math.max(0, Math.floor(dataLength / targetLabels) - 1)
-    }
-    return undefined
-  }, [isRealtime, range, dataLength])
+  return useMemo(() => xAxisStride(isRealtime, range.hours, dataLength), [isRealtime, range, dataLength])
 }
 
 function useTooltipFormatter(isRealtime: boolean, range: TimeRange) {
-  return useMemo<((time: string) => string) | undefined>(() => {
-    if (isRealtime) {
-      return (time: string) => {
-        const d = new Date(time)
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-      }
-    }
-    if (range.hours >= 168) {
-      return (time: string) => {
-        const d = new Date(time)
-        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-      }
-    }
-    return undefined
-  }, [isRealtime, range])
+  return useMemo(() => makeTooltipFormatter(isRealtime, range.hours), [isRealtime, range])
 }
 
 function useGpuChartData(
@@ -491,23 +362,10 @@ function useGpuChartData(
   gpuRecords: GpuRecordAggregated[] | undefined,
   publicMetrics: PublicMetricsPoint[] | undefined
 ) {
-  return useMemo<Record<string, unknown>[]>(() => {
-    if (isAdminVariant) {
-      if (!gpuRecords || gpuRecords.length === 0) {
-        return []
-      }
-      return gpuRecords.map((r) => ({
-        timestamp: r.time,
-        gpu_usage: r.gpu_usage_avg,
-        gpu_temp: r.temperature_avg,
-        gpu_mem_pct: r.mem_total_avg > 0 ? (r.mem_used_avg / r.mem_total_avg) * 100 : 0
-      }))
-    }
-    if (!publicMetrics) {
-      return []
-    }
-    return publicMetrics.filter((p) => p.gpu_usage != null).map((p) => ({ timestamp: p.time, gpu_usage: p.gpu_usage }))
-  }, [isAdminVariant, gpuRecords, publicMetrics])
+  return useMemo(
+    () => buildGpuChartRows(isAdminVariant, gpuRecords, publicMetrics),
+    [isAdminVariant, gpuRecords, publicMetrics]
+  )
 }
 
 interface AvailableMetrics {

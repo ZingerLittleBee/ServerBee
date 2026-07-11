@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
+import { pct } from '@/lib/metric-chart-model'
 import { readLiveServers, type ServerMetrics, subscribeLiveServers } from '@/lib/server-catalog'
 
 const MAX_BUFFER_SIZE = 200
@@ -47,11 +48,11 @@ export interface RealtimeDataPoint {
 export function toRealtimeDataPoint(metrics: ServerMetrics): RealtimeDataPoint {
   return {
     cpu: metrics.cpu,
-    disk_pct: metrics.disk_total > 0 ? (metrics.disk_used / metrics.disk_total) * 100 : 0,
+    disk_pct: pct(metrics.disk_used, metrics.disk_total),
     load1: metrics.load1,
     load5: metrics.load5,
     load15: metrics.load15,
-    memory_pct: metrics.mem_total > 0 ? (metrics.mem_used / metrics.mem_total) * 100 : 0,
+    memory_pct: pct(metrics.mem_used, metrics.mem_total),
     net_in_speed: metrics.net_in_speed,
     net_in_transfer: metrics.net_in_transfer,
     net_out_speed: metrics.net_out_speed,
