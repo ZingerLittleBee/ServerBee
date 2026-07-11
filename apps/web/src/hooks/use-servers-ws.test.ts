@@ -96,7 +96,7 @@ describe('handleWsMessage upgrade messages', () => {
 describe('handleWsMessage network probe updates', () => {
   it('dispatches validated network_probe_update frames to subscribers', () => {
     const queryClient = new QueryClient()
-    const received: Array<Record<string, unknown>> = []
+    const received: Record<string, unknown>[] = []
     const unsubscribe = subscribeBrowserMessage('network_probe_update', (msg) => received.push(msg))
 
     handleWsMessage(
@@ -115,7 +115,7 @@ describe('handleWsMessage network probe updates', () => {
 
   it('drops malformed network_probe_update frames before dispatch', () => {
     const queryClient = new QueryClient()
-    const received: Array<Record<string, unknown>> = []
+    const received: Record<string, unknown>[] = []
     const unsubscribe = subscribeBrowserMessage('network_probe_update', (msg) => received.push(msg))
 
     handleWsMessage({ results: [null], server_id: 's1', type: 'network_probe_update' }, queryClient)

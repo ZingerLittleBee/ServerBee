@@ -25,6 +25,7 @@ export interface MetricSeriesPoint {
   time: string
 }
 
+// biome-ignore lint/style/useConsistentTypeDefinitions: interfaces lack an implicit index signature, and chart rows must be assignable to the Record<string, unknown>[] the chart components accept
 export type MetricChartRow = {
   cpu: number
   disk_pct: number

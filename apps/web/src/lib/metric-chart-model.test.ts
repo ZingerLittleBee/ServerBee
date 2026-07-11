@@ -12,6 +12,11 @@ import {
   xAxisStride
 } from './metric-chart-model'
 
+const HH_MM = /^\d{2}:\d{2}$/
+const MM_DD = /^\d{2}-\d{2}$/
+const HH_MM_SS = /^\d{2}:\d{2}:\d{2}$/
+const MM_DD_HH_MM = /^\d{2}-\d{2} \d{2}:\d{2}$/
+
 function makePoint(overrides: Partial<MetricSeriesPoint> = {}): MetricSeriesPoint {
   return {
     cpu: 42,
@@ -80,9 +85,9 @@ describe('buildRealtimeTickLabels', () => {
       { timestamp: '2026-07-11T10:00:35Z' },
       { timestamp: '2026-07-11T10:01:05Z' }
     ])
-    expect(labels.get('2026-07-11T10:00:05Z')).toMatch(/^\d{2}:\d{2}$/)
+    expect(labels.get('2026-07-11T10:00:05Z')).toMatch(HH_MM)
     expect(labels.get('2026-07-11T10:00:35Z')).toBe('')
-    expect(labels.get('2026-07-11T10:01:05Z')).toMatch(/^\d{2}:\d{2}$/)
+    expect(labels.get('2026-07-11T10:01:05Z')).toMatch(HH_MM)
   })
 
   it('skips rows without a string timestamp', () => {
@@ -94,12 +99,12 @@ describe('buildRealtimeTickLabels', () => {
 describe('makeTickFormatter', () => {
   it('falls back to HH:MM for unknown realtime timestamps', () => {
     const format = makeTickFormatter(true, 0, [])
-    expect(format?.('2026-07-11T10:00:00Z')).toMatch(/^\d{2}:\d{2}$/)
+    expect(format?.('2026-07-11T10:00:00Z')).toMatch(HH_MM)
   })
 
   it('uses MM-DD labels for ranges of 7 days and longer', () => {
     const format = makeTickFormatter(false, 168, [])
-    expect(format?.('2026-07-11T10:00:00Z')).toMatch(/^\d{2}-\d{2}$/)
+    expect(format?.('2026-07-11T10:00:00Z')).toMatch(MM_DD)
   })
 
   it('leaves short historical ranges to the chart default', () => {
@@ -110,12 +115,12 @@ describe('makeTickFormatter', () => {
 describe('makeTooltipFormatter', () => {
   it('shows seconds in realtime mode', () => {
     const format = makeTooltipFormatter(true, 0)
-    expect(format?.('2026-07-11T10:00:07Z')).toMatch(/^\d{2}:\d{2}:\d{2}$/)
+    expect(format?.('2026-07-11T10:00:07Z')).toMatch(HH_MM_SS)
   })
 
   it('shows date and time for long ranges', () => {
     const format = makeTooltipFormatter(false, 720)
-    expect(format?.('2026-07-11T10:00:00Z')).toMatch(/^\d{2}-\d{2} \d{2}:\d{2}$/)
+    expect(format?.('2026-07-11T10:00:00Z')).toMatch(MM_DD_HH_MM)
   })
 
   it('leaves short historical ranges to the chart default', () => {
