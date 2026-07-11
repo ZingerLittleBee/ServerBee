@@ -354,4 +354,3 @@ async fn send_browser_message(
     let text = serde_json::to_string(msg).map_err(axum::Error::new)?;
     sink.send(Message::Text(text.into())).await
 }
-

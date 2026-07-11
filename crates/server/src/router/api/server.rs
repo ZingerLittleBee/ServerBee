@@ -29,6 +29,7 @@ use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
 use crate::service::server_tag as server_tag_service;
+use crate::service::task_scheduler;
 use crate::service::upgrade_tracker::{StartUpgradeJobError, UpgradeLookup};
 use crate::state::AppState;
 use serverbee_common::protocol::ServerMessage;
@@ -1235,6 +1236,7 @@ async fn cleanup_orphaned_servers(
 ) -> Result<Json<ApiResponse<CleanupResponse>>, AppError> {
     use crate::entity::*;
 
+    let mut task_cleanup = task_scheduler::begin_server_cleanup(&state).await;
     let txn = state.db.begin().await?;
 
     let candidates = server::Entity::find()
@@ -1256,7 +1258,11 @@ async fn cleanup_orphaned_servers(
         .exec(&txn)
         .await?;
 
-    // Tables with server_ids_json — per-table rules
+    task_cleanup
+        .remove_server_references(&txn, &orphan_ids)
+        .await?;
+
+    // Remaining tables with server_ids_json — per-table rules
     cleanup_json_array_tables(&txn, &orphan_ids).await?;
 
     let deleted = server::Entity::delete_many()
@@ -1265,6 +1271,7 @@ async fn cleanup_orphaned_servers(
         .await?;
 
     txn.commit().await?;
+    task_cleanup.apply_after_commit(&state).await;
 
     tracing::info!("Cleaned up {} orphaned servers", deleted.rows_affected);
     ok(CleanupResponse {
@@ -1285,19 +1292,6 @@ async fn cleanup_json_array_tables(
                 ping_task::Entity::delete_by_id(&task.id).exec(txn).await?;
             } else {
                 let mut active: ping_task::ActiveModel = task.into();
-                active.server_ids_json = Set(new_json);
-                active.update(txn).await?;
-            }
-        }
-    }
-
-    // tasks: delete if empty
-    for t in task::Entity::find().all(txn).await? {
-        if let Some(new_json) = remove_ids_from_json(&t.server_ids_json, orphan_ids) {
-            if new_json == "[]" {
-                task::Entity::delete_by_id(&t.id).exec(txn).await?;
-            } else {
-                let mut active: task::ActiveModel = t.into();
                 active.server_ids_json = Set(new_json);
                 active.update(txn).await?;
             }
