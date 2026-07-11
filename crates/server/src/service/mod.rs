@@ -30,6 +30,7 @@ pub mod oauth;
 pub mod ping;
 pub mod public_status;
 pub mod record;
+pub mod rollup;
 pub mod security;
 pub mod server;
 pub mod server_tag;

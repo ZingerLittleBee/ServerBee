@@ -211,51 +211,10 @@ impl RecordService {
         let hour_start_str = hour_start.to_rfc3339_opts(SecondsFormat::AutoSi, false);
         let hour_end_str = hour_end.to_rfc3339_opts(SecondsFormat::AutoSi, false);
 
-        // SQL aggregation for numeric columns with upsert
-        let sql = "INSERT INTO records_hourly \
-            (server_id, time, cpu, mem_used, swap_used, disk_used, \
-             net_in_speed, net_out_speed, net_in_transfer, net_out_transfer, \
-             load1, load5, load15, tcp_conn, udp_conn, process_count, \
-             temperature, gpu_usage) \
-            SELECT \
-                server_id, \
-                ?, \
-                AVG(cpu), \
-                CAST(AVG(mem_used) AS INTEGER), \
-                CAST(AVG(swap_used) AS INTEGER), \
-                CAST(AVG(disk_used) AS INTEGER), \
-                CAST(AVG(net_in_speed) AS INTEGER), \
-                CAST(AVG(net_out_speed) AS INTEGER), \
-                CAST(MAX(net_in_transfer) AS INTEGER), \
-                CAST(MAX(net_out_transfer) AS INTEGER), \
-                AVG(load1), \
-                AVG(load5), \
-                AVG(load15), \
-                CAST(AVG(tcp_conn) AS INTEGER), \
-                CAST(AVG(udp_conn) AS INTEGER), \
-                CAST(AVG(process_count) AS INTEGER), \
-                AVG(temperature), \
-                AVG(gpu_usage) \
-            FROM records \
-            WHERE time >= ? AND time < ? \
-            GROUP BY server_id \
-            ON CONFLICT(server_id, time) DO UPDATE SET \
-                cpu = excluded.cpu, \
-                mem_used = excluded.mem_used, \
-                swap_used = excluded.swap_used, \
-                disk_used = excluded.disk_used, \
-                net_in_speed = excluded.net_in_speed, \
-                net_out_speed = excluded.net_out_speed, \
-                net_in_transfer = excluded.net_in_transfer, \
-                net_out_transfer = excluded.net_out_transfer, \
-                load1 = excluded.load1, \
-                load5 = excluded.load5, \
-                load15 = excluded.load15, \
-                tcp_conn = excluded.tcp_conn, \
-                udp_conn = excluded.udp_conn, \
-                process_count = excluded.process_count, \
-                temperature = excluded.temperature, \
-                gpu_usage = excluded.gpu_usage";
+        // Scalar columns roll up in SQL; the statement is generated from the
+        // rollup-policy descriptor so column list and aggregation choices have
+        // a single owner (see service::rollup).
+        let sql = super::rollup::aggregate_hourly_sql();
 
         let result = db
             .execute(Statement::from_sql_and_values(
