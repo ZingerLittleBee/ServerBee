@@ -1,3 +1,4 @@
+mod docker_subsystem;
 mod file_ops;
 mod runtime;
 mod wire;
@@ -16,7 +17,8 @@ use tokio::time::interval;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-use runtime::{ConnectionRuntime, DockerTick};
+use docker_subsystem::DockerTick;
+use runtime::ConnectionRuntime;
 use wire::send_msg;
 
 use crate::capability_grants::CapabilityAuthority;
@@ -188,8 +190,8 @@ impl Reporter {
             Arc::clone(&capabilities),
             Arc::clone(&self.firewall_manager),
         );
-        runtime.probe_docker().await;
-        let features = runtime.features();
+        runtime.docker.probe().await;
+        let features = runtime.docker.features();
 
         // Send SystemInfo
         let mut collector = Collector::new(
@@ -419,10 +421,13 @@ impl Reporter {
                 }
                 // Docker housekeeping: stats polling while the daemon is
                 // connected, reconnect retry while it is absent.
-                tick = runtime.docker_tick() => {
-                    match tick {
-                        DockerTick::PollStats => runtime.poll_docker_stats(&mut write).await?,
-                        DockerTick::Retry => runtime.retry_docker(&mut write).await?,
+                tick = runtime.docker.tick() => {
+                    let reply = match tick {
+                        DockerTick::PollStats => runtime.docker.poll_stats().await,
+                        DockerTick::Retry => runtime.docker.retry().await,
+                    };
+                    if let Some(msg) = reply {
+                        send_msg(&mut write, &msg).await?;
                     }
                 }
                 // IP change detection — spawned off the WS hot path so a

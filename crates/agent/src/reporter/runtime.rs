@@ -1,11 +1,12 @@
 //! Connection-scoped command runtime.
 //!
-//! One WebSocket connection owns one [`ConnectionRuntime`]: every manager,
-//! outbound channel sender, and piece of Docker lifecycle state that executing
-//! a `ServerMessage` can touch lives here, so the dispatcher is a method on
-//! the state it drives instead of a free function threading a dozen borrows.
-//! `mod.rs` keeps transport concerns only (connect/backoff, the select! loop,
-//! report and IP timers); file replies stay in `file_ops`, framing in `wire`.
+//! One WebSocket connection owns one [`ConnectionRuntime`]: every manager
+//! and outbound channel sender that executing a `ServerMessage` can touch
+//! lives here, so the dispatcher is a method on the state it drives instead
+//! of a free function threading a dozen borrows. `mod.rs` keeps transport
+//! concerns only (connect/backoff, the select! loop, report and IP timers);
+//! file replies stay in `file_ops`, framing in `wire`, and the Docker
+//! availability state machine in `docker_subsystem`.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,11 +19,11 @@ use serverbee_common::types::{NetworkProbeResultData, PingResult};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+use super::docker_subsystem::DockerSubsystem;
 use super::wire::send_msg;
 use super::{emit_upgrade_failure, file_ops, perform_upgrade};
 use crate::capability_grants::CapabilityAuthority;
 use crate::config::{AgentConfig, UpgradeConfig};
-use crate::docker::DockerManager;
 use crate::file_manager::{FileEvent, FileManager};
 use crate::firewall::FirewallManager;
 use crate::ip_quality::{RunResult, UnlockChecker};
@@ -30,18 +31,9 @@ use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
 use crate::terminal::{TerminalEvent, TerminalManager};
 
-const DOCKER_RETRY_SECS: u64 = 30;
-
 /// Process-wide single-flight latch for binary self-upgrade. A duplicate
 /// Upgrade command must be rejected without disturbing the running one.
 static UPGRADE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
-
-/// Which Docker housekeeping event [`ConnectionRuntime::docker_tick`] resolved
-/// to: poll container stats, or retry the daemon connection.
-pub(super) enum DockerTick {
-    PollStats,
-    Retry,
-}
 
 /// Receiver halves for every event stream the runtime's managers emit. The
 /// select! loop in `mod.rs` drains these; the matching senders live inside
@@ -66,11 +58,7 @@ pub(super) struct ConnectionRuntime {
     pub(super) unlock_checker: UnlockChecker,
     pub(super) cmd_result_tx: mpsc::Sender<AgentMessage>,
     file_tx: mpsc::Sender<FileEvent>,
-    docker_tx: mpsc::Sender<AgentMessage>,
-    docker_manager: Option<DockerManager>,
-    docker_available: bool,
-    docker_stats_interval: Option<tokio::time::Interval>,
-    docker_retry_interval: tokio::time::Interval,
+    pub(super) docker: DockerSubsystem,
     upgrade_cfg: UpgradeConfig,
     firewall_manager: Arc<FirewallManager>,
 }
@@ -100,14 +88,9 @@ impl ConnectionRuntime {
         let file_manager = FileManager::new(config.file.clone(), Arc::clone(&capabilities));
 
         let (docker_tx, docker_rx) = mpsc::channel::<AgentMessage>(256);
+        let docker = DockerSubsystem::new(docker_tx, Arc::clone(&capabilities));
 
         let (cmd_result_tx, cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
-
-        // First retry fires one full period out — connection start already
-        // probes explicitly, so there is no immediate tick to consume.
-        let retry_period = Duration::from_secs(DOCKER_RETRY_SECS);
-        let docker_retry_interval =
-            tokio::time::interval_at(tokio::time::Instant::now() + retry_period, retry_period);
 
         let runtime = Self {
             capabilities,
@@ -118,11 +101,7 @@ impl ConnectionRuntime {
             unlock_checker,
             cmd_result_tx,
             file_tx,
-            docker_tx,
-            docker_manager: None,
-            docker_available: false,
-            docker_stats_interval: None,
-            docker_retry_interval,
+            docker,
             upgrade_cfg: config.upgrade.clone(),
             firewall_manager,
         };
@@ -138,114 +117,6 @@ impl ConnectionRuntime {
         (runtime, events)
     }
 
-    /// Feature list advertised in `SystemInfo`, derived from what is live.
-    pub(super) fn features(&self) -> Vec<String> {
-        if self.docker_available {
-            vec!["docker".to_string()]
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// Initial Docker detection at connection start. Absence is informational
-    /// — the retry tick keeps looking.
-    pub(super) async fn probe_docker(&mut self) {
-        match DockerManager::try_new(self.docker_tx.clone(), Arc::clone(&self.capabilities)) {
-            Ok(dm) => match dm.verify_connection().await {
-                Ok(()) => {
-                    tracing::info!("Docker daemon connected");
-                    self.docker_available = true;
-                    self.docker_manager = Some(dm);
-                }
-                Err(e) => {
-                    tracing::info!("Docker daemon not available: {e}");
-                }
-            },
-            Err(e) => {
-                tracing::info!("Docker not available: {e}");
-            }
-        }
-    }
-
-    /// Wait for the next Docker housekeeping event: a stats-poll tick while
-    /// the daemon is connected, or a retry tick while it is absent. Pending
-    /// when connected with stats polling off.
-    pub(super) async fn docker_tick(&mut self) -> DockerTick {
-        if self.docker_manager.is_some() {
-            match self.docker_stats_interval.as_mut() {
-                Some(iv) => {
-                    iv.tick().await;
-                    DockerTick::PollStats
-                }
-                None => std::future::pending().await,
-            }
-        } else {
-            self.docker_retry_interval.tick().await;
-            DockerTick::Retry
-        }
-    }
-
-    /// Poll container stats once; a failing daemon demotes the runtime.
-    pub(super) async fn poll_docker_stats<S>(&mut self, write: &mut S) -> anyhow::Result<()>
-    where
-        S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
-    {
-        if let Some(dm) = self.docker_manager.as_mut()
-            && let Err(e) = dm.poll_stats().await
-        {
-            tracing::warn!("Docker stats polling failed: {e}");
-            self.demote_docker(write).await?;
-        }
-        Ok(())
-    }
-
-    /// Retry the daemon connection; success re-advertises the feature.
-    pub(super) async fn retry_docker<S>(&mut self, write: &mut S) -> anyhow::Result<()>
-    where
-        S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
-    {
-        tracing::debug!("Retrying Docker connection...");
-        match DockerManager::try_new(self.docker_tx.clone(), Arc::clone(&self.capabilities)) {
-            Ok(dm) => match dm.verify_connection().await {
-                Ok(()) => {
-                    tracing::info!("Docker daemon now available");
-                    self.docker_manager = Some(dm);
-                    self.docker_available = true;
-                    let msg = AgentMessage::FeaturesUpdate {
-                        features: vec!["docker".to_string()],
-                    };
-                    send_msg(write, &msg).await?;
-                }
-                Err(e) => {
-                    tracing::debug!("Docker still not available: {e}");
-                }
-            },
-            Err(e) => {
-                tracing::debug!("Docker still not available: {e}");
-            }
-        }
-        Ok(())
-    }
-
-    async fn demote_docker<S>(&mut self, write: &mut S) -> anyhow::Result<()>
-    where
-        S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
-    {
-        if let Some(dm) = self.docker_manager.as_mut() {
-            dm.cleanup();
-        }
-        self.docker_manager = None;
-        self.docker_stats_interval = None;
-
-        if self.docker_available {
-            self.docker_available = false;
-            let msg = AgentMessage::FeaturesUpdate { features: vec![] };
-            send_msg(write, &msg).await?;
-        }
-
-        Ok(())
-    }
-
     /// Tear down every in-flight resource this connection owns. Called on all
     /// connection-exit paths (server close, WS error, stream end).
     pub(super) fn shutdown(&mut self) {
@@ -254,9 +125,7 @@ impl ConnectionRuntime {
         self.network_prober.stop_all();
         self.unlock_checker.stop();
         self.file_manager.cancel_all_transfers();
-        if let Some(dm) = self.docker_manager.as_mut() {
-            dm.cleanup();
-        }
+        self.docker.cleanup();
     }
 
     /// Parse and execute one server text frame against this connection's
@@ -472,25 +341,11 @@ impl ConnectionRuntime {
                 )
                 .await?;
             }
-            // --- Docker messages ---
-            ServerMessage::DockerStartStats { interval_secs } => {
-                if self.docker_manager.is_some() {
-                    let secs = interval_secs.max(1);
-                    tracing::info!("Starting Docker stats polling every {secs}s");
-                    let mut iv = tokio::time::interval(Duration::from_secs(secs as u64));
-                    iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                    self.docker_stats_interval = Some(iv);
-                } else {
-                    tracing::warn!("DockerStartStats received but Docker is not available");
-                    let unavailable = AgentMessage::DockerUnavailable { msg_id: None };
-                    send_msg(write, &unavailable).await?;
-                }
-            }
-            ServerMessage::DockerStopStats => {
-                tracing::info!("Stopping Docker stats polling");
-                self.docker_stats_interval = None;
-            }
-            ServerMessage::DockerListContainers { .. }
+            // --- Docker messages --- (availability FSM + replies live in
+            // docker_subsystem; the reply is whatever the transition emits)
+            msg @ (ServerMessage::DockerStartStats { .. }
+            | ServerMessage::DockerStopStats
+            | ServerMessage::DockerListContainers { .. }
             | ServerMessage::DockerLogsStart { .. }
             | ServerMessage::DockerLogsStop { .. }
             | ServerMessage::DockerEventsStart
@@ -498,18 +353,9 @@ impl ConnectionRuntime {
             | ServerMessage::DockerContainerAction { .. }
             | ServerMessage::DockerGetInfo { .. }
             | ServerMessage::DockerListNetworks { .. }
-            | ServerMessage::DockerListVolumes { .. } => {
-                if let Some(dm) = self.docker_manager.as_mut() {
-                    if let Err(e) = dm.handle_server_message(msg.clone()).await {
-                        tracing::warn!("Docker runtime became unavailable: {e}");
-                        self.demote_docker(write).await?;
-                    }
-                } else {
-                    tracing::warn!("Docker message received but Docker is not available");
-                    let unavailable = AgentMessage::DockerUnavailable {
-                        msg_id: docker_request_msg_id(&msg),
-                    };
-                    send_msg(write, &unavailable).await?;
+            | ServerMessage::DockerListVolumes { .. }) => {
+                if let Some(reply) = self.docker.handle(msg).await {
+                    send_msg(write, &reply).await?;
                 }
             }
             // Firewall blocklist variants — dispatched to the FirewallManager
@@ -594,17 +440,6 @@ fn spawn_capability_denied(
     });
 }
 
-fn docker_request_msg_id(msg: &ServerMessage) -> Option<String> {
-    match msg {
-        ServerMessage::DockerListContainers { msg_id }
-        | ServerMessage::DockerGetInfo { msg_id }
-        | ServerMessage::DockerListNetworks { msg_id }
-        | ServerMessage::DockerListVolumes { msg_id } => Some(msg_id.clone()),
-        ServerMessage::DockerContainerAction { msg_id, .. } => Some(msg_id.clone()),
-        _ => None,
-    }
-}
-
 async fn execute_command(
     task_id: &str,
     command: &str,
@@ -661,78 +496,6 @@ mod tests {
     };
     use crate::firewall::nft::CliNftExecutor;
     use serverbee_common::constants::CapabilityDeniedReason;
-
-    #[test]
-    fn test_docker_request_msg_id_extracts_only_request_variants() {
-        // Variants that carry a msg_id return it...
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerListContainers {
-                msg_id: "a".to_string()
-            }),
-            Some("a".to_string())
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerGetInfo {
-                msg_id: "b".to_string()
-            }),
-            Some("b".to_string())
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerListNetworks {
-                msg_id: "c".to_string()
-            }),
-            Some("c".to_string())
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerListVolumes {
-                msg_id: "d".to_string()
-            }),
-            Some("d".to_string())
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerContainerAction {
-                msg_id: "e".to_string(),
-                container_id: "cid".to_string(),
-                action: serverbee_common::docker_types::DockerAction::Restart { timeout: None },
-            }),
-            Some("e".to_string())
-        );
-        // ...non-request docker variants return None.
-        assert_eq!(docker_request_msg_id(&ServerMessage::DockerStopStats), None);
-        assert_eq!(docker_request_msg_id(&ServerMessage::Ping), None);
-    }
-
-    #[test]
-    fn test_docker_request_msg_id_none_for_log_and_event_variants() {
-        // Streaming control variants carry no request msg_id -> None.
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerLogsStart {
-                session_id: "s".to_string(),
-                container_id: "c".to_string(),
-                tail: None,
-                follow: false,
-            }),
-            None
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerLogsStop {
-                session_id: "s".to_string(),
-            }),
-            None
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerEventsStart),
-            None
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerEventsStop),
-            None
-        );
-        assert_eq!(
-            docker_request_msg_id(&ServerMessage::DockerStartStats { interval_secs: 5 }),
-            None
-        );
-    }
 
     // ----------------------------------------------------------------------
     // `execute_command` — pure-ish process helper. These shell out to `sh`,
@@ -1476,20 +1239,20 @@ mod tests {
             &msgs[0],
             AgentMessage::DockerUnavailable { msg_id: None }
         ));
-        assert!(h.runtime.docker_stats_interval.is_none());
+        assert!(!h.runtime.docker.stats_polling_active());
     }
 
     #[tokio::test]
     async fn test_dispatch_docker_stop_stats_clears_interval() {
         let mut h = Harness::new(ALL_CAPS, FileConfig::default());
         // Pre-seed an interval so we can observe it being cleared.
-        h.runtime.docker_stats_interval = Some(tokio::time::interval(Duration::from_secs(60)));
+        h.runtime.docker.arm_stats_polling_for_test();
         let mut sink = RecordingSink::new();
         h.dispatch(r#"{"type":"docker_stop_stats"}"#, &mut sink)
             .await
             .unwrap();
         assert_eq!(sink.sent_count(), 0);
-        assert!(h.runtime.docker_stats_interval.is_none());
+        assert!(!h.runtime.docker.stats_polling_active());
     }
 
     #[tokio::test]
