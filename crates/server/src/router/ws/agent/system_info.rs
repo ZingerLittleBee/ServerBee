@@ -61,12 +61,12 @@ impl IpChange {
     /// Drives the audit trail: first population happens on every fresh
     /// registration and must not spam the audit log.
     fn is_transition(&self) -> bool {
-        fn t(old: &Option<String>, new: &Option<String>) -> bool {
+        fn transitioned(old: &Option<String>, new: &Option<String>) -> bool {
             old.is_some() && old != new
         }
-        t(&self.old_ipv4, &self.new_ipv4)
-            || t(&self.old_ipv6, &self.new_ipv6)
-            || t(&self.old_remote_addr, &self.new_remote_addr)
+        transitioned(&self.old_ipv4, &self.new_ipv4)
+            || transitioned(&self.old_ipv6, &self.new_ipv6)
+            || transitioned(&self.old_remote_addr, &self.new_remote_addr)
     }
 
     fn detail(&self, server_id: &str) -> String {
