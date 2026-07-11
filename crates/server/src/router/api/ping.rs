@@ -139,7 +139,6 @@ async fn delete_task(
     ok("ok")
 }
 
-
 #[derive(Deserialize, utoipa::IntoParams)]
 pub struct RecordsQuery {
     from: DateTime<Utc>,

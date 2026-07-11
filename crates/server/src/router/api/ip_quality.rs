@@ -248,7 +248,6 @@ async fn update_settings(
     ok(setting)
 }
 
-
 #[utoipa::path(
     post,
     path = "/api/ip-quality/servers/{id}/check",

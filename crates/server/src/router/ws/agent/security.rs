@@ -186,6 +186,10 @@ pub(super) async fn on_capabilities_changed(
         tracing::error!("Failed to mirror capabilities for {server_id}: {e}");
     }
 
+    // Deliberately a full-domain reconcile even though only the ping and
+    // firewall projections read capabilities: capability changes are rare,
+    // and "capability change ⇒ every domain converges" is a simpler invariant
+    // to trust than tracking which projections are capability-sensitive.
     if let Err(error) = state
         .agent_desired_state
         .reconcile_connection(server_id)

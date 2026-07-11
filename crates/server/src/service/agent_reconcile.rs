@@ -15,7 +15,7 @@ use serverbee_common::constants::{
     CAP_DEFAULT, CAP_FIREWALL_BLOCK, has_capability, probe_type_to_cap,
 };
 use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
-use serverbee_common::protocol::ServerMessage;
+use serverbee_common::protocol::{ServerMessage, UnlockServiceDef};
 use serverbee_common::types::{NetworkProbeTarget, PingTaskConfig};
 use tokio::sync::Mutex;
 
@@ -47,6 +47,17 @@ struct ProviderLocks {
     network_probes: Mutex<()>,
     ip_quality: Mutex<()>,
     firewall: Mutex<()>,
+}
+
+impl ProviderLocks {
+    fn for_domain(&self, domain: AgentDesiredStateDomain) -> &Mutex<()> {
+        match domain {
+            AgentDesiredStateDomain::PingTasks => &self.ping_tasks,
+            AgentDesiredStateDomain::NetworkProbes => &self.network_probes,
+            AgentDesiredStateDomain::IpQuality => &self.ip_quality,
+            AgentDesiredStateDomain::Firewall => &self.firewall,
+        }
+    }
 }
 
 /// Owns projection of persisted desired state into agent protocol messages.
@@ -90,16 +101,11 @@ impl AgentDesiredStateReconciler {
                     error = %error,
                     "failed to reconcile agent desired state"
                 );
-                if first_error.is_none() {
-                    first_error = Some(error);
-                }
+                first_error.get_or_insert(error);
             }
         }
 
-        match first_error {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Reconcile one provider for one agent.
@@ -108,27 +114,20 @@ impl AgentDesiredStateReconciler {
         server_id: &str,
         domain: AgentDesiredStateDomain,
     ) -> Result<(), AppError> {
+        let _guard = self.locks.for_domain(domain).lock().await;
         match domain {
             AgentDesiredStateDomain::PingTasks => {
-                let _guard = self.locks.ping_tasks.lock().await;
                 let tasks = self.load_ping_tasks().await?;
                 let capabilities = self.capabilities_for_agent(server_id).await?;
                 self.send_ping_tasks(server_id, &tasks, capabilities).await;
                 Ok(())
             }
             AgentDesiredStateDomain::NetworkProbes => {
-                let _guard = self.locks.network_probes.lock().await;
                 let setting = NetworkProbeService::get_setting(&self.db).await?;
                 self.send_network_probes(server_id, &setting).await
             }
-            AgentDesiredStateDomain::IpQuality => {
-                let _guard = self.locks.ip_quality.lock().await;
-                self.send_ip_quality(server_id).await
-            }
-            AgentDesiredStateDomain::Firewall => {
-                let _guard = self.locks.firewall.lock().await;
-                self.send_firewall(server_id).await
-            }
+            AgentDesiredStateDomain::IpQuality => self.send_ip_quality(server_id).await,
+            AgentDesiredStateDomain::Firewall => self.send_firewall(server_id).await,
         }
     }
 
@@ -139,23 +138,14 @@ impl AgentDesiredStateReconciler {
         &self,
         domain: AgentDesiredStateDomain,
     ) -> Result<(), AppError> {
+        let _guard = self.locks.for_domain(domain).lock().await;
         match domain {
-            AgentDesiredStateDomain::PingTasks => {
-                let _guard = self.locks.ping_tasks.lock().await;
-                self.reconcile_connected_ping_tasks().await
-            }
+            AgentDesiredStateDomain::PingTasks => self.reconcile_connected_ping_tasks().await,
             AgentDesiredStateDomain::NetworkProbes => {
-                let _guard = self.locks.network_probes.lock().await;
                 self.reconcile_connected_network_probes().await
             }
-            AgentDesiredStateDomain::IpQuality => {
-                let _guard = self.locks.ip_quality.lock().await;
-                self.reconcile_connected_ip_quality().await
-            }
-            AgentDesiredStateDomain::Firewall => {
-                let _guard = self.locks.firewall.lock().await;
-                self.reconcile_connected_firewall().await
-            }
+            AgentDesiredStateDomain::IpQuality => self.reconcile_connected_ip_quality().await,
+            AgentDesiredStateDomain::Firewall => self.reconcile_connected_firewall().await,
         }
     }
 
@@ -210,26 +200,16 @@ impl AgentDesiredStateReconciler {
                     error = %error,
                     "failed to reconcile network probe desired state"
                 );
-                if first_error.is_none() {
-                    first_error = Some(error);
-                }
+                first_error.get_or_insert(error);
             }
         }
 
-        match first_error {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        first_error.map_or(Ok(()), Err)
     }
 
     async fn reconcile_connected_ip_quality(&self) -> Result<(), AppError> {
         let server_ids = self.agent_manager.connected_server_ids();
-        let services = IpQualityService::enabled_service_defs(&self.db).await?;
-        let interval_hours = ip_quality_interval_hours(
-            IpQualityService::get_setting(&self.db)
-                .await?
-                .check_interval_hours,
-        )?;
+        let (services, interval_hours) = self.load_ip_quality().await?;
 
         for server_id in server_ids {
             self.send_if_online(
@@ -255,16 +235,11 @@ impl AgentDesiredStateReconciler {
                     error = %error,
                     "failed to reconcile firewall desired state"
                 );
-                if first_error.is_none() {
-                    first_error = Some(error);
-                }
+                first_error.get_or_insert(error);
             }
         }
 
-        match first_error {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        first_error.map_or(Ok(()), Err)
     }
 
     async fn load_ping_tasks(&self) -> Result<Vec<ping_task::Model>, AppError> {
@@ -360,13 +335,20 @@ impl AgentDesiredStateReconciler {
         Ok(())
     }
 
-    async fn send_ip_quality(&self, server_id: &str) -> Result<(), AppError> {
+    /// Load the enabled unlock-service catalog and check interval that every
+    /// `IpQualitySync` frame carries.
+    async fn load_ip_quality(&self) -> Result<(Vec<UnlockServiceDef>, u32), AppError> {
         let services = IpQualityService::enabled_service_defs(&self.db).await?;
         let interval_hours = ip_quality_interval_hours(
             IpQualityService::get_setting(&self.db)
                 .await?
                 .check_interval_hours,
         )?;
+        Ok((services, interval_hours))
+    }
+
+    async fn send_ip_quality(&self, server_id: &str) -> Result<(), AppError> {
+        let (services, interval_hours) = self.load_ip_quality().await?;
         self.send_if_online(
             server_id,
             ServerMessage::IpQualitySync {
