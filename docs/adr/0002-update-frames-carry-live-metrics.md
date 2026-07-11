@@ -16,10 +16,17 @@ same `servers` key, same field names, just fewer keys — so older iOS builds
 decode the missing statics as `nil` and their merge keeps cached values (which
 also fixes the swapTotal stomp without an app release).
 
+Subtraction has one hard floor: shipped iOS decoders require `id` **and**
+`name` (`ServerStatus.init(from:)` uses non-optional `decode` for both) and
+drop the whole frame on a missing key. `LiveMetrics` therefore keeps `name` as
+a documented decoder-compat field — it is the agent connection name, not live
+data, and clients must not let it overwrite the REST-managed name on merge
+(the web merge pins `current.name`; an iOS decoding regression test pins the
+contract).
+
 Consequences: an update can no longer seed the web catalog cache; frames
 arriving before `full_sync`/REST are dropped (previously they seeded rows with
-zero placeholders — the same bug class client-side). `name` was dropped from
-update frames outright: no client consumed it, renames flow through REST.
+zero placeholders — the same bug class client-side).
 Considered and rejected: (a) making the static fields `Option` on `ServerStatus`
 — one type stays two-faced and every FullSync consumer pays an unwrap; (b)
 server-side named constructors only — concentrates the projection but keeps the

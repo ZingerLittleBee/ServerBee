@@ -247,6 +247,10 @@ fn default_has_token() -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveMetrics {
     pub id: String,
+    /// Decoder-compat field, not live data: shipped iOS builds require `id`
+    /// and `name` to decode a frame and drop the whole message otherwise.
+    /// Clients must NOT let it overwrite the REST-managed name on merge.
+    pub name: String,
     pub online: bool,
     pub last_active: i64,
     pub uptime: u64,

@@ -249,6 +249,11 @@ impl AgentManager {
 
         let metrics = LiveMetrics {
             id: server_id.to_string(),
+            name: self
+                .connections
+                .get(server_id)
+                .map(|c| c.server_name.clone())
+                .unwrap_or_default(),
             online: true,
             last_active: chrono::Utc::now().timestamp(),
             uptime: report.uptime,
@@ -990,10 +995,12 @@ mod tests {
         assert_eq!(json["type"], "update");
         let server = &json["servers"][0];
         assert_eq!(server["id"], "s1");
+        // `id` and `name` are the only keys shipped iOS decoders require; a
+        // frame missing either is dropped wholesale on old builds.
+        assert_eq!(server["name"], "Srv");
         assert!((server["cpu"].as_f64().unwrap() - 42.5).abs() < f64::EPSILON);
         assert_eq!(server["swap_used"], 1024);
         for key in [
-            "name",
             "mem_total",
             "swap_total",
             "disk_total",

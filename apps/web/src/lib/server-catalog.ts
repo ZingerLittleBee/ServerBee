@@ -30,6 +30,8 @@ export interface LiveMetrics {
   load5: number
   load15: number
   mem_used: number
+  /** Decoder-compat field for shipped iOS builds; never merged (REST owns the name). */
+  name: string
   net_in_speed: number
   net_in_transfer: number
   net_out_speed: number
@@ -55,7 +57,6 @@ export interface ServerMetrics extends LiveMetrics {
   group_id: string | null
   has_token?: boolean
   mem_total: number
-  name: string
   os: string | null
   outstanding_enrollment?: OutstandingEnrollmentSummary | null
   protocol_version?: number
@@ -195,7 +196,9 @@ function projectFullSyncServerToRest(current: ServerResponse, server: ServerMetr
 }
 
 function mergeWsServerUpdate(current: ServerMetrics, incoming: LiveMetrics): ServerMetrics {
-  return { ...current, ...incoming }
+  // The wire `name` exists only so old iOS decoders accept the frame; it is
+  // the agent connection name and must not stomp the REST-managed one.
+  return { ...current, ...incoming, name: current.name }
 }
 
 function mergeWsUpdate(current: ServerMetrics[], incoming: LiveMetrics[]): ServerMetrics[] {

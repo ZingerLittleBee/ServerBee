@@ -151,6 +151,7 @@ function makeLiveMetrics(overrides: Partial<LiveMetrics> = {}): LiveMetrics {
     load5: 0.8,
     load15: 0.6,
     mem_used: 16_000,
+    name: 'Agent Connection Name',
     net_in_speed: 1000,
     net_in_transfer: 10_000,
     net_out_speed: 500,
@@ -231,7 +232,7 @@ describe('server catalog projection', () => {
     projectServerCatalog(queryClient, { kind: 'tags_changed', serverId: rest.id, tags: ['prod', 'edge'] })
     projectServerCatalog(queryClient, {
       kind: 'ws_update',
-      servers: [makeLiveMetrics({ cpu: 91, mem_used: 24_000 })]
+      servers: [makeLiveMetrics({ cpu: 91, mem_used: 24_000, name: 'Stale Agent Name' })]
     })
 
     expect(readLiveServers(queryClient)?.[0]).toMatchObject({
