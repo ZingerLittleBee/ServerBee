@@ -21,7 +21,7 @@ use crate::entity::{
 use crate::error::AppError;
 use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::ip_quality::IpQualityService;
-use crate::service::record::{QueryHistoryResult, RecordService};
+use crate::service::record::RecordService;
 use crate::service::uptime::{UptimeDailyEntry, UptimeService};
 
 // ---------------------------------------------------------------------------
@@ -641,52 +641,30 @@ pub async fn get_server_metrics(
     let from = clamp_public_metrics_from(range.from, range.to, &range.interval)?;
     let result = RecordService::query_history(db, id, from, range.to, &range.interval).await?;
 
-    let points = match result {
-        QueryHistoryResult::Raw(records) => records
-            .into_iter()
-            .map(|r| PublicMetricsPoint {
-                time: r.time.to_rfc3339(),
-                cpu: r.cpu,
-                mem_used: r.mem_used,
-                disk_used: r.disk_used,
-                net_in_speed: r.net_in_speed,
-                net_out_speed: r.net_out_speed,
-                net_in_transfer: r.net_in_transfer,
-                net_out_transfer: r.net_out_transfer,
-                load1: r.load1,
-                load5: r.load5,
-                load15: r.load15,
-                tcp_conn: r.tcp_conn,
-                udp_conn: r.udp_conn,
-                process_count: r.process_count,
-                temperature: r.temperature,
-                gpu_usage: r.gpu_usage,
-            })
-            .collect(),
-        QueryHistoryResult::Hourly(records) => records
-            .into_iter()
-            .map(|r| PublicMetricsPoint {
-                time: r.time.to_rfc3339(),
-                cpu: r.cpu,
-                mem_used: r.mem_used,
-                disk_used: r.disk_used,
-                net_in_speed: r.net_in_speed,
-                net_out_speed: r.net_out_speed,
-                net_in_transfer: r.net_in_transfer,
-                net_out_transfer: r.net_out_transfer,
-                load1: r.load1,
-                load5: r.load5,
-                load15: r.load15,
-                tcp_conn: r.tcp_conn,
-                udp_conn: r.udp_conn,
-                process_count: r.process_count,
-                temperature: r.temperature,
-                gpu_usage: r.gpu_usage,
-            })
-            .collect(),
-    };
-
-    Ok(points)
+    // Both resolutions share the raw-row shape, so one field mapping serves
+    // raw and hourly queries alike.
+    Ok(result
+        .into_rows()
+        .into_iter()
+        .map(|r| PublicMetricsPoint {
+            time: r.time.to_rfc3339(),
+            cpu: r.cpu,
+            mem_used: r.mem_used,
+            disk_used: r.disk_used,
+            net_in_speed: r.net_in_speed,
+            net_out_speed: r.net_out_speed,
+            net_in_transfer: r.net_in_transfer,
+            net_out_transfer: r.net_out_transfer,
+            load1: r.load1,
+            load5: r.load5,
+            load15: r.load15,
+            tcp_conn: r.tcp_conn,
+            udp_conn: r.udp_conn,
+            process_count: r.process_count,
+            temperature: r.temperature,
+            gpu_usage: r.gpu_usage,
+        })
+        .collect())
 }
 
 /// 90-day uptime band for a scoped server.

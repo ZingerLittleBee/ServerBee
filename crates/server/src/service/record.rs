@@ -334,6 +334,18 @@ pub enum QueryHistoryResult {
     Hourly(Vec<record_hourly::Model>),
 }
 
+impl QueryHistoryResult {
+    /// Rows in the raw-row shape regardless of resolution (the two tables
+    /// share one column set). For consumers that don't care which table
+    /// served the query.
+    pub fn into_rows(self) -> Vec<record::Model> {
+        match self {
+            QueryHistoryResult::Raw(rows) => rows,
+            QueryHistoryResult::Hourly(rows) => rows.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

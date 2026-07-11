@@ -33,3 +33,33 @@ pub struct Model {
 pub enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
+
+/// `records_hourly` deliberately mirrors the `records` column set (the rollup
+/// policy manages both), so an hourly row converts losslessly into the raw-row
+/// shape for consumers that don't care which resolution served them.
+impl From<Model> for super::record::Model {
+    fn from(m: Model) -> Self {
+        super::record::Model {
+            id: m.id,
+            server_id: m.server_id,
+            time: m.time,
+            cpu: m.cpu,
+            mem_used: m.mem_used,
+            swap_used: m.swap_used,
+            disk_used: m.disk_used,
+            net_in_speed: m.net_in_speed,
+            net_out_speed: m.net_out_speed,
+            net_in_transfer: m.net_in_transfer,
+            net_out_transfer: m.net_out_transfer,
+            load1: m.load1,
+            load5: m.load5,
+            load15: m.load15,
+            tcp_conn: m.tcp_conn,
+            udp_conn: m.udp_conn,
+            process_count: m.process_count,
+            temperature: m.temperature,
+            gpu_usage: m.gpu_usage,
+            disk_io_json: m.disk_io_json,
+        }
+    }
+}
