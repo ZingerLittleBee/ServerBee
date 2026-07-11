@@ -82,7 +82,10 @@ async fn create_task(
     Json(input): Json<CreatePingTask>,
 ) -> Result<Json<ApiResponse<ping_task::Model>>, AppError> {
     let task = PingService::create(&state.db, input).await?;
-    reconcile_ping_tasks(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::PingTasks)
+        .await;
     ok(task)
 }
 
@@ -105,7 +108,10 @@ async fn update_task(
     Json(input): Json<UpdatePingTask>,
 ) -> Result<Json<ApiResponse<ping_task::Model>>, AppError> {
     let task = PingService::update(&state.db, &id, input).await?;
-    reconcile_ping_tasks(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::PingTasks)
+        .await;
     ok(task)
 }
 
@@ -126,19 +132,13 @@ async fn delete_task(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     PingService::delete(&state.db, &id).await?;
-    reconcile_ping_tasks(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::PingTasks)
+        .await;
     ok("ok")
 }
 
-async fn reconcile_ping_tasks(state: &AppState) {
-    if let Err(error) = state
-        .agent_desired_state
-        .reconcile_connected(AgentDesiredStateDomain::PingTasks)
-        .await
-    {
-        tracing::warn!(%error, "failed to reconcile ping task desired state");
-    }
-}
 
 #[derive(Deserialize, utoipa::IntoParams)]
 pub struct RecordsQuery {

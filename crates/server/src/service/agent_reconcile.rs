@@ -159,6 +159,32 @@ impl AgentDesiredStateReconciler {
         }
     }
 
+    /// [`Self::reconcile_connected`], demoted to a warning. Mutation handlers
+    /// must not fail their HTTP request over a push failure — the agent's
+    /// state converges on its next connection reconcile.
+    pub async fn reconcile_connected_or_warn(&self, domain: AgentDesiredStateDomain) {
+        if let Err(error) = self.reconcile_connected(domain).await {
+            tracing::warn!(
+                ?domain,
+                error = %error,
+                "failed to reconcile connected agents' desired state"
+            );
+        }
+    }
+
+    /// [`Self::reconcile_agent`], demoted to a warning under the same
+    /// contract as [`Self::reconcile_connected_or_warn`].
+    pub async fn reconcile_agent_or_warn(&self, server_id: &str, domain: AgentDesiredStateDomain) {
+        if let Err(error) = self.reconcile_agent(server_id, domain).await {
+            tracing::warn!(
+                server_id,
+                ?domain,
+                error = %error,
+                "failed to reconcile agent desired state"
+            );
+        }
+    }
+
     async fn reconcile_connected_ping_tasks(&self) -> Result<(), AppError> {
         let server_ids = self.agent_manager.connected_server_ids();
         let tasks = self.load_ping_tasks().await?;

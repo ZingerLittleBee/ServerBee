@@ -128,7 +128,10 @@ async fn update_target(
     Json(input): Json<UpdateNetworkProbeTarget>,
 ) -> Result<Json<ApiResponse<crate::entity::network_probe_target::Model>>, AppError> {
     let target = NetworkProbeService::update_target(&state.db, &id, input).await?;
-    reconcile_network_probes(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::NetworkProbes)
+        .await;
     ok(target)
 }
 
@@ -149,7 +152,10 @@ async fn delete_target(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     // Delete the target (cascades records + configs + setting cleanup)
     NetworkProbeService::delete_target(&state.db, &id).await?;
-    reconcile_network_probes(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::NetworkProbes)
+        .await;
 
     ok("ok")
 }
@@ -169,20 +175,14 @@ async fn update_setting(
     Json(input): Json<NetworkProbeSetting>,
 ) -> Result<Json<ApiResponse<NetworkProbeSetting>>, AppError> {
     NetworkProbeService::update_setting(&state.db, &input).await?;
-    reconcile_network_probes(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::NetworkProbes)
+        .await;
 
     ok(input)
 }
 
-async fn reconcile_network_probes(state: &AppState) {
-    if let Err(error) = state
-        .agent_desired_state
-        .reconcile_connected(AgentDesiredStateDomain::NetworkProbes)
-        .await
-    {
-        tracing::warn!(%error, "failed to reconcile network probe desired state");
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Per-server read handlers (mounted in server.rs)

@@ -1199,13 +1199,10 @@ async fn set_server_network_targets(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     NetworkProbeService::set_server_targets(&state.db, &id, body.target_ids).await?;
 
-    if let Err(error) = state
+    state
         .agent_desired_state
-        .reconcile_agent(&id, AgentDesiredStateDomain::NetworkProbes)
-        .await
-    {
-        tracing::warn!(server_id = id, %error, "failed to reconcile network probe desired state");
-    }
+        .reconcile_agent_or_warn(&id, AgentDesiredStateDomain::NetworkProbes)
+        .await;
 
     ok("ok")
 }

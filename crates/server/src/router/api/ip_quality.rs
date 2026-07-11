@@ -168,7 +168,10 @@ async fn create_service(
     Json(input): Json<CreateCustomServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::create_custom_service(&state.db, input).await?;
-    reconcile_ip_quality(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok(service)
 }
 
@@ -190,7 +193,10 @@ async fn update_service(
     Json(input): Json<UpdateServiceInput>,
 ) -> Result<Json<ApiResponse<crate::entity::unlock_service::Model>>, AppError> {
     let service = IpQualityService::update_service(&state.db, &id, input).await?;
-    reconcile_ip_quality(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok(service)
 }
 
@@ -211,7 +217,10 @@ async fn delete_service(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     IpQualityService::delete_service(&state.db, &id).await?;
-    reconcile_ip_quality(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok("ok")
 }
 
@@ -232,19 +241,13 @@ async fn update_settings(
     Json(input): Json<IpQualitySettingDto>,
 ) -> Result<Json<ApiResponse<IpQualitySettingDto>>, AppError> {
     let setting = IpQualityService::update_setting(&state.db, input.check_interval_hours).await?;
-    reconcile_ip_quality(&state).await;
+    state
+        .agent_desired_state
+        .reconcile_connected_or_warn(AgentDesiredStateDomain::IpQuality)
+        .await;
     ok(setting)
 }
 
-async fn reconcile_ip_quality(state: &AppState) {
-    if let Err(error) = state
-        .agent_desired_state
-        .reconcile_connected(AgentDesiredStateDomain::IpQuality)
-        .await
-    {
-        tracing::warn!(%error, "failed to reconcile IP quality desired state");
-    }
-}
 
 #[utoipa::path(
     post,
