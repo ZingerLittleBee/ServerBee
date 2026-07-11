@@ -273,11 +273,8 @@ async fn check_server(
     // capability. The agent would silently ignore the message, giving the UI
     // false success. Capabilities are agent-owned, so the only fix is to edit
     // the agent's config file (or CLI flags) on the host.
-    let agent_has = state
-        .agent_manager
-        .get_agent_local_capabilities(&id)
-        .map(|caps| has_capability(caps, CAP_IP_QUALITY))
-        .unwrap_or(false);
+    let caps = crate::service::capability_gate::effective_capabilities(&state, &id).await;
+    let agent_has = has_capability(caps, CAP_IP_QUALITY);
 
     if !agent_has {
         return Err(AppError::Conflict(

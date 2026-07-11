@@ -631,21 +631,26 @@ impl AgentManager {
         self.get_agent_local_capabilities(server_id)
     }
 
+    /// The one encoding of the capability priority rule: the live
+    /// agent-reported bitmask decides, and `mirror_caps` (the persisted
+    /// `servers.capabilities` mirror) fills the brief window before the
+    /// agent's first `SystemInfo` (or while it is offline). Every "is this
+    /// capability effective" answer must resolve through here.
+    pub fn effective_capabilities_or(&self, server_id: &str, mirror_caps: u32) -> u32 {
+        self.get_agent_local_capabilities(server_id)
+            .unwrap_or(mirror_caps)
+    }
+
     /// Returns `Some(reason)` when `cap_bit` is NOT available on the agent, or
-    /// `None` when it is allowed. `mirror_caps` is the persisted
-    /// `servers.capabilities` mirror, used as a fallback for the brief window
-    /// before the agent's first `SystemInfo` (or while it is offline). The
-    /// reason is always agent-side: the server has no say in capabilities.
+    /// `None` when it is allowed. The reason is always agent-side: the server
+    /// has no say in capabilities.
     pub fn capability_denied_reason(
         &self,
         server_id: &str,
         mirror_caps: u32,
         cap_bit: u32,
     ) -> Option<&'static str> {
-        let caps = self
-            .get_agent_local_capabilities(server_id)
-            .unwrap_or(mirror_caps);
-        if has_capability(caps, cap_bit) {
+        if has_capability(self.effective_capabilities_or(server_id, mirror_caps), cap_bit) {
             None
         } else {
             Some("agent_capability_disabled")

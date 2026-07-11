@@ -13,6 +13,25 @@ use crate::service::audit::AuditService;
 use crate::service::server::ServerService;
 use crate::state::AppState;
 
+/// The raw agent-effective bitmask for consumers that need the mask itself
+/// (inbound-data gates, availability checks with bespoke error shapes) rather
+/// than a deny decision: live agent report first, persisted mirror before the
+/// first `SystemInfo`, zero when the server row is gone. Same priority rule
+/// as [`require_capability`], resolved through the same funnel.
+pub async fn effective_capabilities(state: &AppState, server_id: &str) -> u32 {
+    // Hot path: a reported bitmask decides without touching the DB.
+    if let Some(caps) = state.agent_manager.get_effective_capabilities(server_id) {
+        return caps;
+    }
+    let mirror = ServerService::get_server(&state.db, server_id)
+        .await
+        .map(|s| s.capabilities as u32)
+        .unwrap_or(0);
+    state
+        .agent_manager
+        .effective_capabilities_or(server_id, mirror)
+}
+
 /// Resolve the server row and apply the agent-owned capability policy.
 /// Returns the server model on success so callers don't re-query.
 pub async fn require_capability(
@@ -104,6 +123,20 @@ mod tests {
 
     fn test_addr() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)
+    }
+
+    #[tokio::test]
+    async fn effective_capabilities_prefers_report_then_mirror_then_zero() {
+        let (state, _tmp) = setup_state_with_server(CAP_FILE).await;
+        // No report yet: the persisted mirror decides.
+        assert_eq!(effective_capabilities(&state, "srv-1").await, CAP_FILE);
+        // A live report overrides the mirror entirely.
+        state
+            .agent_manager
+            .update_agent_local_capabilities("srv-1", CAP_DOCKER);
+        assert_eq!(effective_capabilities(&state, "srv-1").await, CAP_DOCKER);
+        // Unknown server resolves to no capabilities, not an error.
+        assert_eq!(effective_capabilities(&state, "nope").await, 0);
     }
 
     #[tokio::test]
