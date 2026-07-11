@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { GaugeWidget } from './gauge'
 
 function makeServer(id: string, overrides: Partial<ServerMetrics> = {}): ServerMetrics {

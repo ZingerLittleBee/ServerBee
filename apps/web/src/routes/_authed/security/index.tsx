@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,19 +11,14 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuth } from '@/hooks/use-auth'
 import { type SecurityEventFilters, useSecurityEvents } from '@/hooks/use-security-events'
-import { api } from '@/lib/api-client'
 import type { SecurityEventDto } from '@/lib/api-schema'
+import { useServerList } from '@/lib/server-catalog'
 
 export const Route = createFileRoute('/_authed/security/')({
   component: SecurityIndexPage
 })
 
 type RangeKey = '24h' | '7d' | '30d'
-
-interface ServerSummary {
-  id: string
-  name: string
-}
 
 const RANGE_HOURS: Record<RangeKey, number> = {
   '24h': 24,
@@ -119,10 +113,7 @@ function SecurityIndexPage() {
 
   const eventsQuery = useSecurityEvents(filters)
 
-  const { data: servers } = useQuery<ServerSummary[]>({
-    queryKey: ['servers', 'lite'],
-    queryFn: () => api.get<ServerSummary[]>('/api/servers')
-  })
+  const { data: servers } = useServerList()
 
   const allEvents = useMemo(() => {
     const list: SecurityEventDto[] = []

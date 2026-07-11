@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkOverview } from '@/hooks/use-network-api'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { formatLatency, type NetworkServerSummary } from '@/lib/network-types'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import type { NetworkOverviewConfig } from '@/lib/widget-types'
 
 interface NetworkOverviewWidgetProps {

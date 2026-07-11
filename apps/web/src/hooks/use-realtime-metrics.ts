@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import type { ServerMetrics } from './use-servers-ws'
+import { readLiveServers, type ServerMetrics, subscribeLiveServers } from '@/lib/server-catalog'
 
 const MAX_BUFFER_SIZE = 200
 const TRIM_THRESHOLD = 250
@@ -62,7 +62,7 @@ export function toRealtimeDataPoint(metrics: ServerMetrics): RealtimeDataPoint {
 
 function createRealtimeBufferState(queryClient: QueryClient, serverId: string): RealtimeBufferState {
   const cache = getQueryClientBufferCache(queryClient)
-  const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
+  const servers = readLiveServers(queryClient)
   const server = servers?.find((s) => s.id === serverId)
   const cached = cache.get(serverId)
 
@@ -113,7 +113,7 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
       return
     }
     const cache = getQueryClientBufferCache(queryClient)
-    const servers = queryClient.getQueryData<ServerMetrics[]>(['servers'])
+    const servers = readLiveServers(queryClient)
     const server = servers?.find((s) => s.id === serverId)
     if (!server?.online || server.last_active <= 0) {
       cache.delete(serverId)
@@ -134,13 +134,8 @@ export function useRealtimeMetrics(serverId: string): RealtimeDataPoint[] {
       }, RENDER_THROTTLE_MS)
     }
 
-    // Subscribe to cache updates
-    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      if (event.query.queryHash !== '["servers"]') {
-        return
-      }
-
-      const data = event.query.state.data as ServerMetrics[] | undefined
+    const unsubscribe = subscribeLiveServers(queryClient, () => {
+      const data = readLiveServers(queryClient)
       if (!data) {
         return
       }

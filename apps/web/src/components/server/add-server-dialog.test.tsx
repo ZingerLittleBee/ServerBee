@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockPost = vi.fn()
-const mockGet = vi.fn()
-const mockSetQueryData = vi.fn()
+const mockRefreshServerCatalog = vi.hoisted(() => vi.fn())
+const mockQueryClient = {}
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -34,7 +34,7 @@ vi.mock('@tanstack/react-query', () => ({
     }
   }),
   useQuery: () => ({ data: [], isLoading: false }),
-  useQueryClient: () => ({ setQueryData: mockSetQueryData })
+  useQueryClient: () => mockQueryClient
 }))
 
 vi.mock('sonner', () => ({
@@ -46,9 +46,12 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/api-client', () => ({
   api: {
-    get: (path: string) => mockGet(path),
     post: (path: string, body: unknown) => mockPost(path, body)
   }
+}))
+
+vi.mock('@/lib/server-catalog', () => ({
+  refreshServerCatalog: mockRefreshServerCatalog
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -113,8 +116,7 @@ const { AddServerDialog } = await import('./add-server-dialog')
 describe('AddServerDialog', () => {
   beforeEach(() => {
     mockPost.mockReset()
-    mockGet.mockReset()
-    mockSetQueryData.mockReset()
+    mockRefreshServerCatalog.mockReset()
   })
 
   it('POSTs to /api/servers with the form payload and transitions to the install-command view on success', async () => {
@@ -127,7 +129,7 @@ describe('AddServerDialog', () => {
         expires_at: '2030-01-01T00:00:00Z'
       }
     })
-    mockGet.mockResolvedValueOnce([])
+    mockRefreshServerCatalog.mockResolvedValueOnce(undefined)
 
     render(<AddServerDialog onClose={vi.fn()} open />)
 
@@ -150,8 +152,7 @@ describe('AddServerDialog', () => {
     })
 
     expect(screen.getByText('add_server.shown_once_warning')).toBeInTheDocument()
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/servers'))
-    expect(mockSetQueryData).toHaveBeenCalledWith(['servers'], expect.any(Function))
+    await waitFor(() => expect(mockRefreshServerCatalog).toHaveBeenCalledWith(mockQueryClient))
     expect(screen.queryByRole('button', { name: 'add_server.generate' })).not.toBeInTheDocument()
   })
 

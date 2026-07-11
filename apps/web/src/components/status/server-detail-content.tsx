@@ -16,7 +16,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import { useServerRecords, useUptimeDaily } from '@/hooks/use-api'
 import { useRealtimeMetrics } from '@/hooks/use-realtime-metrics'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type {
   PublicMetricsPoint,
@@ -26,6 +25,7 @@ import type {
   UptimeDailyEntry
 } from '@/lib/api-schema'
 import { buildMergedDiskIoSeries, buildPerDiskIoSeries } from '@/lib/disk-io'
+import { type ServerMetrics, useLiveServers } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 
@@ -169,18 +169,11 @@ function useAdminGpuRecords(serverId: string, range: TimeRange, isAdminVariant: 
   })
 }
 
-// Pulls the live-traffic strip data from the WS-driven `['servers']` cache.
+// Pulls the live-traffic strip data from the WS-driven server catalog.
 // Public variant intentionally does not subscribe; the strip falls back to
 // the snapshot in `PublicServerDetail.metrics`.
 function useLiveServerMetrics(serverId: string, isAdminVariant: boolean) {
-  const { data: liveServers } = useQuery<ServerMetrics[]>({
-    queryKey: ['servers'],
-    queryFn: () => [],
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    enabled: isAdminVariant
-  })
+  const { data: liveServers } = useLiveServers({ enabled: isAdminVariant })
   return liveServers?.find((s) => s.id === serverId)
 }
 

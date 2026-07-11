@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { UpgradeRequest } from '@/lib/api-schema'
+import { invalidateServerDetail } from '@/lib/server-catalog'
 import { type UpgradeJob, useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 
 interface UseUpgradeJobResult {
@@ -19,7 +20,7 @@ export function useUpgradeJob(serverId: string): UseUpgradeJobResult {
       return api.post<void>(`/api/servers/${serverId}/upgrade`, body)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['servers', serverId] })
+      invalidateServerDetail(queryClient, serverId).catch(() => undefined)
     }
   })
 

@@ -1,7 +1,7 @@
 import { Activity, Cpu, Gauge as GaugeIcon, HardDrive, MemoryStick, Network } from 'lucide-react'
 import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { GaugeConfig } from '@/lib/widget-types'
 

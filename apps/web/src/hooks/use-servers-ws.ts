@@ -3,9 +3,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import type { OutstandingEnrollmentSummary, SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
+import type { SecurityEventDto, SecurityEventList } from '@/lib/api-schema'
 import type { IpQualitySnapshotData, ServerIpQualityData, UnlockResultDto, UnlockStatus } from '@/lib/ip-quality-types'
 import type { NetworkProbeResultData } from '@/lib/network-types'
+import { projectServerCatalog, type ServerMetrics } from '@/lib/server-catalog'
 import { WsClient } from '@/lib/ws-client'
 import type {
   DockerContainer,
@@ -16,56 +17,6 @@ import { type UpgradeJob, useUpgradeJobsStore } from '@/stores/upgrade-jobs-stor
 
 const MAX_DOCKER_EVENTS = 100
 const MAX_SECURITY_EVENTS_IN_CACHE = 200
-
-interface ServerMetrics {
-  agent_local_capabilities?: number | null
-  capabilities?: number
-  country_code: string | null
-  cpu: number
-  cpu_cores?: number | null
-  cpu_name: string | null
-  disk_read_bytes_per_sec: number
-  disk_total: number
-  disk_used: number
-  disk_write_bytes_per_sec: number
-  effective_capabilities?: number | null
-  features?: string[]
-  group_id: string | null
-  /**
-   * `true` iff the server row has a non-NULL `token_hash`. Pending servers (created via
-   * `POST /api/servers` but not yet enrolled by an agent) have `has_token = false`.
-   */
-  has_token?: boolean
-  id: string
-  last_active: number
-  load1: number
-  load5: number
-  load15: number
-  mem_total: number
-  mem_used: number
-  name: string
-  net_in_speed: number
-  net_in_transfer: number
-  net_out_speed: number
-  net_out_transfer: number
-  online: boolean
-  os: string | null
-  /**
-   * Summary of the active outstanding enrollment (if any). Present for pending servers
-   * so the UI can render the install hint without an extra fetch.
-   */
-  outstanding_enrollment?: OutstandingEnrollmentSummary | null
-  process_count: number
-  protocol_version?: number
-  region: string | null
-  swap_total: number
-  swap_used: number
-  tags?: string[]
-  tcp_conn: number
-  temporary?: Array<{ cap: string; granted_at: number; expires_at: number }>
-  udp_conn: number
-  uptime: number
-}
 
 type WsMessage =
   | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[] }
@@ -137,193 +88,6 @@ interface WsUnlockResult {
   status: UnlockStatus
 }
 
-export type { ServerMetrics }
-
-const STATIC_FIELDS = new Set([
-  'mem_total',
-  'swap_total',
-  'disk_total',
-  'cpu_name',
-  'cpu_cores',
-  'os',
-  'region',
-  'country_code',
-  'group_id',
-  'tags',
-  'features'
-])
-
-export function mergeServerUpdate(prev: ServerMetrics[], incoming: ServerMetrics[]): ServerMetrics[] {
-  const updated = [...prev]
-  // Index by id once (O(n)) instead of findIndex per incoming row: this runs on
-  // every WS `update`, which carries metrics for all servers, so the naive scan
-  // was O(n*m) each tick. The loop only updates rows in place, so indices stay valid.
-  const indexById = new Map(updated.map((s, i) => [s.id, i]))
-  for (const server of incoming) {
-    const idx = indexById.get(server.id)
-    if (idx !== undefined) {
-      const merged = { ...updated[idx] }
-      for (const [key, value] of Object.entries(server)) {
-        const isStaticDefault =
-          STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))
-        if (!isStaticDefault) {
-          ;(merged as Record<string, unknown>)[key] = value
-        }
-      }
-      updated[idx] = merged as ServerMetrics
-    }
-  }
-  return updated
-}
-
-/**
- * Default-zero runtime metrics for a brand-new server stub. The REST
- * `ServerResponse` only carries static + identity fields; runtime metrics
- * (cpu, mem_used, online, …) populate on the next WS push.
- */
-function blankServerMetrics(id: string): ServerMetrics {
-  return {
-    id,
-    name: '',
-    cpu: 0,
-    cpu_cores: null,
-    cpu_name: null,
-    mem_total: 0,
-    mem_used: 0,
-    swap_total: 0,
-    swap_used: 0,
-    disk_total: 0,
-    disk_used: 0,
-    disk_read_bytes_per_sec: 0,
-    disk_write_bytes_per_sec: 0,
-    net_in_speed: 0,
-    net_in_transfer: 0,
-    net_out_speed: 0,
-    net_out_transfer: 0,
-    load1: 0,
-    load5: 0,
-    load15: 0,
-    process_count: 0,
-    tcp_conn: 0,
-    udp_conn: 0,
-    uptime: 0,
-    last_active: 0,
-    online: false,
-    country_code: null,
-    group_id: null,
-    os: null,
-    region: null
-  }
-}
-
-/**
- * Reconcile the WS-fed `['servers']` cache against a fresh REST list. Membership
- * comes from REST (handles add / delete / cleanup), but per-row runtime metrics
- * are preserved from the existing cache so we don't blink to zeros while
- * waiting for the next WS update.
- */
-export function reconcileServersFromRest(
-  prev: ServerMetrics[] | undefined,
-  fresh: Array<Partial<ServerMetrics> & { id: string }>
-): ServerMetrics[] {
-  const prevMap = new Map((prev ?? []).map((s) => [s.id, s]))
-  return fresh.map((row) => {
-    const existing = prevMap.get(row.id)
-    if (existing) {
-      const merged: Record<string, unknown> = { ...existing }
-      for (const [key, value] of Object.entries(row)) {
-        const isStaticDefault =
-          STATIC_FIELDS.has(key) && (value === null || value === 0 || (Array.isArray(value) && value.length === 0))
-        if (!isStaticDefault) {
-          merged[key] = value
-        }
-      }
-      return merged as unknown as ServerMetrics
-    }
-    return { ...blankServerMetrics(row.id), ...row } as ServerMetrics
-  })
-}
-
-export function setServerOnlineStatus(prev: ServerMetrics[], serverId: string, online: boolean): ServerMetrics[] {
-  return prev.map((s) => (s.id === serverId ? { ...s, online } : s))
-}
-
-export function setServerDockerAvailability(
-  prev: ServerMetrics[],
-  serverId: string,
-  available: boolean
-): ServerMetrics[] {
-  return prev.map((s) => {
-    if (s.id !== serverId) {
-      return s
-    }
-    const features = s.features ?? []
-    if (available && !features.includes('docker')) {
-      return { ...s, features: [...features, 'docker'] }
-    }
-    if (!available && features.includes('docker')) {
-      return { ...s, features: features.filter((f) => f !== 'docker') }
-    }
-    return s
-  })
-}
-
-export function applyServerEdit(
-  prev: ServerMetrics[],
-  serverId: string,
-  edited: { name: string; group_id: string | null; country_code: string | null }
-): ServerMetrics[] {
-  return prev.map((server) =>
-    server.id === serverId
-      ? { ...server, name: edited.name, group_id: edited.group_id, country_code: edited.country_code }
-      : server
-  )
-}
-
-export function setServerCapabilities(
-  prev: ServerMetrics[],
-  serverId: string,
-  capabilities: number,
-  agentLocalCapabilities: number | null | undefined,
-  effectiveCapabilities: number | null | undefined,
-  temporary?: Array<{ cap: string; granted_at: number; expires_at: number }> | null
-): ServerMetrics[] {
-  return prev.map((server) =>
-    server.id === serverId
-      ? {
-          ...server,
-          capabilities,
-          agent_local_capabilities: agentLocalCapabilities ?? null,
-          effective_capabilities: effectiveCapabilities ?? null,
-          temporary: temporary ?? []
-        }
-      : server
-  )
-}
-
-function setServerDetailDockerAvailability(
-  prev: Record<string, unknown> | undefined,
-  available: boolean
-): Record<string, unknown> | undefined {
-  if (!prev) {
-    return prev
-  }
-
-  const features = Array.isArray(prev.features)
-    ? prev.features.filter((feature): feature is string => typeof feature === 'string')
-    : []
-
-  if (available && !features.includes('docker')) {
-    return { ...prev, features: [...features, 'docker'] }
-  }
-
-  if (!available && features.includes('docker')) {
-    return { ...prev, features: features.filter((feature) => feature !== 'docker') }
-  }
-
-  return prev
-}
-
 type QueryClient = ReturnType<typeof useQueryClient>
 type FullSyncMessage = Extract<WsMessage, { type: 'full_sync' }>
 type UpdateMessage = Extract<WsMessage, { type: 'update' }>
@@ -333,16 +97,14 @@ function isWsMessageLike(raw: unknown): raw is { type: string } & Record<string,
 }
 
 function handleFullSyncMessage(msg: FullSyncMessage, queryClient: QueryClient): void {
-  queryClient.setQueryData<ServerMetrics[]>(['servers'], msg.servers)
+  projectServerCatalog(queryClient, { kind: 'ws_full_sync', servers: msg.servers })
   if (Array.isArray(msg.upgrades)) {
-    useUpgradeJobsStore.getState().setJobs(msg.upgrades as UpgradeJob[])
+    useUpgradeJobsStore.getState().setJobs(msg.upgrades)
   }
 }
 
 function handleUpdateMessage(msg: UpdateMessage, queryClient: QueryClient): void {
-  queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-    prev ? mergeServerUpdate(prev, msg.servers) : msg.servers
-  )
+  projectServerCatalog(queryClient, { kind: 'ws_update', servers: msg.servers })
 }
 
 function handleServerMetricsMessage(raw: { type: string } & Record<string, unknown>, queryClient: QueryClient): void {
@@ -364,9 +126,7 @@ function handleServerMetricsMessage(raw: { type: string } & Record<string, unkno
     }
     const online = raw.type === 'server_online'
     const server_id = raw.server_id as string
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-      prev ? setServerOnlineStatus(prev, server_id, online) : prev
-    )
+    projectServerCatalog(queryClient, { kind: 'online_changed', serverId: server_id, online })
   }
 }
 
@@ -377,42 +137,14 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
     }
     const msg = raw as WsMessage & { type: 'capabilities_changed' }
     const { server_id, capabilities, agent_local_capabilities, effective_capabilities, temporary } = msg
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-      prev
-        ? setServerCapabilities(
-            prev,
-            server_id,
-            capabilities,
-            agent_local_capabilities,
-            effective_capabilities,
-            temporary
-          )
-        : prev
-    )
-    queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-      prev
-        ? {
-            ...prev,
-            capabilities,
-            agent_local_capabilities: agent_local_capabilities ?? null,
-            effective_capabilities: effective_capabilities ?? null,
-            temporary: temporary ?? []
-          }
-        : prev
-    )
-    queryClient.setQueryData<Record<string, unknown>[]>(['servers-list'], (prev) =>
-      prev?.map((s) =>
-        s.id === server_id
-          ? {
-              ...s,
-              capabilities,
-              agent_local_capabilities: agent_local_capabilities ?? null,
-              effective_capabilities: effective_capabilities ?? null,
-              temporary: temporary ?? []
-            }
-          : s
-      )
-    )
+    projectServerCatalog(queryClient, {
+      kind: 'capabilities_changed',
+      serverId: server_id,
+      capabilities,
+      agentLocalCapabilities: agent_local_capabilities,
+      effectiveCapabilities: effective_capabilities,
+      temporary
+    })
     return
   }
   if (raw.type === 'agent_info_updated') {
@@ -421,12 +153,12 @@ function handleCapabilityMessage(raw: { type: string } & Record<string, unknown>
     }
     const msg = raw as WsMessage & { type: 'agent_info_updated' }
     const { server_id, protocol_version, agent_version } = msg
-    queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-      prev ? { ...prev, protocol_version, agent_version: agent_version ?? null } : prev
-    )
-    queryClient.setQueryData<Record<string, unknown>[]>(['servers-list'], (prev) =>
-      prev?.map((s) => (s.id === server_id ? { ...s, protocol_version, agent_version: agent_version ?? null } : s))
-    )
+    projectServerCatalog(queryClient, {
+      kind: 'agent_info_changed',
+      serverId: server_id,
+      protocolVersion: protocol_version,
+      agentVersion: agent_version
+    })
   }
 }
 
@@ -466,12 +198,7 @@ function handleDockerMessage(raw: { type: string } & Record<string, unknown>, qu
     }
     const msg = raw as WsMessage & { type: 'docker_availability_changed' }
     const { server_id, available } = msg
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-      prev ? setServerDockerAvailability(prev, server_id, available) : prev
-    )
-    queryClient.setQueryData(['servers', server_id], (prev: Record<string, unknown> | undefined) =>
-      setServerDetailDockerAvailability(prev, available)
-    )
+    projectServerCatalog(queryClient, { kind: 'docker_availability_changed', serverId: server_id, available })
   }
 }
 

@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -13,21 +12,14 @@ import {
   useCreateScheduledTask,
   useUpdateScheduledTask
 } from '@/hooks/use-scheduled-tasks'
-import { api } from '@/lib/api-client'
 import { CAP_EXEC, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
+import { useServerList } from '@/lib/server-catalog'
 
 const CRON_SPLIT_RE = /\s+/
 
 interface Props {
   onClose: () => void
   task?: ScheduledTask | null
-}
-
-interface ServerInfo {
-  capabilities?: number
-  effective_capabilities?: number | null
-  id: string
-  name: string
 }
 
 interface ScheduledTaskFormState {
@@ -99,10 +91,7 @@ export function ScheduledTaskDialog({ onClose, task }: Props) {
   const { t } = useTranslation(['settings', 'common'])
   const [state, dispatch] = useReducer(scheduledTaskFormReducer, task, scheduledTaskFormFromTask)
 
-  const { data: servers } = useQuery<ServerInfo[]>({
-    queryKey: ['servers-list'],
-    queryFn: () => api.get<ServerInfo[]>('/api/servers')
-  })
+  const { data: servers } = useServerList()
 
   const createMutation = useCreateScheduledTask()
   const updateMutation = useUpdateScheduledTask()

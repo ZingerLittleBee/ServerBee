@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/chart'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { formatBytes } from '@/lib/utils'
 import type { TrafficBarConfig } from '@/lib/widget-types'
 

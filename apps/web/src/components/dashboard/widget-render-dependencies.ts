@@ -1,4 +1,4 @@
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { parseConfig } from '@/lib/widget-helpers'
 import type { DashboardWidget } from '@/lib/widget-types'
 

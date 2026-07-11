@@ -19,9 +19,10 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { PingTask } from '@/lib/api-schema'
+import { useServerList } from '@/lib/server-catalog'
 import { PingResultsChart } from './ping-results-chart'
 import { PingTaskCreateDialog } from './ping-task-create-dialog'
-import type { ProbeType, Server } from './ping-task-types'
+import type { ProbeType } from './ping-task-types'
 
 export const Route = createFileRoute('/_authed/settings/ping-tasks')({
   component: PingTasksPage
@@ -44,10 +45,7 @@ function PingTasksPage() {
     queryFn: () => api.get<PingTask[]>('/api/ping-tasks')
   })
 
-  const { data: servers } = useQuery<Server[]>({
-    queryKey: ['servers-list'],
-    queryFn: () => api.get<Server[]>('/api/servers')
-  })
+  const { data: servers } = useServerList()
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/ping-tasks/${id}`),

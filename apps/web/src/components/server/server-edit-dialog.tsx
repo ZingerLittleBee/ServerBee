@@ -21,10 +21,10 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
-import { applyServerEdit, type ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 import { buildCountryOptions, type CountryOption } from '@/lib/country-codes'
+import { projectServerCatalog } from '@/lib/server-catalog'
 import { cn, countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
@@ -409,16 +409,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
   const mutation = useMutation({
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
     onSuccess: (data) => {
-      queryClient.setQueryData(['servers', server.id], data)
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-        prev
-          ? applyServerEdit(prev, server.id, {
-              name: data.name,
-              group_id: data.group_id ?? null,
-              country_code: data.country_code ?? null
-            })
-          : prev
-      )
+      projectServerCatalog(queryClient, { kind: 'server_saved', server: data })
     }
   })
 

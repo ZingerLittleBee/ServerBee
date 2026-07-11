@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, renderHook } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
+import { projectServerCatalog, type ServerMetrics } from '@/lib/server-catalog'
 import { toRealtimeDataPoint, useRealtimeMetrics } from './use-realtime-metrics'
-import type { ServerMetrics } from './use-servers-ws'
 
 function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
@@ -38,6 +38,10 @@ function makeMetrics(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
     uptime: 3600,
     ...overrides
   }
+}
+
+function setLiveServers(queryClient: QueryClient, servers: ServerMetrics[]): void {
+  projectServerCatalog(queryClient, { kind: 'ws_full_sync', servers })
 }
 
 describe('toRealtimeDataPoint', () => {
@@ -103,7 +107,7 @@ describe('useRealtimeMetrics', () => {
 
   it('seeds from existing cache on mount', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', cpu: 42, last_active: 1000 })])
+    setLiveServers(queryClient, [makeMetrics({ id: 's1', cpu: 42, last_active: 1000 })])
 
     const { result } = renderHook(() => useRealtimeMetrics('s1'), { wrapper: Wrapper })
 
@@ -122,7 +126,7 @@ describe('useRealtimeMetrics', () => {
 
   it('does not seed when server is offline', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', online: false })])
+    setLiveServers(queryClient, [makeMetrics({ id: 's1', online: false })])
 
     const { result } = renderHook(() => useRealtimeMetrics('s1'), { wrapper: Wrapper })
 
@@ -131,7 +135,7 @@ describe('useRealtimeMetrics', () => {
 
   it('does not seed when last_active is 0', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', last_active: 0 })])
+    setLiveServers(queryClient, [makeMetrics({ id: 's1', last_active: 0 })])
 
     const { result } = renderHook(() => useRealtimeMetrics('s1'), { wrapper: Wrapper })
 
@@ -140,13 +144,13 @@ describe('useRealtimeMetrics', () => {
 
   it('appends data point when last_active changes', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', cpu: 10, last_active: 1000 })])
+    setLiveServers(queryClient, [makeMetrics({ id: 's1', cpu: 10, last_active: 1000 })])
 
     const { result } = renderHook(() => useRealtimeMetrics('s1'), { wrapper: Wrapper })
     expect(result.current).toHaveLength(1)
 
     act(() => {
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', cpu: 20, last_active: 1003 })])
+      setLiveServers(queryClient, [makeMetrics({ id: 's1', cpu: 20, last_active: 1003 })])
     })
 
     expect(result.current).toHaveLength(2)
@@ -155,14 +159,14 @@ describe('useRealtimeMetrics', () => {
 
   it('deduplicates when last_active stays the same', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', cpu: 10, last_active: 1000 })])
+    setLiveServers(queryClient, [makeMetrics({ id: 's1', cpu: 10, last_active: 1000 })])
 
     const { result } = renderHook(() => useRealtimeMetrics('s1'), { wrapper: Wrapper })
     expect(result.current).toHaveLength(1)
 
     // Same last_active, different cpu — should NOT append
     act(() => {
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', cpu: 99, last_active: 1000 })])
+      setLiveServers(queryClient, [makeMetrics({ id: 's1', cpu: 99, last_active: 1000 })])
     })
 
     expect(result.current).toHaveLength(1)
@@ -171,20 +175,20 @@ describe('useRealtimeMetrics', () => {
 
   it('ignores updates for a different server', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(
-      ['servers'],
-      [makeMetrics({ id: 's1', last_active: 1000 }), makeMetrics({ id: 's2', last_active: 2000 })]
-    )
+    setLiveServers(queryClient, [
+      makeMetrics({ id: 's1', last_active: 1000 }),
+      makeMetrics({ id: 's2', last_active: 2000 })
+    ])
 
     const { result } = renderHook(() => useRealtimeMetrics('s1'), { wrapper: Wrapper })
     expect(result.current).toHaveLength(1)
 
     // Update only s2
     act(() => {
-      queryClient.setQueryData<ServerMetrics[]>(
-        ['servers'],
-        [makeMetrics({ id: 's1', last_active: 1000 }), makeMetrics({ id: 's2', last_active: 2003 })]
-      )
+      setLiveServers(queryClient, [
+        makeMetrics({ id: 's1', last_active: 1000 }),
+        makeMetrics({ id: 's2', last_active: 2003 })
+      ])
     })
 
     expect(result.current).toHaveLength(1)
@@ -192,14 +196,14 @@ describe('useRealtimeMetrics', () => {
 
   it('trims buffer when exceeding threshold', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', last_active: 1 })])
+    setLiveServers(queryClient, [makeMetrics({ id: 's1', last_active: 1 })])
 
     const { result } = renderHook(() => useRealtimeMetrics('s1'), { wrapper: Wrapper })
 
     // Push 260 updates (seed=1, then 259 more → 260 total, exceeds 250 threshold)
     act(() => {
       for (let i = 2; i <= 260; i++) {
-        queryClient.setQueryData<ServerMetrics[]>(['servers'], [makeMetrics({ id: 's1', cpu: i, last_active: i })])
+        setLiveServers(queryClient, [makeMetrics({ id: 's1', cpu: i, last_active: i })])
       }
     })
 
@@ -213,10 +217,10 @@ describe('useRealtimeMetrics', () => {
 
   it('resets buffer when serverId changes', () => {
     const { queryClient, Wrapper } = createTestEnv()
-    queryClient.setQueryData<ServerMetrics[]>(
-      ['servers'],
-      [makeMetrics({ id: 's1', cpu: 10, last_active: 1000 }), makeMetrics({ id: 's2', cpu: 20, last_active: 2000 })]
-    )
+    setLiveServers(queryClient, [
+      makeMetrics({ id: 's1', cpu: 10, last_active: 1000 }),
+      makeMetrics({ id: 's2', cpu: 20, last_active: 2000 })
+    ])
 
     const { result, rerender } = renderHook(({ id }) => useRealtimeMetrics(id), {
       initialProps: { id: 's1' },

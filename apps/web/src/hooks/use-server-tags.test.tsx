@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { projectServerCatalog, readLiveServers } from '@/lib/server-catalog'
 import { useServerTags, useUpdateServerTags } from './use-server-tags'
 
 function harness() {
@@ -43,10 +44,28 @@ describe('useUpdateServerTags', () => {
     })
     const { qc, Wrapper } = harness()
     qc.setQueryData(['server-tags', 'srv-1'], ['old'])
-    qc.setQueryData(['servers'], [{ id: 'srv-1', tags: ['old'] }])
+    projectServerCatalog(qc, {
+      kind: 'rest_snapshot',
+      servers: [
+        {
+          capabilities: 0,
+          created_at: '2026-01-01T00:00:00Z',
+          features: [],
+          geo_manual: false,
+          has_token: true,
+          hidden: false,
+          id: 'srv-1',
+          name: 'srv-1',
+          protocol_version: 2,
+          updated_at: '2026-01-01T00:00:00Z',
+          weight: 0
+        }
+      ]
+    })
+    projectServerCatalog(qc, { kind: 'tags_changed', serverId: 'srv-1', tags: ['old'] })
     const { result } = renderHook(() => useUpdateServerTags('srv-1'), { wrapper: Wrapper })
     await result.current.mutateAsync(['b', 'a'])
     expect(qc.getQueryData(['server-tags', 'srv-1'])).toEqual(['a', 'b'])
-    expect((qc.getQueryData(['servers']) as Array<{ id: string; tags: string[] }>)[0].tags).toEqual(['a', 'b'])
+    expect(readLiveServers(qc)?.[0].tags).toEqual(['a', 'b'])
   })
 })

@@ -1,9 +1,7 @@
-import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { api } from '@/lib/api-client'
-import type { ServerResponse } from '@/lib/api-schema'
+import { useServerList } from '@/lib/server-catalog'
 import { StatusPageConfigForm } from './status-page-config-form'
 import { StatusPageIncidentsTab } from './status-page-incidents-tab'
 import { StatusPageMaintenanceTab } from './status-page-maintenance-tab'
@@ -27,10 +25,7 @@ function StatusPagesManagement() {
   const { tab } = Route.useSearch()
   const navigate = Route.useNavigate()
 
-  const { data: servers } = useQuery<ServerResponse[]>({
-    queryKey: ['servers-list'],
-    queryFn: () => api.get<ServerResponse[]>('/api/servers')
-  })
+  const { data: servers } = useServerList()
 
   return (
     <div>

@@ -1,7 +1,7 @@
 import type { WidgetManifest, WidgetModule } from '@serverbee/widget-sdk'
 import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { registryActions, useWidgetRegistry } from '@/widgets-runtime/registry'
 import { WidgetRenderer } from './widget-renderer'

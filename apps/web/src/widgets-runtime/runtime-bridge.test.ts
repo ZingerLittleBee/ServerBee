@@ -2,7 +2,7 @@
 import * as Sdk from '@serverbee/widget-sdk'
 import { QueryClient } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
+import { projectServerCatalog, type ServerMetrics } from '@/lib/server-catalog'
 import { mountRuntimeBridge } from './runtime-bridge'
 
 function makeServer(id: string): ServerMetrics {
@@ -41,6 +41,10 @@ function makeServer(id: string): ServerMetrics {
   }
 }
 
+function setLiveServers(queryClient: QueryClient, servers: ServerMetrics[]): void {
+  projectServerCatalog(queryClient, { kind: 'ws_full_sync', servers })
+}
+
 describe('runtime-bridge: React Query store wiring', () => {
   let qc: QueryClient
 
@@ -59,22 +63,22 @@ describe('runtime-bridge: React Query store wiring', () => {
   })
 
   it('serversStore reflects current cache after setQueryData', () => {
-    qc.setQueryData<ServerMetrics[]>(['servers'], [makeServer('s1'), makeServer('s2')])
+    setLiveServers(qc, [makeServer('s1'), makeServer('s2')])
     const list = Sdk.getRuntime().serversStore()
     expect(list.map((s) => s.id)).toEqual(['s1', 's2'])
   })
 
   it('serversStore returns the same array reference when cache is unchanged', () => {
-    qc.setQueryData<ServerMetrics[]>(['servers'], [makeServer('s1')])
+    setLiveServers(qc, [makeServer('s1')])
     const a = Sdk.getRuntime().serversStore()
     const b = Sdk.getRuntime().serversStore()
     expect(a).toBe(b)
   })
 
-  it('subscribeServers fires on ["servers"] cache updates', () => {
+  it('subscribeServers fires on live catalog updates', () => {
     const cb = vi.fn()
     const unsub = Sdk.getRuntime().subscribeServers(cb)
-    qc.setQueryData<ServerMetrics[]>(['servers'], [makeServer('s1')])
+    setLiveServers(qc, [makeServer('s1')])
     expect(cb).toHaveBeenCalled()
     unsub()
   })
@@ -88,7 +92,7 @@ describe('runtime-bridge: React Query store wiring', () => {
   })
 
   it('serverByIdStore looks up by id from cache', () => {
-    qc.setQueryData<ServerMetrics[]>(['servers'], [makeServer('s1'), makeServer('s2')])
+    setLiveServers(qc, [makeServer('s1'), makeServer('s2')])
     const lookup = Sdk.getRuntime().serverByIdStore('s2')
     expect((lookup as ServerMetrics).id).toBe('s2')
     expect(Sdk.getRuntime().serverByIdStore('missing')).toBeUndefined()

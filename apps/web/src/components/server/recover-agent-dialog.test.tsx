@@ -6,7 +6,8 @@ import { CAP_DEFAULT } from '@/lib/capabilities'
 
 const mockPost = vi.fn()
 const mockDelete = vi.fn()
-const mockSetQueryData = vi.fn()
+const mockProjectServerCatalog = vi.hoisted(() => vi.fn())
+const mockQueryClient = {}
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -35,7 +36,7 @@ vi.mock('@tanstack/react-query', () => ({
       }
     }
   }),
-  useQueryClient: () => ({ setQueryData: mockSetQueryData })
+  useQueryClient: () => mockQueryClient
 }))
 
 vi.mock('sonner', () => ({
@@ -60,6 +61,10 @@ vi.mock('@/lib/api-client', () => ({
     post: (path: string, body: unknown) => mockPost(path, body),
     delete: (path: string) => mockDelete(path)
   }
+}))
+
+vi.mock('@/lib/server-catalog', () => ({
+  projectServerCatalog: mockProjectServerCatalog
 }))
 
 vi.mock('@/components/ui/button', () => ({
@@ -131,7 +136,7 @@ describe('RecoverAgentDialog', () => {
   beforeEach(() => {
     mockPost.mockReset()
     mockDelete.mockReset()
-    mockSetQueryData.mockReset()
+    mockProjectServerCatalog.mockReset()
   })
 
   it('renders the server name in a read-only header (not as an input)', () => {
@@ -179,17 +184,11 @@ describe('RecoverAgentDialog', () => {
       expect(screen.getByText('plaintext-recover-code')).toBeInTheDocument()
     })
     expect(screen.getByText('add_server.shown_once_warning')).toBeInTheDocument()
-    expect(mockSetQueryData).toHaveBeenCalledWith(['servers'], expect.any(Function))
-    // The updater should patch outstanding_enrollment and (since revoke_immediately
-    // defaulted to true) flip has_token / online to false.
-    const updater = mockSetQueryData.mock.calls[0][1] as (
-      prev: Record<string, unknown>[] | undefined
-    ) => Record<string, unknown>[] | undefined
-    const patched = updater([{ id: 'srv-42', has_token: true, online: true, outstanding_enrollment: null }])
-    expect(patched?.[0]).toMatchObject({
-      has_token: false,
-      online: false,
-      outstanding_enrollment: { id: 'enr-9', code_prefix: 'plaint' }
+    expect(mockProjectServerCatalog).toHaveBeenCalledWith(mockQueryClient, {
+      kind: 'enrollment_changed',
+      serverId: 'srv-42',
+      outstandingEnrollment: expect.objectContaining({ id: 'enr-9', code_prefix: 'plaint' }),
+      tokenRevoked: true
     })
   })
 
@@ -244,13 +243,12 @@ describe('RecoverAgentDialog', () => {
     await waitFor(() => expect(mockDelete).toHaveBeenCalledTimes(1))
     expect(mockDelete).toHaveBeenCalledWith('/api/agent/enrollments/enr-out-1')
     await waitFor(() => {
-      expect(mockSetQueryData).toHaveBeenCalledWith(['servers'], expect.any(Function))
+      expect(mockProjectServerCatalog).toHaveBeenCalledWith(mockQueryClient, {
+        kind: 'enrollment_changed',
+        serverId: 'srv-42',
+        outstandingEnrollment: null,
+        tokenRevoked: false
+      })
     })
-    // The updater should clear outstanding_enrollment on the affected row.
-    const updater = mockSetQueryData.mock.calls[0][1] as (
-      prev: Record<string, unknown>[] | undefined
-    ) => Record<string, unknown>[] | undefined
-    const patched = updater([{ id: 'srv-42', outstanding_enrollment: { id: 'enr-out-1', code_prefix: 'abc123' } }])
-    expect(patched?.[0]).toMatchObject({ outstanding_enrollment: null })
   })
 })

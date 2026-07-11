@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { useEffect, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -11,12 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { useCreateBlock } from '@/hooks/use-firewall-blocks'
-import { ApiError, api } from '@/lib/api-client'
-
-interface ServerLite {
-  id: string
-  name: string
-}
+import { ApiError } from '@/lib/api-client'
+import { useServerList } from '@/lib/server-catalog'
 
 export interface AddBlockInitialValues {
   comment?: string
@@ -110,11 +105,7 @@ export function AddBlockDrawer({ open, onOpenChange, initialValues }: Props) {
     dispatchForm({ type: 'reset', initialValues })
   }, [open, initialValues])
 
-  const { data: servers } = useQuery<ServerLite[]>({
-    queryKey: ['servers', 'lite'],
-    queryFn: () => api.get<ServerLite[]>('/api/servers'),
-    enabled: open && form.coverType !== 'all'
-  })
+  const { data: servers } = useServerList({ enabled: open && form.coverType !== 'all' })
 
   const createMutation = useCreateBlock()
 

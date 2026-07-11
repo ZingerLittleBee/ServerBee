@@ -15,8 +15,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import { projectServerCatalog } from '@/lib/server-catalog'
 import { RegenerateCodeDialog } from './regenerate-code-dialog'
 
 interface PendingActionMenuProps {
@@ -33,7 +33,7 @@ export function PendingActionMenu({ serverId, serverName }: PendingActionMenuPro
   const deleteMutation = useMutation({
     mutationFn: () => api.delete<void>(`/api/servers/${serverId}`),
     onSuccess: () => {
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) => prev?.filter((s) => s.id !== serverId))
+      projectServerCatalog(queryClient, { kind: 'servers_removed', serverIds: [serverId] })
       toast.success(t('servers:card_pending.deleted'))
       setConfirmDeleteOpen(false)
     },

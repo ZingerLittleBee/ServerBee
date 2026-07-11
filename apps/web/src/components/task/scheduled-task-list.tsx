@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { Calendar, ChevronDown, ChevronRight, Edit, Pause, Play, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -13,14 +12,9 @@ import {
   useScheduledTasks,
   useUpdateScheduledTask
 } from '@/hooks/use-scheduled-tasks'
-import { api } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format'
+import { useServerList } from '@/lib/server-catalog'
 import { ScheduledTaskDialog } from './scheduled-task-dialog'
-
-interface ServerInfo {
-  id: string
-  name: string
-}
 
 function getExitCodeColor(code: number) {
   if (code === 0) {
@@ -47,10 +41,7 @@ export function ScheduledTaskList() {
   const runMutation = useRunScheduledTask()
   const updateMutation = useUpdateScheduledTask()
 
-  const { data: servers } = useQuery<ServerInfo[]>({
-    queryKey: ['servers-list'],
-    queryFn: () => api.get<ServerInfo[]>('/api/servers')
-  })
+  const { data: servers } = useServerList()
 
   const serverNameMap = new Map(servers?.map((s) => [s.id, s.name]) ?? [])
 

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import type { ServerMetricRecord } from '@/lib/api-schema'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import { extractLiveMetric, extractRecordMetric } from '@/lib/widget-helpers'
 
 export interface MetricSeriesPoint {

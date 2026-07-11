@@ -2,9 +2,9 @@ import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkServerSummary } from '@/hooks/use-network-api'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { CHART_COLORS } from '@/lib/chart-colors'
 import { formatLatency, formatPacketLoss, getLossTextClassName } from '@/lib/network-types'
+import type { ServerMetrics } from '@/lib/server-catalog'
 import type { NetworkQualityConfig } from '@/lib/widget-types'
 
 interface NetworkQualityWidgetProps {

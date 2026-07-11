@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ServerMetrics } from '@/hooks/use-servers-ws'
 import { api } from '@/lib/api-client'
+import { projectServerCatalog } from '@/lib/server-catalog'
 
 export function useServerTags(serverId: string, enabled = true) {
   return useQuery<string[]>({
@@ -17,9 +17,7 @@ export function useUpdateServerTags(serverId: string) {
     mutationFn: (tags) => api.put<string[]>(`/api/servers/${serverId}/tags`, { tags }),
     onSuccess: (data) => {
       queryClient.setQueryData<string[]>(['server-tags', serverId], data)
-      queryClient.setQueryData<ServerMetrics[]>(['servers'], (prev) =>
-        prev?.map((s) => (s.id === serverId ? { ...s, tags: data } : s))
-      )
+      projectServerCatalog(queryClient, { kind: 'tags_changed', serverId, tags: data })
     }
   })
 }
