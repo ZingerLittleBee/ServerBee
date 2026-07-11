@@ -19,13 +19,16 @@ the public DTO maps) had no compiler protection.
 
 `service::rollup` owns the rollup policy. Every scalar column of
 `records`/`records_hourly` is declared once in `METRIC_COLUMNS` with its SQL
-name, `RollupAgg` (AVG / CAST-AVG / window-end MAX), optional alert rule type,
-and a typed accessor. From that table we derive:
+name, `RollupAgg` (AVG / CAST-AVG / window MAX — for a monotonically growing
+counter the maximum coincides with the window-end value), optional alert rule
+type, and a typed accessor. From that table we derive:
 
 - the hourly rollup upsert (`aggregate_hourly_sql()`), pinned byte-for-byte to
   the original hand-written SQL by a golden test;
-- the alert metric read (`alert_metric`), with transfer counters deliberately
-  non-alertable (`alert_rule_type: None`);
+- the alert metric read (`alert_metric` → `Option<f64>`), with transfer
+  counters deliberately non-alertable: `alert_rule_type: None` resolves to
+  `None`, and `check_threshold` skips samples without a value, so no threshold
+  shape (including `min <= 0`) can fire on them;
 - the raw/hourly switch (`select_history_table`, `RAW_WINDOW_MAX_HOURS`).
 
 Alert evaluation reads through `RecordService::query_recent` /
