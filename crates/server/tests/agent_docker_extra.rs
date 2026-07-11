@@ -76,6 +76,7 @@ fn is_first_connect_noise(msg_type: Option<&str>) -> bool {
         msg_type,
         Some("ping_tasks_sync")
             | Some("network_probe_sync")
+            | Some("ip_quality_sync")
             | Some("blocklist_reset")
             | Some("blocklist_sync")
             | Some("blocklist_add")

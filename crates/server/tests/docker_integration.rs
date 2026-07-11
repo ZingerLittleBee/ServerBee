@@ -411,6 +411,7 @@ async fn test_docker_info_endpoint_requests_agent_when_cache_empty() {
                 // docker flow under test and are ignored.
                 Some("ping_tasks_sync")
                 | Some("network_probe_sync")
+                | Some("ip_quality_sync")
                 | Some("blocklist_reset")
                 | Some("blocklist_sync")
                 | Some("blocklist_add")
@@ -788,6 +789,7 @@ async fn test_docker_unavailable_fails_pending_request_and_clears_feature_state(
                 // docker flow under test and are ignored.
                 Some("ping_tasks_sync")
                 | Some("network_probe_sync")
+                | Some("ip_quality_sync")
                 | Some("blocklist_reset")
                 | Some("blocklist_sync")
                 | Some("blocklist_add")
