@@ -147,17 +147,9 @@ impl RecordService {
         to: DateTime<Utc>,
         interval: &str,
     ) -> Result<QueryHistoryResult, AppError> {
-        let use_hourly = match interval {
-            "raw" => false,
-            "hourly" => true,
-            _ => {
-                // "auto" mode
-                let duration = to - from;
-                duration > Duration::hours(24)
-            }
-        };
+        let table = super::rollup::select_history_table(interval, from, to);
 
-        if use_hourly {
+        if table == super::rollup::HistoryTable::Hourly {
             let records = record_hourly::Entity::find()
                 .filter(record_hourly::Column::ServerId.eq(server_id))
                 .filter(record_hourly::Column::Time.gte(from))
@@ -1244,49 +1236,6 @@ mod tests {
         // Verify the Hourly variant can be constructed
         let hourly: QueryHistoryResult = QueryHistoryResult::Hourly(vec![]);
         assert!(matches!(hourly, QueryHistoryResult::Hourly(v) if v.is_empty()));
-    }
-
-    /// The interval auto-selection logic: <=24h => raw, >24h => hourly.
-    /// Extracted from `query_history` so we can verify it without DB.
-    #[test]
-    fn test_interval_selection_logic() {
-        let now = Utc::now();
-
-        // Within 24 hours => should use raw
-        let from_recent = now - Duration::hours(12);
-        let duration_recent = now - from_recent;
-        let use_hourly_recent = duration_recent > Duration::hours(24);
-        assert!(!use_hourly_recent, "12h range should select raw");
-
-        // Exactly 24 hours => should use raw (not >24h)
-        let from_exact = now - Duration::hours(24);
-        let duration_exact = now - from_exact;
-        let use_hourly_exact = duration_exact > Duration::hours(24);
-        assert!(
-            !use_hourly_exact,
-            "24h range should select raw (not strictly greater)"
-        );
-
-        // More than 24 hours => should use hourly
-        let from_old = now - Duration::hours(48);
-        let duration_old = now - from_old;
-        let use_hourly_old = duration_old > Duration::hours(24);
-        assert!(use_hourly_old, "48h range should select hourly");
-
-        // Explicit interval overrides
-        let explicit_raw = match "raw" {
-            "raw" => false,
-            "hourly" => true,
-            _ => unreachable!(),
-        };
-        assert!(!explicit_raw, "explicit 'raw' should use raw");
-
-        let explicit_hourly = match "hourly" {
-            "raw" => false,
-            "hourly" => true,
-            _ => unreachable!(),
-        };
-        assert!(explicit_hourly, "explicit 'hourly' should use hourly");
     }
 
     /// Verify the retention cutoff calculation used in cleanup_expired.

@@ -9,6 +9,36 @@
 //! per-device JSON blob, so `RecordService::aggregate_hourly` folds it in Rust
 //! after the SQL pass.
 
+use chrono::{DateTime, Duration, Utc};
+
+/// Longest range the raw table serves under `interval = "auto"`; longer
+/// ranges read the hourly rollup.
+pub const RAW_WINDOW_MAX_HOURS: i64 = 24;
+
+/// Which table serves a history query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HistoryTable {
+    Raw,
+    Hourly,
+}
+
+/// Resolve the table for a history query: explicit `"raw"` / `"hourly"` win,
+/// anything else (the `"auto"` default) switches to the hourly rollup once
+/// the range exceeds [`RAW_WINDOW_MAX_HOURS`].
+pub fn select_history_table(interval: &str, from: DateTime<Utc>, to: DateTime<Utc>) -> HistoryTable {
+    match interval {
+        "raw" => HistoryTable::Raw,
+        "hourly" => HistoryTable::Hourly,
+        _ => {
+            if to - from > Duration::hours(RAW_WINDOW_MAX_HOURS) {
+                HistoryTable::Hourly
+            } else {
+                HistoryTable::Raw
+            }
+        }
+    }
+}
+
 /// How a raw metric column folds into its hourly bucket.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RollupAgg {
@@ -142,6 +172,29 @@ mod tests {
                 temperature = excluded.temperature, \
                 gpu_usage = excluded.gpu_usage";
         assert_eq!(aggregate_hourly_sql(), expected);
+    }
+
+    /// Table selection: explicit intervals win; "auto" switches to hourly
+    /// strictly beyond 24h (a range of exactly 24h still reads raw).
+    #[test]
+    fn select_history_table_covers_explicit_and_auto_intervals() {
+        let now = Utc::now();
+        let hours = |h: i64| now - Duration::hours(h);
+
+        assert_eq!(select_history_table("raw", hours(48), now), HistoryTable::Raw);
+        assert_eq!(
+            select_history_table("hourly", hours(1), now),
+            HistoryTable::Hourly
+        );
+        assert_eq!(select_history_table("auto", hours(12), now), HistoryTable::Raw);
+        assert_eq!(
+            select_history_table("auto", hours(RAW_WINDOW_MAX_HOURS), now),
+            HistoryTable::Raw
+        );
+        assert_eq!(
+            select_history_table("auto", hours(48), now),
+            HistoryTable::Hourly
+        );
     }
 
     #[test]
