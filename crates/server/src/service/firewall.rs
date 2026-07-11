@@ -305,9 +305,12 @@ impl FirewallService {
         Ok(())
     }
 
-    /// Tell an agent to drop every entry it currently holds and clear our
-    /// `apply_state` map for that agent. Caller is responsible for verifying
-    /// capability + protocol version.
+    /// Tell an agent to drop every entry it currently holds. Caller is
+    /// responsible for verifying capability + protocol version.
+    ///
+    /// Sending the command is not proof that the kernel state was wiped, so
+    /// `apply_state` remains untouched until [`Self::record_reset_ack`] receives
+    /// a successful acknowledgement.
     pub async fn push_reset_to(
         &self,
         server_id: &str,
@@ -318,8 +321,6 @@ impl FirewallService {
                 .send(serverbee_common::protocol::ServerMessage::BlocklistReset)
                 .await;
         }
-        let mut g = self.apply_state.write().await;
-        g.retain(|(_block_id, srv), _| srv != server_id);
     }
 
     /// Update `apply_state`, write an audit row, and fan out a
@@ -510,8 +511,10 @@ impl FirewallService {
         Ok(Some(row.id))
     }
 
-    /// Audit a `BlocklistResetAck` from the agent. No `apply_state` mutation
-    /// is needed because `push_reset_to` already cleared it locally.
+    /// Apply and audit a `BlocklistResetAck` from the agent. A successful ack is
+    /// the only evidence that the agent wiped its kernel state, so only that
+    /// path clears the server's entries from `apply_state`. Failed acks retain
+    /// the last-known state for operators and later retries.
     pub async fn record_reset_ack(
         &self,
         server_id: &str,
@@ -519,6 +522,11 @@ impl FirewallService {
         reason: Option<String>,
         db: &DatabaseConnection,
     ) {
+        if ok {
+            let mut g = self.apply_state.write().await;
+            g.retain(|(_block_id, srv), _| srv != server_id);
+        }
+
         let action = if ok {
             "firewall_reset_acked"
         } else {
@@ -1219,7 +1227,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn push_reset_sends_reset_and_clears_only_target_apply_state() {
+    async fn push_reset_sends_reset_without_clearing_apply_state() {
         use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
         use serverbee_common::protocol::ServerMessage;
 
@@ -1227,7 +1235,8 @@ mod tests {
         let (svc, mgr) = make_service(db);
         let mut rx = wire_agent(&mgr, "srv-A", FIREWALL_MIN_PROTOCOL, 0);
 
-        // Seed apply_state for srv-A and srv-B; only srv-A should be cleared.
+        // Sending the command is not proof that the agent wiped its state.
+        // Both entries must remain until a successful reset acknowledgement.
         {
             let mut g = svc.apply_state.write().await;
             g.insert(
@@ -1254,12 +1263,12 @@ mod tests {
         assert!(matches!(msg, ServerMessage::BlocklistReset));
 
         let g = svc.apply_state.read().await;
-        assert!(!g.contains_key(&("blk-1".into(), "srv-A".to_string())));
+        assert!(g.contains_key(&("blk-1".into(), "srv-A".to_string())));
         assert!(g.contains_key(&("blk-2".into(), "srv-B".to_string())));
     }
 
     #[tokio::test]
-    async fn push_reset_clears_state_even_without_connection() {
+    async fn push_reset_without_connection_preserves_apply_state() {
         let (db, _tmp) = setup_test_db().await;
         let (svc, mgr) = make_service(db);
         {
@@ -1273,10 +1282,11 @@ mod tests {
                 },
             );
         }
-        // No connection for "ghost" — the local apply_state is still cleared.
+        // With no connection there can be no successful acknowledgement, so
+        // the last-known state must remain intact.
         svc.push_reset_to("ghost", &mgr).await;
         let g = svc.apply_state.read().await;
-        assert!(g.is_empty());
+        assert!(g.contains_key(&("blk-1".into(), "ghost".to_string())));
     }
 
     // ── record_ack: state mirror + audit + broadcast ──
@@ -1366,25 +1376,68 @@ mod tests {
     // ── record_reset_ack: ok / failure audit actions ──
 
     #[tokio::test]
-    async fn record_reset_ack_ok_writes_acked_audit() {
+    async fn record_reset_ack_ok_writes_acked_audit_and_clears_only_target_state() {
         let (db, _tmp) = setup_test_db().await;
         let (svc, _mgr) = make_service(db.clone());
+
+        {
+            let mut g = svc.apply_state.write().await;
+            g.insert(
+                ("blk-1".into(), "srv-A".into()),
+                ApplyState {
+                    state: BlocklistEntryState::Present,
+                    reason: None,
+                    at: chrono::Utc::now(),
+                },
+            );
+            g.insert(
+                ("blk-2".into(), "srv-B".into()),
+                ApplyState {
+                    state: BlocklistEntryState::Present,
+                    reason: None,
+                    at: chrono::Utc::now(),
+                },
+            );
+        }
+
         svc.record_reset_ack("srv-A", true, None, &db).await;
+
         let acked = fetch_audits(&db, "firewall_reset_acked").await;
         assert_eq!(acked.len(), 1);
+
+        let g = svc.apply_state.read().await;
+        assert!(!g.contains_key(&("blk-1".into(), "srv-A".to_string())));
+        assert!(g.contains_key(&("blk-2".into(), "srv-B".to_string())));
     }
 
     #[tokio::test]
-    async fn record_reset_ack_failure_writes_failed_audit() {
+    async fn record_reset_ack_failure_writes_failed_audit_and_preserves_state() {
         let (db, _tmp) = setup_test_db().await;
         let (svc, _mgr) = make_service(db.clone());
+
+        {
+            let mut g = svc.apply_state.write().await;
+            g.insert(
+                ("blk-1".into(), "srv-A".into()),
+                ApplyState {
+                    state: BlocklistEntryState::Present,
+                    reason: None,
+                    at: chrono::Utc::now(),
+                },
+            );
+        }
+
         svc.record_reset_ack("srv-A", false, Some("agent error".into()), &db)
             .await;
+
         let failed = fetch_audits(&db, "firewall_reset_failed_agent").await;
         assert_eq!(failed.len(), 1);
         // The success action must NOT be written.
         let acked = fetch_audits(&db, "firewall_reset_acked").await;
         assert!(acked.is_empty());
+
+        let g = svc.apply_state.read().await;
+        assert!(g.contains_key(&("blk-1".into(), "srv-A".to_string())));
     }
 
     // ── broadcast_changed_* ──

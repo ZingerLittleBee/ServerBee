@@ -1,4 +1,5 @@
 pub mod agent_manager;
+pub mod agent_reconcile;
 pub mod alert;
 pub mod apns;
 pub mod asn;

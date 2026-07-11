@@ -23,6 +23,7 @@ use crate::router::api::network_probe::{
     get_server_network_targets,
 };
 use crate::service::agent_manager::AgentManager;
+use crate::service::agent_reconcile::AgentDesiredStateDomain;
 use crate::service::audit::AuditService;
 use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
 use crate::service::network_probe::NetworkProbeService;
@@ -33,7 +34,7 @@ use crate::service::task_scheduler;
 use crate::service::upgrade_tracker::{StartUpgradeJobError, UpgradeLookup};
 use crate::state::AppState;
 use serverbee_common::protocol::ServerMessage;
-use serverbee_common::types::{NetworkProbeTarget, OutstandingEnrollmentSummary};
+use serverbee_common::types::OutstandingEnrollmentSummary;
 
 const DEFAULT_SERVER_NAME: &str = "New Server";
 
@@ -1198,25 +1199,12 @@ async fn set_server_network_targets(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     NetworkProbeService::set_server_targets(&state.db, &id, body.target_ids).await?;
 
-    // Push updated NetworkProbeSync to agent if online
-    if let Some(tx) = state.agent_manager.get_sender(&id) {
-        let targets = NetworkProbeService::get_server_targets(&state.db, &id).await?;
-        let setting = NetworkProbeService::get_setting(&state.db).await?;
-        let probe_targets: Vec<NetworkProbeTarget> = targets
-            .into_iter()
-            .map(|t| NetworkProbeTarget {
-                target_id: t.id,
-                name: t.name,
-                target: t.target,
-                probe_type: t.probe_type,
-            })
-            .collect();
-        let msg = ServerMessage::NetworkProbeSync {
-            targets: probe_targets,
-            interval: setting.interval,
-            packet_count: setting.packet_count,
-        };
-        let _ = tx.send(msg).await;
+    if let Err(error) = state
+        .agent_desired_state
+        .reconcile_agent(&id, AgentDesiredStateDomain::NetworkProbes)
+        .await
+    {
+        tracing::warn!(server_id = id, %error, "failed to reconcile network probe desired state");
     }
 
     ok("ok")

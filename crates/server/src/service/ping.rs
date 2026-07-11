@@ -3,12 +3,8 @@ use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{ping_record, ping_task, server};
+use crate::entity::{ping_record, ping_task};
 use crate::error::AppError;
-use crate::service::agent_manager::AgentManager;
-use serverbee_common::constants::{CAP_DEFAULT, has_capability, probe_type_to_cap};
-use serverbee_common::protocol::ServerMessage;
-use serverbee_common::types::PingTaskConfig;
 
 pub struct PingService;
 
@@ -57,7 +53,6 @@ impl PingService {
 
     pub async fn create(
         db: &DatabaseConnection,
-        agent_manager: &AgentManager,
         input: CreatePingTask,
     ) -> Result<ping_task::Model, AppError> {
         if !["icmp", "tcp", "http"].contains(&input.probe_type.as_str()) {
@@ -81,17 +76,11 @@ impl PingService {
             enabled: Set(input.enabled),
             created_at: Set(Utc::now()),
         };
-        let created = model.insert(db).await?;
-
-        // Sync tasks to affected agents
-        Self::sync_tasks_to_agents(db, agent_manager).await;
-
-        Ok(created)
+        Ok(model.insert(db).await?)
     }
 
     pub async fn update(
         db: &DatabaseConnection,
-        agent_manager: &AgentManager,
         id: &str,
         input: UpdatePingTask,
     ) -> Result<ping_task::Model, AppError> {
@@ -126,18 +115,10 @@ impl PingService {
             model.enabled = Set(enabled);
         }
 
-        let updated = model.update(db).await?;
-
-        Self::sync_tasks_to_agents(db, agent_manager).await;
-
-        Ok(updated)
+        Ok(model.update(db).await?)
     }
 
-    pub async fn delete(
-        db: &DatabaseConnection,
-        agent_manager: &AgentManager,
-        id: &str,
-    ) -> Result<(), AppError> {
+    pub async fn delete(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
         let result = ping_task::Entity::delete_by_id(id).exec(db).await?;
         if result.rows_affected == 0 {
             return Err(AppError::NotFound(format!("Ping task {id} not found")));
@@ -147,8 +128,6 @@ impl PingService {
             .filter(ping_record::Column::TaskId.eq(id))
             .exec(db)
             .await?;
-
-        Self::sync_tasks_to_agents(db, agent_manager).await;
 
         Ok(())
     }
@@ -174,155 +153,12 @@ impl PingService {
             .all(db)
             .await?)
     }
-
-    /// Send current ping tasks to a specific agent (e.g., on new connection).
-    pub async fn sync_tasks_to_agent(
-        db: &DatabaseConnection,
-        agent_manager: &AgentManager,
-        server_id: &str,
-    ) {
-        let tasks = match ping_task::Entity::find()
-            .filter(ping_task::Column::Enabled.eq(true))
-            .all(db)
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::error!("Failed to load ping tasks for agent sync: {e}");
-                return;
-            }
-        };
-
-        // Fetch server capabilities
-        let server_caps = server::Entity::find_by_id(server_id)
-            .one(db)
-            .await
-            .ok()
-            .flatten()
-            .map(|s| s.capabilities as u32)
-            .unwrap_or(CAP_DEFAULT);
-
-        let mut task_configs: Vec<PingTaskConfig> = Vec::new();
-        for task in &tasks {
-            let server_ids: Vec<String> =
-                serde_json::from_str(&task.server_ids_json).unwrap_or_default();
-            // Include task if server_ids is empty (all agents) or contains this server
-            if server_ids.is_empty() || server_ids.contains(&server_id.to_string()) {
-                // Filter by capability
-                if probe_type_to_cap(&task.probe_type)
-                    .map(|cap| has_capability(server_caps, cap))
-                    .unwrap_or(false)
-                {
-                    task_configs.push(PingTaskConfig {
-                        task_id: task.id.clone(),
-                        probe_type: task.probe_type.clone(),
-                        target: task.target.clone(),
-                        interval: task.interval as u32,
-                    });
-                }
-            }
-        }
-
-        // Always send PingTasksSync (even if empty — tells Agent to stop all probes)
-        if let Some(tx) = agent_manager.get_sender(server_id) {
-            let msg = ServerMessage::PingTasksSync {
-                tasks: task_configs,
-            };
-            let _ = tx.send(msg).await;
-        }
-    }
-
-    /// Sync all enabled ping tasks to all connected agents.
-    async fn sync_tasks_to_agents(db: &DatabaseConnection, agent_manager: &AgentManager) {
-        let tasks = match ping_task::Entity::find()
-            .filter(ping_task::Column::Enabled.eq(true))
-            .all(db)
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::error!("Failed to load ping tasks for sync: {e}");
-                return;
-            }
-        };
-
-        // Fetch capabilities for all connected agents
-        let connected_ids = agent_manager.connected_server_ids();
-        let server_caps_map: std::collections::HashMap<String, u32> = match server::Entity::find()
-            .filter(server::Column::Id.is_in(connected_ids.iter().cloned()))
-            .all(db)
-            .await
-        {
-            Ok(servers) => servers
-                .into_iter()
-                .map(|s| {
-                    let caps = s.capabilities as u32;
-                    (s.id, caps)
-                })
-                .collect(),
-            Err(e) => {
-                tracing::error!("Failed to load server caps for ping sync: {e}");
-                return;
-            }
-        };
-
-        // Build per-agent task lists filtered by capability
-        let mut agent_tasks: std::collections::HashMap<String, Vec<PingTaskConfig>> =
-            std::collections::HashMap::new();
-
-        // Ensure every connected agent gets an entry (even if empty)
-        for sid in &connected_ids {
-            agent_tasks.entry(sid.clone()).or_default();
-        }
-
-        for task in &tasks {
-            let server_ids: Vec<String> =
-                serde_json::from_str(&task.server_ids_json).unwrap_or_default();
-            let config = PingTaskConfig {
-                task_id: task.id.clone(),
-                probe_type: task.probe_type.clone(),
-                target: task.target.clone(),
-                interval: task.interval as u32,
-            };
-
-            let target_ids: Vec<String> = if server_ids.is_empty() {
-                connected_ids.clone()
-            } else {
-                server_ids
-            };
-
-            for sid in target_ids {
-                let caps = server_caps_map.get(&sid).copied().unwrap_or(CAP_DEFAULT);
-                if probe_type_to_cap(&task.probe_type)
-                    .map(|cap| has_capability(caps, cap))
-                    .unwrap_or(false)
-                {
-                    agent_tasks.entry(sid).or_default().push(config.clone());
-                }
-            }
-        }
-
-        for (server_id, task_configs) in agent_tasks {
-            if let Some(tx) = agent_manager.get_sender(&server_id) {
-                let msg = ServerMessage::PingTasksSync {
-                    tasks: task_configs,
-                };
-                let _ = tx.send(msg).await;
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::setup_test_db;
-    use serverbee_common::constants::{CAP_PING_HTTP, CAP_PING_ICMP};
-
-    fn test_agent_manager() -> crate::service::agent_manager::AgentManager {
-        let (tx, _) = tokio::sync::broadcast::channel(16);
-        crate::service::agent_manager::AgentManager::new(tx)
-    }
 
     fn sample_create_ping_task() -> CreatePingTask {
         CreatePingTask {
@@ -338,12 +174,9 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_list_ping_task() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
         let input = sample_create_ping_task();
-        let created = PingService::create(&db, &agent_manager, input)
-            .await
-            .unwrap();
+        let created = PingService::create(&db, input).await.unwrap();
 
         let list = PingService::list(&db).await.unwrap();
         assert_eq!(list.len(), 1);
@@ -355,13 +188,12 @@ mod tests {
     #[tokio::test]
     async fn create_rejects_literal_metadata_target() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
         let mut input = sample_create_ping_task();
         input.probe_type = "http".to_string();
         input.target = "http://169.254.169.254/latest/meta-data/".to_string();
 
-        let result = PingService::create(&db, &agent_manager, input).await;
+        let result = PingService::create(&db, input).await;
         assert!(
             result.is_err(),
             "creating a ping task targeting cloud metadata must be rejected"
@@ -372,15 +204,13 @@ mod tests {
     #[tokio::test]
     async fn update_rejects_literal_loopback_target() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
-        let created = PingService::create(&db, &agent_manager, sample_create_ping_task())
+        let created = PingService::create(&db, sample_create_ping_task())
             .await
             .unwrap();
 
         let result = PingService::update(
             &db,
-            &agent_manager,
             &created.id,
             UpdatePingTask {
                 name: None,
@@ -401,16 +231,11 @@ mod tests {
     #[tokio::test]
     async fn test_delete_ping_task() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
         let input = sample_create_ping_task();
-        let created = PingService::create(&db, &agent_manager, input)
-            .await
-            .unwrap();
+        let created = PingService::create(&db, input).await.unwrap();
 
-        PingService::delete(&db, &agent_manager, &created.id)
-            .await
-            .unwrap();
+        PingService::delete(&db, &created.id).await.unwrap();
 
         let list = PingService::list(&db).await.unwrap();
         assert!(list.is_empty());
@@ -419,12 +244,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_ping_task() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
         let input = sample_create_ping_task();
-        let created = PingService::create(&db, &agent_manager, input)
-            .await
-            .unwrap();
+        let created = PingService::create(&db, input).await.unwrap();
 
         let fetched = PingService::get(&db, &created.id).await.unwrap();
         assert_eq!(fetched.id, created.id);
@@ -434,25 +256,6 @@ mod tests {
     }
 
     // --- helpers --------------------------------------------------------
-
-    /// Seed a minimal `servers` row with the given capabilities mirror.
-    async fn insert_test_server(db: &DatabaseConnection, id: &str, capabilities: u32) {
-        let now = Utc::now();
-        server::ActiveModel {
-            id: Set(id.to_string()),
-            name: Set(format!("srv-{id}")),
-            weight: Set(0),
-            hidden: Set(false),
-            capabilities: Set(capabilities as i32),
-            protocol_version: Set(1),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .expect("insert test server should succeed");
-    }
 
     /// Seed a single ping record and return the inserted row id.
     async fn insert_ping_record(
@@ -489,19 +292,6 @@ mod tests {
         }
     }
 
-    /// Register a connected agent with a real mpsc sender so `get_sender`
-    /// returns `Some`. Returns the receiver so the channel stays open and we
-    /// can inspect delivered `ServerMessage`s.
-    fn connect_agent(
-        agent_manager: &crate::service::agent_manager::AgentManager,
-        server_id: &str,
-    ) -> tokio::sync::mpsc::Receiver<ServerMessage> {
-        let (tx, rx) = tokio::sync::mpsc::channel(16);
-        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8080));
-        agent_manager.add_connection(server_id.to_string(), format!("srv-{server_id}"), tx, addr);
-        rx
-    }
-
     // --- get error path -------------------------------------------------
 
     #[tokio::test]
@@ -516,12 +306,11 @@ mod tests {
     #[tokio::test]
     async fn create_rejects_invalid_probe_type() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
         let mut input = sample_create_ping_task();
         input.probe_type = "udp".to_string();
 
-        let result = PingService::create(&db, &agent_manager, input).await;
+        let result = PingService::create(&db, input).await;
         assert!(matches!(result, Err(AppError::Validation(_))));
         // Nothing should have been persisted.
         assert!(PingService::list(&db).await.unwrap().is_empty());
@@ -530,16 +319,13 @@ mod tests {
     #[tokio::test]
     async fn create_persists_server_ids_json() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
         let mut input = sample_create_ping_task();
         input.probe_type = "icmp".to_string();
         input.target = "1.1.1.1".to_string();
         input.server_ids = vec!["s1".to_string(), "s2".to_string()];
 
-        let created = PingService::create(&db, &agent_manager, input)
-            .await
-            .unwrap();
+        let created = PingService::create(&db, input).await.unwrap();
         let parsed: Vec<String> = serde_json::from_str(&created.server_ids_json).unwrap();
         assert_eq!(parsed, vec!["s1".to_string(), "s2".to_string()]);
     }
@@ -549,24 +335,21 @@ mod tests {
     #[tokio::test]
     async fn update_missing_task_returns_not_found() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
-        let result = PingService::update(&db, &agent_manager, "ghost", empty_update()).await;
+        let result = PingService::update(&db, "ghost", empty_update()).await;
         assert!(matches!(result, Err(AppError::NotFound(_))));
     }
 
     #[tokio::test]
     async fn update_applies_all_fields() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
-        let created = PingService::create(&db, &agent_manager, sample_create_ping_task())
+        let created = PingService::create(&db, sample_create_ping_task())
             .await
             .unwrap();
 
         let updated = PingService::update(
             &db,
-            &agent_manager,
             &created.id,
             UpdatePingTask {
                 name: Some("Renamed".to_string()),
@@ -592,13 +375,12 @@ mod tests {
     #[tokio::test]
     async fn update_with_no_fields_is_noop() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
-        let created = PingService::create(&db, &agent_manager, sample_create_ping_task())
+        let created = PingService::create(&db, sample_create_ping_task())
             .await
             .unwrap();
 
-        let updated = PingService::update(&db, &agent_manager, &created.id, empty_update())
+        let updated = PingService::update(&db, &created.id, empty_update())
             .await
             .unwrap();
 
@@ -613,15 +395,13 @@ mod tests {
     #[tokio::test]
     async fn update_rejects_invalid_probe_type() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
-        let created = PingService::create(&db, &agent_manager, sample_create_ping_task())
+        let created = PingService::create(&db, sample_create_ping_task())
             .await
             .unwrap();
 
         let result = PingService::update(
             &db,
-            &agent_manager,
             &created.id,
             UpdatePingTask {
                 probe_type: Some("ftp".to_string()),
@@ -641,18 +421,16 @@ mod tests {
     #[tokio::test]
     async fn delete_missing_task_returns_not_found() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
-        let result = PingService::delete(&db, &agent_manager, "ghost").await;
+        let result = PingService::delete(&db, "ghost").await;
         assert!(matches!(result, Err(AppError::NotFound(_))));
     }
 
     #[tokio::test]
     async fn delete_removes_associated_records() {
         let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
 
-        let created = PingService::create(&db, &agent_manager, sample_create_ping_task())
+        let created = PingService::create(&db, sample_create_ping_task())
             .await
             .unwrap();
 
@@ -662,9 +440,7 @@ mod tests {
         // A record for an unrelated task must survive the delete.
         insert_ping_record(&db, "other-task", "s1", 99.0, true, t).await;
 
-        PingService::delete(&db, &agent_manager, &created.id)
-            .await
-            .unwrap();
+        PingService::delete(&db, &created.id).await.unwrap();
 
         let remaining = ping_record::Entity::find().all(&db).await.unwrap();
         assert_eq!(remaining.len(), 1);
@@ -744,264 +520,5 @@ mod tests {
         .await
         .unwrap();
         assert!(records.is_empty());
-    }
-
-    // --- sync_tasks_to_agent (single) -----------------------------------
-
-    /// Drain all currently-buffered messages from the agent's receiver.
-    fn drain_messages(rx: &mut tokio::sync::mpsc::Receiver<ServerMessage>) -> Vec<ServerMessage> {
-        let mut out = Vec::new();
-        while let Ok(msg) = rx.try_recv() {
-            out.push(msg);
-        }
-        out
-    }
-
-    fn ping_tasks_from(msgs: &[ServerMessage]) -> Option<Vec<PingTaskConfig>> {
-        msgs.iter().find_map(|m| match m {
-            ServerMessage::PingTasksSync { tasks } => Some(tasks.clone()),
-            _ => None,
-        })
-    }
-
-    #[tokio::test]
-    async fn sync_to_agent_includes_capable_tasks_and_skips_uncapable() {
-        let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
-
-        // Server supports only ICMP ping (and nothing else relevant).
-        insert_test_server(&db, "s1", CAP_PING_ICMP).await;
-
-        // ICMP task targeting all agents (empty server_ids) -> should be sent.
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "icmp-all".to_string(),
-                probe_type: "icmp".to_string(),
-                target: "1.1.1.1".to_string(),
-                interval: 30,
-                server_ids: vec![],
-                enabled: true,
-            },
-        )
-        .await
-        .unwrap();
-        // HTTP task -> server lacks CAP_PING_HTTP, must be filtered out.
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "http-all".to_string(),
-                probe_type: "http".to_string(),
-                target: "https://example.com".to_string(),
-                interval: 30,
-                server_ids: vec![],
-                enabled: true,
-            },
-        )
-        .await
-        .unwrap();
-
-        let mut rx = connect_agent(&agent_manager, "s1");
-        PingService::sync_tasks_to_agent(&db, &agent_manager, "s1").await;
-
-        let msgs = drain_messages(&mut rx);
-        let tasks = ping_tasks_from(&msgs).expect("a PingTasksSync must be delivered");
-        assert_eq!(tasks.len(), 1, "only the ICMP task is capability-allowed");
-        assert_eq!(tasks[0].probe_type, "icmp");
-        assert_eq!(tasks[0].interval, 30);
-    }
-
-    #[tokio::test]
-    async fn sync_to_agent_respects_server_id_targeting() {
-        let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
-
-        insert_test_server(&db, "s1", CAP_DEFAULT).await;
-
-        // Task scoped to a different server -> not for s1.
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "scoped-other".to_string(),
-                probe_type: "icmp".to_string(),
-                target: "1.1.1.1".to_string(),
-                interval: 60,
-                server_ids: vec!["s2".to_string()],
-                enabled: true,
-            },
-        )
-        .await
-        .unwrap();
-        // Task explicitly scoped to s1 -> included.
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "scoped-s1".to_string(),
-                probe_type: "tcp".to_string(),
-                target: "1.1.1.1:53".to_string(),
-                interval: 60,
-                server_ids: vec!["s1".to_string()],
-                enabled: true,
-            },
-        )
-        .await
-        .unwrap();
-
-        let mut rx = connect_agent(&agent_manager, "s1");
-        PingService::sync_tasks_to_agent(&db, &agent_manager, "s1").await;
-
-        let msgs = drain_messages(&mut rx);
-        let tasks = ping_tasks_from(&msgs).expect("a PingTasksSync must be delivered");
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].probe_type, "tcp");
-    }
-
-    #[tokio::test]
-    async fn sync_to_agent_excludes_disabled_tasks() {
-        let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
-
-        insert_test_server(&db, "s1", CAP_DEFAULT).await;
-
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "disabled".to_string(),
-                probe_type: "icmp".to_string(),
-                target: "1.1.1.1".to_string(),
-                interval: 60,
-                server_ids: vec![],
-                enabled: false,
-            },
-        )
-        .await
-        .unwrap();
-
-        let mut rx = connect_agent(&agent_manager, "s1");
-        PingService::sync_tasks_to_agent(&db, &agent_manager, "s1").await;
-
-        let msgs = drain_messages(&mut rx);
-        // Sync still fires (telling the agent to stop probes) but with no tasks.
-        let tasks = ping_tasks_from(&msgs).expect("a PingTasksSync must be delivered");
-        assert!(tasks.is_empty());
-    }
-
-    #[tokio::test]
-    async fn sync_to_agent_uses_cap_default_when_server_row_missing() {
-        let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
-
-        // No `servers` row for s1 -> falls back to CAP_DEFAULT (ICMP allowed).
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "icmp".to_string(),
-                probe_type: "icmp".to_string(),
-                target: "1.1.1.1".to_string(),
-                interval: 60,
-                server_ids: vec![],
-                enabled: true,
-            },
-        )
-        .await
-        .unwrap();
-
-        let mut rx = connect_agent(&agent_manager, "s1");
-        PingService::sync_tasks_to_agent(&db, &agent_manager, "s1").await;
-
-        let msgs = drain_messages(&mut rx);
-        let tasks = ping_tasks_from(&msgs).expect("a PingTasksSync must be delivered");
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].probe_type, "icmp");
-    }
-
-    #[tokio::test]
-    async fn sync_to_agent_noop_when_agent_not_connected() {
-        let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
-
-        insert_test_server(&db, "s1", CAP_DEFAULT).await;
-        PingService::create(&db, &agent_manager, sample_create_ping_task())
-            .await
-            .unwrap();
-
-        // No connection registered -> get_sender returns None, nothing to assert
-        // beyond "does not panic".
-        PingService::sync_tasks_to_agent(&db, &agent_manager, "s1").await;
-    }
-
-    // --- sync_tasks_to_agents (plural, exercised via create/update/delete) -
-
-    #[tokio::test]
-    async fn create_syncs_per_agent_filtered_by_capability() {
-        let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
-
-        // s1 supports HTTP ping, s2 does not.
-        insert_test_server(&db, "s1", CAP_PING_HTTP).await;
-        insert_test_server(&db, "s2", CAP_PING_ICMP).await;
-        let mut rx1 = connect_agent(&agent_manager, "s1");
-        let mut rx2 = connect_agent(&agent_manager, "s2");
-
-        // Creating the task triggers sync_tasks_to_agents over all connected agents.
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "http-all".to_string(),
-                probe_type: "http".to_string(),
-                target: "https://example.com".to_string(),
-                interval: 45,
-                server_ids: vec![],
-                enabled: true,
-            },
-        )
-        .await
-        .unwrap();
-
-        let tasks1 = ping_tasks_from(&drain_messages(&mut rx1)).expect("s1 gets a sync");
-        assert_eq!(tasks1.len(), 1, "s1 has HTTP capability");
-        assert_eq!(tasks1[0].interval, 45);
-
-        let tasks2 = ping_tasks_from(&drain_messages(&mut rx2)).expect("s2 gets a sync");
-        assert!(tasks2.is_empty(), "s2 lacks HTTP capability");
-    }
-
-    #[tokio::test]
-    async fn create_syncs_explicit_server_ids_to_targeted_agent_only() {
-        let (db, _tmp) = setup_test_db().await;
-        let agent_manager = test_agent_manager();
-
-        insert_test_server(&db, "s1", CAP_DEFAULT).await;
-        insert_test_server(&db, "s2", CAP_DEFAULT).await;
-        let mut rx1 = connect_agent(&agent_manager, "s1");
-        let mut rx2 = connect_agent(&agent_manager, "s2");
-
-        PingService::create(
-            &db,
-            &agent_manager,
-            CreatePingTask {
-                name: "scoped-s1".to_string(),
-                probe_type: "icmp".to_string(),
-                target: "1.1.1.1".to_string(),
-                interval: 60,
-                server_ids: vec!["s1".to_string()],
-                enabled: true,
-            },
-        )
-        .await
-        .unwrap();
-
-        let tasks1 = ping_tasks_from(&drain_messages(&mut rx1)).expect("s1 gets a sync");
-        assert_eq!(tasks1.len(), 1);
-
-        let tasks2 = ping_tasks_from(&drain_messages(&mut rx2)).expect("s2 gets a sync");
-        assert!(tasks2.is_empty(), "task is scoped to s1 only");
     }
 }

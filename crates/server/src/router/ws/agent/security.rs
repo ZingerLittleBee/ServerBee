@@ -8,6 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::service::agent_reconcile::AgentDesiredStateDomain;
 use crate::service::alert::AlertService;
 use crate::service::audit::AuditService;
 use crate::service::ip_quality::IpQualityService;
@@ -184,6 +185,26 @@ pub(super) async fn on_capabilities_changed(
         ServerService::update_capabilities_mirror(&state.db, server_id, capabilities).await
     {
         tracing::error!("Failed to mirror capabilities for {server_id}: {e}");
+    }
+
+    for domain in [
+        AgentDesiredStateDomain::PingTasks,
+        AgentDesiredStateDomain::NetworkProbes,
+        AgentDesiredStateDomain::IpQuality,
+        AgentDesiredStateDomain::Firewall,
+    ] {
+        if let Err(error) = state
+            .agent_desired_state
+            .reconcile_agent(server_id, domain)
+            .await
+        {
+            tracing::warn!(
+                server_id,
+                ?domain,
+                error = %error,
+                "capability-change desired-state reconcile failed"
+            );
+        }
     }
 
     // Resolve display name + originating IP for the audit trail. Neither

@@ -6,13 +6,12 @@ use axum::{Json, Router};
 use serde::Deserialize;
 
 use crate::error::{ApiResponse, AppError, ok};
+use crate::service::agent_reconcile::AgentDesiredStateDomain;
 use crate::service::network_probe::{
     CreateNetworkProbeTarget, NetworkProbeAnomaly, NetworkProbeService, NetworkProbeSetting,
     ServerOverview, TargetDto, UpdateNetworkProbeTarget,
 };
 use crate::state::AppState;
-use serverbee_common::protocol::ServerMessage;
-use serverbee_common::types::NetworkProbeTarget;
 
 /// GET endpoints accessible to all authenticated users (admin + member).
 pub fn read_router() -> Router<Arc<AppState>> {
@@ -129,6 +128,7 @@ async fn update_target(
     Json(input): Json<UpdateNetworkProbeTarget>,
 ) -> Result<Json<ApiResponse<crate::entity::network_probe_target::Model>>, AppError> {
     let target = NetworkProbeService::update_target(&state.db, &id, input).await?;
+    reconcile_network_probes(&state).await;
     ok(target)
 }
 
@@ -147,45 +147,9 @@ async fn delete_target(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
-    // Find which servers have this target configured, before deletion
-    use crate::entity::network_probe_config;
-    use sea_orm::ColumnTrait;
-    use sea_orm::EntityTrait;
-    use sea_orm::QueryFilter;
-
-    let affected_configs = network_probe_config::Entity::find()
-        .filter(network_probe_config::Column::TargetId.eq(id.as_str()))
-        .all(&state.db)
-        .await?;
-    let affected_server_ids: Vec<String> =
-        affected_configs.into_iter().map(|c| c.server_id).collect();
-
     // Delete the target (cascades records + configs + setting cleanup)
     NetworkProbeService::delete_target(&state.db, &id).await?;
-
-    // Notify affected agents
-    let setting = NetworkProbeService::get_setting(&state.db).await?;
-    for server_id in &affected_server_ids {
-        let targets = NetworkProbeService::get_server_targets(&state.db, server_id).await?;
-        let probe_targets: Vec<NetworkProbeTarget> = targets
-            .into_iter()
-            .map(|t| NetworkProbeTarget {
-                target_id: t.id,
-                name: t.name,
-                target: t.target,
-                probe_type: t.probe_type,
-            })
-            .collect();
-
-        if let Some(tx) = state.agent_manager.get_sender(server_id) {
-            let msg = ServerMessage::NetworkProbeSync {
-                targets: probe_targets,
-                interval: setting.interval,
-                packet_count: setting.packet_count,
-            };
-            let _ = tx.send(msg).await;
-        }
-    }
+    reconcile_network_probes(&state).await;
 
     ok("ok")
 }
@@ -205,32 +169,19 @@ async fn update_setting(
     Json(input): Json<NetworkProbeSetting>,
 ) -> Result<Json<ApiResponse<NetworkProbeSetting>>, AppError> {
     NetworkProbeService::update_setting(&state.db, &input).await?;
-
-    // Push updated config to all currently-online agents
-    let online_ids = state.agent_manager.connected_server_ids();
-    for server_id in &online_ids {
-        let targets = NetworkProbeService::get_server_targets(&state.db, server_id).await?;
-        let probe_targets: Vec<NetworkProbeTarget> = targets
-            .into_iter()
-            .map(|t| NetworkProbeTarget {
-                target_id: t.id,
-                name: t.name,
-                target: t.target,
-                probe_type: t.probe_type,
-            })
-            .collect();
-
-        if let Some(tx) = state.agent_manager.get_sender(server_id) {
-            let msg = ServerMessage::NetworkProbeSync {
-                targets: probe_targets,
-                interval: input.interval,
-                packet_count: input.packet_count,
-            };
-            let _ = tx.send(msg).await;
-        }
-    }
+    reconcile_network_probes(&state).await;
 
     ok(input)
+}
+
+async fn reconcile_network_probes(state: &AppState) {
+    if let Err(error) = state
+        .agent_desired_state
+        .reconcile_connected(AgentDesiredStateDomain::NetworkProbes)
+        .await
+    {
+        tracing::warn!(%error, "failed to reconcile network probe desired state");
+    }
 }
 
 // ---------------------------------------------------------------------------

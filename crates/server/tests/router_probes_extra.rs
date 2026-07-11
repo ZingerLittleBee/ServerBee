@@ -106,7 +106,6 @@ async fn network_probe_setting_update_pushes_sync_to_online_agent() {
 
 // Deleting a custom target that is assigned to an online server notifies that
 // agent with a fresh `NetworkProbeSync` (now without the deleted target).
-// Exercises the delete_target → affected_server_ids → push branch.
 #[tokio::test]
 async fn network_probe_delete_assigned_target_pushes_sync() {
     let (base_url, _tmp) = start_test_server().await;
@@ -166,6 +165,72 @@ async fn network_probe_delete_assigned_target_pushes_sync() {
             .any(|t| t["target_id"].as_str() == Some(target_id.as_str())),
         "deleted target must be absent from the refreshed sync"
     );
+}
+
+// Updating an assigned custom target must replace the agent's live projection.
+// This is the regression that the old router-local fan-out missed entirely.
+#[tokio::test]
+async fn network_probe_update_assigned_target_pushes_latest_sync() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+
+    let (server_id, token) = register_agent(&admin, &base_url).await;
+    let (_sink, mut reader) = online_agent(&base_url, &token, None).await;
+
+    let created: Value = admin
+        .post(format!("{}/api/network-probes/targets", base_url))
+        .json(&json!({
+            "name": "before-update", "provider": "P", "location": "L",
+            "target": "9.9.9.9", "probe_type": "icmp"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let target_id = created["data"]["id"].as_str().unwrap().to_string();
+
+    let assigned = admin
+        .put(format!(
+            "{}/api/servers/{}/network-probes/targets",
+            base_url, server_id
+        ))
+        .json(&json!({ "target_ids": [target_id] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(assigned.status(), 200, "assigning targets succeeds");
+    drain_initial_noise(&mut reader).await;
+
+    let updated = admin
+        .put(format!(
+            "{}/api/network-probes/targets/{}",
+            base_url, target_id
+        ))
+        .json(&json!({
+            "name": "after-update",
+            "target": "8.8.8.8",
+            "probe_type": "tcp"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), 200, "updating a custom target succeeds");
+
+    let sync = recv_until(&mut reader, "network_probe_sync").await;
+    let target = sync["targets"]
+        .as_array()
+        .and_then(|targets| {
+            targets
+                .iter()
+                .find(|target| target["target_id"].as_str() == Some(target_id.as_str()))
+        })
+        .expect("updated target should remain assigned");
+    assert_eq!(target["name"], "after-update");
+    assert_eq!(target["target"], "8.8.8.8");
+    assert_eq!(target["probe_type"], "tcp");
 }
 
 // A preset target cannot be modified: update_target hits the Forbidden arm → 403.

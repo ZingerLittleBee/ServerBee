@@ -4451,9 +4451,9 @@ mod firewall_tests {
             serverbee_common::constants::PROTOCOL_VERSION,
         )
         .await;
-        // First-connect path issues an extra BlocklistReset+BlocklistSync after
-        // the ack. Drain through both extras to leave the stream clean.
-        let _ = drain_through_ack(&mut reader, "pb-1", 2).await;
+        // AgentReady reconciliation follows the ack: ping, network, IP quality,
+        // then BlocklistReset+BlocklistSync. Drain all five messages.
+        let _ = drain_through_ack(&mut reader, "pb-1", 5).await;
 
         // Now POST a block and assert the agent receives BlocklistAdd.
         let resp = admin
@@ -4572,7 +4572,7 @@ mod firewall_tests {
         )
         .await;
 
-        let extras = drain_through_ack(&mut reader, "connect-sync", 2).await;
+        let extras = drain_through_ack(&mut reader, "connect-sync", 5).await;
         // Reset, then Sync are appended after the ack handler runs.
         let types: Vec<&str> = extras
             .iter()
@@ -4609,7 +4609,7 @@ mod firewall_tests {
             serverbee_common::constants::PROTOCOL_VERSION,
         )
         .await;
-        let _drain = drain_through_ack(&mut reader, "ack-1", 2).await;
+        let _drain = drain_through_ack(&mut reader, "ack-1", 5).await;
 
         let resp = admin
             .post(format!("{}/api/firewall/blocks", base_url))
@@ -4683,7 +4683,7 @@ mod firewall_tests {
             1,
         )
         .await;
-        let extras = drain_through_ack(&mut reader, "old-1", 0).await;
+        let extras = drain_through_ack(&mut reader, "old-1", 3).await;
         let types: Vec<&str> = extras
             .iter()
             .map(|m| m["type"].as_str().unwrap_or(""))

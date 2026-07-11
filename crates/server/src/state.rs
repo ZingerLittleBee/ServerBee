@@ -9,16 +9,17 @@ use tokio::sync::broadcast;
 use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
+use crate::service::agent_reconcile::AgentDesiredStateReconciler;
 use crate::service::alert::AlertStateManager;
 use crate::service::asn::AsnService;
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
+use crate::service::firewall::FirewallService;
 use crate::service::geoip::GeoIpService;
 use crate::service::high_risk_audit::{
     DockerLogsAuditContext, ExecAuditContext, TerminalAuditContext,
 };
 use crate::service::monitor_check::MonitorCheckRunner;
-use crate::service::firewall::FirewallService;
 use crate::service::security::SecurityService;
 use crate::service::task_scheduler::TaskScheduler;
 use crate::service::upgrade_release::UpgradeReleaseService;
@@ -105,6 +106,8 @@ pub struct AppState {
     /// Firewall blocklist service. CRUD wiring lives in
     /// `router::api::firewall`; WS push is invoked from there.
     pub firewall: Arc<FirewallService>,
+    /// Projects server-owned desired state into full-state agent messages.
+    pub agent_desired_state: AgentDesiredStateReconciler,
     /// Pending mobile pairing codes for QR login, keyed by code.
     pub pending_pairs: DashMap<String, PendingPair>,
     /// Terminal session audit contexts keyed by session_id.
@@ -231,6 +234,8 @@ impl AppState {
             config_arc.clone(),
             browser_tx.clone(),
         ));
+        let agent_desired_state =
+            AgentDesiredStateReconciler::new(db.clone(), agent_manager.clone(), firewall.clone());
         let security_service = Arc::new(SecurityService::new(
             db.clone(),
             browser_tx.clone(),
@@ -264,6 +269,7 @@ impl AppState {
             alert_state_manager,
             security_service,
             firewall,
+            agent_desired_state,
             pending_pairs: DashMap::new(),
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),

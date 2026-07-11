@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use crate::entity::{ping_record, ping_task};
 use crate::error::{ApiResponse, AppError, ok};
+use crate::service::agent_reconcile::AgentDesiredStateDomain;
 use crate::service::ping::{CreatePingTask, PingService, UpdatePingTask};
 use crate::state::AppState;
 
@@ -80,7 +81,8 @@ async fn create_task(
     State(state): State<Arc<AppState>>,
     Json(input): Json<CreatePingTask>,
 ) -> Result<Json<ApiResponse<ping_task::Model>>, AppError> {
-    let task = PingService::create(&state.db, &state.agent_manager, input).await?;
+    let task = PingService::create(&state.db, input).await?;
+    reconcile_ping_tasks(&state).await;
     ok(task)
 }
 
@@ -102,7 +104,8 @@ async fn update_task(
     Path(id): Path<String>,
     Json(input): Json<UpdatePingTask>,
 ) -> Result<Json<ApiResponse<ping_task::Model>>, AppError> {
-    let task = PingService::update(&state.db, &state.agent_manager, &id, input).await?;
+    let task = PingService::update(&state.db, &id, input).await?;
+    reconcile_ping_tasks(&state).await;
     ok(task)
 }
 
@@ -122,8 +125,19 @@ async fn delete_task(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
-    PingService::delete(&state.db, &state.agent_manager, &id).await?;
+    PingService::delete(&state.db, &id).await?;
+    reconcile_ping_tasks(&state).await;
     ok("ok")
+}
+
+async fn reconcile_ping_tasks(state: &AppState) {
+    if let Err(error) = state
+        .agent_desired_state
+        .reconcile_connected(AgentDesiredStateDomain::PingTasks)
+        .await
+    {
+        tracing::warn!(%error, "failed to reconcile ping task desired state");
+    }
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]

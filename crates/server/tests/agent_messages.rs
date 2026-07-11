@@ -25,12 +25,14 @@
 mod common;
 
 use common::{
-    connect_agent, http_client, login_admin, recv_agent_text, register_agent, send_system_info,
-    start_test_server, AgentReader, AgentSink,
+    AgentReader, AgentSink, connect_agent, http_client, login_admin, recv_agent_text,
+    register_agent, send_system_info, start_test_server,
 };
 use futures_util::SinkExt;
-use serde_json::{json, Value};
-use serverbee_common::constants::CAP_DEFAULT;
+use serde_json::{Value, json};
+use serverbee_common::constants::{
+    CAP_DEFAULT, CAP_FIREWALL_BLOCK, CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP,
+};
 use tokio_tungstenite::tungstenite;
 
 // ---------------------------------------------------------------------------
@@ -659,7 +661,101 @@ async fn test_capabilities_changed_is_audited_and_mirrored() {
     );
 
     // Connection survives.
-    send_system_info(&mut sink, &mut reader, "post-capchange-handshake", Some(new_caps)).await;
+    send_system_info(
+        &mut sink,
+        &mut reader,
+        "post-capchange-handshake",
+        Some(new_caps),
+    )
+    .await;
+
+    let _ = sink.close().await;
+}
+
+#[tokio::test]
+async fn test_capabilities_changed_reconciles_agent_desired_state_after_revoke() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let create_resp = client
+        .post(format!("{}/api/ping-tasks", base_url))
+        .json(&json!({
+            "name": "capability-reconcile-icmp",
+            "probe_type": "icmp",
+            "target": "1.1.1.1",
+            "interval": 60,
+            "server_ids": []
+        }))
+        .send()
+        .await
+        .expect("create ping task failed");
+    assert_eq!(
+        create_resp.status(),
+        200,
+        "ping task fixture should be created"
+    );
+
+    let (_server_id, mut sink, mut reader) = bring_up_agent(&client, &base_url).await;
+
+    let revoked_caps =
+        CAP_DEFAULT & !(CAP_PING_ICMP | CAP_PING_TCP | CAP_PING_HTTP | CAP_FIREWALL_BLOCK);
+    send_agent_frame(
+        &mut sink,
+        json!({
+            "type": "capabilities_changed",
+            "msg_id": "cap-reconcile-revoke-1",
+            "capabilities": revoked_caps,
+            "temporary": [],
+            "changes": [{
+                "cap": "firewall_block",
+                "action": "revoked",
+                "reason": "policy_changed"
+            }]
+        }),
+    )
+    .await;
+
+    let expected = [
+        "ping_tasks_sync",
+        "network_probe_sync",
+        "ip_quality_sync",
+        "blocklist_reset",
+    ];
+    let mut seen = std::collections::HashSet::new();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+
+    while seen.len() < expected.len() {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        assert!(
+            !remaining.is_zero(),
+            "timed out waiting for capability-revoke reconciliation; saw {seen:?}"
+        );
+        let message = tokio::time::timeout(remaining, recv_agent_text(&mut reader))
+            .await
+            .unwrap_or_else(|_| {
+                panic!("timed out waiting for capability-revoke reconciliation; saw {seen:?}")
+            });
+        let Some(message_type) = message["type"].as_str() else {
+            continue;
+        };
+        if expected.contains(&message_type) {
+            if message_type == "ping_tasks_sync" {
+                assert_eq!(
+                    message["tasks"].as_array().map(|tasks| tasks.len()),
+                    Some(0),
+                    "revoked ping capabilities must be applied before reconciliation"
+                );
+            }
+            seen.insert(message_type.to_string());
+        }
+    }
+
+    assert_eq!(
+        seen,
+        expected.into_iter().map(str::to_string).collect(),
+        "capability changes should reconcile every agent desired-state domain"
+    );
 
     let _ = sink.close().await;
 }

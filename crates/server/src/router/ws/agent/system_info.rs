@@ -1,5 +1,6 @@
 //! `SystemInfo` / `IpChanged` handling: agent identity, GeoIP resolution,
-//! capability mirroring, IP-change detection, and reconnect-time firewall sync.
+//! capability mirroring, IP-change detection, and connection-time desired-state
+//! reconciliation.
 
 use std::sync::Arc;
 
@@ -233,30 +234,16 @@ pub(super) async fn on_system_info(
         }
     }
 
-    // Firewall blocklist: on every fresh SystemInfo, drop whatever the
-    // agent may have leftover from a previous boot, then resend the
-    // authoritative set. Gated on capability + protocol version.
+    if let Err(error) = state
+        .agent_desired_state
+        .reconcile_connection(server_id)
+        .await
     {
-        use serverbee_common::constants::{CAP_FIREWALL_BLOCK, has_capability};
-        use serverbee_common::firewall::FIREWALL_MIN_PROTOCOL;
-
-        let caps = state
-            .agent_manager
-            .get_effective_capabilities(server_id)
-            .unwrap_or(0);
-        if has_capability(caps, CAP_FIREWALL_BLOCK) && agent_pv >= FIREWALL_MIN_PROTOCOL {
-            state
-                .firewall
-                .push_reset_to(server_id, &state.agent_manager)
-                .await;
-            if let Err(e) = state
-                .firewall
-                .push_sync_to(server_id, &state.agent_manager)
-                .await
-            {
-                tracing::warn!(server_id, error = %e, "firewall sync push failed");
-            }
-        }
+        tracing::warn!(
+            server_id,
+            error = %error,
+            "connection desired-state reconcile was incomplete"
+        );
     }
 }
 
