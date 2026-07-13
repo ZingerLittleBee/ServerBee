@@ -323,10 +323,12 @@ Request arrives
 
 #### Agent Token (agents)
 
-- During registration, an agent authenticates with a one-time enrollment code (single-use, short-lived).
-- The returned token is used for subsequent WebSocket connections.
-- The token is hashed with argon2 and stored in the `servers` table.
+- An enrollment offer is bound to one Server, single-use, and short-lived. Its lifecycle is owned by the Agent Authority module.
+- Before claiming an offer, the Agent generates and persists its run token, then submits it as `proposed_run_token`. The Server never generates or returns that token.
+- The run token is hashed with argon2 and stored in the `servers` table; only the Agent retains the plaintext.
 - Agents authenticate by providing the raw token as a query parameter on the WebSocket connection.
+- WebSocket admission has two stages: preflight validation before the HTTP upgrade, then final validation while holding the Server lifecycle lock. Authority transitions and frame dispatch share that lock, so a revoked or replaced connection cannot race through after fencing.
+- Every authority/offer transition appends a secret-free event. Events retain a snapshot of the Server identity and survive Server deletion.
 
 ### Role-Based Access
 

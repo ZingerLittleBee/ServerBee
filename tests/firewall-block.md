@@ -97,7 +97,7 @@
 | V3 | 推送二进制 + 启动隔离测试环境 | `scp target/.../release/serverbee-{server,agent} root@<vps-host>:/opt/serverbee/bin/`；`SERVERBEE_SERVER__DATA_DIR=/tmp/sb-test/data SERVERBEE_SERVER__LISTEN=127.0.0.1:9528 nohup ./bin/serverbee-server` | ✅ |
 | V4 | 首次启动密码 | server log 输出 `FIRST-RUN ADMIN CREDENTIALS` + 一次性 password | ✅ |
 | V5 | 完成 onboarding 强制改密 | `POST /api/auth/onboarding {"new_password": "..."}` | ✅ |
-| V6 | 创建 enrollment | `POST /api/agent/enrollments {"name":"test-srv"}` | ✅ |
+| V6 | 创建 Server + enrollment offer | `POST /api/servers`，携带唯一 `onboarding_request_id` 和 `name` | ✅ |
 | V7 | 启动测试 Agent | `agent.toml` 指向 `http://127.0.0.1:9528`，`nohup` 启动 | ✅ agent log `WebSocket connected` + `Welcome` |
 
 ### 执行结果摘录

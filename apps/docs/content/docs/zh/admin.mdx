@@ -248,17 +248,17 @@ ServerBee 不再计算合成价值分，而是为每台已配置成本的服务�
 
 同样的数据也通过只读 API 暴露，便于自动化使用：`GET /api/cost/overview`（按币种汇总的机群总览 + 每台服务器摘要）和 `GET /api/servers/{id}/cost-insights`（单台服务器的完整明细）。认证细节见 [API 参考](/zh/docs/api-reference#已认证读取端点)。
 
-## Agent 注册管理
+## Agent Authority 管理
 
-管理员可以直接在界面里管理 Agent 的首次接入流程。
+管理员通过 **添加 Server** 和各 Server 的详情操作管理首次接入与重新接入。添加 Server 会原子地创建配置和一个绑定到该 Server 的 enrollment offer。明文 code 仅显示一次，后续页面只展示 offer ID、前缀、过期时间和 Agent Authority 状态。
 
-### 一次性注册码
+对于 unclaimed Server，管理员可以发出 offer。对于 claimed Server，可以选择 graceful 重新接入（新 claim 完成前保留当前 authority）或 emergency 重新接入（立即吊销并隔离当前 authority）。每个 Server 同时最多一个 outstanding offer，替换或吊销都必须针对准确 offer ID。吊销 Agent Authority 是独立操作，不会隐式生成 offer。
 
-进入 **设置** 页面，为新 Agent 生成一个一次性注册码。每个注册码单次使用且短时有效（默认 10 分钟过期），在 Agent 首次成功注册时被消费。你可以查看已生成的注册码列表（不会再次显示明文，仅显示 8 位前缀和元信息）并删除未使用的注册码。已连接的 Agent 不受影响，因为它们使用各自已保存的每台服务器专属 token；如需吊销某个 Agent，可在服务器详情操作中轮换其 run token，该 Agent 会被强制重新连接。
+Agent Authority 历史会记录操作者、来源、状态转换、模式、offer 结果和前后状态，但不会保存明文密钥。这些事件在 Server 删除后仍会保留，便于运维追查。
 
 ### 清理未连接的占位服务器
 
-接入失败可能会留下离线的 `New Server` 占位条目。此时 **服务器** 页面会显示 **Clean up unconnected** 操作，它只删除从未完成初始化的离线占位服务器，并刻意保留在线但尚未初始化的 Agent。
+中止的接入可能会留下离线 Server 占位条目。此时 **服务器** 页面会显示 **Clean up unconnected** 操作，它只删除从未完成初始化的离线占位服务器，并刻意保留在线但尚未初始化的 Agent。
 
 <Cards>
   <Card title="功能开关" href="/zh/docs/capabilities" />

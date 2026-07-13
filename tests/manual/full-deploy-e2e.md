@@ -12,13 +12,13 @@
 - 改 server 启动 / 数据库迁移 / OnboardingResponse
 - 升级 docker base 镜像
 
-Recover-only 的窄回归用 [agent-recover-e2e.md](agent-recover-e2e.md)；本文是它的超集。
+Agent Authority 重新接入的窄回归用 [agent-reenrollment-e2e.md](agent-reenrollment-e2e.md)；本文覆盖完整安装主路径。
 
 ---
 
 ## 0. 前提
 
-同 [agent-recover-e2e.md §0](agent-recover-e2e.md#0-前提)：本机 macOS + cargo-zigbuild + sshpass；VPS Debian/Ubuntu x86_64；域名 A 记录已指向 VPS。
+同 [agent-reenrollment-e2e.md §0](agent-reenrollment-e2e.md#0-前提)：本机 macOS + cargo-zigbuild + sshpass；VPS Debian/Ubuntu x86_64；域名 A 记录已指向 VPS。
 
 > 测试机的 IP/域名/凭据不入仓库。下面所有命令都用变量占位符引用，按你自己 vault
 > 里的实际值导出后再跑。
@@ -39,7 +39,7 @@ export DEV_TAG=1.0.0-alpha.4-dev
 
 ## 1. 本机构建 + 推镜像 / 二进制到 VPS
 
-按 [agent-recover-e2e.md §1–§3](agent-recover-e2e.md#1-本机交叉编译为-linuxamd64) 跑一遍：编译 web、`cargo zigbuild` 出 `target/x86_64-unknown-linux-musl/release/serverbee-{server,agent}`、打 docker 镜像（tag 必须等于 `PROD_TAG`）、`docker save | gzip > /tmp/sbee-build/serverbee-${DEV_TAG}.tar.gz`、scp 到 VPS、`docker load`。
+编译 web，使用 `cargo zigbuild` 产出 `target/x86_64-unknown-linux-musl/release/serverbee-{server,agent}`，再构建 tag 等于 `PROD_TAG` 的 Docker 镜像。通过 `docker save | gzip > /tmp/sbee-build/serverbee-${DEV_TAG}.tar.gz`、scp 和 `docker load` 把当前分支产物送到 VPS。
 
 到这里 VPS 上应有：
 
@@ -83,7 +83,7 @@ REMOTE
 
 ## 3. ⭐ install.sh install server（含 Caddy + HTTPS 自动化）
 
-这是上一份 recover runbook 没覆盖的主路径。命令：
+这是完整部署主路径。命令：
 
 ```bash
 sshpass -p "$VPS_PASS" ssh $VPS_USER@$VPS_IP \
@@ -148,7 +148,8 @@ curl -sS -b /tmp/sb.cookies -c /tmp/sb.cookies -X POST https://$DOMAIN/api/auth/
 
 curl -sS -b /tmp/sb.cookies -X POST https://$DOMAIN/api/servers \
   -H 'Content-Type: application/json' \
-  -d '{"name":"vps-fulldeploy-test"}' | tee /tmp/sb.server.json | jq .
+  -d "{\"onboarding_request_id\":\"$(uuidgen)\",\"name\":\"vps-fulldeploy-test\"}" \
+  | tee /tmp/sb.server.json | jq .
 
 export SERVER_ID=$(jq -r '.data.server_id' /tmp/sb.server.json)
 export INIT_CODE=$(jq -r '.data.enrollment.code' /tmp/sb.server.json)
@@ -178,8 +179,8 @@ sshpass -p "$VPS_PASS" ssh $VPS_USER@$VPS_IP \
 
 # server 看到 agent 已注册并上报硬件信息
 curl -sS -b /tmp/sb.cookies "https://$DOMAIN/api/servers/$SERVER_ID" \
-  | jq '.data | {has_token, agent_version, cpu_name, mem_total, outstanding_enrollment}'
-# 期望 has_token=true, outstanding_enrollment=null, cpu_name/mem_total 都填上
+  | jq '.data | {agent_authority, agent_version, cpu_name, mem_total}'
+# 期望 agent_authority.status=claimed、outstanding_offer=null，cpu_name/mem_total 都填上
 
 # server 容器日志
 sshpass -p "$VPS_PASS" ssh $VPS_USER@$VPS_IP \
@@ -196,17 +197,18 @@ binary 模式默认会去 GitHub Releases 下 `serverbee-agent-linux-amd64`。�
 预先把本地编译好的二进制放到 `/opt/serverbee/bin/serverbee-agent`，install.sh 就会
 绕过下载、直接使用它，同时仍然走完 agent.toml + systemd unit 的生成路径。
 
-### 6.1 卸载上一节 docker agent，清 agent.toml，发新 code
+### 6.1 卸载上一节 docker agent，清 agent.toml，开始 emergency re-enrollment
 
 ```bash
 sshpass -p "$VPS_PASS" ssh $VPS_USER@$VPS_IP "set -e
 bash /root/install.sh uninstall agent --yes
 rm -f /opt/serverbee/etc/agent.toml /opt/serverbee/docker-compose.agent.yml"
 
-# 上一节 INIT_CODE 已被消费，重新走 recover 拿新 code（也顺带把 has_token 翻 false）
-curl -sS -b /tmp/sb.cookies -X POST "https://$DOMAIN/api/servers/$SERVER_ID/recover" \
+# 上一节 INIT_CODE 已被消费。Emergency 会立即吊销旧 authority 并发出新 offer。
+curl -sS -b /tmp/sb.cookies -X POST \
+  "https://$DOMAIN/api/servers/$SERVER_ID/agent-authority/re-enrollment" \
   -H 'Content-Type: application/json' \
-  -d '{"revoke_immediately":true}' | tee /tmp/sb.bincode.json | jq .
+  -d '{"mode":"emergency"}' | tee /tmp/sb.bincode.json | jq .
 export BIN_CODE=$(jq -r '.data.enrollment.code' /tmp/sb.bincode.json)
 ```
 
@@ -317,7 +319,7 @@ REMOTE
 | `install server --domain` 全套（含 Caddy + Let's Encrypt） | ~30 s |
 | Onboarding + 创建 server 实体 | ~3 s |
 | `install agent --method docker` | ~10 s |
-| recover + 卸载 + `install agent --method binary` | ~15 s |
+| emergency re-enrollment + 卸载 + `install agent --method binary` | ~15 s |
 | `uninstall server --purge` + `uninstall agent --purge` | ~10 s |
 
 完整一遍从 cold cache 起约 10 分钟。命中 cache 复跑约 3 分钟（不算交互输入）。
@@ -335,18 +337,17 @@ REMOTE
 | `/api/servers` 返 `MUST_CHANGE_PASSWORD` | 先 `POST /api/auth/onboarding`，**不要** `PUT /api/auth/password`（白名单只放 onboarding） |
 | binary 模式 install.sh 仍然去 ghcr 拉镜像 / 仍然 download GitHub | 你忘了 `mkdir -p /opt/serverbee/bin && scp <agent binary> ...`；adopt 路径要求二进制 `chmod +x` 且 `[ -f ... ]` 命中 |
 | docker 模式 install.sh 去 ghcr 拉真实 release | 本地镜像 tag 不是 `PROD_TAG`；`docker tag` 改成 release 版本号去 `v` 形态 |
-| `systemctl status serverbee-agent` 报 `status=78/CONFIG` | enrollment_code 已过期/已用；按提示 recover 拿新 code、清 `token` 行后 `systemctl restart serverbee-agent` |
+| `systemctl status serverbee-agent` 报 `status=78/CONFIG` | enrollment offer 已过期/已用；在 Server 详情精确替换当前 offer，或按 authority 状态发起重新接入，再更新配置并重启 |
 | `install.sh install agent` 报 `serverbee-agent is already installed (...). Use 'upgrade'` | meta 残留；先 `uninstall agent --yes`（不带 `--purge` 保留 agent.toml）再 install |
 | `uninstall server --purge` 删了我刚才 docker load 的镜像 | 是的，符合预期；从 tarball 重新 `docker load < /root/serverbee-*.tar.gz` 即可 |
 | `online` 字段在 REST 永远为 `null` | 设计如此，运行态走 WS push；判定在线看 server 日志 `Agent <id> connected` |
 
 ---
 
-## 10. 跟 agent-recover-e2e.md 的关系
+## 10. 跟 agent-reenrollment-e2e.md 的关系
 
 - 本文 = 完整正向部署流程，覆盖 server + 两种 agent 模式 + 卸载。
-- [agent-recover-e2e.md](agent-recover-e2e.md) = recover 窄回归，专测 install.sh 的 `else` 分支
-  （agent.toml 已存在时 `enrollment_code` / `server_url` / `token` 三字段的刷新行为）。
+- [agent-reenrollment-e2e.md](agent-reenrollment-e2e.md) = Agent Authority 窄回归，专测 graceful/emergency、精确 offer CAS、Agent token 暂存和 WS fencing。
 - 改了 install.sh 主路径 / cmd_domain / Caddyfile 生成 / install_server_*：跑本文。
-- 改了 recover endpoint / install.sh agent.toml 刷新逻辑 / recover dialog：跑 agent-recover-e2e.md。
-- 不确定时跑本文（超集）。
+- 改了 Agent Authority endpoint、Agent claim/token 持久化或重新接入 UI：跑 agent-reenrollment-e2e.md。
+- 两边都改了就两份都跑，别让“超集”这个词替你漏测状态机。

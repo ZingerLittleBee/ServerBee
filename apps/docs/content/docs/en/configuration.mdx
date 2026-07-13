@@ -175,7 +175,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_SERVER_URL` | -- (required) | Server HTTP base URL (e.g. `http://your-server:9527`). Agent appends API paths automatically |
-| `SERVERBEE_ENROLLMENT_CODE` | `""` | One-time enrollment code minted by an admin in Settings. Single-use and short-lived (default 10 min). Only used when token is empty |
+| `SERVERBEE_ENROLLMENT_CODE` | `""` | One-time enrollment offer shown when a Server is added or re-enrollment begins. Single-use and short-lived (default 10 min). Only used when `token` is empty |
 
 #### Common
 
@@ -200,7 +200,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `SERVERBEE_TOKEN` | auto-populated | Agent auth token. Auto-populated after registration, do not set manually |
+| `SERVERBEE_TOKEN` | generated when empty | Agent run token. During enrollment the Agent generates and persists one before claim; an explicit environment override is used as provided and is not written to disk |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | Max file size in bytes for read/download (default 1GB) |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Glob patterns for files the agent refuses to access |
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | Ordered list of public IP services tried at startup and on every IP-change tick. First success wins. Required for agents behind NAT or in containers where interface enumeration can't see the routable IP. Set to `[]` to skip external lookups for air-gapped deployments |
@@ -397,18 +397,13 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 
 ## Agent Configuration (agent.toml)
 
-> **Docker Agent:** Mount the host's machine-id for correct fingerprint identification:
-> ```
-> -v /etc/machine-id:/etc/machine-id:ro
-> ```
-
 ### Top-Level Options
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `server_url` | string | **required** | URL of the ServerBee server (e.g., `http://10.0.0.1:9527`) |
-| `token` | string | `""` | Agent authentication token (auto-populated after registration) |
-| `enrollment_code` | string | `""` | One-time enrollment code from server Settings (used only when `token` is empty; consumed on first successful registration) |
+| `token` | string | `""` | Agent authentication token. When enrollment is needed, the Agent generates and persists this token before claiming the offer; the Server stores only its hash |
+| `enrollment_code` | string | `""` | One-time enrollment offer from Add Server or the Server's Agent Authority actions (used only when `token` is empty; consumed on first successful claim) |
 
 ### `[collector]` -- Metric Collection
 
@@ -538,14 +533,14 @@ client_secret = "secret123"
 
 ```toml
 server_url = "http://your-server-ip:9527"
-enrollment_code = "<one-time code from Settings>"
+enrollment_code = "<one-time code from Add Server>"
 ```
 
 ## Example: Production Agent Configuration
 
 ```toml
 server_url = "https://monitor.example.com"
-token = "previously-obtained-token"
+token = "<agent-generated persisted token>"
 
 [collector]
 interval = 3

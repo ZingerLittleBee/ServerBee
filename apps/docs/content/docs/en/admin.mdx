@@ -248,17 +248,17 @@ Instead of a composite value score, each configured server surfaces a list of ob
 
 For automation, the same data is exposed read-only at `GET /api/cost/overview` (fleet-wide currency totals + per-server summaries) and `GET /api/servers/{id}/cost-insights` (full per-server breakdown). See the [API Reference](/en/docs/api-reference#authenticated-read-endpoints) for authentication details.
 
-## Agent Registration Management
+## Agent Authority Management
 
-Admins can manage first-time agent onboarding directly from the UI.
+Admins manage onboarding and re-enrollment from **Add Server** and each Server's detail actions. Adding a Server creates its profile and one bound enrollment offer atomically. The plaintext code is displayed once; later views expose only the offer ID, prefix, expiry, and Agent Authority state.
 
-### Enrollment Codes
+For an unclaimed Server, an admin may issue an offer. For a claimed Server, start either graceful re-enrollment (keep current authority until the replacement claim) or emergency re-enrollment (revoke and fence it immediately). Only one offer may be outstanding, and replacement or revocation targets that exact offer ID. Revoking Agent Authority is a separate action and never creates an offer implicitly.
 
-Go to **Settings** to mint a one-time enrollment code for a new agent. Each code is single-use and short-lived (default 10-minute expiry) and is consumed on the agent's first successful registration. You can list previously issued codes (the plaintext is never shown again -- only an 8-character prefix and metadata) and delete unused ones. Already-connected agents are unaffected because they use their own stored per-server tokens; to revoke a specific agent, rotate its run token from the server detail actions, which forces that agent to reconnect.
+The Agent Authority history records actor, source, transition, mode, offer outcome, and before/after status without storing plaintext secrets. These events survive Server deletion for operational investigation.
 
 ### Clean Up Unconnected Placeholders
 
-Failed onboarding can leave behind offline `New Server` placeholders. The Servers page then shows a **Clean up unconnected** action that removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
+Abandoned onboarding can leave behind offline Server placeholders. The Servers page then shows a **Clean up unconnected** action that removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
 
 <Cards>
   <Card title="Capabilities" href="/en/docs/capabilities" />

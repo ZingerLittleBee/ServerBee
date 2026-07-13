@@ -12,12 +12,13 @@ cargo build --workspace
 # 3. 启动 Server（设置管理员密码，开发环境关闭 secure cookie）
 SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
 
-# 4. 铸造一次性 enrollment code（登录后调用 API；也可在服务端 UI 设置页生成）
+# 4. 原子创建 Server 和绑定的 enrollment offer
 curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
   -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123"}'
-curl -s -b /tmp/sb-cookies.txt -X POST http://localhost:9527/api/agent/enrollments \
-  -H 'Content-Type: application/json' -d '{}'
-# 返回 {"data":{"id":"...","code":"<enrollment_code>","expires_at":...}}（单次使用，默认 10 分钟过期）
+curl -s -b /tmp/sb-cookies.txt -X POST http://localhost:9527/api/servers \
+  -H 'Content-Type: application/json' \
+  -d "{\"onboarding_request_id\":\"$(uuidgen)\",\"name\":\"Local Agent\"}"
+# 返回 data.server_id 和 data.enrollment（明文 code 仅本次返回，默认 10 分钟过期）
 
 # 5. 启动 Agent（server_url 是 HTTP 基础地址，不是 WS 路径）
 SERVERBEE_SERVER_URL="http://127.0.0.1:9527" SERVERBEE_ENROLLMENT_CODE="<enrollment_code>" cargo run -p serverbee-agent &
@@ -37,8 +38,9 @@ docker compose up -d
 | [auth-users.md](auth-users.md) | 认证、用户与安全 | `/login`, `/settings/users`, `/settings/api-keys` |
 | [dashboard.md](dashboard.md) | 自定义仪表盘 | `/` |
 | [server-detail.md](server-detail.md) | 服务器列表与详情 | `/servers`, `/servers/:id` |
-| [registration-hardening.md](registration-hardening.md) | 注册加固、cleanup 与 enrollment code | `/servers`, `/settings`, Docker agent install |
-| [agent-enrollment-smoke.md](agent-enrollment-smoke.md) | 一次性 enrollment code 冒烟测试 | `/api/agent/enrollments`, `/api/agent/register`, `/settings` |
+| [registration-hardening.md](registration-hardening.md) | Onboarding 幂等、claim 竞态、offer CAS、WS fencing 与 cleanup | `/servers`, `/api/servers/*/agent-authority` |
+| [agent-enrollment-smoke.md](agent-enrollment-smoke.md) | Agent Authority 生命周期冒烟测试 | `/api/servers`, `/api/agent/register`, `/api/servers/*/agent-authority` |
+| [manual/agent-reenrollment-e2e.md](manual/agent-reenrollment-e2e.md) | 真实 Linux VPS 的 graceful/emergency 重新接入 | Server 详情、Agent 进程、WebSocket |
 | [ping-tasks.md](ping-tasks.md) | Ping 探测任务管理 | `/settings/ping-tasks` |
 | [network-quality.md](network-quality.md) | 网络质量监控 | `/network`, `/network/:id`, `/settings/network-probes` |
 | [docker.md](docker.md) | Docker 容器监控 | `/servers/:id/docker` |

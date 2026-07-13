@@ -84,7 +84,7 @@ curl https://your-server/api/auth/me \
 | POST | `/api/mobile/auth/login` | Mobile login |
 | POST | `/api/mobile/auth/refresh` | Refresh a mobile session |
 | POST | `/api/mobile/auth/pair` | Redeem a mobile pairing code |
-| POST | `/api/agent/register` | Agent registration using a one-time enrollment code (the code is consumed on first successful registration) |
+| POST | `/api/agent/register` | Claim a bound enrollment offer with an Agent-proposed run token |
 | GET | `/api/status` | Default public status page data |
 | GET | `/api/status/{slug}` | Configurable public status page data |
 | GET | `/api/settings/brand` | Public brand settings |
@@ -101,6 +101,7 @@ Read endpoints are available to Admin and Member users unless noted otherwise.
 | 2FA and OAuth accounts | `/api/auth/2fa/*`, `GET/DELETE /api/auth/oauth/accounts/*` |
 | Mobile devices | `POST /api/mobile/auth/logout`, `GET /api/mobile/auth/devices`, `DELETE /api/mobile/auth/devices/{id}` |
 | Servers | `GET /api/servers`, `GET /api/servers/{id}`, `GET /api/servers/{id}/records`, `GET /api/servers/{id}/gpu-records` |
+| Agent Authority | `GET /api/servers/{id}/agent-authority`, `GET /api/agent-authority/events?server_id={id}` |
 | Groups and tags | `GET /api/server-groups`, `GET /api/server-tags` |
 | Uptime and traffic | `GET /api/servers/{id}/uptime-daily`, `GET /api/servers/{id}/traffic` |
 | GeoIP | `GET /api/geoip/status` |
@@ -122,9 +123,8 @@ Admin role is required for write operations and system management.
 
 | Family | Representative endpoints |
 |--------|--------------------------|
-| Server management | `POST/PUT/DELETE /api/servers/*`, `POST /api/servers/{id}/upgrade` |
-| Agent enrollment | `POST /api/agent/enrollments`, `GET /api/agent/enrollments`, `DELETE /api/agent/enrollments/{id}`, `POST /api/agent/{id}/rotate-token` |
-| Agent recovery | `GET /api/servers/{target_id}/recovery-candidates`, `GET /api/servers/recovery-jobs/{job_id}`, `POST /api/servers/{target_id}/recover-merge` |
+| Server management | `POST /api/servers` (idempotent onboarding), `PUT/DELETE /api/servers/{id}`, `POST /api/servers/{id}/upgrade` |
+| Agent Authority | re-enrollment, offer issue/replace/revoke, and authority revocation under `/api/servers/{id}/agent-authority/*` |
 | Groups and tags | CRUD `/api/server-groups/*`, CRUD `/api/server-tags/*` |
 | Ping and network probes | CRUD `/api/ping-tasks/*`, write endpoints under `/api/network-probes/*` |
 | Traceroute | `POST /api/servers/{id}/traceroute` |
@@ -143,52 +143,49 @@ Admin role is required for write operations and system management.
 | GeoIP | `POST /api/geoip/download` |
 | Mobile push | `POST /api/mobile/pair`, `POST /api/mobile/push/register`, `POST /api/mobile/push/unregister` |
 
-## Agent Enrollment Endpoints
+## Agent Authority and Enrollment
 
-All of these endpoints require the Admin role. Responses follow the standard `{ "data": ... }` envelope.
+Responses follow the standard `{ "data": ... }` envelope. Agent Authority management requires Admin; state and event history are authenticated read endpoints.
 
-### `POST /api/agent/enrollments` -- Mint an enrollment code
+### `POST /api/servers` -- Onboard a Server
 
-Mints a one-time, short-lived enrollment code (default TTL 600 seconds / 10 minutes; single-use; consumed on the agent's first successful registration).
-
-Response:
+Creates the Server profile and its initial bound offer atomically. `onboarding_request_id` is required and is scoped to the authenticated actor. Retrying the same ID with identical normalized input returns the same `server_id`; reusing it with different input returns `409 ONBOARDING_IDEMPOTENCY_CONFLICT`.
 
 ```json
 {
-  "data": {
-    "id": "01J...",
-    "code": "<plaintext code, returned only once>",
-    "expires_at": "2026-05-17T12:34:56Z"
-  }
+  "onboarding_request_id": "019f...",
+  "name": "edge-tpe-1",
+  "tags": ["production"],
+  "ttl_secs": 600
 }
 ```
 
-The plaintext `code` is returned only at mint time -- copy it immediately.
+A new operation returns `replayed: false` and `enrollment: { id, code, code_prefix, expires_at }`. A replay returns `replayed: true`, never returns plaintext `code`, and may return `outstanding_offer` metadata.
 
-### `GET /api/agent/enrollments` -- List enrollment codes
+### `POST /api/agent/register` -- Claim an offer
 
-Lists issued enrollment codes with metadata. For security this endpoint **never returns the plaintext code**, only an 8-character prefix plus status/expiry metadata.
+This public Agent endpoint authenticates with `Authorization: Bearer <enrollment_code>` and requires an Agent-generated token:
 
 ```json
-{
-  "data": [
-    {
-      "id": "01J...",
-      "code_prefix": "ab12cd34",
-      "expires_at": "2026-05-17T12:34:56Z",
-      "consumed_at": null
-    }
-  ]
-}
+{ "proposed_run_token": "<32-or-more non-whitespace characters>" }
 ```
 
-### `DELETE /api/agent/enrollments/{id}` -- Delete an enrollment code
+On success it consumes the offer, stores only the run-token hash, and returns `{ "data": { "server_id": "..." } }`. The Server never returns the plaintext run token.
 
-Deletes an unused enrollment code, invalidating it immediately.
+### Agent Authority state and history
 
-### `POST /api/agent/{id}/rotate-token` -- Rotate/revoke a run token
+- `GET /api/servers/{id}/agent-authority` returns `status` (`claimed` or `unclaimed`) and the current `outstanding_offer`, if any.
+- `GET /api/agent-authority/events?server_id={id}&limit=100` returns secret-free transition history. Events survive Server deletion.
 
-Rotates (revokes) the agent run token for the given server. The old token is invalidated immediately and the affected agent is forced to disconnect and must reconnect with the new token.
+### Offer and authority actions
+
+- `POST /api/servers/{id}/agent-authority/re-enrollment` with `{ "mode": "graceful" | "emergency", "ttl_secs": 600 }` starts re-enrollment for a claimed authority. Graceful keeps the old authority valid; emergency revokes and fences it immediately.
+- `POST /api/servers/{id}/agent-authority/offers` with optional `{ "ttl_secs": 600 }` issues an offer only when authority is unclaimed.
+- `POST /api/servers/{id}/agent-authority/offers/{offer_id}/replace` replaces exactly the current outstanding offer and returns new plaintext once.
+- `DELETE /api/servers/{id}/agent-authority/offers/{offer_id}` revokes exactly that offer.
+- `DELETE /api/servers/{id}/agent-authority` revokes the current authority and disconnects its Agent without issuing an offer.
+
+Only one offer may be outstanding per Server. Its terminal outcome is exactly one of `consumed`, `revoked`, `replaced`, or `expired`. Exact-ID replacement is compare-and-swap: stale or terminal offers return `409` and cannot overwrite newer state.
 
 ## WebSocket Endpoints
 

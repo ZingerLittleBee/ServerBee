@@ -175,7 +175,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `SERVERBEE_SERVER_URL` | --（必填） | Server 的 HTTP 基础地址（如 `http://your-server:9527`），Agent 自动拼接 API 路径 |
-| `SERVERBEE_ENROLLMENT_CODE` | `""` | 一次性注册码，由管理员在设置页生成；单次使用、短时有效（默认 10 分钟），仅在 Token 为空时使用 |
+| `SERVERBEE_ENROLLMENT_CODE` | `""` | 添加 Server 或开始重新接入时显示的一次性注册 offer；单次使用、短时有效（默认 10 分钟），仅在 `token` 为空时使用 |
 
 #### 常用配置（Common）
 
@@ -200,7 +200,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `SERVERBEE_TOKEN` | 注册后自动填充 | Agent 认证 Token。注册后自动填充，无需手动设置 |
+| `SERVERBEE_TOKEN` | 留空时由 Agent 生成 | Agent run token。接入时 Agent 会在 claim 前生成并持久化；显式环境变量值会原样使用且不写入磁盘 |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | 文件读取 / 下载的最大字节数（默认 1GB） |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Agent 拒绝访问的文件名 glob 模式 |
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | 公网 IP 查询服务的有序列表，Agent 启动和每次 IP 变更检测时按顺序逐个尝试，首个成功即采用。在 NAT、容器或网卡看不到可路由 IP 的环境下是必需的。完全离线部署可设为 `[]` 跳过外部查询 |
@@ -397,18 +397,13 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 ## Agent 配置（agent.toml）
 
-> **Docker Agent：** 挂载宿主机的 machine-id 以确保指纹识别正确：
-> ```
-> -v /etc/machine-id:/etc/machine-id:ro
-> ```
-
 ### 顶层选项
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
 | `server_url` | string | **必填** | ServerBee Server 的 URL（如 `http://10.0.0.1:9527`） |
-| `token` | string | `""` | Agent 认证 Token（注册后自动填充） |
-| `enrollment_code` | string | `""` | 一次性注册码，来自 Server 设置页（仅在 `token` 为空时使用；首次注册成功后即被消费） |
+| `token` | string | `""` | Agent 认证 Token。需要接入时由 Agent 在 claim offer 前生成并持久化，Server 仅存储其哈希 |
+| `enrollment_code` | string | `""` | 来自「添加 Server」或 Server 的 Agent Authority 操作的一次性注册 offer（仅在 `token` 为空时使用；首次成功 claim 后即被消费） |
 
 ### `[collector]` —— 指标采集
 
@@ -538,14 +533,14 @@ client_secret = "secret123"
 
 ```toml
 server_url = "http://your-server-ip:9527"
-enrollment_code = "<来自设置页的一次性注册码>"
+enrollment_code = "<添加 Server 时显示的一次性注册码>"
 ```
 
 ## 示例：生产 Agent 配置
 
 ```toml
 server_url = "https://monitor.example.com"
-token = "previously-obtained-token"
+token = "<Agent 生成并持久化的 Token>"
 
 [collector]
 interval = 3
