@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Shows a freshly-minted enrollment code and the agent install command, with
-/// copy buttons and a one-time warning. Reused by create / recover / regenerate.
+/// copy buttons and a one-time warning. Reused by onboarding, re-enrollment, and offer replacement.
 struct EnrollmentResultView: View {
     let issued: AgentLifecycleViewModel.IssuedEnrollment
 

@@ -19,6 +19,27 @@ struct AddServerSheet: View {
                     } header: {
                         Text(String(localized: "Server created"))
                     }
+                } else if let replay = viewModel.onboardingReplay {
+                    Section {
+                        Text(String(localized: "This onboarding request already created the server. The original plaintext code cannot be recovered."))
+                        if let offer = replay.outstandingOffer {
+                            Button(String(localized: "Replace outstanding offer")) {
+                                Task {
+                                    await viewModel.replaceOffer(
+                                        serverId: replay.serverId,
+                                        offerId: offer.id,
+                                        serverUrl: authManager.serverUrl,
+                                        apiClient: apiClient
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(String(localized: "No outstanding enrollment offer remains. Manage Agent Authority from the existing server."))
+                                .foregroundStyle(.secondary)
+                        }
+                    } header: {
+                        Text(String(localized: "Server already created"))
+                    }
                 } else {
                     Section {
                         TextField(String(localized: "Server name"), text: $name)
@@ -40,9 +61,12 @@ struct AddServerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(viewModel.issued == nil ? String(localized: "Cancel") : String(localized: "Done")) { dismiss() }
+                    Button(viewModel.issued == nil ? String(localized: "Cancel") : String(localized: "Done")) {
+                        viewModel.resetOnboarding()
+                        dismiss()
+                    }
                 }
-                if viewModel.issued == nil {
+                if viewModel.issued == nil, viewModel.onboardingReplay == nil {
                     ToolbarItem(placement: .confirmationAction) {
                         if viewModel.isWorking {
                             ProgressView()

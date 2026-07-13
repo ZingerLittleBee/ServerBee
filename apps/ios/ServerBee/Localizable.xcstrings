@@ -4530,6 +4530,40 @@
         }
       }
     },
+    "Enrollment offer expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enrollment offer expired"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enrollment Offer 已过期"
+          }
+        }
+      }
+    },
+    "This offer is terminal and can no longer be replaced or revoked.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This offer is terminal and can no longer be replaced or revoked."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Offer 已进入终态，不能再替换或吊销。"
+          }
+        }
+      }
+    },
     "Enter the 6-digit code from your authenticator app": {
       "localizations": {
         "en": {
@@ -5192,36 +5226,36 @@
         }
       }
     },
-    "Generate new code": {
+    "Graceful re-enrollment": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Generate new code"
+            "value": "Graceful re-enrollment"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "生成新注册码"
+            "value": "平滑重新接入"
           }
         }
       }
     },
-    "Generates a new enrollment code for this server. Revoking immediately disconnects the current agent until it re-enrolls with the new code.": {
+    "Graceful mode preserves current Agent Authority until claim. Emergency mode revokes it and fences the connection immediately.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Generates a new enrollment code for this server. Revoking immediately disconnects the current agent until it re-enrolls with the new code."
+            "value": "Graceful mode preserves current Agent Authority until claim. Emergency mode revokes it and fences the connection immediately."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "为此服务器生成新的注册码。吊销后当前 Agent 将立即断开连接，直到使用新注册码重新接入。"
+            "value": "平滑模式会保留当前 Agent Authority，直到新 Offer 被领取。紧急模式会立即吊销 Authority 并封锁连接。"
           }
         }
       }
@@ -9135,19 +9169,19 @@
         }
       }
     },
-    "Pending enrollment code": {
+    "Outstanding enrollment offer": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pending enrollment code"
+            "value": "Outstanding enrollment offer"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "待使用的注册码"
+            "value": "未完成的 Enrollment Offer"
           }
         }
       }
@@ -9951,19 +9985,19 @@
         }
       }
     },
-    "Recover agent": {
+    "Agent re-enrollment": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recover agent"
+            "value": "Agent re-enrollment"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "恢复 Agent"
+            "value": "Agent 重新接入"
           }
         }
       }
@@ -10529,36 +10563,36 @@
         }
       }
     },
-    "Revoke pending code": {
+    "Revoke offer": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Revoke pending code"
+            "value": "Revoke offer"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "撤销待使用注册码"
+            "value": "吊销 Offer"
           }
         }
       }
     },
-    "Revoke the pending code before generating a new one.": {
+    "Replace this exact offer if its plaintext code was lost, or revoke it without creating a successor.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Revoke the pending code before generating a new one."
+            "value": "Replace this exact offer if its plaintext code was lost, or revoke it without creating a successor."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "生成新注册码前请先撤销待使用的注册码。"
+            "value": "若明文注册码丢失，请按精确 ID 替换此 Offer；也可以直接吊销且不创建后继。"
           }
         }
       }
@@ -10580,19 +10614,189 @@
         }
       }
     },
-    "Revoke token & generate code": {
+    "Emergency re-enrollment": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Revoke token & generate code"
+            "value": "Emergency re-enrollment"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "撤销令牌并生成注册码"
+            "value": "紧急重新接入"
+          }
+        }
+      }
+    },
+    "Issue enrollment offer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Issue enrollment offer"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "签发 Enrollment Offer"
+          }
+        }
+      }
+    },
+    "No outstanding enrollment offer remains. Manage Agent Authority from the existing server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No outstanding enrollment offer remains. Manage Agent Authority from the existing server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前没有未完成的 Enrollment Offer，请从已有服务器管理 Agent Authority。"
+          }
+        }
+      }
+    },
+    "Replace offer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace offer"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换 Offer"
+          }
+        }
+      }
+    },
+    "Replace outstanding offer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace outstanding offer"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换当前 Offer"
+          }
+        }
+      }
+    },
+    "Revoke Agent Authority": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revoke Agent Authority"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "吊销 Agent Authority"
+          }
+        }
+      }
+    },
+    "Revoke Agent Authority?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revoke Agent Authority?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "吊销 Agent Authority？"
+          }
+        }
+      }
+    },
+    "Server already created": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server already created"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器已创建"
+          }
+        }
+      }
+    },
+    "Server or enrollment offer not found": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server or enrollment offer not found"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到服务器或 Enrollment Offer"
+          }
+        }
+      }
+    },
+    "The Agent is fenced immediately and the server becomes unclaimed. No Enrollment offer is created.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The Agent is fenced immediately and the server becomes unclaimed. No Enrollment offer is created."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 将立即被封锁，服务器变为未认领状态，且不会创建 Enrollment Offer。"
+          }
+        }
+      }
+    },
+    "This onboarding request already created the server. The original plaintext code cannot be recovered.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This onboarding request already created the server. The original plaintext code cannot be recovered."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此接入请求已创建服务器，原始明文注册码无法找回。"
           }
         }
       }

@@ -79,7 +79,11 @@ struct ServerOverviewSection: View {
     // MARK: - Derived
 
     private var isOnline: Bool { live?.isOnline ?? false }
-    private var isPending: Bool { (config?.hasToken == false) || (live?.hasToken == false) }
+    private var isPending: Bool {
+        if let config { return !config.isEnrolled }
+        if let live { return !live.hasAgentAuthority }
+        return false
+    }
 
     private var hasAnyMetric: Bool {
         guard let s = live else { return false }

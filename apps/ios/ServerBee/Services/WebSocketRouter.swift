@@ -15,7 +15,7 @@ struct WebSocketRouter {
             // Full sync carries both the server metrics and the upgrade snapshot.
             servers(message)
             upgrades(message)
-        case .update, .serverOnline, .serverOffline,
+        case .update, .serverOnline, .serverOffline, .agentAuthorityChanged,
              .capabilitiesChanged, .agentInfoUpdated:
             servers(message)
         case .alertEvent:

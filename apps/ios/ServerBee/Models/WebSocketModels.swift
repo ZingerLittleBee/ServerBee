@@ -5,6 +5,7 @@ enum BrowserMessage: Sendable {
     case update(servers: [ServerStatus])
     case serverOnline(serverId: String)
     case serverOffline(serverId: String)
+    case agentAuthorityChanged(serverId: String, agentAuthority: AgentAuthorityState)
     case capabilitiesChanged(serverId: String, capabilities: Int, agentLocal: Int?, effective: Int?)
     case agentInfoUpdated(serverId: String, protocolVersion: Int)
     case alertEvent(alertKey: String, status: AlertStatus)
@@ -34,6 +35,7 @@ extension BrowserMessage: Decodable {
         case update
         case serverOnline = "server_online"
         case serverOffline = "server_offline"
+        case agentAuthorityChanged = "agent_authority_changed"
         case capabilitiesChanged = "capabilities_changed"
         case agentInfoUpdated = "agent_info_updated"
         case alertEvent = "alert_event"
@@ -50,6 +52,7 @@ extension BrowserMessage: Decodable {
         case capabilities
         case agentLocalCapabilities = "agent_local_capabilities"
         case effectiveCapabilities = "effective_capabilities"
+        case agentAuthority = "agent_authority"
         case protocolVersion = "protocol_version"
         case alertKey = "alert_key"
         case status
@@ -84,6 +87,11 @@ extension BrowserMessage: Decodable {
         case .serverOffline:
             let serverId = try container.decode(String.self, forKey: .serverId)
             self = .serverOffline(serverId: serverId)
+        case .agentAuthorityChanged:
+            self = .agentAuthorityChanged(
+                serverId: try container.decode(String.self, forKey: .serverId),
+                agentAuthority: try container.decode(AgentAuthorityState.self, forKey: .agentAuthority)
+            )
         case .capabilitiesChanged:
             let serverId = try container.decode(String.self, forKey: .serverId)
             let capabilities = try container.decode(Int.self, forKey: .capabilities)

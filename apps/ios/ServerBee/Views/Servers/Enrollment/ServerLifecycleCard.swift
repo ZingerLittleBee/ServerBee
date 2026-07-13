@@ -2,9 +2,8 @@ import SwiftUI
 
 /// Admin-only agent lifecycle actions, shown on the server detail Overview tab.
 ///
-/// - Pending servers: show the outstanding code summary + "Get install command"
-///   (mints a fresh one-time code).
-/// - Enrolled servers: Recover (re-mint, optionally revoking the live token),
+/// - Unclaimed servers: issue or exactly replace an Enrollment offer.
+/// - Claimed servers: begin Graceful or Emergency re-enrollment,
 ///   Upgrade (gated on effective `upgrade` capability + online), and Delete.
 ///
 /// Every mint surfaces the plaintext code + install command once, via a sheet.
@@ -14,7 +13,7 @@ struct ServerLifecycleCard: View {
     let capabilities: CapabilitySet
     let isOnline: Bool
     let isPending: Bool
-    /// Re-fetch the server config after an enrollment change (revoke/recover).
+    /// Re-fetch the server config after an Agent Authority change.
     var onConfigChanged: () -> Void = {}
     /// Called after a successful delete so the caller can pop the detail screen.
     let onDeleted: () -> Void
@@ -24,10 +23,12 @@ struct ServerLifecycleCard: View {
     @Environment(UpgradeJobsStore.self) private var upgradeJobs
     @State private var viewModel = AgentLifecycleViewModel()
 
-    @State private var showRecover = false
+    @State private var showReenrollment = false
+    @State private var showRevokeAuthority = false
     @State private var showUpgrade = false
     @State private var showDelete = false
     @State private var upgradeQueued = false
+    @State private var offerClock = Date()
 
     var body: some View {
         SectionCard(String(localized: "Agent"), systemImage: "gearshape.2") {
@@ -59,16 +60,50 @@ struct ServerLifecycleCard: View {
                 await viewModel.loadLatestVersion(apiClient: apiClient)
             }
         }
-        .confirmationDialog(String(localized: "Recover agent"), isPresented: $showRecover, titleVisibility: .visible) {
-            Button(String(localized: "Generate new code")) {
-                Task { await viewModel.recover(serverId: serverId, revokeImmediately: false, serverUrl: authManager.serverUrl, apiClient: apiClient) }
+        .task(id: config?.outstandingOffer?.expiresAt) {
+            offerClock = Date()
+            guard
+                let expiresAt = config?.outstandingOffer?.expiresAt,
+                let expiry = ISO8601DateFormatter.shared.date(from: expiresAt)
+            else { return }
+            let remaining = expiry.timeIntervalSinceNow
+            guard remaining > 0 else { return }
+            try? await Task.sleep(for: .seconds(remaining))
+            guard !Task.isCancelled else { return }
+            offerClock = Date()
+        }
+        .confirmationDialog(String(localized: "Agent re-enrollment"), isPresented: $showReenrollment, titleVisibility: .visible) {
+            Button(String(localized: "Graceful re-enrollment")) {
+                Task {
+                    await viewModel.beginReenrollment(
+                        serverId: serverId,
+                        mode: .graceful,
+                        serverUrl: authManager.serverUrl,
+                        apiClient: apiClient
+                    )
+                }
             }
-            Button(String(localized: "Revoke token & generate code"), role: .destructive) {
-                Task { await viewModel.recover(serverId: serverId, revokeImmediately: true, serverUrl: authManager.serverUrl, apiClient: apiClient) }
+            Button(String(localized: "Emergency re-enrollment"), role: .destructive) {
+                Task {
+                    await viewModel.beginReenrollment(
+                        serverId: serverId,
+                        mode: .emergency,
+                        serverUrl: authManager.serverUrl,
+                        apiClient: apiClient
+                    )
+                }
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text(String(localized: "Generates a new enrollment code for this server. Revoking immediately disconnects the current agent until it re-enrolls with the new code."))
+            Text(String(localized: "Graceful mode preserves current Agent Authority until claim. Emergency mode revokes it and fences the connection immediately."))
+        }
+        .confirmationDialog(String(localized: "Revoke Agent Authority?"), isPresented: $showRevokeAuthority, titleVisibility: .visible) {
+            Button(String(localized: "Revoke Agent Authority"), role: .destructive) {
+                Task { await runRevokeAuthority() }
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "The Agent is fenced immediately and the server becomes unclaimed. No Enrollment offer is created."))
         }
         .confirmationDialog(String(localized: "Upgrade agent"), isPresented: $showUpgrade, titleVisibility: .visible) {
             if let target = viewModel.latestVersion {
@@ -136,7 +171,11 @@ private extension ServerLifecycleCard {
             .font(.caption)
             .foregroundStyle(.secondary)
 
-        if let outstanding = config?.outstandingEnrollment {
+        if let expired = expiredOutstandingOffer {
+            expiredOfferNotice(expired)
+        }
+
+        if let outstanding = activeOutstandingOffer {
             VStack(alignment: .leading, spacing: 4) {
                 if let prefix = outstanding.codePrefix {
                     DetailRow(label: String(localized: "Current code"), value: "\(prefix)…", monospaced: true)
@@ -147,12 +186,28 @@ private extension ServerLifecycleCard {
             }
         }
 
-        actionButton(
-            title: String(localized: "Get install command"),
-            systemImage: "qrcode",
-            tint: .brandAccent
-        ) {
-            Task { await viewModel.regenerateCode(serverId: serverId, serverUrl: authManager.serverUrl, apiClient: apiClient) }
+        if let outstanding = activeOutstandingOffer {
+            actionButton(
+                title: String(localized: "Replace outstanding offer"),
+                systemImage: "arrow.triangle.2.circlepath",
+                tint: .brandAccent
+            ) {
+                Task { await runReplace(outstanding) }
+            }
+        } else {
+            actionButton(
+                title: String(localized: "Issue enrollment offer"),
+                systemImage: "qrcode",
+                tint: .brandAccent
+            ) {
+                Task {
+                    await viewModel.issueOffer(
+                        serverId: serverId,
+                        serverUrl: authManager.serverUrl,
+                        apiClient: apiClient
+                    )
+                }
+            }
         }
     }
 
@@ -169,14 +224,17 @@ private extension ServerLifecycleCard {
                 .foregroundStyle(Color.brandAccent)
         }
 
-        if let outstanding = config?.outstandingEnrollment {
+        if let outstanding = activeOutstandingOffer {
             outstandingNotice(outstanding)
         } else {
+            if let expired = expiredOutstandingOffer {
+                expiredOfferNotice(expired)
+            }
             actionButton(
-                title: String(localized: "Recover agent"),
+                title: String(localized: "Agent re-enrollment"),
                 systemImage: "arrow.triangle.2.circlepath",
                 tint: .brandAccent
-            ) { showRecover = true }
+            ) { showReenrollment = true }
         }
 
         if capabilities.isEnabled(.upgrade) {
@@ -194,6 +252,12 @@ private extension ServerLifecycleCard {
         }
 
         Divider()
+
+        actionButton(
+            title: String(localized: "Revoke Agent Authority"),
+            systemImage: "person.crop.circle.badge.xmark",
+            tint: .serverOffline
+        ) { showRevokeAuthority = true }
 
         actionButton(
             title: String(localized: "Delete server"),
@@ -220,12 +284,41 @@ private extension ServerLifecycleCard {
         upgradeJobs.job(forServer: serverId)?.status == .running
     }
 
-    // MARK: - Outstanding enrollment (recover gate)
+    // MARK: - Outstanding Enrollment offer
+
+    private var activeOutstandingOffer: OutstandingOffer? {
+        guard let offer = config?.outstandingOffer, !offer.isExpired(at: offerClock) else { return nil }
+        return offer
+    }
+
+    private var expiredOutstandingOffer: OutstandingOffer? {
+        guard let offer = config?.outstandingOffer, offer.isExpired(at: offerClock) else { return nil }
+        return offer
+    }
 
     @ViewBuilder
-    func outstandingNotice(_ outstanding: OutstandingEnrollment) -> some View {
+    func expiredOfferNotice(_ offer: OutstandingOffer) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(String(localized: "Pending enrollment code"), systemImage: "clock.badge.exclamationmark")
+            Label(String(localized: "Enrollment offer expired"), systemImage: "clock.badge.xmark")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+            if let prefix = offer.codePrefix {
+                DetailRow(label: String(localized: "Code"), value: "\(prefix)…", monospaced: true)
+            }
+            Text(String(localized: "This offer is terminal and can no longer be replaced or revoked."))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    func outstandingNotice(_ outstanding: OutstandingOffer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(String(localized: "Outstanding enrollment offer"), systemImage: "clock.badge.exclamationmark")
                 .font(.caption.bold())
                 .foregroundStyle(Color.warningAmber)
             if let prefix = outstanding.codePrefix {
@@ -234,14 +327,19 @@ private extension ServerLifecycleCard {
             if let expiry = outstanding.expiresAt {
                 DetailRow(label: String(localized: "Expires"), value: Formatters.formatRelativeTime(expiry))
             }
-            Text(String(localized: "Revoke the pending code before generating a new one."))
+            Text(String(localized: "Replace this exact offer if its plaintext code was lost, or revoke it without creating a successor."))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             actionButton(
-                title: String(localized: "Revoke pending code"),
+                title: String(localized: "Revoke offer"),
                 systemImage: "xmark.circle",
                 tint: .serverOffline
             ) { Task { await runRevoke(outstanding) } }
+            actionButton(
+                title: String(localized: "Replace offer"),
+                systemImage: "arrow.triangle.2.circlepath",
+                tint: .brandAccent
+            ) { Task { await runReplace(outstanding) } }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -249,10 +347,19 @@ private extension ServerLifecycleCard {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    func runRevoke(_ outstanding: OutstandingEnrollment) async {
-        if await viewModel.revokeEnrollment(enrollmentId: outstanding.id, apiClient: apiClient) {
+    func runRevoke(_ outstanding: OutstandingOffer) async {
+        if await viewModel.revokeOffer(serverId: serverId, offerId: outstanding.id, apiClient: apiClient) {
             onConfigChanged()
         }
+    }
+
+    func runReplace(_ outstanding: OutstandingOffer) async {
+        await viewModel.replaceOffer(
+            serverId: serverId,
+            offerId: outstanding.id,
+            serverUrl: authManager.serverUrl,
+            apiClient: apiClient
+        )
     }
 
     // MARK: - Action row
@@ -323,6 +430,12 @@ private extension ServerLifecycleCard {
     private func runDelete() async {
         if await viewModel.delete(serverId: serverId, apiClient: apiClient) {
             onDeleted()
+        }
+    }
+
+    private func runRevokeAuthority() async {
+        if await viewModel.revokeAuthority(serverId: serverId, apiClient: apiClient) {
+            onConfigChanged()
         }
     }
 
