@@ -1,3 +1,4 @@
+pub mod agent_authority;
 pub mod agent_manager;
 pub mod agent_reconcile;
 pub mod alert;

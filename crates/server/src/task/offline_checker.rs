@@ -14,7 +14,7 @@ pub async fn run(state: Arc<AppState>) {
 
         let offline_candidates = state.agent_manager.stale_connection_candidates(30);
         for (server_id, connection_id) in offline_candidates {
-            let server_lock = state.agent_manager.server_cleanup_lock(&server_id);
+            let server_lock = state.agent_manager.server_lifecycle_lock(&server_id);
             let _guard = server_lock.lock().await;
 
             if state
@@ -83,7 +83,7 @@ mod tests {
         server_name: &str,
         tx: mpsc::Sender<serverbee_common::protocol::ServerMessage>,
     ) {
-        let server_lock = state.agent_manager.server_cleanup_lock(server_id);
+        let server_lock = state.agent_manager.server_lifecycle_lock(server_id);
         let _guard = server_lock.lock().await;
         state.agent_manager.add_connection(
             server_id.to_string(),
@@ -113,7 +113,7 @@ mod tests {
         let (candidate_server_id, candidate_connection_id) = stale_candidates[0].clone();
         assert_eq!(candidate_server_id, "s1");
 
-        let server_lock = state.agent_manager.server_cleanup_lock("s1");
+        let server_lock = state.agent_manager.server_lifecycle_lock("s1");
         let held_guard = server_lock.lock().await;
         let mut rx = state.browser_tx.subscribe();
 
@@ -129,7 +129,7 @@ mod tests {
 
         reconnect_task.await.unwrap();
 
-        let server_lock = state.agent_manager.server_cleanup_lock("s1");
+        let server_lock = state.agent_manager.server_lifecycle_lock("s1");
         let _guard = server_lock.lock().await;
         if state
             .agent_manager

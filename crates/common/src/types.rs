@@ -180,6 +180,22 @@ pub struct OutstandingEnrollmentSummary {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum AgentAuthorityStatus {
+    #[default]
+    Claimed,
+    Unclaimed,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub struct AgentAuthorityStateSummary {
+    pub status: AgentAuthorityStatus,
+    pub outstanding_offer: Option<OutstandingEnrollmentSummary>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStatus {
     pub id: String,

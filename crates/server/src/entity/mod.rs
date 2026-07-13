@@ -1,4 +1,5 @@
 pub mod agent_enrollment;
+pub mod agent_authority_event;
 pub mod alert_rule;
 pub mod alert_state;
 pub mod api_key;
@@ -9,6 +10,7 @@ pub mod dashboard;
 pub mod dashboard_widget;
 pub mod device_token;
 pub mod docker_event;
+pub mod enrollment_offer;
 pub mod gpu_record;
 pub mod incident;
 pub mod incident_update;

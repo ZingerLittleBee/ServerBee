@@ -230,6 +230,17 @@ impl AgentManager {
         }
     }
 
+    pub fn broadcast_agent_authority_changed(
+        &self,
+        server_id: String,
+        agent_authority: serverbee_common::types::AgentAuthorityStateSummary,
+    ) {
+        let _ = self.browser_tx.send(BrowserMessage::AgentAuthorityChanged {
+            server_id,
+            agent_authority,
+        });
+    }
+
     pub fn is_current_connection(&self, server_id: &str, expected_connection_id: u64) -> bool {
         self.connections
             .get(server_id)
@@ -294,7 +305,7 @@ impl AgentManager {
         self.connections.contains_key(server_id)
     }
 
-    pub fn server_cleanup_lock(&self, server_id: &str) -> Arc<Mutex<()>> {
+    pub fn server_lifecycle_lock(&self, server_id: &str) -> Arc<Mutex<()>> {
         self.server_lifecycle_locks
             .entry(server_id.to_string())
             .or_insert_with(|| Arc::new(Mutex::new(())))

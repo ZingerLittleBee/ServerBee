@@ -595,6 +595,10 @@ pub enum BrowserMessage {
     ServerOffline {
         server_id: String,
     },
+    AgentAuthorityChanged {
+        server_id: String,
+        agent_authority: crate::types::AgentAuthorityStateSummary,
+    },
     CapabilitiesChanged {
         server_id: String,
         capabilities: u32,
@@ -828,6 +832,37 @@ mod tests {
                 assert_eq!(effective_capabilities, Some(0));
             }
             _ => panic!("Expected CapabilitiesChanged"),
+        }
+    }
+
+    #[test]
+    fn test_browser_agent_authority_changed_round_trip() {
+        let msg = BrowserMessage::AgentAuthorityChanged {
+            server_id: "server-1".to_string(),
+            agent_authority: crate::types::AgentAuthorityStateSummary {
+                status: crate::types::AgentAuthorityStatus::Unclaimed,
+                outstanding_offer: None,
+            },
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"agent_authority_changed","server_id":"server-1","agent_authority":{"status":"unclaimed","outstanding_offer":null}}"#
+        );
+
+        match serde_json::from_str::<BrowserMessage>(&json).unwrap() {
+            BrowserMessage::AgentAuthorityChanged {
+                server_id,
+                agent_authority,
+            } => {
+                assert_eq!(server_id, "server-1");
+                assert_eq!(
+                    agent_authority.status,
+                    crate::types::AgentAuthorityStatus::Unclaimed
+                );
+                assert!(agent_authority.outstanding_offer.is_none());
+            }
+            _ => panic!("Expected AgentAuthorityChanged"),
         }
     }
 

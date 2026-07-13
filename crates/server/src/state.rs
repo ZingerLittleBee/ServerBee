@@ -8,6 +8,7 @@ use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
 use crate::error::AppError;
+use crate::service::agent_authority::AgentAuthority;
 use crate::service::agent_manager::AgentManager;
 use crate::service::agent_reconcile::AgentDesiredStateReconciler;
 use crate::service::alert::AlertStateManager;
@@ -72,6 +73,7 @@ pub struct RateLimitEntry {
 pub struct AppState {
     pub db: DatabaseConnection,
     pub agent_manager: Arc<AgentManager>,
+    pub agent_authority: Arc<AgentAuthority>,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
     pub config: AppConfig,
     pub upgrade_tracker: UpgradeJobTracker,
@@ -183,6 +185,7 @@ impl AppState {
     pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, AppError> {
         let (browser_tx, _) = broadcast::channel(256);
         let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
+        let agent_authority = Arc::new(AgentAuthority::new(db.clone(), agent_manager.clone()));
         let upgrade_tracker = UpgradeJobTracker::new(browser_tx.clone());
         let upgrade_release_service = UpgradeReleaseService::new(&config.upgrade);
         let geoip = if !config.geoip.mmdb_path.is_empty() {
@@ -250,6 +253,7 @@ impl AppState {
         Ok(Arc::new(Self {
             db,
             agent_manager,
+            agent_authority,
             browser_tx,
             config,
             upgrade_tracker,
