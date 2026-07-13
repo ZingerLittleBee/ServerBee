@@ -32,10 +32,13 @@ export type CreateServerRequest = S['CreateServerRequest']
 export type CreateServerResponse = S['CreateServerResponse']
 export type EnrollmentIssueResponse = S['EnrollmentIssueResponse']
 export type OutstandingEnrollmentSummary = S['OutstandingEnrollmentSummary']
-export type RecoverRequest = S['RecoverRequest']
-export type RecoverResponse = S['RecoverResponse']
-export type RegenerateCodeRequest = S['RegenerateCodeRequest']
-export type RegenerateCodeResponse = S['RegenerateCodeResponse']
+export type AgentAuthorityStateSummary = S['AgentAuthorityStateSummary']
+export type AgentAuthorityStatus = S['AgentAuthorityStatus']
+export type ReenrollmentModeRequest = S['ReenrollmentModeRequest']
+export type ReenrollmentRequest = S['ReenrollmentRequest']
+export type EnrollmentOfferResponse = S['EnrollmentOfferResponse']
+export type RevokeOfferResponse = S['RevokeOfferResponse']
+export type RevokeAuthorityResponse = S['RevokeAuthorityResponse']
 
 // Cost
 export type CostOverviewResponse = S['CostOverviewResponse']
@@ -121,8 +124,6 @@ export type SystemSettings = S['SystemSettings']
 // Agent
 export type RegisterResponse = S['RegisterResponse']
 export type UpgradeRequest = S['UpgradeRequest']
-export type EnrollmentSummary = S['EnrollmentSummary']
-export type RotateTokenResponse = S['RotateTokenResponse']
 
 // Traffic (manually typed until OpenAPI types are regenerated)
 export interface TrafficResponse {
@@ -152,8 +153,6 @@ export interface UptimeDailyEntry {
   online_minutes: number
   total_minutes: number
 }
-
-export type ThemeResolved = S['ThemeResolved']
 
 // ---------------------------------------------------------------------------
 // Public status page DTOs (singleton, mirror of `crates/server/src/service/public_status.rs`).

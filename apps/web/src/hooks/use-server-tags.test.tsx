@@ -48,6 +48,7 @@ describe('useUpdateServerTags', () => {
       kind: 'rest_snapshot',
       servers: [
         {
+          agent_authority: { outstanding_offer: null, status: 'claimed' },
           capabilities: 0,
           created_at: '2026-01-01T00:00:00Z',
           features: [],

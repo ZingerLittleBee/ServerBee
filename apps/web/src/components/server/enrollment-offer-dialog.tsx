@@ -6,71 +6,89 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ApiError, api } from '@/lib/api-client'
-import type { RegenerateCodeRequest, RegenerateCodeResponse } from '@/lib/api-schema'
+import type { EnrollmentOfferResponse, OutstandingEnrollmentSummary } from '@/lib/api-schema'
 import { projectServerCatalog } from '@/lib/server-catalog'
 
-interface RegenerateCodeDialogProps {
+interface EnrollmentOfferDialogProps {
   onOpenChange: (open: boolean) => void
   open: boolean
+  outstandingOffer: OutstandingEnrollmentSummary | null
   serverId: string
 }
 
-export function RegenerateCodeDialog({ open, onOpenChange, serverId }: RegenerateCodeDialogProps) {
+export function EnrollmentOfferDialog({ open, onOpenChange, outstandingOffer, serverId }: EnrollmentOfferDialogProps) {
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      {open && <RegenerateCodeDialogContent key={serverId} onOpenChange={onOpenChange} serverId={serverId} />}
+      {open && (
+        <EnrollmentOfferDialogContent
+          key={`${serverId}:${outstandingOffer?.id ?? 'none'}`}
+          onOpenChange={onOpenChange}
+          outstandingOffer={outstandingOffer}
+          serverId={serverId}
+        />
+      )}
     </Dialog>
   )
 }
 
-function RegenerateCodeDialogContent({
+function EnrollmentOfferDialogContent({
   onOpenChange,
+  outstandingOffer,
   serverId
 }: {
   onOpenChange: (open: boolean) => void
+  outstandingOffer: OutstandingEnrollmentSummary | null
   serverId: string
 }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
-  const [issued, setIssued] = useState<RegenerateCodeResponse | null>(null)
+  const [issued, setIssued] = useState<EnrollmentOfferResponse | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const autoFiredRef = useRef(false)
 
   const mutation = useMutation({
-    mutationFn: (body: RegenerateCodeRequest) =>
-      api.post<RegenerateCodeResponse>(`/api/servers/${serverId}/regenerate-code`, body),
+    mutationFn: () =>
+      outstandingOffer
+        ? api.post<EnrollmentOfferResponse>(
+            `/api/servers/${serverId}/agent-authority/offers/${outstandingOffer.id}/replace`,
+            {}
+          )
+        : api.post<EnrollmentOfferResponse>(`/api/servers/${serverId}/agent-authority/offers`, {}),
     onSuccess: (data) => {
       setIssued(data)
       setErrorMessage(null)
-      toast.success(t('servers:card_pending.regenerated'))
+      toast.success(t('servers:card_pending.offer_issued'))
       projectServerCatalog(queryClient, {
-        kind: 'enrollment_changed',
-        serverId,
-        outstandingEnrollment: {
-          id: data.enrollment.id,
-          code_prefix: data.enrollment.code_prefix,
-          expires_at: data.enrollment.expires_at,
-          created_at: new Date().toISOString()
+        authority: {
+          outstanding_offer: {
+            id: data.enrollment.id,
+            code_prefix: data.enrollment.code_prefix,
+            expires_at: data.enrollment.expires_at,
+            created_at: new Date().toISOString()
+          },
+          status: 'unclaimed'
         },
-        tokenRevoked: false
+        kind: 'agent_authority_changed',
+        serverId
       })
     },
     onError: (err: unknown) => {
       const message =
-        err instanceof ApiError || err instanceof Error ? err.message : t('servers:card_pending.regenerate_failed')
+        err instanceof ApiError || err instanceof Error ? err.message : t('servers:card_pending.offer_failed')
       setErrorMessage(message)
-      toast.error(t('servers:card_pending.regenerate_failed'))
+      toast.error(t('servers:card_pending.offer_failed'))
     }
   })
 
   const mutateRef = useRef(mutation.mutate)
   mutateRef.current = mutation.mutate
 
-  // Auto-fire the regenerate request after this open-state content mounts.
+  // The menu click is the operator's explicit request. Issue or replace once
+  // after this open-state content mounts.
   useEffect(() => {
     if (!autoFiredRef.current) {
       autoFiredRef.current = true
-      mutateRef.current({})
+      mutateRef.current()
     }
   }, [])
 
@@ -85,16 +103,16 @@ function RegenerateCodeDialogContent({
 
   const retry = () => {
     setErrorMessage(null)
-    mutation.mutate({})
+    mutation.mutate()
   }
 
   return (
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>{t('servers:card_pending.regenerate_title')}</DialogTitle>
+        <DialogTitle>{t('servers:card_pending.offer_title')}</DialogTitle>
       </DialogHeader>
       <DialogBody className="space-y-4">
-        <p className="text-muted-foreground text-sm">{t('servers:card_pending.regenerate_description')}</p>
+        <p className="text-muted-foreground text-sm">{t('servers:card_pending.offer_description')}</p>
 
         {issued && (
           <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
@@ -121,7 +139,7 @@ function RegenerateCodeDialogContent({
             <p>{errorMessage}</p>
             <Button disabled={mutation.isPending} onClick={retry} size="sm" type="button" variant="outline">
               <RefreshCw aria-hidden="true" className="size-3.5" />
-              {t('servers:card_pending.regenerate_code')}
+              {t('servers:card_pending.issue_offer')}
             </Button>
           </div>
         )}

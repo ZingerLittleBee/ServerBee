@@ -24,6 +24,11 @@ type WsMessage =
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
   | {
+      type: 'agent_authority_changed'
+      server_id: string
+      agent_authority: NonNullable<ServerMetrics['agent_authority']>
+    }
+  | {
       type: 'capabilities_changed'
       server_id: string
       capabilities: number
@@ -127,6 +132,18 @@ function handleServerMetricsMessage(raw: { type: string } & Record<string, unkno
     const online = raw.type === 'server_online'
     const server_id = raw.server_id as string
     projectServerCatalog(queryClient, { kind: 'online_changed', serverId: server_id, online })
+    return
+  }
+  if (raw.type === 'agent_authority_changed') {
+    if (typeof raw.server_id !== 'string' || typeof raw.agent_authority !== 'object' || raw.agent_authority === null) {
+      return
+    }
+    const msg = raw as WsMessage & { type: 'agent_authority_changed' }
+    projectServerCatalog(queryClient, {
+      authority: msg.agent_authority,
+      kind: 'agent_authority_changed',
+      serverId: msg.server_id
+    })
   }
 }
 
@@ -392,6 +409,7 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
     case 'update':
     case 'server_online':
     case 'server_offline':
+    case 'agent_authority_changed':
       handleServerMetricsMessage(raw, queryClient)
       break
     case 'capabilities_changed':

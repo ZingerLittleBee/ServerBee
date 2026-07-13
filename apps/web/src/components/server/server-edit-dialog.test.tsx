@@ -107,6 +107,7 @@ vi.mock('@/components/ui/select', () => ({
 const { ServerEditDialog } = await import('./server-edit-dialog')
 
 const server: ServerResponse = {
+  agent_authority: { outstanding_offer: null, status: 'claimed' },
   billing_cycle: null,
   billing_start_day: null,
   capabilities: 56,

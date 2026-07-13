@@ -95,21 +95,41 @@
         ]
       }
     },
-    "/api/agent/enrollments": {
+    "/api/agent-authority/events": {
       "get": {
         "tags": [
-          "agent"
+          "servers"
         ],
-        "operationId": "list_enrollments",
+        "operationId": "get_authority_history",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "List enrollment codes",
+            "description": "Agent authority event history",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/EnrollmentSummary"
+                    "$ref": "#/components/schemas/AuthorityEventResponse"
                   }
                 }
               }
@@ -122,38 +142,9 @@
           },
           {
             "api_key": []
-          }
-        ]
-      }
-    },
-    "/api/agent/enrollments/{id}": {
-      "delete": {
-        "tags": [
-          "agent"
-        ],
-        "operationId": "delete_enrollment",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Enrollment id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deleted"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
           },
           {
-            "api_key": []
+            "bearer_token": []
           }
         ]
       }
@@ -202,11 +193,12 @@
                 "$ref": "#/components/schemas/RegisterRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
-            "description": "Agent registered against the bound server",
+            "description": "Agent claimed the bound Server authority",
             "content": {
               "application/json": {
                 "schema": {
@@ -216,61 +208,13 @@
             }
           },
           "400": {
-            "description": "Invalid fingerprint format"
+            "description": "Missing or invalid Agent-proposed run token"
           },
           "401": {
-            "description": "Invalid, expired, revoked, or already-used enrollment code"
+            "description": "Enrollment claim rejected"
           }
         },
         "security": [
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/agent/{id}/rotate-token": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "operationId": "rotate_token",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Server id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Token rotated; old token revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RotateTokenResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Server is pending (no token to rotate); use recover instead"
-          },
-          "404": {
-            "description": "Server not found"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
           {
             "bearer_token": []
           }
@@ -1004,6 +948,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Admin role required"
           },
           "422": {
             "description": "Validation error"
@@ -5255,6 +5202,309 @@
         ]
       }
     },
+    "/api/servers/{id}/agent-authority": {
+      "get": {
+        "tags": [
+          "servers"
+        ],
+        "operationId": "get_agent_authority",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent authority state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentAuthorityStateSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "servers"
+        ],
+        "operationId": "revoke_agent_authority",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent authority revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAuthorityResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{id}/agent-authority/offers": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "operationId": "issue_offer_for_unclaimed",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueOfferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Enrollment offer issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentOfferResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
+          },
+          "409": {
+            "description": "Authority or offer state conflict"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{id}/agent-authority/offers/{offer_id}": {
+      "delete": {
+        "tags": [
+          "servers"
+        ],
+        "operationId": "revoke_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offer_id",
+            "in": "path",
+            "description": "Offer ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enrollment offer revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeOfferResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server or offer not found"
+          },
+          "409": {
+            "description": "Offer has another terminal outcome"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{id}/agent-authority/offers/{offer_id}/replace": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "operationId": "replace_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offer_id",
+            "in": "path",
+            "description": "Exact current offer ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enrollment offer replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentOfferResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server or offer not found"
+          },
+          "409": {
+            "description": "Offer is stale or terminal"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/servers/{id}/agent-authority/re-enrollment": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "operationId": "begin_reenrollment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReenrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Re-enrollment offer issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentOfferResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found"
+          },
+          "409": {
+            "description": "Authority or offer state conflict"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
     "/api/servers/{id}/cost-insights": {
       "get": {
         "tags": [
@@ -5430,126 +5680,6 @@
           },
           {
             "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/servers/{id}/recover": {
-      "post": {
-        "tags": [
-          "servers"
-        ],
-        "summary": "Mint a fresh bound enrollment for an already-enrolled server so the operator\ncan reinstall the agent. The target server MUST already have a token\n(`token_hash IS NOT NULL`) — recover on a pending server is rejected with\n`400`, use `regenerate-code` for that path.",
-        "description": "Recover NEVER auto-supersedes an outstanding enrollment: if one is still\nactive, this returns `409` and the operator is expected to either wait for\nit to expire or revoke it first. Only `regenerate-code` auto-supersedes.\n\n`revoke_immediately`:\n- `true` — clear `token_hash`/`token_prefix` inside the same transaction\n  and kick the currently connected agent WS after commit. The server\n  returns to pending until the new code is consumed.\n- `false` — the existing token stays valid; the new code only becomes\n  active once the agent registers with it (`verify_and_consume_tx` then\n  rotates the token via `mint_token_for_server`).",
-        "operationId": "recover_server",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Server ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecoverRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Recover enrollment minted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecoverResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Server is pending (use regenerate-code instead)"
-          },
-          "404": {
-            "description": "Server not found"
-          },
-          "409": {
-            "description": "Outstanding enrollment exists; revoke it first"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          }
-        ]
-      }
-    },
-    "/api/servers/{id}/regenerate-code": {
-      "post": {
-        "tags": [
-          "servers"
-        ],
-        "summary": "Mint a fresh bound enrollment for a pending server, auto-superseding the\nprevious outstanding enrollment (if any) inside one transaction. The target\nserver MUST be pending (`token_hash IS NULL`); use `recover` for an already-\nenrolled server.",
-        "description": "Optimistic concurrency: callers pass `expected_enrollment_id` to guard\nagainst stomping on a concurrent operator's regenerated code. Semantics:\n- `Some(id) && matches current outstanding` → proceed (CAS pass)\n- `Some(id) && does NOT match` (including: there is no outstanding row, or\n  the row referenced has been revoked/consumed) → 409\n- `None && outstanding exists` → proceed (last-writer-wins)\n- `None && no outstanding` → proceed (fresh mint)",
-        "operationId": "regenerate_code",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Server ID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegenerateCodeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Regenerate enrollment minted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RegenerateCodeResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Server is not pending; use recover instead"
-          },
-          "404": {
-            "description": "Server not found"
-          },
-          "409": {
-            "description": "expected_enrollment_id mismatch"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
           }
         ]
       }
@@ -6186,6 +6316,9 @@
           },
           "404": {
             "description": "Not found"
+          },
+          "409": {
+            "description": "A check for this monitor is already running"
           }
         },
         "security": [
@@ -6341,88 +6474,6 @@
                 }
               }
             }
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/settings/active-theme": {
-      "get": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "get_active_theme",
-        "responses": {
-          "200": {
-            "description": "Resolved active admin theme",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActiveThemeResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      },
-      "put": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "put_active_theme",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PutActiveThemeInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Resolved active admin theme",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActiveThemeResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden (non-admin)"
-          },
-          "422": {
-            "description": "Validation error or custom themes disabled"
           }
         },
         "security": [
@@ -6643,461 +6694,6 @@
           },
           "400": {
             "description": "Invalid backup file"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/settings/themes": {
-      "get": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "list_themes",
-        "responses": {
-          "200": {
-            "description": "List custom themes",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ThemeSummary"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "create_theme",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateThemeInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Custom theme created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Theme"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden (non-admin)"
-          },
-          "422": {
-            "description": "Validation error or custom themes disabled"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/settings/themes/import": {
-      "post": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "import_theme",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ExportPayload"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Custom theme imported",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Theme"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden (non-admin)"
-          },
-          "422": {
-            "description": "Validation error or custom themes disabled"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/settings/themes/{id}": {
-      "get": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "get_theme",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Theme ID",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Custom theme",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Theme"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "404": {
-            "description": "Theme not found"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      },
-      "put": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "update_theme",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Theme ID",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateThemeInput"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Custom theme updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Theme"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden (non-admin)"
-          },
-          "404": {
-            "description": "Theme not found"
-          },
-          "422": {
-            "description": "Validation error or custom themes disabled"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      },
-      "delete": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "delete_theme",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Theme ID",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Custom theme deleted"
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden (non-admin)"
-          },
-          "404": {
-            "description": "Theme not found"
-          },
-          "409": {
-            "description": "Theme is referenced"
-          },
-          "422": {
-            "description": "Custom themes disabled"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/settings/themes/{id}/duplicate": {
-      "post": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "duplicate_theme",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Theme ID",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Custom theme duplicated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Theme"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden (non-admin)"
-          },
-          "404": {
-            "description": "Theme not found"
-          },
-          "422": {
-            "description": "Validation error or custom themes disabled"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/settings/themes/{id}/export": {
-      "get": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "export_theme",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Theme ID",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Exportable custom theme payload",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ExportPayload"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "404": {
-            "description": "Theme not found"
-          }
-        },
-        "security": [
-          {
-            "session_cookie": []
-          },
-          {
-            "api_key": []
-          },
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/settings/themes/{id}/references": {
-      "get": {
-        "tags": [
-          "themes"
-        ],
-        "operationId": "get_references",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "Theme ID",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Theme references",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ThemeReferences"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthenticated"
-          },
-          "403": {
-            "description": "Forbidden (non-admin)"
-          },
-          "404": {
-            "description": "Theme not found"
-          },
-          "422": {
-            "description": "Invalid theme ID"
           }
         },
         "security": [
@@ -7494,6 +7090,9 @@
           },
           "404": {
             "description": "Server not in public scope"
+          },
+          "422": {
+            "description": "Invalid time range (`from` after `to`)"
           },
           "429": {
             "description": "Rate limit exceeded"
@@ -8221,6 +7820,167 @@
           }
         ]
       }
+    },
+    "/api/widget-modules": {
+      "get": {
+        "tags": [
+          "widget-modules"
+        ],
+        "operationId": "list_modules",
+        "responses": {
+          "200": {
+            "description": "List installed widget modules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WidgetModuleListEntry"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "widget-modules"
+        ],
+        "operationId": "install_widget_module",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "description": "HTTPS URL to fetch the widget bundle from. Accepts either a single `.js` file or a `.zip` collection bundle.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Alternatively, upload the widget bundle in a `file` field. Accepts either a single `.js` file or a `.zip` collection bundle.",
+          "content": {
+            "multipart/form-data": {}
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Installed (or upgraded) widget module(s). For a single `.js` file the response is `{ data: { id, version } }`. For a `.zip` collection it is `{ data: [{ id, version }, ...] }` — one entry per widget in the collection."
+          },
+          "400": {
+            "description": "Bad URL, unsupported source, or invalid manifest"
+          },
+          "409": {
+            "description": "Module id conflicts with an existing install of a different source type"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/widget-modules/{id}": {
+      "delete": {
+        "tags": [
+          "widget-modules"
+        ],
+        "operationId": "uninstall_module",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Module ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Module uninstalled"
+          },
+          "400": {
+            "description": "Cannot uninstall builtin module"
+          },
+          "404": {
+            "description": "Module not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/api/widget-modules/{id}/{asset_path}": {
+      "get": {
+        "tags": [
+          "widget-modules"
+        ],
+        "operationId": "serve_asset",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Module ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asset_path",
+            "in": "path",
+            "description": "Asset path within the package",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Asset bytes"
+          },
+          "404": {
+            "description": "Module or asset not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -8236,20 +7996,33 @@
           }
         }
       },
-      "ActiveThemeResponse": {
+      "AgentAuthorityStateSummary": {
         "type": "object",
         "required": [
-          "ref",
-          "theme"
+          "status"
         ],
         "properties": {
-          "ref": {
-            "type": "string"
+          "outstanding_offer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OutstandingEnrollmentSummary"
+              }
+            ]
           },
-          "theme": {
-            "$ref": "#/components/schemas/ThemeResolved"
+          "status": {
+            "$ref": "#/components/schemas/AgentAuthorityStatus"
           }
         }
+      },
+      "AgentAuthorityStatus": {
+        "type": "string",
+        "enum": [
+          "claimed",
+          "unclaimed"
+        ]
       },
       "AlertEventDetailResponse": {
         "type": "object",
@@ -8655,6 +8428,12 @@
               "advisories"
             ],
             "properties": {
+              "advisories": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CostAdvisory"
+                }
+              },
               "billing_cycle": {
                 "type": [
                   "string",
@@ -8781,12 +8560,6 @@
               },
               "server_id": {
                 "type": "string"
-              },
-              "advisories": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CostAdvisory"
-                }
               }
             }
           }
@@ -9154,6 +8927,74 @@
           }
         }
       },
+      "AuthorityEventResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "server_name",
+          "actor_kind",
+          "request_source",
+          "transition",
+          "authority_before",
+          "authority_after",
+          "created_at"
+        ],
+        "properties": {
+          "actor_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor_kind": {
+            "type": "string"
+          },
+          "authority_after": {
+            "type": "string"
+          },
+          "authority_before": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offer_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offer_outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_source": {
+            "type": "string"
+          },
+          "server_id": {
+            "type": "string"
+          },
+          "server_name": {
+            "type": "string"
+          },
+          "transition": {
+            "type": "string"
+          }
+        }
+      },
       "BatchDeleteRequest": {
         "type": "object",
         "required": [
@@ -9318,6 +9159,7 @@
       },
       "CostAdvisory": {
         "type": "string",
+        "description": "A cost advisory: an objective, per-server warning surfaced alongside the cost\nbreakdown. Unlike the former composite \"value score\", each advisory is a\nsingle actionable fact computed without any fleet comparison, so it is\nmeaningful even for a single-server deployment. The variants are declared in\ndisplay-priority order (most urgent first).",
         "enum": [
           "expired_billing",
           "sleeping_money",
@@ -9685,6 +9527,7 @@
       "CreateServerRequest": {
         "type": "object",
         "required": [
+          "onboarding_request_id",
           "name"
         ],
         "properties": {
@@ -9731,6 +9574,9 @@
             ]
           },
           "name": {
+            "type": "string"
+          },
+          "onboarding_request_id": {
             "type": "string"
           },
           "price": {
@@ -9785,11 +9631,31 @@
         "type": "object",
         "required": [
           "server_id",
-          "enrollment"
+          "replayed"
         ],
         "properties": {
           "enrollment": {
-            "$ref": "#/components/schemas/EnrollmentIssueResponse"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EnrollmentIssueResponse"
+              }
+            ]
+          },
+          "outstanding_offer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OutstandingEnrollmentSummary"
+              }
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
           },
           "server_id": {
             "type": "string"
@@ -9885,7 +9751,7 @@
             }
           },
           "task_type": {
-            "type": "string",
+            "$ref": "#/components/schemas/TaskType",
             "description": "\"oneshot\" (default) or \"scheduled\""
           },
           "timeout": {
@@ -9895,37 +9761,6 @@
             ],
             "format": "int32",
             "minimum": 0
-          }
-        }
-      },
-      "CreateThemeInput": {
-        "type": "object",
-        "required": [
-          "name",
-          "vars_light",
-          "vars_dark"
-        ],
-        "properties": {
-          "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "vars_dark": {
-            "$ref": "#/components/schemas/HashMap"
-          },
-          "vars_light": {
-            "$ref": "#/components/schemas/HashMap"
           }
         }
       },
@@ -10132,46 +9967,14 @@
           }
         }
       },
-      "EnrollmentSummary": {
+      "EnrollmentOfferResponse": {
         "type": "object",
         "required": [
-          "id",
-          "target_server_id",
-          "code_prefix",
-          "created_by",
-          "expires_at",
-          "created_at"
+          "enrollment"
         ],
         "properties": {
-          "code_prefix": {
-            "type": "string"
-          },
-          "consumed_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "created_by": {
-            "type": "string"
-          },
-          "expires_at": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "revoked_at": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "target_server_id": {
-            "type": "string"
+          "enrollment": {
+            "$ref": "#/components/schemas/EnrollmentIssueResponse"
           }
         }
       },
@@ -10196,45 +9999,9 @@
           "code": {
             "type": "string"
           },
+          "details": {},
           "message": {
             "type": "string"
-          }
-        }
-      },
-      "ExportPayload": {
-        "type": "object",
-        "required": [
-          "version",
-          "name",
-          "vars_light",
-          "vars_dark"
-        ],
-        "properties": {
-          "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "vars_dark": {
-            "$ref": "#/components/schemas/HashMap"
-          },
-          "vars_light": {
-            "$ref": "#/components/schemas/HashMap"
-          },
-          "version": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           }
         }
       },
@@ -10387,15 +10154,6 @@
             "type": "number",
             "format": "double"
           }
-        }
-      },
-      "HashMap": {
-        "type": "object",
-        "additionalProperties": {
-          "type": "string"
-        },
-        "propertyNames": {
-          "type": "string"
         }
       },
       "HourlyTraffic": {
@@ -10601,6 +10359,18 @@
               "null"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "IssueOfferRequest": {
+        "type": "object",
+        "properties": {
+          "ttl_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -11008,6 +10778,12 @@
           },
           "id": {
             "type": "string"
+          },
+          "module_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sort_order": {
             "type": "integer",
@@ -12076,17 +11852,6 @@
           }
         }
       },
-      "PutActiveThemeInput": {
-        "type": "object",
-        "required": [
-          "ref"
-        ],
-        "properties": {
-          "ref": {
-            "type": "string"
-          }
-        }
-      },
       "RateLimitEntryDto": {
         "type": "object",
         "required": [
@@ -12257,56 +12022,38 @@
           "legacy"
         ]
       },
-      "RecoverRequest": {
+      "ReenrollmentModeRequest": {
+        "type": "string",
+        "enum": [
+          "graceful",
+          "emergency"
+        ]
+      },
+      "ReenrollmentRequest": {
         "type": "object",
         "required": [
-          "revoke_immediately"
+          "mode"
         ],
         "properties": {
-          "revoke_immediately": {
-            "type": "boolean",
-            "description": "If `true`, clear the server's `token_hash`/`token_prefix` and kick the\ncurrently connected agent WebSocket as part of the same transaction.\nUse this when the operator suspects the existing agent token has been\ncompromised. If `false`, the existing token remains valid and only a\nnew bound enrollment is minted alongside it."
-          }
-        }
-      },
-      "RecoverResponse": {
-        "type": "object",
-        "required": [
-          "enrollment"
-        ],
-        "properties": {
-          "enrollment": {
-            "$ref": "#/components/schemas/EnrollmentIssueResponse"
-          }
-        }
-      },
-      "RegenerateCodeRequest": {
-        "type": "object",
-        "properties": {
-          "expected_enrollment_id": {
+          "mode": {
+            "$ref": "#/components/schemas/ReenrollmentModeRequest"
+          },
+          "ttl_secs": {
             "type": [
-              "string",
+              "integer",
               "null"
             ],
-            "description": "Optimistic concurrency token. If `Some`, must match the current\noutstanding enrollment id exactly; otherwise the server returns 409.\nIf `None`, last-writer-wins: any outstanding enrollment is revoked\nand a fresh one is minted."
-          }
-        }
-      },
-      "RegenerateCodeResponse": {
-        "type": "object",
-        "required": [
-          "enrollment"
-        ],
-        "properties": {
-          "enrollment": {
-            "$ref": "#/components/schemas/EnrollmentIssueResponse"
+            "format": "int64"
           }
         }
       },
       "RegisterRequest": {
         "type": "object",
+        "required": [
+          "proposed_run_token"
+        ],
         "properties": {
-          "fingerprint": {
+          "proposed_run_token": {
             "type": "string"
           }
         }
@@ -12314,14 +12061,10 @@
       "RegisterResponse": {
         "type": "object",
         "required": [
-          "server_id",
-          "token"
+          "server_id"
         ],
         "properties": {
           "server_id": {
-            "type": "string"
-          },
-          "token": {
             "type": "string"
           }
         }
@@ -12365,19 +12108,33 @@
           }
         }
       },
-      "RotateTokenResponse": {
+      "RevokeAuthorityResponse": {
         "type": "object",
         "required": [
           "server_id",
-          "token"
+          "changed"
         ],
         "properties": {
+          "changed": {
+            "type": "boolean"
+          },
           "server_id": {
             "type": "string"
+          }
+        }
+      },
+      "RevokeOfferResponse": {
+        "type": "object",
+        "required": [
+          "offer_id",
+          "already_revoked"
+        ],
+        "properties": {
+          "already_revoked": {
+            "type": "boolean"
           },
-          "token": {
-            "type": "string",
-            "description": "New plaintext run token — shown once. The agent must be reconfigured\nwith this value (or it will need to re-enroll)."
+          "offer_id": {
+            "type": "string"
           }
         }
       },
@@ -12515,6 +12272,12 @@
           "advisories"
         ],
         "properties": {
+          "advisories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostAdvisory"
+            }
+          },
           "billing_cycle": {
             "type": [
               "string",
@@ -12641,12 +12404,6 @@
           },
           "server_id": {
             "type": "string"
-          },
-          "advisories": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CostAdvisory"
-            }
           }
         }
       },
@@ -12659,6 +12416,12 @@
           "advisories"
         ],
         "properties": {
+          "advisories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CostAdvisory"
+            }
+          },
           "billing_cycle": {
             "type": [
               "string",
@@ -12738,12 +12501,6 @@
           },
           "server_id": {
             "type": "string"
-          },
-          "advisories": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CostAdvisory"
-            }
           }
         }
       },
@@ -13088,16 +12845,21 @@
         "required": [
           "id",
           "name",
+          "geo_manual",
           "weight",
           "hidden",
           "capabilities",
           "protocol_version",
           "features",
+          "agent_authority",
           "has_token",
           "created_at",
           "updated_at"
         ],
         "properties": {
+          "agent_authority": {
+            "$ref": "#/components/schemas/AgentAuthorityStateSummary"
+          },
           "agent_local_capabilities": {
             "type": [
               "integer",
@@ -13189,6 +12951,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "geo_manual": {
+            "type": "boolean",
+            "description": "`true` when `country_code`/`region` were pinned manually by an operator\nand are no longer auto-updated from GeoIP. The UI uses this to show that\nthe flag is a manual override."
           },
           "group_id": {
             "type": [
@@ -13291,7 +13057,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TemporaryGrantDto"
-            }
+            },
+            "description": "Currently-active temporary capability grants reported by the agent, used\nby the UI to render countdowns. Empty when the agent is offline or has no\nactive grants."
           },
           "traffic_limit": {
             "type": [
@@ -13899,8 +13666,16 @@
           }
         }
       },
+      "TaskType": {
+        "type": "string",
+        "enum": [
+          "oneshot",
+          "scheduled"
+        ]
+      },
       "TemporaryGrantDto": {
         "type": "object",
+        "description": "A capability that is temporarily enabled on the agent host until\n`expires_at`. Mirrors `serverbee_common::protocol::TemporaryGrant` but adds a\n`ToSchema` derive so the REST `ServerResponse` can advertise it; the UI uses\nit to render countdowns from a plain HTTP fetch.",
         "required": [
           "cap",
           "granted_at",
@@ -13910,156 +13685,13 @@
           "cap": {
             "type": "string"
           },
-          "granted_at": {
-            "type": "integer",
-            "format": "int64"
-          },
           "expires_at": {
             "type": "integer",
             "format": "int64"
-          }
-        }
-      },
-      "Theme": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "vars_light",
-          "vars_dark",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "id": {
+          "granted_at": {
             "type": "integer",
-            "format": "int32"
-          },
-          "name": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "vars_dark": {
-            "$ref": "#/components/schemas/HashMap"
-          },
-          "vars_light": {
-            "$ref": "#/components/schemas/HashMap"
-          }
-        }
-      },
-      "ThemeReferences": {
-        "type": "object",
-        "description": "Where a custom theme is referenced.\n\nAfter R1 the public status page no longer carries its own `theme_ref` —\nonly the admin UI's active theme can pin a custom theme. The previous\n`status_pages: Vec<StatusPageRef>` collection has therefore been removed.",
-        "required": [
-          "admin"
-        ],
-        "properties": {
-          "admin": {
-            "type": "boolean"
-          }
-        }
-      },
-      "ThemeResolved": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "kind"
-            ],
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "preset"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "id",
-              "name",
-              "vars_light",
-              "vars_dark",
-              "updated_at",
-              "kind"
-            ],
-            "properties": {
-              "id": {
-                "type": "integer",
-                "format": "int32"
-              },
-              "kind": {
-                "type": "string",
-                "enum": [
-                  "custom"
-                ]
-              },
-              "name": {
-                "type": "string"
-              },
-              "updated_at": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "vars_dark": {
-                "$ref": "#/components/schemas/HashMap"
-              },
-              "vars_light": {
-                "$ref": "#/components/schemas/HashMap"
-              }
-            }
-          }
-        ]
-      },
-      "ThemeSummary": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "updated_at"
-        ],
-        "properties": {
-          "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "id": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "name": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
+            "format": "int64"
           }
         }
       },
@@ -14465,6 +14097,13 @@
           },
           "direction": {
             "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable failure reason when `status == \"failed\"`; omitted otherwise."
           },
           "file_path": {
             "type": "string"
@@ -14987,6 +14626,13 @@
             ],
             "format": "int32"
           },
+          "country_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Manual override for the GeoIP country flag. `Some(Some(\"us\"))` pins the\n2-letter ISO code and freezes it against auto-detection; `Some(None)`\n(explicit JSON null) clears the override and resumes GeoIP on the next\nagent report. Absent = unchanged."
+          },
           "currency": {
             "type": [
               "string",
@@ -15331,37 +14977,6 @@
           }
         }
       },
-      "UpdateThemeInput": {
-        "type": "object",
-        "required": [
-          "name",
-          "vars_light",
-          "vars_dark"
-        ],
-        "properties": {
-          "based_on": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": "string"
-          },
-          "vars_dark": {
-            "$ref": "#/components/schemas/HashMap"
-          },
-          "vars_light": {
-            "$ref": "#/components/schemas/HashMap"
-          }
-        }
-      },
       "UpdateUserInput": {
         "type": "object",
         "properties": {
@@ -15534,6 +15149,12 @@
               "null"
             ]
           },
+          "module_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sort_order": {
             "type": "integer",
             "format": "int32"
@@ -15545,6 +15166,41 @@
             ]
           },
           "widget_type": {
+            "type": "string"
+          }
+        }
+      },
+      "WidgetModuleListEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "source_type",
+          "entry_path",
+          "code_sha256",
+          "manifest",
+          "enabled"
+        ],
+        "properties": {
+          "code_sha256": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "entry_path": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "object"
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "version": {
             "type": "string"
           }
         }
@@ -15632,10 +15288,6 @@
       "description": "System settings"
     },
     {
-      "name": "themes",
-      "description": "Custom theme management"
-    },
-    {
       "name": "notifications",
       "description": "Notification channels"
     },
@@ -15684,6 +15336,10 @@
       "description": "Custom dashboard management"
     },
     {
+      "name": "widget-modules",
+      "description": "Custom widget module registry & asset serving"
+    },
+    {
       "name": "service-monitors",
       "description": "Server-side service monitoring (SSL/DNS/HTTP/TCP/WHOIS)"
     },
@@ -15701,7 +15357,7 @@
     },
     {
       "name": "cost",
-      "description": "VPS cost insights and value scoring"
+      "description": "VPS cost insights and advisories"
     },
     {
       "name": "uptime",

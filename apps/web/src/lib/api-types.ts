@@ -52,33 +52,17 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/agent/enrollments": {
+    "/api/agent-authority/events": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["list_enrollments"];
+        get: operations["get_authority_history"];
         put?: never;
         post?: never;
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/agent/enrollments/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["delete_enrollment"];
         options?: never;
         head?: never;
         patch?: never;
@@ -110,22 +94,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["register"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/agent/{id}/rotate-token": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["rotate_token"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1523,6 +1491,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/servers/{id}/agent-authority": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_agent_authority"];
+        put?: never;
+        post?: never;
+        delete: operations["revoke_agent_authority"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/servers/{id}/agent-authority/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["issue_offer_for_unclaimed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/servers/{id}/agent-authority/offers/{offer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_offer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/servers/{id}/agent-authority/offers/{offer_id}/replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["replace_offer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/servers/{id}/agent-authority/re-enrollment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["begin_reenrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/servers/{id}/cost-insights": {
         parameters: {
             query?: never;
@@ -1565,68 +1613,6 @@ export interface paths {
         get: operations["get_server_records"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/recover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mint a fresh bound enrollment for an already-enrolled server so the operator
-         *     can reinstall the agent. The target server MUST already have a token
-         *     (`token_hash IS NOT NULL`) — recover on a pending server is rejected with
-         *     `400`, use `regenerate-code` for that path.
-         * @description Recover NEVER auto-supersedes an outstanding enrollment: if one is still
-         *     active, this returns `409` and the operator is expected to either wait for
-         *     it to expire or revoke it first. Only `regenerate-code` auto-supersedes.
-         *
-         *     `revoke_immediately`:
-         *     - `true` — clear `token_hash`/`token_prefix` inside the same transaction
-         *       and kick the currently connected agent WS after commit. The server
-         *       returns to pending until the new code is consumed.
-         *     - `false` — the existing token stays valid; the new code only becomes
-         *       active once the agent registers with it (`verify_and_consume_tx` then
-         *       rotates the token via `mint_token_for_server`).
-         */
-        post: operations["recover_server"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/servers/{id}/regenerate-code": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mint a fresh bound enrollment for a pending server, auto-superseding the
-         *     previous outstanding enrollment (if any) inside one transaction. The target
-         *     server MUST be pending (`token_hash IS NULL`); use `recover` for an already-
-         *     enrolled server.
-         * @description Optimistic concurrency: callers pass `expected_enrollment_id` to guard
-         *     against stomping on a concurrent operator's regenerated code. Semantics:
-         *     - `Some(id) && matches current outstanding` → proceed (CAS pass)
-         *     - `Some(id) && does NOT match` (including: there is no outstanding row, or
-         *       the row referenced has been revoked/consumed) → 409
-         *     - `None && outstanding exists` → proceed (last-writer-wins)
-         *     - `None && no outstanding` → proceed (fresh mint)
-         */
-        post: operations["regenerate_code"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1793,22 +1779,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/settings/active-theme": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_active_theme"];
-        put: operations["put_active_theme"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/settings/backup": {
         parameters: {
             query?: never;
@@ -1889,102 +1859,6 @@ export interface paths {
          *     Note: request body is raw binary (application/octet-stream).
          */
         post: operations["restore_backup"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["list_themes"];
-        put?: never;
-        post: operations["create_theme"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/import": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["import_theme"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_theme"];
-        put: operations["update_theme"];
-        post?: never;
-        delete: operations["delete_theme"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}/duplicate": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["duplicate_theme"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["export_theme"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/settings/themes/{id}/references": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_references"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2311,6 +2185,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/widget-modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_modules"];
+        put?: never;
+        post: operations["install_widget_module"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/widget-modules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["uninstall_module"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/widget-modules/{id}/{asset_path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["serve_asset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2318,10 +2240,12 @@ export interface components {
         AboutInfo: {
             version: string;
         };
-        ActiveThemeResponse: {
-            ref: string;
-            theme: components["schemas"]["ThemeResolved"];
+        AgentAuthorityStateSummary: {
+            outstanding_offer?: null | components["schemas"]["OutstandingEnrollmentSummary"];
+            status: components["schemas"]["AgentAuthorityStatus"];
         };
+        /** @enum {string} */
+        AgentAuthorityStatus: "claimed" | "unclaimed";
         AlertEventDetailResponse: {
             alert_key: string;
             first_triggered_at: string;
@@ -2427,6 +2351,7 @@ export interface components {
         };
         ApiResponse_ServerCostInsights: {
             data: {
+                advisories: components["schemas"]["CostAdvisory"][];
                 billing_cycle?: string | null;
                 configured: boolean;
                 /** Format: double */
@@ -2457,7 +2382,6 @@ export interface components {
                 price?: number | null;
                 resource_value?: null | components["schemas"]["ResourceValue"];
                 server_id: string;
-                advisories: components["schemas"]["CostAdvisory"][];
             };
         };
         ApiResponse_TrafficResponse: {
@@ -2555,6 +2479,22 @@ export interface components {
             id: string;
             label: string;
         };
+        AuthorityEventResponse: {
+            actor_id?: string | null;
+            actor_kind: string;
+            authority_after: string;
+            authority_before: string;
+            /** Format: date-time */
+            created_at: string;
+            id: string;
+            mode?: string | null;
+            offer_id?: string | null;
+            offer_outcome?: string | null;
+            request_source: string;
+            server_id: string;
+            server_name: string;
+            transition: string;
+        };
         BatchDeleteRequest: {
             ids: string[];
         };
@@ -2594,7 +2534,14 @@ export interface components {
             /** Format: int64 */
             deleted: number;
         };
-        /** @enum {string} */
+        /**
+         * @description A cost advisory: an objective, per-server warning surfaced alongside the cost
+         *     breakdown. Unlike the former composite "value score", each advisory is a
+         *     single actionable fact computed without any fleet comparison, so it is
+         *     meaningful even for a single-server deployment. The variants are declared in
+         *     display-priority order (most urgent first).
+         * @enum {string}
+         */
         CostAdvisory: "expired_billing" | "sleeping_money" | "idle_burn" | "low_uptime";
         /** @enum {string} */
         CostInvalidReason: "missing_price" | "missing_billing_cycle" | "invalid_billing_cycle" | "invalid_price";
@@ -2704,6 +2651,7 @@ export interface components {
             expired_at?: string | null;
             group_id?: string | null;
             name: string;
+            onboarding_request_id: string;
             /** Format: double */
             price?: number | null;
             public_remark?: string | null;
@@ -2719,7 +2667,9 @@ export interface components {
             ttl_secs?: number | null;
         };
         CreateServerResponse: {
-            enrollment: components["schemas"]["EnrollmentIssueResponse"];
+            enrollment?: null | components["schemas"]["EnrollmentIssueResponse"];
+            outstanding_offer?: null | components["schemas"]["OutstandingEnrollmentSummary"];
+            replayed: boolean;
             server_id: string;
         };
         CreateServiceMonitor: {
@@ -2745,16 +2695,9 @@ export interface components {
             retry_interval?: number | null;
             server_ids: string[];
             /** @description "oneshot" (default) or "scheduled" */
-            task_type?: string;
+            task_type?: components["schemas"]["TaskType"];
             /** Format: int32 */
             timeout?: number | null;
-        };
-        CreateThemeInput: {
-            based_on?: string | null;
-            description?: string | null;
-            name: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
         };
         CreateUserInput: {
             password: string;
@@ -2816,31 +2759,16 @@ export interface components {
             expires_at: string;
             id: string;
         };
-        EnrollmentSummary: {
-            code_prefix: string;
-            consumed_at?: string | null;
-            created_at: string;
-            created_by: string;
-            expires_at: string;
-            id: string;
-            revoked_at?: string | null;
-            target_server_id: string;
+        EnrollmentOfferResponse: {
+            enrollment: components["schemas"]["EnrollmentIssueResponse"];
         };
         ErrorBody: {
             error: components["schemas"]["ErrorDetail"];
         };
         ErrorDetail: {
             code: string;
+            details?: unknown;
             message: string;
-        };
-        ExportPayload: {
-            based_on?: string | null;
-            description?: string | null;
-            name: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-            /** Format: int32 */
-            version: number;
         };
         FileEntry: {
             file_type: components["schemas"]["FileType"];
@@ -2884,9 +2812,6 @@ export interface components {
             time: string;
             /** Format: double */
             utilization: number;
-        };
-        HashMap: {
-            [key: string]: string;
         };
         HourlyTraffic: {
             /** Format: int64 */
@@ -2943,6 +2868,10 @@ export interface components {
             risk_level: string;
             /** Format: int32 */
             risk_score?: number | null;
+        };
+        IssueOfferRequest: {
+            /** Format: int64 */
+            ttl_secs?: number | null;
         };
         LatestAgentVersionResponse: {
             error?: string | null;
@@ -3054,6 +2983,7 @@ export interface components {
             /** Format: int32 */
             grid_y: number;
             id: string;
+            module_id?: string | null;
             /** Format: int32 */
             sort_order: number;
             title?: string | null;
@@ -3354,9 +3284,6 @@ export interface components {
             /** @description The APNs device token obtained from the iOS device. */
             device_token: string;
         };
-        PutActiveThemeInput: {
-            ref: string;
-        };
         RateLimitEntryDto: {
             /** @description True if `count >= max` and the window is still open. */
             blocked: boolean;
@@ -3428,37 +3355,18 @@ export interface components {
          * @enum {string}
          */
         RecordedProtocol: "icmp" | "udp" | "tcp" | "legacy";
-        RecoverRequest: {
-            /**
-             * @description If `true`, clear the server's `token_hash`/`token_prefix` and kick the
-             *     currently connected agent WebSocket as part of the same transaction.
-             *     Use this when the operator suspects the existing agent token has been
-             *     compromised. If `false`, the existing token remains valid and only a
-             *     new bound enrollment is minted alongside it.
-             */
-            revoke_immediately: boolean;
-        };
-        RecoverResponse: {
-            enrollment: components["schemas"]["EnrollmentIssueResponse"];
-        };
-        RegenerateCodeRequest: {
-            /**
-             * @description Optimistic concurrency token. If `Some`, must match the current
-             *     outstanding enrollment id exactly; otherwise the server returns 409.
-             *     If `None`, last-writer-wins: any outstanding enrollment is revoked
-             *     and a fresh one is minted.
-             */
-            expected_enrollment_id?: string | null;
-        };
-        RegenerateCodeResponse: {
-            enrollment: components["schemas"]["EnrollmentIssueResponse"];
+        /** @enum {string} */
+        ReenrollmentModeRequest: "graceful" | "emergency";
+        ReenrollmentRequest: {
+            mode: components["schemas"]["ReenrollmentModeRequest"];
+            /** Format: int64 */
+            ttl_secs?: number | null;
         };
         RegisterRequest: {
-            fingerprint?: string;
+            proposed_run_token: string;
         };
         RegisterResponse: {
             server_id: string;
-            token: string;
         };
         ResourceValue: {
             /** Format: double */
@@ -3471,13 +3379,13 @@ export interface components {
             cost_per_tb_traffic_limit?: number | null;
             traffic_limit_type?: string | null;
         };
-        RotateTokenResponse: {
+        RevokeAuthorityResponse: {
+            changed: boolean;
             server_id: string;
-            /**
-             * @description New plaintext run token — shown once. The agent must be reconfigured
-             *     with this value (or it will need to re-enroll).
-             */
-            token: string;
+        };
+        RevokeOfferResponse: {
+            already_revoked: boolean;
+            offer_id: string;
         };
         SecurityEventDto: {
             created_at: string;
@@ -3522,6 +3430,7 @@ export interface components {
             min_failed_count?: number | null;
         };
         ServerCostInsights: {
+            advisories: components["schemas"]["CostAdvisory"][];
             billing_cycle?: string | null;
             configured: boolean;
             /** Format: double */
@@ -3552,9 +3461,9 @@ export interface components {
             price?: number | null;
             resource_value?: null | components["schemas"]["ResourceValue"];
             server_id: string;
-            advisories: components["schemas"]["CostAdvisory"][];
         };
         ServerCostOverview: {
+            advisories: components["schemas"]["CostAdvisory"][];
             billing_cycle?: string | null;
             configured: boolean;
             /** Format: double */
@@ -3575,7 +3484,6 @@ export interface components {
             invalid_reason?: null | components["schemas"]["CostInvalidReason"];
             name: string;
             server_id: string;
-            advisories: components["schemas"]["CostAdvisory"][];
         };
         ServerGroup: {
             /** Format: date-time */
@@ -3688,6 +3596,7 @@ export interface components {
         };
         /** @description Server response DTO — excludes sensitive fields (token_hash, token_prefix). */
         ServerResponse: {
+            agent_authority: components["schemas"]["AgentAuthorityStateSummary"];
             /** Format: int32 */
             agent_local_capabilities?: number | null;
             agent_version?: string | null;
@@ -3743,6 +3652,11 @@ export interface components {
             remark?: string | null;
             /** Format: int64 */
             swap_total?: number | null;
+            /**
+             * @description Currently-active temporary capability grants reported by the agent, used
+             *     by the UI to render countdowns. Empty when the agent is offline or has no
+             *     active grants.
+             */
             temporary?: components["schemas"]["TemporaryGrantDto"][];
             /** Format: int64 */
             traffic_limit?: number | null;
@@ -3918,58 +3832,20 @@ export interface components {
             started_at?: string | null;
             task_id: string;
         };
+        /** @enum {string} */
+        TaskType: "oneshot" | "scheduled";
+        /**
+         * @description A capability that is temporarily enabled on the agent host until
+         *     `expires_at`. Mirrors `serverbee_common::protocol::TemporaryGrant` but adds a
+         *     `ToSchema` derive so the REST `ServerResponse` can advertise it; the UI uses
+         *     it to render countdowns from a plain HTTP fetch.
+         */
         TemporaryGrantDto: {
             cap: string;
             /** Format: int64 */
-            granted_at: number;
-            /** Format: int64 */
             expires_at: number;
-        };
-        Theme: {
-            based_on?: string | null;
-            /** Format: date-time */
-            created_at: string;
-            description?: string | null;
-            /** Format: int32 */
-            id: number;
-            name: string;
-            /** Format: date-time */
-            updated_at: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-        };
-        /**
-         * @description Where a custom theme is referenced.
-         *
-         *     After R1 the public status page no longer carries its own `theme_ref` —
-         *     only the admin UI's active theme can pin a custom theme. The previous
-         *     `status_pages: Vec<StatusPageRef>` collection has therefore been removed.
-         */
-        ThemeReferences: {
-            admin: boolean;
-        };
-        ThemeResolved: {
-            id: string;
-            /** @enum {string} */
-            kind: "preset";
-        } | {
-            /** Format: int32 */
-            id: number;
-            /** @enum {string} */
-            kind: "custom";
-            name: string;
-            /** Format: date-time */
-            updated_at: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-        };
-        ThemeSummary: {
-            based_on?: string | null;
-            /** Format: int32 */
-            id: number;
-            name: string;
-            /** Format: date-time */
-            updated_at: string;
+            /** Format: int64 */
+            granted_at: number;
         };
         TotpDisableRequest: {
             password: string;
@@ -4092,6 +3968,8 @@ export interface components {
             /** Format: int64 */
             created_at_secs_ago: number;
             direction: string;
+            /** @description Human-readable failure reason when `status == "failed"`; omitted otherwise. */
+            error?: string | null;
             file_path: string;
             /** Format: int64 */
             file_size?: number | null;
@@ -4212,9 +4090,10 @@ export interface components {
             /** Format: int32 */
             billing_start_day?: number | null;
             /**
-             * @description Manual override for the GeoIP country flag. A 2-letter ISO code pins it
-             *     and freezes it against auto-detection; explicit null clears the override
-             *     and resumes GeoIP on the next agent report. Absent = unchanged.
+             * @description Manual override for the GeoIP country flag. `Some(Some("us"))` pins the
+             *     2-letter ISO code and freezes it against auto-detection; `Some(None)`
+             *     (explicit JSON null) clears the override and resumes GeoIP on the next
+             *     agent report. Absent = unchanged.
              */
             country_code?: string | null;
             currency?: string | null;
@@ -4309,13 +4188,6 @@ export interface components {
             /** Format: int32 */
             timeout?: number | null;
         };
-        UpdateThemeInput: {
-            based_on?: string | null;
-            description?: string | null;
-            name: string;
-            vars_dark: components["schemas"]["HashMap"];
-            vars_light: components["schemas"]["HashMap"];
-        };
         UpdateUserInput: {
             password?: string | null;
             role?: string | null;
@@ -4372,10 +4244,20 @@ export interface components {
             /** Format: int32 */
             grid_y: number;
             id?: string | null;
+            module_id?: string | null;
             /** Format: int32 */
             sort_order: number;
             title?: string | null;
             widget_type: string;
+        };
+        WidgetModuleListEntry: {
+            code_sha256: string;
+            enabled: boolean;
+            entry_path: string;
+            id: string;
+            manifest: Record<string, never>;
+            source_type: string;
+            version: string;
         };
         WriteRequest: {
             content: string;
@@ -4454,44 +4336,26 @@ export interface operations {
             };
         };
     };
-    list_enrollments: {
+    get_authority_history: {
         parameters: {
-            query?: never;
+            query: {
+                server_id: string;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description List enrollment codes */
+            /** @description Agent authority event history */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EnrollmentSummary"][];
+                    "application/json": components["schemas"]["AuthorityEventResponse"][];
                 };
-            };
-        };
-    };
-    delete_enrollment: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Enrollment id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -4522,13 +4386,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": components["schemas"]["RegisterRequest"];
             };
         };
         responses: {
-            /** @description Agent registered against the bound server */
+            /** @description Agent claimed the bound Server authority */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4537,52 +4401,15 @@ export interface operations {
                     "application/json": components["schemas"]["RegisterResponse"];
                 };
             };
-            /** @description Invalid fingerprint format */
+            /** @description Missing or invalid Agent-proposed run token */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Invalid, expired, revoked, or already-used enrollment code */
+            /** @description Enrollment claim rejected */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    rotate_token: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server id */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Token rotated; old token revoked */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RotateTokenResponse"];
-                };
-            };
-            /** @description Server is pending (no token to rotate); use recover instead */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5080,6 +4907,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiKeyResponse"];
                 };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation error */
             422: {
@@ -8105,6 +7939,226 @@ export interface operations {
             };
         };
     };
+    get_agent_authority: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent authority state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAuthorityStateSummary"];
+                };
+            };
+            /** @description Server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_agent_authority: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent authority revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeAuthorityResponse"];
+                };
+            };
+            /** @description Server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    issue_offer_for_unclaimed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueOfferRequest"];
+            };
+        };
+        responses: {
+            /** @description Enrollment offer issued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentOfferResponse"];
+                };
+            };
+            /** @description Server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authority or offer state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_offer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+                /** @description Offer ID */
+                offer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enrollment offer revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokeOfferResponse"];
+                };
+            };
+            /** @description Server or offer not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Offer has another terminal outcome */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    replace_offer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+                /** @description Exact current offer ID */
+                offer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Enrollment offer replaced */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentOfferResponse"];
+                };
+            };
+            /** @description Server or offer not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Offer is stale or terminal */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    begin_reenrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReenrollmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Re-enrollment offer issued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnrollmentOfferResponse"];
+                };
+            };
+            /** @description Server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authority or offer state conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_server_cost_insights: {
         parameters: {
             query?: never;
@@ -8185,102 +8239,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ServerRecord"][];
                 };
-            };
-        };
-    };
-    recover_server: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RecoverRequest"];
-            };
-        };
-        responses: {
-            /** @description Recover enrollment minted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RecoverResponse"];
-                };
-            };
-            /** @description Server is pending (use regenerate-code instead) */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Outstanding enrollment exists; revoke it first */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    regenerate_code: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Server ID */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RegenerateCodeRequest"];
-            };
-        };
-        responses: {
-            /** @description Regenerate enrollment minted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RegenerateCodeResponse"];
-                };
-            };
-            /** @description Server is not pending; use recover instead */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Server not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description expected_enrollment_id mismatch */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -8694,6 +8652,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description A check for this monitor is already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     get_service_monitor_records: {
@@ -8767,78 +8732,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SystemSettings"];
                 };
-            };
-        };
-    };
-    get_active_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Resolved active admin theme */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActiveThemeResponse"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    put_active_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PutActiveThemeInput"];
-            };
-        };
-        responses: {
-            /** @description Resolved active admin theme */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActiveThemeResponse"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -9010,410 +8903,6 @@ export interface operations {
             };
             /** @description Invalid backup file */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    list_themes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List custom themes */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThemeSummary"][];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    create_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateThemeInput"];
-            };
-        };
-        responses: {
-            /** @description Custom theme created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    import_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExportPayload"];
-            };
-        };
-        responses: {
-            /** @description Custom theme imported */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Custom theme */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    update_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateThemeInput"];
-            };
-        };
-        responses: {
-            /** @description Custom theme updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    delete_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Custom theme deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme is referenced */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    duplicate_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Custom theme duplicated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Theme"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation error or custom themes disabled */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    export_theme: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Exportable custom theme payload */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportPayload"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_references: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Theme ID */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Theme references */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThemeReferences"];
-                };
-            };
-            /** @description Unauthenticated */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Forbidden (non-admin) */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Theme not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Invalid theme ID */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9808,6 +9297,13 @@ export interface operations {
             };
             /** @description Server not in public scope */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid time range (`from` after `to`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10317,6 +9813,131 @@ export interface operations {
                 content?: never;
             };
             /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_modules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List installed widget modules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetModuleListEntry"][];
+                };
+            };
+        };
+    };
+    install_widget_module: {
+        parameters: {
+            query?: {
+                /** @description HTTPS URL to fetch the widget bundle from. Accepts either a single `.js` file or a `.zip` collection bundle. */
+                url?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Alternatively, upload the widget bundle in a `file` field. Accepts either a single `.js` file or a `.zip` collection bundle. */
+        requestBody?: {
+            content: {
+                "multipart/form-data": unknown;
+            };
+        };
+        responses: {
+            /** @description Installed (or upgraded) widget module(s). For a single `.js` file the response is `{ data: { id, version } }`. For a `.zip` collection it is `{ data: [{ id, version }, ...] }` — one entry per widget in the collection. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad URL, unsupported source, or invalid manifest */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Module id conflicts with an existing install of a different source type */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    uninstall_module: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Module ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Module uninstalled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cannot uninstall builtin module */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Module not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    serve_asset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Module ID */
+                id: string;
+                /** @description Asset path within the package */
+                asset_path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Asset bytes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Module or asset not found */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -4,21 +4,28 @@ import { CalendarIcon, Copy, Plus } from 'lucide-react'
 import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  AgentCapabilityPicker,
+  ALL_AGENT_CAPABILITY_KEYS,
+  DEFAULT_AGENT_CAPABILITY_KEYS,
+  resolveAgentCapabilitySelection
+} from '@/components/server/agent-capability-picker'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/lib/api-client'
-import type { CreateServerRequest, CreateServerResponse, ServerGroup } from '@/lib/api-schema'
-import { CAP_DEFAULT, CAPABILITIES, hasCap } from '@/lib/capabilities'
+import type {
+  CreateServerRequest,
+  CreateServerResponse,
+  EnrollmentIssueResponse,
+  EnrollmentOfferResponse,
+  ServerGroup
+} from '@/lib/api-schema'
 import { refreshServerCatalog } from '@/lib/server-catalog'
 import { cn } from '@/lib/utils'
-
-const DEFAULT_CAP_KEYS = CAPABILITIES.flatMap((c) => (hasCap(CAP_DEFAULT, c.bit) ? [c.key] : []))
-const ALL_CAP_KEYS = CAPABILITIES.map((c) => c.key)
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
@@ -77,41 +84,6 @@ function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
     return { tags: [], error: 'tags_validation_too_many' }
   }
   return { tags: deduped.sort(), error: null }
-}
-
-interface CapGroupProps {
-  caps: readonly (typeof CAPABILITIES)[number][]
-  onToggle: (key: string) => void
-  selected: Set<string>
-  t: (key: string) => string
-  title: string
-  tone: 'high' | 'standard'
-}
-
-function CapGroup({ caps, onToggle, selected, t, title, tone }: CapGroupProps) {
-  return (
-    <div>
-      <p
-        className={cn(
-          'mb-1.5 font-medium text-[11px] uppercase tracking-wide',
-          tone === 'high' ? 'text-amber-600 dark:text-amber-500' : 'text-muted-foreground'
-        )}
-      >
-        {title}
-      </p>
-      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-        {caps.map((cap) => {
-          const id = `add-server-cap-${cap.key}`
-          return (
-            <label className="flex cursor-pointer items-center gap-2 text-sm" htmlFor={id} key={cap.key}>
-              <Checkbox checked={selected.has(cap.key)} id={id} onCheckedChange={() => onToggle(cap.key)} />
-              <span className="truncate">{t(cap.labelKey)}</span>
-            </label>
-          )
-        })}
-      </div>
-    </div>
-  )
 }
 
 function Field({ label, children, htmlFor }: { children: React.ReactNode; htmlFor?: string; label: string }) {
@@ -173,6 +145,7 @@ interface AddServerFormState {
   groupId: string
   issued: CreateServerResponse | null
   name: string
+  onboardingRequestId: string
   price: string
   publicRemark: string
   remark: string
@@ -198,10 +171,11 @@ function initialAddServerFormState(): AddServerFormState {
     groupId: '',
     issued: null,
     name: '',
+    onboardingRequestId: crypto.randomUUID(),
     price: '',
     publicRemark: '',
     remark: '',
-    selectedCaps: new Set(DEFAULT_CAP_KEYS),
+    selectedCaps: new Set(DEFAULT_AGENT_CAPABILITY_KEYS),
     tagsInput: '',
     trafficLimit: '',
     trafficLimitType: 'sum'
@@ -233,15 +207,15 @@ function addServerFormReducer(state: AddServerFormState, action: AddServerFormAc
 }
 
 function AddServerIssuedView({
+  enrollment,
   installCommand,
-  issued,
   onAnother,
   onClose,
   onCopy,
   t
 }: {
   installCommand: string
-  issued: CreateServerResponse
+  enrollment: EnrollmentIssueResponse
   onAnother: () => void
   onClose: () => void
   onCopy: (value: string) => void
@@ -259,11 +233,11 @@ function AddServerIssuedView({
             <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.code_label')}</p>
             <div className="flex min-w-0 items-center gap-2">
               <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
-                {issued.enrollment.code}
+                {enrollment.code}
               </code>
               <Button
                 aria-label={t('add_server.copy')}
-                onClick={() => onCopy(issued.enrollment.code)}
+                onClick={() => onCopy(enrollment.code)}
                 size="icon"
                 type="button"
                 variant="outline"
@@ -539,68 +513,6 @@ function AddServerBillingFields({
   )
 }
 
-function AddServerCapabilityFields({
-  highRiskCaps,
-  onReset,
-  onSelectAll,
-  onSelectNone,
-  onToggle,
-  selectedCaps,
-  standardCaps,
-  t
-}: {
-  highRiskCaps: (typeof CAPABILITIES)[number][]
-  onReset: () => void
-  onSelectAll: () => void
-  onSelectNone: () => void
-  onToggle: (key: string) => void
-  selectedCaps: Set<string>
-  standardCaps: (typeof CAPABILITIES)[number][]
-  t: TFunction
-}) {
-  return (
-    <fieldset className="space-y-2">
-      <legend className="mb-1 flex w-full items-center justify-between gap-2">
-        <span className="font-medium text-muted-foreground text-xs uppercase tracking-wider">
-          {t('add_server.caps_label')}
-        </span>
-        <span className="flex gap-2 text-xs">
-          <button className="text-muted-foreground hover:text-foreground" onClick={onReset} type="button">
-            {t('add_server.caps_reset')}
-          </button>
-          <span className="text-muted-foreground/50">·</span>
-          <button className="text-muted-foreground hover:text-foreground" onClick={onSelectAll} type="button">
-            {t('add_server.caps_select_all')}
-          </button>
-          <span className="text-muted-foreground/50">·</span>
-          <button className="text-muted-foreground hover:text-foreground" onClick={onSelectNone} type="button">
-            {t('add_server.caps_select_none')}
-          </button>
-        </span>
-      </legend>
-      <p className="text-muted-foreground text-xs">{t('add_server.caps_hint')}</p>
-      <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3">
-        <CapGroup
-          caps={standardCaps}
-          onToggle={onToggle}
-          selected={selectedCaps}
-          t={t}
-          title={t('add_server.caps_low_risk')}
-          tone="standard"
-        />
-        <CapGroup
-          caps={highRiskCaps}
-          onToggle={onToggle}
-          selected={selectedCaps}
-          t={t}
-          title={t('add_server.caps_high_risk')}
-          tone="high"
-        />
-      </div>
-    </fieldset>
-  )
-}
-
 export function AddServerDialog({ open, onClose }: { onClose: () => void; open: boolean }) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
@@ -628,36 +540,49 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
     }
   })
 
+  const replaceReplayOfferMutation = useMutation({
+    mutationFn: ({ offerId, serverId }: { offerId: string; serverId: string }) =>
+      api.post<EnrollmentOfferResponse>(`/api/servers/${serverId}/agent-authority/offers/${offerId}/replace`, {}),
+    onSuccess: (data) => {
+      const current = state.issued
+      if (!current) {
+        return
+      }
+      dispatch({
+        type: 'setIssued',
+        value: {
+          ...current,
+          enrollment: data.enrollment,
+          outstanding_offer: {
+            id: data.enrollment.id,
+            code_prefix: data.enrollment.code_prefix,
+            created_at: new Date().toISOString(),
+            expires_at: data.enrollment.expires_at
+          }
+        }
+      })
+    },
+    onError: (err: unknown) => {
+      toast.error(err instanceof Error ? err.message : t('add_server.replace_failed'))
+    }
+  })
+
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   // Emit --caps only when the selection differs from the default set; an
   // omitted flag means "use install.sh's built-in defaults", which keeps the
   // copy/paste command short for the common case.
-  const orderedCapSelection = ALL_CAP_KEYS.filter((k) => state.selectedCaps.has(k))
-  const capsIsDefault =
-    orderedCapSelection.length === DEFAULT_CAP_KEYS.length && DEFAULT_CAP_KEYS.every((k) => state.selectedCaps.has(k))
-  const capsArg = (() => {
-    if (capsIsDefault) {
-      return ''
-    }
-    if (orderedCapSelection.length === 0) {
-      return " --caps ''"
-    }
-    return ` --caps ${orderedCapSelection.join(',')}`
-  })()
+  const capabilitySelection = resolveAgentCapabilitySelection(state.selectedCaps)
   const issued = state.issued
-  const installCommand = issued
-    ? `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --server-url '${origin}' --enrollment-code '${issued.enrollment.code}'${capsArg}`
+  const installCommand = issued?.enrollment
+    ? `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --server-url '${origin}' --enrollment-code '${issued.enrollment.code}'${capabilitySelection.installArgument}`
     : ''
 
   const toggleCap = (key: string) => {
     dispatch({ type: 'toggleCap', key })
   }
-  const resetCapsToDefault = () => dispatch({ type: 'setCaps', value: new Set(DEFAULT_CAP_KEYS) })
-  const selectAllCaps = () => dispatch({ type: 'setCaps', value: new Set(ALL_CAP_KEYS) })
+  const resetCapsToDefault = () => dispatch({ type: 'setCaps', value: new Set(DEFAULT_AGENT_CAPABILITY_KEYS) })
+  const selectAllCaps = () => dispatch({ type: 'setCaps', value: new Set(ALL_AGENT_CAPABILITY_KEYS) })
   const selectNoCaps = () => dispatch({ type: 'setCaps', value: new Set() })
-
-  const highRiskCaps = CAPABILITIES.filter((c) => c.risk === 'high')
-  const standardCaps = CAPABILITIES.filter((c) => c.risk !== 'high')
 
   const copy = async (value: string) => {
     try {
@@ -679,7 +604,9 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
 
   const buildBody = (trimmedName: string, tags: string[]): CreateServerRequest => {
     const trafficLimitValue = numberOrUndefined(Math.round(parseFloatOrNaN(state.trafficLimit) * 1024 ** 3))
-    const optionalFields: Partial<CreateServerRequest> = {
+    return {
+      onboarding_request_id: state.onboardingRequestId,
+      name: trimmedName,
       group_id: state.groupId || undefined,
       tags: tags.length > 0 ? tags : undefined,
       remark: nullIfBlank(state.remark),
@@ -691,15 +618,8 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
       expired_at: state.expiredAt ? `${state.expiredAt}T00:00:00Z` : undefined,
       traffic_limit: trafficLimitValue,
       traffic_limit_type: trafficLimitValue === undefined ? undefined : state.trafficLimitType,
-      caps: capsIsDefault ? undefined : orderedCapSelection
+      caps: capabilitySelection.isDefault ? undefined : capabilitySelection.keys
     }
-    const body: CreateServerRequest = { name: trimmedName }
-    for (const [k, v] of Object.entries(optionalFields)) {
-      if (v !== undefined) {
-        ;(body as Record<string, unknown>)[k] = v
-      }
-    }
-    return body
   }
 
   const handleSubmit = (e?: FormEvent) => {
@@ -717,6 +637,7 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   }
 
   const submitDisabled = mutation.isPending || !state.name.trim()
+  const replayOffer = issued?.outstanding_offer ?? null
 
   return (
     <Dialog
@@ -732,30 +653,65 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
           <DialogTitle>{t('add_server.title')}</DialogTitle>
         </DialogHeader>
 
-        {issued ? (
+        {issued?.enrollment && (
           <AddServerIssuedView
+            enrollment={issued.enrollment}
             installCommand={installCommand}
-            issued={issued}
             onAnother={reset}
             onClose={handleClose}
             onCopy={copy}
             t={t}
           />
-        ) : (
+        )}
+        {!issued?.enrollment && issued?.replayed && (
+          <>
+            <DialogBody className="space-y-4">
+              <p className="text-muted-foreground text-sm">
+                {t('add_server.replayed', { serverId: issued.server_id })}
+              </p>
+              {replayOffer ? (
+                <div className="space-y-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
+                  <p className="text-amber-700 text-sm dark:text-amber-400">{t('add_server.replay_code_lost')}</p>
+                  <Button
+                    disabled={replaceReplayOfferMutation.isPending}
+                    onClick={() =>
+                      replaceReplayOfferMutation.mutate({
+                        offerId: replayOffer.id,
+                        serverId: issued.server_id
+                      })
+                    }
+                    type="button"
+                  >
+                    {t('add_server.replace_offer')}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">{t('add_server.replay_no_offer')}</p>
+              )}
+            </DialogBody>
+            <DialogFooter>
+              <Button onClick={handleClose} type="button">
+                {t('add_server.done')}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+        {!(issued?.enrollment || issued?.replayed) && (
           <form className="flex min-h-0 flex-1 flex-col gap-4" onSubmit={handleSubmit}>
             <DialogBody className="space-y-4">
               <p className="text-muted-foreground text-sm">{t('add_server.description')}</p>
 
               <AddServerBasicFields dispatch={dispatch} groups={groups} state={state} t={t} />
               <AddServerBillingFields dispatch={dispatch} state={state} t={t} />
-              <AddServerCapabilityFields
-                highRiskCaps={highRiskCaps}
+              <AgentCapabilityPicker
+                hintKey="add_server.caps_hint"
+                idPrefix="add-server-cap"
+                labelKey="add_server.caps_label"
                 onReset={resetCapsToDefault}
                 onSelectAll={selectAllCaps}
                 onSelectNone={selectNoCaps}
                 onToggle={toggleCap}
-                selectedCaps={state.selectedCaps}
-                standardCaps={standardCaps}
+                selected={state.selectedCaps}
                 t={t}
               />
 

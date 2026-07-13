@@ -5,9 +5,9 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
 import { NetworkTab } from '@/components/network/network-tab'
+import { AgentReenrollmentDialog } from '@/components/server/agent-reenrollment-dialog'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
-import { RecoverAgentDialog } from '@/components/server/recover-agent-dialog'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
@@ -88,7 +88,7 @@ function ServerActionButtons({
   isOnline,
   liveHydrated,
   onEditOpen,
-  onRecoverOpen,
+  onReenrollmentOpen,
   serverWithCaps,
   terminalEnabled
 }: {
@@ -99,14 +99,13 @@ function ServerActionButtons({
   isOnline: boolean
   liveHydrated: boolean
   onEditOpen: () => void
-  onRecoverOpen: () => void
+  onReenrollmentOpen: () => void
   serverWithCaps: ServerResponse & ServerWithCaps
   terminalEnabled: boolean
 }) {
   const { t } = useTranslation('servers')
   // Gate online/offline-specific buttons on liveHydrated so the button list does
-  // not flicker (offline-only Recovery button shown then hidden, online-only
-  // Terminal/Files/Docker hidden then shown) when WS data arrives.
+  // not flicker while online-only Terminal/Files/Docker actions hydrate.
   return (
     <div className="flex flex-wrap gap-2">
       <Button onClick={onEditOpen} size="sm" variant="outline">
@@ -114,9 +113,9 @@ function ServerActionButtons({
         {t('detail_edit')}
       </Button>
       <CapabilitiesDialog server={serverWithCaps} />
-      {isAdmin && liveHydrated && !isOnline && (
-        <Button onClick={onRecoverOpen} size="sm" variant="outline">
-          {t('detail_recover_agent', { defaultValue: 'Recover Agent' })}
+      {isAdmin && liveHydrated && (
+        <Button onClick={onReenrollmentOpen} size="sm" variant="outline">
+          {t('detail_agent_reenrollment', { defaultValue: 'Agent re-enrollment' })}
         </Button>
       )}
       {liveHydrated && isOnline && terminalEnabled && (
@@ -153,7 +152,7 @@ export function ServerDetailPage() {
   const { range: rangeParam, tab: tabParam } = routeApi.useSearch()
   const navigate = routeApi.useNavigate()
   const [editOpen, setEditOpen] = useState(false)
-  const [recoverOpen, setRecoverOpen] = useState(false)
+  const [reenrollmentOpen, setReenrollmentOpen] = useState(false)
   const { user } = useAuth()
   const { data: latestAgentVersion } = useQuery<{ version?: string | null }>({
     queryKey: ['agent', 'latest-version'],
@@ -247,7 +246,7 @@ export function ServerDetailPage() {
               isOnline={isOnline}
               liveHydrated={liveHydrated}
               onEditOpen={() => setEditOpen(true)}
-              onRecoverOpen={() => setRecoverOpen(true)}
+              onReenrollmentOpen={() => setReenrollmentOpen(true)}
               serverWithCaps={serverWithCaps}
               terminalEnabled={terminalEnabled}
             />
@@ -273,14 +272,14 @@ export function ServerDetailPage() {
       />
 
       <ServerEditDialog onClose={() => setEditOpen(false)} open={editOpen} server={server} />
-      <RecoverAgentDialog
-        onOpenChange={setRecoverOpen}
-        open={recoverOpen}
+      <AgentReenrollmentDialog
+        onOpenChange={setReenrollmentOpen}
+        open={reenrollmentOpen}
         server={{
           id: server.id,
           name: server.name,
           capabilities: server.capabilities,
-          outstanding_enrollment: server.outstanding_enrollment ?? null
+          agent_authority: server.agent_authority
         }}
       />
     </div>

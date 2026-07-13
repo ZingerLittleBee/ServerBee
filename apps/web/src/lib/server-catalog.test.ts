@@ -73,6 +73,7 @@ function readServerDetail(queryClient: QueryClient, serverId: string): ServerRes
 
 function makeRestServer(overrides: Partial<ServerResponse> = {}): ServerResponse {
   return {
+    agent_authority: { outstanding_offer: null, status: 'claimed' },
     capabilities: 1852,
     country_code: 'US',
     cpu_cores: 8,
@@ -401,10 +402,9 @@ describe('server catalog projection', () => {
     projectServerCatalog(queryClient, { kind: 'server_saved', server: saved })
     projectServerCatalog(queryClient, { kind: 'tags_changed', serverId: first.id, tags: ['edited'] })
     projectServerCatalog(queryClient, {
-      kind: 'enrollment_changed',
-      outstandingEnrollment: OUTSTANDING_ENROLLMENT,
-      serverId: first.id,
-      tokenRevoked: true
+      authority: { outstanding_offer: OUTSTANDING_ENROLLMENT, status: 'unclaimed' },
+      kind: 'agent_authority_changed',
+      serverId: first.id
     })
 
     expect(readLiveServers(queryClient)?.[0]).toMatchObject({
