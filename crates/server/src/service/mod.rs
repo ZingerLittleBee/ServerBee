@@ -34,6 +34,7 @@ pub mod record;
 pub mod rollup;
 pub mod security;
 pub mod server;
+pub mod server_onboarding;
 pub mod server_tag;
 pub mod service_monitor;
 pub mod status_page;
