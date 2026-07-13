@@ -1267,7 +1267,7 @@ mod db_tests {
 
         // Redaction: serialize the summary and prove no IP/identity leak fields.
         let json = serde_json::to_value(s).unwrap();
-        for leaked in ["ipv4", "ipv6", "hostname", "remark", "last_remote_addr", "fingerprint"] {
+        for leaked in ["ipv4", "ipv6", "hostname", "remark", "last_remote_addr"] {
             assert!(
                 json.get(leaked).is_none(),
                 "public summary must not expose `{leaked}`"
@@ -1374,7 +1374,7 @@ mod db_tests {
 
         // Redaction at the detail level too.
         let json = serde_json::to_value(&detail).unwrap();
-        for leaked in ["ipv4", "ipv6", "remark", "fingerprint", "last_remote_addr"] {
+        for leaked in ["ipv4", "ipv6", "remark", "last_remote_addr"] {
             assert!(json.get(leaked).is_none(), "detail leaks `{leaked}`");
         }
     }

@@ -8,6 +8,7 @@ use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
 use crate::error::AppError;
+use crate::service::agent_authority::AgentAuthority;
 use crate::service::agent_manager::AgentManager;
 use crate::service::agent_reconcile::AgentDesiredStateReconciler;
 use crate::service::alert::AlertStateManager;
@@ -21,6 +22,7 @@ use crate::service::high_risk_audit::{
 };
 use crate::service::monitor_check::MonitorCheckRunner;
 use crate::service::security::SecurityService;
+use crate::service::server_onboarding::ServerOnboarding;
 use crate::service::task_scheduler::TaskScheduler;
 use crate::service::upgrade_release::UpgradeReleaseService;
 use crate::service::upgrade_tracker::UpgradeJobTracker;
@@ -72,6 +74,8 @@ pub struct RateLimitEntry {
 pub struct AppState {
     pub db: DatabaseConnection,
     pub agent_manager: Arc<AgentManager>,
+    pub agent_authority: Arc<AgentAuthority>,
+    pub server_onboarding: Arc<ServerOnboarding>,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
     pub config: AppConfig,
     pub upgrade_tracker: UpgradeJobTracker,
@@ -183,6 +187,12 @@ impl AppState {
     pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, AppError> {
         let (browser_tx, _) = broadcast::channel(256);
         let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
+        let agent_authority = Arc::new(AgentAuthority::new(db.clone(), agent_manager.clone()));
+        let server_onboarding = Arc::new(ServerOnboarding::new(
+            db.clone(),
+            agent_authority.clone(),
+            config.auth.max_servers,
+        ));
         let upgrade_tracker = UpgradeJobTracker::new(browser_tx.clone());
         let upgrade_release_service = UpgradeReleaseService::new(&config.upgrade);
         let geoip = if !config.geoip.mmdb_path.is_empty() {
@@ -250,6 +260,8 @@ impl AppState {
         Ok(Arc::new(Self {
             db,
             agent_manager,
+            agent_authority,
+            server_onboarding,
             browser_tx,
             config,
             upgrade_tracker,

@@ -123,7 +123,6 @@ async fn insert_server_with_hidden(
         protocol_version: Set(1),
         features: Set("[]".to_string()),
         last_remote_addr: Set(None),
-        fingerprint: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }

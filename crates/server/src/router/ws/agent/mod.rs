@@ -6,14 +6,17 @@ use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::HeaderMap;
-use axum::response::Response;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::router::utils::extract_client_ip;
-use crate::service::auth::AuthService;
+use crate::service::agent_authority::{
+    AdmissionError, NewConnection, PendingAdmission, PresentedRunToken,
+};
 use crate::service::record::RecordService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
@@ -82,70 +85,70 @@ async fn agent_ws_handler(
             tracing::warn!(
                 "Agent WS unauthorized from {addr}: missing token (query_present={query_present}, authorization_present={auth_present})"
             );
-            return Response::builder()
-                .status(401)
-                .body("Unauthorized".into())
-                .unwrap();
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
         }
     };
 
-    // Validate agent token
-    let server = match AuthService::validate_agent_token(&state.db, &token).await {
-        Ok(Some(server)) => server,
-        Ok(None) => {
-            tracing::warn!(
-                "Agent WS unauthorized from {addr}: invalid token (source={}, prefix={})",
-                if query.token.as_deref() == Some(token.as_str()) {
-                    "query"
-                } else {
-                    "authorization"
-                },
-                &token[..8.min(token.len())]
-            );
-            return Response::builder()
-                .status(401)
-                .body("Unauthorized".into())
-                .unwrap();
+    let token = match PresentedRunToken::parse(token) {
+        Ok(token) => token,
+        Err(_) => {
+            tracing::warn!("Agent WS unauthorized from {addr}: invalid credential");
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
         }
-        Err(e) => {
-            tracing::error!("Failed to validate agent token: {e}");
-            return Response::builder()
-                .status(500)
-                .body("Internal server error".into())
-                .unwrap();
+    };
+    let pending = match state.agent_authority.preflight_connection(token).await {
+        Ok(pending) => pending,
+        Err(AdmissionError::Rejected) => {
+            tracing::warn!("Agent WS unauthorized from {addr}: invalid credential");
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        }
+        Err(AdmissionError::Store(error)) => {
+            tracing::error!("Failed to preflight Agent WS admission: {error}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response();
         }
     };
 
-    let server_id = server.id.clone();
-    let server_name = server.name.clone();
-    let server_capabilities = server.capabilities;
-    tracing::info!("Agent WS upgrading for server {server_id} ({server_name}) from {addr}");
+    tracing::info!("Agent WS preflight accepted from {addr}");
 
     ws.max_message_size(MAX_WS_MESSAGE_SIZE)
-        .on_upgrade(move |socket| {
-            handle_agent_ws(
-                socket,
-                state,
-                server_id,
-                server_name,
-                server_capabilities,
-                addr,
-            )
-        })
+        .on_upgrade(move |socket| handle_agent_ws(socket, state, pending, addr))
 }
 
 async fn handle_agent_ws(
     socket: WebSocket,
     state: Arc<AppState>,
-    server_id: String,
-    server_name: String,
-    server_capabilities: i32,
+    pending: PendingAdmission,
     remote_addr: SocketAddr,
 ) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
     // Create mpsc channel for outgoing messages to this agent (buffer 64)
     let (tx, mut rx) = mpsc::channel::<ServerMessage>(64);
+
+    let admitted = match pending.admit(NewConnection { tx, remote_addr }).await {
+        Ok(admitted) => admitted,
+        Err(AdmissionError::Rejected) => {
+            tracing::warn!("Agent WS admission became invalid before upgrade completed");
+            let _ = ws_sink.close().await;
+            return;
+        }
+        Err(AdmissionError::Store(error)) => {
+            tracing::error!("Failed to finalize Agent WS admission: {error}");
+            let _ = ws_sink.close().await;
+            return;
+        }
+    };
+    let server_id = admitted.server_id.into_inner();
+    let server_name = admitted.server_name;
+    let server_capabilities = admitted.server_capabilities;
+    let connection_id = admitted.connection_id;
+
+    // Seed the last-known agent capabilities from the persisted mirror so
+    // enforcement/display has a value before the agent's first SystemInfo.
+    // The agent overwrites this with its live value moments later.
+    state
+        .agent_manager
+        .update_agent_local_capabilities(&server_id, server_capabilities as u32);
 
     // Send Welcome message. Capabilities are agent-owned, so the server does
     // NOT advertise any: the agent enforces purely on its local policy and
@@ -158,27 +161,15 @@ async fn handle_agent_ws(
     };
     if let Err(e) = send_server_message(&mut ws_sink, &welcome).await {
         tracing::error!("Failed to send Welcome to {server_id}: {e}");
+        let server_lock = state.agent_manager.server_lifecycle_lock(&server_id);
+        let _guard = server_lock.lock().await;
+        state
+            .agent_manager
+            .remove_connection_if_current(&server_id, connection_id);
         return;
     }
 
-    // Register in AgentManager
-    let connection_id = {
-        let server_lock = state.agent_manager.server_cleanup_lock(&server_id);
-        let _guard = server_lock.lock().await;
-        let connection_id =
-            state
-                .agent_manager
-                .add_connection(server_id.clone(), server_name, tx, remote_addr);
-        // Seed the last-known agent capabilities from the persisted mirror so
-        // enforcement/display has a value before the agent's first SystemInfo.
-        // The agent overwrites this with its live value moments later.
-        state
-            .agent_manager
-            .update_agent_local_capabilities(&server_id, server_capabilities as u32);
-        connection_id
-    };
-
-    tracing::info!("Agent {server_id} connected from {remote_addr}");
+    tracing::info!("Agent {server_id} ({server_name}) connected from {remote_addr}");
 
     // Spawn a task to forward mpsc messages to WebSocket + send periodic Pings
     let sid_write = server_id.clone();
@@ -282,7 +273,7 @@ async fn handle_agent_ws(
     }
 
     // Cleanup: remove from AgentManager and abort write task
-    let server_lock = state.agent_manager.server_cleanup_lock(&server_id);
+    let server_lock = state.agent_manager.server_lifecycle_lock(&server_id);
     let _guard = server_lock.lock().await;
     if state
         .agent_manager
@@ -310,19 +301,17 @@ async fn handle_current_connection_frame(
     connection_id: u64,
     frame: CurrentConnectionFrame,
 ) -> bool {
-    {
-        let server_lock = state.agent_manager.server_cleanup_lock(server_id);
-        let _guard = server_lock.lock().await;
+    let server_lock = state.agent_manager.server_lifecycle_lock(server_id);
+    let _guard = server_lock.lock().await;
 
-        if !state
-            .agent_manager
-            .is_current_connection(server_id, connection_id)
-        {
-            tracing::info!(
-                "Stopping superseded agent socket for {server_id} (connection_id={connection_id})"
-            );
-            return false;
-        }
+    if !state
+        .agent_manager
+        .is_current_connection(server_id, connection_id)
+    {
+        tracing::info!(
+            "Stopping superseded agent socket for {server_id} (connection_id={connection_id})"
+        );
+        return false;
     }
 
     match frame {
@@ -649,7 +638,7 @@ mod tests {
                 .agent_manager
                 .add_connection("s1".into(), "Srv".into(), tx, test_addr());
 
-        let server_lock = state.agent_manager.server_cleanup_lock("s1");
+        let server_lock = state.agent_manager.server_lifecycle_lock("s1");
         let held_guard = server_lock.lock().await;
 
         let task_state = Arc::clone(&state);

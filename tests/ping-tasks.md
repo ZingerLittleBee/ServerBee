@@ -27,13 +27,14 @@ until curl -fsS http://localhost:9527/healthz >/dev/null; do
   sleep 1
 done
 
-# 4. 登录 admin，铸造一次性 enrollment code
+# 4. 登录 admin，创建 Server 和绑定的 enrollment offer
 curl -fsS -c "$ADMIN_COOKIE" -X POST http://localhost:9527/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123"}'
-CODE=$(curl -fsS -b "$ADMIN_COOKIE" -X POST http://localhost:9527/api/agent/enrollments \
-  -H 'Content-Type: application/json' -d '{}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['code'])")
+CODE=$(curl -fsS -b "$ADMIN_COOKIE" -X POST http://localhost:9527/api/servers \
+  -H 'Content-Type: application/json' \
+  -d "{\"onboarding_request_id\":\"$(uuidgen)\",\"name\":\"Ping Test Agent\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['enrollment']['code'])")
 
 # 5. 启动 Agent
 SERVERBEE_SERVER_URL="http://127.0.0.1:9527" \

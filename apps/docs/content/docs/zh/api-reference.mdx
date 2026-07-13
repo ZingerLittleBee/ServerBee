@@ -84,7 +84,7 @@ curl https://your-server/api/auth/me \
 | POST | `/api/mobile/auth/login` | 移动端登录 |
 | POST | `/api/mobile/auth/refresh` | 刷新移动端会话 |
 | POST | `/api/mobile/auth/pair` | 兑换移动端配对码 |
-| POST | `/api/agent/register` | Agent 使用一次性注册码注册（注册码在首次成功注册时被消费） |
+| POST | `/api/agent/register` | 使用 Agent 提议的 run token claim 已绑定的 enrollment offer |
 | GET | `/api/status` | 默认公开状态页数据 |
 | GET | `/api/status/{slug}` | 可配置公开状态页数据 |
 | GET | `/api/settings/brand` | 公开品牌设置 |
@@ -101,6 +101,7 @@ curl https://your-server/api/auth/me \
 | 2FA 和 OAuth 账号 | `/api/auth/2fa/*`、`GET/DELETE /api/auth/oauth/accounts/*` |
 | 移动端设备 | `POST /api/mobile/auth/logout`、`GET /api/mobile/auth/devices`、`DELETE /api/mobile/auth/devices/{id}` |
 | 服务器 | `GET /api/servers`、`GET /api/servers/{id}`、`GET /api/servers/{id}/records`、`GET /api/servers/{id}/gpu-records` |
+| Agent Authority | `GET /api/servers/{id}/agent-authority`、`GET /api/agent-authority/events?server_id={id}` |
 | 分组和标签 | `GET /api/server-groups`、`GET /api/server-tags` |
 | 可用性和流量 | `GET /api/servers/{id}/uptime-daily`、`GET /api/servers/{id}/traffic` |
 | GeoIP | `GET /api/geoip/status` |
@@ -122,9 +123,8 @@ curl https://your-server/api/auth/me \
 
 | 端点族 | 代表端点 |
 |--------|----------|
-| 服务器管理 | `POST/PUT/DELETE /api/servers/*`、`POST /api/servers/{id}/upgrade` |
-| Agent 注册码 | `POST /api/agent/enrollments`、`GET /api/agent/enrollments`、`DELETE /api/agent/enrollments/{id}`、`POST /api/agent/{id}/rotate-token` |
-| Agent 恢复 | `GET /api/servers/{target_id}/recovery-candidates`、`GET /api/servers/recovery-jobs/{job_id}`、`POST /api/servers/{target_id}/recover-merge` |
+| 服务器管理 | `POST /api/servers`（幂等 onboarding）、`PUT/DELETE /api/servers/{id}`、`POST /api/servers/{id}/upgrade` |
+| Agent Authority | `/api/servers/{id}/agent-authority/*` 下的重新接入、offer 发出/替换/吊销及 authority 吊销 |
 | 分组和标签 | CRUD `/api/server-groups/*`、CRUD `/api/server-tags/*` |
 | Ping 和网络探测 | CRUD `/api/ping-tasks/*`、`/api/network-probes/*` 下的写入端点 |
 | Traceroute | `POST /api/servers/{id}/traceroute` |
@@ -143,52 +143,49 @@ curl https://your-server/api/auth/me \
 | GeoIP | `POST /api/geoip/download` |
 | 移动端推送 | `POST /api/mobile/pair`、`POST /api/mobile/push/register`、`POST /api/mobile/push/unregister` |
 
-## Agent 注册码端点
+## Agent Authority 与接入
 
-以下端点均需 Admin 角色。所有响应遵循统一的 `{ "data": ... }` 包装格式。
+所有响应遵循统一的 `{ "data": ... }` 包装格式。Agent Authority 管理操作需要 Admin；状态与事件历史属于已认证读取端点。
 
-### `POST /api/agent/enrollments` —— 生成注册码
+### `POST /api/servers` —— Onboard Server
 
-生成一个一次性、短时有效的注册码（默认 TTL 600 秒 / 10 分钟，单次使用，在 Agent 首次成功注册时被消费）。
-
-响应：
+原子地创建 Server 配置及其初始绑定 offer。`onboarding_request_id` 必填，并按当前认证操作者隔离。使用相同 ID 和相同标准化输入重试会返回同一个 `server_id`；同一 ID 搭配不同输入会返回 `409 ONBOARDING_IDEMPOTENCY_CONFLICT`。
 
 ```json
 {
-  "data": {
-    "id": "01J...",
-    "code": "<明文注册码，仅此一次返回>",
-    "expires_at": "2026-05-17T12:34:56Z"
-  }
+  "onboarding_request_id": "019f...",
+  "name": "edge-tpe-1",
+  "tags": ["production"],
+  "ttl_secs": 600
 }
 ```
 
-明文 `code` 只在生成时返回一次，请立即复制。
+首次执行返回 `replayed: false` 和 `enrollment: { id, code, code_prefix, expires_at }`。重放返回 `replayed: true`，绝不再次返回明文 `code`，并可能返回 `outstanding_offer` 元数据。
 
-### `GET /api/agent/enrollments` —— 列出注册码
+### `POST /api/agent/register` —— Claim offer
 
-列出已生成的注册码及其元信息。出于安全考虑，**永不返回明文注册码**，仅返回 8 位前缀和状态/过期等元数据。
+此公开 Agent 端点使用 `Authorization: Bearer <enrollment_code>` 认证，并要求 Agent 自己生成 token：
 
 ```json
-{
-  "data": [
-    {
-      "id": "01J...",
-      "code_prefix": "ab12cd34",
-      "expires_at": "2026-05-17T12:34:56Z",
-      "consumed_at": null
-    }
-  ]
-}
+{ "proposed_run_token": "<至少 32 个非空白字符>" }
 ```
 
-### `DELETE /api/agent/enrollments/{id}` —— 删除注册码
+成功后会消费 offer、只保存 run token 哈希，并返回 `{ "data": { "server_id": "..." } }`。Server 永不返回明文 run token。
 
-删除一个尚未使用的注册码，使其立即失效。
+### Agent Authority 状态与历史
 
-### `POST /api/agent/{id}/rotate-token` —— 轮换/吊销 run token
+- `GET /api/servers/{id}/agent-authority` 返回 `status`（`claimed` 或 `unclaimed`）以及当前 `outstanding_offer`（如有）。
+- `GET /api/agent-authority/events?server_id={id}&limit=100` 返回不含密钥的状态转换历史。Server 删除后事件仍会保留。
 
-轮换（吊销）指定服务器的 Agent run token。旧 token 立即失效，对应 Agent 会被强制断开并需使用新 token 重新连接。
+### Offer 与 authority 操作
+
+- `POST /api/servers/{id}/agent-authority/re-enrollment` 携带 `{ "mode": "graceful" | "emergency", "ttl_secs": 600 }`，为 claimed authority 开始重新接入。Graceful 保留旧 authority，emergency 立即吊销并隔离它。
+- `POST /api/servers/{id}/agent-authority/offers` 携带可选的 `{ "ttl_secs": 600 }`，仅在 authority 为 unclaimed 时发出 offer。
+- `POST /api/servers/{id}/agent-authority/offers/{offer_id}/replace` 精确替换当前 outstanding offer，并仅返回一次新的明文 code。
+- `DELETE /api/servers/{id}/agent-authority/offers/{offer_id}` 精确吊销该 offer。
+- `DELETE /api/servers/{id}/agent-authority` 吊销当前 authority 并断开 Agent，但不生成 offer。
+
+每个 Server 同时最多一个 outstanding offer。它的终态严格为 `consumed`、`revoked`、`replaced` 或 `expired` 之一。精确 ID 替换采用 compare-and-swap，过期页面或已进入终态的 offer 返回 `409`，不能覆盖更新状态。
 
 ## WebSocket 端点
 

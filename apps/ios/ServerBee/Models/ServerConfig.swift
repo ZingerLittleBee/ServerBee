@@ -24,10 +24,8 @@ struct UpdateGroupRequest: Encodable, Sendable {
     var weight: Int?
 }
 
-/// A pending enrollment code summary attached to a server that has not yet been
-/// claimed by an agent. The plaintext code is NEVER returned here — only on the
-/// create/recover/regenerate calls.
-struct OutstandingEnrollment: Decodable, Hashable, Sendable {
+/// An outstanding Enrollment offer. Plaintext is never present in projections.
+struct OutstandingOffer: Decodable, Hashable, Sendable {
     let id: String
     let codePrefix: String?
     let expiresAt: String?
@@ -38,6 +36,28 @@ struct OutstandingEnrollment: Decodable, Hashable, Sendable {
         case codePrefix = "code_prefix"
         case expiresAt = "expires_at"
         case createdAt = "created_at"
+    }
+
+    func isExpired(at date: Date = Date()) -> Bool {
+        guard let expiresAt, let expiry = ISO8601DateFormatter.shared.date(from: expiresAt) else {
+            return false
+        }
+        return expiry <= date
+    }
+}
+
+enum AgentAuthorityStatus: String, Decodable, Hashable, Sendable {
+    case claimed
+    case unclaimed
+}
+
+struct AgentAuthorityState: Decodable, Hashable, Sendable {
+    let status: AgentAuthorityStatus
+    let outstandingOffer: OutstandingOffer?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case outstandingOffer = "outstanding_offer"
     }
 }
 
@@ -80,8 +100,9 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
     var effectiveCapabilities: Int?
     var protocolVersion: Int?
     var features: [String]?
+    var agentAuthority: AgentAuthorityState?
     var hasToken: Bool?
-    var outstandingEnrollment: OutstandingEnrollment?
+    var outstandingEnrollment: OutstandingOffer?
     var createdAt: String?
     var updatedAt: String?
 
@@ -108,6 +129,7 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
         case agentLocalCapabilities = "agent_local_capabilities"
         case effectiveCapabilities = "effective_capabilities"
         case protocolVersion = "protocol_version"
+        case agentAuthority = "agent_authority"
         case hasToken = "has_token"
         case outstandingEnrollment = "outstanding_enrollment"
         case createdAt = "created_at"
@@ -122,8 +144,14 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
         )
     }
 
-    /// `false` => pending enrollment (agent never connected).
-    var isEnrolled: Bool { hasToken ?? true }
+    var isEnrolled: Bool {
+        if let agentAuthority { return agentAuthority.status == .claimed }
+        return hasToken ?? true
+    }
+
+    var outstandingOffer: OutstandingOffer? {
+        agentAuthority?.outstandingOffer ?? outstandingEnrollment
+    }
 
     var expiredDate: Date? {
         guard let expiredAt else { return nil }

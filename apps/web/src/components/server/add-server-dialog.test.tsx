@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const UUID_RE = /^[0-9a-f-]{36}$/
+
 const mockPost = vi.fn()
 const mockRefreshServerCatalog = vi.hoisted(() => vi.fn())
 const mockQueryClient = {}
@@ -122,6 +124,8 @@ describe('AddServerDialog', () => {
   it('POSTs to /api/servers with the form payload and transitions to the install-command view on success', async () => {
     mockPost.mockResolvedValueOnce({
       server_id: 'srv-123',
+      replayed: false,
+      outstanding_offer: null,
       enrollment: {
         id: 'enr-1',
         code: 'plaintext-code-shown-once',
@@ -143,9 +147,12 @@ describe('AddServerDialog', () => {
 
     const [path, body] = mockPost.mock.calls[0]
     expect(path).toBe('/api/servers')
-    expect(body).toMatchObject({ name: 'tokyo-vps-01' })
-    expect((body as Record<string, unknown>).group_id).toBeUndefined()
-    expect((body as Record<string, unknown>).caps).toBeUndefined()
+    expect(body).toMatchObject({
+      name: 'tokyo-vps-01',
+      onboarding_request_id: expect.stringMatching(UUID_RE)
+    })
+    expect(body).toHaveProperty('group_id', undefined)
+    expect(body).toHaveProperty('caps', undefined)
 
     await waitFor(() => {
       expect(screen.getByText('plaintext-code-shown-once')).toBeInTheDocument()
@@ -154,6 +161,67 @@ describe('AddServerDialog', () => {
     expect(screen.getByText('add_server.shown_once_warning')).toBeInTheDocument()
     await waitFor(() => expect(mockRefreshServerCatalog).toHaveBeenCalledWith(mockQueryClient))
     expect(screen.queryByRole('button', { name: 'add_server.generate' })).not.toBeInTheDocument()
+  })
+
+  it('reuses the onboarding request id after an ambiguous failure', async () => {
+    mockPost.mockRejectedValueOnce(new Error('connection closed')).mockResolvedValueOnce({
+      enrollment: null,
+      outstanding_offer: null,
+      replayed: true,
+      server_id: 'srv-123'
+    })
+    mockRefreshServerCatalog.mockResolvedValue(undefined)
+
+    render(<AddServerDialog onClose={vi.fn()} open />)
+    fireEvent.change(screen.getByLabelText('add_server.name_label'), { target: { value: 'tokyo-vps-01' } })
+    const submit = screen.getByRole('button', { name: 'add_server.generate' })
+
+    fireEvent.click(submit)
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1))
+    fireEvent.click(submit)
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2))
+
+    const firstBody = mockPost.mock.calls[0]?.[1]
+    const secondBody = mockPost.mock.calls[1]?.[1]
+    expect(firstBody).toHaveProperty('onboarding_request_id')
+    expect(secondBody).toHaveProperty('onboarding_request_id')
+    expect(secondBody).toMatchObject({ onboarding_request_id: firstBody.onboarding_request_id })
+  })
+
+  it('offers exact replacement when onboarding replay cannot recover plaintext', async () => {
+    mockPost
+      .mockResolvedValueOnce({
+        enrollment: null,
+        outstanding_offer: {
+          code_prefix: 'oldpre',
+          created_at: '2026-07-13T00:00:00Z',
+          expires_at: '2026-07-13T00:10:00Z',
+          id: 'offer-current'
+        },
+        replayed: true,
+        server_id: 'srv-123'
+      })
+      .mockResolvedValueOnce({
+        enrollment: {
+          code: 'replacement-code',
+          code_prefix: 'replac',
+          expires_at: '2026-07-13T00:20:00Z',
+          id: 'offer-next'
+        }
+      })
+    mockRefreshServerCatalog.mockResolvedValue(undefined)
+
+    render(<AddServerDialog onClose={vi.fn()} open />)
+    fireEvent.change(screen.getByLabelText('add_server.name_label'), { target: { value: 'tokyo-vps-01' } })
+    fireEvent.click(screen.getByRole('button', { name: 'add_server.generate' }))
+
+    const replace = await screen.findByRole('button', { name: 'add_server.replace_offer' })
+    fireEvent.click(replace)
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenLastCalledWith('/api/servers/srv-123/agent-authority/offers/offer-current/replace', {})
+    })
+    expect(await screen.findByText('replacement-code')).toBeInTheDocument()
   })
 
   it('disables the submit button when name is empty', () => {

@@ -8,16 +8,18 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use futures_util::{SinkExt, StreamExt};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{EntityTrait, QueryOrder};
 
-use crate::entity::{agent_enrollment, server_tag};
+use crate::entity::server_tag;
 use crate::middleware::auth::resolve_ws_connection;
 use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::server::ServerService;
 use crate::state::AppState;
 use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
 use serverbee_common::protocol::{BrowserClientMessage, BrowserMessage, ServerMessage};
-use serverbee_common::types::{OutstandingEnrollmentSummary, ServerStatus};
+use serverbee_common::types::{
+    AgentAuthorityStateSummary, AgentAuthorityStatus, OutstandingEnrollmentSummary, ServerStatus,
+};
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new().route("/ws/servers", get(browser_ws_handler))
@@ -209,28 +211,68 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
     }
 
     let server_ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
-    let outstanding_rows = if server_ids.is_empty() {
-        Vec::new()
-    } else {
-        agent_enrollment::Entity::find()
-            .filter(agent_enrollment::Column::TargetServerId.is_in(server_ids))
-            .filter(agent_enrollment::Column::ConsumedAt.is_null())
-            .filter(agent_enrollment::Column::RevokedAt.is_null())
-            .all(&state.db)
-            .await
-            .unwrap_or_default()
+    let authority_ids = match server_ids
+        .into_iter()
+        .map(crate::service::agent_authority::ServerId::parse)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(ids) => ids,
+        Err(error) => {
+            tracing::error!("Failed to parse stored Server ID for FullSync: {error}");
+            return BrowserMessage::FullSync {
+                servers: Vec::new(),
+                upgrades: state.upgrade_tracker.snapshot(),
+            };
+        }
     };
-    let mut outstanding_by_server: HashMap<String, OutstandingEnrollmentSummary> = HashMap::new();
-    for row in outstanding_rows {
-        outstanding_by_server.insert(
-            row.target_server_id.clone(),
-            OutstandingEnrollmentSummary {
-                id: row.id,
-                code_prefix: row.code_prefix,
-                expires_at: row.expires_at.to_rfc3339(),
-                created_at: row.created_at.to_rfc3339(),
-            },
+    let mut authority_by_server: HashMap<String, AgentAuthorityStateSummary> =
+        match state.agent_authority.states(&authority_ids).await {
+            Ok(states) => states
+                .into_iter()
+                .map(|authority| {
+                    let server_id = authority.server_id.as_str().to_string();
+                    let outstanding_offer =
+                        authority
+                            .outstanding_offer
+                            .map(|offer| OutstandingEnrollmentSummary {
+                                id: offer.id.into_inner(),
+                                code_prefix: offer.code_prefix,
+                                expires_at: offer.expires_at.to_rfc3339(),
+                                created_at: offer.created_at.to_rfc3339(),
+                            });
+                    let status = match authority.authority {
+                        crate::service::agent_authority::AuthorityStatus::Claimed => {
+                            AgentAuthorityStatus::Claimed
+                        }
+                        crate::service::agent_authority::AuthorityStatus::Unclaimed => {
+                            AgentAuthorityStatus::Unclaimed
+                        }
+                    };
+                    (
+                        server_id,
+                        AgentAuthorityStateSummary {
+                            status,
+                            outstanding_offer,
+                        },
+                    )
+                })
+                .collect(),
+            Err(error) => {
+                tracing::error!("Failed to project Agent Authority for FullSync: {error}");
+                return BrowserMessage::FullSync {
+                    servers: Vec::new(),
+                    upgrades: state.upgrade_tracker.snapshot(),
+                };
+            }
+        };
+    if authority_by_server.len() != servers.len() {
+        tracing::warn!(
+            "Server set changed while building FullSync; retrying on the next connection"
         );
+        return BrowserMessage::FullSync {
+            servers: Vec::new(),
+            upgrades: state.upgrade_tracker.snapshot(),
+        };
     }
 
     let statuses: Vec<ServerStatus> = servers
@@ -290,6 +332,10 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
                 .map(|r| aggregate_disk_io(r))
                 .unwrap_or((0, 0));
 
+            let agent_authority = authority_by_server.remove(&server.id).unwrap_or_default();
+            let outstanding_enrollment = agent_authority.outstanding_offer.clone();
+            let has_token = agent_authority.status == AgentAuthorityStatus::Claimed;
+
             ServerStatus {
                 id: server.id.clone(),
                 name: server.name.clone(),
@@ -323,8 +369,9 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
                 disk_write_bytes_per_sec,
                 tags: tags_by_server.remove(&server.id).unwrap_or_default(),
                 cpu_cores: server.cpu_cores,
-                has_token: server.token_hash.is_some(),
-                outstanding_enrollment: outstanding_by_server.remove(&server.id),
+                has_token,
+                agent_authority,
+                outstanding_enrollment,
             }
         })
         .collect();

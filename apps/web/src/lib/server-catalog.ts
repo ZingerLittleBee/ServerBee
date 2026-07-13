@@ -1,6 +1,6 @@
 import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
-import type { OutstandingEnrollmentSummary, ServerResponse } from '@/lib/api-schema'
+import type { AgentAuthorityStateSummary, OutstandingEnrollmentSummary, ServerResponse } from '@/lib/api-schema'
 
 const LIVE_SERVERS_KEY = ['server-catalog', 'live'] as const
 const SERVER_LIST_KEY = ['server-catalog', 'list'] as const
@@ -45,6 +45,7 @@ export interface LiveMetrics {
 }
 
 export interface ServerMetrics extends LiveMetrics {
+  agent_authority?: AgentAuthorityStateSummary
   agent_local_capabilities?: number | null
   agent_version?: string | null
   capabilities?: number
@@ -70,12 +71,7 @@ export type ServerCatalogEvent =
   | { kind: 'rest_snapshot'; servers: ServerResponse[] }
   | { kind: 'servers_removed'; serverIds: readonly string[] }
   | { kind: 'server_saved'; server: ServerResponse }
-  | {
-      kind: 'enrollment_changed'
-      outstandingEnrollment: OutstandingEnrollmentSummary | null
-      serverId: string
-      tokenRevoked: boolean
-    }
+  | { authority: AgentAuthorityStateSummary; kind: 'agent_authority_changed'; serverId: string }
   | { kind: 'tags_changed'; serverId: string; tags: string[] }
   | { kind: 'ws_full_sync'; servers: ServerMetrics[] }
   | { kind: 'ws_update'; servers: LiveMetrics[] }
@@ -102,6 +98,7 @@ function serverDetailKey(serverId: string): readonly ['server-catalog', 'detail'
 
 function blankServerMetrics(id: string): ServerMetrics {
   return {
+    agent_authority: { outstanding_offer: null, status: 'unclaimed' },
     agent_local_capabilities: null,
     agent_version: null,
     country_code: null,
@@ -146,6 +143,7 @@ function blankServerMetrics(id: string): ServerMetrics {
 function projectRestServer(current: ServerMetrics, server: ServerResponse): ServerMetrics {
   return {
     ...current,
+    agent_authority: server.agent_authority,
     agent_local_capabilities:
       server.agent_local_capabilities === undefined
         ? current.agent_local_capabilities
@@ -181,6 +179,7 @@ function projectRestSnapshot(current: ServerMetrics[] | undefined, servers: Serv
 function projectFullSyncServerToRest(current: ServerResponse, server: ServerMetrics): ServerResponse {
   return {
     ...current,
+    agent_authority: server.agent_authority ?? current.agent_authority,
     country_code: server.country_code,
     cpu_cores: server.cpu_cores,
     cpu_name: server.cpu_name,
@@ -223,6 +222,7 @@ function mergeWsFullSync(current: ServerMetrics[] | undefined, incoming: ServerM
           ? existing.agent_local_capabilities
           : server.agent_local_capabilities,
       agent_version: server.agent_version === undefined ? existing.agent_version : server.agent_version,
+      agent_authority: server.agent_authority === undefined ? existing.agent_authority : server.agent_authority,
       capabilities: server.capabilities === undefined ? existing.capabilities : server.capabilities,
       effective_capabilities:
         server.effective_capabilities === undefined ? existing.effective_capabilities : server.effective_capabilities,
@@ -364,26 +364,31 @@ export function projectServerCatalog(queryClient: QueryClient, event: ServerCata
       }
       return
     }
-    case 'enrollment_changed': {
+    case 'agent_authority_changed': {
+      const hasToken = event.authority.status === 'claimed'
+      const outstandingEnrollment = event.authority.outstanding_offer
       queryClient.setQueryData<ServerMetrics[]>(LIVE_SERVERS_KEY, (current) =>
         updateById(current, event.serverId, (server) => ({
           ...server,
-          has_token: event.tokenRevoked ? false : server.has_token,
-          online: event.tokenRevoked ? false : server.online,
-          outstanding_enrollment: event.outstandingEnrollment
+          agent_authority: event.authority,
+          has_token: hasToken,
+          online: hasToken ? server.online : false,
+          outstanding_enrollment: outstandingEnrollment
         }))
       )
       queryClient.setQueryData<ServerResponse[]>(SERVER_LIST_KEY, (current) =>
         updateById(current, event.serverId, (server) => ({
           ...server,
-          has_token: event.tokenRevoked ? false : server.has_token,
-          outstanding_enrollment: event.outstandingEnrollment
+          agent_authority: event.authority,
+          has_token: hasToken,
+          outstanding_enrollment: outstandingEnrollment
         }))
       )
       updateExistingDetail(queryClient, event.serverId, (server) => ({
         ...server,
-        has_token: event.tokenRevoked ? false : server.has_token,
-        outstanding_enrollment: event.outstandingEnrollment
+        agent_authority: event.authority,
+        has_token: hasToken,
+        outstanding_enrollment: outstandingEnrollment
       }))
       return
     }

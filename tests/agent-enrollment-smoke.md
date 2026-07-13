@@ -1,158 +1,112 @@
-# Agent Enrollment Code 冒烟测试
+# Agent Authority 生命周期冒烟测试
 
-验证「一次性 enrollment code 取代共享 auto_discovery_key」改造的关键路径与安全属性。
-环境与启动参考 [README.md](README.md) 的「启动本地环境」。Server 默认 `http://localhost:9527`，管理员用户名 `admin`。
+验证 Server onboarding、offer 单次消费、Agent 自持 run token、重新接入、精确 offer CAS、authority 吊销和事件留存。环境与启动参考 [README.md](README.md)。
 
-通过标准：步骤 1–7、9 全部符合预期，步骤 10 端到端闭环成功，步骤 11 UI 正常。步骤 8 为可选耗时项。
-
----
-
-## 0. 启动环境
+## 0. 登录并准备变量
 
 ```bash
-cd <repo-or-worktree-root>
-SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server
-```
-
-预期：启动 banner **不再打印** `Auto-discovery key`（旧机制已移除）。未设密码时从 banner 的
-`*** IMPORTANT: Save these now ***` 区块读取 `Admin password`。
-
-## 1. 管理员登录
-
-```bash
-curl -s -c /tmp/sb.txt -X POST http://localhost:9527/api/auth/login \
+BASE=http://localhost:9527
+COOKIE=/tmp/sb-agent-authority.txt
+curl -fsS -c "$COOKIE" -X POST "$BASE/api/auth/login" \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123"}'
+REQUEST_ID=$(uuidgen)
 ```
 
-预期：HTTP 200。
-
-## 2. 铸造 enrollment code（golden path）
+## 1. 幂等 onboarding
 
 ```bash
-curl -s -b /tmp/sb.txt -X POST http://localhost:9527/api/agent/enrollments \
-  -H 'Content-Type: application/json' -d '{}'
+BODY="{\"onboarding_request_id\":\"$REQUEST_ID\",\"name\":\"Lifecycle Smoke\",\"ttl_secs\":600}"
+CREATED=$(curl -fsS -b "$COOKIE" -X POST "$BASE/api/servers" \
+  -H 'Content-Type: application/json' -d "$BODY")
+SERVER_ID=$(printf '%s' "$CREATED" | jq -r '.data.server_id')
+OFFER_ID=$(printf '%s' "$CREATED" | jq -r '.data.enrollment.id')
+CODE=$(printf '%s' "$CREATED" | jq -r '.data.enrollment.code')
+curl -fsS -b "$COOKIE" -X POST "$BASE/api/servers" \
+  -H 'Content-Type: application/json' -d "$BODY" | jq .
 ```
 
-预期：`{"data":{"id":"...","code":"<43 位>","expires_at":"..."}}`。记录 `CODE` 与 `ID`。
+预期：首次响应 `replayed=false` 并返回一次明文 code；重试响应 `replayed=true`、`enrollment=null`，且 `outstanding_offer.id` 等于 `$OFFER_ID`。相同 request ID 搭配不同输入返回 `409 ONBOARDING_IDEMPOTENCY_CONFLICT`。
 
-## 3. 注册 agent（消费 code）
+## 2. Agent 提议并持有 run token
 
 ```bash
-curl -s -X POST http://localhost:9527/api/agent/register \
+RUN_TOKEN=$(openssl rand -base64 32 | tr -d '\n')
+curl -fsS -X POST "$BASE/api/agent/register" \
   -H "Authorization: Bearer $CODE" \
-  -H 'Content-Type: application/json' -d '{"fingerprint":""}'
+  -H 'Content-Type: application/json' \
+  -d "{\"proposed_run_token\":\"$RUN_TOKEN\"}" | jq .
 ```
 
-预期：HTTP 200，返回 `server_id` + `token`。记录二者（`SERVER_ID` / `OLD_TOKEN`）。
+预期：只返回 `$SERVER_ID`，不返回 token。再次使用 `$CODE` claim 返回 401。`GET /api/servers/$SERVER_ID/agent-authority` 返回 `status=claimed` 且没有 outstanding offer；`websocat "ws://localhost:9527/api/agent/ws?token=$RUN_TOKEN"` 可以握手。
 
-## 4. 单次性校验（核心安全属性）
+## 3. Graceful 重新接入与精确替换
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:9527/api/agent/register \
-  -H "Authorization: Bearer $CODE"
+GRACEFUL=$(curl -fsS -b "$COOKIE" -X POST \
+  "$BASE/api/servers/$SERVER_ID/agent-authority/re-enrollment" \
+  -H 'Content-Type: application/json' -d '{"mode":"graceful"}')
+GRACEFUL_ID=$(printf '%s' "$GRACEFUL" | jq -r '.data.enrollment.id')
+
+REPLACED=$(curl -fsS -b "$COOKIE" -X POST \
+  "$BASE/api/servers/$SERVER_ID/agent-authority/offers/$GRACEFUL_ID/replace")
+NEW_OFFER_ID=$(printf '%s' "$REPLACED" | jq -r '.data.enrollment.id')
 ```
 
-预期：**401**——同一 code 已消费，不可重放。
+预期：graceful 后 authority 仍为 `claimed`，旧 run token 仍可连接。替换后 `$GRACEFUL_ID` 进入 `replaced` 终态并返回一次新 code；再次替换旧 ID 返回 409，且不能覆盖 `$NEW_OFFER_ID`。
 
-## 5. 列表不泄露明文
+先精确吊销当前 offer，为 emergency 场景清空 outstanding 状态：
 
 ```bash
-curl -s -b /tmp/sb.txt http://localhost:9527/api/agent/enrollments
+curl -fsS -b "$COOKIE" -X DELETE \
+  "$BASE/api/servers/$SERVER_ID/agent-authority/offers/$NEW_OFFER_ID"
 ```
 
-预期：数组包含该条，仅含 `code_prefix`（8 位）与非空 `consumed_at`；**无** `code` / `code_hash` 字段。
-
-## 6. 旧机制确已移除
+## 4. Emergency 重新接入与连接 fencing
 
 ```bash
-# 旧共享 key 注册方式
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:9527/api/agent/register \
-  -H 'Authorization: Bearer test-key'                          # 预期 401
-# 旧设置端点：handler 已删除。注意未匹配的 /api/* 会被 SPA fallback
-# (.fallback(static_handler)) 兜底返回 200 text/html，这是既有路由行为，
-# 不代表旧 API 复活。判据是“不再返回旧 JSON（无 key 字段），而是 HTML”。
-curl -s -b /tmp/sb.txt http://localhost:9527/api/settings/auto-discovery-key \
-  | head -c 200
-# 预期：输出是 SPA 的 HTML（<!doctype html ...>），而非 {"data":{"key":...}}
-curl -s -b /tmp/sb.txt -o /dev/null -w 'content-type=%{content_type}\n' \
-  http://localhost:9527/api/settings/auto-discovery-key
-# 预期：content-type=text/html...（非 application/json）
+EMERGENCY=$(curl -fsS -b "$COOKIE" -X POST \
+  "$BASE/api/servers/$SERVER_ID/agent-authority/re-enrollment" \
+  -H 'Content-Type: application/json' -d '{"mode":"emergency"}')
+EMERGENCY_CODE=$(printf '%s' "$EMERGENCY" | jq -r '.data.enrollment.code')
+NEW_RUN_TOKEN=$(openssl rand -base64 32 | tr -d '\n')
 ```
 
-## 7. Token 轮换 + 吊销旧 token
+预期：authority 立即变为 `unclaimed`，现有旧 WebSocket 被关闭，旧 `$RUN_TOKEN` 新握手返回 401。随后用 `$EMERGENCY_CODE` 和 `$NEW_RUN_TOKEN` claim，状态回到 `claimed`，新 token 可连接。
+
+## 5. 独立吊销 authority
 
 ```bash
-curl -s -b /tmp/sb.txt -X POST http://localhost:9527/api/agent/$SERVER_ID/rotate-token
+curl -fsS -b "$COOKIE" -X DELETE \
+  "$BASE/api/servers/$SERVER_ID/agent-authority" | jq .
+curl -fsS -b "$COOKIE" "$BASE/api/servers/$SERVER_ID/agent-authority" | jq .
 ```
 
-预期：HTTP 200，返回新 `token` ≠ `OLD_TOKEN`。
+预期：返回 `changed=true`，状态为 `unclaimed`，新 WebSocket 被隔离且没有自动生成 offer。此时可通过 `POST /api/servers/$SERVER_ID/agent-authority/offers` 发出 offer；再用准确 offer ID 删除它。
 
-再用旧 token 连 WS 验证吊销。**注意**：`curl` 不带 upgrade 头会被 Axum
-`WebSocketUpgrade` extractor 在鉴权前打成 400，无法验证 token——必须用真实
-WS 客户端（如 `websocat`）：
+## 6. 事件与删除留存
 
 ```bash
-# 旧 token：握手应被拒（401）
-websocat "ws://localhost:9527/api/agent/ws?token=$OLD_TOKEN"   # 预期：连接失败 / 401
-# 新 token：可正常握手
-websocat "ws://localhost:9527/api/agent/ws?token=$NEW_TOKEN"   # 预期：连接建立
+curl -fsS -b "$COOKIE" \
+  "$BASE/api/agent-authority/events?server_id=$SERVER_ID&limit=100" | jq .
+curl -fsS -b "$COOKIE" -X DELETE "$BASE/api/servers/$SERVER_ID"
+curl -fsS -b "$COOKIE" \
+  "$BASE/api/agent-authority/events?server_id=$SERVER_ID&limit=100" | jq .
 ```
 
-> 此属性已有自动化 e2e 覆盖（`integration.rs` 用真实 WebSocket 客户端断言旧
-> token 握手返回 401）；手动冒烟若无 `websocat` 可仅依赖该自动化测试。
+预期：历史包含 offer issued/replaced/revoked/consumed、graceful/emergency、authority revoked 和 server deleted 等转换，不含任何明文 code 或 run token；删除 Server 后事件仍可读取。
 
-## 8. TTL 过期（可选，耗时）
+## 7. UI 冒烟
 
-```bash
-SHORT=$(curl -s -b /tmp/sb.txt -X POST http://localhost:9527/api/agent/enrollments \
-  -H 'Content-Type: application/json' -d '{"ttl_secs":2}' | grep -o '"code":"[^"]*"' | cut -d'"' -f4)
-sleep 3
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:9527/api/agent/register \
-  -H "Authorization: Bearer $SHORT"                            # 预期 401
-```
-
-## 9. 删除
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' -b /tmp/sb.txt \
-  -X DELETE http://localhost:9527/api/agent/enrollments/$ID    # 预期 200
-```
-
-## 10. 端到端真实 agent（完整闭环）
-
-1. 按步骤 2 铸造新 code。
-2. 写 `agent.toml`：
-
-   ```toml
-   server_url = "http://localhost:9527"
-   enrollment_code = "<新 CODE>"
-   ```
-
-   或 `SERVERBEE_SERVER_URL=http://127.0.0.1:9527 SERVERBEE_ENROLLMENT_CODE=<CODE> cargo run -p serverbee-agent`。
-3. 预期：agent 日志出现 `Registered as server_id=...` → `Registration successful`，token 落盘到 `agent.toml`。
-4. 重启 agent：使用已存 token 直连，**不再消费 code**（验证 code 仅首次需要）。
-5. 故意用过期/错误 code 启动：agent 应打印
-   `Registration failed: HTTP 401 ... enrollment code ... expired or already used`（验证错误透传）。
-
-## 11. UI 冒烟（Settings 页，对应 [registration-hardening.md](registration-hardening.md) RH-5）
-
-通过 `make web-dev`（或 build 后）访问 `/settings`：
-
-- 点击「生成 enrollment code」→ 一次性显示 code 与可复制安装命令（含 `--enrollment-code` 与当前 origin）。
-- 列表显示该条（prefix + 状态徽章：active / consumed / expired），删除按钮带确认对话框。
-- 刷新页面后明文 code 不再出现（仅展示一次）。
-
----
+- **Add Server** 在失败后使用相同 onboarding request ID 重试，显式关闭后才生成新 ID。
+- 重放响应不尝试恢复明文，只允许精确替换响应中可见的 outstanding offer。
+- Server 详情分别提供 Graceful、Emergency、精确替换/吊销 offer，以及独立的 Agent Authority 吊销确认。
+- Web 与 iOS 都从 `agent_authority` 判断 claimed/unclaimed 和 outstanding 状态。
 
 ## 自动化回归对照
 
-以下属性已有自动化测试覆盖（`cargo test -p serverbee-server`），冒烟仅作端到端复核：
-
-| 属性 | 测试 |
-|------|------|
-| 单次消费 + 并发抢兑竞态 | `service::enrollment` 单元测试 |
-| TTL 过期 / prune | `service::enrollment` 单元测试 |
-| 列表 DTO 不含 code/hash | `enrollment_summary_dto_never_exposes_code_or_hash` |
-| 注册消费 + 重放拒绝 | `register_flow_consumes_code_single_use` |
-| 轮换后旧 token 被 401 拒绝 | `integration.rs` e2e 测试 |
+```bash
+cargo test -p serverbee-server --test agent_registration_integration
+cargo test -p serverbee-server service::agent_authority
+cargo test -p serverbee-agent register
+```

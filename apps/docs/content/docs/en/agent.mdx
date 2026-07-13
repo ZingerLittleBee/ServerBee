@@ -93,18 +93,13 @@ docker run -d \
   --pid=host \
   -v /proc:/host/proc:ro \
   -v /sys:/host/sys:ro \
-  -v /etc/machine-id:/etc/machine-id:ro \
   -v /etc/serverbee:/etc/serverbee \
   --restart unless-stopped \
   ghcr.io/zingerlittlebee/serverbee-agent:latest
 ```
 
 <Callout type="warn">
-The `/etc/serverbee` volume mount is mandatory. Agent writes its registration token to `agent.toml` after first connection. Without this volume, container recreation causes duplicate server entries.
-</Callout>
-
-<Callout type="warn">
-Mount `/etc/machine-id` from the host to keep the agent fingerprint stable across container recreation.
+The `/etc/serverbee` volume mount is mandatory. Before claiming an Enrollment offer, the Agent generates and atomically stores its run token in `agent.toml`. Without persistent storage, a recreated container loses the credential that the Server accepted.
 </Callout>
 
 **Limitations of Docker deployment:**
@@ -115,11 +110,11 @@ Mount `/etc/machine-id` from the host to keep the agent fingerprint stable acros
 
 ## Registration Flow
 
-Agents authenticate with the server using a **token**. There are two ways to obtain a token: a one-time enrollment code (recommended) or a manually created token.
+Agents authenticate with the Server using an Agent-owned **run token**. The Agent generates and persists this secret locally before it claims a one-time Enrollment offer. The Server stores only its hash and never returns the plaintext token.
 
 ### Enrollment Code Registration (Recommended)
 
-1. Sign in to the web UI as an admin, open **Settings**, and generate a one-time **enrollment code** (also available via `POST /api/agent/enrollments`, admin-only). The code is **single-use** and **short-lived** (default 10 minute expiry), and a fresh code is needed for each new agent.
+1. Sign in as an admin and choose **Add Server**. Server onboarding atomically creates the Server identity and a one-time **Enrollment offer**. Its code is single-use, short-lived (10 minutes by default), and shown only once.
 2. Configure the agent with the code, either via environment variables:
 
 ```bash
@@ -132,24 +127,24 @@ or in the config file:
 
 ```toml title="/etc/serverbee/agent.toml"
 server_url = "http://your-server-ip:9527"
-enrollment_code = "<one-time code from Settings>"
-# Leave empty on first run; auto-populated after registration
+enrollment_code = "<one-time code from Add Server>"
+# Leave empty on first run; the Agent generates and persists it before claim
 token = ""
 ```
 
 3. Start the agent. On first run (no token), it will:
-   - Send a registration request to `POST /api/agent/register` presenting the one-time enrollment code
-   - Receive a `server_id` and per-server `token` from the server (the code is consumed on this first successful registration)
-   - Save the token to the config file automatically
+   - Generate a high-entropy run token and atomically save it before any claim request
+   - Send `POST /api/agent/register` with the one-time code and `proposed_run_token`
+   - Receive only `server_id`; the Server hashes the proposed token while consuming the offer
    - Connect via WebSocket using the token for all future sessions -- the enrollment code is no longer needed
 
 On subsequent runs (token present), the agent connects directly over WebSocket, sends its static system info, and reports metrics on the configured interval.
 
-When the agent can read a stable machine identifier, it also sends a fingerprint during registration. Repeated registration from the same machine reuses the existing server row instead of creating duplicate placeholders. If a code is lost, expired, or already used, the server responds with HTTP 401 and the agent logs `Registration failed: HTTP 401 ... enrollment code ... expired or already used`; mint a fresh code in Settings to retry.
+If the HTTP result is ambiguous, the Agent first tries WebSocket authentication with the already-staged token. Success proves the claim committed; rejection permits retrying the same code and token. If a code was lost, use the exact Outstanding offer shown on the existing Server to replace it. Replacement is compare-and-swap by offer ID; it never silently replaces an unknown newer offer.
 
 ### Correcting a Wrong Enrollment Code
 
-If the agent was installed with a mistyped enrollment code (or wrong `server_url`) and has **not yet registered** (no `token` saved), fix it without reinstalling. Enrollment codes are single-use, so a typo'd or already-consumed code cannot be reused — generate a fresh one in **Settings** first if needed, then:
+If the Agent was installed with a mistyped enrollment code (or wrong `server_url`) and has not claimed the Server, fix it without reinstalling. Replace the exact Outstanding offer from the Server page when a new code is required, then:
 
 ```bash
 serverbee config set enrollment_code <new-code> -y
@@ -167,16 +162,7 @@ serverbee install agent --method <binary|docker> \
   --enrollment-code <new-code> -y
 ```
 
-Once the agent has **already registered** (a `token` is present in `agent.toml`), the enrollment code is no longer used and does not need correcting; point the agent at a different server only by re-registering with a fresh code from that server.
-
-### Manual Token
-
-If you prefer not to use enrollment codes, you can manually create a server entry in the dashboard and provide the token directly:
-
-```toml
-server_url = "http://your-server-ip:9527"
-token = "the-agent-token-from-dashboard"
-```
+Once the Agent has claimed the Server, the enrollment code is no longer used. Use **Agent re-enrollment** for replacement or reinstall scenarios: Graceful mode preserves current authority until the new claim, while Emergency mode revokes authority and fences the current connection immediately.
 
 ## Configuration
 
@@ -196,7 +182,7 @@ Here is a complete `agent.toml` with all available options:
 # Required: URL of your ServerBee server
 server_url = "http://your-server-ip:9527"
 
-# Authentication token (auto-populated after registration)
+# Agent-owned run token (generated and staged locally before registration)
 token = ""
 
 # One-time enrollment code for first-time registration (used only if token is empty)
@@ -216,7 +202,7 @@ file = ""                      # Log file path (empty = stdout only)
 |--------|------|---------|-------------|
 | `server_url` | string | required | URL of your ServerBee server |
 | `enrollment_code` | string | `""` | One-time enrollment code, needed only for first registration; consumed on success and unused once a token is present |
-| `token` | string | auto-generated | Agent token, written automatically after registration |
+| `token` | string | Agent-generated | Agent run token, atomically written before the claim request; the Server stores only its hash |
 | `collector.interval` | int | `3` | Metric collection interval in seconds; can be overridden by the server's Welcome message |
 | `collector.enable_gpu` | bool | `false` | Enable GPU metric collection |
 | `collector.enable_temperature` | bool | `true` | Enable temperature collection |

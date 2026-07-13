@@ -2,20 +2,18 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Extension, Path, Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 
 use crate::router::utils::extract_client_ip;
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
-use crate::entity::{agent_enrollment, server, server_tag};
+use crate::entity::server;
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
 use crate::router::api::network_probe::{
@@ -25,16 +23,19 @@ use crate::router::api::network_probe::{
 use crate::service::agent_manager::AgentManager;
 use crate::service::agent_reconcile::AgentDesiredStateDomain;
 use crate::service::audit::AuditService;
-use crate::service::enrollment::{DEFAULT_TTL_SECS, EnrollmentService};
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::{QueryHistoryResult, RecordService};
 use crate::service::server::{ServerService, UpdateServerInput};
-use crate::service::server_tag as server_tag_service;
+use crate::service::server_onboarding::{
+    OnboardServer, OnboardingError, OnboardingRequestId, OnboardingResult, ServerProfile,
+};
 use crate::service::task_scheduler;
 use crate::service::upgrade_tracker::{StartUpgradeJobError, UpgradeLookup};
 use crate::state::AppState;
 use serverbee_common::protocol::ServerMessage;
-use serverbee_common::types::OutstandingEnrollmentSummary;
+use serverbee_common::types::{
+    AgentAuthorityStateSummary, AgentAuthorityStatus, OutstandingEnrollmentSummary,
+};
 
 const DEFAULT_SERVER_NAME: &str = "New Server";
 
@@ -137,6 +138,7 @@ pub struct ServerResponse {
     pub temporary: Vec<TemporaryGrantDto>,
     pub protocol_version: i32,
     features: Vec<String>,
+    pub agent_authority: AgentAuthorityStateSummary,
     /// `true` iff the server row has a non-NULL `token_hash`. Pending servers
     /// (created via `POST /api/servers` but not yet enrolled by an agent) have
     /// `has_token = false`; the UI uses this to render a "pending" badge.
@@ -152,6 +154,7 @@ pub struct ServerResponse {
 
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct CreateServerRequest {
+    pub onboarding_request_id: String,
     pub name: String,
     #[serde(default)]
     pub group_id: Option<String>,
@@ -197,37 +200,74 @@ pub struct EnrollmentIssueResponse {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CreateServerResponse {
     pub server_id: String,
-    pub enrollment: EnrollmentIssueResponse,
+    pub replayed: bool,
+    pub enrollment: Option<EnrollmentIssueResponse>,
+    pub outstanding_offer: Option<OutstandingEnrollmentSummary>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ReenrollmentModeRequest {
+    Graceful,
+    Emergency,
 }
 
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
-pub struct RecoverRequest {
-    /// If `true`, clear the server's `token_hash`/`token_prefix` and kick the
-    /// currently connected agent WebSocket as part of the same transaction.
-    /// Use this when the operator suspects the existing agent token has been
-    /// compromised. If `false`, the existing token remains valid and only a
-    /// new bound enrollment is minted alongside it.
-    pub revoke_immediately: bool,
-}
-
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct RecoverResponse {
-    pub enrollment: EnrollmentIssueResponse,
-}
-
-#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
-pub struct RegenerateCodeRequest {
-    /// Optimistic concurrency token. If `Some`, must match the current
-    /// outstanding enrollment id exactly; otherwise the server returns 409.
-    /// If `None`, last-writer-wins: any outstanding enrollment is revoked
-    /// and a fresh one is minted.
+pub struct ReenrollmentRequest {
+    pub mode: ReenrollmentModeRequest,
     #[serde(default)]
-    pub expected_enrollment_id: Option<String>,
+    pub ttl_secs: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct IssueOfferRequest {
+    #[serde(default)]
+    pub ttl_secs: Option<i64>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct RegenerateCodeResponse {
+pub struct EnrollmentOfferResponse {
     pub enrollment: EnrollmentIssueResponse,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct RevokeOfferResponse {
+    pub offer_id: String,
+    pub already_revoked: bool,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct RevokeAuthorityResponse {
+    pub server_id: String,
+    pub changed: bool,
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct AuthorityHistoryQuery {
+    pub server_id: String,
+    #[serde(default = "default_authority_history_limit")]
+    pub limit: u64,
+}
+
+fn default_authority_history_limit() -> u64 {
+    100
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct AuthorityEventResponse {
+    pub id: String,
+    pub server_id: String,
+    pub server_name: String,
+    pub actor_kind: String,
+    pub actor_id: Option<String>,
+    pub request_source: String,
+    pub offer_id: Option<String>,
+    pub transition: String,
+    pub mode: Option<String>,
+    pub offer_outcome: Option<String>,
+    pub authority_before: String,
+    pub authority_after: String,
+    pub created_at: DateTime<Utc>,
 }
 
 fn runtime_capability_fields(
@@ -247,7 +287,7 @@ fn runtime_capability_fields(
 fn build_server_response(
     s: server::Model,
     agent_manager: &AgentManager,
-    outstanding_enrollment: Option<OutstandingEnrollmentSummary>,
+    agent_authority: AgentAuthorityStateSummary,
 ) -> ServerResponse {
     let (agent_local_capabilities, effective_capabilities) =
         runtime_capability_fields(agent_manager, &s.id);
@@ -258,7 +298,8 @@ fn build_server_response(
         .map(Into::into)
         .collect();
 
-    let has_token = s.token_hash.is_some();
+    let has_token = agent_authority.status == AgentAuthorityStatus::Claimed;
+    let outstanding_enrollment = agent_authority.outstanding_offer.clone();
 
     ServerResponse {
         id: s.id,
@@ -296,6 +337,7 @@ fn build_server_response(
         temporary,
         protocol_version: s.protocol_version,
         features: serde_json::from_str(&s.features).unwrap_or_default(),
+        agent_authority,
         has_token,
         outstanding_enrollment,
         created_at: s.created_at,
@@ -303,59 +345,38 @@ fn build_server_response(
     }
 }
 
-/// Fetch the single outstanding (not consumed, not revoked) enrollment for a
-/// server, mapped to the response DTO. Returns `Ok(None)` when there is no
-/// outstanding enrollment.
-async fn fetch_outstanding_enrollment(
-    db: &sea_orm::DatabaseConnection,
-    server_id: &str,
-) -> Result<Option<OutstandingEnrollmentSummary>, AppError> {
-    let row = agent_enrollment::Entity::find()
-        .filter(agent_enrollment::Column::TargetServerId.eq(server_id))
-        .filter(agent_enrollment::Column::ConsumedAt.is_null())
-        .filter(agent_enrollment::Column::RevokedAt.is_null())
-        .one(db)
-        .await?;
-    Ok(row.map(|m| OutstandingEnrollmentSummary {
-        id: m.id,
-        code_prefix: m.code_prefix,
-        expires_at: m.expires_at.to_rfc3339(),
-        created_at: m.created_at.to_rfc3339(),
-    }))
-}
-
-/// Batch fetch of outstanding enrollments for a set of server ids. Avoids
-/// the N+1 pattern when serializing the `GET /api/servers` list. Returns a
-/// map keyed by `target_server_id`.
-async fn fetch_outstanding_enrollments_batch(
-    db: &sea_orm::DatabaseConnection,
+async fn fetch_authority_states_batch(
+    authority: &crate::service::agent_authority::AgentAuthority,
     server_ids: &[String],
-) -> Result<std::collections::HashMap<String, OutstandingEnrollmentSummary>, AppError> {
-    let mut out = std::collections::HashMap::new();
-    if server_ids.is_empty() {
-        return Ok(out);
-    }
-    let rows = agent_enrollment::Entity::find()
-        .filter(agent_enrollment::Column::TargetServerId.is_in(server_ids.iter().cloned()))
-        .filter(agent_enrollment::Column::ConsumedAt.is_null())
-        .filter(agent_enrollment::Column::RevokedAt.is_null())
-        .all(db)
-        .await?;
-    for m in rows {
-        // The partial unique index `idx_enrollments_active_per_server`
-        // guarantees at most one outstanding row per server, so the last-write
-        // wins behavior here is fine (and unreachable in practice).
-        out.insert(
-            m.target_server_id.clone(),
-            OutstandingEnrollmentSummary {
-                id: m.id,
-                code_prefix: m.code_prefix,
-                expires_at: m.expires_at.to_rfc3339(),
-                created_at: m.created_at.to_rfc3339(),
-            },
-        );
-    }
-    Ok(out)
+) -> Result<std::collections::HashMap<String, AgentAuthorityStateSummary>, AppError> {
+    let ids = server_ids
+        .iter()
+        .cloned()
+        .map(|server_id| {
+            crate::service::agent_authority::ServerId::parse(server_id)
+                .map_err(|error| AppError::Internal(format!("invalid stored server id: {error}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    authority
+        .states(&ids)
+        .await
+        .map_err(|error| match error {
+            crate::service::agent_authority::StateError::NotFound => {
+                AppError::Internal("batch authority projection lost a server".to_string())
+            }
+            crate::service::agent_authority::StateError::Store(error) => error,
+        })
+        .map(|states| {
+            states
+                .into_iter()
+                .map(|state| {
+                    (
+                        state.server_id.as_str().to_string(),
+                        authority_state_response(state),
+                    )
+                })
+                .collect()
+        })
 }
 
 /// GET endpoints accessible to all authenticated users (admin + member).
@@ -363,6 +384,8 @@ pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/servers", get(list_servers))
         .route("/servers/{id}", get(get_server))
+        .route("/servers/{id}/agent-authority", get(get_agent_authority))
+        .route("/agent-authority/events", get(get_authority_history))
         .route("/servers/{id}/records", get(get_records))
         .route("/servers/{id}/gpu-records", get(get_gpu_records))
         .route(
@@ -392,10 +415,25 @@ pub fn write_router() -> Router<Arc<AppState>> {
         .route("/servers/batch-delete", post(batch_delete))
         .route("/servers/cleanup", delete(cleanup_orphaned_servers))
         .route("/servers/{id}/upgrade", post(trigger_upgrade))
-        .route("/servers/{id}/recover", post(recover_server))
         .route(
-            "/servers/{id}/regenerate-code",
-            post(regenerate_code),
+            "/servers/{id}/agent-authority/re-enrollment",
+            post(begin_reenrollment),
+        )
+        .route(
+            "/servers/{id}/agent-authority/offers",
+            post(issue_offer_for_unclaimed),
+        )
+        .route(
+            "/servers/{id}/agent-authority/offers/{offer_id}/replace",
+            post(replace_offer),
+        )
+        .route(
+            "/servers/{id}/agent-authority/offers/{offer_id}",
+            delete(revoke_offer),
+        )
+        .route(
+            "/servers/{id}/agent-authority",
+            delete(revoke_agent_authority),
         )
         .route(
             "/servers/{id}/network-probes/targets",
@@ -417,14 +455,24 @@ async fn list_servers(
 ) -> Result<Json<ApiResponse<Vec<ServerResponse>>>, AppError> {
     let servers = ServerService::list_servers(&state.db).await?;
     let ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
-    let mut outstanding = fetch_outstanding_enrollments_batch(&state.db, &ids).await?;
-    ok(servers
+    let mut authority_states = fetch_authority_states_batch(&state.agent_authority, &ids).await?;
+    let response = servers
         .into_iter()
         .map(|server| {
-            let pending = outstanding.remove(&server.id);
-            build_server_response(server, &state.agent_manager, pending)
+            let authority = authority_states.remove(&server.id).ok_or_else(|| {
+                AppError::Internal(format!(
+                    "Agent Authority projection missing Server {}",
+                    server.id
+                ))
+            })?;
+            Ok(build_server_response(
+                server,
+                &state.agent_manager,
+                authority,
+            ))
         })
-        .collect())
+        .collect::<Result<Vec<_>, AppError>>()?;
+    ok(response)
 }
 
 /// Create a pending server row and a server-bound enrollment in a single
@@ -437,7 +485,7 @@ async fn list_servers(
 ///
 /// `caps` is accepted in the request for the install.sh `--caps` arg but is
 /// NOT persisted on the server row. The server row always starts at
-/// `CAP_DEFAULT`; the operator can edit capabilities afterwards.
+/// `CAP_DEFAULT`; the Agent later reports its locally configured capabilities.
 #[utoipa::path(
     post,
     path = "/api/servers",
@@ -451,429 +499,498 @@ async fn list_servers(
 )]
 async fn create_server(
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
-    headers: HeaderMap,
     Json(body): Json<CreateServerRequest>,
 ) -> Result<Json<ApiResponse<CreateServerResponse>>, AppError> {
-    use serverbee_common::constants::CAP_DEFAULT;
+    let request_id =
+        OnboardingRequestId::parse(body.onboarding_request_id).map_err(AppError::BadRequest)?;
+    let offer_ttl = parse_offer_ttl(body.ttl_secs)?;
+    let result = state
+        .server_onboarding
+        .onboard(OnboardServer {
+            actor_id: current_user.user_id,
+            request_id,
+            source: request_source("api:create-server")?,
+            profile: ServerProfile {
+                name: body.name,
+                group_id: body.group_id,
+                tags: body.tags,
+                remark: body.remark,
+                public_remark: body.public_remark,
+                price: body.price,
+                currency: body.currency,
+                billing_cycle: body.billing_cycle,
+                billing_start_day: body.billing_start_day,
+                expired_at: body.expired_at,
+                traffic_limit: body.traffic_limit,
+                traffic_limit_type: body.traffic_limit_type,
+            },
+            offer_ttl,
+        })
+        .await
+        .map_err(map_onboarding_error)?;
 
-    let name = body.name.trim().to_string();
-    if name.is_empty() {
-        return Err(AppError::BadRequest("name is required".into()));
+    match result {
+        OnboardingResult::Created {
+            server_id,
+            enrollment,
+        } => ok(CreateServerResponse {
+            server_id: server_id.into_inner(),
+            replayed: false,
+            enrollment: Some(enrollment_issue_response(enrollment)),
+            outstanding_offer: None,
+        }),
+        OnboardingResult::Replayed {
+            server_id,
+            outstanding_offer,
+        } => ok(CreateServerResponse {
+            server_id: server_id.into_inner(),
+            replayed: true,
+            enrollment: None,
+            outstanding_offer: outstanding_offer.map(outstanding_offer_response),
+        }),
     }
+}
 
-    // Validate tags up-front so we fail before opening the tx. Reuses the
-    // shared validator so the rules stay identical to PUT /api/servers/{id}/tags.
-    let normalized_tags = server_tag_service::validate_tags(&body.tags)?;
+fn request_source(value: &str) -> Result<crate::service::agent_authority::RequestSource, AppError> {
+    crate::service::agent_authority::RequestSource::parse(value)
+        .map_err(|error| AppError::Internal(format!("invalid request source: {error}")))
+}
 
-    // Soft max_servers cap. `max_servers == 0` means "no cap" per AuthConfig
-    // default; only fire the pre-check when an actual limit is configured.
-    let max_servers = state.config.auth.max_servers;
-    if max_servers > 0 {
-        let count = server::Entity::find().count(&state.db).await?;
-        if count >= max_servers as u64 {
-            return Err(AppError::BadRequest(format!(
-                "Server limit reached ({max_servers}). Delete unused servers or increase max_servers in config."
-            )));
+fn parse_offer_ttl(
+    value: Option<i64>,
+) -> Result<crate::service::agent_authority::OfferTtl, AppError> {
+    crate::service::agent_authority::OfferTtl::seconds(
+        value.unwrap_or(crate::service::agent_authority::OfferTtl::DEFAULT_SECONDS),
+    )
+    .map_err(AppError::BadRequest)
+}
+
+fn parse_server_id(value: String) -> Result<crate::service::agent_authority::ServerId, AppError> {
+    crate::service::agent_authority::ServerId::parse(value).map_err(AppError::BadRequest)
+}
+
+fn parse_offer_id(value: String) -> Result<crate::service::agent_authority::OfferId, AppError> {
+    crate::service::agent_authority::OfferId::parse(value).map_err(AppError::BadRequest)
+}
+
+fn authority_actor(user: &CurrentUser) -> crate::service::agent_authority::Actor {
+    crate::service::agent_authority::Actor::User {
+        id: user.user_id.clone(),
+    }
+}
+
+fn enrollment_issue_response(
+    enrollment: crate::service::agent_authority::IssuedOffer,
+) -> EnrollmentIssueResponse {
+    EnrollmentIssueResponse {
+        id: enrollment.id.into_inner(),
+        code: enrollment.code.expose().to_string(),
+        code_prefix: enrollment.code_prefix,
+        expires_at: enrollment.expires_at.to_rfc3339(),
+    }
+}
+
+fn outstanding_offer_response(
+    offer: crate::service::agent_authority::OutstandingOffer,
+) -> OutstandingEnrollmentSummary {
+    OutstandingEnrollmentSummary {
+        id: offer.id.into_inner(),
+        code_prefix: offer.code_prefix,
+        expires_at: offer.expires_at.to_rfc3339(),
+        created_at: offer.created_at.to_rfc3339(),
+    }
+}
+
+fn authority_state_response(
+    state: crate::service::agent_authority::AuthorityState,
+) -> AgentAuthorityStateSummary {
+    AgentAuthorityStateSummary {
+        status: match state.authority {
+            crate::service::agent_authority::AuthorityStatus::Claimed => {
+                AgentAuthorityStatus::Claimed
+            }
+            crate::service::agent_authority::AuthorityStatus::Unclaimed => {
+                AgentAuthorityStatus::Unclaimed
+            }
+        },
+        outstanding_offer: state.outstanding_offer.map(outstanding_offer_response),
+    }
+}
+
+fn current_offer_details(
+    current: Option<crate::service::agent_authority::OutstandingOffer>,
+) -> Option<serde_json::Value> {
+    current.map(|offer| {
+        serde_json::json!({
+            "current_offer": {
+                "id": offer.id.into_inner(),
+                "code_prefix": offer.code_prefix,
+                "expires_at": offer.expires_at.to_rfc3339(),
+                "created_at": offer.created_at.to_rfc3339()
+            }
+        })
+    })
+}
+
+fn conflict(
+    code: &'static str,
+    message: impl Into<String>,
+    details: Option<serde_json::Value>,
+) -> AppError {
+    AppError::Domain {
+        status: StatusCode::CONFLICT,
+        code,
+        message: message.into(),
+        details,
+    }
+}
+
+fn map_onboarding_error(error: OnboardingError) -> AppError {
+    match error {
+        OnboardingError::Invalid(message) => AppError::BadRequest(message),
+        OnboardingError::Validation(message) => AppError::Validation(message),
+        OnboardingError::LimitReached(limit) => AppError::BadRequest(format!(
+            "Server limit reached ({limit}). Delete unused servers or increase max_servers in config."
+        )),
+        OnboardingError::IdempotencyConflict => conflict(
+            "ONBOARDING_IDEMPOTENCY_CONFLICT",
+            "onboarding_request_id was already used with different input",
+            None,
+        ),
+        OnboardingError::Store(error) => error,
+    }
+}
+
+fn map_issue_offer_error(error: crate::service::agent_authority::IssueOfferError) -> AppError {
+    use crate::service::agent_authority::IssueOfferError;
+    match error {
+        IssueOfferError::NotFound => AppError::NotFound("server not found".to_string()),
+        IssueOfferError::AlreadyClaimed => conflict(
+            "AGENT_AUTHORITY_ALREADY_CLAIMED",
+            "server authority is already claimed; begin re-enrollment instead",
+            None,
+        ),
+        IssueOfferError::OutstandingExists(current) => conflict(
+            "ENROLLMENT_OFFER_OUTSTANDING",
+            "an Outstanding enrollment offer already exists",
+            current_offer_details(Some(current)),
+        ),
+        IssueOfferError::Store(error) => error,
+    }
+}
+
+fn map_reenrollment_error(error: crate::service::agent_authority::ReenrollmentError) -> AppError {
+    use crate::service::agent_authority::ReenrollmentError;
+    match error {
+        ReenrollmentError::NotFound => AppError::NotFound("server not found".to_string()),
+        ReenrollmentError::Unclaimed => conflict(
+            "AGENT_AUTHORITY_UNCLAIMED",
+            "server authority is Unclaimed; issue an offer instead",
+            None,
+        ),
+        ReenrollmentError::OutstandingExists(current) => conflict(
+            "ENROLLMENT_OFFER_OUTSTANDING",
+            "an Outstanding enrollment offer already exists",
+            current_offer_details(Some(current)),
+        ),
+        ReenrollmentError::Store(error) => error,
+    }
+}
+
+fn map_replace_offer_error(error: crate::service::agent_authority::ReplaceOfferError) -> AppError {
+    use crate::service::agent_authority::ReplaceOfferError;
+    match error {
+        ReplaceOfferError::ServerNotFound => AppError::NotFound("server not found".to_string()),
+        ReplaceOfferError::OfferNotFound => {
+            AppError::NotFound("enrollment offer not found".to_string())
         }
+        ReplaceOfferError::NotOutstanding { outcome, current } => conflict(
+            "ENROLLMENT_OFFER_TERMINAL",
+            format!("enrollment offer is already {}", outcome.as_str()),
+            current_offer_details(current),
+        ),
+        ReplaceOfferError::Stale { current } => conflict(
+            "ENROLLMENT_OFFER_STALE",
+            "the exact offer is not the current Outstanding offer",
+            current_offer_details(current),
+        ),
+        ReplaceOfferError::Store(error) => error,
     }
-
-    // Fetch default probe targets BEFORE the tx — ConfigService::get_typed
-    // takes &DatabaseConnection, not a generic conn. The targets array is
-    // small and stable, so reading it outside the tx is fine.
-    let probe_setting = NetworkProbeService::get_setting(&state.db).await?;
-    let default_target_ids = probe_setting.default_target_ids.clone();
-
-    let ttl = body.ttl_secs.unwrap_or(DEFAULT_TTL_SECS);
-    let server_id = Uuid::new_v4().to_string();
-    let now = Utc::now();
-    let user_id = current_user.user_id.clone();
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
-        &headers,
-        &state.config.server.trusted_proxies,
-    )
-    .to_string();
-
-    let tx_server_id = server_id.clone();
-    let tx_user_id = user_id.clone();
-    let tx_name = name.clone();
-    let tx_tags = normalized_tags.clone();
-    let tx_body = body.clone();
-
-    let (enrollment_model, plaintext_code) = state
-        .db
-        .transaction::<_, (agent_enrollment::Model, String), AppError>(move |tx| {
-            Box::pin(async move {
-                // 1. Insert the pending server row. token_hash = None marks
-                //    the row as "pending" until the agent enrolls.
-                server::ActiveModel {
-                    id: Set(tx_server_id.clone()),
-                    token_hash: Set(None),
-                    token_prefix: Set(None),
-                    name: Set(tx_name),
-                    cpu_name: Set(None),
-                    cpu_cores: Set(None),
-                    cpu_arch: Set(None),
-                    os: Set(None),
-                    kernel_version: Set(None),
-                    mem_total: Set(None),
-                    swap_total: Set(None),
-                    disk_total: Set(None),
-                    ipv4: Set(None),
-                    ipv6: Set(None),
-                    region: Set(None),
-                    country_code: Set(None),
-                    geo_manual: Set(false),
-                    virtualization: Set(None),
-                    agent_version: Set(None),
-                    group_id: Set(tx_body.group_id.clone()),
-                    weight: Set(0),
-                    hidden: Set(false),
-                    remark: Set(tx_body.remark.clone()),
-                    public_remark: Set(tx_body.public_remark.clone()),
-                    price: Set(tx_body.price),
-                    billing_cycle: Set(tx_body.billing_cycle.clone()),
-                    currency: Set(tx_body.currency.clone()),
-                    expired_at: Set(tx_body.expired_at),
-                    traffic_limit: Set(tx_body.traffic_limit),
-                    traffic_limit_type: Set(tx_body.traffic_limit_type.clone()),
-                    billing_start_day: Set(tx_body.billing_start_day),
-                    capabilities: Set(CAP_DEFAULT as i32),
-                    protocol_version: Set(1),
-                    features: Set("[]".to_string()),
-                    last_remote_addr: Set(None),
-                    fingerprint: Set(None),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                }
-                .insert(tx)
-                .await?;
-
-                // 2. Persist operator-supplied tags.
-                for tag in &tx_tags {
-                    server_tag::ActiveModel {
-                        server_id: Set(tx_server_id.clone()),
-                        tag: Set(tag.clone()),
-                    }
-                    .insert(tx)
-                    .await?;
-                }
-
-                // 3. Apply default network probe targets inside the same tx
-                //    so a failure rolls back the server row too.
-                NetworkProbeService::apply_defaults_tx(
-                    tx,
-                    &tx_server_id,
-                    &default_target_ids,
-                )
-                .await?;
-
-                // 4. Mint the bound enrollment. The partial unique index
-                //    `idx_enrollments_active_per_server` makes this atomic
-                //    with the server insert: if two `POST /api/servers`
-                //    requests raced on the same id (impossible — UUID), the
-                //    second would also fail. With unique UUIDs the only way
-                //    this errors is downstream of bad input, in which case
-                //    we want the whole tx to roll back.
-                let (model, plaintext) = EnrollmentService::mint_for_server(
-                    tx,
-                    &tx_server_id,
-                    &tx_user_id,
-                    ttl,
-                )
-                .await?;
-
-                Ok((model, plaintext))
-            })
-        })
-        .await
-        .map_err(|e| match e {
-            sea_orm::TransactionError::Connection(db_err) => AppError::from(db_err),
-            sea_orm::TransactionError::Transaction(app_err) => app_err,
-        })?;
-
-    // Audit log AFTER commit so we don't log fictitious creations on rollback.
-    let _ = AuditService::log(
-        &state.db,
-        &user_id,
-        "server_created",
-        Some(&format!(
-            "server_id={server_id} enrollment={} prefix={}",
-            enrollment_model.id, enrollment_model.code_prefix
-        )),
-        &ip,
-    )
-    .await;
-
-    ok(CreateServerResponse {
-        server_id,
-        enrollment: EnrollmentIssueResponse {
-            id: enrollment_model.id,
-            code: plaintext_code,
-            code_prefix: enrollment_model.code_prefix,
-            expires_at: enrollment_model.expires_at.to_rfc3339(),
-        },
-    })
 }
 
-/// Mint a fresh bound enrollment for an already-enrolled server so the operator
-/// can reinstall the agent. The target server MUST already have a token
-/// (`token_hash IS NOT NULL`) — recover on a pending server is rejected with
-/// `400`, use `regenerate-code` for that path.
-///
-/// Recover NEVER auto-supersedes an outstanding enrollment: if one is still
-/// active, this returns `409` and the operator is expected to either wait for
-/// it to expire or revoke it first. Only `regenerate-code` auto-supersedes.
-///
-/// `revoke_immediately`:
-/// - `true` — clear `token_hash`/`token_prefix` inside the same transaction
-///   and kick the currently connected agent WS after commit. The server
-///   returns to pending until the new code is consumed.
-/// - `false` — the existing token stays valid; the new code only becomes
-///   active once the agent registers with it (`verify_and_consume_tx` then
-///   rotates the token via `mint_token_for_server`).
+fn map_revoke_offer_error(error: crate::service::agent_authority::RevokeOfferError) -> AppError {
+    use crate::service::agent_authority::RevokeOfferError;
+    match error {
+        RevokeOfferError::ServerNotFound => AppError::NotFound("server not found".to_string()),
+        RevokeOfferError::OfferNotFound => {
+            AppError::NotFound("enrollment offer not found".to_string())
+        }
+        RevokeOfferError::Terminal(outcome) => conflict(
+            "ENROLLMENT_OFFER_TERMINAL",
+            format!("enrollment offer is already {}", outcome.as_str()),
+            None,
+        ),
+        RevokeOfferError::Store(error) => error,
+    }
+}
+
 #[utoipa::path(
     post,
-    path = "/api/servers/{id}/recover",
+    path = "/api/servers/{id}/agent-authority/re-enrollment",
     tag = "servers",
     params(("id" = String, Path, description = "Server ID")),
-    request_body = RecoverRequest,
+    request_body = ReenrollmentRequest,
     responses(
-        (status = 200, description = "Recover enrollment minted", body = RecoverResponse),
-        (status = 400, description = "Server is pending (use regenerate-code instead)"),
+        (status = 200, description = "Re-enrollment offer issued", body = EnrollmentOfferResponse),
         (status = 404, description = "Server not found"),
-        (status = 409, description = "Outstanding enrollment exists; revoke it first"),
+        (status = 409, description = "Authority or offer state conflict"),
     ),
     security(("session_cookie" = []), ("api_key" = []))
 )]
-async fn recover_server(
+async fn begin_reenrollment(
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
-    headers: HeaderMap,
     Path(id): Path<String>,
-    Json(body): Json<RecoverRequest>,
-) -> Result<Json<ApiResponse<RecoverResponse>>, AppError> {
-    let user_id = current_user.user_id.clone();
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
-        &headers,
-        &state.config.server.trusted_proxies,
-    )
-    .to_string();
-
-    let tx_id = id.clone();
-    let tx_user_id = user_id.clone();
-    let revoke = body.revoke_immediately;
-
-    let (enrollment_model, plaintext_code, kicked) = state
-        .db
-        .transaction::<_, (agent_enrollment::Model, String, bool), AppError>(move |tx| {
-            Box::pin(async move {
-                // 1. Load the server row; 404 if it doesn't exist.
-                let row = server::Entity::find_by_id(&tx_id)
-                    .one(tx)
-                    .await?
-                    .ok_or_else(|| AppError::NotFound("server not found".into()))?;
-
-                // 2. Recover is only for already-enrolled servers. A pending
-                //    server (token_hash IS NULL) should use regenerate-code.
-                if row.token_hash.is_none() {
-                    return Err(AppError::BadRequest(
-                        "server is pending; use regenerate-code instead".into(),
-                    ));
+    Json(body): Json<ReenrollmentRequest>,
+) -> Result<Json<ApiResponse<EnrollmentOfferResponse>>, AppError> {
+    let enrollment = state
+        .agent_authority
+        .begin_reenrollment(crate::service::agent_authority::BeginReenrollment {
+            server_id: parse_server_id(id)?,
+            mode: match body.mode {
+                ReenrollmentModeRequest::Graceful => {
+                    crate::service::agent_authority::ReenrollmentMode::Graceful
                 }
-
-                // 3. Recover NEVER auto-supersedes an outstanding enrollment.
-                //    The partial unique index `idx_enrollments_active_per_server`
-                //    would also reject the mint below, but checking first lets
-                //    us return a precise 409 instead of a generic constraint
-                //    error.
-                let outstanding = agent_enrollment::Entity::find()
-                    .filter(agent_enrollment::Column::TargetServerId.eq(&tx_id))
-                    .filter(agent_enrollment::Column::ConsumedAt.is_null())
-                    .filter(agent_enrollment::Column::RevokedAt.is_null())
-                    .one(tx)
-                    .await?;
-                if outstanding.is_some() {
-                    return Err(AppError::Conflict(
-                        "an outstanding enrollment exists; revoke it before recovering".into(),
-                    ));
+                ReenrollmentModeRequest::Emergency => {
+                    crate::service::agent_authority::ReenrollmentMode::Emergency
                 }
-
-                // 4. Optionally clear the server token inside the same tx.
-                let kicked = if revoke {
-                    let mut active: server::ActiveModel = row.into();
-                    active.token_hash = Set(None);
-                    active.token_prefix = Set(None);
-                    active.updated_at = Set(Utc::now());
-                    active.update(tx).await?;
-                    true
-                } else {
-                    false
-                };
-
-                // 5. Mint the new bound enrollment.
-                let (model, plaintext) =
-                    EnrollmentService::mint_for_server(tx, &tx_id, &tx_user_id, DEFAULT_TTL_SECS)
-                        .await?;
-
-                Ok((model, plaintext, kicked))
-            })
+            },
+            actor: authority_actor(&current_user),
+            source: request_source("api:begin-re-enrollment")?,
+            ttl: parse_offer_ttl(body.ttl_secs)?,
         })
         .await
-        .map_err(|e| match e {
-            sea_orm::TransactionError::Connection(db_err) => AppError::from(db_err),
-            sea_orm::TransactionError::Transaction(app_err) => app_err,
-        })?;
-
-    // Post-commit side effects.
-    if kicked {
-        // Drop the agent WS connection; the agent will reconnect, see its
-        // token has been cleared, and exit/back off. Operator then runs the
-        // install command with the new code.
-        state.agent_manager.remove_connection(&id);
-    }
-
-    let _ = AuditService::log(
-        &state.db,
-        &user_id,
-        "server_recover",
-        Some(&format!(
-            "server_id={id} enrollment={} prefix={} revoke_immediately={}",
-            enrollment_model.id, enrollment_model.code_prefix, kicked
-        )),
-        &ip,
-    )
-    .await;
-
-    ok(RecoverResponse {
-        enrollment: EnrollmentIssueResponse {
-            id: enrollment_model.id,
-            code: plaintext_code,
-            code_prefix: enrollment_model.code_prefix,
-            expires_at: enrollment_model.expires_at.to_rfc3339(),
-        },
+        .map_err(map_reenrollment_error)?;
+    ok(EnrollmentOfferResponse {
+        enrollment: enrollment_issue_response(enrollment),
     })
 }
 
-/// Mint a fresh bound enrollment for a pending server, auto-superseding the
-/// previous outstanding enrollment (if any) inside one transaction. The target
-/// server MUST be pending (`token_hash IS NULL`); use `recover` for an already-
-/// enrolled server.
-///
-/// Optimistic concurrency: callers pass `expected_enrollment_id` to guard
-/// against stomping on a concurrent operator's regenerated code. Semantics:
-/// - `Some(id) && matches current outstanding` → proceed (CAS pass)
-/// - `Some(id) && does NOT match` (including: there is no outstanding row, or
-///   the row referenced has been revoked/consumed) → 409
-/// - `None && outstanding exists` → proceed (last-writer-wins)
-/// - `None && no outstanding` → proceed (fresh mint)
 #[utoipa::path(
     post,
-    path = "/api/servers/{id}/regenerate-code",
+    path = "/api/servers/{id}/agent-authority/offers",
     tag = "servers",
     params(("id" = String, Path, description = "Server ID")),
-    request_body = RegenerateCodeRequest,
+    request_body = IssueOfferRequest,
     responses(
-        (status = 200, description = "Regenerate enrollment minted", body = RegenerateCodeResponse),
-        (status = 400, description = "Server is not pending; use recover instead"),
+        (status = 200, description = "Enrollment offer issued", body = EnrollmentOfferResponse),
         (status = 404, description = "Server not found"),
-        (status = 409, description = "expected_enrollment_id mismatch"),
+        (status = 409, description = "Authority or offer state conflict"),
     ),
     security(("session_cookie" = []), ("api_key" = []))
 )]
-async fn regenerate_code(
+async fn issue_offer_for_unclaimed(
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Extension(current_user): Extension<CurrentUser>,
-    headers: HeaderMap,
     Path(id): Path<String>,
-    Json(body): Json<RegenerateCodeRequest>,
-) -> Result<Json<ApiResponse<RegenerateCodeResponse>>, AppError> {
-    let user_id = current_user.user_id.clone();
-    let ip = extract_client_ip(
-        &ConnectInfo(addr),
-        &headers,
-        &state.config.server.trusted_proxies,
-    )
-    .to_string();
-
-    let tx_id = id.clone();
-    let tx_user_id = user_id.clone();
-    let expected = body.expected_enrollment_id.clone();
-
-    let (enrollment_model, plaintext_code) = state
-        .db
-        .transaction::<_, (agent_enrollment::Model, String), AppError>(move |tx| {
-            Box::pin(async move {
-                // 1. Load the server row; 404 if it doesn't exist.
-                let row = server::Entity::find_by_id(&tx_id)
-                    .one(tx)
-                    .await?
-                    .ok_or_else(|| AppError::NotFound("server not found".into()))?;
-
-                // 2. regenerate-code is only for pending servers. An already-
-                //    enrolled server (token_hash IS NOT NULL) must use recover.
-                if row.token_hash.is_some() {
-                    return Err(AppError::BadRequest(
-                        "server is not pending; use recover instead".into(),
-                    ));
-                }
-
-                // 3. Optimistic CAS: if caller provided expected_enrollment_id,
-                //    it must match the current OUTSTANDING enrollment exactly.
-                //    A None value means "I don't care what's outstanding"
-                //    (last-writer-wins).
-                let current = agent_enrollment::Entity::find()
-                    .filter(agent_enrollment::Column::TargetServerId.eq(&tx_id))
-                    .filter(agent_enrollment::Column::ConsumedAt.is_null())
-                    .filter(agent_enrollment::Column::RevokedAt.is_null())
-                    .one(tx)
-                    .await?;
-                let current_id = current.as_ref().map(|m| m.id.clone());
-                if expected.is_some() && expected != current_id {
-                    return Err(AppError::Conflict(
-                        "expected_enrollment_id mismatch".into(),
-                    ));
-                }
-
-                // 4. Revoke any outstanding row, then mint a fresh one.
-                EnrollmentService::revoke_outstanding_tx(tx, &tx_id).await?;
-                let (model, plaintext) =
-                    EnrollmentService::mint_for_server(tx, &tx_id, &tx_user_id, DEFAULT_TTL_SECS)
-                        .await?;
-                Ok((model, plaintext))
-            })
+    Json(body): Json<IssueOfferRequest>,
+) -> Result<Json<ApiResponse<EnrollmentOfferResponse>>, AppError> {
+    let enrollment = state
+        .agent_authority
+        .issue_offer_for_unclaimed(crate::service::agent_authority::IssueOfferForUnclaimed {
+            server_id: parse_server_id(id)?,
+            actor: authority_actor(&current_user),
+            source: request_source("api:issue-enrollment-offer")?,
+            ttl: parse_offer_ttl(body.ttl_secs)?,
         })
         .await
-        .map_err(|e| match e {
-            sea_orm::TransactionError::Connection(db_err) => AppError::from(db_err),
-            sea_orm::TransactionError::Transaction(app_err) => app_err,
-        })?;
-
-    let _ = AuditService::log(
-        &state.db,
-        &user_id,
-        "server_regenerate_code",
-        Some(&format!(
-            "server_id={id} enrollment={} prefix={}",
-            enrollment_model.id, enrollment_model.code_prefix
-        )),
-        &ip,
-    )
-    .await;
-
-    ok(RegenerateCodeResponse {
-        enrollment: EnrollmentIssueResponse {
-            id: enrollment_model.id,
-            code: plaintext_code,
-            code_prefix: enrollment_model.code_prefix,
-            expires_at: enrollment_model.expires_at.to_rfc3339(),
-        },
+        .map_err(map_issue_offer_error)?;
+    ok(EnrollmentOfferResponse {
+        enrollment: enrollment_issue_response(enrollment),
     })
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/servers/{id}/agent-authority/offers/{offer_id}/replace",
+    tag = "servers",
+    params(
+        ("id" = String, Path, description = "Server ID"),
+        ("offer_id" = String, Path, description = "Exact current offer ID"),
+    ),
+    responses(
+        (status = 200, description = "Enrollment offer replaced", body = EnrollmentOfferResponse),
+        (status = 404, description = "Server or offer not found"),
+        (status = 409, description = "Offer is stale or terminal"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn replace_offer(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path((id, offer_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<EnrollmentOfferResponse>>, AppError> {
+    let enrollment = state
+        .agent_authority
+        .replace_offer(crate::service::agent_authority::ReplaceOffer {
+            server_id: parse_server_id(id)?,
+            offer_id: parse_offer_id(offer_id)?,
+            actor: authority_actor(&current_user),
+            source: request_source("api:replace-enrollment-offer")?,
+            ttl: crate::service::agent_authority::OfferTtl::default(),
+        })
+        .await
+        .map_err(map_replace_offer_error)?;
+    ok(EnrollmentOfferResponse {
+        enrollment: enrollment_issue_response(enrollment),
+    })
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/servers/{id}/agent-authority/offers/{offer_id}",
+    tag = "servers",
+    params(
+        ("id" = String, Path, description = "Server ID"),
+        ("offer_id" = String, Path, description = "Offer ID"),
+    ),
+    responses(
+        (status = 200, description = "Enrollment offer revoked", body = RevokeOfferResponse),
+        (status = 404, description = "Server or offer not found"),
+        (status = 409, description = "Offer has another terminal outcome"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn revoke_offer(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path((id, offer_id)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<RevokeOfferResponse>>, AppError> {
+    let receipt = state
+        .agent_authority
+        .revoke_offer(crate::service::agent_authority::RevokeOffer {
+            server_id: parse_server_id(id)?,
+            offer_id: parse_offer_id(offer_id)?,
+            actor: authority_actor(&current_user),
+            source: request_source("api:revoke-enrollment-offer")?,
+        })
+        .await
+        .map_err(map_revoke_offer_error)?;
+    ok(RevokeOfferResponse {
+        offer_id: receipt.offer_id.into_inner(),
+        already_revoked: receipt.already_revoked,
+    })
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/servers/{id}/agent-authority",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    responses(
+        (status = 200, description = "Agent authority revoked", body = RevokeAuthorityResponse),
+        (status = 404, description = "Server not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []))
+)]
+async fn revoke_agent_authority(
+    State(state): State<Arc<AppState>>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<RevokeAuthorityResponse>>, AppError> {
+    let receipt = state
+        .agent_authority
+        .revoke_authority(crate::service::agent_authority::RevokeAuthority {
+            server_id: parse_server_id(id)?,
+            actor: authority_actor(&current_user),
+            source: request_source("api:revoke-agent-authority")?,
+        })
+        .await
+        .map_err(|error| match error {
+            crate::service::agent_authority::RevokeAuthorityError::NotFound => {
+                AppError::NotFound("server not found".to_string())
+            }
+            crate::service::agent_authority::RevokeAuthorityError::Store(error) => error,
+        })?;
+    ok(RevokeAuthorityResponse {
+        server_id: receipt.server_id.into_inner(),
+        changed: receipt.changed,
+    })
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/servers/{id}/agent-authority",
+    tag = "servers",
+    params(("id" = String, Path, description = "Server ID")),
+    responses(
+        (status = 200, description = "Agent authority state", body = AgentAuthorityStateSummary),
+        (status = 404, description = "Server not found"),
+    ),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+async fn get_agent_authority(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<AgentAuthorityStateSummary>>, AppError> {
+    let state = state
+        .agent_authority
+        .state(parse_server_id(id)?)
+        .await
+        .map_err(|error| match error {
+            crate::service::agent_authority::StateError::NotFound => {
+                AppError::NotFound("server not found".to_string())
+            }
+            crate::service::agent_authority::StateError::Store(error) => error,
+        })?;
+    ok(authority_state_response(state))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/agent-authority/events",
+    tag = "servers",
+    params(AuthorityHistoryQuery),
+    responses(
+        (status = 200, description = "Agent authority event history", body = Vec<AuthorityEventResponse>),
+    ),
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+async fn get_authority_history(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<AuthorityHistoryQuery>,
+) -> Result<Json<ApiResponse<Vec<AuthorityEventResponse>>>, AppError> {
+    let events = state
+        .agent_authority
+        .history(crate::service::agent_authority::HistoryQuery {
+            server_id: parse_server_id(query.server_id)?,
+            limit: query.limit,
+        })
+        .await
+        .map_err(|error| match error {
+            crate::service::agent_authority::HistoryError::Store(error) => error,
+        })?;
+    ok(events
+        .into_iter()
+        .map(|event| AuthorityEventResponse {
+            id: event.id,
+            server_id: event.server_id.into_inner(),
+            server_name: event.server_name,
+            actor_kind: event.actor_kind.as_str().to_string(),
+            actor_id: event.actor_id,
+            request_source: event.request_source,
+            offer_id: event.offer_id.map(|id| id.into_inner()),
+            transition: event.transition.as_str().to_string(),
+            mode: event.mode.map(|mode| mode.as_str().to_string()),
+            offer_outcome: event
+                .offer_outcome
+                .map(|outcome| outcome.as_str().to_string()),
+            authority_before: event.authority_before.as_str().to_string(),
+            authority_after: event.authority_after.as_str().to_string(),
+            created_at: event.created_at,
+        })
+        .collect())
 }
 
 #[utoipa::path(
@@ -892,8 +1009,21 @@ async fn get_server(
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ServerResponse>>, AppError> {
     let server = ServerService::get_server(&state.db, &id).await?;
-    let outstanding = fetch_outstanding_enrollment(&state.db, &id).await?;
-    ok(build_server_response(server, &state.agent_manager, outstanding))
+    let authority = state
+        .agent_authority
+        .state(parse_server_id(id)?)
+        .await
+        .map_err(|error| match error {
+            crate::service::agent_authority::StateError::NotFound => {
+                AppError::NotFound("server not found".to_string())
+            }
+            crate::service::agent_authority::StateError::Store(error) => error,
+        })?;
+    ok(build_server_response(
+        server,
+        &state.agent_manager,
+        authority_state_response(authority),
+    ))
 }
 
 #[utoipa::path(
@@ -918,8 +1048,21 @@ async fn update_server(
     // longer change what the agent is allowed to do.
     let server = ServerService::update_server(&state.db, &id, input).await?;
 
-    let outstanding = fetch_outstanding_enrollment(&state.db, &id).await?;
-    ok(build_server_response(server, &state.agent_manager, outstanding))
+    let authority = state
+        .agent_authority
+        .state(parse_server_id(id)?)
+        .await
+        .map_err(|error| match error {
+            crate::service::agent_authority::StateError::NotFound => {
+                AppError::NotFound("server not found".to_string())
+            }
+            crate::service::agent_authority::StateError::Store(error) => error,
+        })?;
+    ok(build_server_response(
+        server,
+        &state.agent_manager,
+        authority_state_response(authority),
+    ))
 }
 
 #[utoipa::path(
@@ -946,25 +1089,23 @@ pub async fn delete_server(
         &state.config.server.trusted_proxies,
     )
     .to_string();
-    // Capture the name before deletion so the audit detail is meaningful.
-    let server_name = ServerService::get_server(&state.db, &id)
-        .await
-        .ok()
-        .map(|s| s.name);
-    ServerService::delete_server(&state.db, &id).await?;
-    // Close any live agent connection so it doesn't linger after the row is gone.
-    state.agent_manager.remove_connection(&id);
-    // Drop the cached report too: the server row is gone, so its "last known
-    // metrics" cache is dead weight (and would otherwise never be reclaimed).
-    state.agent_manager.remove_cached_report(&id);
+    let deleted = state
+        .agent_authority
+        .delete_servers(
+            &[parse_server_id(id.clone())?],
+            &authority_actor(&current_user),
+            &request_source("api:delete-server")?,
+        )
+        .await?;
+    let deleted = deleted
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::NotFound("server not found".to_string()))?;
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
         "server_deleted",
-        Some(&format!(
-            "server_id={id} name={}",
-            server_name.as_deref().unwrap_or("?")
-        )),
+        Some(&format!("server_id={id} name={}", deleted.name)),
         &ip,
     )
     .await;
@@ -994,15 +1135,21 @@ pub async fn batch_delete(
         &state.config.server.trusted_proxies,
     )
     .to_string();
-    let deleted = ServerService::batch_delete(&state.db, &body.ids).await?;
-    // Kick any live connections for the requested ids. `remove_connection` is
-    // a no-op when nothing is connected, so it's safe to call for ids that
-    // weren't actually deleted (e.g. unknown ids in the request).
-    for id in &body.ids {
-        state.agent_manager.remove_connection(id);
-        // Row deleted -> drop its display cache so it isn't retained forever.
-        state.agent_manager.remove_cached_report(id);
-    }
+    let server_ids = body
+        .ids
+        .iter()
+        .cloned()
+        .map(parse_server_id)
+        .collect::<Result<Vec<_>, _>>()?;
+    let deleted = state
+        .agent_authority
+        .delete_servers(
+            &server_ids,
+            &authority_actor(&current_user),
+            &request_source("api:batch-delete-servers")?,
+        )
+        .await?
+        .len() as u64;
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -1219,15 +1366,11 @@ async fn set_server_network_targets(
 async fn cleanup_orphaned_servers(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<CleanupResponse>>, AppError> {
-    use crate::entity::*;
-
     let mut task_cleanup = task_scheduler::begin_server_cleanup(&state).await;
-    let txn = state.db.begin().await?;
-
     let candidates = server::Entity::find()
         .filter(server::Column::Name.eq("New Server"))
         .filter(server::Column::Os.is_null())
-        .all(&txn)
+        .all(&state.db)
         .await?;
 
     let orphan_ids = collect_orphan_server_ids(&candidates, |id| state.agent_manager.is_online(id));
@@ -1235,33 +1378,38 @@ async fn cleanup_orphaned_servers(
         return ok(CleanupResponse { deleted_count: 0 });
     }
 
-    // Purge all server_id-scoped rows through the shared service helper so
-    // this path cannot drift from delete_server again.
-    ServerService::delete_server_scoped_rows(&txn, &orphan_ids).await?;
-    server_tag::Entity::delete_many()
-        .filter(server_tag::Column::ServerId.is_in(&orphan_ids))
-        .exec(&txn)
+    let cleanup_actor = crate::service::agent_authority::Actor::System;
+    let cleanup_source = request_source("system:orphan-cleanup")?;
+    let typed_ids = orphan_ids
+        .into_iter()
+        .map(parse_server_id)
+        .collect::<Result<Vec<_>, _>>()?;
+    let deleted_rows = state
+        .agent_authority
+        .delete_servers(&typed_ids, &cleanup_actor, &cleanup_source)
         .await?;
+    let deleted_ids: Vec<String> = deleted_rows
+        .iter()
+        .map(|server| server.id.clone())
+        .collect();
+    if deleted_ids.is_empty() {
+        return ok(CleanupResponse { deleted_count: 0 });
+    }
 
+    let txn = state.db.begin().await?;
     task_cleanup
-        .remove_server_references(&txn, &orphan_ids)
+        .remove_server_references(&txn, &deleted_ids)
         .await?;
 
     // Remaining tables with server_ids_json — per-table rules
-    cleanup_json_array_tables(&txn, &orphan_ids).await?;
-
-    let deleted = server::Entity::delete_many()
-        .filter(server::Column::Id.is_in(&orphan_ids))
-        .exec(&txn)
-        .await?;
+    cleanup_json_array_tables(&txn, &deleted_ids).await?;
 
     txn.commit().await?;
     task_cleanup.apply_after_commit(&state).await;
 
-    tracing::info!("Cleaned up {} orphaned servers", deleted.rows_affected);
-    ok(CleanupResponse {
-        deleted_count: deleted.rows_affected,
-    })
+    let deleted_count = deleted_rows.len() as u64;
+    tracing::info!("Cleaned up {deleted_count} orphaned servers");
+    ok(CleanupResponse { deleted_count })
 }
 
 async fn cleanup_json_array_tables(
@@ -1423,7 +1571,6 @@ mod cleanup_tests {
             protocol_version: 1,
             features: "[]".to_string(),
             last_remote_addr: None,
-            fingerprint: None,
             created_at: now,
             updated_at: now,
         }
@@ -1552,7 +1699,6 @@ mod delete_audit_tests {
             protocol_version: 1,
             features: "[]".to_string(),
             last_remote_addr: None,
-            fingerprint: None,
             created_at: now,
             updated_at: now,
         };

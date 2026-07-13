@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { CAP_DEFAULT } from '@/lib/capabilities'
 import type { ServerMetrics } from '@/lib/server-catalog'
-import { RecoverAgentDialog } from './recover-agent-dialog'
+import { AgentReenrollmentDialog } from './agent-reenrollment-dialog'
 import { ServerCardEditDialog } from './server-card-edit-dialog'
 
 interface ServerCardActionMenuProps {
@@ -14,7 +14,7 @@ interface ServerCardActionMenuProps {
 
 export function ServerCardActionMenu({ server }: ServerCardActionMenuProps) {
   const { t } = useTranslation(['servers'])
-  const [recoverOpen, setRecoverOpen] = useState(false)
+  const [reenrollmentOpen, setReenrollmentOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
 
   return (
@@ -42,29 +42,30 @@ export function ServerCardActionMenu({ server }: ServerCardActionMenuProps) {
             <Pencil aria-hidden="true" className="size-3.5" />
             {t('servers:detail_edit')}
           </DropdownMenuItem>
-          {!server.online && (
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation()
-                setRecoverOpen(true)
-              }}
-            >
-              <RotateCcw aria-hidden="true" className="size-3.5" />
-              {t('servers:recover_agent.title')}
-            </DropdownMenuItem>
-          )}
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              setReenrollmentOpen(true)
+            }}
+          >
+            <RotateCcw aria-hidden="true" className="size-3.5" />
+            {t('servers:agent_reenrollment.title')}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {recoverOpen && (
-        <RecoverAgentDialog
-          onOpenChange={setRecoverOpen}
-          open={recoverOpen}
+      {reenrollmentOpen && (
+        <AgentReenrollmentDialog
+          onOpenChange={setReenrollmentOpen}
+          open={reenrollmentOpen}
           server={{
             id: server.id,
             name: server.name,
             capabilities: server.capabilities ?? CAP_DEFAULT,
-            outstanding_enrollment: server.outstanding_enrollment ?? null
+            agent_authority: server.agent_authority ?? {
+              outstanding_offer: server.outstanding_enrollment ?? null,
+              status: server.has_token === false ? 'unclaimed' : 'claimed'
+            }
           }}
         />
       )}

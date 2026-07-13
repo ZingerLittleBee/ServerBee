@@ -40,7 +40,10 @@ async fn harness_login_create_server_and_member_role() {
     let member = login_as_new_user(&client, &base_url, "member1", "member").await;
     let resp = member
         .post(format!("{}/api/servers", base_url))
-        .json(&serde_json::json!({ "name": "nope" }))
+        .json(&serde_json::json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "nope"
+        }))
         .send()
         .await
         .unwrap();

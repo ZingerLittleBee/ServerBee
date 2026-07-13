@@ -171,7 +171,11 @@ const ServerCardInner = ({
               tone as the one bright "needs attention" cue on a muted card. */}
           <StatusBadge className={isPending ? 'relative z-20' : undefined} status={status} />
           {isPending ? (
-            <PendingActionMenu serverId={server.id} serverName={server.name} />
+            <PendingActionMenu
+              outstandingOffer={server.agent_authority?.outstanding_offer ?? null}
+              serverId={server.id}
+              serverName={server.name}
+            />
           ) : (
             <ServerCardActionMenu server={server} />
           )}
@@ -181,7 +185,7 @@ const ServerCardInner = ({
       {isPending ? (
         <div className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-muted/40 px-3 py-3 text-center">
           <p className="font-medium text-foreground text-sm">{t('card_pending.waiting')}</p>
-          <PendingEnrollmentSummary enrollment={server.outstanding_enrollment} />
+          <PendingEnrollmentSummary enrollment={server.agent_authority?.outstanding_offer} />
         </div>
       ) : (
         <>
@@ -383,9 +387,9 @@ export const ServerCard = memo(ServerCardInner, (prev, next) => {
     a.mem_total === b.mem_total &&
     a.disk_total === b.disk_total &&
     a.swap_total === b.swap_total &&
-    a.has_token === b.has_token &&
-    a.outstanding_enrollment?.id === b.outstanding_enrollment?.id &&
-    a.outstanding_enrollment?.expires_at === b.outstanding_enrollment?.expires_at &&
+    a.agent_authority?.status === b.agent_authority?.status &&
+    a.agent_authority?.outstanding_offer?.id === b.agent_authority?.outstanding_offer?.id &&
+    a.agent_authority?.outstanding_offer?.expires_at === b.agent_authority?.outstanding_offer?.expires_at &&
     tagsEqual(a.tags, b.tags)
   )
 })

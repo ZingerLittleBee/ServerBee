@@ -2,22 +2,10 @@
 //! that cover branches `router_server_crud.rs` left untested.
 //!
 //! `router_server_crud.rs` already covers the basic create/list/get/update/
-//! delete/batch-delete happy paths plus their authZ (401/403) and validation
-//! (400/422) arms, and the recover/regenerate error arms (pending->400,
-//! stale-CAS->409, missing->404, member->403, unauth->401). This file targets
-//! the remaining reachable branches:
-//!
-//!   - POST /servers/{id}/recover happy path on an ENROLLED server
-//!     (revoke_immediately = false) — mints a fresh bound enrollment.
-//!   - POST /servers/{id}/recover with revoke_immediately = true — clears the
-//!     server token in the same tx (DB side effect: has_token -> false) and
-//!     kicks the live agent connection.
-//!   - POST /servers/{id}/recover 409 — an outstanding enrollment already
-//!     exists (recover never auto-supersedes).
-//!   - POST /servers/{id}/regenerate-code CAS pass — expected_enrollment_id
-//!     matches the current outstanding enrollment -> 200 with a rotated id.
-//!   - POST /servers/{id}/regenerate-code on an ENROLLED server -> 400
-//!     ("not pending; use recover instead").
+//! delete/batch-delete happy paths plus their authZ and validation arms. The
+//! Agent Authority lifecycle has focused coverage in
+//! `agent_registration_integration.rs`; this file targets the remaining
+//! general Server branches:
 //!   - POST /servers/batch-delete with a MIX of known + unknown ids — partial
 //!     delete count, and the known one is actually gone.
 //!   - PUT /servers/{id} group MOVE (group A -> group B), not just assign+clear.
@@ -29,19 +17,14 @@
 //!     (mock agent connected + SystemInfo handshake): is the row marked online
 //!     via populated agent_local_capabilities / effective_capabilities, and is
 //!     has_token = true after enrollment.
-//!
-//! Skipped (NOTE): a clean "recover with revoke_immediately = true returns the
-//! server to a verifiable reconnect" loop is not asserted end-to-end — the post-
-//! commit `remove_connection` kick is observed indirectly via has_token = false
-//! and a re-list. There is no HTTP surface to assert the WS was dropped.
 
 mod common;
 
 use common::{
-    connect_agent, create_server, http_client, login_admin, login_as_new_user, recv_agent_text,
-    register_agent, send_system_info, start_test_server, AgentSink,
+    AgentSink, connect_agent, create_server, http_client, login_admin, login_as_new_user,
+    recv_agent_text, register_agent, send_system_info, start_test_server,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use serverbee_common::constants::CAP_DEFAULT;
 
 // ---------------------------------------------------------------------------
@@ -73,212 +56,6 @@ async fn bring_agent_online(
         }
     });
     (sink, drain)
-}
-
-// ---------------------------------------------------------------------------
-// POST /api/servers/{id}/recover — happy + side-effect branches
-// ---------------------------------------------------------------------------
-
-// Recover on an already-enrolled server (token_hash IS NOT NULL) with
-// revoke_immediately = false mints a fresh bound enrollment and leaves the
-// token intact (has_token stays true).
-#[tokio::test]
-async fn recover_enrolled_server_mints_enrollment_keeps_token() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    // register_agent logs `admin` in and enrolls a server (token set, the
-    // create-time enrollment is consumed during registration).
-    let (server_id, _token) = register_agent(&admin, &base_url).await;
-
-    // Sanity: the enrolled server has a token and no outstanding enrollment.
-    let before: Value = admin
-        .get(format!("{}/api/servers/{}", base_url, server_id))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(before["data"]["has_token"].as_bool(), Some(true));
-    assert!(before["data"]["outstanding_enrollment"].is_null(), "no outstanding before recover");
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
-        .json(&json!({ "revoke_immediately": false }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200, "recover on an enrolled server should succeed");
-    let body: Value = resp.json().await.unwrap();
-    let enrollment = &body["data"]["enrollment"];
-    assert!(
-        enrollment["code"].as_str().is_some_and(|s| !s.is_empty()),
-        "recover must return a fresh plaintext code"
-    );
-    assert!(enrollment["code_prefix"].as_str().is_some());
-
-    // Token is untouched (revoke_immediately = false), and the new bound
-    // enrollment now surfaces as outstanding on the detail DTO.
-    let after: Value = admin
-        .get(format!("{}/api/servers/{}", base_url, server_id))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(after["data"]["has_token"].as_bool(), Some(true), "token preserved");
-    assert_eq!(
-        after["data"]["outstanding_enrollment"]["id"].as_str(),
-        enrollment["id"].as_str(),
-        "the minted enrollment is the outstanding one"
-    );
-}
-
-// Recover with revoke_immediately = true clears the server token in the same
-// transaction (DB side effect: has_token flips to false) so the server returns
-// to pending until the new code is consumed.
-#[tokio::test]
-async fn recover_revoke_immediately_clears_token() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    let (server_id, _token) = register_agent(&admin, &base_url).await;
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
-        .json(&json!({ "revoke_immediately": true }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200, "recover with revoke should succeed");
-
-    // The token was cleared inside the recover transaction.
-    let after: Value = admin
-        .get(format!("{}/api/servers/{}", base_url, server_id))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(
-        after["data"]["has_token"].as_bool(),
-        Some(false),
-        "revoke_immediately must clear the server token (back to pending)"
-    );
-    // A new bound enrollment is outstanding for the (now pending) server.
-    assert!(
-        after["data"]["outstanding_enrollment"].is_object(),
-        "a fresh outstanding enrollment exists after revoke-recover"
-    );
-}
-
-// Recover never auto-supersedes: a second recover while an enrollment is still
-// outstanding is rejected with 409.
-#[tokio::test]
-async fn recover_with_outstanding_enrollment_409() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    let (server_id, _token) = register_agent(&admin, &base_url).await;
-
-    // First recover (revoke = false) mints an outstanding enrollment.
-    let first = admin
-        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
-        .json(&json!({ "revoke_immediately": false }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(first.status(), 200, "first recover should succeed");
-
-    // Second recover sees the still-outstanding enrollment and refuses.
-    let second = admin
-        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
-        .json(&json!({ "revoke_immediately": false }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        second.status(),
-        409,
-        "recover must 409 while an enrollment is still outstanding"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// POST /api/servers/{id}/regenerate-code — CAS pass + not-pending branches
-// ---------------------------------------------------------------------------
-
-// CAS pass: when expected_enrollment_id matches the current outstanding
-// enrollment exactly, regenerate proceeds and rotates to a fresh id.
-#[tokio::test]
-async fn regenerate_code_matching_expected_id_rotates() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-
-    // Capture the create-time enrollment id; it is the current outstanding one.
-    let create_body: Value = admin
-        .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "regen-cas-pass-host" }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    let server_id = create_body["data"]["server_id"].as_str().unwrap().to_string();
-    let outstanding_id = create_body["data"]["enrollment"]["id"].as_str().unwrap().to_string();
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/regenerate-code", base_url, server_id))
-        .json(&json!({ "expected_enrollment_id": outstanding_id }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200, "matching expected id should pass the CAS check");
-    let body: Value = resp.json().await.unwrap();
-    let new_id = body["data"]["enrollment"]["id"].as_str().unwrap();
-    assert_ne!(new_id, outstanding_id, "regenerate must mint a fresh enrollment id");
-    assert!(
-        body["data"]["enrollment"]["code"].as_str().is_some_and(|s| !s.is_empty()),
-        "regenerate must return a non-empty code"
-    );
-
-    // The detail DTO now reports the rotated enrollment as outstanding.
-    let detail: Value = admin
-        .get(format!("{}/api/servers/{}", base_url, server_id))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    assert_eq!(
-        detail["data"]["outstanding_enrollment"]["id"].as_str(),
-        Some(new_id),
-        "the rotated enrollment supersedes the previous one"
-    );
-}
-
-// regenerate-code on an already-enrolled server (token_hash IS NOT NULL) is
-// rejected with 400 — that path must use recover instead.
-#[tokio::test]
-async fn regenerate_code_enrolled_server_400() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    let (server_id, _token) = register_agent(&admin, &base_url).await;
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/regenerate-code", base_url, server_id))
-        .json(&json!({}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        resp.status(),
-        400,
-        "regenerate-code on an enrolled (non-pending) server is rejected"
-    );
 }
 
 // ---------------------------------------------------------------------------

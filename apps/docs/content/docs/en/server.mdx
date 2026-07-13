@@ -184,30 +184,26 @@ Capture this password from the logs. On first login you are required to change i
 The generated password is shown only once in the logs. Record it before the logs rotate, and complete the forced password change on first login before exposing the server to the internet.
 </Callout>
 
-## Enrollment Codes
+## Agent Enrollment
 
-Agents enroll with a **one-time enrollment code** instead of a permanent shared secret. An admin mints a code from **Settings** in the web UI (or via `POST /api/agent/enrollments`, admin-only, which returns `{ id, code, expires_at }`). Enrollment codes have the following properties:
+Adding a Server is one idempotent onboarding operation. `POST /api/servers` requires an `onboarding_request_id` and atomically creates the Server profile, tags, default probes, Agent Authority event, and one bound enrollment offer. Retrying the same request ID and input returns the existing Server. A replay never returns the plaintext code again, but it may identify the current outstanding offer so an administrator can replace that exact offer.
 
-1. **Single-use** -- the code is consumed on the agent's first successful registration and cannot be reused afterwards
-2. **Short-lived** -- expires after a default TTL of 600 seconds (10 minutes)
-3. After registration the agent uses its persisted per-server token; the code is no longer needed
+Enrollment offers are server-bound, single-use, and short-lived (10 minutes by default). Their terminal outcomes are `consumed`, `revoked`, `replaced`, or `expired`; a terminal offer can never become outstanding again. The plaintext code is returned only when an offer is created or replaced.
 
-If a code is lost, expired, or already used, the server responds with HTTP 401 and the agent logs `Registration failed: HTTP 401 ... enrollment code ... expired or already used`. To onboard another agent (or re-enroll one that lost its token), mint a fresh code in Settings. Use `GET /api/agent/enrollments` to list issued codes (returns only an 8-character prefix and metadata, never the plaintext code) and `DELETE /api/agent/enrollments/{id}` to delete an unused code.
+Before claiming an offer, the Agent generates and persists its own run token. It sends that proposed token with `POST /api/agent/register`; the Server stores only its hash and returns only the `server_id`. If the HTTP result is ambiguous, the Agent tries the WebSocket with its staged token before attempting another claim.
 
-To reduce duplicate placeholder servers, agents reuse the existing server row when they re-register with the same machine fingerprint. You can also set `auth.max_servers` to soft-cap newly enrolled servers, and use **Clean up unconnected** on the Servers page to remove offline placeholders that never finished initialization. A connected agent's run token can be rotated or revoked via `POST /api/agent/{id}/rotate-token`, which forces that agent to reconnect. After rotation the affected agent is disconnected and must be reconfigured with the new token, or re-enrolled with a fresh one-time enrollment code (the original code is single-use and was already consumed).
+The Server's `agent_authority.status` is either `claimed` or `unclaimed` and is independent of whether the Agent is currently online. The Agent Authority state and its outstanding offer are available from the Server detail APIs and UI. You can set `auth.max_servers` to cap new Server onboarding, and use **Clean up unconnected** to remove never-initialized offline placeholders.
 
-## Recovering a Reinstalled Agent
+## Re-enrollment and Revocation
 
-If an existing server was reinstalled and then re-registered as a new temporary online node, you can recover it from the original offline server detail page:
+Use the Server detail page's **Agent re-enrollment** action when a claimed Agent must receive a new run token:
 
-1. Open the original offline server.
-2. Click **Recover Agent**.
-3. Choose the recommended online replacement candidate.
-4. Start the recovery job.
+1. **Graceful** keeps the current authority valid while issuing an enrollment offer. The currently connected Agent continues running until the new claim succeeds.
+2. **Emergency** revokes the current authority immediately, fences the old connection, and issues an enrollment offer in the same transition.
 
-The original server record is kept. The replacement agent is asked to rebind onto the original server identity, and the recovery flow continues from there.
+Only one offer may be outstanding for a Server. Replacing or revoking it always targets the exact visible offer ID, so a stale browser cannot overwrite a newer offer. Revoking Agent Authority is a separate destructive action: it invalidates the current run token and disconnects the Agent, but deliberately does not issue a new offer.
 
-Recovery is designed for reinstalling the same logical machine. It is not intended for arbitrary record merges or hardware migrations to a different host.
+Agent Authority transitions are recorded as secret-free events. Their history remains available after the Server record is deleted.
 
 ## GeoIP Setup
 

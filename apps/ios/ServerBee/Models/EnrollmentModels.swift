@@ -1,7 +1,7 @@
 import Foundation
 
-/// A freshly-minted enrollment code. The plaintext `code` is returned ONLY at
-/// mint time (create / recover / regenerate) and can never be fetched again.
+/// A freshly issued enrollment code. The plaintext `code` is returned only at
+/// issue time and can never be fetched again.
 struct EnrollmentIssue: Decodable, Sendable {
     let id: String
     let code: String
@@ -18,48 +18,66 @@ struct EnrollmentIssue: Decodable, Sendable {
 /// Request body for `POST /api/servers` (create a pending server). Mobile keeps
 /// this minimal — a name; the agent reports the rest after it connects.
 struct CreateServerRequest: Encodable, Sendable {
+    let onboardingRequestId: String
     let name: String
     var groupId: String?
 
     enum CodingKeys: String, CodingKey {
         case name
+        case onboardingRequestId = "onboarding_request_id"
         case groupId = "group_id"
     }
 }
 
-/// `POST /api/servers` response: the new (pending) server id + its first code.
+/// `POST /api/servers` may replay an earlier request. Replay never recovers the
+/// original plaintext code and only returns current offer metadata.
 struct CreateServerResponse: Decodable, Sendable {
     let serverId: String
-    let enrollment: EnrollmentIssue
+    let replayed: Bool
+    let enrollment: EnrollmentIssue?
+    let outstandingOffer: OutstandingOffer?
 
     enum CodingKeys: String, CodingKey {
         case serverId = "server_id"
-        case enrollment
+        case replayed, enrollment
+        case outstandingOffer = "outstanding_offer"
     }
 }
 
-/// Body for `POST /api/servers/{id}/recover`. When `revokeImmediately` is true
-/// the existing agent token is cleared and the connected agent kicked.
-struct RecoverRequest: Encodable, Sendable {
-    let revokeImmediately: Bool
+enum ReenrollmentMode: String, Encodable, Sendable {
+    case graceful
+    case emergency
+}
+
+struct ReenrollmentRequest: Encodable, Sendable {
+    let mode: ReenrollmentMode
+}
+
+struct IssueOfferRequest: Encodable, Sendable {
+    enum CodingKeys: CodingKey {}
+}
+
+struct RevokeOfferResponse: Decodable, Sendable {
+    let offerId: String
+    let alreadyRevoked: Bool
 
     enum CodingKeys: String, CodingKey {
-        case revokeImmediately = "revoke_immediately"
+        case offerId = "offer_id"
+        case alreadyRevoked = "already_revoked"
     }
 }
 
-/// Body for `POST /api/servers/{id}/regenerate-code`. Omit `expectedEnrollmentId`
-/// for last-writer-wins (mobile default).
-struct RegenerateCodeRequest: Encodable, Sendable {
-    var expectedEnrollmentId: String?
+struct RevokeAuthorityResponse: Decodable, Sendable {
+    let serverId: String
+    let changed: Bool
 
     enum CodingKeys: String, CodingKey {
-        case expectedEnrollmentId = "expected_enrollment_id"
+        case serverId = "server_id"
+        case changed
     }
 }
 
-/// Both recover and regenerate return `{ enrollment }`.
-struct EnrollmentOnlyResponse: Decodable, Sendable {
+struct EnrollmentOfferResponse: Decodable, Sendable {
     let enrollment: EnrollmentIssue
 }
 

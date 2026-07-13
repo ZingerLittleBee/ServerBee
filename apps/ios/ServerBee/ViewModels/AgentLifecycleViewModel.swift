@@ -1,8 +1,6 @@
 import SwiftUI
 
-/// Drives agent lifecycle actions (admin-only, server-enforced): create a
-/// pending server, recover/regenerate its enrollment code, trigger an agent
-/// upgrade, and delete a server. Each mint returns a one-time plaintext code.
+/// Drives request-idempotent Server onboarding and Agent Authority actions.
 @MainActor
 @Observable
 final class AgentLifecycleViewModel {
@@ -11,6 +9,9 @@ final class AgentLifecycleViewModel {
 
     /// The most recently minted code + its install command, for display.
     var issued: IssuedEnrollment?
+    var onboardingReplay: OnboardingReplay?
+
+    private(set) var onboardingRequestId = UUID().uuidString
 
     /// Newest released agent version (for the upgrade affordance). `nil` until loaded.
     var latestVersion: String?
@@ -20,6 +21,12 @@ final class AgentLifecycleViewModel {
         let code: String
         let expiresAt: String
         let installCommand: String
+    }
+
+    struct OnboardingReplay: Identifiable {
+        var id: String { serverId }
+        let serverId: String
+        let outstandingOffer: OutstandingOffer?
     }
 
     // MARK: - Create
@@ -34,9 +41,21 @@ final class AgentLifecycleViewModel {
         do {
             let resp: CreateServerResponse = try await apiClient.post(
                 "/api/servers",
-                body: CreateServerRequest(name: name, groupId: nil)
+                body: CreateServerRequest(
+                    onboardingRequestId: onboardingRequestId,
+                    name: name,
+                    groupId: nil
+                )
             )
-            issued = makeIssued(resp.enrollment, serverUrl: serverUrl)
+            if let enrollment = resp.enrollment {
+                issued = makeIssued(enrollment, serverUrl: serverUrl)
+                onboardingReplay = nil
+            } else {
+                onboardingReplay = OnboardingReplay(
+                    serverId: resp.serverId,
+                    outstandingOffer: resp.outstandingOffer
+                )
+            }
             return resp.serverId
         } catch {
             errorMessage = message(for: error)
@@ -44,20 +63,50 @@ final class AgentLifecycleViewModel {
         }
     }
 
-    // MARK: - Regenerate (pending server: mint a fresh code)
-
-    func regenerateCode(serverId: String, serverUrl: String?, apiClient: APIClient) async {
-        await mint(path: "/api/servers/\(serverId)/regenerate-code",
-                   body: RegenerateCodeRequest(expectedEnrollmentId: nil),
-                   serverUrl: serverUrl, apiClient: apiClient)
+    func resetOnboarding() {
+        onboardingRequestId = UUID().uuidString
+        onboardingReplay = nil
+        issued = nil
+        errorMessage = nil
     }
 
-    // MARK: - Recover (enrolled server: mint a new code, optionally revoke token)
+    // MARK: - Agent Authority
 
-    func recover(serverId: String, revokeImmediately: Bool, serverUrl: String?, apiClient: APIClient) async {
-        await mint(path: "/api/servers/\(serverId)/recover",
-                   body: RecoverRequest(revokeImmediately: revokeImmediately),
-                   serverUrl: serverUrl, apiClient: apiClient)
+    func issueOffer(serverId: String, serverUrl: String?, apiClient: APIClient) async {
+        await mint(
+            path: "/api/servers/\(serverId)/agent-authority/offers",
+            body: IssueOfferRequest(),
+            serverUrl: serverUrl,
+            apiClient: apiClient
+        )
+    }
+
+    func replaceOffer(
+        serverId: String,
+        offerId: String,
+        serverUrl: String?,
+        apiClient: APIClient
+    ) async {
+        await mint(
+            path: "/api/servers/\(serverId)/agent-authority/offers/\(offerId)/replace",
+            body: IssueOfferRequest(),
+            serverUrl: serverUrl,
+            apiClient: apiClient
+        )
+    }
+
+    func beginReenrollment(
+        serverId: String,
+        mode: ReenrollmentMode,
+        serverUrl: String?,
+        apiClient: APIClient
+    ) async {
+        await mint(
+            path: "/api/servers/\(serverId)/agent-authority/re-enrollment",
+            body: ReenrollmentRequest(mode: mode),
+            serverUrl: serverUrl,
+            apiClient: apiClient
+        )
     }
 
     private func mint(path: String, body: any Encodable & Sendable, serverUrl: String?, apiClient: APIClient) async {
@@ -65,7 +114,7 @@ final class AgentLifecycleViewModel {
         errorMessage = nil
         defer { isWorking = false }
         do {
-            let resp: EnrollmentOnlyResponse = try await apiClient.post(path, body: body)
+            let resp: EnrollmentOfferResponse = try await apiClient.post(path, body: body)
             issued = makeIssued(resp.enrollment, serverUrl: serverUrl)
         } catch {
             errorMessage = message(for: error)
@@ -99,17 +148,29 @@ final class AgentLifecycleViewModel {
         }
     }
 
-    // MARK: - Revoke outstanding enrollment
-
-    /// Revoke an outstanding (unconsumed) enrollment so a fresh recover can mint
-    /// a new code. The `enrollmentId` is `ServerConfig.outstandingEnrollment.id`
-    /// — NOT the server id. Returns true on success.
-    func revokeEnrollment(enrollmentId: String, apiClient: APIClient) async -> Bool {
+    func revokeOffer(serverId: String, offerId: String, apiClient: APIClient) async -> Bool {
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
         do {
-            let _: String = try await apiClient.delete("/api/agent/enrollments/\(enrollmentId)")
+            let _: RevokeOfferResponse = try await apiClient.delete(
+                "/api/servers/\(serverId)/agent-authority/offers/\(offerId)"
+            )
+            return true
+        } catch {
+            errorMessage = message(for: error)
+            return false
+        }
+    }
+
+    func revokeAuthority(serverId: String, apiClient: APIClient) async -> Bool {
+        isWorking = true
+        errorMessage = nil
+        defer { isWorking = false }
+        do {
+            let _: RevokeAuthorityResponse = try await apiClient.delete(
+                "/api/servers/\(serverId)/agent-authority"
+            )
             return true
         } catch {
             errorMessage = message(for: error)
@@ -156,7 +217,7 @@ final class AgentLifecycleViewModel {
             if let msg = AccountSecurityViewModel.errorMessage(from: data) { return msg }
             switch code {
             case 403: return String(localized: "Admin permission required")
-            case 404: return String(localized: "Agent not connected")
+            case 404: return String(localized: "Server or enrollment offer not found")
             case 409: return String(localized: "An upgrade or enrollment is already in progress")
             default: break
             }

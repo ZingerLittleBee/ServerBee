@@ -228,6 +228,27 @@ final class BrowserMessageDecodingTests: XCTestCase {
         }
     }
 
+    func test_decode_agentAuthorityChanged() throws {
+        let json = """
+        {
+          "type": "agent_authority_changed",
+          "server_id": "abc-123",
+          "agent_authority": {
+            "status": "unclaimed",
+            "outstanding_offer": null
+          }
+        }
+        """
+        let msg = try decode(json)
+        if case let .agentAuthorityChanged(serverId, authority) = msg {
+            XCTAssertEqual(serverId, "abc-123")
+            XCTAssertEqual(authority.status, .unclaimed)
+            XCTAssertNil(authority.outstandingOffer)
+        } else {
+            XCTFail("Expected .agentAuthorityChanged, got \(msg)")
+        }
+    }
+
     func test_decode_capabilitiesChanged() throws {
         let json = """
         {

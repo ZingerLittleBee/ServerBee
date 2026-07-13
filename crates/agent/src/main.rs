@@ -4,15 +4,14 @@ mod collector;
 mod config;
 mod docker;
 mod file_manager;
-mod fingerprint;
 mod firewall;
 mod ip_quality;
 mod network_prober;
 mod pinger;
 mod probe_utils;
-mod rebind;
 mod register;
 mod reporter;
+mod run_token_store;
 mod security;
 mod terminal;
 mod traceroute;
@@ -198,31 +197,24 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    let machine_fingerprint = fingerprint::generate();
-    if !machine_fingerprint.is_empty() {
-        tracing::info!(
-            "Machine fingerprint: {}...{}",
-            &machine_fingerprint[..8],
-            &machine_fingerprint[56..]
-        );
-    }
-
     if config.token.is_empty() {
         if config.enrollment_code.is_empty() {
             anyhow::bail!(
-                "No token and no enrollment_code. Generate a one-time code in the \
-                 server UI (Settings) and set `enrollment_code` in agent.toml or the \
+                "No token and no enrollment_code. Add a Server in the server UI and set \
+                 its one-time code as `enrollment_code` in agent.toml or the \
                  SERVERBEE_ENROLLMENT_CODE environment variable."
             );
         }
-        tracing::info!("No token found, registering...");
-        match register::register_agent_with_backoff(&config, &machine_fingerprint).await {
-            Ok((server_id, token)) => {
+        tracing::info!("No run token found, staging one before claiming Agent authority...");
+        match register::register_agent_with_backoff(&mut config).await {
+            Ok(register::RegistrationOutcome::Confirmed { server_id }) => {
                 tracing::info!("Registration successful (server_id={server_id})");
-                if let Err(e) = register::save_token(&token) {
-                    tracing::warn!("Failed to save token: {e}");
-                }
-                config.token = token;
+            }
+            Ok(register::RegistrationOutcome::Ambiguous) => {
+                tracing::warn!(
+                    "Registration response was ambiguous; trying WebSocket authentication with \
+                     the staged run token before retrying the same claim"
+                );
             }
             Err(register::RegisterError::PermanentAuth(msg)) => {
                 eprintln!(
@@ -259,15 +251,9 @@ async fn main() -> anyhow::Result<()> {
         security_tx,
     );
 
-    let mut reporter = Reporter::new(config, machine_fingerprint, capabilities);
+    let mut reporter = Reporter::new(config, capabilities);
     reporter.run_with_external(Some(security_rx)).await;
     Ok(())
-}
-
-#[cfg(test)]
-#[test]
-fn persist_rebind_token() {
-    crate::rebind::assert_persist_rebind_token();
 }
 
 #[cfg(test)]

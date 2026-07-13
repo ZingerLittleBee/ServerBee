@@ -93,18 +93,13 @@ docker run -d \
   --pid=host \
   -v /proc:/host/proc:ro \
   -v /sys:/host/sys:ro \
-  -v /etc/machine-id:/etc/machine-id:ro \
   -v /etc/serverbee:/etc/serverbee \
   --restart unless-stopped \
   ghcr.io/zingerlittlebee/serverbee-agent:latest
 ```
 
 <Callout type="warn">
-`/etc/serverbee` 挂载是必须的。Agent 注册成功后会将 Token 写入 `agent.toml`。如果不挂载此目录，容器重建后会重新注册并产生重复的服务器记录。
-</Callout>
-
-<Callout type="warn">
-请同时挂载宿主机的 `/etc/machine-id`，这样容器重建后 Agent 指纹才能保持稳定。
+`/etc/serverbee` 挂载是必须的。Agent 在领取 Enrollment Offer 前会生成 run token，并原子写入 `agent.toml`。若没有持久化存储，容器重建后会丢失 Server 已接受的凭据。
 </Callout>
 
 **Docker 部署的限制：**
@@ -115,11 +110,11 @@ docker run -d \
 
 ## 注册流程
 
-Agent 通过 **Token** 向 Server 认证。获取 Token 有两种方式：一次性注册码（推荐）或手动创建的 Token。
+Agent 使用自己持有的 **run token** 向 Server 认证。Agent 会在领取一次性 Enrollment Offer 前本地生成并持久化该 secret；Server 只保存哈希，永远不会返回明文 token。
 
 ### 通过注册码注册（推荐）
 
-1. 以管理员身份登录 Server 管理面板，进入「设置」页面生成一个一次性**注册码**（也可通过 `POST /api/agent/enrollments` 生成，仅管理员可用）。注册码为**单次使用**且**短时有效**（默认 10 分钟过期），每接入一台新 Agent 都需重新生成。
+1. 以管理员身份登录后选择「添加服务器」。Server onboarding 会在同一事务中创建 Server 身份和一次性 **Enrollment Offer**。注册码单次使用、默认 10 分钟有效，且明文只显示一次。
 2. 用注册码配置 Agent，可通过环境变量：
 
 ```bash
@@ -132,24 +127,24 @@ serverbee-agent
 
 ```toml title="/etc/serverbee/agent.toml"
 server_url = "http://your-server-ip:9527"
-enrollment_code = "<设置页生成的一次性注册码>"
-# 首次运行时留空，注册成功后会自动写入
+enrollment_code = "<添加服务器时显示的一次性注册码>"
+# 首次运行时留空，Agent 会在 claim 前生成并持久化
 token = ""
 ```
 
 3. 启动 Agent。首次运行（无 token）时，它会：
-   - 向 Server 发送注册请求 `POST /api/agent/register`，携带一次性注册码
-   - 从 Server 接收 `server_id` 和每服务器的 `token`（注册码在此次首次注册成功时被消费）
-   - 将 token 自动写回配置文件
+   - 生成高熵 run token，并在发出 claim 前原子写入配置
+   - 调用 `POST /api/agent/register`，同时提交一次性注册码和 `proposed_run_token`
+   - 只接收 `server_id`；Server 在消费 Offer 的同一事务中保存 token 哈希
    - 后续所有会话都使用 token 通过 WebSocket 连接——注册码不再需要
 
 后续运行（已有 token）时，Agent 直接通过 WebSocket 连接，发送静态系统信息，并按配置的间隔周期上报指标。
 
-当 Agent 能读取稳定的机器标识时，还会在注册请求中携带指纹。相同机器重复注册时会复用原有服务器记录，而不是继续创建重复的占位条目。如果注册码丢失、过期或已被使用，Server 会返回 HTTP 401，Agent 日志中会出现 `Registration failed: HTTP 401 ... enrollment code ... expired or already used`；到「设置」页重新生成一个新码即可重试。
+若 HTTP 结果不明确，Agent 会先用已落盘的 token 尝试 WebSocket。成功即可证明 claim 已提交；被拒绝时仍可用同一 code/token 重试。若注册码丢失，应在既有 Server 上按可见的精确 Offer ID 替换 Outstanding Offer，不会发生无条件覆盖。
 
 ### 更正错误的注册码
 
-如果安装时把注册码（或 `server_url`）填错了，且 Agent **尚未注册成功**（配置中还没有 `token`），无需重装即可更正。注册码为单次使用，填错或已被消费的码无法重复使用——必要时先到管理面板「设置」页重新生成一个新码，再执行：
+如果安装时把注册码（或 `server_url`）填错了，且 Agent 尚未完成 claim，无需重装即可更正。需要新码时，先在 Server 页面按精确 ID 替换当前 Outstanding Offer，再执行：
 
 ```bash
 serverbee config set enrollment_code <新注册码> -y
@@ -167,16 +162,7 @@ serverbee install agent --method <binary|docker> \
   --enrollment-code <新注册码> -y
 ```
 
-如果 Agent **已注册成功**（`agent.toml` 中已有 `token`），注册码便不再使用，无需更正；要把该 Agent 接到另一台 Server，只能用新 Server 的新码重新注册。
-
-### 手动指定 Token
-
-如果不想使用注册码，也可以在管理面板手动创建一条服务器记录，然后把它的 token 直接填进配置：
-
-```toml
-server_url = "http://your-server-ip:9527"
-token = "从管理面板获取的 Agent Token"
-```
+Agent 完成 claim 后便不再使用注册码。替换或重装时使用「Agent 重新接入」：平滑模式会保留当前 Authority，直到新 Agent claim；紧急模式会立即吊销 Authority 并封锁当前连接。
 
 ## 配置文件
 
@@ -196,7 +182,7 @@ Agent 按以下顺序读取 TOML 配置文件：
 # 必填：ServerBee Server 的地址
 server_url = "http://your-server-ip:9527"
 
-# 认证 Token（注册成功后自动写入）
+# Agent 自有 run token（注册前由 Agent 生成并落盘）
 token = ""
 
 # 首次注册用的一次性注册码（仅在 token 为空时使用）
@@ -216,7 +202,7 @@ file = ""                      # 日志文件路径（留空仅输出到 stdout�
 |--------|------|--------|------|
 | `server_url` | string | 必填 | ServerBee Server 的地址 |
 | `enrollment_code` | string | `""` | 一次性注册码，仅首次注册时需要；注册成功后即被消费，拥有 token 后无需再填 |
-| `token` | string | 自动生成 | Agent Token，注册成功后自动写入 |
+| `token` | string | Agent 生成 | Agent 在 claim 前原子写入的 run token；Server 仅保存哈希 |
 | `collector.interval` | int | `3` | 指标采集间隔，单位秒；可被 Server 的 Welcome 消息覆盖 |
 | `collector.enable_gpu` | bool | `false` | 是否启用 GPU 指标采集 |
 | `collector.enable_temperature` | bool | `true` | 是否启用温度采集 |

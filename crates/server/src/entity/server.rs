@@ -46,7 +46,6 @@ pub struct Model {
     #[sea_orm(default_value = "[]")]
     pub features: String,
     pub last_remote_addr: Option<String>,
-    pub fingerprint: Option<String>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

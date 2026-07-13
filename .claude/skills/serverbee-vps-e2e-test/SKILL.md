@@ -1,6 +1,6 @@
 ---
 name: serverbee-vps-e2e-test
-description: Run the ServerBee install.sh deploy / agent-recover end-to-end regression on a real Linux VPS — cross-compile the current branch locally, push the binary or docker image to the VPS, then execute install.sh against it and verify HTTPS + agent connection. Use this whenever the user wants to validate deploy changes on a real VPS, smoke-test install.sh after editing it, verify the agent.toml refresh / recover flow, check that Caddy + Let's Encrypt automation still works, or test the binary vs docker agent install paths. Trigger on phrases like "用 VPS 跑下测试", "跑 deploy 回归", "测 recover 闭环", "test the installer on VPS", "VPS regression", "在 VPS 上验一下", "跑下 runbook" — even when the user doesn't name a specific runbook.
+description: Run the ServerBee install.sh deploy / Agent re-enrollment end-to-end regression on a real Linux VPS — cross-compile the current branch locally, push the binary or docker image to the VPS, then execute install.sh against it and verify HTTPS + agent connection. Use this whenever the user wants to validate deploy changes on a real VPS, smoke-test install.sh after editing it, verify the Agent Authority re-enrollment flow, check that Caddy + Let's Encrypt automation still works, or test the binary vs docker agent install paths. Trigger on phrases like "用 VPS 跑下测试", "跑 deploy 回归", "测重新接入闭环", "test the installer on VPS", "VPS regression", "在 VPS 上验一下", "跑下 runbook" — even when the user doesn't name a specific runbook.
 ---
 
 # ServerBee VPS e2e regression
@@ -8,7 +8,7 @@ description: Run the ServerBee install.sh deploy / agent-recover end-to-end regr
 End-to-end regression for ServerBee's `deploy/install.sh` against a real Linux VPS, using the **current branch's** code (not the released ghcr image). Two canonical runbooks already live in the repo:
 
 - `tests/manual/full-deploy-e2e.md` — full lifecycle (server + agent docker + agent binary + uninstall)
-- `tests/manual/agent-recover-e2e.md` — narrow recover-only flow (agent.toml refresh, ~3 min)
+- `tests/manual/agent-reenrollment-e2e.md` — narrow Agent Authority re-enrollment flow
 
 This skill orchestrates them autonomously. The runbooks are reference; SKILL.md routes + handles credentials + reports.
 
@@ -17,26 +17,26 @@ This skill orchestrates them autonomously. The runbooks are reference; SKILL.md 
 Run this skill whenever the user wants to exercise the deploy flow on a real VPS — explicitly named or not. Concrete triggers:
 
 - After editing `deploy/install.sh` (any path)
-- After editing `crates/server/src/router/api/server.rs` recover endpoint or related routes
-- After editing front-end `recover-agent-dialog.tsx` / `regenerate-code-dialog.tsx` / `add-server-dialog.tsx` mutation paths
+- After editing the Agent Authority re-enrollment, offer, or revocation routes
+- After editing front-end `agent-reenrollment-dialog.tsx` / `enrollment-offer-dialog.tsx` / `add-server-dialog.tsx` mutation paths
 - After editing `Dockerfile*` or the `docker-compose.*.yml` shapes install.sh generates
 - After a sea-orm migration / OnboardingResponse change
-- Whenever the user says some variation of "在 VPS 上跑一遍", "测下 deploy", "跑下 recover", "VPS 回归", "run the install.sh test"
+- Whenever the user says some variation of "在 VPS 上跑一遍", "测下 deploy", "跑下重新接入", "VPS 回归", "run the install.sh test"
 
 Do **not** trigger for: `cargo test` / `bun run test` unit tests, local-only smoke tests on the user's laptop, or anything that doesn't touch deploy/install.
 
 ## Step 1 — Pick the runbook
 
-Default to **full-deploy**. Narrow to recover-only if and only if the change is clearly localized to the recover slice.
+Default to **full-deploy**. Narrow to re-enrollment-only if and only if the change is clearly localized to the Agent Authority lifecycle slice.
 
 | Recent change touches… | Use |
 | --- | --- |
 | `deploy/install.sh` main paths / `cmd_domain` / Caddyfile gen / `install_*_{server,agent}` | full-deploy |
 | Migration / `auth.rs` middleware / OnboardingResponse / Dockerfiles | full-deploy |
 | `Cargo.toml` / dep bumps where you want a smoke confirmation | full-deploy |
-| Only the recover endpoint, recover-agent-dialog, or the `agent.toml` `else` branch (`toml_set` of `server_url` / `enrollment_code` / `token`) | agent-recover |
+| Only Agent Authority routes, re-enrollment UI, or Agent-side staged-token claim recovery | agent-reenrollment |
 | User says "全部跑一遍" / "complete deploy" / "from scratch" | full-deploy |
-| User says "只测 recover" / "fast" / "just the refresh" | agent-recover |
+| User says "只测重新接入" / "fast" / "just re-enrollment" | agent-reenrollment |
 | Genuinely unsure | full-deploy (superset) |
 
 State your choice in one sentence before going further: e.g. *"Running tests/manual/full-deploy-e2e.md because the change touches install.sh §install_docker_server."*
@@ -65,7 +65,7 @@ Read the chosen runbook top to bottom. Follow it section by section, but keep th
 
 - **Binary mode test**: install.sh's `install_binary_agent` has an adopt-mode short-circuit at [`deploy/install.sh:1502`](../../../deploy/install.sh#L1502): `if [ -f "${INSTALL_DIR}/serverbee-agent" ] then ... "skipping download (adopting existing)"`. Before running install.sh in binary mode, `scp` your locally built `target/x86_64-unknown-linux-musl/release/serverbee-agent` to `/opt/serverbee/bin/serverbee-agent` and `chmod +x`. install.sh will then use *your* binary and still write agent.toml + systemd unit. Without this, install.sh downloads the released v1.0.0-alpha.4 binary from GitHub — useful for testing install.sh itself, but not testing your branch's binary.
 
-- **Recover test** (the agent.toml `else` branch): the exact sequence is `uninstall agent --yes` (no `--purge` — that preserves agent.toml, which is the prerequisite for hitting the refresh branch) → recover endpoint with `revoke_immediately: true` → `install agent --enrollment-code <new>` → cat `/opt/serverbee/etc/agent.toml` and check the three fields (see §7.4 of the recover runbook). Directly re-running `install agent` without uninstall is rejected by install.sh's `meta_has` guard.
+- **Re-enrollment test**: follow `tests/manual/agent-reenrollment-e2e.md` exactly. Exercise both `graceful` and `emergency`, use the exact visible offer ID for replacement or revocation, confirm the Agent persists its proposed run token before claim, and verify the old WebSocket is fenced. Do not expect the Server to return a run token.
 
 - **Onboarding**: a freshly installed server has `must_change_password=true` on the admin user. Only `POST /api/auth/onboarding` is whitelisted (see `is_onboarding_whitelisted` in `crates/server/src/middleware/auth.rs`); calling `PUT /api/auth/password` first returns `MUST_CHANGE_PASSWORD` and stops you. Login → `/api/auth/onboarding` with `new_password` → then everything else opens up.
 
@@ -87,7 +87,7 @@ End with a summary in this exact shape so multiple runs are easy to compare:
 ```
 ## VPS e2e regression result
 
-Runbook: <full-deploy | agent-recover>
+Runbook: <full-deploy | agent-reenrollment>
 VPS: <ipv4>, <distro/version>, <cpu/cores>
 Domain: <domain>
 Total: <m:ss>
@@ -100,7 +100,7 @@ Total: <m:ss>
 - [✓ | ✗ | -] onboarding + create server
 - [✓ | ✗ | -] install.sh install agent --method docker
 - [✓ | ✗ | -] install.sh install agent --method binary
-- [✓ | ✗ | -] recover flow (agent.toml three-field check)
+- [✓ | ✗ | -] Agent Authority re-enrollment + fencing
 - [✓ | ✗ | -] uninstall --purge → clean
 
 ### Evidence
@@ -113,7 +113,7 @@ Total: <m:ss>
 <one sentence: PASS / PARTIAL / FAIL, plus the deciding stage>
 ```
 
-Use `-` for stages the chosen runbook doesn't cover (e.g. recover-only skips most full-deploy stages). On a hard fail, name the runbook section, paste the exact error, and stop the remaining stages rather than charging through teardown.
+Use `-` for stages the chosen runbook doesn't cover (e.g. re-enrollment-only skips most full-deploy stages). On a hard fail, name the runbook section, paste the exact error, and stop the remaining stages rather than charging through teardown.
 
 ## Failure-mode quick map
 
@@ -122,8 +122,8 @@ The canonical table is in [`tests/manual/full-deploy-e2e.md` §9](../../../tests
 - `[ERROR] Failed to get latest version from GitHub` → VPS can't reach api.github.com (firewall / DNS), or you tried to use `RESOLVED_VERSION` env to override (doesn't work, line 745 nukes it).
 - `MUST_CHANGE_PASSWORD` on `/api/servers` → forgot `POST /api/auth/onboarding` first.
 - compose `Pulling` from ghcr instead of using local image → local tag isn't `${PROD_TAG}` exactly. Re-`docker tag` and re-run.
-- `serverbee-agent.service: status=78/CONFIG` → enrollment code expired/used; recover for a fresh one, clear `token` line, restart.
-- `serverbee-agent is already installed (...). Use 'upgrade'` → meta-file guard; for recover test you want `uninstall agent --yes` (no `--purge`) first, then re-install with new code.
+- `serverbee-agent.service: status=78/CONFIG` → enrollment code expired/used; issue or exactly replace the current offer, then retry with the same staged run token.
+- `serverbee-agent is already installed (...). Use 'upgrade'` → meta-file guard; use the dedicated temporary-Agent procedure in the re-enrollment runbook instead of overwriting a live installation.
 
 ## Related skills / docs
 

@@ -114,9 +114,9 @@ sudo serverbee uninstall server --purge    # 卸载服务端并清除数据
 
 Agent 是跑在被监控机器上的轻量探针，负责把 CPU、内存、磁盘、网络等指标上报给 Server。
 
-### 第一步：在 Server 生成一次性注册码
+### 第一步：添加 Server 并获取 enrollment offer
 
-以管理员身份登录管理面板，进入「Servers（服务器）」页面，点击「Add Server（添加服务器）」，输入新机器的名称并点击「Generate code（生成注册码）」，复制生成的一次性注册码（Enrollment Code）。此操作会同时创建一条待接入（Pending）的服务器记录，Agent 首次连接时会自动认领。
+以管理员身份登录管理面板，进入「Servers（服务器）」页面，点击「Add Server（添加服务器）」并提交机器配置。ServerBee 会原子地创建待接入 Server 及其绑定的 enrollment offer，然后显示一次性 code 和安装命令。
 
 注册码**只能用一次**，而且**很快过期**（默认 10 分钟），只在 Agent 首次注册时用得到。每接入一台新 Agent，就重新生成一个。
 
@@ -136,11 +136,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 Agent 推荐用二进制方式安装，这样才能采集到宿主机的完整指标；不建议用 Docker 跑 Agent。
 </Callout>
 
-Agent 首次启动会自动向 Server 注册：注册成功后注册码即作废，Agent 拿到一份专属 Token 并写回配置文件；之后启动都用这份持久化的 Token，不再需要注册码。如果某台 Agent 丢了 Token 要重新接入，去设置页再生成一个新码即可。
-
-<Callout type="info">
-当 Agent 能读到稳定的机器标识时，重复注册会复用已有的服务器记录，而不是新建一条占位条目。
-</Callout>
+Agent 首次启动时会在 claim offer 前自行生成并持久化 run token。Server 只保存其哈希并返回已有 `server_id`；之后启动都用这份持久化 token，不再需要注册码。如果 token 丢失，在该 Server 详情页发起 graceful 或 emergency 重新接入。
 
 ### 第三步：验证连接
 

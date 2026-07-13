@@ -38,24 +38,32 @@ describe('StatusDot', () => {
 })
 
 describe('deriveServerStatus', () => {
-  it('returns online when online and has_token is true', () => {
-    expect(deriveServerStatus({ online: true, has_token: true })).toBe('online')
+  it('returns online when authority is claimed and the agent is online', () => {
+    expect(deriveServerStatus({ agent_authority: { outstanding_offer: null, status: 'claimed' }, online: true })).toBe(
+      'online'
+    )
   })
 
-  it('returns offline when not online and has_token is true', () => {
-    expect(deriveServerStatus({ online: false, has_token: true })).toBe('offline')
+  it('returns offline when authority is claimed and the agent is offline', () => {
+    expect(deriveServerStatus({ agent_authority: { outstanding_offer: null, status: 'claimed' }, online: false })).toBe(
+      'offline'
+    )
   })
 
-  it('returns pending when has_token is false and offline', () => {
-    expect(deriveServerStatus({ online: false, has_token: false })).toBe('pending')
+  it('returns pending when authority is unclaimed', () => {
+    expect(
+      deriveServerStatus({ agent_authority: { outstanding_offer: null, status: 'unclaimed' }, online: false })
+    ).toBe('pending')
   })
 
-  it('returns pending when has_token is false even if online (has_token wins)', () => {
-    expect(deriveServerStatus({ online: true, has_token: false })).toBe('pending')
+  it('lets unclaimed authority win over a stale online fact', () => {
+    expect(
+      deriveServerStatus({ agent_authority: { outstanding_offer: null, status: 'unclaimed' }, online: true })
+    ).toBe('pending')
   })
 
-  it('treats undefined has_token as "has token, just old payload" (defensive default)', () => {
-    expect(deriveServerStatus({ online: true })).toBe('online')
-    expect(deriveServerStatus({ online: false })).toBe('offline')
+  it('falls back to has_token only for legacy payloads', () => {
+    expect(deriveServerStatus({ has_token: false, online: false })).toBe('pending')
+    expect(deriveServerStatus({ has_token: true, online: true })).toBe('online')
   })
 })

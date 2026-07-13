@@ -2,7 +2,7 @@ import XCTest
 @testable import ServerBee
 
 /// Decoding / encoding coverage for M9 agent-lifecycle models, matching the live
-/// `/api/servers` (create / recover / regenerate) and `/api/agent/latest-version`
+/// `/api/servers`, Agent Authority, and `/api/agent/latest-version`
 /// payloads verified against the demo backend.
 final class EnrollmentModelsDecodingTests: XCTestCase {
     private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
@@ -18,6 +18,8 @@ final class EnrollmentModelsDecodingTests: XCTestCase {
     func test_createServerResponse_decodes() throws {
         let json = """
         { "server_id": "8455ce93-41ba-4c9c-8969-19037f7ba711",
+          "replayed": false,
+          "outstanding_offer": null,
           "enrollment": {
             "id": "76623365-7cae-4d1c-932d-198a91d7da8c",
             "code": "SBENROLL-9F2A-7C41-DE08",
@@ -27,24 +29,26 @@ final class EnrollmentModelsDecodingTests: XCTestCase {
         """
         let resp = try decode(CreateServerResponse.self, json)
         XCTAssertEqual(resp.serverId, "8455ce93-41ba-4c9c-8969-19037f7ba711")
-        XCTAssertEqual(resp.enrollment.code, "SBENROLL-9F2A-7C41-DE08")
-        XCTAssertEqual(resp.enrollment.codePrefix, "gs1QPJIl")
-        XCTAssertEqual(resp.enrollment.id, "76623365-7cae-4d1c-932d-198a91d7da8c")
+        XCTAssertFalse(resp.replayed)
+        XCTAssertEqual(resp.enrollment?.code, "SBENROLL-9F2A-7C41-DE08")
+        XCTAssertEqual(resp.enrollment?.codePrefix, "gs1QPJIl")
+        XCTAssertEqual(resp.enrollment?.id, "76623365-7cae-4d1c-932d-198a91d7da8c")
     }
 
     func test_createServerRequest_encodesGroupIdSnakeCase() throws {
-        let json = try encode(CreateServerRequest(name: "edge-01", groupId: "grp-1"))
+        let json = try encode(CreateServerRequest(onboardingRequestId: "request-1", name: "edge-01", groupId: "grp-1"))
+        XCTAssertTrue(json.contains("\"onboarding_request_id\":\"request-1\""))
         XCTAssertTrue(json.contains("\"name\":\"edge-01\""))
         XCTAssertTrue(json.contains("\"group_id\":\"grp-1\""))
     }
 
     func test_createServerRequest_omitsNilGroupId() throws {
-        let json = try encode(CreateServerRequest(name: "edge-02", groupId: nil))
+        let json = try encode(CreateServerRequest(onboardingRequestId: "request-2", name: "edge-02", groupId: nil))
         XCTAssertTrue(json.contains("\"name\":\"edge-02\""))
         XCTAssertFalse(json.contains("group_id"))
     }
 
-    // MARK: - Recover / Regenerate
+    // MARK: - Agent Authority
 
     func test_enrollmentOnlyResponse_decodes() throws {
         let json = """
@@ -55,24 +59,68 @@ final class EnrollmentModelsDecodingTests: XCTestCase {
             "expires_at": "2026-06-15T18:00:00Z"
           } }
         """
-        let resp = try decode(EnrollmentOnlyResponse.self, json)
+        let resp = try decode(EnrollmentOfferResponse.self, json)
         XCTAssertEqual(resp.enrollment.code, "SBENROLL-AAAA-BBBB-CCCC")
         XCTAssertEqual(resp.enrollment.codePrefix, "KhAzBgBs")
     }
 
-    func test_recoverRequest_encodesRevokeFlag() throws {
-        XCTAssertTrue(try encode(RecoverRequest(revokeImmediately: true)).contains("\"revoke_immediately\":true"))
-        XCTAssertTrue(try encode(RecoverRequest(revokeImmediately: false)).contains("\"revoke_immediately\":false"))
+    func test_reenrollmentRequest_encodesGracefulMode() throws {
+        XCTAssertTrue(try encode(ReenrollmentRequest(mode: .graceful)).contains("\"mode\":\"graceful\""))
     }
 
-    func test_regenerateRequest_omitsNilExpectedId() throws {
-        let json = try encode(RegenerateCodeRequest(expectedEnrollmentId: nil))
-        XCTAssertFalse(json.contains("expected_enrollment_id"))
+    func test_reenrollmentRequest_encodesEmergencyMode() throws {
+        XCTAssertTrue(try encode(ReenrollmentRequest(mode: .emergency)).contains("\"mode\":\"emergency\""))
     }
 
-    func test_regenerateRequest_encodesExpectedIdSnakeCase() throws {
-        let json = try encode(RegenerateCodeRequest(expectedEnrollmentId: "enr-9"))
-        XCTAssertTrue(json.contains("\"expected_enrollment_id\":\"enr-9\""))
+    func test_createServerReplayDecodesOutstandingOfferWithoutPlaintext() throws {
+        let json = """
+        {
+          "server_id": "srv-1",
+          "replayed": true,
+          "enrollment": null,
+          "outstanding_offer": {
+            "id": "offer-1",
+            "code_prefix": "abcdef",
+            "expires_at": "2026-07-13T00:10:00Z",
+            "created_at": "2026-07-13T00:00:00Z"
+          }
+        }
+        """
+        let resp = try decode(CreateServerResponse.self, json)
+        XCTAssertTrue(resp.replayed)
+        XCTAssertNil(resp.enrollment)
+        XCTAssertEqual(resp.outstandingOffer?.id, "offer-1")
+    }
+
+    func test_serverConfigUsesCanonicalAgentAuthorityProjection() throws {
+        let json = """
+        {
+          "id": "srv-1",
+          "name": "edge-1",
+          "has_token": true,
+          "agent_authority": {
+            "status": "unclaimed",
+            "outstanding_offer": {
+              "id": "offer-1",
+              "code_prefix": "abcdef",
+              "expires_at": "2026-07-13T00:10:00Z",
+              "created_at": "2026-07-13T00:00:00Z"
+            }
+          }
+        }
+        """
+        let config = try decode(ServerConfig.self, json)
+        XCTAssertFalse(config.isEnrolled)
+        XCTAssertEqual(config.outstandingOffer?.id, "offer-1")
+    }
+
+    func test_outstandingOfferExpiryIsTerminalAtDeadline() throws {
+        let offer = try decode(
+            OutstandingOffer.self,
+            #"{"id":"offer-1","expires_at":"2026-07-13T00:10:00Z"}"#
+        )
+        XCTAssertFalse(offer.isExpired(at: Date(timeIntervalSince1970: 1_783_901_399)))
+        XCTAssertTrue(offer.isExpired(at: Date(timeIntervalSince1970: 1_783_901_400)))
     }
 
     // MARK: - Upgrade
@@ -114,5 +162,18 @@ final class EnrollmentModelsDecodingTests: XCTestCase {
     func test_installCommand_trimsWhitespaceOrigin() {
         let cmd = AgentLifecycleViewModel.installCommand(code: "C1", serverUrl: "  https://x.test  ")
         XCTAssertTrue(cmd.contains("--server-url 'https://x.test'"))
+    }
+
+    @MainActor
+    func test_onboardingRequestIdStaysStableUntilReset() {
+        let viewModel = AgentLifecycleViewModel()
+        let first = viewModel.onboardingRequestId
+
+        XCTAssertEqual(viewModel.onboardingRequestId, first)
+        viewModel.resetOnboarding()
+
+        XCTAssertNotEqual(viewModel.onboardingRequestId, first)
+        XCTAssertNil(viewModel.issued)
+        XCTAssertNil(viewModel.onboardingReplay)
     }
 }

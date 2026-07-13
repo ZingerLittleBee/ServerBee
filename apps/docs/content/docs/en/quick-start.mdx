@@ -114,9 +114,9 @@ sudo serverbee uninstall server --purge    # Uninstall and wipe data
 
 The agent is a lightweight probe running on each monitored machine; it reports CPU, memory, disk, and network metrics back to the server.
 
-### Step 1: Generate a one-time enrollment code on the server
+### Step 1: Add the Server and receive its enrollment offer
 
-Sign in to the dashboard as an admin, go to **Servers → Add Server**, enter a name for the new machine, click **Generate code**, and copy the one-time enrollment code. This also creates a pending server entry that the agent will claim when it first connects.
+Sign in to the dashboard as an admin, go to **Servers → Add Server**, enter the machine profile, and submit it. ServerBee atomically creates the pending Server and its bound enrollment offer, then shows the one-time code and install command.
 
 The code is **single-use** and **short-lived** (10 minute default expiry), and is only needed the first time an agent registers. Generate a fresh one for each new agent.
 
@@ -136,11 +136,7 @@ The script detects the architecture, downloads the binary, writes the config, re
 Install agents via the binary method — that's the only way to collect full host metrics. Running the agent in Docker is not recommended.
 </Callout>
 
-On its first start the agent registers with the server: once registration succeeds the code is spent, and the agent receives its own token and writes it back to the config file. Later starts use that persisted token and no longer need the code. If an agent loses its token and has to re-onboard, just generate a new code in Settings.
-
-<Callout type="info">
-When the agent can read a stable machine identifier, re-registering from the same host reuses the existing server entry instead of creating a duplicate placeholder.
-</Callout>
+On its first start, the Agent generates and persists its run token before claiming the offer. The Server stores only the hash and returns the existing `server_id`. Later starts use that persisted token and no longer need the code. If the token is lost, start graceful or emergency re-enrollment from that Server's detail page.
 
 ### Step 3: Verify the connection
 

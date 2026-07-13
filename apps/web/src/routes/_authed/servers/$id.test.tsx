@@ -68,8 +68,8 @@ vi.mock('@/components/server/server-edit-dialog', () => ({
   ServerEditDialog: () => null
 }))
 
-vi.mock('@/components/server/recover-agent-dialog', () => ({
-  RecoverAgentDialog: () => null
+vi.mock('@/components/server/agent-reenrollment-dialog', () => ({
+  AgentReenrollmentDialog: () => null
 }))
 
 vi.mock('@/components/server/status-badge', () => ({
@@ -243,10 +243,10 @@ describe('ServerDetailPage', () => {
     expect(headerGrid?.children[2]).toContainElement(editButton)
   })
 
-  it('shows recovery action for offline server when admin', () => {
+  it('shows Agent re-enrollment action for an admin', () => {
     render(<ServerDetailPage />)
 
-    expect(screen.getByText('Recover Agent')).toBeInTheDocument()
+    expect(screen.getByText('Agent re-enrollment')).toBeInTheDocument()
   })
 
   it('shows cost insights on the billing summary', () => {

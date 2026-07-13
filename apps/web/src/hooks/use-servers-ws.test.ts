@@ -125,3 +125,34 @@ describe('handleWsMessage network probe updates', () => {
     expect(received).toHaveLength(0)
   })
 })
+
+describe('handleWsMessage Agent Authority updates', () => {
+  it('projects a canonical Agent Authority change into the live catalog', () => {
+    const queryClient = new QueryClient()
+    handleWsMessage(
+      {
+        type: 'full_sync',
+        servers: [{ id: 'server-1', name: 'edge-1', online: true }]
+      },
+      queryClient
+    )
+
+    handleWsMessage(
+      {
+        type: 'agent_authority_changed',
+        server_id: 'server-1',
+        agent_authority: { outstanding_offer: null, status: 'unclaimed' }
+      },
+      queryClient
+    )
+
+    const servers = queryClient.getQueryData<
+      Array<{ agent_authority?: { outstanding_offer: unknown; status: string }; has_token?: boolean; online: boolean }>
+    >(['server-catalog', 'live'])
+    expect(servers?.[0]).toMatchObject({
+      agent_authority: { outstanding_offer: null, status: 'unclaimed' },
+      has_token: false,
+      online: false
+    })
+  })
+})

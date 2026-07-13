@@ -146,7 +146,7 @@ After deployment, configure your agents to connect:
 
 ```bash
 SERVERBEE_SERVER_URL=https://your-railway-app.up.railway.app
-SERVERBEE_ENROLLMENT_CODE=<one-time code from Settings>
+SERVERBEE_ENROLLMENT_CODE=<one-time code from Add Server>
 ```
 
-Sign in to the deployed server as an admin, open **Settings**, and generate a one-time enrollment code. The code is single-use and short-lived (default 10 min) and is consumed on the agent's first successful registration; mint a fresh one for each new agent.
+Sign in to the deployed server as an admin and choose **Add Server**. ServerBee atomically creates the Server profile and a bound enrollment offer, then shows its install command once. The offer is single-use and short-lived (default 10 min).

@@ -182,30 +182,26 @@ Server 首次启动时，如果 `users` 表为空，会自动创建管理员账�
 自动生成的密码只在日志中显示一次。请在日志轮转前记录下来，并在首次登录时完成强制改密，再将 Server 暴露到公网。
 </Callout>
 
-## 一次性注册码（Enrollment Code）
+## Agent 接入
 
-Agent 首次注册通过一次性注册码完成。由管理员在 Web 管理面板的「设置」页面生成（或调用 `POST /api/agent/enrollments`，仅管理员可用，返回 `{ id, code, expires_at }`）。注册码具有以下特性：
+添加 Server 是一个幂等的 onboarding 操作。`POST /api/servers` 必须携带 `onboarding_request_id`，并在同一个事务中创建 Server 配置、标签、默认探测目标、Agent Authority 事件和一个绑定到该 Server 的 enrollment offer。使用相同 request ID 和相同输入重试会返回已有 Server。重放响应绝不会再次返回明文 code，但可以标识当前 outstanding offer，管理员随后可精确替换该 offer。
 
-1. **单次使用** —— 在 Agent 首次成功注册时即被消费，之后不可再用
-2. **短时有效** —— 默认 10 分钟（600 秒）后过期
-3. 注册成功后 Agent 使用持久化的每台服务器专属 token，不再需要注册码
+Enrollment offer 绑定到具体 Server，单次使用且短时有效（默认 10 分钟）。它的终态只有 `consumed`、`revoked`、`replaced` 和 `expired`，进入终态后不能恢复为 outstanding。明文 code 仅在新建或替换 offer 时返回一次。
 
-如果注册码丢失、过期或已被使用，Server 返回 HTTP 401，Agent 日志会显示 `Registration failed: HTTP 401 ... enrollment code ... expired or already used`。需要接入新 Agent（或为丢失 token 的 Agent 重新接入）时，在设置页重新生成一个新注册码即可。可通过 `GET /api/agent/enrollments` 查看已生成的注册码列表（仅返回 8 位前缀等元信息，不会返回明文注册码），通过 `DELETE /api/agent/enrollments/{id}` 删除尚未使用的注册码。
+Agent 在 claim offer 前自行生成并持久化 run token，然后通过 `POST /api/agent/register` 提交 proposed token。Server 只保存哈希，并且只返回 `server_id`。如果 HTTP 结果不明确，Agent 会先用已暂存的 token 尝试 WebSocket，再决定是否重新 claim。
 
-为减少重复的占位服务器，Agent 在可读取稳定机器标识时会携带指纹，相同机器重复注册会复用原有服务器记录。你还可以通过 `auth.max_servers` 软限制通过注册码新建的服务器数量；如果历史失败注册留下了离线占位条目，可在 `/servers` 页面使用 **Clean up unconnected** 清理。已连接 Agent 的 run token 可通过 `POST /api/agent/{id}/rotate-token` 轮换/吊销，吊销后该 Agent 会被强制重新连接。轮换后该 Agent 会断开连接，必须用新 token 重新配置，或使用一个新的一次性 enrollment code 重新注册（原 code 单次使用且已被消费）。
+Server 的 `agent_authority.status` 只有 `claimed` 与 `unclaimed`，它与 Agent 当前是否在线相互独立。Server 详情 API 和 UI 会展示 Agent Authority 状态及 outstanding offer。你可以用 `auth.max_servers` 限制新 Server onboarding，并用 **Clean up unconnected** 清理从未初始化的离线占位条目。
 
-## 恢复重装后的 Agent
+## 重新接入与吊销
 
-如果一台已有服务器重装系统后重新注册成了一条新的临时在线节点，可以在原来的离线服务器详情页里发起恢复：
+已 claimed 的 Agent 需要更换 run token 时，在 Server 详情页使用 **Agent 重新接入**：
 
-1. 打开原来的离线服务器
-2. 点击 **恢复 Agent**
-3. 选择推荐的在线替代节点
-4. 启动恢复任务
+1. **Graceful** 保留现有 authority，同时发出 enrollment offer。新 claim 完成前，当前 Agent 可继续运行。
+2. **Emergency** 立即吊销现有 authority、隔离旧连接，并在同一状态转换中发出 enrollment offer。
 
-恢复会保留原始服务器记录，并要求替代 Agent 重新绑定到原来的服务器身份，后续恢复流程会继续在这个基础上执行。
+每个 Server 同时最多有一个 outstanding offer。替换或吊销必须指定界面中可见的准确 offer ID，过期页面因此不能覆盖较新的 offer。吊销 Agent Authority 是独立的破坏性操作，它会使当前 run token 失效并断开 Agent，但不会顺手生成新 offer。
 
-这个恢复流程用于“同一台逻辑机器重装后重新接回”。它不适用于任意两条服务器记录的合并，也不适用于迁移到完全不同的硬件主机。
+所有 Agent Authority 状态转换都会记录不含密钥的事件。即使 Server 记录已删除，历史事件仍会保留。
 
 ## GeoIP 设置
 

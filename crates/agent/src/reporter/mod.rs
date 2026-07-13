@@ -35,21 +35,15 @@ const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 
 pub struct Reporter {
     config: AgentConfig,
-    fingerprint: String,
     capabilities: Arc<CapabilityAuthority>,
     firewall_manager: Arc<FirewallManager>,
 }
 
 impl Reporter {
-    pub fn new(
-        config: AgentConfig,
-        fingerprint: String,
-        capabilities: Arc<CapabilityAuthority>,
-    ) -> Self {
+    pub fn new(config: AgentConfig, capabilities: Arc<CapabilityAuthority>) -> Self {
         let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
         Self {
             config,
-            fingerprint,
             capabilities,
             firewall_manager,
         }
@@ -94,19 +88,17 @@ impl Reporter {
                                  ({reregister_attempts}/{MAX_REREGISTER_ATTEMPTS})"
                             );
 
-                            match register::register_agent(&self.config, &self.fingerprint).await {
-                                Ok((server_id, token)) => {
+                            match register::register_agent(&mut self.config).await {
+                                Ok(register::RegistrationOutcome::Confirmed { server_id }) => {
                                     tracing::info!(
                                         "Re-registration successful for server {server_id}"
                                     );
-                                    if let Err(save_err) = register::save_token(&token) {
-                                        tracing::warn!(
-                                            "Failed to save refreshed token: {save_err}"
-                                        );
-                                    }
-                                    self.config.token = token;
                                     // Do NOT skip backoff — prevents tight re-registration loop
                                 }
+                                Ok(register::RegistrationOutcome::Ambiguous) => tracing::warn!(
+                                    "Re-registration response was ambiguous; the next WebSocket \
+                                     attempt will verify the staged token"
+                                ),
                                 Err(register_err) => {
                                     tracing::error!("Re-registration failed: {register_err}");
                                 }
@@ -1248,7 +1240,10 @@ mod tests {
         // returns Ok.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1293,7 +1288,10 @@ mod tests {
         // the fake server reads off the wire.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1328,7 +1326,10 @@ mod tests {
         // agent Pong over the real socket.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1357,7 +1358,10 @@ mod tests {
         // select! loop.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1406,7 +1410,10 @@ mod tests {
         // receive-dispatch path for a "silent" variant plus the Close arm.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1437,7 +1444,10 @@ mod tests {
         // Ok(()) (the normal-reconnect signal), not an error.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1471,7 +1481,10 @@ mod tests {
         // Drop the listener so the port refuses connections.
         drop(listener);
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
         let connect = connect.expect("connect should fail fast, not hang");
@@ -1490,7 +1503,10 @@ mod tests {
         // is bounded by an outer timeout that aborts the never-returning task.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         // Server: accept two connections; each time send Welcome, read
         // SystemInfo, then close. Signal each successful handshake.
@@ -1569,7 +1585,10 @@ mod tests {
         // the loop.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1602,7 +1621,10 @@ mod tests {
         // No WS frame results; we confirm liveness with Ping->Pong.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1640,7 +1662,10 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_TERMINAL;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(caps),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1735,7 +1760,7 @@ mod tests {
 
         let authority = CapabilityAuthority::new(base, grants_path);
         tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(100)));
-        let mut reporter = Reporter::new(config, "fp".to_string(), authority);
+        let mut reporter = Reporter::new(config, authority);
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1811,7 +1836,10 @@ mod tests {
         // ack, so the dispatcher always emits exactly one reply frame.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1837,7 +1865,10 @@ mod tests {
         // `nft` but the manager still returns a (failed-state) ack frame.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1867,7 +1898,10 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_FILE;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(caps),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -1914,7 +1948,7 @@ mod tests {
         let state = tempfile::tempdir().unwrap();
         let mut config = e2e_config(&addr, state.path());
         config.file = enabled_file_cfg(&root);
-        let mut reporter = Reporter::new(config, "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
 
         let dest = root.join("upload.bin");
         let dest_s = dest.to_string_lossy().to_string();
@@ -1956,7 +1990,10 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_EXEC;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(caps),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2002,7 +2039,10 @@ mod tests {
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
         let caps = ALL_CAPS & !serverbee_common::constants::CAP_UPGRADE;
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(caps));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(caps),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2045,7 +2085,10 @@ mod tests {
         // channel and forwarded over the WS. No traceroute subprocess spawns.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2087,7 +2130,10 @@ mod tests {
         // running, proven by a subsequent Ping->Pong.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -2115,7 +2161,10 @@ mod tests {
         // dispatching application messages via a ServerMessage::Ping->Pong.
         let (listener, addr) = bind_fake_server().await;
         let tmp = tempfile::tempdir().unwrap();
-        let mut reporter = Reporter::new(e2e_config(&addr, tmp.path()), "fp".to_string(), CapabilityAuthority::fixed(ALL_CAPS));
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
 
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;

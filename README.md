@@ -45,7 +45,7 @@ Open `http://your-server:9527`. The admin password is auto-generated and printed
 
 ### 2. Enroll an agent
 
-Sign in as admin → **Settings** → generate a one-time **enrollment code** (single-use, expires in ~10 min). Then on each node:
+Sign in as admin, choose **Add Server**, and copy the generated install command. Its Server-bound enrollment offer is single-use and expires in about 10 minutes. Then run it on that node:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent --method binary \
@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 > A **native binary is recommended for agents** — smallest footprint and full host-level metrics. Pass `--method docker` to run the agent in a container instead.
 
-The agent saves a per-server token on first connect and reconnects automatically afterwards — the code is only needed once. That's it. 🎉
+The Agent generates and persists its run token before claiming the offer, then reconnects automatically afterwards. The code is only needed once. That's it. 🎉
 
 ## Features
 
@@ -85,7 +85,7 @@ password = ""   # leave empty to auto-generate
 ```toml
 # /etc/serverbee/agent.toml
 server_url = "http://your-server:9527"
-enrollment_code = ""   # one-time code from Settings; only used for first registration
+enrollment_code = ""   # one-time code from Add Server; only used for first claim
 
 [collector]
 interval = 3           # seconds between reports
@@ -129,7 +129,7 @@ make test             # frontend tests
 make cargo-clippy     # Rust lint
 ```
 
-> `make dev-full` runs Vite with HMR at `http://localhost:5173` and proxies `/api/*` to the Rust server at `:9527`. Generate a one-time enrollment code in **Settings** to connect a dev agent.
+> `make dev-full` runs Vite with HMR at `http://localhost:5173`, proxies `/api/*` to the Rust server at `:9527`, creates a development Server, and prints its one-time Agent enrollment command.
 
 **Stack:** Rust (Axum 0.8 · sea-orm · SQLite WAL) · React 19 (Vite 7 · TanStack Router/Query · Recharts · shadcn/ui · Tailwind CSS v4) · Rust agents (sysinfo · tokio-tungstenite).
 

@@ -16,18 +16,20 @@ import {
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api-client'
+import type { OutstandingEnrollmentSummary } from '@/lib/api-schema'
 import { projectServerCatalog } from '@/lib/server-catalog'
-import { RegenerateCodeDialog } from './regenerate-code-dialog'
+import { EnrollmentOfferDialog } from './enrollment-offer-dialog'
 
 interface PendingActionMenuProps {
+  outstandingOffer: OutstandingEnrollmentSummary | null
   serverId: string
   serverName: string
 }
 
-export function PendingActionMenu({ serverId, serverName }: PendingActionMenuProps) {
+export function PendingActionMenu({ outstandingOffer, serverId, serverName }: PendingActionMenuProps) {
   const { t } = useTranslation(['servers', 'common'])
   const queryClient = useQueryClient()
-  const [regenerateOpen, setRegenerateOpen] = useState(false)
+  const [offerDialogOpen, setOfferDialogOpen] = useState(false)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
   const deleteMutation = useMutation({
@@ -48,7 +50,7 @@ export function PendingActionMenu({ serverId, serverName }: PendingActionMenuPro
         <DropdownMenuTrigger
           render={
             <Button
-              aria-label={`${t('servers:card_pending.regenerate_code')} / ${t('servers:card_pending.delete_server')}`}
+              aria-label={`${t('servers:card_pending.issue_offer')} / ${t('servers:card_pending.delete_server')}`}
               onClick={(e) => e.stopPropagation()}
               size="icon-sm"
               variant="ghost"
@@ -61,11 +63,11 @@ export function PendingActionMenu({ serverId, serverName }: PendingActionMenuPro
           <DropdownMenuItem
             onClick={(e) => {
               e.stopPropagation()
-              setRegenerateOpen(true)
+              setOfferDialogOpen(true)
             }}
           >
             <RefreshCw aria-hidden="true" className="size-3.5" />
-            {t('servers:card_pending.regenerate_code')}
+            {t('servers:card_pending.issue_offer')}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={(e) => {
@@ -79,7 +81,12 @@ export function PendingActionMenu({ serverId, serverName }: PendingActionMenuPro
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <RegenerateCodeDialog onOpenChange={setRegenerateOpen} open={regenerateOpen} serverId={serverId} />
+      <EnrollmentOfferDialog
+        onOpenChange={setOfferDialogOpen}
+        open={offerDialogOpen}
+        outstandingOffer={outstandingOffer}
+        serverId={serverId}
+      />
 
       <AlertDialog onOpenChange={setConfirmDeleteOpen} open={confirmDeleteOpen}>
         <AlertDialogContent>

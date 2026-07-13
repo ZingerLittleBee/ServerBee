@@ -73,7 +73,7 @@
 | O3 | Drawer 查看 evidence | 点击事件行 | Drawer 弹出，evidence JSON 完整 | — |
 | O4 | source_ip 一键过滤 | 点击表格里的 IP | 自动填入过滤条 | — |
 | O5 | 服务器详情 Security Tab | 进入 `/servers/$id` → Security tab | 显示该 server 最近 50 条 + "View all" 链接 | — |
-| O6 | recovery_merge 携带历史 | server 重新绑定后 | 旧 source_id 的 security_event 行 server_id 被更新为 target | — |
+| O6 | 重新接入保持身份 | 同一 Server 完成 Agent re-enrollment | 既有与新上报的 security event 都保持同一 server_id | — |
 | O7 | retention cleanup | 设置 `retention.security_event_days=1`，跑 cleanup task | 1 天前的事件被删 | — |
 | O8 | i18n 中英文 | 切换语言 | "Security Events" / "安全事件" 各处标签正确 | — |
 
@@ -83,7 +83,7 @@
 |---|---------|---------|---------|------|
 | B1 | 高频失败抗压 | 在 60s 内触发 1000+ 失败登录 | agent 内存稳定（IP map cap 10000）；事件正常聚合 | — |
 | B2 | WS 断连缓冲 | 触发事件期间停 server → 启回 | agent 缓冲 1000 条；恢复后批量重发；超 1000 老的丢弃，warn 日志 | — |
-| B3 | RecoveryLock 期间写入 | 触发 recovery → 期间触发 S4 | 事件正常落库（append-only 不受冻结）；recovery_merge 完成后 server_id 跟随 | — |
+| B3 | Authority fencing 期间写入 | 触发 emergency re-enrollment，同时从旧连接发送事件 | fencing 后旧连接 frame 不再落库；新 authority claim 后正常写入 | — |
 
 ---
 
@@ -104,7 +104,7 @@
 | V4 | 启动 server | `nohup target/release/serverbee-server > /tmp/server.log` | ✅ 日志见证 migration `m20260521_000024_create_security_event` 执行 |
 | V5 | 首次启动密码 | server 控制台打印一次性 admin 密码 | ✅ `cnQJvJUu-...` 由代码生成 |
 | V6 | 强制改密 | `POST /api/auth/onboarding`（`must_change_password=true` 状态下只放行此路径）| ✅ |
-| V7 | 创建 enrollment | `POST /api/agent/enrollments` → `{ code, expires_at }` | ✅ |
+| V7 | 创建 Server + enrollment offer | `POST /api/servers`（含唯一 `onboarding_request_id`）→ `{ server_id, enrollment }` | ✅ |
 | V8 | 启动 agent | env `ENROLLMENT_CODE` 启动 → 自注册，token 写本地 state | ✅ agent log 见 `WebSocket connected` + `Welcome` |
 | V9 | 触发爆破 | `for i in {1..15}; do sshpass -p wrong ssh testuser_brute@127.0.0.1 true; done` | ✅ journal 见 `Failed password for invalid user testuser_brute` |
 | V10 | 等待聚合 + 上报 | 等 90s（滑动窗 60s + WS 上报）| ✅ |
@@ -141,4 +141,4 @@ ssh_brute_force | 87.251.64.145   | 15
 
 - 端口扫描检测（**P2-P6**）：opt-in，需要额外 `CAP_NET_ADMIN` + `conntrack-tools`，本次未启用；机制单测已覆盖
 - 告警通知接收链（**A1-A7**）：需要外部 webhook/email；本次仅验证规则匹配 + 落库 + 广播
-- 跨 server recovery_merge 实际场景（**B3**）：需要双 agent 模拟身份变更
+- Authority fencing 竞态（**B3**）：需要双 Agent 连接精确控制旧/新 frame 时序

@@ -108,7 +108,10 @@ async fn create_pending_server(client: &reqwest::Client, base_url: &str) -> (Str
     login_admin(client, base_url).await;
     let resp = client
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "cost-integration-test" }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "cost-integration-test"
+        }))
         .send()
         .await
         .expect("Create server request failed");
@@ -133,6 +136,9 @@ async fn register_agent(client: &reqwest::Client, base_url: &str) -> String {
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
         .header("Authorization", format!("Bearer {code}"))
+        .json(&json!({
+            "proposed_run_token": format!("cost-token-{}", uuid::Uuid::new_v4())
+        }))
         .send()
         .await
         .expect("Register request failed");

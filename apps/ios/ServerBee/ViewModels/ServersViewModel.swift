@@ -173,6 +173,12 @@ final class ServersViewModel {
                 servers[index].online = false
             }
 
+        case let .agentAuthorityChanged(serverId, agentAuthority):
+            if let index = servers.firstIndex(where: { $0.id == serverId }) {
+                servers[index].agentAuthority = agentAuthority
+                servers[index].hasToken = agentAuthority.status == .claimed
+            }
+
         case let .capabilitiesChanged(serverId, capabilities, agentLocal, effective):
             if let index = servers.firstIndex(where: { $0.id == serverId }) {
                 servers[index].capabilities = capabilities

@@ -1674,8 +1674,9 @@ services:
       - SERVERBEE_ADMIN__USERNAME=admin
       - SERVERBEE_AUTH__SECURE_COOKIE=false
     restart: unless-stopped
+    # Alpine BusyBox wget prefers ::1 for localhost, while the server listens on IPv4.
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -1737,7 +1738,6 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /etc/machine-id:/etc/machine-id:ro
       - ${conf_dir}:/etc/serverbee
     restart: unless-stopped
 YAML

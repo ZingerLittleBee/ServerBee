@@ -31,7 +31,6 @@ hex = "0.4"
 semver = "1"
 x509-parser = "0.16"
 webpki-roots = "1"
-gethostname = "0.5"
 dashmap = "6"
 libc = "0.2"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

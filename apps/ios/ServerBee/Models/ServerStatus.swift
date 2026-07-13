@@ -57,7 +57,8 @@ struct ServerStatus: Decodable, Identifiable, Hashable, Sendable {
     var capabilities: Int?
     var agentLocalCapabilities: Int?
     var effectiveCapabilities: Int?
-    /// `false` => pending enrollment (agent never connected).
+    var agentAuthority: AgentAuthorityState?
+    /// Decoder compatibility for older Server payloads.
     var hasToken: Bool?
     /// ISO-8601 string. The WS frame sends `last_active` as a Unix **epoch
     /// second integer**; the decoder normalises both forms to a string here so
@@ -109,6 +110,7 @@ struct ServerStatus: Decodable, Identifiable, Hashable, Sendable {
         case capabilities
         case agentLocalCapabilities = "agent_local_capabilities"
         case effectiveCapabilities = "effective_capabilities"
+        case agentAuthority = "agent_authority"
         case hasToken = "has_token"
         case lastActiveAt = "last_active_at"
         case lastActive = "last_active"
@@ -166,6 +168,7 @@ extension ServerStatus {
         capabilities = try container.decodeIfPresent(Int.self, forKey: .capabilities)
         agentLocalCapabilities = try container.decodeIfPresent(Int.self, forKey: .agentLocalCapabilities)
         effectiveCapabilities = try container.decodeIfPresent(Int.self, forKey: .effectiveCapabilities)
+        agentAuthority = try container.decodeIfPresent(AgentAuthorityState.self, forKey: .agentAuthority)
         hasToken = try container.decodeIfPresent(Bool.self, forKey: .hasToken)
 
         // `last_active` is a Unix epoch integer over the WS, an ISO string over
@@ -212,6 +215,11 @@ extension ServerStatus {
             agentLocal: agentLocalCapabilities,
             effective: effectiveCapabilities
         )
+    }
+
+    var hasAgentAuthority: Bool {
+        if let agentAuthority { return agentAuthority.status == .claimed }
+        return hasToken ?? true
     }
 
     /// Human-readable location derived from region + country.
@@ -269,6 +277,7 @@ extension ServerStatus {
         if let v = other.capabilities { capabilities = v }
         if let v = other.agentLocalCapabilities { agentLocalCapabilities = v }
         if let v = other.effectiveCapabilities { effectiveCapabilities = v }
+        if let v = other.agentAuthority { agentAuthority = v }
         if let v = other.hasToken { hasToken = v }
         if let v = other.lastActiveAt { lastActiveAt = v }
     }
