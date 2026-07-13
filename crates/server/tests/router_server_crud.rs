@@ -5,7 +5,6 @@
 //! Covered: POST /api/servers (create + enrollment), GET /api/servers (list),
 //! GET /api/servers/{id} (detail + 404), PUT /api/servers/{id} (update + 404),
 //! DELETE /api/servers/{id} (delete + 404), POST /api/servers/batch-delete,
-//! POST /api/servers/{id}/recover, POST /api/servers/{id}/regenerate-code,
 //! plus authZ (member -> 403 on admin writes, reads OK), unauth -> 401, and
 //! validation (empty name -> 400, bad tags -> 422).
 //!
@@ -29,7 +28,10 @@ async fn create_server_returns_id_and_enrollment() {
 
     let resp = admin
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "create-host" }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "create-host"
+        }))
         .send()
         .await
         .unwrap();
@@ -59,6 +61,7 @@ async fn create_server_with_tags_and_metadata() {
     let resp = admin
         .post(format!("{}/api/servers", base_url))
         .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
             "name": "meta-host",
             "tags": ["web", "db"],
             "remark": "primary",
@@ -100,7 +103,10 @@ async fn create_server_empty_name_400() {
 
     let resp = admin
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "   " }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "   "
+        }))
         .send()
         .await
         .unwrap();
@@ -116,7 +122,11 @@ async fn create_server_bad_tags_422() {
 
     let resp = admin
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "bad-tag-host", "tags": ["bad space"] }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "bad-tag-host",
+            "tags": ["bad space"]
+        }))
         .send()
         .await
         .unwrap();
@@ -133,7 +143,11 @@ async fn create_server_too_many_tags_422() {
     let too_many: Vec<String> = (0..9).map(|i| format!("t{i}")).collect();
     let resp = admin
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "many-tag-host", "tags": too_many }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "many-tag-host",
+            "tags": too_many
+        }))
         .send()
         .await
         .unwrap();
@@ -150,7 +164,10 @@ async fn create_server_member_forbidden() {
 
     let resp = member
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "nope" }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "nope"
+        }))
         .send()
         .await
         .unwrap();
@@ -165,7 +182,10 @@ async fn create_server_unauthenticated_401() {
 
     let resp = anon
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "nope" }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "nope"
+        }))
         .send()
         .await
         .unwrap();
@@ -630,192 +650,6 @@ async fn batch_delete_unauthenticated_401() {
     let resp = anon
         .post(format!("{}/api/servers/batch-delete", base_url))
         .json(&json!({ "ids": ["x"] }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 401);
-}
-
-// ---------------------------------------------------------------------------
-// POST /api/servers/{id}/recover — recover enrollment (admin write)
-// ---------------------------------------------------------------------------
-
-// Recover on a freshly created (pending) server is rejected with 400 — a pending
-// server should use regenerate-code instead.
-#[tokio::test]
-async fn recover_pending_server_400() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-    let server_id = create_server(&admin, &base_url, "recover-pending-host").await;
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
-        .json(&json!({ "revoke_immediately": false }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 400, "recover on a pending server is rejected");
-}
-
-// Recover on a non-existent server returns 404.
-#[tokio::test]
-async fn recover_missing_server_404() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/recover", base_url, "no-such-server"))
-        .json(&json!({ "revoke_immediately": false }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 404, "unknown server id yields 404");
-}
-
-// POST recover is admin-only: a member gets 403.
-#[tokio::test]
-async fn recover_member_forbidden() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-    let server_id = create_server(&admin, &base_url, "recover-authz-host").await;
-    let member = login_as_new_user(&admin, &base_url, "recover_member", "member").await;
-
-    let resp = member
-        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
-        .json(&json!({ "revoke_immediately": false }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 403, "members may not recover servers");
-}
-
-// POST recover requires authentication.
-#[tokio::test]
-async fn recover_unauthenticated_401() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-    let server_id = create_server(&admin, &base_url, "recover-unauth-host").await;
-
-    let anon = http_client();
-    let resp = anon
-        .post(format!("{}/api/servers/{}/recover", base_url, server_id))
-        .json(&json!({ "revoke_immediately": false }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 401);
-}
-
-// ---------------------------------------------------------------------------
-// POST /api/servers/{id}/regenerate-code — regenerate enrollment (admin write)
-// ---------------------------------------------------------------------------
-
-// Happy path: regenerate on a pending server mints a fresh enrollment, replacing
-// the outstanding one (last-writer-wins when no expected id is supplied).
-#[tokio::test]
-async fn regenerate_code_pending_server_mints_new() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-
-    // Create returns the initial enrollment id; capture it to verify rotation.
-    let create_body: Value = admin
-        .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "regen-host" }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    let server_id = create_body["data"]["server_id"].as_str().unwrap().to_string();
-    let original_enrollment_id = create_body["data"]["enrollment"]["id"].as_str().unwrap().to_string();
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/regenerate-code", base_url, server_id))
-        .json(&json!({}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-    let body: Value = resp.json().await.unwrap();
-    let enrollment = &body["data"]["enrollment"];
-    let new_code = enrollment["code"].as_str().expect("regenerate must return a fresh code");
-    assert!(!new_code.is_empty(), "regenerated code must be non-empty");
-    assert_ne!(
-        enrollment["id"].as_str(),
-        Some(original_enrollment_id.as_str()),
-        "regenerate must mint a fresh enrollment id"
-    );
-}
-
-// Optimistic concurrency: a stale expected_enrollment_id is rejected with 409.
-#[tokio::test]
-async fn regenerate_code_stale_expected_id_409() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-    let server_id = create_server(&admin, &base_url, "regen-cas-host").await;
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/regenerate-code", base_url, server_id))
-        .json(&json!({ "expected_enrollment_id": "stale-id-that-does-not-match" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 409, "expected_enrollment_id mismatch yields 409");
-}
-
-// Regenerate on a non-existent server returns 404.
-#[tokio::test]
-async fn regenerate_code_missing_server_404() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-
-    let resp = admin
-        .post(format!("{}/api/servers/{}/regenerate-code", base_url, "no-such-server"))
-        .json(&json!({}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 404, "unknown server id yields 404");
-}
-
-// POST regenerate-code is admin-only: a member gets 403.
-#[tokio::test]
-async fn regenerate_code_member_forbidden() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-    let server_id = create_server(&admin, &base_url, "regen-authz-host").await;
-    let member = login_as_new_user(&admin, &base_url, "regen_member", "member").await;
-
-    let resp = member
-        .post(format!("{}/api/servers/{}/regenerate-code", base_url, server_id))
-        .json(&json!({}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 403, "members may not regenerate enrollment codes");
-}
-
-// POST regenerate-code requires authentication.
-#[tokio::test]
-async fn regenerate_code_unauthenticated_401() {
-    let (base_url, _tmp) = start_test_server().await;
-    let admin = http_client();
-    login_admin(&admin, &base_url).await;
-    let server_id = create_server(&admin, &base_url, "regen-unauth-host").await;
-
-    let anon = http_client();
-    let resp = anon
-        .post(format!("{}/api/servers/{}/regenerate-code", base_url, server_id))
-        .json(&json!({}))
         .send()
         .await
         .unwrap();

@@ -1,4 +1,3 @@
-pub mod agent_enrollment;
 pub mod agent_authority_event;
 pub mod alert_rule;
 pub mod alert_state;

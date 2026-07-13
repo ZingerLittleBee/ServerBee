@@ -2,7 +2,7 @@
 //!
 //! `router_server_crud.rs` and `router_server_extra.rs` already cover the
 //! create/list/get/update/delete/batch-delete happy paths, their authZ
-//! (401/403) and validation (400/422) arms, the recover / regenerate-code
+//! (401/403) and validation (400/422) arms, the Agent Authority lifecycle
 //! success + error arms, the group assign/clear/move + weight/hidden/geo edge
 //! updates, and the ONLINE-server DTO mapping. This file targets the branches
 //! those two leave uncovered:

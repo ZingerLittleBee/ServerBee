@@ -14,7 +14,6 @@ pub mod dashboard;
 pub mod db_error;
 pub mod docker;
 pub mod docker_viewer;
-pub mod enrollment;
 pub mod file_transfer;
 pub mod firewall;
 pub mod geoip;

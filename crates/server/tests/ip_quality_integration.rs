@@ -127,7 +127,10 @@ async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, St
     // enrollment code as part of the same response).
     let enroll_resp = client
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "ip-quality-test" }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "ip-quality-test"
+        }))
         .send()
         .await
         .expect("Create-server request failed");
@@ -139,9 +142,11 @@ async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, St
         .to_string();
 
     // Register
+    let token = format!("ip-quality-token-{}", uuid::Uuid::new_v4());
     let register_resp = client
         .post(format!("{}/api/agent/register", base_url))
         .header("Authorization", format!("Bearer {code}"))
+        .json(&json!({ "proposed_run_token": token }))
         .send()
         .await
         .expect("Register request failed");
@@ -151,7 +156,6 @@ async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, St
         .as_str()
         .unwrap()
         .to_string();
-    let token = register_body["data"]["token"].as_str().unwrap().to_string();
     (server_id, token)
 }
 

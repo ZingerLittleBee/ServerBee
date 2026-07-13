@@ -235,6 +235,10 @@ pub struct ServerStatus {
     pub tags: Vec<String>,
     #[serde(default)]
     pub cpu_cores: Option<i32>,
+    /// Canonical Agent credential and Enrollment-offer projection. Online
+    /// state remains independent and is represented by `online`.
+    #[serde(default)]
+    pub agent_authority: AgentAuthorityStateSummary,
     /// `true` iff the server row has a non-NULL `token_hash`. Pending servers
     /// (created via `POST /api/servers` but not yet enrolled by an agent) have
     /// `has_token = false`. Defaults to `true` for backward compatibility with
@@ -379,7 +383,7 @@ mod tests {
     }
 
     /// Build a `ServerStatus` JSON object with every required field populated.
-    /// `has_token` and `outstanding_enrollment` are intentionally omitted so
+    /// Agent authority compatibility fields are intentionally omitted so
     /// callers can assert the serde defaults.
     fn server_status_json_without_token() -> serde_json::Value {
         json!({
@@ -421,6 +425,8 @@ mod tests {
         let status: ServerStatus = serde_json::from_value(legacy).unwrap();
         assert!(status.has_token, "missing has_token must default to true");
         assert!(status.outstanding_enrollment.is_none());
+        assert_eq!(status.agent_authority.status, AgentAuthorityStatus::Claimed);
+        assert!(status.agent_authority.outstanding_offer.is_none());
     }
 
     #[test]

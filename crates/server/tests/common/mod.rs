@@ -144,9 +144,13 @@ pub async fn login_as_new_user(
 
 /// Create a pending server via the admin API and return its server id.
 pub async fn create_server(client: &reqwest::Client, base_url: &str, name: &str) -> String {
+    let onboarding_request_id = uuid::Uuid::new_v4().to_string();
     let resp = client
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": name }))
+        .json(&json!({
+            "onboarding_request_id": onboarding_request_id,
+            "name": name
+        }))
         .send()
         .await
         .expect("create server failed");
@@ -182,9 +186,13 @@ pub type AgentReader = futures_util::stream::SplitStream<
 /// Mint an enrollment code by creating a pending server as admin.
 pub async fn mint_enrollment_code(client: &reqwest::Client, base_url: &str, name: &str) -> String {
     login_admin(client, base_url).await;
+    let onboarding_request_id = uuid::Uuid::new_v4().to_string();
     let resp = client
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": name }))
+        .json(&json!({
+            "onboarding_request_id": onboarding_request_id,
+            "name": name
+        }))
         .send()
         .await
         .expect("create-server request failed");
@@ -199,16 +207,20 @@ pub async fn mint_enrollment_code(client: &reqwest::Client, base_url: &str, name
 /// Register an agent (enrollment → register) and return `(server_id, token)`.
 pub async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String, String) {
     let code = mint_enrollment_code(client, base_url, "mock-agent-server").await;
+    let token = format!("test-token-{}", uuid::Uuid::new_v4());
     let resp = client
         .post(format!("{}/api/agent/register", base_url))
         .header("Authorization", format!("Bearer {code}"))
+        .json(&json!({ "proposed_run_token": token }))
         .send()
         .await
         .expect("register request failed");
     assert_eq!(resp.status(), 200, "agent registration should succeed");
     let body: Value = resp.json().await.expect("parse register response");
-    let server_id = body["data"]["server_id"].as_str().expect("server_id missing").to_string();
-    let token = body["data"]["token"].as_str().expect("token missing").to_string();
+    let server_id = body["data"]["server_id"]
+        .as_str()
+        .expect("server_id missing")
+        .to_string();
     (server_id, token)
 }
 

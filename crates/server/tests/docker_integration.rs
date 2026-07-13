@@ -150,7 +150,10 @@ async fn mint_enrollment_code(client: &Client, base_url: &str) -> String {
     login_admin(client, base_url).await;
     let resp = client
         .post(format!("{}/api/servers", base_url))
-        .json(&json!({ "name": "docker-integration-test" }))
+        .json(&json!({
+            "onboarding_request_id": uuid::Uuid::new_v4().to_string(),
+            "name": "docker-integration-test"
+        }))
         .send()
         .await
         .expect("Create-server request failed");
@@ -167,9 +170,11 @@ async fn mint_enrollment_code(client: &Client, base_url: &str) -> String {
 
 async fn register_agent(client: &Client, base_url: &str) -> (String, String) {
     let code = mint_enrollment_code(client, base_url).await;
+    let token = format!("docker-token-{}", uuid::Uuid::new_v4());
     let resp = client
         .post(format!("{}/api/agent/register", base_url))
         .header("Authorization", format!("Bearer {code}"))
+        .json(&json!({ "proposed_run_token": token }))
         .send()
         .await
         .expect("Register request failed");
@@ -185,10 +190,7 @@ async fn register_agent(client: &Client, base_url: &str) -> (String, String) {
             .as_str()
             .expect("server_id missing")
             .to_string(),
-        body["data"]["token"]
-            .as_str()
-            .expect("token missing")
-            .to_string(),
+        token,
     )
 }
 

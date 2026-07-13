@@ -27,6 +27,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api", ws::terminal::router())
         // Docker logs WS: /api/ws/docker/logs/:server_id (auth checked inside handler)
         .nest("/api", ws::docker_logs::router())
+        // Unknown API paths must not fall through to the SPA index with 200.
+        .route(
+            "/api/{*path}",
+            axum::routing::any(|| async { axum::http::StatusCode::NOT_FOUND }),
+        )
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Embedded frontend: serve the rust-embed SPA assets.
