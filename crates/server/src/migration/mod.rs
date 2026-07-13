@@ -43,6 +43,7 @@ mod m20260619_000071_add_password_changed_at;
 mod m20260621_000072_add_geo_manual;
 mod m20260702_000073_retention_time_indexes;
 mod m20260702_000074_hash_existing_session_tokens;
+mod m20260713_000075_agent_authority_lifecycle;
 
 pub struct Migrator;
 
@@ -92,6 +93,244 @@ impl MigratorTrait for Migrator {
             Box::new(m20260621_000072_add_geo_manual::Migration),
             Box::new(m20260702_000073_retention_time_indexes::Migration),
             Box::new(m20260702_000074_hash_existing_session_tokens::Migration),
+            Box::new(m20260713_000075_agent_authority_lifecycle::Migration),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::{ConnectionTrait, Database, DatabaseBackend, Statement};
+    use sea_orm_migration::MigratorTrait;
+
+    use super::Migrator;
+
+    async fn migrated_db() -> sea_orm::DatabaseConnection {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        Migrator::up(&db, None).await.expect("run migrations");
+        db
+    }
+
+    async fn seed_user_and_server(db: &sea_orm::DatabaseConnection, server_id: &str) {
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "INSERT OR IGNORE INTO users (id, username, password_hash, role, must_change_password, created_at, updated_at) VALUES ('actor-1', 'actor-1', 'hash', 'admin', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)".to_string(),
+        ))
+        .await
+        .expect("seed actor");
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            format!(
+                "INSERT INTO servers (id, name, weight, hidden, capabilities, protocol_version, features, geo_manual, created_at, updated_at) VALUES ('{server_id}', 'Server {server_id}', 0, 0, 0, 1, '[]', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ),
+        ))
+        .await
+        .expect("seed server");
+    }
+
+    #[tokio::test]
+    async fn agent_authority_schema_replaces_fingerprint_and_legacy_enrollments() {
+        let db = migrated_db().await;
+
+        let server_columns = db
+            .query_all(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "PRAGMA table_info('servers')".to_string(),
+            ))
+            .await
+            .expect("inspect servers schema");
+        let server_column_names: Vec<String> = server_columns
+            .iter()
+            .map(|row| row.try_get("", "name").expect("column name"))
+            .collect();
+        assert!(
+            !server_column_names.iter().any(|name| name == "fingerprint"),
+            "live servers schema must not retain machine fingerprints"
+        );
+
+        let offer_columns = db
+            .query_all(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "PRAGMA table_info('enrollment_offers')".to_string(),
+            ))
+            .await
+            .expect("inspect enrollment offer schema");
+        assert!(!offer_columns.is_empty(), "enrollment_offers must exist");
+
+        let legacy_table = db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_enrollments'"
+                    .to_string(),
+            ))
+            .await
+            .expect("inspect legacy enrollment table");
+        assert!(
+            legacy_table.is_none(),
+            "legacy agent_enrollments must be removed"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_authority_offer_constraints_enforce_one_exclusive_outcome() {
+        let db = migrated_db().await;
+        seed_user_and_server(&db, "server-1").await;
+
+        let insert_outstanding = |id: &str| {
+            Statement::from_string(
+                DatabaseBackend::Sqlite,
+                format!(
+                    "INSERT INTO enrollment_offers (id, code_hash, code_prefix, target_server_id, created_by, expires_at, created_at) VALUES ('{id}', 'hash', 'prefix01', 'server-1', 'actor-1', '2999-01-01 00:00:00', CURRENT_TIMESTAMP)"
+                ),
+            )
+        };
+        db.execute(insert_outstanding("offer-1"))
+            .await
+            .expect("insert first outstanding offer");
+        assert!(
+            db.execute(insert_outstanding("offer-2")).await.is_err(),
+            "a Server cannot have two Outstanding offers"
+        );
+
+        let missing_terminal_time = db
+            .execute(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "INSERT INTO enrollment_offers (id, code_hash, code_prefix, target_server_id, created_by, expires_at, outcome, created_at) VALUES ('bad-consumed', 'hash', 'prefix02', 'server-1', 'actor-1', '2999-01-01 00:00:00', 'consumed', CURRENT_TIMESTAMP)".to_string(),
+            ))
+            .await;
+        assert!(
+            missing_terminal_time.is_err(),
+            "a terminal outcome must carry terminal_at"
+        );
+
+        let replaced_without_successor = db
+            .execute(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "INSERT INTO enrollment_offers (id, code_hash, code_prefix, target_server_id, created_by, expires_at, outcome, terminal_at, created_at) VALUES ('bad-replaced', 'hash', 'prefix03', 'server-1', 'actor-1', '2999-01-01 00:00:00', 'replaced', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)".to_string(),
+            ))
+            .await;
+        assert!(
+            replaced_without_successor.is_err(),
+            "Replaced must identify its successor"
+        );
+
+        let successor_on_consumed = db
+            .execute(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "INSERT INTO enrollment_offers (id, code_hash, code_prefix, target_server_id, created_by, expires_at, outcome, terminal_at, successor_offer_id, created_at) VALUES ('bad-successor', 'hash', 'prefix04', 'server-1', 'actor-1', '2999-01-01 00:00:00', 'consumed', CURRENT_TIMESTAMP, 'offer-9', CURRENT_TIMESTAMP)".to_string(),
+            ))
+            .await;
+        assert!(
+            successor_on_consumed.is_err(),
+            "only Replaced may identify a successor"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_authority_migration_converts_legacy_terminal_facts() {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        let migrations_before_authority = Migrator::migrations().len() as u32 - 1;
+        Migrator::up(&db, Some(migrations_before_authority))
+            .await
+            .expect("run legacy migrations");
+        seed_user_and_server(&db, "legacy-server").await;
+        seed_user_and_server(&db, "legacy-expired-server").await;
+
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            r#"
+            INSERT INTO agent_enrollments (id, code_hash, code_prefix, target_server_id, created_by, expires_at, consumed_at, revoked_at, created_at) VALUES
+                ('double-terminal', 'hash', 'double01', 'legacy-server', 'actor-1', '2999-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-02 00:00:00', '2026-01-01 00:00:00'),
+                ('revoked', 'hash', 'revoke01', 'legacy-server', 'actor-1', '2999-01-01 00:00:00', NULL, '2026-01-02 00:00:00', '2026-01-01 00:00:00'),
+                ('expired', 'hash', 'expire01', 'legacy-expired-server', 'actor-1', '2026-01-01 00:00:00', NULL, NULL, '2026-01-01 00:00:00'),
+                ('outstanding', 'hash', 'open0001', 'legacy-server', 'actor-1', '2999-01-01 00:00:00', NULL, NULL, '2026-01-01 00:00:00')
+            "#
+            .to_string(),
+        ))
+        .await
+        .expect("seed legacy offers");
+
+        Migrator::up(&db, None)
+            .await
+            .expect("run authority migration");
+
+        let rows = db
+            .query_all(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT id, outcome FROM enrollment_offers ORDER BY id".to_string(),
+            ))
+            .await
+            .expect("read migrated offers");
+        let outcomes: std::collections::HashMap<String, Option<String>> = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.try_get("", "id").expect("offer id"),
+                    row.try_get("", "outcome").expect("offer outcome"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            outcomes.get("double-terminal"),
+            Some(&Some("consumed".to_string())),
+            "legacy consume wins over the later revoke bug"
+        );
+        assert_eq!(outcomes.get("revoked"), Some(&Some("revoked".to_string())));
+        assert_eq!(outcomes.get("expired"), Some(&Some("expired".to_string())));
+        assert_eq!(outcomes.get("outstanding"), Some(&None));
+    }
+
+    #[tokio::test]
+    async fn agent_authority_events_survive_server_deletion_without_secrets() {
+        let db = migrated_db().await;
+        seed_user_and_server(&db, "server-delete").await;
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO enrollment_offers (id, code_hash, code_prefix, target_server_id, created_by, expires_at, created_at) VALUES ('offer-delete', 'secret-hash', 'prefix05', 'server-delete', 'actor-1', '2999-01-01 00:00:00', CURRENT_TIMESTAMP)".to_string(),
+        ))
+        .await
+        .expect("insert offer");
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "INSERT INTO agent_authority_events (id, server_id, server_name, actor_kind, actor_id, request_source, offer_id, transition, authority_before, authority_after, created_at) VALUES ('event-delete', 'server-delete', 'Deleted Server', 'user', 'actor-1', 'api', 'offer-delete', 'server_deleted', 'unclaimed', 'unclaimed', CURRENT_TIMESTAMP)".to_string(),
+        ))
+        .await
+        .expect("insert authority event");
+
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "DELETE FROM servers WHERE id = 'server-delete'".to_string(),
+        ))
+        .await
+        .expect("delete server");
+
+        let offer_count: i64 = db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT COUNT(*) AS count FROM enrollment_offers WHERE target_server_id = 'server-delete'"
+                    .to_string(),
+            ))
+            .await
+            .expect("count offers")
+            .expect("count row")
+            .try_get("", "count")
+            .expect("offer count");
+        let event_count: i64 = db
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT COUNT(*) AS count FROM agent_authority_events WHERE server_id = 'server-delete'"
+                    .to_string(),
+            ))
+            .await
+            .expect("count events")
+            .expect("count row")
+            .try_get("", "count")
+            .expect("event count");
+        assert_eq!(offer_count, 0, "credential-bearing offers cascade");
+        assert_eq!(event_count, 1, "secret-free authority history is retained");
     }
 }
