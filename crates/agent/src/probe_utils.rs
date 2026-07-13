@@ -600,8 +600,8 @@ mod tests {
     #[test]
     fn parse_ping_time_scans_multiple_lines() {
         // First line has no marker; second line carries the value.
-        let out = "PING start\n64 bytes: icmp_seq=1 time=3.14 ms";
-        assert!((parse_ping_time(out).unwrap() - 3.14).abs() < 0.001);
+        let out = "PING start\n64 bytes: icmp_seq=1 time=3.12 ms";
+        assert!((parse_ping_time(out).unwrap() - 3.12).abs() < 0.001);
     }
 
     // ── parse_ping_batch_output: remaining branches ──────────────────────────

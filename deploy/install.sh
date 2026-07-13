@@ -1737,7 +1737,6 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /etc/machine-id:/etc/machine-id:ro
       - ${conf_dir}:/etc/serverbee
     restart: unless-stopped
 YAML

@@ -42,7 +42,7 @@ fn is_table_header(line: &str) -> bool {
     trimmed.starts_with('[') && trimmed.ends_with(']')
 }
 
-pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> anyhow::Result<()> {
+pub(crate) fn persist_run_token(path: impl AsRef<Path>, token: &str) -> anyhow::Result<()> {
     let path = path.as_ref();
     let existing = if path.exists() {
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?
@@ -54,15 +54,20 @@ pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> 
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = path.file_name().unwrap_or_else(|| OsStr::new("agent.toml"));
     let temp_path = parent.join(format!(
-        ".{}.rebind.{}.tmp",
+        ".{}.run-token.{}.tmp",
         file_name.to_string_lossy(),
         uuid::Uuid::new_v4()
     ));
 
     let write_result = (|| -> anyhow::Result<()> {
-        let mut temp_file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut temp_file = options
             .open(&temp_path)
             .with_context(|| format!("failed to create {}", temp_path.display()))?;
         temp_file
@@ -71,6 +76,7 @@ pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> 
         temp_file
             .sync_all()
             .with_context(|| format!("failed to sync {}", temp_path.display()))?;
+        #[cfg(not(unix))]
         if path.exists()
             && let Ok(metadata) = fs::metadata(path)
         {
@@ -96,9 +102,6 @@ pub(crate) fn persist_rebind_token_impl(path: impl AsRef<Path>, token: &str) -> 
 
     write_result
 }
-
-#[cfg(not(test))]
-pub(crate) use persist_rebind_token_impl as persist_rebind_token;
 
 #[cfg(unix)]
 fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
@@ -146,12 +149,12 @@ fn replace_file(temp_path: &Path, path: &Path) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
-pub(crate) fn assert_persist_rebind_token() {
+pub(crate) fn assert_persist_run_token() {
     let tempdir = tempfile::TempDir::new().expect("tempdir");
     let path = tempdir.path().join("agent.toml");
     fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
 
-    persist_rebind_token_impl(&path, "focused-token").expect("persist");
+    persist_run_token(&path, "focused-token").expect("persist");
 
     let content = fs::read_to_string(&path).expect("read file");
     assert_eq!(
@@ -167,8 +170,23 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    #[cfg(unix)]
     #[test]
-    fn persist_rebind_token_replaces_existing_token_line_without_touching_other_lines() {
+    fn persist_run_token_creates_owner_only_config() {
+        let tempdir = TempDir::new().expect("tempdir");
+        let path = tempdir.path().join("agent.toml");
+
+        super::persist_run_token(&path, "fresh-token").expect("persist");
+
+        let mode = fs::metadata(path).expect("metadata").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[test]
+    fn persist_run_token_replaces_existing_token_line_without_touching_other_lines() {
         let tempdir = TempDir::new().expect("tempdir");
         let path = tempdir.path().join("agent.toml");
         fs::write(
@@ -179,7 +197,7 @@ log.level = "debug""#,
         )
         .expect("seed file");
 
-        super::persist_rebind_token_impl(&path, "new-token").expect("persist");
+        super::persist_run_token(&path, "new-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
@@ -191,12 +209,12 @@ log.level = "debug""#
     }
 
     #[test]
-    fn persist_rebind_token_appends_token_line_when_missing() {
+    fn persist_run_token_appends_token_line_when_missing() {
         let tempdir = TempDir::new().expect("tempdir");
         let path = tempdir.path().join("agent.toml");
         fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
 
-        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+        super::persist_run_token(&path, "fresh-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
@@ -208,7 +226,7 @@ token = "fresh-token"
     }
 
     #[test]
-    fn persist_rebind_token_inserts_before_first_table_header() {
+    fn persist_run_token_inserts_before_first_table_header() {
         let tempdir = TempDir::new().expect("tempdir");
         let path = tempdir.path().join("agent.toml");
         fs::write(
@@ -221,7 +239,7 @@ level = "info""#,
         )
         .expect("seed file");
 
-        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+        super::persist_run_token(&path, "fresh-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
@@ -236,19 +254,19 @@ level = "info""#
     }
 
     #[test]
-    fn persist_rebind_token_preserves_trailing_newline() {
+    fn persist_run_token_preserves_trailing_newline() {
         let tempdir = TempDir::new().expect("tempdir");
         let path = tempdir.path().join("agent.toml");
         fs::write(&path, "server_url = \"http://127.0.0.1:9527\"\n").expect("seed file");
 
-        super::persist_rebind_token_impl(&path, "fresh-token").expect("persist");
+        super::persist_run_token(&path, "fresh-token").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert!(content.ends_with('\n'));
     }
 
     #[test]
-    fn persist_rebind_token_preserves_nested_token_and_inserts_top_level_token() {
+    fn persist_run_token_preserves_nested_token_and_inserts_top_level_token() {
         let tempdir = TempDir::new().expect("tempdir");
         let path = tempdir.path().join("agent.toml");
         fs::write(
@@ -262,7 +280,7 @@ level = "info""#,
         )
         .expect("seed file");
 
-        super::persist_rebind_token_impl(&path, "top-level").expect("persist");
+        super::persist_run_token(&path, "top-level").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
@@ -278,21 +296,21 @@ level = "info""#
     }
 
     #[test]
-    fn persist_rebind_token_creates_file_when_absent() {
+    fn persist_run_token_creates_file_when_absent() {
         // Path does not exist → existing is empty; the rendered output is just
         // the token line with no trailing newline.
         let tempdir = TempDir::new().expect("tempdir");
         let path = tempdir.path().join("agent.toml");
         assert!(!path.exists());
 
-        super::persist_rebind_token_impl(&path, "brand-new").expect("persist");
+        super::persist_run_token(&path, "brand-new").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(content, "token = \"brand-new\"");
     }
 
     #[test]
-    fn persist_rebind_token_replaces_indented_token_line() {
+    fn persist_run_token_replaces_indented_token_line() {
         // A leading-whitespace token line is recognised and replaced wholesale
         // (the replacement is not indented).
         let tempdir = TempDir::new().expect("tempdir");
@@ -303,7 +321,7 @@ level = "info""#
         )
         .expect("seed file");
 
-        super::persist_rebind_token_impl(&path, "replaced").expect("persist");
+        super::persist_run_token(&path, "replaced").expect("persist");
 
         let content = fs::read_to_string(&path).expect("read file");
         assert_eq!(
@@ -340,8 +358,8 @@ level = "info""#
     }
 
     #[test]
-    fn run_assert_persist_rebind_token_helper() {
+    fn run_assert_persist_run_token_helper() {
         // Exercise the standalone shared assertion helper.
-        super::assert_persist_rebind_token();
+        super::assert_persist_run_token();
     }
 }
