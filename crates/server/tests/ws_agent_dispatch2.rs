@@ -30,7 +30,8 @@
 //!   - DockerStats (unsolicited)       -> stats visible via GET /docker/stats
 //!   - SystemInfo (second, changed caps) -> mirror update + capabilities_changed
 //!   - reconnect / superseded connection -> second connect wins; the first
-//!     socket's next frame stops its read loop (end-to-end, not the unit arm)
+//!     socket's next frame stops its read loop without clearing the current
+//!     connection's temporary grants (end-to-end, not the unit arm)
 //!   - SecurityEvent (ssh_login, FULL evidence) -> persisted, queryable
 //!   - CapabilityDenied (capability=terminal, with session_id) -> the
 //!     terminal-session unregister arm; connection survives
@@ -481,7 +482,7 @@ async fn test_second_system_info_updates_capability_mirror() {
 // ===========================================================================
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_reconnect_supersedes_first_connection() {
+async fn test_superseded_connection_cleanup_preserves_current_temporary_grants() {
     let (base_url, _tmp) = start_test_server().await;
     let client = http_client();
     login_admin(&client, &base_url).await;
@@ -500,6 +501,51 @@ async fn test_reconnect_supersedes_first_connection() {
     assert_eq!(recv_agent_text(&mut reader_b).await["type"], "welcome");
     send_system_info(&mut sink_b, &mut reader_b, "recon-b", Some(CAP_DEFAULT)).await;
     drain_first_connect_pushes(&mut reader_b, 300).await;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before epoch")
+        .as_secs() as i64;
+    let expires_at = now + 3600;
+    send_agent_frame(
+        &mut sink_b,
+        json!({
+            "type": "capabilities_changed",
+            "msg_id": "recon-b-grant",
+            "capabilities": CAP_DEFAULT | CAP_TERMINAL,
+            "temporary": [{
+                "cap": "terminal",
+                "granted_at": now,
+                "expires_at": expires_at
+            }],
+            "changes": []
+        }),
+    )
+    .await;
+
+    let mut grant_visible = false;
+    for _ in 0..20 {
+        let resp = client
+            .get(format!("{base_url}/api/servers/{server_id}"))
+            .send()
+            .await
+            .expect("GET server failed");
+        assert_eq!(resp.status(), 200);
+        let body: Value = resp.json().await.expect("parse server");
+        grant_visible = body["data"]["temporary"]
+            .as_array()
+            .is_some_and(|grants| {
+                grants.iter().any(|grant| {
+                    grant["cap"].as_str() == Some("terminal")
+                        && grant["expires_at"].as_i64() == Some(expires_at)
+                })
+            });
+        if grant_visible {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(grant_visible, "the current connection should report its temporary grant");
 
     // The FIRST socket is now superseded: handle_current_connection_frame returns
     // false on its next frame, which breaks its read loop and closes the socket.
@@ -530,6 +576,24 @@ async fn test_reconnect_supersedes_first_connection() {
     assert!(
         closed,
         "the superseded first connection should be torn down once it sends a frame"
+    );
+
+    let resp = client
+        .get(format!("{base_url}/api/servers/{server_id}"))
+        .send()
+        .await
+        .expect("GET server failed");
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.expect("parse server");
+    let temporary = body["data"]["temporary"]
+        .as_array()
+        .expect("temporary grants should be an array");
+    assert!(
+        temporary.iter().any(|grant| {
+            grant["cap"].as_str() == Some("terminal")
+                && grant["expires_at"].as_i64() == Some(expires_at)
+        }),
+        "superseded connection cleanup should preserve the current connection's temporary grants"
     );
 
     // The SECOND connection is the live one: it still gets Acked.
