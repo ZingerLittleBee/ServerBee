@@ -433,6 +433,7 @@ impl AgentManager {
 
     fn finish_connection_removal(&self, server_id: &str) {
         self.agent_local_capabilities.remove(server_id);
+        self.temporary_grants.remove(server_id);
         self.remove_docker_log_sessions_for_server(server_id);
         self.clear_docker_caches(server_id);
 
@@ -1264,6 +1265,29 @@ mod tests {
         assert!(mgr.is_online("s1"));
         assert!(mgr.get_sender("s1").is_some());
         assert!(mgr.get_docker_containers("s1").is_some());
+    }
+
+    #[test]
+    fn test_remove_connection_if_current_scopes_temporary_grant_cleanup() {
+        let (mgr, _rx) = make_manager();
+        let (tx1, _) = mpsc::channel(1);
+        let (tx2, _) = mpsc::channel(1);
+        let first_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx1, test_addr());
+        let second_connection_id = mgr.add_connection("s1".into(), "Srv".into(), tx2, test_addr());
+        mgr.update_temporary_grants(
+            "s1",
+            vec![TemporaryGrant {
+                cap: "terminal".into(),
+                granted_at: 1,
+                expires_at: 100,
+            }],
+        );
+
+        assert!(!mgr.remove_connection_if_current("s1", first_connection_id));
+        assert_eq!(mgr.get_temporary_grants("s1").len(), 1);
+
+        assert!(mgr.remove_connection_if_current("s1", second_connection_id));
+        assert!(mgr.get_temporary_grants("s1").is_empty());
     }
 
     #[test]

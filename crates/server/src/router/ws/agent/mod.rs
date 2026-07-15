@@ -281,11 +281,6 @@ async fn handle_agent_ws(
     {
         crate::service::agent_manager::cleanup_disconnected_docker_state(&state, &server_id).await;
     }
-    // Drop any temporary-grant countdowns so a disconnected agent does not leave
-    // stale grants ticking in the REST DTO / browser view.
-    state
-        .agent_manager
-        .update_temporary_grants(&server_id, vec![]);
     write_task.abort();
     tracing::info!("Agent {server_id} disconnected");
 }
