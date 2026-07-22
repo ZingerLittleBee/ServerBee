@@ -101,13 +101,6 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
       .map(([, v]) => v)
   }, [records, targets])
 
-  const tickInterval = useMemo(() => {
-    if (chartData.length <= 12) {
-      return 0
-    }
-    return Math.ceil(chartData.length / 10) - 1
-  }, [chartData.length])
-
   const isExtendedRange = hours >= 168
 
   const tickFormatter = useMemo<(v: string) => string>(() => {
@@ -159,10 +152,13 @@ export function LatencyChart({ records, targets, isRealtime = false, hours = 1, 
     <ChartContainer className={embedded ? 'h-full w-full' : 'h-[300px] w-full'} config={chartConfig}>
       <AreaChart accessibilityLayer data={chartData}>
         <CartesianGrid vertical={false} />
+        {/* Width-aware tick decimation: a fixed tick count overlaps into an
+            unreadable string on narrow dashboard widgets (min 4-col ≈ 300px). */}
         <XAxis
           axisLine={false}
           dataKey="timestamp"
-          interval={tickInterval}
+          interval="equidistantPreserveStart"
+          minTickGap={32}
           tickFormatter={tickFormatter}
           tickLine={false}
         />
