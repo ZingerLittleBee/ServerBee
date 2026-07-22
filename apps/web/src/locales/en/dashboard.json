@@ -198,9 +198,12 @@
         "metric": "Metric",
         "server": "Server",
         "servers": "Servers",
+        "monitors": "Monitors",
         "timeRange": "Time Range",
         "count": "Count",
         "maxItems": "Max Items",
+        "maxOptional": "Max value (optional)",
+        "sortOrder": "Sort",
         "markdownContent": "Markdown Content",
         "days": "Days",
         "titleOptional": "Title (optional)",
@@ -221,6 +224,17 @@
       "empty": {
         "noServers": "No servers available",
         "serverNotFound": "Server not found"
+      },
+      "sort": {
+        "desc": "Highest first",
+        "asc": "Lowest first"
+      },
+      "hints": {
+        "allServersWhenEmpty": "Leave empty to include all servers",
+        "allMonitorsWhenEmpty": "Leave empty to include all monitors"
+      },
+      "errors": {
+        "numberRange": "Enter a number between {{min}} and {{max}}"
       }
     },
     "networkLatency": {
@@ -285,9 +299,6 @@
       },
       "placeholders": {
         "widgetTitle": "Widget title"
-      },
-      "messages": {
-        "noConfigNeeded": "No additional configuration needed."
       }
     }
   },
