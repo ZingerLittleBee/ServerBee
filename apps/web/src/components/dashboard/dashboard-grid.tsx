@@ -320,8 +320,14 @@ export function DashboardGrid({
   // Only ever called mid-interaction — idle echoes are dropped in
   // handleLayoutChange (see the comment there).
   // Escape cancels the in-flight drag/resize: further live updates are ignored
-  // and the commit on release restores the pre-interaction layout.
+  // and the commit on release restores the pre-interaction layout. Restoring
+  // the layout prop alone is not enough — RGL's prop-sync effect skips prop
+  // changes made during an interaction and afterwards deep-equal-compares
+  // against the pre-interaction prop, so it keeps its internal (moved/resized)
+  // layout. Bumping cancelEpoch remounts GridLayout so it re-reads the
+  // restored controlled layout.
   const interactionCancelledRef = useRef(false)
+  const [cancelEpoch, setCancelEpoch] = useState(0)
 
   const updateLiveLayout = useCallback(
     (nextLayout: Layout) => {
@@ -402,8 +408,12 @@ export function DashboardGrid({
   const commitLayoutChange = useCallback(
     (finalLayout: Layout) => {
       if (interactionCancelledRef.current) {
-        interactionCancelledRef.current = false
+        // Deliberately NOT reset here: RGL fires trailing onResize/onLayoutChange
+        // callbacks synchronously after onResizeStop (before our state flushes),
+        // and those must stay blocked or they re-adopt the cancelled layout.
+        // startInteraction resets the flag on the next gesture.
         dispatchLayoutRuntime({ type: 'commit-layout', baseLayout, layout: baseLayout })
+        setCancelEpoch((epoch) => epoch + 1)
         return
       }
       // Per-strategy snap. For free/fixed: snap h to coarse multiples. For
@@ -493,6 +503,7 @@ export function DashboardGrid({
           compactor={compactor}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
+          key={cancelEpoch}
           layout={renderedLayout}
           onDrag={(next) => updateLiveLayout(next)}
           onDragStart={() => startInteraction('dragging')}

@@ -25,6 +25,7 @@ interface MockGridLayoutProps {
 
 let latestGridLayoutProps: MockGridLayoutProps | undefined
 let mockContainerWidth = 1200
+let gridLayoutMountCount = 0
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -38,20 +39,26 @@ vi.mock('./widget-renderer', () => ({
   )
 }))
 
-vi.mock('react-grid-layout', () => ({
-  GridLayout: (props: MockGridLayoutProps) => {
-    latestGridLayoutProps = props
-    return <div data-testid="grid-layout">{props.children}</div>
-  },
-  useContainerWidth: () => ({ width: mockContainerWidth, containerRef: { current: null }, mounted: true }),
-  noCompactor: (layout: unknown) => layout,
-  getCompactor: (type: null, allowOverlap = false, preventCollision = false) => ({
-    type,
-    allowOverlap,
-    preventCollision,
-    compact: (l: unknown) => l
-  })
-}))
+vi.mock('react-grid-layout', async () => {
+  const { useEffect } = await import('react')
+  return {
+    GridLayout: (props: MockGridLayoutProps) => {
+      latestGridLayoutProps = props
+      useEffect(() => {
+        gridLayoutMountCount += 1
+      }, [])
+      return <div data-testid="grid-layout">{props.children}</div>
+    },
+    useContainerWidth: () => ({ width: mockContainerWidth, containerRef: { current: null }, mounted: true }),
+    noCompactor: (layout: unknown) => layout,
+    getCompactor: (type: null, allowOverlap = false, preventCollision = false) => ({
+      type,
+      allowOverlap,
+      preventCollision,
+      compact: (l: unknown) => l
+    })
+  }
+})
 
 vi.mock('react-grid-layout/css/styles.css', () => ({}))
 
@@ -99,6 +106,7 @@ describe('DashboardGrid', () => {
   beforeEach(() => {
     latestGridLayoutProps = undefined
     mockContainerWidth = 1200
+    gridLayoutMountCount = 0
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1200 })
   })
 
@@ -429,11 +437,16 @@ describe('DashboardGrid', () => {
     })
     expect(getGridLayoutProps().layout).toEqual(originalLayout)
 
+    const mountsBeforeCancel = gridLayoutMountCount
     act(() => {
       getGridLayoutProps().onDragStop?.(dragLayout)
     })
     expect(onLayoutChange).not.toHaveBeenCalled()
     expect(getGridLayoutProps().layout).toEqual(originalLayout)
+    // RGL ignores prop restores made mid-interaction and keeps its internal
+    // (moved) layout, so the cancel commit must remount GridLayout to force it
+    // to re-read the restored controlled layout.
+    expect(gridLayoutMountCount).toBe(mountsBeforeCancel + 1)
 
     // The cancel flag resets: the next interaction commits normally.
     act(() => {
