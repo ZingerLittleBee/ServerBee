@@ -319,8 +319,15 @@ export function DashboardGrid({
   // visibly snaps back. content-height widgets keep their measured fine height.
   // Only ever called mid-interaction — idle echoes are dropped in
   // handleLayoutChange (see the comment there).
+  // Escape cancels the in-flight drag/resize: further live updates are ignored
+  // and the commit on release restores the pre-interaction layout.
+  const interactionCancelledRef = useRef(false)
+
   const updateLiveLayout = useCallback(
     (nextLayout: Layout) => {
+      if (interactionCancelledRef.current) {
+        return
+      }
       const next = nextLayout.map((item) => {
         const strategy = getStrategy(item.i)
         const base = {
@@ -351,10 +358,28 @@ export function DashboardGrid({
 
   const startInteraction = useCallback(
     (state: ActiveInteractionState) => {
+      interactionCancelledRef.current = false
       dispatchLayoutRuntime({ type: 'start-interaction', state, baseLayout, layout: baseLayout })
     },
     [baseLayout]
   )
+
+  useEffect(() => {
+    if (!isInteracting) {
+      return
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+      interactionCancelledRef.current = true
+      // Pushed neighbors revert immediately; the actively dragged item is owned
+      // by RGL's internal drag state until release, then snaps back on commit.
+      dispatchLayoutRuntime({ type: 'set-live-layout', baseLayout, layout: baseLayout })
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isInteracting, baseLayout])
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
@@ -376,6 +401,11 @@ export function DashboardGrid({
 
   const commitLayoutChange = useCallback(
     (finalLayout: Layout) => {
+      if (interactionCancelledRef.current) {
+        interactionCancelledRef.current = false
+        dispatchLayoutRuntime({ type: 'commit-layout', baseLayout, layout: baseLayout })
+        return
+      }
       // Per-strategy snap. For free/fixed: snap h to coarse multiples. For
       // aspect-square: apply snapOnRelease's coarse SnapPatch via applyCoarsePatch
       // (sets w and re-derives fine h via SCALE). Then re-normalize so the live

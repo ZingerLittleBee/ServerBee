@@ -392,6 +392,58 @@ describe('DashboardGrid', () => {
     expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 1, grid_w: 2, grid_h: 2 }])
   })
 
+  it('cancels the interaction and restores the layout when Escape is pressed', () => {
+    const onLayoutChange = vi.fn()
+
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const originalLayout = getGridLayoutProps().layout
+    const dragLayout = [
+      { i: 'w-1', x: 5, y: 8, w: 2, h: 8 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
+    ]
+
+    act(() => {
+      getGridLayoutProps().onDragStart?.()
+      getGridLayoutProps().onDrag?.(dragLayout)
+    })
+    expect(getGridLayoutProps().layout).toEqual(dragLayout)
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    // The preview snaps back right away and further live updates are ignored.
+    expect(getGridLayoutProps().layout).toEqual(originalLayout)
+
+    act(() => {
+      getGridLayoutProps().onDrag?.(dragLayout)
+    })
+    expect(getGridLayoutProps().layout).toEqual(originalLayout)
+
+    act(() => {
+      getGridLayoutProps().onDragStop?.(dragLayout)
+    })
+    expect(onLayoutChange).not.toHaveBeenCalled()
+    expect(getGridLayoutProps().layout).toEqual(originalLayout)
+
+    // The cancel flag resets: the next interaction commits normally.
+    act(() => {
+      getGridLayoutProps().onDragStart?.()
+      getGridLayoutProps().onDrag?.(dragLayout)
+      getGridLayoutProps().onDragStop?.(dragLayout)
+    })
+    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 5, grid_y: 2, grid_w: 2, grid_h: 2 }])
+  })
+
   it('does not overwrite liveLayout from external widget rerenders while dragging', () => {
     const onLayoutChange = vi.fn()
     const { rerender } = render(
