@@ -58,32 +58,35 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
   return (
     <div className="flex h-full flex-col rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{t('widgets.alertList.title')}</h3>
-      <ScrollArea className="flex-1" contentClassName="flex flex-col gap-1.5">
-        {filtered.map((event) => {
-          const isFiring = event.status === 'firing'
-          const serverName = serverNameMap.get(event.server_id) ?? event.server_name
-          return (
-            <div
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50"
-              key={`${event.rule_id}-${event.server_id}-${event.status}`}
-            >
-              <span
-                className={`inline-block size-2 shrink-0 rounded-full ${isFiring ? 'bg-red-500' : 'bg-green-500'}`}
-              />
-              <span className="min-w-0 flex-1 truncate">
-                <span className="font-medium">{event.rule_name}</span>
-                <span className="text-muted-foreground"> - {serverName}</span>
-              </span>
-              <span className="shrink-0 text-muted-foreground tabular-nums">{formatRelativeTime(event.event_at)}</span>
-            </div>
-          )
-        })}
-        {filtered.length === 0 && (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
-            {t('widgets.alertList.empty.noEvents')}
-          </div>
-        )}
-      </ScrollArea>
+      {filtered.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
+          {t('widgets.alertList.empty.noEvents')}
+        </div>
+      ) : (
+        <ScrollArea className="flex-1" contentClassName="flex flex-col gap-1.5">
+          {filtered.map((event) => {
+            const isFiring = event.status === 'firing'
+            const serverName = serverNameMap.get(event.server_id) ?? event.server_name
+            return (
+              <div
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50"
+                key={`${event.rule_id}-${event.server_id}-${event.status}`}
+              >
+                <span
+                  className={`inline-block size-2 shrink-0 rounded-full ${isFiring ? 'bg-red-500' : 'bg-green-500'}`}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  <span className="font-medium">{event.rule_name}</span>
+                  <span className="text-muted-foreground"> - {serverName}</span>
+                </span>
+                <span className="shrink-0 text-muted-foreground tabular-nums">
+                  {formatRelativeTime(event.event_at)}
+                </span>
+              </div>
+            )
+          })}
+        </ScrollArea>
+      )}
     </div>
   )
 }
