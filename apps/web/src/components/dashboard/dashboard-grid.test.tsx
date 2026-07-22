@@ -7,6 +7,7 @@ import { DashboardGrid } from './dashboard-grid'
 
 interface MockGridLayoutProps {
   children: ReactNode
+  compactor?: { allowOverlap: boolean; preventCollision: boolean; type: null }
   layout: Array<{ h: number; i: string; minH?: number; minW?: number; w: number; x: number; y: number }>
   onDrag?: (...args: unknown[]) => void
   onDragStart?: (...args: unknown[]) => void
@@ -24,6 +25,7 @@ interface MockGridLayoutProps {
 
 let latestGridLayoutProps: MockGridLayoutProps | undefined
 let mockContainerWidth = 1200
+let gridLayoutMountCount = 0
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -37,15 +39,26 @@ vi.mock('./widget-renderer', () => ({
   )
 }))
 
-vi.mock('react-grid-layout', () => ({
-  GridLayout: (props: MockGridLayoutProps) => {
-    latestGridLayoutProps = props
-    return <div data-testid="grid-layout">{props.children}</div>
-  },
-  useContainerWidth: () => ({ width: mockContainerWidth, containerRef: { current: null }, mounted: true }),
-  noCompactor: (layout: unknown) => layout,
-  getCompactor: () => ({ type: null, allowOverlap: false, preventCollision: true, compact: (l: unknown) => l })
-}))
+vi.mock('react-grid-layout', async () => {
+  const { useEffect } = await import('react')
+  return {
+    GridLayout: (props: MockGridLayoutProps) => {
+      latestGridLayoutProps = props
+      useEffect(() => {
+        gridLayoutMountCount += 1
+      }, [])
+      return <div data-testid="grid-layout">{props.children}</div>
+    },
+    useContainerWidth: () => ({ width: mockContainerWidth, containerRef: { current: null }, mounted: true }),
+    noCompactor: (layout: unknown) => layout,
+    getCompactor: (type: null, allowOverlap = false, preventCollision = false) => ({
+      type,
+      allowOverlap,
+      preventCollision,
+      compact: (l: unknown) => l
+    })
+  }
+})
 
 vi.mock('react-grid-layout/css/styles.css', () => ({}))
 
@@ -93,6 +106,7 @@ describe('DashboardGrid', () => {
   beforeEach(() => {
     latestGridLayoutProps = undefined
     mockContainerWidth = 1200
+    gridLayoutMountCount = 0
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1200 })
   })
 
@@ -226,7 +240,7 @@ describe('DashboardGrid', () => {
     expect(screen.getByTestId('grid-layout')).toBeInTheDocument()
   })
 
-  it('updates liveLayout from library onLayoutChange without notifying the parent', () => {
+  it('drops idle onLayoutChange echoes without adopting them or notifying the parent', () => {
     const onLayoutChange = vi.fn()
 
     render(
@@ -240,22 +254,27 @@ describe('DashboardGrid', () => {
       />
     )
 
-    // Fine units (4x scale), coarse-row aligned (snap no-op) and in separate
-    // columns from w-2 so de-overlap is also a no-op.
-    const nextLayout = [
-      { i: 'w-1', x: 5, y: 8, w: 2, h: 8 },
-      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
+    const before = getGridLayoutProps().layout
+
+    // While idle, everything onLayoutChange delivers is an echo of RGL's
+    // internal state (mount correction, post-stop re-emit, post-save sync).
+    // Adopting it feeds RGL's state back into the controlled `layout` prop and
+    // any mismatch with the committed layout ping-pongs forever ("Maximum
+    // update depth" jitter). The grid is controlled: echoes must be dropped.
+    const echoed = [
+      { i: 'w-1', x: 0, y: 11, w: 2, h: 8 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 11 }
     ]
 
     act(() => {
-      getGridLayoutProps().onLayoutChange?.(nextLayout)
+      getGridLayoutProps().onLayoutChange?.(echoed)
     })
 
     expect(onLayoutChange).not.toHaveBeenCalled()
-    expect(getGridLayoutProps().layout).toEqual(nextLayout)
+    expect(getGridLayoutProps().layout).toEqual(before)
   })
 
-  it('preserves an idle onLayoutChange echo with a non-coarse y (no re-snap ping-pong)', () => {
+  it('swaps in an allowOverlap compactor only while resizing', () => {
     render(
       <DashboardGrid
         isEditing
@@ -267,24 +286,56 @@ describe('DashboardGrid', () => {
       />
     )
 
-    // Reproduces the post-save jitter: baseLayout de-overlaps a widget so it hugs
-    // the non-coarse bottom edge of a content-height / aspect-square widget, giving
-    // it a y that is NOT a SCALE(4) multiple. While idle, RGL echoes that layout
-    // back through onLayoutChange. The grid must keep it verbatim — re-snapping y
-    // to a coarse row would hand RGL a different layout, which it echoes again,
-    // setLiveLayout fires again, and the two normalizers ping-pong until React
-    // aborts with "Maximum update depth exceeded". w-1 (cols 0-1) and w-2 (cols
-    // 2-4) never overlap, so de-overlap is a no-op and y=11 must survive.
-    const echoed = [
-      { i: 'w-1', x: 0, y: 11, w: 2, h: 8 },
-      { i: 'w-2', x: 2, y: 0, w: 3, h: 11 }
+    // Idle/drag: strict compactor so dropping onto an occupied cell snaps back.
+    expect(getGridLayoutProps().compactor).toMatchObject({ allowOverlap: false, preventCollision: true })
+
+    // Resizing: RGL's preventCollision path would revert the size on any
+    // collision instead of pushing neighbors, making vertical growth next to a
+    // neighbor impossible (visual stretch, then snap-back on release). The
+    // allowOverlap compactor lets RGL accept the size; deoverlapLayout resolves
+    // the transient overlap.
+    act(() => {
+      getGridLayoutProps().onResizeStart?.()
+    })
+    expect(getGridLayoutProps().compactor).toMatchObject({ allowOverlap: true, preventCollision: false })
+
+    act(() => {
+      getGridLayoutProps().onResizeStop?.([
+        { i: 'w-1', x: 0, y: 0, w: 2, h: 8 },
+        { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
+      ])
+    })
+    expect(getGridLayoutProps().compactor).toMatchObject({ allowOverlap: false, preventCollision: true })
+  })
+
+  it('commits a grown size on resize stop instead of reverting it', () => {
+    const onLayoutChange = vi.fn()
+
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    // w-1 grows from h=8 to h=12 fine units (2 -> 3 coarse rows).
+    const resized = [
+      { i: 'w-1', x: 0, y: 0, w: 2, h: 12 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
     ]
 
     act(() => {
-      getGridLayoutProps().onLayoutChange?.(echoed)
+      getGridLayoutProps().onResizeStart?.()
+      getGridLayoutProps().onResize?.(resized)
+      getGridLayoutProps().onResizeStop?.(resized)
     })
 
-    expect(getGridLayoutProps().layout).toEqual(echoed)
+    expect(onLayoutChange).toHaveBeenCalledTimes(1)
+    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 0, grid_w: 2, grid_h: 3 }])
   })
 
   it('keeps drag-time layout changes internal until commit', () => {
@@ -347,6 +398,63 @@ describe('DashboardGrid', () => {
 
     expect(onLayoutChange).toHaveBeenCalledTimes(1)
     expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 0, grid_y: 1, grid_w: 2, grid_h: 2 }])
+  })
+
+  it('cancels the interaction and restores the layout when Escape is pressed', () => {
+    const onLayoutChange = vi.fn()
+
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={onLayoutChange}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={widgets}
+      />
+    )
+
+    const originalLayout = getGridLayoutProps().layout
+    const dragLayout = [
+      { i: 'w-1', x: 5, y: 8, w: 2, h: 8 },
+      { i: 'w-2', x: 2, y: 0, w: 3, h: 12 }
+    ]
+
+    act(() => {
+      getGridLayoutProps().onDragStart?.()
+      getGridLayoutProps().onDrag?.(dragLayout)
+    })
+    expect(getGridLayoutProps().layout).toEqual(dragLayout)
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+    // The preview snaps back right away and further live updates are ignored.
+    expect(getGridLayoutProps().layout).toEqual(originalLayout)
+
+    act(() => {
+      getGridLayoutProps().onDrag?.(dragLayout)
+    })
+    expect(getGridLayoutProps().layout).toEqual(originalLayout)
+
+    const mountsBeforeCancel = gridLayoutMountCount
+    act(() => {
+      getGridLayoutProps().onDragStop?.(dragLayout)
+    })
+    expect(onLayoutChange).not.toHaveBeenCalled()
+    expect(getGridLayoutProps().layout).toEqual(originalLayout)
+    // RGL ignores prop restores made mid-interaction and keeps its internal
+    // (moved) layout, so the cancel commit must remount GridLayout to force it
+    // to re-read the restored controlled layout.
+    expect(gridLayoutMountCount).toBe(mountsBeforeCancel + 1)
+
+    // The cancel flag resets: the next interaction commits normally.
+    act(() => {
+      getGridLayoutProps().onDragStart?.()
+      getGridLayoutProps().onDrag?.(dragLayout)
+      getGridLayoutProps().onDragStop?.(dragLayout)
+    })
+    expect(onLayoutChange).toHaveBeenCalledWith([{ id: 'w-1', grid_x: 5, grid_y: 2, grid_w: 2, grid_h: 2 }])
   })
 
   it('does not overwrite liveLayout from external widget rerenders while dragging', () => {

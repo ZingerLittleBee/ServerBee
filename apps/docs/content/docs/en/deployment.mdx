@@ -451,12 +451,24 @@ sudo systemctl start serverbee-server
 
 ```bash
 docker compose stop
+
+SERVERBEE_DATA_VOLUME="$(
+  docker inspect serverbee-server \
+    --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{println .Name}}{{end}}{{end}}'
+)"
+test -n "$SERVERBEE_DATA_VOLUME"
+
+mkdir -p backups
 docker run --rm \
-  -v serverbee-data:/data \
-  -v $(pwd)/backups:/backups \
-  alpine tar czf /backups/serverbee-$(date +%Y%m%d).tar.gz -C /data .
+  --mount "type=volume,src=${SERVERBEE_DATA_VOLUME},dst=/data,readonly" \
+  --mount "type=bind,src=$(pwd)/backups,dst=/backups" \
+  alpine \
+  tar czf /backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /data .
+
 docker compose start
 ```
+
+Do not assume the Docker volume is literally named `serverbee-data`. Compose usually prefixes the volume with its project name; referring to the wrong name creates a new empty volume, so the command appears to succeed while backing up no production data. The command above reads the actual volume mounted at `/data` from the existing container.
 
 ### Restore
 
@@ -561,6 +573,197 @@ sudo systemctl start serverbee-server
 ```
 
 If you deployed with the install script, `sudo serverbee upgrade -y` handles the binary download, replacement, and restart for you.
+
+## Database Migration Failures and Recovery
+
+ServerBee runs database migrations during Rust server startup. Migrations finish before the HTTP listener starts; when a migration fails, the process exits, and Docker's `restart: unless-stopped` or a systemd restart policy may put the service into a restart loop.
+
+<Callout type="warn">
+The current release does not create an automatic pre-migration snapshot and cannot automatically roll migrations back. A Docker volume persists files, but it is not a versioned restore point. All migrations move forward, and migration `down()` implementations do not restore the old schema.
+</Callout>
+
+### Failure Scenarios
+
+| Category | Typical causes | Recommended response |
+|----------|----------------|----------------------|
+| Storage is not writable | Incorrect `/data` permissions, read-only mount, exhausted disk space or inodes | Stop the restart loop, repair storage, then retry the migration |
+| Database lock | Another ServerBee instance, backup process, or SQLite client holds a long-lived lock | Ensure there is one database writer, stop the conflicting process, then retry |
+| Database corruption | Damaged SQLite database, WAL, or SHM file; abrupt host power loss | Preserve the failed state, run integrity checks, and prefer a verified backup |
+| Schema drift | Tables, indexes, or migration history were edited manually | Do not fabricate migration records; restore a compatible backup or ship a forward repair migration |
+| Existing data violates a new constraint | Duplicate values, null values, orphaned foreign keys, or unexpected legacy formats | Locate and repair the data in a database copy, then retry the migration |
+| Migration implementation defect | Incorrect SQL, backfill logic, or target schema | Preserve the database and deploy a new image containing a corrected migration |
+| Interrupted execution | The container was killed or the host restarted during a migration | Snapshot the failed state first; verify schema and migration history before retrying |
+| Multiple instances compete | Multiple containers migrate the same SQLite file concurrently | Scale down to one instance; multiple Server instances must not share writes to one SQLite database |
+| Incompatible application rollback | A new migration succeeded, then only the application image was downgraded | Restore the matching pre-upgrade database backup or run an application version compatible with the new schema |
+
+### Step 1: Stop the Restart Loop
+
+Docker Compose:
+
+```bash
+docker compose stop serverbee-server
+```
+
+If an external tool still keeps starting the container, temporarily disable its container-level restart policy:
+
+```bash
+docker update --restart=no serverbee-server
+docker stop serverbee-server
+```
+
+systemd:
+
+```bash
+sudo systemctl stop serverbee-server
+sudo systemctl reset-failed serverbee-server
+```
+
+Stopping the service does not delete its Docker volume or database. Do not run `docker compose down -v`; the `-v` flag deletes Compose-managed volumes.
+
+### Step 2: Read the Migration Error
+
+Docker:
+
+```bash
+docker logs --tail 200 serverbee-server
+```
+
+systemd:
+
+```bash
+sudo journalctl -u serverbee-server -b -n 200 --no-pager
+```
+
+A successful migration writes `Database migrations complete` to the log. If that message is absent, investigate the first database or migration error rather than the later restart messages.
+
+### Step 3: Preserve the Failed State
+
+Create a complete copy even when the database may be partially migrated or damaged. It is both the input for repair and protection against later attempts overwriting evidence.
+
+Docker:
+
+```bash
+SERVERBEE_DATA_VOLUME="$(
+  docker inspect serverbee-server \
+    --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{println .Name}}{{end}}{{end}}'
+)"
+test -n "$SERVERBEE_DATA_VOLUME"
+
+mkdir -p backups
+docker run --rm \
+  --mount "type=volume,src=${SERVERBEE_DATA_VOLUME},dst=/data,readonly" \
+  --mount "type=bind,src=$(pwd)/backups,dst=/backups" \
+  alpine \
+  tar czf /backups/serverbee-failed-migration-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /data .
+```
+
+For systemd or binary deployments, copy the entire data directory after stopping the service, not just the main database file:
+
+```bash
+sudo mkdir -p /backups
+sudo cp -a /opt/serverbee/data \
+  "/backups/serverbee-failed-migration-$(date -u +%Y%m%dT%H%M%SZ)"
+```
+
+### Step 4: Inspect the Database State
+
+Run checks against an extracted copy of the failed snapshot, not the only production volume:
+
+```bash
+mkdir -p recovery-data
+SERVERBEE_FAILED_BACKUP="$(ls -1t backups/serverbee-failed-migration-*.tar.gz | head -n 1)"
+test -f "$SERVERBEE_FAILED_BACKUP"
+tar xzf "$SERVERBEE_FAILED_BACKUP" -C recovery-data
+
+sqlite3 recovery-data/serverbee.db "PRAGMA integrity_check;"
+sqlite3 recovery-data/serverbee.db "PRAGMA foreign_key_check;"
+sqlite3 recovery-data/serverbee.db \
+  "SELECT * FROM seaql_migrations ORDER BY applied_at;"
+```
+
+- `PRAGMA integrity_check` should return `ok`.
+- `PRAGMA foreign_key_check` should normally return no rows.
+- `seaql_migrations` shows migrations recorded as successful; the table may not exist if a brand-new database failed before migration bookkeeping was created.
+
+Do not delete rows from `seaql_migrations` or manually mark a failed migration as successful. When migration history and the actual schema disagree, a later release can fail in a more difficult-to-recover state.
+
+### Step 5: Choose a Recovery Path
+
+**Environmental failure**
+
+If the cause was disk space, permissions, a read-only mount, or a temporary database lock, repair the root cause and restart. SeaORM will retry migrations not recorded as successful:
+
+```bash
+docker update --restart=unless-stopped serverbee-server
+docker compose up -d serverbee-server
+docker logs -f serverbee-server
+```
+
+**Incompatible existing data or schema**
+
+Identify conflicting data in a database copy. Prefer a forward repair migration that handles the legacy state. If manual data repair is unavoidable, validate the complete migration and application startup against the copy before applying the same reviewed operations to production.
+
+**Migration code defect**
+
+Do not repeatedly restart the same failing image. Preserve the failed state and deploy a new image containing a corrected migration. Switching only to the old image is not a database rollback; it is safe only when you have established that the failed migration made no schema changes. Otherwise restore the pre-upgrade backup.
+
+**Database corruption**
+
+Prefer the latest backup that passes integrity checks. SQLite `.recover` is a last-resort data salvage tool when no usable backup exists; its output may be incomplete and must be validated in isolation.
+
+### Restore a Docker Backup into a New Volume
+
+Restore into a new volume instead of overwriting the failed volume. This preserves the failed state for further investigation:
+
+```bash
+SERVERBEE_RECOVERY_VOLUME="serverbee-data-recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+docker volume create "$SERVERBEE_RECOVERY_VOLUME"
+
+docker run --rm \
+  --mount "type=volume,src=${SERVERBEE_RECOVERY_VOLUME},dst=/data" \
+  --mount "type=bind,src=$(pwd)/backups,dst=/backups,readonly" \
+  alpine \
+  tar xzf /backups/serverbee-20260314T020000Z.tar.gz -C /data
+
+echo "$SERVERBEE_RECOVERY_VOLUME"
+```
+
+Then point the existing `serverbee-data` logical Compose volume at the newly created volume:
+
+```yaml
+volumes:
+  serverbee-data:
+    external: true
+    name: serverbee-data-recovery-20260722T103000Z
+```
+
+Confirm that `name` exactly matches the preceding command's output before starting the service. Restoring an older database may run migrations again, so first decide whether to run the original application version or a newer version containing the migration fix.
+
+### Verify Recovery
+
+```bash
+docker compose up -d serverbee-server
+docker compose ps
+docker logs --tail 200 serverbee-server
+curl --fail http://127.0.0.1:9527/healthz
+```
+
+Consider recovery complete only when all of the following are true:
+
+- The logs contain `Database migrations complete`.
+- The container remains running and its health check passes.
+- `PRAGMA integrity_check` returns `ok`.
+- You can sign in and read existing servers, alerts, and historical records.
+- Database lock, foreign key, and missing table or column errors do not continue.
+
+### Prevention
+
+- Create and verify a database backup before every upgrade; the current upgrade command does not create one automatically.
+- Copy backups off the Docker host so one disk failure cannot damage both the production volume and its local backups.
+- Keep SQLite deployments at one Server instance; do not share one writable database file among multiple containers.
+- Check available disk space before upgrading, and use an explicit image version tag so the migration source is identifiable.
+- Keep both the pre-upgrade image and database backup. Database rollback depends on the backup, not just the old image.
+- Wait for the migration success log and health check after an upgrade; a successful `docker compose up -d` return is not sufficient evidence.
 
 <Cards>
   <Card title="Server Setup" href="/en/docs/server" />

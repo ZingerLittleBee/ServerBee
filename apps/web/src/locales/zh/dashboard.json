@@ -173,10 +173,7 @@
       "attribution": "GeoIP by DB-IP"
     },
     "uptimeTimeline": {
-      "title": "可用时间线",
-      "empty": {
-        "noServers": "未配置服务器"
-      }
+      "title": "可用时间线"
     },
     "diskIo": {
       "title": "磁盘 I/O",
@@ -198,9 +195,12 @@
         "metric": "指标",
         "server": "服务器",
         "servers": "服务器",
+        "monitors": "监控项",
         "timeRange": "时间范围",
         "count": "数量",
         "maxItems": "最大条目数",
+        "maxOptional": "最大值（可选）",
+        "sortOrder": "排序",
         "markdownContent": "Markdown 内容",
         "days": "天数",
         "titleOptional": "标题（可选）",
@@ -221,6 +221,17 @@
       "empty": {
         "noServers": "暂无可用服务器",
         "serverNotFound": "未找到服务器"
+      },
+      "sort": {
+        "desc": "从高到低",
+        "asc": "从低到高"
+      },
+      "hints": {
+        "allServersWhenEmpty": "留空表示包含所有服务器",
+        "allMonitorsWhenEmpty": "留空表示包含所有监控项"
+      },
+      "errors": {
+        "numberRange": "请输入 {{min}} 到 {{max}} 之间的数字"
       }
     },
     "networkLatency": {
@@ -285,9 +296,6 @@
       },
       "placeholders": {
         "widgetTitle": "小组件标题"
-      },
-      "messages": {
-        "noConfigNeeded": "无需额外配置。"
       }
     }
   },

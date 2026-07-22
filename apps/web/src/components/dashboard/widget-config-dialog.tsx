@@ -1,4 +1,5 @@
 import { ConfigForm } from '@serverbee/widget-sdk'
+import { useQuery } from '@tanstack/react-query'
 import { LayoutGrid, List } from 'lucide-react'
 import { useId, useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -11,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { parseConfig } from '@/lib/widget-helpers'
 import type {
@@ -28,6 +30,8 @@ import type {
   NetworkQualityConfig,
   ServerCardsConfig,
   ServerCardsLayout,
+  ServerMapConfig,
+  ServiceStatusConfig,
   StatNumberConfig,
   TopNConfig,
   TrafficBarConfig,
@@ -255,18 +259,20 @@ function RangeSelect({
   )
 }
 
-function ServerMultiSelect({
+function CheckboxMultiSelect({
   label,
-  servers,
+  items,
   selected,
   onChange,
-  emptyMessage
+  emptyMessage,
+  hint
 }: {
   emptyMessage: string
+  hint?: string
+  items: { id: string; name: string }[]
   label: string
   onChange: (ids: string[]) => void
   selected: string[]
-  servers: ServerMetrics[]
 }) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
 
@@ -282,19 +288,94 @@ function ServerMultiSelect({
     <div className="space-y-1.5">
       <Label>{label}</Label>
       <ScrollArea className="max-h-40 rounded-lg border" contentClassName="space-y-1 p-2">
-        {servers.map((s) => (
+        {items.map((item) => (
           <button
             className="flex w-full cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-muted/50"
-            key={s.id}
-            onClick={() => toggle(s.id)}
+            key={item.id}
+            onClick={() => toggle(item.id)}
             type="button"
           >
-            <Checkbox checked={selectedSet.has(s.id)} onCheckedChange={() => toggle(s.id)} />
-            <span className="text-sm">{s.name}</span>
+            <Checkbox checked={selectedSet.has(item.id)} onCheckedChange={() => toggle(item.id)} />
+            <span className="text-sm">{item.name}</span>
           </button>
         ))}
-        {servers.length === 0 && <p className="py-2 text-center text-muted-foreground text-xs">{emptyMessage}</p>}
+        {items.length === 0 && <p className="py-2 text-center text-muted-foreground text-xs">{emptyMessage}</p>}
       </ScrollArea>
+      {hint && items.length > 0 && <p className="text-muted-foreground text-xs">{hint}</p>}
+    </div>
+  )
+}
+
+// Numeric config fields validate against these bounds; the dialog disables
+// Save while any bound is violated. Values left empty are valid — the key is
+// omitted from config_json and the widget's built-in default applies.
+interface NumericBound {
+  field: string
+  integer: boolean
+  max: number
+  min: number
+}
+
+const GAUGE_MAX_BOUND: NumericBound = { field: 'max', min: 1, max: 100, integer: false }
+const TOP_N_COUNT_BOUND: NumericBound = { field: 'count', min: 1, max: 20, integer: true }
+const ALERT_MAX_ITEMS_BOUND: NumericBound = { field: 'max_items', min: 1, max: 50, integer: true }
+
+const NUMERIC_BOUNDS: Partial<Record<string, NumericBound[]>> = {
+  gauge: [GAUGE_MAX_BOUND],
+  'top-n': [TOP_N_COUNT_BOUND],
+  'alert-list': [ALERT_MAX_ITEMS_BOUND]
+}
+
+function isBoundValid(value: unknown, bound: NumericBound): boolean {
+  if (value === undefined) {
+    return true
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return false
+  }
+  if (bound.integer && !Number.isInteger(value)) {
+    return false
+  }
+  return value >= bound.min && value <= bound.max
+}
+
+function isConfigWithinBounds(widgetType: string, config: Record<string, unknown>): boolean {
+  return (NUMERIC_BOUNDS[widgetType] ?? []).every((bound) => isBoundValid(config[bound.field], bound))
+}
+
+function BoundedNumberField({
+  label,
+  bound,
+  value,
+  onChange,
+  placeholder,
+  t
+}: {
+  bound: NumericBound
+  label: string
+  onChange: (value: number | undefined) => void
+  placeholder: string
+  t: (key: string, options?: Record<string, unknown>) => string
+  value: number | undefined
+}) {
+  const valid = isBoundValid(value, bound)
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <Input
+        aria-invalid={!valid}
+        max={bound.max}
+        min={bound.min}
+        onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+        placeholder={placeholder}
+        type="number"
+        value={value ?? ''}
+      />
+      {!valid && (
+        <p className="text-destructive text-xs">
+          {t('widgets.common.errors.numberRange', { min: bound.min, max: bound.max })}
+        </p>
+      )}
     </div>
   )
 }
@@ -375,7 +456,7 @@ function GaugeForm({
   config: Partial<GaugeConfig>
   onChange: (c: Partial<GaugeConfig>) => void
   servers: ServerMetrics[]
-  t: (key: string) => string
+  t: (key: string, options?: Record<string, unknown>) => string
 }) {
   const GAUGE_METRICS = useGaugeMetrics(t)
   return (
@@ -393,6 +474,22 @@ function GaugeForm({
         onChange={(v) => onChange({ ...config, metric: v })}
         placeholder={t('widgets.common.placeholders.selectMetric')}
         value={config.metric ?? ''}
+      />
+      <div className="space-y-1.5">
+        <Label>{t('widgets.common.labels.labelOptional')}</Label>
+        <Input
+          onChange={(e) => onChange({ ...config, label: e.target.value || undefined })}
+          placeholder={t('widgets.common.placeholders.optionalLabel')}
+          value={config.label ?? ''}
+        />
+      </div>
+      <BoundedNumberField
+        bound={GAUGE_MAX_BOUND}
+        label={t('widgets.common.labels.maxOptional')}
+        onChange={(v) => onChange({ ...config, max: v })}
+        placeholder="100"
+        t={t}
+        value={config.max}
       />
     </>
   )
@@ -449,12 +546,12 @@ function MultiLineForm({
   const LINE_METRICS = useLineMetrics(t)
   return (
     <>
-      <ServerMultiSelect
+      <CheckboxMultiSelect
         emptyMessage={t('widgets.common.empty.noServers')}
+        items={servers}
         label={t('widgets.common.labels.servers')}
         onChange={(ids) => onChange({ ...config, server_ids: ids })}
         selected={config.server_ids ?? []}
-        servers={servers}
       />
       <MetricSelect
         label={t('widgets.common.labels.metric')}
@@ -472,6 +569,13 @@ function MultiLineForm({
   )
 }
 
+function useSortOptions(t: (key: string) => string): { label: string; value: string }[] {
+  return [
+    { label: t('widgets.common.sort.desc'), value: 'desc' },
+    { label: t('widgets.common.sort.asc'), value: 'asc' }
+  ]
+}
+
 function TopNForm({
   config,
   onChange,
@@ -479,9 +583,10 @@ function TopNForm({
 }: {
   config: Partial<TopNConfig>
   onChange: (c: Partial<TopNConfig>) => void
-  t: (key: string) => string
+  t: (key: string, options?: Record<string, unknown>) => string
 }) {
   const TOP_N_METRICS = useTopNMetrics(t)
+  const SORT_OPTIONS = useSortOptions(t)
   return (
     <>
       <MetricSelect
@@ -492,15 +597,32 @@ function TopNForm({
         value={config.metric ?? ''}
       />
       <div className="space-y-1.5">
-        <Label>{t('widgets.common.labels.count')}</Label>
-        <Input
-          max={20}
-          min={1}
-          onChange={(e) => onChange({ ...config, count: Number(e.target.value) || 5 })}
-          type="number"
-          value={config.count ?? 5}
-        />
+        <Label>{t('widgets.common.labels.sortOrder')}</Label>
+        <Select
+          items={SORT_OPTIONS}
+          onValueChange={(v) => v !== null && onChange({ ...config, sort: v as TopNConfig['sort'] })}
+          value={config.sort ?? 'desc'}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+      <BoundedNumberField
+        bound={TOP_N_COUNT_BOUND}
+        label={t('widgets.common.labels.count')}
+        onChange={(v) => onChange({ ...config, count: v })}
+        placeholder="5"
+        t={t}
+        value={config.count}
+      />
     </>
   )
 }
@@ -538,12 +660,13 @@ function ServerCardsForm({
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
-      <ServerMultiSelect
+      <CheckboxMultiSelect
         emptyMessage={t('widgets.common.empty.noServers')}
+        hint={t('widgets.common.hints.allServersWhenEmpty')}
+        items={servers}
         label={t('widgets.common.labels.servers')}
         onChange={(ids) => onChange({ ...config, server_ids: ids })}
         selected={config.server_ids ?? []}
-        servers={servers}
       />
     </>
   )
@@ -651,24 +774,34 @@ function DiskIoForm({
 
 function AlertListForm({
   config,
+  servers,
   onChange,
   t
 }: {
   config: Partial<AlertListConfig>
   onChange: (c: Partial<AlertListConfig>) => void
-  t: (key: string) => string
+  servers: ServerMetrics[]
+  t: (key: string, options?: Record<string, unknown>) => string
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label>{t('widgets.common.labels.maxItems')}</Label>
-      <Input
-        max={50}
-        min={1}
-        onChange={(e) => onChange({ ...config, max_items: Number(e.target.value) || 10 })}
-        type="number"
-        value={config.max_items ?? 10}
+    <>
+      <CheckboxMultiSelect
+        emptyMessage={t('widgets.common.empty.noServers')}
+        hint={t('widgets.common.hints.allServersWhenEmpty')}
+        items={servers}
+        label={t('widgets.common.labels.servers')}
+        onChange={(ids) => onChange({ ...config, server_ids: ids })}
+        selected={config.server_ids ?? []}
       />
-    </div>
+      <BoundedNumberField
+        bound={ALERT_MAX_ITEMS_BOUND}
+        label={t('widgets.common.labels.maxItems')}
+        onChange={(v) => onChange({ ...config, max_items: v })}
+        placeholder="10"
+        t={t}
+        value={config.max_items}
+      />
+    </>
   )
 }
 
@@ -752,12 +885,13 @@ function UptimeTimelineForm({
   const UPTIME_DAYS_OPTIONS = useUptimeDaysOptions(t)
   return (
     <>
-      <ServerMultiSelect
+      <CheckboxMultiSelect
         emptyMessage={t('widgets.common.empty.noServers')}
+        hint={t('widgets.common.hints.allServersWhenEmpty')}
+        items={servers}
         label={t('widgets.common.labels.servers')}
         onChange={(ids) => onChange({ ...config, server_ids: ids })}
         selected={config.server_ids ?? []}
-        servers={servers}
       />
       <div className="space-y-1.5">
         <Label>{t('widgets.common.labels.days')}</Label>
@@ -860,12 +994,61 @@ function NetworkOverviewForm({
   t: (key: string) => string
 }) {
   return (
-    <ServerMultiSelect
+    <CheckboxMultiSelect
       emptyMessage={t('widgets.common.empty.noServers')}
+      hint={t('widgets.common.hints.allServersWhenEmpty')}
+      items={servers}
       label={t('widgets.common.labels.servers')}
       onChange={(ids) => onChange({ ...config, server_ids: ids })}
       selected={config.server_ids ?? []}
-      servers={servers}
+    />
+  )
+}
+
+function ServerMapForm({
+  config,
+  servers,
+  onChange,
+  t
+}: {
+  config: Partial<ServerMapConfig>
+  onChange: (c: Partial<ServerMapConfig>) => void
+  servers: ServerMetrics[]
+  t: (key: string) => string
+}) {
+  return (
+    <CheckboxMultiSelect
+      emptyMessage={t('widgets.common.empty.noServers')}
+      hint={t('widgets.common.hints.allServersWhenEmpty')}
+      items={servers}
+      label={t('widgets.common.labels.servers')}
+      onChange={(ids) => onChange({ ...config, server_ids: ids })}
+      selected={config.server_ids ?? []}
+    />
+  )
+}
+
+function ServiceStatusForm({
+  config,
+  onChange,
+  t
+}: {
+  config: Partial<ServiceStatusConfig>
+  onChange: (c: Partial<ServiceStatusConfig>) => void
+  t: (key: string) => string
+}) {
+  const { data: monitors } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['service-monitors'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/api/service-monitors')
+  })
+  return (
+    <CheckboxMultiSelect
+      emptyMessage={t('widgets.serviceStatus.empty.noMonitors')}
+      hint={t('widgets.common.hints.allMonitorsWhenEmpty')}
+      items={monitors ?? []}
+      label={t('widgets.common.labels.monitors')}
+      onChange={(ids) => onChange({ ...config, monitor_ids: ids })}
+      selected={config.monitor_ids ?? []}
     />
   )
 }
@@ -890,7 +1073,6 @@ function WidgetConfigDialogForm({
   const [draft, dispatchDraft] = useReducer(widgetFormReducer, widget, createWidgetFormDraft)
   const setConfig = (config: object) => dispatchDraft({ type: 'configChanged', config })
 
-  const needsNoConfig = widgetType === 'service-status' || widgetType === 'server-map'
   const isModule = widgetType === 'module'
   const moduleId = widget?.module_id ?? null
   const moduleEntry = useMemo(
@@ -898,6 +1080,7 @@ function WidgetConfigDialogForm({
     [isModule, moduleId]
   )
   const moduleMissing = isModule && !moduleEntry
+  const configOutOfBounds = !isConfigWithinBounds(widgetType, draft.config)
 
   const handleSubmit = () => {
     // Seed per-widget defaults that the form only shows but doesn't write,
@@ -987,7 +1170,23 @@ function WidgetConfigDialogForm({
             <DiskIoForm config={draft.config as Partial<DiskIoConfig>} onChange={setConfig} servers={servers} t={t} />
           )}
           {widgetType === 'alert-list' && (
-            <AlertListForm config={draft.config as Partial<AlertListConfig>} onChange={setConfig} t={t} />
+            <AlertListForm
+              config={draft.config as Partial<AlertListConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
+          )}
+          {widgetType === 'service-status' && (
+            <ServiceStatusForm config={draft.config as Partial<ServiceStatusConfig>} onChange={setConfig} t={t} />
+          )}
+          {widgetType === 'server-map' && (
+            <ServerMapForm
+              config={draft.config as Partial<ServerMapConfig>}
+              onChange={setConfig}
+              servers={servers}
+              t={t}
+            />
           )}
           {widgetType === 'markdown' && (
             <MarkdownForm config={draft.config as Partial<MarkdownConfig>} onChange={setConfig} t={t} />
@@ -1032,12 +1231,9 @@ function WidgetConfigDialogForm({
               {moduleId ? t('module_not_installed_id').replace('{{id}}', moduleId) : t('module_not_installed')}
             </p>
           )}
-          {needsNoConfig && (
-            <p className="text-muted-foreground text-sm">{t('dialogs.widgetConfig.messages.noConfigNeeded')}</p>
-          )}
         </div>
         <DialogFooter>
-          <Button disabled={moduleMissing} onClick={handleSubmit}>
+          <Button disabled={moduleMissing || configOutOfBounds} onClick={handleSubmit}>
             {widget ? t('save') : t('add_widget')}
           </Button>
         </DialogFooter>

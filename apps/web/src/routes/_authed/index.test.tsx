@@ -88,10 +88,11 @@ const defaultDashboard: DashboardWithWidgets = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
 
   mockUseQuery.mockReturnValue({ data: [] })
   mockUseAuth.mockReturnValue({ user: { role: 'admin' } })
-  mockUseDashboards.mockReturnValue({ data: dashboards })
+  mockUseDashboards.mockReturnValue({ data: dashboards, isSuccess: true })
   mockUseDefaultDashboard.mockReturnValue({ data: defaultDashboard })
   mockUseUpdateDashboard.mockReturnValue({
     isPending: false,
@@ -115,5 +116,35 @@ describe('DashboardPage', () => {
 
     expect(screen.getByTestId('active-dashboard-id')).toHaveTextContent('dash-2')
     expect(screen.getByTestId('loaded-dashboard-id')).toHaveTextContent('none')
+  })
+
+  it('persists the selection and restores it on the next mount', () => {
+    const { unmount } = render(<DashboardPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'switch-dashboard' }))
+    expect(screen.getByTestId('active-dashboard-id')).toHaveTextContent('dash-2')
+
+    // Simulate a page reload: fresh mount reads the stored selection.
+    unmount()
+    render(<DashboardPage />)
+
+    expect(screen.getByTestId('active-dashboard-id')).toHaveTextContent('dash-2')
+  })
+
+  it('falls back to the default dashboard when the stored id no longer exists', () => {
+    localStorage.setItem('serverbee.dashboard.selected', 'dash-deleted')
+
+    render(<DashboardPage />)
+
+    expect(screen.getByTestId('active-dashboard-id')).toHaveTextContent('dash-1')
+  })
+
+  it('trusts the stored id while the dashboard list is still loading', () => {
+    mockUseDashboards.mockReturnValue({ data: [], isSuccess: false })
+    localStorage.setItem('serverbee.dashboard.selected', 'dash-2')
+
+    render(<DashboardPage />)
+
+    expect(screen.getByTestId('active-dashboard-id')).toHaveTextContent('dash-2')
   })
 })

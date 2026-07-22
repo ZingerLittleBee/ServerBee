@@ -10,12 +10,24 @@ const translations: Record<string, string> = {
   'dialogs.widgetConfig.editTitle': 'Edit Widget',
   'dialogs.widgetConfig.labels.titleOptional': 'Title (optional)',
   'dialogs.widgetConfig.placeholders.widgetTitle': 'Widget title',
-  'dialogs.widgetConfig.messages.noConfigNeeded': 'No additional configuration needed.',
   'widgets.common.labels.server': 'Server',
   'widgets.common.labels.servers': 'Servers',
+  'widgets.common.labels.monitors': 'Monitors',
   'widgets.common.labels.metric': 'Metric',
   'widgets.common.labels.timeRange': 'Time Range',
   'widgets.common.labels.days': 'Days',
+  'widgets.common.labels.count': 'Count',
+  'widgets.common.labels.maxItems': 'Max Items',
+  'widgets.common.labels.maxOptional': 'Max value (optional)',
+  'widgets.common.labels.labelOptional': 'Label (optional)',
+  'widgets.common.labels.sortOrder': 'Sort',
+  'widgets.common.sort.desc': 'Highest first',
+  'widgets.common.sort.asc': 'Lowest first',
+  'widgets.common.hints.allServersWhenEmpty': 'Leave empty to include all servers',
+  'widgets.common.hints.allMonitorsWhenEmpty': 'Leave empty to include all monitors',
+  'widgets.common.errors.numberRange': 'Enter a number between {{min}} and {{max}}',
+  'widgets.common.placeholders.optionalLabel': 'Override label',
+  'widgets.serviceStatus.empty.noMonitors': 'No service monitors',
   'widgets.common.labels.markdownContent': 'Markdown Content',
   'widgets.common.placeholders.writeMarkdown': 'Write markdown here...',
   'common.metrics.serverCount': 'Server Count',
@@ -43,8 +55,17 @@ const translations: Record<string, string> = {
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => translations[key] ?? fallback ?? key
+    t: (key: string, fallback?: string) => translations[key] ?? (typeof fallback === 'string' ? fallback : key)
   })
+}))
+
+const mockMonitors = [
+  { id: 'mon-1', name: 'API health' },
+  { id: 'mon-2', name: 'Landing page' }
+]
+
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({ data: mockMonitors })
 }))
 
 vi.mock('@/components/ui/dialog', () => ({
@@ -199,7 +220,7 @@ describe('WidgetConfigDialog', () => {
     expect(screen.getByPlaceholderText('Write markdown here...')).toBeInTheDocument()
   })
 
-  it('renders "no config needed" for service-status widget', () => {
+  it('renders a monitor multi-select for service-status widget', () => {
     render(
       <WidgetConfigDialog
         onOpenChange={noop}
@@ -210,10 +231,31 @@ describe('WidgetConfigDialog', () => {
       />
     )
 
-    expect(screen.getByText('No additional configuration needed.')).toBeInTheDocument()
+    expect(screen.getByText('Monitors')).toBeInTheDocument()
+    expect(screen.getByText('API health')).toBeInTheDocument()
+    expect(screen.getByText('Landing page')).toBeInTheDocument()
+    expect(screen.getByText('Leave empty to include all monitors')).toBeInTheDocument()
   })
 
-  it('renders "no config needed" for server-map widget', () => {
+  it('submits selected monitor ids for service-status widget', () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={onSubmit}
+        open
+        servers={mockServers as never}
+        widgetType="service-status"
+      />
+    )
+
+    fireEvent.click(screen.getByText('API health'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(onSubmit).toHaveBeenCalledWith('', JSON.stringify({ monitor_ids: ['mon-1'] }))
+  })
+
+  it('renders a server multi-select for server-map widget', () => {
     render(
       <WidgetConfigDialog
         onOpenChange={noop}
@@ -224,7 +266,105 @@ describe('WidgetConfigDialog', () => {
       />
     )
 
-    expect(screen.getByText('No additional configuration needed.')).toBeInTheDocument()
+    expect(screen.getByText('Servers')).toBeInTheDocument()
+    expect(screen.getByText('Server 1')).toBeInTheDocument()
+    expect(screen.getByText('Leave empty to include all servers')).toBeInTheDocument()
+  })
+
+  it('renders label and max fields for gauge widget', () => {
+    render(
+      <WidgetConfigDialog onOpenChange={noop} onSubmit={noop} open servers={mockServers as never} widgetType="gauge" />
+    )
+
+    expect(screen.getByText('Label (optional)')).toBeInTheDocument()
+    expect(screen.getByText('Max value (optional)')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('100')).toBeInTheDocument()
+  })
+
+  it('renders sort selector and count field for top-n widget', () => {
+    render(
+      <WidgetConfigDialog onOpenChange={noop} onSubmit={noop} open servers={mockServers as never} widgetType="top-n" />
+    )
+
+    expect(screen.getByText('Sort')).toBeInTheDocument()
+    expect(screen.getByText('Highest first')).toBeInTheDocument()
+    expect(screen.getByText('Lowest first')).toBeInTheDocument()
+    expect(screen.getByText('Count')).toBeInTheDocument()
+  })
+
+  it('renders a server multi-select for alert-list widget', () => {
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={noop}
+        open
+        servers={mockServers as never}
+        widgetType="alert-list"
+      />
+    )
+
+    expect(screen.getByText('Servers')).toBeInTheDocument()
+    expect(screen.getByText('Server 1')).toBeInTheDocument()
+    expect(screen.getByText('Max Items')).toBeInTheDocument()
+  })
+
+  it('disables save and shows an error while a numeric field is out of bounds', () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={onSubmit}
+        open
+        servers={mockServers as never}
+        widgetType="top-n"
+      />
+    )
+
+    const countInput = screen.getByPlaceholderText('5')
+    fireEvent.change(countInput, { target: { value: '21' } })
+
+    const saveButton = screen.getByRole('button', { name: 'Add' })
+    expect(saveButton).toBeDisabled()
+    expect(screen.getByText('Enter a number between {{min}} and {{max}}')).toBeInTheDocument()
+    fireEvent.click(saveButton)
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    // Back in range: error clears and save goes through.
+    fireEvent.change(countInput, { target: { value: '7' } })
+    expect(screen.queryByText('Enter a number between {{min}} and {{max}}')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(onSubmit).toHaveBeenCalledWith('', JSON.stringify({ count: 7 }))
+  })
+
+  it('drops cleared optional numeric fields from the submitted config', () => {
+    const onSubmit = vi.fn()
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={onSubmit}
+        open
+        servers={mockServers as never}
+        widget={{
+          id: 'w-topn',
+          dashboard_id: 'dash-1',
+          widget_type: 'top-n',
+          title: null,
+          config_json: '{"metric":"cpu","count":12}',
+          grid_x: 0,
+          grid_y: 0,
+          grid_w: 4,
+          grid_h: 2,
+          sort_order: 0,
+          created_at: '2026-03-20T00:00:00Z'
+        }}
+        widgetType="top-n"
+      />
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('5'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(onSubmit).toHaveBeenCalledWith('', JSON.stringify({ metric: 'cpu' }))
   })
 
   it('does not render the title input for built-in widget types', () => {

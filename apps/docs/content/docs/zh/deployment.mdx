@@ -451,12 +451,24 @@ sudo systemctl start serverbee-server
 
 ```bash
 docker compose stop
+
+SERVERBEE_DATA_VOLUME="$(
+  docker inspect serverbee-server \
+    --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{println .Name}}{{end}}{{end}}'
+)"
+test -n "$SERVERBEE_DATA_VOLUME"
+
+mkdir -p backups
 docker run --rm \
-  -v serverbee-data:/data \
-  -v $(pwd)/backups:/backups \
-  alpine tar czf /backups/serverbee-$(date +%Y%m%d).tar.gz -C /data .
+  --mount "type=volume,src=${SERVERBEE_DATA_VOLUME},dst=/data,readonly" \
+  --mount "type=bind,src=$(pwd)/backups,dst=/backups" \
+  alpine \
+  tar czf /backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /data .
+
 docker compose start
 ```
+
+不要假设 Docker volume 的实际名称一定是 `serverbee-data`。Compose 通常会添加项目名前缀；如果备份命令引用了错误的名称，Docker 会创建一个新的空 volume，命令表面成功但备份中没有生产数据。上面的命令从现有容器读取挂载到 `/data` 的真实 volume 名称。
 
 ### 恢复
 
@@ -561,6 +573,197 @@ sudo systemctl start serverbee-server
 ```
 
 如果你使用安装脚本部署，`sudo serverbee upgrade -y` 会自动完成二进制下载、替换和重启。
+
+## 数据库迁移失败与恢复
+
+ServerBee 在 Rust 服务端启动过程中执行数据库迁移。迁移发生在 HTTP 监听端口启动之前；如果迁移失败，进程会退出，Docker 的 `restart: unless-stopped` 或 systemd 的重启策略可能使服务进入重启循环。
+
+<Callout type="warn">
+当前版本不会在迁移前自动创建数据库快照，也没有自动回滚迁移。Docker volume 只能持久化文件，不是可回退的版本。所有迁移都是向前执行，迁移的 `down()` 不会恢复旧 schema。
+</Callout>
+
+### 可能失败的场景
+
+| 类别 | 典型原因 | 推荐处理 |
+|------|----------|----------|
+| 存储不可写 | `/data` 权限错误、只读挂载、磁盘或 inode 耗尽 | 停止重启循环，修复存储问题，然后重新执行迁移 |
+| 数据库锁 | 另一个 ServerBee 实例、备份程序或 SQLite 客户端长期持有锁 | 确认只有一个服务端写入数据库，停止冲突进程后重试 |
+| 数据库损坏 | SQLite 主文件、WAL 或 SHM 损坏，主机异常断电 | 保留故障现场，执行完整性检查，优先恢复已验证备份 |
+| schema 漂移 | 手工修改过表、索引或迁移历史，实际结构与迁移记录不一致 | 不要伪造迁移记录；恢复兼容备份或发布向前修复迁移 |
+| 旧数据违反新约束 | 重复值、空值、孤立外键或无法解析的历史数据 | 在数据库副本中定位并修复数据，再重新执行迁移 |
+| 迁移实现缺陷 | SQL、数据回填或目标 schema 本身有错误 | 保留原数据库，部署包含修正版迁移的新镜像 |
+| 执行中断 | 迁移时容器被强制终止、主机重启或断电 | 先制作故障快照；确认 schema 和迁移记录一致后再重试 |
+| 多实例竞争 | 多个容器同时对同一个 SQLite 文件启动迁移 | 将服务缩容到一个实例；SQLite 部署不应由多个 Server 实例共享写入 |
+| 版本回退不兼容 | 新版迁移已成功，但随后只把镜像切回旧版 | 同时恢复升级前数据库备份，或使用兼容新 schema 的应用版本 |
+
+### 第一步：停止重启循环
+
+Docker Compose：
+
+```bash
+docker compose stop serverbee-server
+```
+
+如果容器仍然被外部工具反复拉起，可以临时关闭容器级重启策略：
+
+```bash
+docker update --restart=no serverbee-server
+docker stop serverbee-server
+```
+
+systemd：
+
+```bash
+sudo systemctl stop serverbee-server
+sudo systemctl reset-failed serverbee-server
+```
+
+停止服务不会删除 Docker volume 或数据库文件。不要使用 `docker compose down -v`，其中的 `-v` 会删除 Compose 管理的 volume。
+
+### 第二步：读取迁移错误
+
+Docker：
+
+```bash
+docker logs --tail 200 serverbee-server
+```
+
+systemd：
+
+```bash
+sudo journalctl -u serverbee-server -b -n 200 --no-pager
+```
+
+迁移成功时日志中会出现 `Database migrations complete`。如果没有这条日志，请从第一条数据库或 migration 错误开始排查，不要只看后续重启信息。
+
+### 第三步：保存故障现场
+
+即使数据库可能已经处于部分迁移或损坏状态，也要先保存完整副本。它既是人工修复的输入，也是避免后续尝试覆盖证据的保险。
+
+Docker：
+
+```bash
+SERVERBEE_DATA_VOLUME="$(
+  docker inspect serverbee-server \
+    --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{println .Name}}{{end}}{{end}}'
+)"
+test -n "$SERVERBEE_DATA_VOLUME"
+
+mkdir -p backups
+docker run --rm \
+  --mount "type=volume,src=${SERVERBEE_DATA_VOLUME},dst=/data,readonly" \
+  --mount "type=bind,src=$(pwd)/backups,dst=/backups" \
+  alpine \
+  tar czf /backups/serverbee-failed-migration-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /data .
+```
+
+systemd 或二进制部署，在服务停止后复制整个数据目录，而不是只复制主数据库文件：
+
+```bash
+sudo mkdir -p /backups
+sudo cp -a /opt/serverbee/data \
+  "/backups/serverbee-failed-migration-$(date -u +%Y%m%dT%H%M%SZ)"
+```
+
+### 第四步：检查数据库状态
+
+在故障快照的副本上运行检查，不要直接修改唯一的生产 volume：
+
+```bash
+mkdir -p recovery-data
+SERVERBEE_FAILED_BACKUP="$(ls -1t backups/serverbee-failed-migration-*.tar.gz | head -n 1)"
+test -f "$SERVERBEE_FAILED_BACKUP"
+tar xzf "$SERVERBEE_FAILED_BACKUP" -C recovery-data
+
+sqlite3 recovery-data/serverbee.db "PRAGMA integrity_check;"
+sqlite3 recovery-data/serverbee.db "PRAGMA foreign_key_check;"
+sqlite3 recovery-data/serverbee.db \
+  "SELECT * FROM seaql_migrations ORDER BY applied_at;"
+```
+
+- `PRAGMA integrity_check` 应返回 `ok`。
+- `PRAGMA foreign_key_check` 正常情况下不返回任何记录。
+- `seaql_migrations` 展示已经记录为成功的迁移；全新数据库在迁移表创建前失败时，这张表可能不存在。
+
+不要删除 `seaql_migrations` 中的记录，也不要手工把失败迁移标记为成功。迁移记录与真实 schema 不一致时，后续版本可能在更难恢复的位置失败。
+
+### 第五步：选择恢复方式
+
+**环境问题**
+
+如果问题只是磁盘空间、权限、只读挂载或临时数据库锁，修复根因后重新启动。SeaORM 会再次执行尚未记录为成功的迁移：
+
+```bash
+docker update --restart=unless-stopped serverbee-server
+docker compose up -d serverbee-server
+docker logs -f serverbee-server
+```
+
+**旧数据或 schema 不兼容**
+
+在数据库副本上识别冲突数据。优先发布能够处理旧数据的向前修复 migration；如果必须人工修改数据，先在副本上验证完整迁移和应用启动，再对生产数据库执行同一组已审查操作。
+
+**迁移代码缺陷**
+
+不要反复重启同一个失败镜像。保留故障现场，部署包含修正版 migration 的新镜像。仅切回旧镜像不等于数据库回滚；只有在确认失败迁移没有改变 schema 时才可能安全，否则应恢复升级前备份。
+
+**数据库损坏**
+
+优先恢复最近一次通过完整性检查的备份。SQLite `.recover` 只应作为没有可用备份时的数据抢救手段，恢复结果可能不完整，需要在隔离副本上验证。
+
+### 从 Docker 备份恢复到新 volume
+
+恢复时建议创建新 volume，不要覆盖故障 volume。这样可以随时切回故障现场继续分析：
+
+```bash
+SERVERBEE_RECOVERY_VOLUME="serverbee-data-recovery-$(date -u +%Y%m%dT%H%M%SZ)"
+docker volume create "$SERVERBEE_RECOVERY_VOLUME"
+
+docker run --rm \
+  --mount "type=volume,src=${SERVERBEE_RECOVERY_VOLUME},dst=/data" \
+  --mount "type=bind,src=$(pwd)/backups,dst=/backups,readonly" \
+  alpine \
+  tar xzf /backups/serverbee-20260314T020000Z.tar.gz -C /data
+
+echo "$SERVERBEE_RECOVERY_VOLUME"
+```
+
+然后让 Compose 中现有的 `serverbee-data` 逻辑名称指向刚创建的 volume：
+
+```yaml
+volumes:
+  serverbee-data:
+    external: true
+    name: serverbee-data-recovery-20260722T103000Z
+```
+
+确认 Compose 文件中的 `name` 与上一条命令输出完全一致，再启动服务。恢复较旧的数据库时，目标镜像可能再次执行迁移，因此应先确定要运行的是原版本还是包含修复的新版本。
+
+### 恢复后验证
+
+```bash
+docker compose up -d serverbee-server
+docker compose ps
+docker logs --tail 200 serverbee-server
+curl --fail http://127.0.0.1:9527/healthz
+```
+
+只有同时满足以下条件，才能认为恢复完成：
+
+- 日志包含 `Database migrations complete`。
+- 容器保持运行且健康检查通过。
+- `PRAGMA integrity_check` 返回 `ok`。
+- 能登录并读取已有 Server、告警和历史记录。
+- 没有持续出现数据库锁、外键或缺失表/列错误。
+
+### 预防措施
+
+- 每次升级前创建并验证数据库备份；当前升级命令不会自动备份。
+- 将备份复制到 Docker 主机之外，避免主机磁盘故障同时损坏生产 volume 和本地备份。
+- SQLite 部署保持单个 Server 实例，不要让多个容器共享写入同一个数据库文件。
+- 升级前检查可用磁盘空间，并使用明确的镜像版本 tag，避免无法确认迁移来自哪个版本。
+- 保留升级前镜像和数据库备份。数据库回退依赖备份，不能只依赖旧镜像。
+- 升级后等待迁移成功日志和健康检查，不要仅以 `docker compose up -d` 返回成功作为完成依据。
 
 <Cards>
   <Card title="Server 配置" href="/zh/docs/server" />
