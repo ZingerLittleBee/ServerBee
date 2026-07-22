@@ -10,6 +10,24 @@ export const Route = createFileRoute('/_authed/')({
   component: DashboardPage
 })
 
+const SELECTED_DASHBOARD_KEY = 'serverbee.dashboard.selected'
+
+function readStoredDashboardId(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_DASHBOARD_KEY)
+  } catch {
+    return null
+  }
+}
+
+function storeDashboardId(id: string) {
+  try {
+    localStorage.setItem(SELECTED_DASHBOARD_KEY, id)
+  } catch {
+    // Storage unavailable (private mode, quota); selection just won't persist.
+  }
+}
+
 export function DashboardPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -17,10 +35,14 @@ export function DashboardPage() {
   const { data: rawServers = [] } = useLiveServers()
   const servers = useMemo(() => withMockServers(rawServers), [rawServers])
 
-  const { data: dashboards = [] } = useDashboards()
+  const { data: dashboards = [], isSuccess: dashboardsLoaded } = useDashboards()
   const { data: defaultDashboard } = useDefaultDashboard()
 
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [rawSelectedId, setRawSelectedId] = useState<string | null>(readStoredDashboardId)
+  // A stored id may reference a dashboard deleted since (possibly by another
+  // session); once the list is loaded, unknown ids fall back to the default.
+  const selectedId =
+    rawSelectedId && (!dashboardsLoaded || dashboards.some((d) => d.id === rawSelectedId)) ? rawSelectedId : null
   const activeId = selectedId ?? defaultDashboard?.id ?? ''
   const { data: activeDashboard } = useDashboard(activeId)
 
@@ -36,7 +58,8 @@ export function DashboardPage() {
   }
 
   function handleDashboardSelect(id: string) {
-    setSelectedId(id)
+    setRawSelectedId(id)
+    storeDashboardId(id)
   }
 
   return (
