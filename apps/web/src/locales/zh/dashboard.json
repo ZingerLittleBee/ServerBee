@@ -173,10 +173,7 @@
       "attribution": "GeoIP by DB-IP"
     },
     "uptimeTimeline": {
-      "title": "可用时间线",
-      "empty": {
-        "noServers": "未配置服务器"
-      }
+      "title": "可用时间线"
     },
     "diskIo": {
       "title": "磁盘 I/O",

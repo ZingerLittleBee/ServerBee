@@ -16,7 +16,12 @@ interface UptimeTimelineWidgetProps {
 
 export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetProps) {
   const { t } = useTranslation('dashboard')
-  const serverIds = config.server_ids ?? []
+  // Empty selection means "all servers", matching the filterByIds semantics
+  // used by the other server_ids widgets (server-cards, server-map, alert-list).
+  const serverIds = useMemo(
+    () => (config.server_ids?.length ? config.server_ids : servers.map((s) => s.id)),
+    [config.server_ids, servers]
+  )
   const days = config.days ?? 90
 
   const queries = useQueries({
@@ -40,7 +45,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
   if (serverIds.length === 0) {
     return (
       <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
-        {t('widgets.uptimeTimeline.empty.noServers')}
+        {t('widgets.common.empty.noServers')}
       </div>
     )
   }

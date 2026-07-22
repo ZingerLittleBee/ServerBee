@@ -173,10 +173,7 @@
       "attribution": "GeoIP by DB-IP"
     },
     "uptimeTimeline": {
-      "title": "Uptime Timeline",
-      "empty": {
-        "noServers": "No servers configured"
-      }
+      "title": "Uptime Timeline"
     },
     "diskIo": {
       "title": "Disk I/O",
