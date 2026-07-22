@@ -300,39 +300,41 @@ export function DashboardGrid({
   // No auto-compaction (widgets stay exactly where dropped, so items in
   // different columns can be aligned freely) and preventCollision blocks
   // dropping onto another widget (it snaps back), so widgets never overlap.
-  const compactor = useMemo(() => getCompactor(null, false, true), [])
+  //
+  // Resize is the exception: RGL's preventCollision path REVERTS the item's
+  // size on any collision instead of pushing neighbors, so growing a widget
+  // toward a neighbor visually stretched (react-resizable inline style) and
+  // snapped back to the old size on release. During a resize we swap in an
+  // allowOverlap compactor so RGL accepts the new size; the transient overlap
+  // is resolved by deoverlapLayout (every frame and on commit), which pushes
+  // the widgets below down. Dragging keeps the strict compactor.
+  const compactor = useMemo(
+    () => (interactionState === 'resizing' ? getCompactor(null, true, false) : getCompactor(null, false, true)),
+    [interactionState]
+  )
 
-  // Manual position/size persists in coarse units, so when `snap` is set we align
-  // the live layout to whole coarse rows (SCALE-aligned) while dragging/resizing.
+  // Manual position/size persists in coarse units, so the live layout is
+  // aligned to whole coarse rows (SCALE-aligned) while dragging/resizing.
   // Otherwise the dropped fine position gets rounded on commit and the widget
   // visibly snaps back. content-height widgets keep their measured fine height.
-  //
-  // `snap` MUST stay off for RGL's idle onLayoutChange echo. That echo replays
-  // the de-overlapped `baseLayout`, whose widgets can hug the non-coarse bottom
-  // edge of a content-height / aspect-square widget (a non-SCALE-aligned y).
-  // Re-snapping those y values yields a layout that differs from the one RGL
-  // holds, so RGL echoes again -> setLiveLayout -> echo -> ... an infinite
-  // "Maximum update depth" ping-pong that jitters widgets right after a save.
-  // Leaving the idle echo un-snapped makes it a fixed point of baseLayout, so it
-  // converges immediately (RGL's deepEqual sees no change and stops).
+  // Only ever called mid-interaction — idle echoes are dropped in
+  // handleLayoutChange (see the comment there).
   const updateLiveLayout = useCallback(
-    (nextLayout: Layout, snap: boolean) => {
-      const next = snap
-        ? nextLayout.map((item) => {
-            const strategy = getStrategy(item.i)
-            const base = {
-              ...item,
-              y: Math.round(item.y / SCALE) * SCALE
-            }
-            // Snap h to SCALE multiples only for strategies that operate at coarse h.
-            // aspect-square: h is fine pixel-square (RGL constraints handle resize); leave it.
-            // content-height: h locked to measurement; leave it.
-            if (strategy.kind === 'free' || strategy.kind === 'fixed') {
-              base.h = Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
-            }
-            return base
-          })
-        : nextLayout
+    (nextLayout: Layout) => {
+      const next = nextLayout.map((item) => {
+        const strategy = getStrategy(item.i)
+        const base = {
+          ...item,
+          y: Math.round(item.y / SCALE) * SCALE
+        }
+        // Snap h to SCALE multiples only for strategies that operate at coarse h.
+        // aspect-square: h is fine pixel-square (RGL constraints handle resize); leave it.
+        // content-height: h locked to measurement; leave it.
+        if (strategy.kind === 'free' || strategy.kind === 'fixed') {
+          base.h = Math.max(SCALE, Math.round(item.h / SCALE) * SCALE)
+        }
+        return base
+      })
       // De-overlap every frame: RGL's identity compactor never resolves
       // overlaps, and its idle onLayoutChange echo would otherwise re-apply the
       // raw (overlapping) persisted positions over the de-overlapped layout.
@@ -356,12 +358,18 @@ export function DashboardGrid({
 
   const handleLayoutChange = useCallback(
     (newLayout: Layout) => {
-      // onLayoutChange fires both during a drag/resize and as an idle "echo" when
-      // RGL re-emits the layout we just synced from `widgets` (after a save, or
-      // when a content-height widget finishes measuring). Snap only mid-interaction;
-      // never re-snap an idle echo, or it ping-pongs with RGL into an infinite
-      // "Maximum update depth" re-render (the post-save jitter). See updateLiveLayout.
-      updateLiveLayout(newLayout, isInteracting)
+      // Live previews arrive via the onDrag/onResize props, and commits via
+      // onDragStop/onResizeStop, so everything onLayoutChange delivers here is
+      // an idle "echo" of RGL's internal state (mount correction, post-stop
+      // re-emit, sync after a save or content-height measurement). Adopting an
+      // echo into liveLayout feeds RGL's state back into the controlled
+      // `layout` prop, and any mismatch with what we committed (e.g. the
+      // unsnapped post-resize layout) ping-pongs forever — the layout jitters
+      // and burns CPU. This grid is controlled: our layout is the source of
+      // truth, so idle echoes are dropped and RGL re-syncs from props instead.
+      if (isInteracting) {
+        updateLiveLayout(newLayout)
+      }
     },
     [isInteracting, updateLiveLayout]
   )
@@ -456,11 +464,11 @@ export function DashboardGrid({
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
           gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
           layout={renderedLayout}
-          onDrag={(next) => updateLiveLayout(next, true)}
+          onDrag={(next) => updateLiveLayout(next)}
           onDragStart={() => startInteraction('dragging')}
           onDragStop={commitLayoutChange}
           onLayoutChange={handleLayoutChange}
-          onResize={(next) => updateLiveLayout(next, true)}
+          onResize={(next) => updateLiveLayout(next)}
           onResizeStart={() => startInteraction('resizing')}
           onResizeStop={commitLayoutChange}
           resizeConfig={{ enabled: isEditing, handleComponent: renderResizeHandle, handles: ['s', 'e', 'se'] }}
