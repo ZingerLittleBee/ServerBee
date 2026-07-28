@@ -1,11 +1,10 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Instant;
 
 use hickory_resolver::TokioResolver;
 use hickory_resolver::config::{NameServerConfig, ResolverConfig};
-use hickory_resolver::proto::rr::RecordType;
-use hickory_resolver::proto::xfer::Protocol;
+use hickory_resolver::proto::rr::{RData, RecordType};
 use serde_json::{Value, json};
 use serverbee_common::ssrf;
 
@@ -122,13 +121,14 @@ fn build_resolver(nameserver: Option<&str>) -> Result<TokioResolver, String> {
                 "nameserver '{ns}' is a blocked address (loopback/link-local/metadata)"
             ));
         }
-        let ns_config = NameServerConfig::new(SocketAddr::new(ip, 53), Protocol::Udp);
-        let mut resolver_config = ResolverConfig::new();
-        resolver_config.add_name_server(ns_config);
-        Ok(TokioResolver::builder_with_config(resolver_config, Default::default()).build())
+        let resolver_config =
+            ResolverConfig::from_parts(None, vec![], vec![NameServerConfig::udp(ip)]);
+        TokioResolver::builder_with_config(resolver_config, Default::default())
+            .build()
+            .map_err(|e| format!("Failed to create custom resolver: {e}"))
     } else {
         TokioResolver::builder_tokio()
-            .map(|builder| builder.build())
+            .and_then(|builder| builder.build())
             .map_err(|e| format!("Failed to create system resolver: {e}"))
     }
 }
@@ -144,14 +144,28 @@ async fn resolve_record(
                 .ipv4_lookup(target)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(response.iter().map(|ip| ip.to_string()).collect())
+            Ok(response
+                .answers()
+                .iter()
+                .filter_map(|record| match &record.data {
+                    RData::A(ip) => Some(ip.to_string()),
+                    _ => None,
+                })
+                .collect())
         }
         "AAAA" => {
             let response = resolver
                 .ipv6_lookup(target)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(response.iter().map(|ip| ip.to_string()).collect())
+            Ok(response
+                .answers()
+                .iter()
+                .filter_map(|record| match &record.data {
+                    RData::AAAA(ip) => Some(ip.to_string()),
+                    _ => None,
+                })
+                .collect())
         }
         "CNAME" => {
             let response = resolver
@@ -159,9 +173,12 @@ async fn resolve_record(
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(response
-                .record_iter()
-                .filter(|r| r.record_type() == RecordType::CNAME)
-                .map(|r| r.data().to_string())
+                .answers()
+                .iter()
+                .filter_map(|record| match &record.data {
+                    RData::CNAME(name) => Some(name.to_string()),
+                    _ => None,
+                })
                 .collect())
         }
         "MX" => {
@@ -170,8 +187,12 @@ async fn resolve_record(
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(response
+                .answers()
                 .iter()
-                .map(|mx| format!("{} {}", mx.preference(), mx.exchange()))
+                .filter_map(|record| match &record.data {
+                    RData::MX(mx) => Some(format!("{} {}", mx.preference, mx.exchange)),
+                    _ => None,
+                })
                 .collect())
         }
         "TXT" => {
@@ -179,7 +200,14 @@ async fn resolve_record(
                 .txt_lookup(target)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(response.iter().map(|txt| txt.to_string()).collect())
+            Ok(response
+                .answers()
+                .iter()
+                .filter_map(|record| match &record.data {
+                    RData::TXT(txt) => Some(txt.to_string()),
+                    _ => None,
+                })
+                .collect())
         }
         _ => Err(format!("Unsupported record type: {record_type}")),
     }
@@ -306,8 +334,15 @@ mod tests {
         let config = json!({ "nameserver": "not-an-ip" });
         let result = check("example.com", &config).await;
         assert!(!result.success, "build failure must fail the check");
-        assert!(result.latency.is_some(), "latency is measured even on failure");
-        assert_eq!(result.detail, Value::Null, "detail is Null on build failure");
+        assert!(
+            result.latency.is_some(),
+            "latency is measured even on failure"
+        );
+        assert_eq!(
+            result.detail,
+            Value::Null,
+            "detail is Null on build failure"
+        );
         let err = result.error.expect("error message present");
         assert!(
             err.contains("Failed to build DNS resolver"),

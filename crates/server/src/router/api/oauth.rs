@@ -10,8 +10,9 @@ use axum::routing::get;
 
 use crate::router::utils::extract_client_ip;
 use chrono::Utc;
-use oauth2::reqwest::async_http_client;
-use oauth2::{AuthorizationCode, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse};
+use oauth2::{
+    AuthorizationCode, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse,
+};
 use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -178,7 +179,9 @@ pub async fn oauth_authorize(
 
     // Evict expired states (older than 10 minutes) to prevent memory leak
     let cutoff = Utc::now() - chrono::Duration::minutes(10);
-    state.oauth_states.retain(|_, flow| flow.created_at > cutoff);
+    state
+        .oauth_states
+        .retain(|_, flow| flow.created_at > cutoff);
 
     let secure_flag = if state.config.auth.secure_cookie {
         "; Secure"
@@ -235,10 +238,14 @@ pub async fn oauth_callback(
     // Exchange authorization code for access token, supplying the PKCE verifier
     // so the provider only honors a code bound to the verifier we generated at
     // authorize time (defends against authorization-code interception/injection).
+    let http_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| AppError::Internal(format!("Failed to build OAuth HTTP client: {e}")))?;
     let token_result = client
         .exchange_code(AuthorizationCode::new(query.code))
         .set_pkce_verifier(PkceCodeVerifier::new(flow.pkce_verifier))
-        .request_async(async_http_client)
+        .request_async(&http_client)
         .await
         .map_err(|e| AppError::Internal(format!("OAuth token exchange failed: {e}")))?;
 
@@ -353,24 +360,21 @@ mod tests {
     #[test]
     fn rejects_unknown_state() {
         let states: DashMap<String, OAuthFlowState> = DashMap::new();
-        let err =
-            validate_and_consume_state(&states, "missing", "github", Some("n")).unwrap_err();
+        let err = validate_and_consume_state(&states, "missing", "github", Some("n")).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
     #[test]
     fn rejects_provider_mismatch() {
         let states = make_states("s1", "github", "nonce1", 0);
-        let err =
-            validate_and_consume_state(&states, "s1", "google", Some("nonce1")).unwrap_err();
+        let err = validate_and_consume_state(&states, "s1", "google", Some("nonce1")).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
     #[test]
     fn rejects_expired_state() {
         let states = make_states("s1", "github", "nonce1", 11);
-        let err =
-            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
+        let err = validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
@@ -384,22 +388,19 @@ mod tests {
     #[test]
     fn rejects_mismatched_nonce_cookie() {
         let states = make_states("s1", "github", "nonce1", 0);
-        let err =
-            validate_and_consume_state(&states, "s1", "github", Some("wrong")).unwrap_err();
+        let err = validate_and_consume_state(&states, "s1", "github", Some("wrong")).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
     #[test]
     fn accepts_valid_state_and_is_single_use() {
         let states = make_states("s1", "github", "nonce1", 0);
-        let flow =
-            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap();
+        let flow = validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap();
         assert_eq!(flow.provider, "github");
         // the PKCE verifier must round-trip back to the caller for token exchange
         assert_eq!(flow.pkce_verifier, "verifier1");
         // second use must fail: state was consumed (replay protection)
-        let err =
-            validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
+        let err = validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 }

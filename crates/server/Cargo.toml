@@ -28,7 +28,7 @@ base64 = "0.22"
 dashmap = "6"
 dns-lookup = "2"
 figment = { version = "0.10", features = ["toml", "env"] }
-hickory-resolver = "0.25"
+hickory-resolver = "0.26.1"
 utoipa = { version = "5", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 tokio-cron-scheduler = "0.13"
@@ -43,7 +43,7 @@ flate2 = "1"
 html-escape = "0.2"
 maxminddb = "0.27"
 totp-rs = { version = "5", features = ["qr", "gen_secret"] }
-oauth2 = "4"
+oauth2 = "5"
 toml = "0.8"
 tokio-util = { version = "0.7", features = ["io"] }
 whois-rust = "1"
