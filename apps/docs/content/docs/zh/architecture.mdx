@@ -208,12 +208,12 @@ Agent                              Server
 
 PTY 原始字节流以 base64 编码放入 JSON 消息的 `data` 字段，因为终端输出并非 UTF-8 安全。
 
-浏览器 <-> Server 消息（均为 JSON 文本）：
+浏览器 ↔ Server 消息（均为 JSON 文本）：
 
 - 浏览器 -> Server：`{ "type": "input", "data": <base64> }`、`{ "type": "resize", "rows": <n>, "cols": <n> }`
 - Server -> 浏览器：`{ "type": "session", "session_id": <id> }`、`{ "type": "started" }`、`{ "type": "output", "data": <base64> }`、`{ "type": "error", "error": <message> }`
 
-Server <-> Agent 消息复用 Agent 协议：
+Server ↔ Agent 消息复用 Agent 协议：
 
 - Server -> Agent：`ServerMessage::TerminalOpen`、`TerminalInput`（`data` base64）、`TerminalResize`、`TerminalClose`
 - Agent -> Server：`AgentMessage::TerminalStarted`、`TerminalOutput`（`data` base64）、`TerminalError`
