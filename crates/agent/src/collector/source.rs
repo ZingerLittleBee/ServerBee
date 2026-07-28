@@ -65,7 +65,7 @@ impl SysinfoSource {
             cpu_name: cpu::name(&self.sys),
             cpu_cores: cpu::cores(&self.sys),
             cpu_arch: cpu::arch(),
-            os: System::long_os_version().unwrap_or_default(),
+            os: resolve_os(),
             kernel_version: System::kernel_version().unwrap_or_default(),
             mem_total: memory::mem_total(&self.sys),
             swap_total: memory::swap_total(&self.sys),
@@ -77,6 +77,57 @@ impl SysinfoSource {
             features: Vec::new(),
         }
     }
+}
+
+/// Resolve the OS string for `SystemInfo`.
+///
+/// In Docker agent mode the host's `/etc/os-release` is bind-mounted at
+/// `/host/etc/os-release:ro`; prefer it over sysinfo, which reads the
+/// container's own `/etc/os-release` (e.g. Alpine) and reports the wrong OS.
+fn resolve_os() -> String {
+    resolve_os_with_host(read_host_os_release())
+}
+
+/// Same as [`resolve_os`] but with the host `/etc/os-release` content injected,
+/// so tests can assert precedence without touching the filesystem.
+fn resolve_os_with_host(host: Option<String>) -> String {
+    host.unwrap_or_else(|| System::long_os_version().unwrap_or_default())
+}
+
+fn read_host_os_release() -> Option<String> {
+    parse_os_release(&std::fs::read_to_string("/host/etc/os-release").ok()?)
+}
+
+fn parse_os_release(content: &str) -> Option<String> {
+    let mut name = None;
+    let mut version = None;
+    for line in content.lines() {
+        if let Some(value) = line.strip_prefix("PRETTY_NAME=") {
+            return Some(format!("Linux ({})", unquote_os_release_value(value)));
+        }
+        if name.is_none()
+            && let Some(value) = line.strip_prefix("NAME=")
+        {
+            name = Some(unquote_os_release_value(value).to_string());
+        }
+        if version.is_none()
+            && let Some(value) = line.strip_prefix("VERSION=")
+        {
+            version = Some(unquote_os_release_value(value).to_string());
+        }
+    }
+    match (name, version) {
+        (Some(n), Some(v)) => Some(format!("Linux ({n} {v})")),
+        (Some(n), None) => Some(format!("Linux ({n})")),
+        _ => None,
+    }
+}
+
+fn unquote_os_release_value(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .unwrap_or(value)
 }
 
 impl MetricsSource for SysinfoSource {
@@ -141,5 +192,60 @@ impl MetricsSource for SysinfoSource {
 
     fn gpu(&self) -> Option<GpuReport> {
         super::gpu::get_gpu_report()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_os_release_prefers_pretty_name() {
+        let content = "NAME=\"Ubuntu\"\nVERSION=\"22.04 LTS\"\nPRETTY_NAME=\"Ubuntu 22.04.4 LTS\"";
+        assert_eq!(
+            parse_os_release(content),
+            Some("Linux (Ubuntu 22.04.4 LTS)".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_os_release_falls_back_to_name_and_version() {
+        let content = "NAME=\"Debian GNU/Linux\"\nVERSION=\"12 (bookworm)\"";
+        assert_eq!(
+            parse_os_release(content),
+            Some("Linux (Debian GNU/Linux 12 (bookworm))".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_os_release_name_only() {
+        let content = "NAME=Alpine Linux";
+        assert_eq!(
+            parse_os_release(content),
+            Some("Linux (Alpine Linux)".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_os_release_empty_returns_none() {
+        assert_eq!(parse_os_release(""), None);
+    }
+
+    #[test]
+    fn parse_os_release_no_relevant_keys_returns_none() {
+        assert_eq!(parse_os_release("HOME=/root\nSHELL=/bin/sh"), None);
+    }
+
+    #[test]
+    fn resolve_os_with_host_prefers_host_over_sysinfo() {
+        let host = Some("Linux (Ubuntu 22.04.4 LTS)".to_string());
+        let os = resolve_os_with_host(host);
+        assert_eq!(os, "Linux (Ubuntu 22.04.4 LTS)");
+    }
+
+    #[test]
+    fn resolve_os_with_host_falls_back_to_sysinfo_when_host_absent() {
+        let os = resolve_os_with_host(None);
+        assert!(!os.is_empty());
     }
 }

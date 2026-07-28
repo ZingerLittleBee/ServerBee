@@ -1738,6 +1738,7 @@ services:
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      - /etc/os-release:/host/etc/os-release:ro
       - ${conf_dir}:/etc/serverbee
     restart: unless-stopped
 YAML
