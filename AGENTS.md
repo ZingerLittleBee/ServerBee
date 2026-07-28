@@ -148,3 +148,17 @@ Safety model for `make web-dev-prod`:
 - The UI always shows a persistent warning banner in prod-proxy mode. In normal mode the banner says `⚠ Dev proxy → PROD (...) · read-only`. If `ALLOW_WRITES=1` is set, the banner switches to a stronger write-enabled warning instead of pretending the session is still read-only.
 
 See `.env.example` for the split-key setup and the warning about member-accessible mobile write endpoints.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked as GitHub Issues on `ZingerLittleBee/ServerBee` via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage labels are used as-is (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
