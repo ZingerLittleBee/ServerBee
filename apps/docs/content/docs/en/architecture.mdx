@@ -208,12 +208,12 @@ Browser <--JSON WebSocket--> Server <--JSON WebSocket--> Agent (PTY)
 
 The raw PTY byte stream is base64-encoded into the `data` field of a JSON message, because terminal output is not UTF-8 safe.
 
-Browser ↔ Server messages (all JSON text):
+Browser <-> Server messages (all JSON text):
 
 - Browser -> Server: `{ "type": "input", "data": <base64> }`, `{ "type": "resize", "rows": <n>, "cols": <n> }`
 - Server -> Browser: `{ "type": "session", "session_id": <id> }`, `{ "type": "started" }`, `{ "type": "output", "data": <base64> }`, `{ "type": "error", "error": <message> }`
 
-Server ↔ Agent messages reuse the agent protocol:
+Server <-> Agent messages reuse the agent protocol:
 
 - Server -> Agent: `ServerMessage::TerminalOpen`, `TerminalInput` (`data` base64), `TerminalResize`, `TerminalClose`
 - Agent -> Server: `AgentMessage::TerminalStarted`, `TerminalOutput` (`data` base64), `TerminalError`

@@ -2,10 +2,10 @@ use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Instant;
 
-use hickory_resolver::TokioResolver;
 use hickory_resolver::config::{NameServerConfig, ResolverConfig};
 use hickory_resolver::proto::rr::{RData, RecordType};
-use serde_json::{Value, json};
+use hickory_resolver::TokioResolver;
+use serde_json::{json, Value};
 use serverbee_common::ssrf;
 
 use super::CheckResult;
@@ -357,13 +357,11 @@ mod tests {
         let result = check("example.com", &config).await;
         assert!(!result.success);
         assert_eq!(result.detail, Value::Null);
-        assert!(
-            result
-                .error
-                .as_deref()
-                .unwrap_or_default()
-                .contains("Failed to build DNS resolver")
-        );
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Failed to build DNS resolver"));
     }
 
     #[tokio::test]
@@ -438,13 +436,11 @@ mod tests {
         let result = check("example.com", &config).await;
         assert!(!result.success);
         assert_eq!(result.detail["record_type"], json!("soa"));
-        assert!(
-            result
-                .error
-                .as_deref()
-                .unwrap_or_default()
-                .contains("DNS resolution failed")
-        );
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("DNS resolution failed"));
     }
 
     #[test]
@@ -583,13 +579,11 @@ mod tests {
         assert!(!result.success);
         // The detail mirror preserves the requested (whitespace) record type.
         assert_eq!(result.detail["record_type"], json!(" "));
-        assert!(
-            result
-                .error
-                .as_deref()
-                .unwrap_or_default()
-                .contains("DNS resolution failed")
-        );
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("DNS resolution failed"));
     }
 
     #[tokio::test]
