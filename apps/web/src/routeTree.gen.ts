@@ -9,57 +9,51 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as StatusRouteImport } from './routes/status'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthedRouteImport } from './routes/_authed'
-import { Route as StatusIndexRouteImport } from './routes/status.index'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
-import { Route as StatusNetworkRouteImport } from './routes/status.network'
-import { Route as StatusIpQualityRouteImport } from './routes/status.ip-quality'
 import { Route as AuthedIpQualityRouteImport } from './routes/_authed/ip-quality'
-import { Route as StatusNetworkIndexRouteImport } from './routes/status.network.index'
-import { Route as AuthedTrafficIndexRouteImport } from './routes/_authed/traffic/index'
-import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
-import { Route as AuthedServersIndexRouteImport } from './routes/_authed/servers/index'
-import { Route as AuthedSecurityIndexRouteImport } from './routes/_authed/security/index'
-import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network/index'
-import { Route as StatusServerServerIdRouteImport } from './routes/status.server.$serverId'
-import { Route as StatusNetworkServerIdRouteImport } from './routes/status.network.$serverId'
-import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
-import { Route as AuthedSettingsWidgetsRouteImport } from './routes/_authed/settings/widgets'
-import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
-import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
-import { Route as AuthedSettingsStatusPagesRouteImport } from './routes/_authed/settings/status-pages'
-import { Route as AuthedSettingsServiceMonitorsRouteImport } from './routes/_authed/settings/service-monitors'
-import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
-import { Route as AuthedSettingsRateLimitsRouteImport } from './routes/_authed/settings/rate-limits'
-import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
-import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
-import { Route as AuthedSettingsNetworkProbesRouteImport } from './routes/_authed/settings/network-probes'
-import { Route as AuthedSettingsMobileDevicesRouteImport } from './routes/_authed/settings/mobile-devices'
-import { Route as AuthedSettingsIpQualityRouteImport } from './routes/_authed/settings/ip-quality'
-import { Route as AuthedSettingsFirewallRouteImport } from './routes/_authed/settings/firewall'
-import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
-import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
-import { Route as AuthedSettingsAppearanceRouteImport } from './routes/_authed/settings/appearance'
-import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/settings/api-keys'
-import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
-import { Route as AuthedServiceMonitorsIdRouteImport } from './routes/_authed/service-monitors/$id'
-import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$id'
-import { Route as AuthedSecurityServerIdRouteImport } from './routes/_authed/security/$serverId'
-import { Route as AuthedNetworkServerIdRouteImport } from './routes/_authed/network/$serverId'
+import { Route as StatusIndexRouteImport } from './routes/status.index'
+import { Route as StatusIpQualityRouteImport } from './routes/status.ip-quality'
+import { Route as StatusNetworkRouteImport } from './routes/status.network'
 import { Route as AuthedFilesServerIdRouteImport } from './routes/_authed/files.$serverId'
+import { Route as AuthedNetworkIndexRouteImport } from './routes/_authed/network/index'
+import { Route as AuthedNetworkServerIdRouteImport } from './routes/_authed/network/$serverId'
+import { Route as AuthedSecurityIndexRouteImport } from './routes/_authed/security/index'
+import { Route as AuthedSecurityServerIdRouteImport } from './routes/_authed/security/$serverId'
+import { Route as AuthedServersIndexRouteImport } from './routes/_authed/servers/index'
+import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$id'
+import { Route as AuthedServiceMonitorsIdRouteImport } from './routes/_authed/service-monitors/$id'
+import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
+import { Route as AuthedSettingsAlertsRouteImport } from './routes/_authed/settings/alerts'
+import { Route as AuthedSettingsApiKeysRouteImport } from './routes/_authed/settings/api-keys'
+import { Route as AuthedSettingsAppearanceRouteImport } from './routes/_authed/settings/appearance'
+import { Route as AuthedSettingsAuditLogsRouteImport } from './routes/_authed/settings/audit-logs'
+import { Route as AuthedSettingsCapabilitiesRouteImport } from './routes/_authed/settings/capabilities'
+import { Route as AuthedSettingsFirewallRouteImport } from './routes/_authed/settings/firewall'
+import { Route as AuthedSettingsIpQualityRouteImport } from './routes/_authed/settings/ip-quality'
+import { Route as AuthedSettingsMobileDevicesRouteImport } from './routes/_authed/settings/mobile-devices'
+import { Route as AuthedSettingsNetworkProbesRouteImport } from './routes/_authed/settings/network-probes'
+import { Route as AuthedSettingsNotificationsRouteImport } from './routes/_authed/settings/notifications'
+import { Route as AuthedSettingsPingTasksRouteImport } from './routes/_authed/settings/ping-tasks'
+import { Route as AuthedSettingsRateLimitsRouteImport } from './routes/_authed/settings/rate-limits'
+import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
+import { Route as AuthedSettingsServiceMonitorsRouteImport } from './routes/_authed/settings/service-monitors'
+import { Route as AuthedSettingsStatusPagesRouteImport } from './routes/_authed/settings/status-pages'
+import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
+import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
+import { Route as AuthedSettingsWidgetsRouteImport } from './routes/_authed/settings/widgets'
+import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/terminal.$serverId'
+import { Route as AuthedTrafficIndexRouteImport } from './routes/_authed/traffic/index'
+import { Route as StatusNetworkIndexRouteImport } from './routes/status.network.index'
+import { Route as StatusNetworkServerIdRouteImport } from './routes/status.network.$serverId'
+import { Route as StatusServerServerIdRouteImport } from './routes/status.server.$serverId'
 import { Route as AuthedServersServerIdDockerIndexRouteImport } from './routes/_authed/servers/$serverId/docker/index'
 
-const StatusRoute = StatusRouteImport.update({
-  id: '/status',
-  path: '/status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OnboardingRoute = OnboardingRouteImport.update({
-  id: '/onboarding',
-  path: '/onboarding',
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -67,23 +61,29 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthedRoute = AuthedRouteImport.update({
-  id: '/_authed',
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const StatusIndexRoute = StatusIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => StatusRoute,
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const StatusNetworkRoute = StatusNetworkRouteImport.update({
-  id: '/network',
-  path: '/network',
+const AuthedIpQualityRoute = AuthedIpQualityRouteImport.update({
+  id: '/ip-quality',
+  path: '/ip-quality',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const StatusIndexRoute = StatusIndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => StatusRoute,
 } as any)
 const StatusIpQualityRoute = StatusIpQualityRouteImport.update({
@@ -91,34 +91,14 @@ const StatusIpQualityRoute = StatusIpQualityRouteImport.update({
   path: '/ip-quality',
   getParentRoute: () => StatusRoute,
 } as any)
-const AuthedIpQualityRoute = AuthedIpQualityRouteImport.update({
-  id: '/ip-quality',
-  path: '/ip-quality',
-  getParentRoute: () => AuthedRoute,
+const StatusNetworkRoute = StatusNetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
+  getParentRoute: () => StatusRoute,
 } as any)
-const StatusNetworkIndexRoute = StatusNetworkIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => StatusNetworkRoute,
-} as any)
-const AuthedTrafficIndexRoute = AuthedTrafficIndexRouteImport.update({
-  id: '/traffic/',
-  path: '/traffic/',
-  getParentRoute: () => AuthedRoute,
-} as any)
-const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
-  id: '/settings/',
-  path: '/settings/',
-  getParentRoute: () => AuthedRoute,
-} as any)
-const AuthedServersIndexRoute = AuthedServersIndexRouteImport.update({
-  id: '/servers/',
-  path: '/servers/',
-  getParentRoute: () => AuthedRoute,
-} as any)
-const AuthedSecurityIndexRoute = AuthedSecurityIndexRouteImport.update({
-  id: '/security/',
-  path: '/security/',
+const AuthedFilesServerIdRoute = AuthedFilesServerIdRouteImport.update({
+  id: '/files/$serverId',
+  path: '/files/$serverId',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedNetworkIndexRoute = AuthedNetworkIndexRouteImport.update({
@@ -126,101 +106,49 @@ const AuthedNetworkIndexRoute = AuthedNetworkIndexRouteImport.update({
   path: '/network/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const StatusServerServerIdRoute = StatusServerServerIdRouteImport.update({
-  id: '/server/$serverId',
-  path: '/server/$serverId',
-  getParentRoute: () => StatusRoute,
-} as any)
-const StatusNetworkServerIdRoute = StatusNetworkServerIdRouteImport.update({
-  id: '/$serverId',
-  path: '/$serverId',
-  getParentRoute: () => StatusNetworkRoute,
-} as any)
-const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
-  id: '/terminal/$serverId',
-  path: '/terminal/$serverId',
+const AuthedNetworkServerIdRoute = AuthedNetworkServerIdRouteImport.update({
+  id: '/network/$serverId',
+  path: '/network/$serverId',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsWidgetsRoute = AuthedSettingsWidgetsRouteImport.update({
-  id: '/settings/widgets',
-  path: '/settings/widgets',
+const AuthedSecurityIndexRoute = AuthedSecurityIndexRouteImport.update({
+  id: '/security/',
+  path: '/security/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsUsersRoute = AuthedSettingsUsersRouteImport.update({
-  id: '/settings/users',
-  path: '/settings/users',
+const AuthedSecurityServerIdRoute = AuthedSecurityServerIdRouteImport.update({
+  id: '/security/$serverId',
+  path: '/security/$serverId',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsTasksRoute = AuthedSettingsTasksRouteImport.update({
-  id: '/settings/tasks',
-  path: '/settings/tasks',
+const AuthedServersIndexRoute = AuthedServersIndexRouteImport.update({
+  id: '/servers/',
+  path: '/servers/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsStatusPagesRoute =
-  AuthedSettingsStatusPagesRouteImport.update({
-    id: '/settings/status-pages',
-    path: '/settings/status-pages',
-    getParentRoute: () => AuthedRoute,
-  } as any)
-const AuthedSettingsServiceMonitorsRoute =
-  AuthedSettingsServiceMonitorsRouteImport.update({
-    id: '/settings/service-monitors',
-    path: '/settings/service-monitors',
-    getParentRoute: () => AuthedRoute,
-  } as any)
-const AuthedSettingsSecurityRoute = AuthedSettingsSecurityRouteImport.update({
-  id: '/settings/security',
-  path: '/settings/security',
+const AuthedServersIdRoute = AuthedServersIdRouteImport.update({
+  id: '/servers/$id',
+  path: '/servers/$id',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsRateLimitsRoute =
-  AuthedSettingsRateLimitsRouteImport.update({
-    id: '/settings/rate-limits',
-    path: '/settings/rate-limits',
-    getParentRoute: () => AuthedRoute,
-  } as any)
-const AuthedSettingsPingTasksRoute = AuthedSettingsPingTasksRouteImport.update({
-  id: '/settings/ping-tasks',
-  path: '/settings/ping-tasks',
+const AuthedServiceMonitorsIdRoute = AuthedServiceMonitorsIdRouteImport.update({
+  id: '/service-monitors/$id',
+  path: '/service-monitors/$id',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsNotificationsRoute =
-  AuthedSettingsNotificationsRouteImport.update({
-    id: '/settings/notifications',
-    path: '/settings/notifications',
-    getParentRoute: () => AuthedRoute,
-  } as any)
-const AuthedSettingsNetworkProbesRoute =
-  AuthedSettingsNetworkProbesRouteImport.update({
-    id: '/settings/network-probes',
-    path: '/settings/network-probes',
-    getParentRoute: () => AuthedRoute,
-  } as any)
-const AuthedSettingsMobileDevicesRoute =
-  AuthedSettingsMobileDevicesRouteImport.update({
-    id: '/settings/mobile-devices',
-    path: '/settings/mobile-devices',
-    getParentRoute: () => AuthedRoute,
-  } as any)
-const AuthedSettingsIpQualityRoute = AuthedSettingsIpQualityRouteImport.update({
-  id: '/settings/ip-quality',
-  path: '/settings/ip-quality',
+const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsFirewallRoute = AuthedSettingsFirewallRouteImport.update({
-  id: '/settings/firewall',
-  path: '/settings/firewall',
+const AuthedSettingsAlertsRoute = AuthedSettingsAlertsRouteImport.update({
+  id: '/settings/alerts',
+  path: '/settings/alerts',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsCapabilitiesRoute =
-  AuthedSettingsCapabilitiesRouteImport.update({
-    id: '/settings/capabilities',
-    path: '/settings/capabilities',
-    getParentRoute: () => AuthedRoute,
-  } as any)
-const AuthedSettingsAuditLogsRoute = AuthedSettingsAuditLogsRouteImport.update({
-  id: '/settings/audit-logs',
-  path: '/settings/audit-logs',
+const AuthedSettingsApiKeysRoute = AuthedSettingsApiKeysRouteImport.update({
+  id: '/settings/api-keys',
+  path: '/settings/api-keys',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsAppearanceRoute =
@@ -229,40 +157,112 @@ const AuthedSettingsAppearanceRoute =
     path: '/settings/appearance',
     getParentRoute: () => AuthedRoute,
   } as any)
-const AuthedSettingsApiKeysRoute = AuthedSettingsApiKeysRouteImport.update({
-  id: '/settings/api-keys',
-  path: '/settings/api-keys',
+const AuthedSettingsAuditLogsRoute = AuthedSettingsAuditLogsRouteImport.update({
+  id: '/settings/audit-logs',
+  path: '/settings/audit-logs',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSettingsAlertsRoute = AuthedSettingsAlertsRouteImport.update({
-  id: '/settings/alerts',
-  path: '/settings/alerts',
+const AuthedSettingsCapabilitiesRoute =
+  AuthedSettingsCapabilitiesRouteImport.update({
+    id: '/settings/capabilities',
+    path: '/settings/capabilities',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsFirewallRoute = AuthedSettingsFirewallRouteImport.update({
+  id: '/settings/firewall',
+  path: '/settings/firewall',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedServiceMonitorsIdRoute = AuthedServiceMonitorsIdRouteImport.update({
-  id: '/service-monitors/$id',
-  path: '/service-monitors/$id',
+const AuthedSettingsIpQualityRoute = AuthedSettingsIpQualityRouteImport.update({
+  id: '/settings/ip-quality',
+  path: '/settings/ip-quality',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedServersIdRoute = AuthedServersIdRouteImport.update({
-  id: '/servers/$id',
-  path: '/servers/$id',
+const AuthedSettingsMobileDevicesRoute =
+  AuthedSettingsMobileDevicesRouteImport.update({
+    id: '/settings/mobile-devices',
+    path: '/settings/mobile-devices',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsNetworkProbesRoute =
+  AuthedSettingsNetworkProbesRouteImport.update({
+    id: '/settings/network-probes',
+    path: '/settings/network-probes',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsNotificationsRoute =
+  AuthedSettingsNotificationsRouteImport.update({
+    id: '/settings/notifications',
+    path: '/settings/notifications',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsPingTasksRoute = AuthedSettingsPingTasksRouteImport.update({
+  id: '/settings/ping-tasks',
+  path: '/settings/ping-tasks',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedSecurityServerIdRoute = AuthedSecurityServerIdRouteImport.update({
-  id: '/security/$serverId',
-  path: '/security/$serverId',
+const AuthedSettingsRateLimitsRoute =
+  AuthedSettingsRateLimitsRouteImport.update({
+    id: '/settings/rate-limits',
+    path: '/settings/rate-limits',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsSecurityRoute = AuthedSettingsSecurityRouteImport.update({
+  id: '/settings/security',
+  path: '/settings/security',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedNetworkServerIdRoute = AuthedNetworkServerIdRouteImport.update({
-  id: '/network/$serverId',
-  path: '/network/$serverId',
+const AuthedSettingsServiceMonitorsRoute =
+  AuthedSettingsServiceMonitorsRouteImport.update({
+    id: '/settings/service-monitors',
+    path: '/settings/service-monitors',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsStatusPagesRoute =
+  AuthedSettingsStatusPagesRouteImport.update({
+    id: '/settings/status-pages',
+    path: '/settings/status-pages',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedSettingsTasksRoute = AuthedSettingsTasksRouteImport.update({
+  id: '/settings/tasks',
+  path: '/settings/tasks',
   getParentRoute: () => AuthedRoute,
 } as any)
-const AuthedFilesServerIdRoute = AuthedFilesServerIdRouteImport.update({
-  id: '/files/$serverId',
-  path: '/files/$serverId',
+const AuthedSettingsUsersRoute = AuthedSettingsUsersRouteImport.update({
+  id: '/settings/users',
+  path: '/settings/users',
   getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsWidgetsRoute = AuthedSettingsWidgetsRouteImport.update({
+  id: '/settings/widgets',
+  path: '/settings/widgets',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedTerminalServerIdRoute = AuthedTerminalServerIdRouteImport.update({
+  id: '/terminal/$serverId',
+  path: '/terminal/$serverId',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedTrafficIndexRoute = AuthedTrafficIndexRouteImport.update({
+  id: '/traffic/',
+  path: '/traffic/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const StatusNetworkIndexRoute = StatusNetworkIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StatusNetworkRoute,
+} as any)
+const StatusNetworkServerIdRoute = StatusNetworkServerIdRouteImport.update({
+  id: '/$serverId',
+  path: '/$serverId',
+  getParentRoute: () => StatusNetworkRoute,
+} as any)
+const StatusServerServerIdRoute = StatusServerServerIdRouteImport.update({
+  id: '/server/$serverId',
+  path: '/server/$serverId',
+  getParentRoute: () => StatusRoute,
 } as any)
 const AuthedServersServerIdDockerIndexRoute =
   AuthedServersServerIdDockerIndexRouteImport.update({
@@ -540,18 +540,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/status': {
-      id: '/status'
-      path: '/status'
-      fullPath: '/status'
-      preLoaderRoute: typeof StatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -561,19 +554,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authed': {
-      id: '/_authed'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthedRouteImport
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/status/': {
-      id: '/status/'
-      path: '/'
-      fullPath: '/status/'
-      preLoaderRoute: typeof StatusIndexRouteImport
-      parentRoute: typeof StatusRoute
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authed/': {
       id: '/_authed/'
@@ -582,11 +575,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/status/network': {
-      id: '/status/network'
-      path: '/network'
-      fullPath: '/status/network'
-      preLoaderRoute: typeof StatusNetworkRouteImport
+    '/_authed/ip-quality': {
+      id: '/_authed/ip-quality'
+      path: '/ip-quality'
+      fullPath: '/ip-quality'
+      preLoaderRoute: typeof AuthedIpQualityRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/status/': {
+      id: '/status/'
+      path: '/'
+      fullPath: '/status/'
+      preLoaderRoute: typeof StatusIndexRouteImport
       parentRoute: typeof StatusRoute
     }
     '/status/ip-quality': {
@@ -596,46 +596,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StatusIpQualityRouteImport
       parentRoute: typeof StatusRoute
     }
-    '/_authed/ip-quality': {
-      id: '/_authed/ip-quality'
-      path: '/ip-quality'
-      fullPath: '/ip-quality'
-      preLoaderRoute: typeof AuthedIpQualityRouteImport
-      parentRoute: typeof AuthedRoute
+    '/status/network': {
+      id: '/status/network'
+      path: '/network'
+      fullPath: '/status/network'
+      preLoaderRoute: typeof StatusNetworkRouteImport
+      parentRoute: typeof StatusRoute
     }
-    '/status/network/': {
-      id: '/status/network/'
-      path: '/'
-      fullPath: '/status/network/'
-      preLoaderRoute: typeof StatusNetworkIndexRouteImport
-      parentRoute: typeof StatusNetworkRoute
-    }
-    '/_authed/traffic/': {
-      id: '/_authed/traffic/'
-      path: '/traffic'
-      fullPath: '/traffic/'
-      preLoaderRoute: typeof AuthedTrafficIndexRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/': {
-      id: '/_authed/settings/'
-      path: '/settings'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof AuthedSettingsIndexRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/servers/': {
-      id: '/_authed/servers/'
-      path: '/servers'
-      fullPath: '/servers/'
-      preLoaderRoute: typeof AuthedServersIndexRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/security/': {
-      id: '/_authed/security/'
-      path: '/security'
-      fullPath: '/security/'
-      preLoaderRoute: typeof AuthedSecurityIndexRouteImport
+    '/_authed/files/$serverId': {
+      id: '/_authed/files/$serverId'
+      path: '/files/$serverId'
+      fullPath: '/files/$serverId'
+      preLoaderRoute: typeof AuthedFilesServerIdRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/network/': {
@@ -645,165 +617,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedNetworkIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/status/server/$serverId': {
-      id: '/status/server/$serverId'
-      path: '/server/$serverId'
-      fullPath: '/status/server/$serverId'
-      preLoaderRoute: typeof StatusServerServerIdRouteImport
-      parentRoute: typeof StatusRoute
-    }
-    '/status/network/$serverId': {
-      id: '/status/network/$serverId'
-      path: '/$serverId'
-      fullPath: '/status/network/$serverId'
-      preLoaderRoute: typeof StatusNetworkServerIdRouteImport
-      parentRoute: typeof StatusNetworkRoute
-    }
-    '/_authed/terminal/$serverId': {
-      id: '/_authed/terminal/$serverId'
-      path: '/terminal/$serverId'
-      fullPath: '/terminal/$serverId'
-      preLoaderRoute: typeof AuthedTerminalServerIdRouteImport
+    '/_authed/network/$serverId': {
+      id: '/_authed/network/$serverId'
+      path: '/network/$serverId'
+      fullPath: '/network/$serverId'
+      preLoaderRoute: typeof AuthedNetworkServerIdRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/settings/widgets': {
-      id: '/_authed/settings/widgets'
-      path: '/settings/widgets'
-      fullPath: '/settings/widgets'
-      preLoaderRoute: typeof AuthedSettingsWidgetsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/users': {
-      id: '/_authed/settings/users'
-      path: '/settings/users'
-      fullPath: '/settings/users'
-      preLoaderRoute: typeof AuthedSettingsUsersRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/tasks': {
-      id: '/_authed/settings/tasks'
-      path: '/settings/tasks'
-      fullPath: '/settings/tasks'
-      preLoaderRoute: typeof AuthedSettingsTasksRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/status-pages': {
-      id: '/_authed/settings/status-pages'
-      path: '/settings/status-pages'
-      fullPath: '/settings/status-pages'
-      preLoaderRoute: typeof AuthedSettingsStatusPagesRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/service-monitors': {
-      id: '/_authed/settings/service-monitors'
-      path: '/settings/service-monitors'
-      fullPath: '/settings/service-monitors'
-      preLoaderRoute: typeof AuthedSettingsServiceMonitorsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/security': {
-      id: '/_authed/settings/security'
-      path: '/settings/security'
-      fullPath: '/settings/security'
-      preLoaderRoute: typeof AuthedSettingsSecurityRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/rate-limits': {
-      id: '/_authed/settings/rate-limits'
-      path: '/settings/rate-limits'
-      fullPath: '/settings/rate-limits'
-      preLoaderRoute: typeof AuthedSettingsRateLimitsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/ping-tasks': {
-      id: '/_authed/settings/ping-tasks'
-      path: '/settings/ping-tasks'
-      fullPath: '/settings/ping-tasks'
-      preLoaderRoute: typeof AuthedSettingsPingTasksRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/notifications': {
-      id: '/_authed/settings/notifications'
-      path: '/settings/notifications'
-      fullPath: '/settings/notifications'
-      preLoaderRoute: typeof AuthedSettingsNotificationsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/network-probes': {
-      id: '/_authed/settings/network-probes'
-      path: '/settings/network-probes'
-      fullPath: '/settings/network-probes'
-      preLoaderRoute: typeof AuthedSettingsNetworkProbesRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/mobile-devices': {
-      id: '/_authed/settings/mobile-devices'
-      path: '/settings/mobile-devices'
-      fullPath: '/settings/mobile-devices'
-      preLoaderRoute: typeof AuthedSettingsMobileDevicesRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/ip-quality': {
-      id: '/_authed/settings/ip-quality'
-      path: '/settings/ip-quality'
-      fullPath: '/settings/ip-quality'
-      preLoaderRoute: typeof AuthedSettingsIpQualityRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/firewall': {
-      id: '/_authed/settings/firewall'
-      path: '/settings/firewall'
-      fullPath: '/settings/firewall'
-      preLoaderRoute: typeof AuthedSettingsFirewallRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/capabilities': {
-      id: '/_authed/settings/capabilities'
-      path: '/settings/capabilities'
-      fullPath: '/settings/capabilities'
-      preLoaderRoute: typeof AuthedSettingsCapabilitiesRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/audit-logs': {
-      id: '/_authed/settings/audit-logs'
-      path: '/settings/audit-logs'
-      fullPath: '/settings/audit-logs'
-      preLoaderRoute: typeof AuthedSettingsAuditLogsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/appearance': {
-      id: '/_authed/settings/appearance'
-      path: '/settings/appearance'
-      fullPath: '/settings/appearance'
-      preLoaderRoute: typeof AuthedSettingsAppearanceRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/api-keys': {
-      id: '/_authed/settings/api-keys'
-      path: '/settings/api-keys'
-      fullPath: '/settings/api-keys'
-      preLoaderRoute: typeof AuthedSettingsApiKeysRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/settings/alerts': {
-      id: '/_authed/settings/alerts'
-      path: '/settings/alerts'
-      fullPath: '/settings/alerts'
-      preLoaderRoute: typeof AuthedSettingsAlertsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/service-monitors/$id': {
-      id: '/_authed/service-monitors/$id'
-      path: '/service-monitors/$id'
-      fullPath: '/service-monitors/$id'
-      preLoaderRoute: typeof AuthedServiceMonitorsIdRouteImport
-      parentRoute: typeof AuthedRoute
-    }
-    '/_authed/servers/$id': {
-      id: '/_authed/servers/$id'
-      path: '/servers/$id'
-      fullPath: '/servers/$id'
-      preLoaderRoute: typeof AuthedServersIdRouteImport
+    '/_authed/security/': {
+      id: '/_authed/security/'
+      path: '/security'
+      fullPath: '/security/'
+      preLoaderRoute: typeof AuthedSecurityIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/security/$serverId': {
@@ -813,19 +638,194 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSecurityServerIdRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/network/$serverId': {
-      id: '/_authed/network/$serverId'
-      path: '/network/$serverId'
-      fullPath: '/network/$serverId'
-      preLoaderRoute: typeof AuthedNetworkServerIdRouteImport
+    '/_authed/servers/': {
+      id: '/_authed/servers/'
+      path: '/servers'
+      fullPath: '/servers/'
+      preLoaderRoute: typeof AuthedServersIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/files/$serverId': {
-      id: '/_authed/files/$serverId'
-      path: '/files/$serverId'
-      fullPath: '/files/$serverId'
-      preLoaderRoute: typeof AuthedFilesServerIdRouteImport
+    '/_authed/servers/$id': {
+      id: '/_authed/servers/$id'
+      path: '/servers/$id'
+      fullPath: '/servers/$id'
+      preLoaderRoute: typeof AuthedServersIdRouteImport
       parentRoute: typeof AuthedRoute
+    }
+    '/_authed/service-monitors/$id': {
+      id: '/_authed/service-monitors/$id'
+      path: '/service-monitors/$id'
+      fullPath: '/service-monitors/$id'
+      preLoaderRoute: typeof AuthedServiceMonitorsIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/': {
+      id: '/_authed/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof AuthedSettingsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/alerts': {
+      id: '/_authed/settings/alerts'
+      path: '/settings/alerts'
+      fullPath: '/settings/alerts'
+      preLoaderRoute: typeof AuthedSettingsAlertsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/api-keys': {
+      id: '/_authed/settings/api-keys'
+      path: '/settings/api-keys'
+      fullPath: '/settings/api-keys'
+      preLoaderRoute: typeof AuthedSettingsApiKeysRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/appearance': {
+      id: '/_authed/settings/appearance'
+      path: '/settings/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof AuthedSettingsAppearanceRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/audit-logs': {
+      id: '/_authed/settings/audit-logs'
+      path: '/settings/audit-logs'
+      fullPath: '/settings/audit-logs'
+      preLoaderRoute: typeof AuthedSettingsAuditLogsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/capabilities': {
+      id: '/_authed/settings/capabilities'
+      path: '/settings/capabilities'
+      fullPath: '/settings/capabilities'
+      preLoaderRoute: typeof AuthedSettingsCapabilitiesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/firewall': {
+      id: '/_authed/settings/firewall'
+      path: '/settings/firewall'
+      fullPath: '/settings/firewall'
+      preLoaderRoute: typeof AuthedSettingsFirewallRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/ip-quality': {
+      id: '/_authed/settings/ip-quality'
+      path: '/settings/ip-quality'
+      fullPath: '/settings/ip-quality'
+      preLoaderRoute: typeof AuthedSettingsIpQualityRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/mobile-devices': {
+      id: '/_authed/settings/mobile-devices'
+      path: '/settings/mobile-devices'
+      fullPath: '/settings/mobile-devices'
+      preLoaderRoute: typeof AuthedSettingsMobileDevicesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/network-probes': {
+      id: '/_authed/settings/network-probes'
+      path: '/settings/network-probes'
+      fullPath: '/settings/network-probes'
+      preLoaderRoute: typeof AuthedSettingsNetworkProbesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/notifications': {
+      id: '/_authed/settings/notifications'
+      path: '/settings/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof AuthedSettingsNotificationsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/ping-tasks': {
+      id: '/_authed/settings/ping-tasks'
+      path: '/settings/ping-tasks'
+      fullPath: '/settings/ping-tasks'
+      preLoaderRoute: typeof AuthedSettingsPingTasksRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/rate-limits': {
+      id: '/_authed/settings/rate-limits'
+      path: '/settings/rate-limits'
+      fullPath: '/settings/rate-limits'
+      preLoaderRoute: typeof AuthedSettingsRateLimitsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/security': {
+      id: '/_authed/settings/security'
+      path: '/settings/security'
+      fullPath: '/settings/security'
+      preLoaderRoute: typeof AuthedSettingsSecurityRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/service-monitors': {
+      id: '/_authed/settings/service-monitors'
+      path: '/settings/service-monitors'
+      fullPath: '/settings/service-monitors'
+      preLoaderRoute: typeof AuthedSettingsServiceMonitorsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/status-pages': {
+      id: '/_authed/settings/status-pages'
+      path: '/settings/status-pages'
+      fullPath: '/settings/status-pages'
+      preLoaderRoute: typeof AuthedSettingsStatusPagesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/tasks': {
+      id: '/_authed/settings/tasks'
+      path: '/settings/tasks'
+      fullPath: '/settings/tasks'
+      preLoaderRoute: typeof AuthedSettingsTasksRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/users': {
+      id: '/_authed/settings/users'
+      path: '/settings/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof AuthedSettingsUsersRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/settings/widgets': {
+      id: '/_authed/settings/widgets'
+      path: '/settings/widgets'
+      fullPath: '/settings/widgets'
+      preLoaderRoute: typeof AuthedSettingsWidgetsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/terminal/$serverId': {
+      id: '/_authed/terminal/$serverId'
+      path: '/terminal/$serverId'
+      fullPath: '/terminal/$serverId'
+      preLoaderRoute: typeof AuthedTerminalServerIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/traffic/': {
+      id: '/_authed/traffic/'
+      path: '/traffic'
+      fullPath: '/traffic/'
+      preLoaderRoute: typeof AuthedTrafficIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/status/network/': {
+      id: '/status/network/'
+      path: '/'
+      fullPath: '/status/network/'
+      preLoaderRoute: typeof StatusNetworkIndexRouteImport
+      parentRoute: typeof StatusNetworkRoute
+    }
+    '/status/network/$serverId': {
+      id: '/status/network/$serverId'
+      path: '/$serverId'
+      fullPath: '/status/network/$serverId'
+      preLoaderRoute: typeof StatusNetworkServerIdRouteImport
+      parentRoute: typeof StatusNetworkRoute
+    }
+    '/status/server/$serverId': {
+      id: '/status/server/$serverId'
+      path: '/server/$serverId'
+      fullPath: '/status/server/$serverId'
+      preLoaderRoute: typeof StatusServerServerIdRouteImport
+      parentRoute: typeof StatusRoute
     }
     '/_authed/servers/$serverId/docker/': {
       id: '/_authed/servers/$serverId/docker/'

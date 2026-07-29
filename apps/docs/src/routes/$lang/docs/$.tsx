@@ -44,7 +44,7 @@ export const Route = createFileRoute('/$lang/docs/$')({
 const serverLoader = createServerFn({
   method: 'GET'
 })
-  .inputValidator((data: { slugs: string[]; lang: string }) => data)
+  .validator((data: { slugs: string[]; lang: string }) => data)
   .handler(async ({ data: { slugs, lang } }) => {
     const page = source.getPage(slugs, lang)
     if (!page) {

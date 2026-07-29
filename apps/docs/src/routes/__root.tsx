@@ -6,14 +6,12 @@ import { i18n } from '@/lib/i18n'
 import appCss from '@/styles/app.css?url'
 
 const { provider } = defineI18nUI(i18n, {
-  translations: {
-    en: {
-      displayName: 'English'
-    },
-    zh: {
-      displayName: '中文',
-      search: '搜索文档'
-    }
+  en: {
+    displayName: 'English'
+  },
+  zh: {
+    displayName: '中文',
+    search: '搜索文档'
   }
 })
 
