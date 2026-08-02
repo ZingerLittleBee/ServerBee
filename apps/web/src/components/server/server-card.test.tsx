@@ -228,6 +228,22 @@ describe('ServerCard', () => {
     expect(container.innerHTML).not.toContain('bg-background/')
   })
 
+  it('gives the truncated name a title so the full value stays reachable', () => {
+    renderCard(makeServer({ name: 'a-very-long-server-name-that-will-be-clipped' }))
+    const heading = screen.getByRole('heading', { level: 3 })
+
+    expect(heading).toHaveClass('truncate')
+    expect(heading).toHaveAttribute('title', 'a-very-long-server-name-that-will-be-clipped')
+  })
+
+  it('hides the decorative OS emoji from the accessible link name', () => {
+    const { container } = renderCard(makeServer({ os: 'Ubuntu 22.04' }))
+    const emoji = container.querySelector('span[title="Ubuntu 22.04"]')
+
+    expect(emoji).not.toBeNull()
+    expect(emoji).toHaveAttribute('aria-hidden', 'true')
+  })
+
   it('lets the card shrink below the ideal 320px card width', () => {
     const { container } = renderCard(makeServer())
     expect((container.firstElementChild as HTMLElement).className).toContain('min-w-0')

@@ -125,7 +125,7 @@ const ServerCardInner = ({
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm',
+        'flex w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10',
         // Pending cards have far less content than active ones; stretch them to
         // fill the grid cell so a "Waiting for agent…" tile matches the height of
         // its data-rich siblings instead of leaving a short, mismatched gap.
@@ -145,11 +145,13 @@ const ServerCardInner = ({
         >
           <CountryFlag className="text-sm" code={server.country_code} />
           {osEmoji && (
-            <span className="shrink-0 text-sm" title={server.os ?? ''}>
+            <span aria-hidden="true" className="shrink-0 text-sm" title={server.os ?? ''}>
               {osEmoji}
             </span>
           )}
-          <h3 className="truncate font-semibold text-[13px]">{server.name}</h3>
+          <h3 className="truncate font-semibold text-sm" title={server.name}>
+            {server.name}
+          </h3>
         </Link>
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
@@ -167,7 +169,7 @@ const ServerCardInner = ({
       </div>
 
       {isPending ? (
-        <div className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-muted/40 px-3 py-3 text-center">
+        <div className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 rounded-sm bg-muted/40 px-3 py-3 text-center">
           <p className="font-medium text-foreground text-sm">{t('card_pending.waiting')}</p>
           <PendingEnrollmentSummary enrollment={server.agent_authority?.outstanding_offer} />
         </div>
@@ -206,7 +208,7 @@ const ServerCardInner = ({
             </RingMetric>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/40 px-2 py-1.5">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-sm bg-muted/40 px-2 py-1.5">
             <CompactMetric
               label={t('card_net_in_speed')}
               value={<MetricValue kind="speed" value={server.net_in_speed} variant="compact" />}
@@ -220,7 +222,7 @@ const ServerCardInner = ({
                 <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
-                    className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+                    className="inline-flex size-4 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[10px] text-foreground leading-none"
                   >
                     R
                   </span>
@@ -234,7 +236,7 @@ const ServerCardInner = ({
                 <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
-                    className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+                    className="inline-flex size-4 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[10px] text-foreground leading-none"
                   >
                     W
                   </span>
@@ -248,7 +250,7 @@ const ServerCardInner = ({
           {hasNetworkData && (
             <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-muted-foreground">{t('card_latency')}</span>
+                <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
                 <NetworkMetricValue targets={currentTargets}>
                   <span
                     className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(
@@ -264,7 +266,7 @@ const ServerCardInner = ({
                 </NetworkMetricValue>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-muted-foreground">{t('card_packet_loss')}</span>
+                <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
                 <NetworkMetricValue targets={currentTargets}>
                   <span
                     className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}

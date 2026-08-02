@@ -228,7 +228,11 @@ export function UptimeCell({ server }: { server: ServerMetrics }) {
       </span>
       {server.os && (
         <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
-          {emoji && <span className="mr-1">{emoji}</span>}
+          {emoji && (
+            <span aria-hidden="true" className="mr-1">
+              {emoji}
+            </span>
+          )}
           {server.os}
         </span>
       )}
@@ -249,7 +253,9 @@ export function NameCell({ server, rightSlot }: { rightSlot?: ReactNode; server:
             to="/servers/$id"
           >
             <CountryFlag className="text-xs" code={server.country_code} />
-            <span className="truncate font-medium group-hover/link:underline">{server.name}</span>
+            <span className="truncate font-medium group-hover/link:underline" title={server.name}>
+              {server.name}
+            </span>
           </Link>
           {rightSlot}
         </div>

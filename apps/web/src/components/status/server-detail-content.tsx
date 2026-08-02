@@ -185,7 +185,7 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
       {/* Network bar — admin: WS-driven live data. Public: snapshot from
           PublicServerDetail.metrics. In both cases we render placeholders
           before data is available so the content below does not shift down. */}
-      <div className="mb-6 flex flex-wrap gap-6 rounded-lg border bg-card p-3 text-sm">
+      <div className="mb-6 flex flex-wrap gap-6 rounded-xl bg-card p-3 text-sm ring-1 ring-foreground/10">
         <span className="text-muted-foreground">
           {t('detail_network_in')} <span className="font-medium text-foreground">{netInLabel}</span>
         </span>
@@ -411,9 +411,11 @@ function MetricsTabContent({
     temperature: availableMetrics.temperature
   }
 
+  // One container owns the rhythm between the range picker, the chart grid and
+  // the trailing cards; the blocks themselves carry no outer margins.
   return (
-    <>
-      <div className="mt-4 mb-4 flex flex-wrap gap-1">
+    <div className="mt-4 space-y-4">
+      <div className="flex flex-wrap gap-1">
         {ranges.map((tr, i) => (
           <Button
             className={cn(rangeIndex === i && 'bg-primary text-primary-foreground')}
@@ -453,7 +455,7 @@ function MetricsTabContent({
       {/* TrafficCard hits an admin-only endpoint; omit it on the public
           surface where there is no equivalent traffic API exposed. */}
       {!isPublic && <TrafficCard serverId={serverId} />}
-    </>
+    </div>
   )
 }
 
@@ -475,7 +477,7 @@ function UptimeCard({ isPublic, serverId }: { isPublic: boolean; serverId: strin
 
   if (isPending) {
     return (
-      <div className="mb-6 rounded-lg border bg-card p-4">
+      <div className="mb-6 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
         <div className="mb-3 flex items-center justify-between">
           <Skeleton className="h-5 w-24" />
           <Skeleton className="h-4 w-14" />
@@ -489,7 +491,7 @@ function UptimeCard({ isPublic, serverId }: { isPublic: boolean; serverId: strin
   }
   const uptimePct = computeAggregateUptime(uptimeDays)
   return (
-    <div className="mb-6 rounded-lg border bg-card p-4">
+    <div className="mb-6 rounded-xl bg-card p-4 ring-1 ring-foreground/10">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-semibold text-sm">{t('uptime_title')}</h3>
         <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '—'}</span>

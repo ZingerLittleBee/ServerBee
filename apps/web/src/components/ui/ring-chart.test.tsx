@@ -48,7 +48,15 @@ describe('RingChart', () => {
 
   it('renders the center percentage with tabular figures so it does not jitter', () => {
     render(<RingChart color="#3b82f6" label="CPU" value={72.3} />)
-    expect(screen.getByText('72').style.fontVariantNumeric).toBe('tabular-nums')
+    expect(screen.getByText('72')).toHaveClass('tabular-nums')
+  })
+
+  it('sizes the center percentage from the shared type scale, never below 10px', () => {
+    const { rerender } = render(<RingChart color="#3b82f6" label="CPU" value={72.3} />)
+    expect(screen.getByText('72')).toHaveClass('text-xs')
+
+    rerender(<RingChart color="#3b82f6" compact label="CPU" value={72.3} />)
+    expect(screen.getByText('72')).toHaveClass('text-[10px]')
   })
 
   it('applies color to foreground circle stroke', () => {

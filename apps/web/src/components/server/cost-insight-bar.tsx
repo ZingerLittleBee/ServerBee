@@ -17,7 +17,9 @@ interface CostInsightBarProps {
   serverId: string
 }
 
-const BAR_CLASS_NAME = 'mb-6 rounded-lg border bg-card p-3 text-sm'
+// Matches the Card primitive's surface so this bar and the network bar it
+// stacks with on the server detail page read as one family.
+const BAR_CLASS_NAME = 'mb-6 rounded-xl bg-card p-3 text-sm ring-1 ring-foreground/10'
 
 export function CostInsightBar({ server, serverId }: CostInsightBarProps) {
   const { t } = useTranslation('servers')

@@ -7,8 +7,11 @@ interface StatusDotProps {
   status: StatusKind
 }
 
+// No pulse on the online dot: `animate-pulse` is the loading-skeleton animation
+// in this app, and a list of 20+ permanently pulsing rows reads as "still
+// loading" rather than "healthy". The halo ring carries the online emphasis.
 const TONE_BY_STATUS: Record<StatusKind, string> = {
-  online: 'animate-pulse bg-status-healthy ring-3 ring-status-healthy/20',
+  online: 'bg-status-healthy ring-3 ring-status-healthy/20',
   offline: 'bg-muted-foreground/60',
   pending: 'bg-status-warning'
 }

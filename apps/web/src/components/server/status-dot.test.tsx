@@ -9,10 +9,12 @@ const BG_MUTED_RE = /bg-muted-foreground/
 const BG_WARNING_RE = /bg-status-warning/
 
 describe('StatusDot', () => {
-  it('renders pulsing healthy dot with online aria-label when status is online', () => {
+  // `animate-pulse` is the loading-skeleton animation; keeping it off the online
+  // dot is what stops a healthy list from reading as a still-loading one.
+  it('renders a static healthy dot with online aria-label when status is online', () => {
     const { container } = render(<StatusDot status="online" />)
     const el = container.querySelector('[data-slot="status-dot"]')
-    expect(el?.className).toMatch(ANIMATE_PULSE_RE)
+    expect(el?.className).not.toMatch(ANIMATE_PULSE_RE)
     expect(el?.className).toMatch(BG_HEALTHY_RE)
     expect(el?.getAttribute('aria-hidden')).toBe('true')
     expect(screen.getByText('Online')).toHaveClass('sr-only')

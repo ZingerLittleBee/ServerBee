@@ -75,7 +75,7 @@ export function DiskIoChart({ formatTime, mergedData, perDiskData }: DiskIoChart
   } satisfies ChartConfig
 
   return (
-    <Card className="mt-4">
+    <Card>
       <Tabs defaultValue="merged">
         <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>{t('chart_disk_io')}</CardTitle>

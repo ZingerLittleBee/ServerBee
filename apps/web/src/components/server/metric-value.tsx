@@ -51,7 +51,7 @@ export function MetricValue({ kind, value, variant = 'dense' }: MetricValueProps
   return (
     <>
       <span className={denseValueClassName(parts.value)}>{parts.value}</span>{' '}
-      <span className="text-[9px]">{parts.unit}</span>
+      <span className="text-[10px]">{parts.unit}</span>
     </>
   )
 }
