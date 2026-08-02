@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Docker container lifecycle controls** -- The container detail dialog was read-only, so operators could see a misbehaving container but not act on it. It now offers admin-only Start / Stop / Restart / Remove actions that follow the container's state (running → Restart + Stop, stopped → Start); Remove asks for confirmation and warns when it will force-remove a running container. The dialog tracks the live container list, so state and available actions update in place while it stays open
+
+### Changed
+
+- **Network quality detail lives inside the server detail page** -- The standalone network quality detail view was merged into the server detail page as tabs, so latency, packet loss, and probe history are read in the same place as the rest of a server's metrics instead of a separate page
+
 ### Security
 
 - **WebSocket handlers share the HTTP credential policy** -- The browser, terminal, and Docker-logs WebSocket endpoints each carried a private copy of the credential ladder (cookie → API key → Bearer), so precedence, forced-password, and mobile-expiry rules could silently drift between four copies. All transports now resolve through one shared policy in the auth middleware. Two edge cases tightened along the way: a user flagged for a forced password change can no longer fall through from their session cookie to a weaker credential on WebSocket upgrades, and a fixed-lifetime mobile session now enforces its expiry on long-lived sockets whichever header carried it
@@ -22,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Editing a network probe target now reaches connected agents** -- Creating or deleting a global probe target and changing the probe settings pushed a fresh `NetworkProbeSync`, but editing an existing target's address or type did not, so connected agents kept probing the old target until they reconnected. Target updates now push the refreshed target list like every other probe mutation
 
 - **A failed firewall blocklist reset is no longer recorded as done** -- When an agent acknowledged a blocklist reset with `ok=false` (for example `nft` missing or permission denied), the server cleared its record of what the agent had applied anyway, so operators saw the host as wiped while the rules stayed live. A successful ack is now the only evidence that clears the per-server apply state; a failed ack keeps the last-known state visible and the wipe is retried on the next connection reconcile
+
+- **Web interface review fixes across accessibility, layout, color, and copy** -- A cross-discipline review of the web app fixed 32 findings in one pass: login errors now name the actual cause (wrong credentials vs rate limit vs server error) and are announced to screen readers, a skip link and proper landmark structure were added, offline server cards are distinguishable without relying on opacity alone, the server grid no longer overflows at narrow widths, empty states explain what to do next, status colors and the chart palette moved to semantic tokens with sufficient contrast in both themes, dark-mode secondary text was lightened to a readable contrast, and the font stack now renders CJK text consistently
+
+- **Dashboard widget interaction and sizing fixes** -- Resizing a custom-dashboard widget no longer fights the collision compactor and snaps back, the layout no longer jitters from stale layout-change echoes, and widget configuration edits apply without leaving phantom sizing behind
+
+- **Concurrent admin demotions can no longer strand the system with zero admins** -- The last-admin guard checked the admin count and applied the demotion or deletion in separate statements, so two concurrent requests could both pass the check and leave no admin behind -- unrecoverable in-product. Guard and mutation now run in one transaction, and user deletion's multi-table cleanup is atomic. The create-user dialog (web and iOS) now also states that members get fleet-wide read access, and the docs describe the lost-admin recovery procedure
+
+- **GeoIP downloads now backfill existing servers** -- Installing a GeoIP database only affected agents on their next reconnect or IP change, so the map stayed blank for already-connected servers. A successful download now re-resolves the region and country for every server with a public IP on record (manually-pinned locations are left alone)
+
+- **Notification channel and group dialogs no longer close mid-edit** -- Interacting with nested controls inside the notification channel and group dialogs could dismiss the dialog as an outside press, losing the form state. The dialogs now stay open until explicitly closed
+
+- **Remaining hardcoded English strings are localized** -- A localization sweep translated the strings that bypassed i18n: the dashboard editor, network probe toasts, public status page labels (including the load metric), notification toasts, and assorted UI leaks found during testing now follow the selected language
+
+- **Agent logs are free of ANSI escape codes** -- The agent's log output carried terminal color escape sequences into log files and journald, littering non-TTY consumers; colors are now applied only when writing to a terminal
+
+- **Agent reports the host OS when running in Docker** -- An agent deployed as a container reported the container image's OS instead of the host's; it now resolves the host OS release via the mounted host filesystem
 
 ## [1.0.0-alpha.11] - 2026-07-03
 
