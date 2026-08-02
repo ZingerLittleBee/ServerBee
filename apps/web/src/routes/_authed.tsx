@@ -184,7 +184,7 @@ function AuthedLayout() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <div className="space-y-4 text-center">
           <div className="mx-auto size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
           <p className="text-muted-foreground text-sm">{t('loading')}</p>

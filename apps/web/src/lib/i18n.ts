@@ -34,6 +34,23 @@ import zhSettings from '@/locales/zh/settings.json'
 import zhStatus from '@/locales/zh/status.json'
 import zhTerminal from '@/locales/zh/terminal.json'
 
+// i18next resource keys are bare language codes; `<html lang>` wants a BCP-47
+// tag so screen readers pick the right voice and the browser the right
+// hyphenation/font rules.
+const HTML_LANG_TAGS: Record<string, string> = {
+  en: 'en',
+  zh: 'zh-CN'
+}
+
+function syncDocumentLang() {
+  const language = i18next.resolvedLanguage ?? i18next.language
+  if (language) {
+    document.documentElement.lang = HTML_LANG_TAGS[language] ?? language
+  }
+}
+
+i18next.on('languageChanged', syncDocumentLang)
+
 i18next
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -83,3 +100,5 @@ i18next
       escapeValue: false
     }
   })
+
+syncDocumentLang()
