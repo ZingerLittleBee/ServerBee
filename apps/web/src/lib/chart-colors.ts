@@ -1,19 +1,25 @@
 /**
  * High-contrast 12-color palette for multi-series charts (e.g. LatencyChart).
- * Matches the original COLOR_PALETTE from network/$serverId.tsx.
  * Used by both LatencyChart (ChartConfig) and TargetCard (color dots).
+ *
+ * The values resolve through the `--chart-series-*` tokens declared in
+ * `index.css`, so the palette lives with the rest of the design tokens.
+ * Every consumer feeds these strings into a place where `var()` resolves:
+ * inline `style={{ backgroundColor }}` on the legend dots, and shadcn's
+ * ChartStyle which emits them as `--color-<key>` custom properties that the
+ * Recharts `stroke`/`fill` attributes then reference.
  */
 export const CHART_COLORS = [
-  '#3b82f6', // blue-500
-  '#ef4444', // red-500
-  '#22c55e', // green-500
-  '#f59e0b', // amber-500
-  '#8b5cf6', // violet-500
-  '#ec4899', // pink-500
-  '#14b8a6', // teal-500
-  '#f97316', // orange-500
-  '#6366f1', // indigo-500
-  '#06b6d4', // cyan-500
-  '#84cc16', // lime-500
-  '#e11d48' // rose-600
+  'var(--chart-series-1)',
+  'var(--chart-series-2)',
+  'var(--chart-series-3)',
+  'var(--chart-series-4)',
+  'var(--chart-series-5)',
+  'var(--chart-series-6)',
+  'var(--chart-series-7)',
+  'var(--chart-series-8)',
+  'var(--chart-series-9)',
+  'var(--chart-series-10)',
+  'var(--chart-series-11)',
+  'var(--chart-series-12)'
 ] as const
