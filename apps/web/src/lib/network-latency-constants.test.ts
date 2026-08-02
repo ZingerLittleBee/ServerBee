@@ -14,28 +14,28 @@ import {
 describe('network-latency-constants', () => {
   it('treats latency below 300ms as healthy', () => {
     expect(getLatencyStatus({ latencyMs: 299 })).toBe('healthy')
-    expect(getLatencyTextClass({ latencyMs: 299 })).toContain('text-emerald-600')
-    expect(getLatencyBarColor({ latencyMs: 299 })).toBe('#10b981')
+    expect(getLatencyTextClass({ latencyMs: 299 })).toBe('text-status-healthy-text')
+    expect(getLatencyBarColor({ latencyMs: 299 })).toBe('var(--status-healthy)')
   })
 
   it('treats latency at or above 300ms as warning', () => {
     expect(getLatencyStatus({ latencyMs: 300 })).toBe('warning')
-    expect(getLatencyTextClass({ latencyMs: 300 })).toContain('text-amber-600')
-    expect(getLatencyBarColor({ latencyMs: 300 })).toBe('#f59e0b')
+    expect(getLatencyTextClass({ latencyMs: 300 })).toBe('text-status-warning-text')
+    expect(getLatencyBarColor({ latencyMs: 300 })).toBe('var(--status-warning)')
   })
 
   it('treats explicit failure as failed even without latency', () => {
     expect(isLatencyFailure(1)).toBe(true)
     expect(getLatencyStatus({ latencyMs: null, failed: true })).toBe('failed')
-    expect(getLatencyTextClass({ latencyMs: null, failed: true })).toContain('text-red-600')
-    expect(getLatencyBarColor({ latencyMs: null, failed: true })).toBe('#ef4444')
+    expect(getLatencyTextClass({ latencyMs: null, failed: true })).toBe('text-status-danger-text')
+    expect(getLatencyBarColor({ latencyMs: null, failed: true })).toBe('var(--status-danger)')
   })
 
   it('keeps missing data muted when there is no failure signal', () => {
     expect(isLatencyFailure(null)).toBe(false)
     expect(getLatencyStatus({ latencyMs: null })).toBe('unknown')
     expect(getLatencyTextClass({ latencyMs: null })).toBe('text-muted-foreground')
-    expect(getLatencyBarColor({ latencyMs: null })).toBe('var(--color-muted)')
+    expect(getLatencyBarColor({ latencyMs: null })).toBe('var(--color-border)')
   })
 
   describe('getCombinedSeverity', () => {
@@ -74,65 +74,65 @@ describe('network-latency-constants', () => {
 
   describe('getCombinedBarColor', () => {
     it('maps severity levels to expected hex colors', () => {
-      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0 })).toBe('#10b981')
-      expect(getCombinedBarColor({ latencyMs: 400, lossRatio: 0 })).toBe('#f59e0b')
-      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0.08 })).toBe('#ef4444')
-      expect(getCombinedBarColor({ latencyMs: null, lossRatio: 1 })).toBe('#ef4444')
-      expect(getCombinedBarColor({ latencyMs: null, lossRatio: null })).toBe('var(--color-muted)')
+      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0 })).toBe('var(--status-healthy)')
+      expect(getCombinedBarColor({ latencyMs: 400, lossRatio: 0 })).toBe('var(--status-warning)')
+      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0.08 })).toBe('var(--status-danger)')
+      expect(getCombinedBarColor({ latencyMs: null, lossRatio: 1 })).toBe('var(--status-danger)')
+      expect(getCombinedBarColor({ latencyMs: null, lossRatio: null })).toBe('var(--color-border)')
     })
   })
 
   describe('getLossDotBgClass', () => {
     it('maps loss ratio to Tailwind bg class', () => {
       expect(getLossDotBgClass(null)).toBe('bg-muted-foreground')
-      expect(getLossDotBgClass(0)).toBe('bg-emerald-500')
-      expect(getLossDotBgClass(0.009)).toBe('bg-emerald-500')
-      expect(getLossDotBgClass(0.01)).toBe('bg-amber-500')
-      expect(getLossDotBgClass(0.049)).toBe('bg-amber-500')
-      expect(getLossDotBgClass(0.05)).toBe('bg-red-500')
-      expect(getLossDotBgClass(1)).toBe('bg-red-500')
+      expect(getLossDotBgClass(0)).toBe('bg-status-healthy')
+      expect(getLossDotBgClass(0.009)).toBe('bg-status-healthy')
+      expect(getLossDotBgClass(0.01)).toBe('bg-status-warning')
+      expect(getLossDotBgClass(0.049)).toBe('bg-status-warning')
+      expect(getLossDotBgClass(0.05)).toBe('bg-status-danger')
+      expect(getLossDotBgClass(1)).toBe('bg-status-danger')
     })
   })
 
   describe('getLatencySquareColor', () => {
     it('returns muted for null latency', () => {
-      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 0 })).toBe('var(--color-muted)')
+      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 0 })).toBe('var(--color-border)')
     })
 
     it('returns failed color when loss indicates probe failure', () => {
-      expect(getLatencySquareColor({ latencyMs: 40, lossRatio: 1 })).toBe('#ef4444')
-      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 1 })).toBe('#ef4444')
+      expect(getLatencySquareColor({ latencyMs: 40, lossRatio: 1 })).toBe('var(--status-danger)')
+      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 1 })).toBe('var(--status-danger)')
     })
 
     it('returns healthy color below threshold', () => {
-      expect(getLatencySquareColor({ latencyMs: 50, lossRatio: 0 })).toBe('#10b981')
-      expect(getLatencySquareColor({ latencyMs: 299, lossRatio: 0 })).toBe('#10b981')
+      expect(getLatencySquareColor({ latencyMs: 50, lossRatio: 0 })).toBe('var(--status-healthy)')
+      expect(getLatencySquareColor({ latencyMs: 299, lossRatio: 0 })).toBe('var(--status-healthy)')
     })
 
     it('returns warning color at or above threshold', () => {
-      expect(getLatencySquareColor({ latencyMs: 300, lossRatio: 0 })).toBe('#f59e0b')
-      expect(getLatencySquareColor({ latencyMs: 500, lossRatio: 0 })).toBe('#f59e0b')
+      expect(getLatencySquareColor({ latencyMs: 300, lossRatio: 0 })).toBe('var(--status-warning)')
+      expect(getLatencySquareColor({ latencyMs: 500, lossRatio: 0 })).toBe('var(--status-warning)')
     })
   })
 
   describe('getLossSquareColor', () => {
     it('returns muted for null loss', () => {
-      expect(getLossSquareColor(null)).toBe('var(--color-muted)')
+      expect(getLossSquareColor(null)).toBe('var(--color-border)')
     })
 
     it('returns healthy when loss is below warning threshold', () => {
-      expect(getLossSquareColor(0)).toBe('#10b981')
-      expect(getLossSquareColor(0.009)).toBe('#10b981')
+      expect(getLossSquareColor(0)).toBe('var(--status-healthy)')
+      expect(getLossSquareColor(0.009)).toBe('var(--status-healthy)')
     })
 
     it('returns warning between warning and severe thresholds', () => {
-      expect(getLossSquareColor(0.01)).toBe('#f59e0b')
-      expect(getLossSquareColor(0.049)).toBe('#f59e0b')
+      expect(getLossSquareColor(0.01)).toBe('var(--status-warning)')
+      expect(getLossSquareColor(0.049)).toBe('var(--status-warning)')
     })
 
     it('returns failed at or above severe threshold', () => {
-      expect(getLossSquareColor(0.05)).toBe('#ef4444')
-      expect(getLossSquareColor(1)).toBe('#ef4444')
+      expect(getLossSquareColor(0.05)).toBe('var(--status-danger)')
+      expect(getLossSquareColor(1)).toBe('var(--status-danger)')
     })
   })
 })

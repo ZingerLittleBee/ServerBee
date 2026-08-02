@@ -50,7 +50,7 @@ describe('NetworkSquareGrid', () => {
     const { container } = renderGrid('latency', [historyPoint])
 
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
-    expect(square?.style.backgroundColor).not.toBe('var(--color-muted)')
+    expect(square?.style.backgroundColor).not.toBe('var(--color-border)')
   })
 
   it('renders the unknown color for points without a value', () => {
@@ -64,7 +64,7 @@ describe('NetworkSquareGrid', () => {
     const { container } = renderGrid('latency', [emptyPoint])
 
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
-    expect(square?.style.backgroundColor).toBe('var(--color-muted)')
+    expect(square?.style.backgroundColor).toBe('var(--color-border)')
   })
 
   it('renders at least one square even at zero width', () => {

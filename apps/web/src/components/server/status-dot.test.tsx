@@ -4,16 +4,16 @@ import { StatusDot } from './status-dot'
 import { deriveServerStatus } from './status-dot-utils'
 
 const ANIMATE_PULSE_RE = /animate-pulse/
-const BG_EMERALD_RE = /bg-emerald-500/
+const BG_HEALTHY_RE = /bg-status-healthy/
 const BG_MUTED_RE = /bg-muted-foreground/
-const BG_AMBER_RE = /bg-amber-500/
+const BG_WARNING_RE = /bg-status-warning/
 
 describe('StatusDot', () => {
-  it('renders pulsing emerald dot with online aria-label when status is online', () => {
+  it('renders pulsing healthy dot with online aria-label when status is online', () => {
     const { container } = render(<StatusDot status="online" />)
     const el = container.querySelector('[data-slot="status-dot"]')
     expect(el?.className).toMatch(ANIMATE_PULSE_RE)
-    expect(el?.className).toMatch(BG_EMERALD_RE)
+    expect(el?.className).toMatch(BG_HEALTHY_RE)
     expect(el?.getAttribute('aria-hidden')).toBe('true')
     expect(screen.getByText('Online')).toHaveClass('sr-only')
   })
@@ -27,11 +27,11 @@ describe('StatusDot', () => {
     expect(screen.getByText('Offline')).toHaveClass('sr-only')
   })
 
-  it('renders amber dot when status is pending', () => {
+  it('renders warning-toned dot when status is pending', () => {
     const { container } = render(<StatusDot status="pending" />)
     const el = container.querySelector('[data-slot="status-dot"]')
     expect(el?.className).not.toMatch(ANIMATE_PULSE_RE)
-    expect(el?.className).toMatch(BG_AMBER_RE)
+    expect(el?.className).toMatch(BG_WARNING_RE)
     expect(el?.getAttribute('aria-hidden')).toBe('true')
     expect(screen.getByText('Pending')).toHaveClass('sr-only')
   })

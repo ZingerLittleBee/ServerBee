@@ -78,20 +78,20 @@ function CycleOverviewCard({ cycle, t }: { cycle: CycleData['current']; t: (key:
 
   const barColor = (() => {
     if (percent >= 90) {
-      return 'bg-red-500'
+      return 'bg-status-danger'
     }
     if (percent >= 70) {
-      return 'bg-yellow-500'
+      return 'bg-status-warning'
     }
-    return 'bg-green-500'
+    return 'bg-status-healthy'
   })()
 
   const percentColor = (() => {
     if (percent >= 90) {
-      return 'text-red-500'
+      return 'text-status-danger-text'
     }
     if (percent >= 70) {
-      return 'text-yellow-500'
+      return 'text-status-warning-text'
     }
     return 'text-foreground'
   })()
@@ -123,7 +123,7 @@ function CycleOverviewCard({ cycle, t }: { cycle: CycleData['current']; t: (key:
             </div>
             <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
               <div
-                className={cn('h-full rounded-full transition-all', barColor)}
+                className={cn('h-full rounded-full transition-[width,background-color]', barColor)}
                 style={{ width: `${Math.min(percent, 100)}%` }}
               />
             </div>

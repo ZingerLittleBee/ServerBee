@@ -36,20 +36,20 @@ function finiteMetric(value: number | null | undefined): number {
 
 function getBarColor(pct: number): string {
   if (pct > 90) {
-    return 'bg-red-500'
+    return 'bg-status-danger'
   }
   if (pct > 70) {
-    return 'bg-amber-500'
+    return 'bg-status-warning'
   }
-  return 'bg-emerald-500'
+  return 'bg-status-healthy'
 }
 
 function getBarTextColor(pct: number): string {
   if (pct > 90) {
-    return 'text-red-600 dark:text-red-400'
+    return 'text-status-danger-text'
   }
   if (pct > 70) {
-    return 'text-amber-600 dark:text-amber-400'
+    return 'text-status-warning-text'
   }
   return 'text-foreground'
 }

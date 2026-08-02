@@ -22,7 +22,7 @@ import {
 } from '@/hooks/use-network-api'
 import { useTracerouteStream } from '@/hooks/use-traceroute-stream'
 import type { TracerouteHop, TracerouteRecordSummary } from '@/lib/network-types'
-import { getLossTextClassName, isNewSchemaHop, latencyColorClass, type TraceProtocol } from '@/lib/network-types'
+import { getHopLossTextClass, isNewSchemaHop, latencyColorClass, type TraceProtocol } from '@/lib/network-types'
 import { cn } from '@/lib/utils'
 import { useTracerouteRunState, useTracerouteStore } from '@/stores/traceroute-store'
 
@@ -80,7 +80,7 @@ function HopRow({ hop }: { hop: TracerouteHop }) {
       <HopIpCell extraIps={extraIps} primaryIp={primaryIp} />
       <TableCell className="max-w-[200px] truncate text-muted-foreground">{hop.hostname ?? '—'}</TableCell>
       <TableCell className="text-muted-foreground">{hop.asn ?? '—'}</TableCell>
-      <TableCell className={cn('text-right font-mono', getLossTextClassName(lossRatio))}>
+      <TableCell className={cn('text-right font-mono', getHopLossTextClass(lossRatio))}>
         {lossPct == null ? '—' : `${lossPct.toFixed(0)}%`}
       </TableCell>
       <TableCell className="text-right font-mono">{formatMs(bestMs)}</TableCell>

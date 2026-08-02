@@ -2,14 +2,16 @@ const LATENCY_HEALTHY_THRESHOLD_MS = 300
 const NETWORK_FAILURE_PACKET_LOSS_RATIO = 1
 
 const LATENCY_UNKNOWN_TEXT_CLASS = 'text-muted-foreground'
-const LATENCY_HEALTHY_TEXT_CLASS = 'text-emerald-600 dark:text-emerald-400'
-const LATENCY_WARNING_TEXT_CLASS = 'text-amber-600 dark:text-amber-400'
-const LATENCY_FAILED_TEXT_CLASS = 'text-red-600 dark:text-red-400'
+const LATENCY_HEALTHY_TEXT_CLASS = 'text-status-healthy-text'
+const LATENCY_WARNING_TEXT_CLASS = 'text-status-warning-text'
+const LATENCY_FAILED_TEXT_CLASS = 'text-status-danger-text'
 
-export const LATENCY_UNKNOWN_BAR_COLOR = 'var(--color-muted)'
-const LATENCY_HEALTHY_BAR_COLOR = '#10b981'
-const LATENCY_WARNING_BAR_COLOR = '#f59e0b'
-const LATENCY_FAILED_BAR_COLOR = '#ef4444'
+// "No data" squares read as an empty slot in the grid, so they take the border
+// tone rather than the near-invisible muted surface.
+export const LATENCY_UNKNOWN_BAR_COLOR = 'var(--color-border)'
+const LATENCY_HEALTHY_BAR_COLOR = 'var(--status-healthy)'
+const LATENCY_WARNING_BAR_COLOR = 'var(--status-warning)'
+const LATENCY_FAILED_BAR_COLOR = 'var(--status-danger)'
 
 export type LatencyStatus = 'unknown' | 'healthy' | 'warning' | 'failed'
 
@@ -65,8 +67,8 @@ export function getLatencyBarColor(input: LatencyStatusInput): string {
   }
 }
 
-const LOSS_WARNING_THRESHOLD_RATIO = 0.01
-const LOSS_SEVERE_THRESHOLD_RATIO = 0.05
+export const LOSS_WARNING_THRESHOLD_RATIO = 0.01
+export const LOSS_SEVERE_THRESHOLD_RATIO = 0.05
 
 export type CombinedSeverity = 'unknown' | 'healthy' | 'warning' | 'severe' | 'failed'
 
@@ -107,17 +109,32 @@ export function getCombinedBarColor(input: CombinedSeverityInput): string {
   }
 }
 
+// Text tone for an end-to-end packet loss ratio, shared by the server card, its
+// per-target tooltip and the network quality widget.
+export function getLossTextClass(lossRatio: number | null | undefined): string {
+  if (lossRatio == null) {
+    return 'text-muted-foreground'
+  }
+  if (lossRatio < LOSS_WARNING_THRESHOLD_RATIO) {
+    return 'text-status-healthy-text'
+  }
+  if (lossRatio < LOSS_SEVERE_THRESHOLD_RATIO) {
+    return 'text-status-warning-text'
+  }
+  return 'text-status-danger-text'
+}
+
 export function getLossDotBgClass(lossRatio: number | null | undefined): string {
   if (lossRatio == null) {
     return 'bg-muted-foreground'
   }
   if (lossRatio < LOSS_WARNING_THRESHOLD_RATIO) {
-    return 'bg-emerald-500'
+    return 'bg-status-healthy'
   }
   if (lossRatio < LOSS_SEVERE_THRESHOLD_RATIO) {
-    return 'bg-amber-500'
+    return 'bg-status-warning'
   }
-  return 'bg-red-500'
+  return 'bg-status-danger'
 }
 
 export function getLatencySquareColor({ latencyMs, lossRatio }: CombinedSeverityInput): string {

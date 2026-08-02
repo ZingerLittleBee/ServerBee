@@ -6,7 +6,7 @@ import { MetricValue } from '@/components/server/metric-value'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import type { ServerCostOverview } from '@/lib/api-schema'
-import { isLatencyFailure } from '@/lib/network-latency-constants'
+import { getLossTextClass, isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { computeTrafficQuota } from '@/lib/traffic'
@@ -58,25 +58,12 @@ function osIcon(os: string | null): string {
 
 function getRingColor(pct: number, brandColor: string): string {
   if (pct > 90) {
-    return '#ef4444'
+    return 'var(--status-danger)'
   }
   if (pct > 70) {
-    return '#f59e0b'
+    return 'var(--status-warning)'
   }
   return brandColor
-}
-
-function getLossTextClassName(lossRatio: number | null): string {
-  if (lossRatio == null) {
-    return 'text-muted-foreground'
-  }
-  if (lossRatio < 0.01) {
-    return 'text-emerald-600 dark:text-emerald-400'
-  }
-  if (lossRatio < 0.05) {
-    return 'text-amber-600 dark:text-amber-400'
-  }
-  return 'text-red-600 dark:text-red-400'
 }
 
 function formatLatency(ms: number | null): string {
@@ -280,7 +267,7 @@ const ServerCardInner = ({
                 <span className="text-[11px] text-muted-foreground">{t('card_packet_loss')}</span>
                 <NetworkMetricValue targets={currentTargets}>
                   <span
-                    className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClassName(currentAvgLossRatio)}`}
+                    className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}
                   >
                     {formatPacketLoss(currentAvgLossRatio)}
                   </span>

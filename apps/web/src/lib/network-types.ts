@@ -159,15 +159,22 @@ export function latencyColorClass(ms: number | null, options?: { failed?: boolea
   return getLatencyTextClass({ latencyMs: ms, failed: options?.failed })
 }
 
-export function getLossTextClassName(lossRatio: number | null): string {
+// Loss tone for a single traceroute hop. Intermediate routers rate-limit or drop
+// ICMP replies as a matter of policy, so hop loss is not end-to-end loss and
+// needs far looser thresholds than getLossTextClass — flagging a hop at 1% would
+// paint most healthy routes amber.
+const HOP_LOSS_WARNING_THRESHOLD_RATIO = 0.1
+const HOP_LOSS_SEVERE_THRESHOLD_RATIO = 0.5
+
+export function getHopLossTextClass(lossRatio: number | null): string {
   if (lossRatio == null) {
     return 'text-muted-foreground'
   }
-  if (lossRatio >= 0.5) {
+  if (lossRatio >= HOP_LOSS_SEVERE_THRESHOLD_RATIO) {
     return 'text-destructive font-semibold'
   }
-  if (lossRatio >= 0.1) {
-    return 'text-amber-600 dark:text-amber-400'
+  if (lossRatio >= HOP_LOSS_WARNING_THRESHOLD_RATIO) {
+    return 'text-status-warning-text'
   }
   return ''
 }
