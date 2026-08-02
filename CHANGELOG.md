@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.12] - 2026-08-03
+
 ### Added
 
 - **Docker container lifecycle controls** -- The container detail dialog was read-only, so operators could see a misbehaving container but not act on it. It now offers admin-only Start / Stop / Restart / Remove actions that follow the container's state (running → Restart + Stop, stopped → Start); Remove asks for confirmation and warns when it will force-remove a running container. The dialog tracks the live container list, so state and available actions update in place while it stays open
