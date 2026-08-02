@@ -110,6 +110,7 @@ const ServerCardInner = ({
 
   const status = deriveServerStatus(server)
   const isPending = status === 'pending'
+  const isOffline = status === 'offline'
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -137,19 +138,17 @@ const ServerCardInner = ({
   return (
     <div
       className={cn(
-        'relative flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm',
+        'flex w-full min-w-0 max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm',
         // Pending cards have far less content than active ones; stretch them to
         // fill the grid cell so a "Waiting for agent…" tile matches the height of
         // its data-rich siblings instead of leaving a short, mismatched gap.
-        isPending && 'h-full'
+        isPending && 'h-full',
+        // Offline cards drop their status colors and sit on a dimmer surface, but
+        // the text keeps its full-contrast tokens. Never dilute the copy with a
+        // translucent scrim — the StatusBadge label carries the offline meaning.
+        isOffline && 'bg-muted/40 grayscale'
       )}
     >
-      {!server.online && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-grayscale"
-        />
-      )}
       <div className="flex items-center justify-between">
         <Link
           className="flex items-center gap-1 truncate border-transparent border-b pb-px hover:border-current"
@@ -167,9 +166,7 @@ const ServerCardInner = ({
         </Link>
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
-          {/* Lift the pending pill above the dim overlay so it keeps its amber
-              tone as the one bright "needs attention" cue on a muted card. */}
-          <StatusBadge className={isPending ? 'relative z-20' : undefined} status={status} />
+          <StatusBadge status={status} />
           {isPending ? (
             <PendingActionMenu
               outstandingOffer={server.agent_authority?.outstanding_offer ?? null}
