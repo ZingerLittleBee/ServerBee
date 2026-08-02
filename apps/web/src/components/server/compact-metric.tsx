@@ -16,7 +16,7 @@ export function CompactMetric({ label, value, subValue, icon, className }: Compa
         {label}
       </span>
       <div className="flex items-baseline gap-1">
-        <span className="font-semibold text-sm">{value}</span>
+        <span className="font-semibold text-sm tabular-nums">{value}</span>
         {subValue && <span className="text-[10px] text-muted-foreground">{subValue}</span>}
       </div>
     </div>

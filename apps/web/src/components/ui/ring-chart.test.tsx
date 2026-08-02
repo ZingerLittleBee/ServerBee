@@ -46,6 +46,11 @@ describe('RingChart', () => {
     expect(circles.length).toBe(2)
   })
 
+  it('renders the center percentage with tabular figures so it does not jitter', () => {
+    render(<RingChart color="#3b82f6" label="CPU" value={72.3} />)
+    expect(screen.getByText('72').style.fontVariantNumeric).toBe('tabular-nums')
+  })
+
   it('applies color to foreground circle stroke', () => {
     const { container } = render(<RingChart color="var(--color-chart-1)" label="CPU" value={50} />)
     const circles = container.querySelectorAll('circle')

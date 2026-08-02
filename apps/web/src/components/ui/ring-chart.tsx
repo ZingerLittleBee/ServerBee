@@ -60,7 +60,8 @@ export function RingChart({ value, size, strokeWidth, color, label, compact = fa
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: labelFontSize,
-            fontWeight: 700
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums'
           }}
         >
           {clamped.toFixed(0)}

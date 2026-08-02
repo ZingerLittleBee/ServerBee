@@ -29,6 +29,22 @@ function getSquareColor(point: ServerCardMetricPoint, kind: 'latency' | 'loss'):
   return getLossSquareColor(point.value)
 }
 
+// The healthy square color, resolved through the public color helper so the summary label
+// can never drift from the thresholds the squares are actually painted with.
+const HEALTHY_SQUARE_COLOR = getLossSquareColor(0)
+
+function isAbnormalSquare(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): boolean {
+  const color = getSquareColor(point, kind)
+  return color !== HEALTHY_SQUARE_COLOR && color !== LATENCY_UNKNOWN_BAR_COLOR
+}
+
+function formatSummaryValue(point: ServerCardMetricPoint | undefined, kind: 'latency' | 'loss'): string {
+  if (point?.value == null) {
+    return '-'
+  }
+  return kind === 'latency' ? `${point.value.toFixed(0)}ms` : `${(point.value * 100).toFixed(1)}%`
+}
+
 function formatTooltipLabel(point: ServerCardMetricPoint, t: (key: string) => string): string {
   const parsed = Date.parse(point.timestamp)
   if (Number.isNaN(parsed)) {
@@ -57,9 +73,23 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
 export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
   const { t } = useTranslation(['servers'])
   const visible = points.toReversed()
+  const summary = t(kind === 'latency' ? 'card_latency_history_summary' : 'card_loss_history_summary', {
+    abnormal: points.filter((point) => isAbnormalSquare(point, kind)).length,
+    latest: formatSummaryValue(points.at(-1), kind),
+    samples: points.length
+  })
 
+  // Every card renders ~30 squares per grid, so per-square tab stops would drown the page's
+  // Tab order. Instead the grid is a single labelled image: assistive tech gets the summary,
+  // pointer users still get the per-square tooltip. `role="img"` makes the squares
+  // presentational, so they need no individual labels.
   return (
-    <div className="flex h-3 w-full flex-row-reverse items-end overflow-hidden" style={{ gap: `${SQUARE_GAP}px` }}>
+    <div
+      aria-label={summary}
+      className="flex h-3 w-full flex-row-reverse items-end overflow-hidden"
+      role="img"
+      style={{ gap: `${SQUARE_GAP}px` }}
+    >
       {visible.map((point) => (
         <Tooltip key={point.timestamp}>
           <TooltipTrigger
