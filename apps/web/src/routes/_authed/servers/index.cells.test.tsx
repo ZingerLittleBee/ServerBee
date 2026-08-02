@@ -13,8 +13,12 @@ import {
   UptimeCell
 } from './components/index-cells'
 
+// `t` echoes the key, and appends interpolated values so assertions can still
+// see what a cell passed into a template (e.g. the relative time string).
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key} ${Object.values(opts).join(' ')}` : key)
+  })
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -25,13 +29,13 @@ vi.mock('@tanstack/react-router', () => ({
   )
 }))
 
-const REGEX_BG_EMERALD = /bg-emerald-500/
-const REGEX_BG_AMBER = /bg-amber-500/
-const REGEX_BG_RED = /bg-red-500/
-const REGEX_CPU_CORES_LOAD = /8 · load 1\.23/
+const REGEX_BG_HEALTHY = /bg-status-healthy/
+const REGEX_BG_WARNING = /bg-status-warning/
+const REGEX_BG_DANGER = /bg-status-danger/
+const REGEX_CPU_CORES_LOAD = /8 · card_load 1\.23/
 const REGEX_CORES = /cores/
-const REGEX_LOAD_1_23 = /load 1\.23/
-const REGEX_LOAD = /load/
+const REGEX_LOAD_1_23 = /card_load 1\.23/
+const REGEX_LOAD = /card_load/
 const REGEX_MEM_USED_TOTAL = /7\.2 GB \/ 16\.0 GB/
 const REGEX_45_PCT = /^45%$/
 const REGEX_DISK_READ = /2\.0 MB\/s/
@@ -50,6 +54,7 @@ const REGEX_UPTIME_23D = /23d/
 const REGEX_OS_UBUNTU = /Ubuntu 22\.04/
 const REGEX_OFFLINE = /offline/i
 const REGEX_LAST_SEEN = /last_seen_ago/
+const REGEX_LAST_SEEN_2H = /last_seen_ago 2h ago/
 
 function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
   return {
@@ -90,22 +95,22 @@ function makeServer(overrides: Partial<ServerMetrics> = {}): ServerMetrics {
 }
 
 describe('MetricBarRow', () => {
-  it('renders green bar below 70%', () => {
+  it('renders a healthy bar below 70%', () => {
     const { container } = render(<MetricBarRow icon={null} pct={50} />)
     const fill = container.querySelector('[data-slot="metric-bar-fill"]')
-    expect(fill?.className).toMatch(REGEX_BG_EMERALD)
+    expect(fill?.className).toMatch(REGEX_BG_HEALTHY)
   })
 
-  it('renders amber bar at 70% and below 90%', () => {
+  it('renders a warning bar at 70% and below 90%', () => {
     const { container } = render(<MetricBarRow icon={null} pct={70.5} />)
     const fill = container.querySelector('[data-slot="metric-bar-fill"]')
-    expect(fill?.className).toMatch(REGEX_BG_AMBER)
+    expect(fill?.className).toMatch(REGEX_BG_WARNING)
   })
 
-  it('renders red bar at 90%+', () => {
+  it('renders a danger bar at 90%+', () => {
     const { container } = render(<MetricBarRow icon={null} pct={92} />)
     const fill = container.querySelector('[data-slot="metric-bar-fill"]')
-    expect(fill?.className).toMatch(REGEX_BG_RED)
+    expect(fill?.className).toMatch(REGEX_BG_DANGER)
   })
 
   it('rounds the percentage to 0 decimals', () => {
@@ -140,10 +145,10 @@ describe('PositionIndicator', () => {
     expect((c2.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement).style.width).toBe('0%')
   })
 
-  it('colors the bar red above 90%', () => {
+  it('colors the bar with the danger tone above 90%', () => {
     const { container } = render(<PositionIndicator pct={95} />)
     const fill = container.querySelector('[data-slot="position-indicator-fill"]') as HTMLElement
-    expect(fill.className).toMatch(REGEX_BG_RED)
+    expect(fill.className).toMatch(REGEX_BG_DANGER)
   })
 })
 
@@ -305,6 +310,15 @@ describe('UptimeCell', () => {
     )
     expect(screen.getByText(REGEX_OFFLINE)).toBeDefined()
     expect(screen.getByText(REGEX_LAST_SEEN)).toBeDefined()
+  })
+
+  // Guards against string-concatenated "2h ago", which leaked English into the
+  // Chinese UI. Intl.RelativeTimeFormat keeps the en output byte-identical.
+  it('formats the last-seen delta through Intl.RelativeTimeFormat', () => {
+    render(
+      <UptimeCell server={makeServer({ online: false, uptime: 0, os: 'Ubuntu 22.04', last_active: NOW - 7200 })} />
+    )
+    expect(screen.getByText(REGEX_LAST_SEEN_2H)).toBeDefined()
   })
 })
 

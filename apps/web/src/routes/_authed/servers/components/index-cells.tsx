@@ -11,6 +11,7 @@ import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { computeTrafficQuota } from '@/lib/traffic'
 import { cn, formatUptime } from '@/lib/utils'
+import { formatRelativeTime } from '@/lib/widget-helpers'
 import { getBarColor, getBarTextColor } from './metric-bar-colors'
 
 interface MetricBarRowProps {
@@ -71,6 +72,7 @@ export function PositionIndicator({ pct }: { pct: number }) {
 }
 
 export function CpuCell({ server }: { server: ServerMetrics }) {
+  const { t } = useTranslation(['servers'])
   if (!server.online) {
     return <span className="text-muted-foreground">—</span>
   }
@@ -82,7 +84,8 @@ export function CpuCell({ server }: { server: ServerMetrics }) {
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <Cpu aria-hidden="true" className="size-3.5 flex-none text-muted-foreground" />
         <span>
-          {cores != null && `${cores} · `}load {server.load1.toFixed(2)}
+          {cores != null && `${cores} · `}
+          {t('card_load')} {server.load1.toFixed(2)}
         </span>
         <span className={cn('ml-auto font-semibold', pctColor)}>{pct}%</span>
       </div>
@@ -204,20 +207,6 @@ function osEmoji(os: string | null): string {
   return ''
 }
 
-function relativeTime(thenSec: number, nowMs = Date.now()): string {
-  const diffSec = Math.max(0, Math.floor(nowMs / 1000) - thenSec)
-  if (diffSec < 60) {
-    return `${diffSec}s ago`
-  }
-  if (diffSec < 3600) {
-    return `${Math.floor(diffSec / 60)}m ago`
-  }
-  if (diffSec < 86_400) {
-    return `${Math.floor(diffSec / 3600)}h ago`
-  }
-  return `${Math.floor(diffSec / 86_400)}d ago`
-}
-
 export function UptimeCell({ server }: { server: ServerMetrics }) {
   const { t } = useTranslation(['servers'])
   const emoji = osEmoji(server.os)
@@ -226,7 +215,7 @@ export function UptimeCell({ server }: { server: ServerMetrics }) {
       <div className="flex flex-col">
         <span className="text-muted-foreground text-xs">{t('offline_label')}</span>
         <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
-          {t('last_seen_ago', { time: relativeTime(server.last_active) })}
+          {t('last_seen_ago', { time: formatRelativeTime(server.last_active) })}
         </span>
       </div>
     )
