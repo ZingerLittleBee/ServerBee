@@ -502,6 +502,32 @@ async fn test_docker_streams_require_browser_resubscribe_after_agent_reconnect()
         .await
         .expect("Failed to close first agent");
 
+    // Disconnect cleanup runs asynchronously after the socket closes, and the
+    // docker viewer teardown even runs after the ServerOffline broadcast. Its
+    // final step persists a feature list without "docker", so poll for that
+    // before reconnecting — otherwise the new agent can race the cleanup and
+    // observe the stale viewer set.
+    let mut cleaned = false;
+    for _ in 0..40 {
+        let resp = client
+            .get(format!("{}/api/servers/{}", base_url, server_id))
+            .send()
+            .await
+            .expect("GET server failed");
+        assert_eq!(resp.status(), 200);
+        let body: serde_json::Value = resp.json().await.expect("parse server");
+        let features = body["data"]["features"].as_array().expect("features array");
+        if !features.iter().any(|v| v == "docker") {
+            cleaned = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        cleaned,
+        "disconnect cleanup should strip the docker feature before reconnect"
+    );
+
     let (mut agent_sink2, mut agent_reader2) = connect_agent(&base_url, &token).await;
     let welcome2 = recv_text(&mut agent_reader2).await;
     assert_eq!(welcome2["type"], "welcome");
