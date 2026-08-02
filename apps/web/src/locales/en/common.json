@@ -55,6 +55,7 @@
   "open_menu": "Open menu",
 
   "a11y": {
+    "skip_to_content": "Skip to content",
     "toggle_theme": "Toggle theme",
     "breadcrumb": "Breadcrumb",
     "more": "More",

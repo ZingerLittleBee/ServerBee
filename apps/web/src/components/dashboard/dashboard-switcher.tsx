@@ -101,7 +101,6 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
     <div className="flex items-center gap-2">
       <LayoutDashboard className="size-5 text-muted-foreground" />
       <Select
-        items={dashboards.map((d) => ({ value: d.id, label: d.name }))}
         onValueChange={(v) => {
           if (v !== null) {
             onSelect(v)
@@ -110,7 +109,11 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
         value={currentId}
       >
         <SelectTrigger className="w-48">
-          <SelectValue placeholder={t('select_dashboard')} />
+          {/* Resolve the label from `dashboards` instead of Base UI's `items` lookup:
+              the selected id is known (default dashboard or stored selection) before
+              the dashboard list request resolves, and the lookup would otherwise fall
+              back to rendering the raw id. */}
+          <SelectValue placeholder={t('select_dashboard')}>{() => current?.name ?? t('select_dashboard')}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           {dashboards.map((d) => (

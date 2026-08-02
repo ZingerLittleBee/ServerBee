@@ -77,6 +77,7 @@
   "capability_disabled_title": "功能不可用",
   "capability_disabled_desc": "Agent 未启用此能力。能力由 Agent 主机拥有，请在 Agent 配置文件的 [capabilities] 段中开启并重启 Agent。",
   "a11y": {
+    "skip_to_content": "跳到主内容",
     "toggle_theme": "切换主题",
     "breadcrumb": "面包屑导航",
     "more": "更多",
