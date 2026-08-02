@@ -7,21 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-alpha.12] - 2026-08-03
+
+### Added
+
+- **Docker container lifecycle controls** -- Start, stop, restart, or remove a container right from its detail dialog (admin-only). Actions follow the container's state, and Remove asks for confirmation
+
+### Changed
+
+- **Network quality detail moved into the server detail page** -- Latency, packet loss, and probe history now live in tabs next to the rest of a server's metrics instead of a separate page
+
 ### Security
 
-- **WebSocket handlers share the HTTP credential policy** -- The browser, terminal, and Docker-logs WebSocket endpoints each carried a private copy of the credential ladder (cookie → API key → Bearer), so precedence, forced-password, and mobile-expiry rules could silently drift between four copies. All transports now resolve through one shared policy in the auth middleware. Two edge cases tightened along the way: a user flagged for a forced password change can no longer fall through from their session cookie to a weaker credential on WebSocket upgrades, and a fixed-lifetime mobile session now enforces its expiry on long-lived sockets whichever header carried it
+- **All WebSocket endpoints authenticate through the shared HTTP credential policy** -- Forced password changes and mobile session expiry are now enforced on WebSocket connections too
 
 ### Fixed
 
-- **Manual service-monitor checks follow the full check policy** -- The "Check now" endpoint assembled the check transition through its own code path: the result record and the monitor state were written in two separate statements, a slow check could overlap the scheduled one for the same monitor, and the maintenance gate and notifications were skipped entirely -- a manual success after failures cleared the failing state and permanently swallowed the recovery notification. Both callers now execute one shared transition: record and state commit atomically, a concurrent check for the same monitor is refused with `409 Conflict`, and failure/recovery notifications fire under the same maintenance-window rules regardless of who triggered the check
+- **Manual service-monitor checks behave like scheduled ones** -- "Check now" respects maintenance windows, sends failure/recovery notifications, and can no longer overlap a running check for the same monitor
 
-- **Temporary capability grants now bound running work** -- A temporary `terminal` grant's expiry blocked new sessions but left live PTY sessions running indefinitely, and the security-events pipeline was started once at boot from the permanent capability set, so a temporary `security_events` grant could never start it (nor could a persisted grant enable it across a restart) and expiry never stopped it. Capability state is now owned by one process-wide authority on the agent: expiry or revocation closes live terminal sessions immediately, and the security pipeline starts and stops as the capability becomes effective or lapses
+- **Temporary capability grants end cleanly** -- When a grant expires or is revoked, live terminal sessions close immediately and security-event collection stops (or starts) to match
 
-- **Capability changes now resync everything the agent executes for the server** -- When an agent reported a capability change mid-connection (a grant expiring, a config edit followed by `SIGHUP`), the server updated its mirror but never re-derived what the agent should be running: a host that revoked its ping capabilities kept executing the last-synced ping task list, and a revoked firewall capability left ServerBee's nftables entries in place until the next reconnect. Every capability change now triggers a full desired-state reconcile -- ping tasks, network probes, IP-quality services, and the firewall blocklist are re-filtered against the new capability set and pushed (or reset) immediately
+- **Capability changes take effect immediately** -- Ping tasks, network probes, IP-quality checks, and the firewall blocklist now resync as soon as an agent's capabilities change, instead of waiting for a reconnect
 
-- **Editing a network probe target now reaches connected agents** -- Creating or deleting a global probe target and changing the probe settings pushed a fresh `NetworkProbeSync`, but editing an existing target's address or type did not, so connected agents kept probing the old target until they reconnected. Target updates now push the refreshed target list like every other probe mutation
+- **Editing a network probe target now reaches connected agents** -- Previously only creating or deleting a target did; edits waited for a reconnect
 
-- **A failed firewall blocklist reset is no longer recorded as done** -- When an agent acknowledged a blocklist reset with `ok=false` (for example `nft` missing or permission denied), the server cleared its record of what the agent had applied anyway, so operators saw the host as wiped while the rules stayed live. A successful ack is now the only evidence that clears the per-server apply state; a failed ack keeps the last-known state visible and the wipe is retried on the next connection reconcile
+- **A failed firewall blocklist reset is no longer shown as done** -- The last-known state stays visible and the wipe is retried on the next reconnect
+
+- **Web interface review fixes** -- 32 fixes across accessibility, layout, color, and copy: login errors name the actual cause, offline server cards are easier to tell apart, the server grid no longer overflows at narrow widths, empty states explain what to do next, status and chart colors have proper contrast in both themes, and CJK text renders consistently
+
+- **Dashboard widget fixes** -- Resizing no longer snaps back, layouts no longer jitter after saving, and widget configuration edits apply cleanly
+
+- **The last admin can no longer be lost** -- Two concurrent demotions or deletions could previously remove every admin account; the guard is now atomic
+
+- **GeoIP downloads backfill existing servers** -- The map fills in right after installing a database, instead of waiting for each agent to reconnect
+
+- **Notification channel and group dialogs no longer close mid-edit**
+
+- **Remaining hardcoded English strings are localized** -- The dashboard editor, network probe toasts, and public status page labels now follow the selected language
+
+- **Agent logs are free of ANSI color codes** -- Colors now apply only when writing to a real terminal
+
+- **Agents in Docker report the host OS** -- Instead of the container image's OS
 
 ## [1.0.0-alpha.11] - 2026-07-03
 
