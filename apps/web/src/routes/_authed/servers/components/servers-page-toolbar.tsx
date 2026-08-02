@@ -89,7 +89,7 @@ export function ServersPageToolbar({
         <AlertDialogFooter>
           <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
           <AlertDialogAction onClick={onCleanup} variant="destructive">
-            {t('common:delete')}
+            {t('servers:cleanup_confirm_action', { count: orphanCount })}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -101,20 +101,22 @@ export function ServersPageToolbar({
       <AlertDialogTrigger
         render={
           <Button disabled={batchDeletePending} size="default" variant="destructive">
-            <Trash2 aria-hidden="true" className="size-3.5" />
+            <Trash2 aria-hidden="true" />
             {t('servers:delete_selected', { count: selectedCount })}
           </Button>
         }
       />
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+          <AlertDialogTitle>{t('servers:batch_delete_confirm_title', { count: selectedCount })}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t('servers:batch_delete_confirm_description', { count: selectedCount })}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
           <AlertDialogAction onClick={onBatchDelete} variant="destructive">
-            {t('common:delete')}
+            {t('servers:batch_delete_confirm_action', { count: selectedCount })}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

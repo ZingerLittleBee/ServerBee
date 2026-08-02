@@ -24,6 +24,7 @@ import { projectServerCatalog, refreshServerCatalog, type ServerMetrics, useLive
 import { cn } from '@/lib/utils'
 import { getInitialServersView } from './components/mobile-view'
 import { buildServerColumns } from './components/server-columns'
+import { ServersEmptyState, ServersNoResults } from './components/servers-empty-state'
 import { ServersPageToolbar } from './components/servers-page-toolbar'
 
 export const Route = createFileRoute('/_authed/servers/')({
@@ -158,6 +159,8 @@ function ServersListPage() {
   const selectedCount = selectedIds.length
 
   const orphanCount = countCleanupCandidates(servers)
+  const hasNoMatches = servers.length > 0 && filtered.length === 0
+  const hasResults = filtered.length > 0
 
   const cleanupMutation = useMutation({
     mutationFn: () => api.delete<{ deleted_count: number }>('/api/servers/cleanup'),
@@ -169,8 +172,8 @@ function ServersListPage() {
       }
       toast.success(t('servers:cleanup_success', { count: data.deleted_count }))
     },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : t('common:errors.operation_failed'))
+    onError: () => {
+      toast.error(t('toast_cleanup_failed'))
     }
   })
 
@@ -191,8 +194,8 @@ function ServersListPage() {
       onSuccess: () => {
         toast.success(t('toast_deleted', { count }))
       },
-      onError: (err) => {
-        toast.error(err instanceof Error ? err.message : t('toast_batch_delete_failed'))
+      onError: () => {
+        toast.error(t('toast_batch_delete_failed'))
       }
     })
   }
@@ -209,12 +212,19 @@ function ServersListPage() {
   return (
     <div
       className={cn(
+        // The mobile max-w is the shared page-root clamp: without a definite
+        // width ceiling the table's intrinsic min-w-max propagates up through
+        // <main> and the DataTable's ScrollArea stops scrolling horizontally.
+        // It matches <main>'s p-3 exactly, so it never narrows the grid view.
         'w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full',
         viewMode === 'table' && 'flex min-h-0 flex-col'
       )}
       ref={fillRef}
       style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
     >
+      {/* The toolbar carries no visible title; without it the heading outline
+          starts at the card/table headings. */}
+      <h1 className="sr-only">{t('servers:title')}</h1>
       <ServersPageToolbar
         batchDeletePending={batchDeleteMutation.isPending}
         cleanupPending={cleanupMutation.isPending}
@@ -233,19 +243,18 @@ function ServersListPage() {
         viewMode={viewMode}
       />
 
-      {servers.length === 0 && (
-        <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
-          <div className="text-center">
-            <p className="text-muted-foreground text-sm">{t('no_servers_title')}</p>
-            <p className="mt-1 text-muted-foreground text-xs">{t('no_servers_description')}</p>
-          </div>
-        </div>
+      {servers.length === 0 && <ServersEmptyState />}
+      {hasNoMatches && <ServersNoResults onClear={() => setSearch('')} query={search} />}
+      {hasResults && viewMode === 'table' && (
+        <DataTable fillHeight rowClassName={(row) => !row.original.online && 'grayscale'} table={table} />
       )}
-      {servers.length > 0 && viewMode === 'table' && (
-        <DataTable fillHeight rowClassName={(row) => !row.original.online && 'opacity-45 grayscale'} table={table} />
-      )}
-      {servers.length > 0 && viewMode === 'grid' && (
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+      {hasResults && viewMode === 'grid' && (
+        <div
+          className="grid gap-4"
+          // min(320px, 100%) keeps the track from overflowing viewports narrower
+          // than the ideal card width instead of clipping the cards.
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}
+        >
           {filtered.map((server) => (
             <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
               <ServerCard

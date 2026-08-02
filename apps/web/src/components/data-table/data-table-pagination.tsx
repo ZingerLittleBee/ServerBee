@@ -40,7 +40,8 @@ export function DataTablePagination<TData>({
         {table.getFilteredSelectedRowModel().rows.length > 0 &&
           t('table.rows_selected', {
             selected: table.getFilteredSelectedRowModel().rows.length,
-            total: table.getFilteredRowModel().rows.length
+            // The noun agrees with the total, not the selection.
+            count: table.getFilteredRowModel().rows.length
           })}
       </div>
       <div className="flex w-full flex-col-reverse items-center gap-4 sm:w-auto sm:flex-row sm:gap-6 lg:gap-8">

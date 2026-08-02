@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAuth } from '@/hooks/use-auth'
 import { ApiError, api } from '@/lib/api-client'
 import type { OnboardingRequest } from '@/lib/api-schema'
@@ -51,7 +52,7 @@ function OnboardingPage() {
 
   if (isLoading || !isAuthenticated || user?.must_change_password !== true) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <div className="size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
       </div>
     )
@@ -81,71 +82,76 @@ function OnboardingPage() {
       await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
       await navigate({ to: '/' })
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : t('failed')
-      toast.error(msg)
+      // Backend `AppError` messages are English-only, so keep a localized
+      // headline and demote the raw server text to the description.
+      toast.error(t('failed'), {
+        description: err instanceof ApiError ? err.message : undefined
+      })
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="font-bold text-2xl">{t('title')}</h1>
-          <p className="mt-1 text-muted-foreground text-sm">{t('subtitle')}</p>
+    <ScrollArea className="h-full">
+      <div className="flex min-h-dvh items-center justify-center p-4">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center">
+            <h1 className="font-bold text-2xl">{t('title')}</h1>
+            <p className="mt-1 text-muted-foreground text-sm">{t('subtitle')}</p>
+          </div>
+
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <label className="font-medium text-sm" htmlFor="username">
+                {t('username')}
+              </label>
+              <Input
+                autoComplete="username"
+                id="username"
+                onChange={(e) => setUsername(e.target.value)}
+                spellCheck={false}
+                type="text"
+                value={username}
+              />
+              <p className="text-muted-foreground text-xs">{t('username_hint')}</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="font-medium text-sm" htmlFor="new-password">
+                {t('new_password')}
+              </label>
+              <Input
+                autoComplete="new-password"
+                id="new-password"
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                type="password"
+                value={password}
+              />
+              <p className="text-muted-foreground text-xs">{t('password_hint', { min: MIN_PASSWORD_LEN })}</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="font-medium text-sm" htmlFor="confirm-password">
+                {t('confirm_password')}
+              </label>
+              <Input
+                autoComplete="new-password"
+                id="confirm-password"
+                onChange={(e) => setConfirm(e.target.value)}
+                required
+                type="password"
+                value={confirm}
+              />
+            </div>
+
+            <Button className="w-full" disabled={submitting} type="submit">
+              {submitting ? t('saving') : t('submit')}
+            </Button>
+          </form>
         </div>
-
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <label className="font-medium text-sm" htmlFor="username">
-              {t('username')}
-            </label>
-            <Input
-              autoComplete="username"
-              id="username"
-              onChange={(e) => setUsername(e.target.value)}
-              spellCheck={false}
-              type="text"
-              value={username}
-            />
-            <p className="text-muted-foreground text-xs">{t('username_hint')}</p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="font-medium text-sm" htmlFor="new-password">
-              {t('new_password')}
-            </label>
-            <Input
-              autoComplete="new-password"
-              id="new-password"
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-            <p className="text-muted-foreground text-xs">{t('password_hint', { min: MIN_PASSWORD_LEN })}</p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="font-medium text-sm" htmlFor="confirm-password">
-              {t('confirm_password')}
-            </label>
-            <Input
-              autoComplete="new-password"
-              id="confirm-password"
-              onChange={(e) => setConfirm(e.target.value)}
-              required
-              type="password"
-              value={confirm}
-            />
-          </div>
-
-          <Button className="w-full" disabled={submitting} type="submit">
-            {submitting ? t('saving') : t('submit')}
-          </Button>
-        </form>
       </div>
-    </div>
+    </ScrollArea>
   )
 }

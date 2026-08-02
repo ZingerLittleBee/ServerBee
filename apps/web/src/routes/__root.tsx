@@ -16,7 +16,7 @@ function RootLayout() {
       <DevProxyBanner />
       <ThemeProvider>
         <TooltipProvider>
-          <div className="h-screen overflow-hidden bg-background text-foreground">
+          <div className="h-dvh overflow-hidden bg-background text-foreground">
             <Outlet />
           </div>
           <Toaster />

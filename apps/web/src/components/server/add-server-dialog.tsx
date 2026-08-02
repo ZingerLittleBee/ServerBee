@@ -536,7 +536,11 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
       }
     },
     onError: (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : t('add_server.generate_failed'))
+      // Backend `AppError` messages are English-only, so keep a localized
+      // headline and demote the raw server text to the description.
+      toast.error(t('add_server.generate_failed'), {
+        description: err instanceof Error ? err.message : undefined
+      })
     }
   })
 
@@ -563,7 +567,9 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
       })
     },
     onError: (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : t('add_server.replace_failed'))
+      toast.error(t('add_server.replace_failed'), {
+        description: err instanceof Error ? err.message : undefined
+      })
     }
   })
 

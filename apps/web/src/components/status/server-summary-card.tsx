@@ -21,10 +21,10 @@ function clampPercent(value: number): number {
 
 function getRingColor(pct: number, brandColor: string): string {
   if (pct > 90) {
-    return '#ef4444'
+    return 'var(--status-danger)'
   }
   if (pct > 70) {
-    return '#f59e0b'
+    return 'var(--status-warning)'
   }
   return brandColor
 }

@@ -6,7 +6,7 @@ import { MetricValue } from '@/components/server/metric-value'
 import { useNetworkRealtime } from '@/hooks/use-network-realtime'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import type { ServerCostOverview } from '@/lib/api-schema'
-import { isLatencyFailure } from '@/lib/network-latency-constants'
+import { getLossTextClass, isLatencyFailure } from '@/lib/network-latency-constants'
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { computeTrafficQuota } from '@/lib/traffic'
@@ -58,25 +58,12 @@ function osIcon(os: string | null): string {
 
 function getRingColor(pct: number, brandColor: string): string {
   if (pct > 90) {
-    return '#ef4444'
+    return 'var(--status-danger)'
   }
   if (pct > 70) {
-    return '#f59e0b'
+    return 'var(--status-warning)'
   }
   return brandColor
-}
-
-function getLossTextClassName(lossRatio: number | null): string {
-  if (lossRatio == null) {
-    return 'text-muted-foreground'
-  }
-  if (lossRatio < 0.01) {
-    return 'text-emerald-600 dark:text-emerald-400'
-  }
-  if (lossRatio < 0.05) {
-    return 'text-amber-600 dark:text-amber-400'
-  }
-  return 'text-red-600 dark:text-red-400'
 }
 
 function formatLatency(ms: number | null): string {
@@ -110,6 +97,7 @@ const ServerCardInner = ({
 
   const status = deriveServerStatus(server)
   const isPending = status === 'pending'
+  const isOffline = status === 'offline'
 
   const memoryPct = server.mem_total > 0 ? (server.mem_used / server.mem_total) * 100 : 0
   const diskPct = server.disk_total > 0 ? (server.disk_used / server.disk_total) * 100 : 0
@@ -137,19 +125,17 @@ const ServerCardInner = ({
   return (
     <div
       className={cn(
-        'relative flex w-full min-w-[320px] max-w-[480px] flex-col gap-2 rounded-lg border bg-card p-3 shadow-sm',
+        'flex w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10',
         // Pending cards have far less content than active ones; stretch them to
         // fill the grid cell so a "Waiting for agent…" tile matches the height of
         // its data-rich siblings instead of leaving a short, mismatched gap.
-        isPending && 'h-full'
+        isPending && 'h-full',
+        // Offline cards drop their status colors and sit on a dimmer surface, but
+        // the text keeps its full-contrast tokens. Never dilute the copy with a
+        // translucent scrim — the StatusBadge label carries the offline meaning.
+        isOffline && 'bg-muted/40 grayscale'
       )}
     >
-      {!server.online && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-grayscale"
-        />
-      )}
       <div className="flex items-center justify-between">
         <Link
           className="flex items-center gap-1 truncate border-transparent border-b pb-px hover:border-current"
@@ -159,17 +145,17 @@ const ServerCardInner = ({
         >
           <CountryFlag className="text-sm" code={server.country_code} />
           {osEmoji && (
-            <span className="shrink-0 text-sm" title={server.os ?? ''}>
+            <span aria-hidden="true" className="shrink-0 text-sm" title={server.os ?? ''}>
               {osEmoji}
             </span>
           )}
-          <h3 className="truncate font-semibold text-[13px]">{server.name}</h3>
+          <h3 className="truncate font-semibold text-sm" title={server.name}>
+            {server.name}
+          </h3>
         </Link>
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
-          {/* Lift the pending pill above the dim overlay so it keeps its amber
-              tone as the one bright "needs attention" cue on a muted card. */}
-          <StatusBadge className={isPending ? 'relative z-20' : undefined} status={status} />
+          <StatusBadge status={status} />
           {isPending ? (
             <PendingActionMenu
               outstandingOffer={server.agent_authority?.outstanding_offer ?? null}
@@ -183,7 +169,7 @@ const ServerCardInner = ({
       </div>
 
       {isPending ? (
-        <div className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 rounded-md bg-muted/40 px-3 py-3 text-center">
+        <div className="flex min-h-24 flex-1 flex-col items-center justify-center gap-1 rounded-sm bg-muted/40 px-3 py-3 text-center">
           <p className="font-medium text-foreground text-sm">{t('card_pending.waiting')}</p>
           <PendingEnrollmentSummary enrollment={server.agent_authority?.outstanding_offer} />
         </div>
@@ -222,7 +208,7 @@ const ServerCardInner = ({
             </RingMetric>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-md bg-muted/40 px-2 py-1.5">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-sm bg-muted/40 px-2 py-1.5">
             <CompactMetric
               label={t('card_net_in_speed')}
               value={<MetricValue kind="speed" value={server.net_in_speed} variant="compact" />}
@@ -236,7 +222,7 @@ const ServerCardInner = ({
                 <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
-                    className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+                    className="inline-flex size-4 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[10px] text-foreground leading-none"
                   >
                     R
                   </span>
@@ -250,7 +236,7 @@ const ServerCardInner = ({
                 <span className="inline-flex items-center gap-1">
                   <span
                     aria-hidden="true"
-                    className="inline-flex size-3.5 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[8px] text-foreground leading-none"
+                    className="inline-flex size-4 flex-none items-center justify-center rounded-full bg-muted font-semibold text-[10px] text-foreground leading-none"
                   >
                     W
                   </span>
@@ -264,7 +250,7 @@ const ServerCardInner = ({
           {hasNetworkData && (
             <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-muted-foreground">{t('card_latency')}</span>
+                <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
                 <NetworkMetricValue targets={currentTargets}>
                   <span
                     className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(
@@ -280,10 +266,10 @@ const ServerCardInner = ({
                 </NetworkMetricValue>
               </div>
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-muted-foreground">{t('card_packet_loss')}</span>
+                <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
                 <NetworkMetricValue targets={currentTargets}>
                   <span
-                    className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClassName(currentAvgLossRatio)}`}
+                    className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}
                   >
                     {formatPacketLoss(currentAvgLossRatio)}
                   </span>

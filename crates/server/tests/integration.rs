@@ -1027,7 +1027,22 @@ async fn test_terminal_open_denied_is_audited() {
     let api_key = create_api_key(&client, &base_url).await;
 
     let (server_id, token) = register_agent(&client, &base_url).await;
-    let (_ws_sink, _ws_reader) = connect_agent(&base_url, &token).await;
+    let (_ws_sink, mut ws_reader) = connect_agent(&base_url, &token).await;
+
+    // connect_agent returns once the client handshake completes, but the server
+    // registers the agent in the async upgrade callback. Welcome is sent only
+    // after registration, so waiting for it guarantees the terminal handshake
+    // below is rejected by the capability gate (audited) instead of the
+    // agent-offline check (not audited).
+    let welcome = tokio::time::timeout(Duration::from_secs(5), ws_reader.next())
+        .await
+        .expect("Timeout waiting for Welcome")
+        .expect("WebSocket stream ended")
+        .expect("WebSocket read error");
+    assert!(
+        matches!(welcome, tungstenite::Message::Text(_)),
+        "expected Welcome text frame, got {welcome:?}"
+    );
 
     let ws_url = format!(
         "{}/api/ws/terminal/{}",

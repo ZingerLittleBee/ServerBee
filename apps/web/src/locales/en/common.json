@@ -55,13 +55,14 @@
   "open_menu": "Open menu",
 
   "a11y": {
+    "skip_to_content": "Skip to content",
     "toggle_theme": "Toggle theme",
     "breadcrumb": "Breadcrumb",
     "more": "More",
     "close": "Close",
     "sidebar_title": "Sidebar",
     "sidebar_description": "Displays the mobile sidebar",
-    "toggle_sidebar": "Toggle Sidebar",
+    "toggle_sidebar": "Toggle sidebar",
     "table_view": "Table view",
     "grid_view": "Grid view",
     "edit_server": "Edit server",
@@ -91,7 +92,7 @@
     "save": "Save",
     "create": "Create",
     "add": "Add",
-    "addMonitor": "Add Monitor"
+    "addMonitor": "Add monitor"
   },
   "errors": {
     "operation_failed": "Operation failed",
@@ -113,7 +114,8 @@
     "sort_desc": "Desc",
     "sort_reset": "Reset",
     "hide_column": "Hide",
-    "rows_selected": "{{selected}} of {{total}} row(s) selected.",
+    "rows_selected_one": "{{selected}} of {{count}} row selected.",
+    "rows_selected_other": "{{selected}} of {{count}} rows selected.",
     "rows_per_page": "Rows per page",
     "page_of": "Page {{current}} of {{total}}",
     "go_first_page": "Go to first page",

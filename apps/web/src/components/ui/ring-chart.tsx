@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils'
+
 interface RingChartProps {
   color: string
   compact?: boolean
@@ -20,11 +22,10 @@ export function RingChart({ value, size, strokeWidth, color, label, compact = fa
   const radius = (VIEWBOX - resolvedStroke) / 2
   const circumference = 2 * Math.PI * radius
   const dashArray = `${(clamped / 100) * circumference} ${circumference}`
-  const labelFontSize = compact ? '10px' : '12px'
 
   return (
     <div style={{ width: resolvedSize }}>
-      <div style={{ position: 'relative', width: resolvedSize, height: resolvedSize }}>
+      <div className="relative" style={{ width: resolvedSize, height: resolvedSize }}>
         <svg
           aria-label={`${label} ${clamped.toFixed(1)}%`}
           height={resolvedSize}
@@ -53,15 +54,10 @@ export function RingChart({ value, size, strokeWidth, color, label, compact = fa
           />
         </svg>
         <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: labelFontSize,
-            fontWeight: 700
-          }}
+          className={cn(
+            'absolute inset-0 flex items-center justify-center font-bold tabular-nums',
+            compact ? 'text-[10px]' : 'text-xs'
+          )}
         >
           {clamped.toFixed(0)}
         </div>

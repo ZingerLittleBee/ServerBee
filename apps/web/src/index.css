@@ -38,9 +38,41 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  --uptime-operational: var(--color-emerald-500);
-  --uptime-degraded: var(--color-amber-500);
-  --uptime-down: var(--color-red-500);
+  /* Semantic status palette. Every healthy/warning/danger signal in the app
+     (dots, meters, rings, uptime timeline) resolves to these three hues so the
+     shades never drift apart. The base tokens are the solid fills; the -text
+     variants are the contrast-safe versions for small text and icons. The 700
+     shades are the lightest ones that clear 4.5:1 on white — 600 only reaches
+     3.7:1 (emerald) and 3.2:1 (amber). */
+  --status-healthy: var(--color-emerald-500);
+  --status-warning: var(--color-amber-500);
+  --status-danger: var(--color-red-500);
+  --status-healthy-text: var(--color-emerald-700);
+  --status-warning-text: var(--color-amber-700);
+  --status-danger-text: var(--color-red-700);
+  --uptime-operational: var(--status-healthy);
+  --uptime-degraded: var(--status-warning);
+  --uptime-down: var(--status-danger);
+  /* Categorical series palette for multi-series charts (network latency, target
+     legend dots). Theme-independent: the same 12 hues read acceptably on both
+     surfaces, and swapping them per theme would re-color a series when the user
+     toggles the theme. Values are literal copies of the Tailwind v4 palette
+     rather than `var(--color-blue-500)` references — Tailwind tree-shakes theme
+     variables that no utility class uses, so referencing them here resolves to
+     an empty value for any hue the app never uses as a class. Consumed from
+     `lib/chart-colors.ts`. */
+  --chart-series-1: oklch(62.3% 0.214 259.815); /* blue-500 */
+  --chart-series-2: oklch(63.7% 0.237 25.331); /* red-500 */
+  --chart-series-3: oklch(72.3% 0.219 149.579); /* green-500 */
+  --chart-series-4: oklch(76.9% 0.188 70.08); /* amber-500 */
+  --chart-series-5: oklch(60.6% 0.25 292.717); /* violet-500 */
+  --chart-series-6: oklch(65.6% 0.241 354.308); /* pink-500 */
+  --chart-series-7: oklch(70.4% 0.14 182.503); /* teal-500 */
+  --chart-series-8: oklch(70.5% 0.213 47.604); /* orange-500 */
+  --chart-series-9: oklch(58.5% 0.233 277.117); /* indigo-500 */
+  --chart-series-10: oklch(71.5% 0.143 215.221); /* cyan-500 */
+  --chart-series-11: oklch(76.8% 0.233 130.85); /* lime-500 */
+  --chart-series-12: oklch(58.6% 0.253 17.585); /* rose-600 */
 }
 
 .dark {
@@ -55,7 +87,11 @@
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  /* Lifted from 0.708: the shadcn default only reaches APCA Lc 50 on the card
+     surface while the light theme's counterpart sits at Lc 73, and the 10-11px
+     card labels all resolve to this token. 0.78 lands at Lc 62 and still keeps
+     a wide gap below --foreground (Lc 103) so the hierarchy holds. */
+  --muted-foreground: oklch(0.78 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -75,10 +111,20 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  /* Fills stay on the 500 shades in both themes; only the text variants flip to
+     the lighter shades to keep contrast on the dark surface. */
+  --status-healthy-text: var(--color-emerald-400);
+  --status-warning-text: var(--color-amber-400);
+  --status-danger-text: var(--color-red-400);
 }
 
 @theme inline {
-  --font-sans: "Inter Variable", sans-serif;
+  /* Inter Variable carries no CJK glyphs, so Chinese text falls through to the
+     generic sans-serif and picks up whatever the OS defaults to (often a serif
+     or a mismatched weight). List the platform CJK faces explicitly. */
+  --font-sans:
+    "Inter Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Noto Sans SC", sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -110,6 +156,12 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-status-healthy: var(--status-healthy);
+  --color-status-warning: var(--status-warning);
+  --color-status-danger: var(--status-danger);
+  --color-status-healthy-text: var(--status-healthy-text);
+  --color-status-warning-text: var(--status-warning-text);
+  --color-status-danger-text: var(--status-danger-text);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -127,7 +179,7 @@
     @apply bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    @apply font-sans antialiased;
   }
 }
 

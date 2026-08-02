@@ -2,6 +2,7 @@
   "title": "仪表盘",
   "servers_online": "{{total}} 台服务器中 {{online}} 台在线",
   "stat_servers": "服务器",
+  "stat_status": "健康状态",
   "offline_count": "{{count}} 台离线",
   "avg_cpu": "平均 CPU",
   "avg_memory": "平均内存",

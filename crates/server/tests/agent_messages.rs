@@ -560,22 +560,35 @@ async fn test_ip_changed_updates_server_and_audits() {
     }
     assert!(updated, "ip_changed should update the persisted server ipv4");
 
-    // The change is audited under the `ip_changed` action.
-    let audit_resp = client
-        .get(format!("{}/api/audit-logs", base_url))
-        .send()
-        .await
-        .expect("GET audit logs failed");
-    assert_eq!(audit_resp.status(), 200);
-    let audit_body: Value = audit_resp.json().await.expect("parse audit logs");
-    let entries = audit_body["data"]["entries"]
-        .as_array()
-        .expect("entries array");
-    assert!(
-        entries
+    // The change is audited under the `ip_changed` action. The handler
+    // persists the IP columns before writing the audit row, so seeing the new
+    // IP above does not yet guarantee the audit insert is visible — poll.
+    let mut audited = false;
+    let mut last_entries = Value::Null;
+    for _ in 0..20 {
+        let audit_resp = client
+            .get(format!("{}/api/audit-logs", base_url))
+            .send()
+            .await
+            .expect("GET audit logs failed");
+        assert_eq!(audit_resp.status(), 200);
+        let audit_body: Value = audit_resp.json().await.expect("parse audit logs");
+        let entries = audit_body["data"]["entries"]
+            .as_array()
+            .expect("entries array");
+        if entries
             .iter()
-            .any(|e| e["action"].as_str() == Some("ip_changed")),
-        "ip_changed should write an audit log entry, got {entries:?}"
+            .any(|e| e["action"].as_str() == Some("ip_changed"))
+        {
+            audited = true;
+            break;
+        }
+        last_entries = Value::Array(entries.clone());
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(
+        audited,
+        "ip_changed should write an audit log entry, got {last_entries:?}"
     );
 
     // Connection survives the frame.

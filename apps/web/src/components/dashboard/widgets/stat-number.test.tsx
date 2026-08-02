@@ -11,6 +11,7 @@ const translations: Record<string, string> = {
   total_bandwidth: 'Total Bandwidth',
   per_second: '/s',
   healthy: 'Healthy',
+  stat_status: 'Status',
   no_data: 'No data',
   online: 'Online',
   servers_online: '{{online}} of {{total}} servers online'
@@ -81,13 +82,28 @@ describe('StatNumberWidget', () => {
     expect(screen.getByTestId('stat-number-icon-shell')).toBeInTheDocument()
   })
 
-  it('uses translated health copy instead of hardcoded English text', () => {
+  it('reports the offline count instead of a constant health word', () => {
     render(
-      <StatNumberWidget config={{ metric: 'health', server_id: '' }} servers={[makeServer('1', { online: false })]} />
+      <StatNumberWidget
+        config={{ metric: 'health', server_id: '' }}
+        servers={[makeServer('1'), makeServer('2', { online: false })]}
+      />
     )
 
-    expect(screen.getByTestId('stat-number-label')).toHaveTextContent('Healthy')
+    expect(screen.getByTestId('stat-number-label')).toHaveTextContent('Status')
+    expect(screen.getByTestId('stat-number-value')).toHaveTextContent('1 offline')
+    expect(screen.getByTestId('stat-number-supporting')).toHaveTextContent('1 of 2 servers online')
+  })
+
+  it('reports healthy only when every server is online', () => {
+    render(<StatNumberWidget config={{ metric: 'health', server_id: '' }} servers={[makeServer('1')]} />)
+
+    expect(screen.getByTestId('stat-number-value')).toHaveTextContent('Healthy')
+  })
+
+  it('falls back to no data when there are no servers at all', () => {
+    render(<StatNumberWidget config={{ metric: 'health', server_id: '' }} servers={[]} />)
+
     expect(screen.getByTestId('stat-number-value')).toHaveTextContent('No data')
-    expect(screen.getByTestId('stat-number-supporting')).toHaveTextContent('0 of 1 servers online')
   })
 })

@@ -4,10 +4,10 @@ import { cn, formatBytes } from '@/lib/utils'
 
 function getPercentColor(percent: number) {
   if (percent >= 90) {
-    return 'text-red-500'
+    return 'text-status-danger-text'
   }
   if (percent >= 70) {
-    return 'text-yellow-500'
+    return 'text-status-warning-text'
   }
   return ''
 }
@@ -36,12 +36,12 @@ export function TrafficProgress({ serverId }: { serverId: string }) {
 
   const barColor = (() => {
     if (percent >= 90) {
-      return 'bg-red-500'
+      return 'bg-status-danger'
     }
     if (percent >= 70) {
-      return 'bg-yellow-500'
+      return 'bg-status-warning'
     }
-    return 'bg-green-500'
+    return 'bg-status-healthy'
   })()
 
   const predictionPercent =
@@ -59,7 +59,10 @@ export function TrafficProgress({ serverId }: { serverId: string }) {
         <span className={cn(getPercentColor(percent))}>{percent.toFixed(1)}%</span>
       </div>
       <div className="relative h-2 w-full overflow-hidden rounded-full bg-muted">
-        <div className={cn('h-full rounded-full transition-all', barColor)} style={{ width: `${percent}%` }} />
+        <div
+          className={cn('h-full rounded-full transition-[width,background-color]', barColor)}
+          style={{ width: `${percent}%` }}
+        />
         {predictionPercent != null && predictionPercent > percent && (
           <div
             className="absolute top-0 h-full border-muted-foreground border-r-2 border-dashed"
@@ -68,7 +71,7 @@ export function TrafficProgress({ serverId }: { serverId: string }) {
         )}
       </div>
       {data.prediction?.will_exceed && (
-        <div className="text-red-500 text-xs">
+        <div className="text-status-danger-text text-xs">
           {t('traffic_exceed_warning', {
             defaultValue: 'Predicted to exceed limit (~{{percent}}%)',
             percent: data.prediction.estimated_percent.toFixed(0)

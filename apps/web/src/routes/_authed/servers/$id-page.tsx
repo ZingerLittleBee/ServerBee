@@ -228,16 +228,10 @@ export function ServerDetailPage() {
             </div>
             <ServerInfoMeta server={server} />
           </div>
-          <div className="sm:col-span-2">
-            <AgentVersionSection
-              agentVersion={server.agent_version}
-              configuredCapabilities={serverWithCaps.capabilities}
-              effectiveCapabilities={serverWithCaps.effective_capabilities}
-              latestVersion={latestAgentVersion?.version ?? null}
-              serverId={id}
-            />
-          </div>
-          <div className="sm:col-start-2 sm:row-start-1 sm:justify-self-end">
+          {/* DOM order matches the rendered order: the actions sit beside the
+              title on sm+, so they must follow it in the tab sequence. The
+              version section spans both columns and falls to the second row. */}
+          <div className="sm:justify-self-end">
             <ServerActionButtons
               dockerEnabled={dockerEnabled}
               fileEnabled={fileEnabled}
@@ -249,6 +243,15 @@ export function ServerDetailPage() {
               onReenrollmentOpen={() => setReenrollmentOpen(true)}
               serverWithCaps={serverWithCaps}
               terminalEnabled={terminalEnabled}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <AgentVersionSection
+              agentVersion={server.agent_version}
+              configuredCapabilities={serverWithCaps.capabilities}
+              effectiveCapabilities={serverWithCaps.effective_capabilities}
+              latestVersion={latestAgentVersion?.version ?? null}
+              serverId={id}
             />
           </div>
         </div>

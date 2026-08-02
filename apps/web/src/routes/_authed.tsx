@@ -184,7 +184,7 @@ function AuthedLayout() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex h-full items-center justify-center">
         <div className="space-y-4 text-center">
           <div className="mx-auto size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
           <p className="text-muted-foreground text-sm">{t('loading')}</p>
@@ -207,6 +207,12 @@ function AuthedLayout() {
 
   return (
     <ServersWsContext.Provider value={wsContextValue}>
+      <a
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:ring-2 focus:ring-ring"
+        href="#main-content"
+      >
+        {t('a11y.skip_to_content')}
+      </a>
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset className="min-h-0 overflow-hidden">
@@ -246,9 +252,11 @@ function AuthedLayout() {
             </output>
           )}
           <ScrollArea className="min-h-0 flex-1 overflow-hidden" contentClassName="min-w-0!">
-            <main className="flex min-h-full min-w-0 flex-col p-3 pt-0 sm:p-4 sm:pt-0">
+            {/* SidebarInset already renders the page's <main> landmark; this is only
+                the skip-link target. */}
+            <div className="flex min-h-full min-w-0 flex-col p-3 pt-0 sm:p-4 sm:pt-0" id="main-content" tabIndex={-1}>
               <Outlet />
-            </main>
+            </div>
           </ScrollArea>
         </SidebarInset>
       </SidebarProvider>

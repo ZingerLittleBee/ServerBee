@@ -8,6 +8,7 @@ import { ServerCard } from './server-card'
 
 const REGEX_COST_PER_HOUR = /0\.01\/h/
 const REGEX_COST_PER_MONTH = /7\.30\/mo/
+const REGEX_OPACITY_UTILITY = /\bopacity-/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -215,5 +216,36 @@ describe('ServerCard', () => {
   it('renders StatusBadge', () => {
     renderCard(makeServer({ online: false }))
     expect(screen.getByText('common:status.offline')).toBeDefined()
+  })
+
+  it('desaturates offline cards without diluting text contrast', () => {
+    const { container } = renderCard(makeServer({ online: false }))
+    const card = container.firstElementChild as HTMLElement
+
+    expect(card.className).toContain('grayscale')
+    expect(card.className).not.toMatch(REGEX_OPACITY_UTILITY)
+    // A translucent scrim stacked over the body pushed it to 1.82:1.
+    expect(container.innerHTML).not.toContain('bg-background/')
+  })
+
+  it('gives the truncated name a title so the full value stays reachable', () => {
+    renderCard(makeServer({ name: 'a-very-long-server-name-that-will-be-clipped' }))
+    const heading = screen.getByRole('heading', { level: 3 })
+
+    expect(heading).toHaveClass('truncate')
+    expect(heading).toHaveAttribute('title', 'a-very-long-server-name-that-will-be-clipped')
+  })
+
+  it('hides the decorative OS emoji from the accessible link name', () => {
+    const { container } = renderCard(makeServer({ os: 'Ubuntu 22.04' }))
+    const emoji = container.querySelector('span[title="Ubuntu 22.04"]')
+
+    expect(emoji).not.toBeNull()
+    expect(emoji).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('lets the card shrink below the ideal 320px card width', () => {
+    const { container } = renderCard(makeServer())
+    expect((container.firstElementChild as HTMLElement).className).toContain('min-w-0')
   })
 })

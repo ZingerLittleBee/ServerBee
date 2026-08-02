@@ -3,7 +3,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkServerSummary } from '@/hooks/use-network-api'
 import { CHART_COLORS } from '@/lib/chart-colors'
-import { formatLatency, formatPacketLoss, getLossTextClassName } from '@/lib/network-types'
+import { getLossTextClass } from '@/lib/network-latency-constants'
+import { formatLatency, formatPacketLoss } from '@/lib/network-types'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import type { NetworkQualityConfig } from '@/lib/widget-types'
 
@@ -56,7 +57,7 @@ export function NetworkQualityWidget({ config }: NetworkQualityWidgetProps) {
               />
               <span className="min-w-0 flex-1 truncate font-medium text-sm">{target.target_name}</span>
               <span className="font-mono text-sm tabular-nums">{formatLatency(target.avg_latency)}</span>
-              <span className={`font-mono text-xs tabular-nums ${getLossTextClassName(target.packet_loss)}`}>
+              <span className={`font-mono text-xs tabular-nums ${getLossTextClass(target.packet_loss)}`}>
                 {formatPacketLoss(target.packet_loss)}
               </span>
             </li>

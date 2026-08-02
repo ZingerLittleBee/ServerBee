@@ -100,9 +100,7 @@ function ServerListTable({ servers }: { servers: ServerMetrics[] }) {
     getRowId: (row) => row.id
   })
 
-  return (
-    <DataTable hidePagination rowClassName={(row) => !row.original.online && 'opacity-45 grayscale'} table={table} />
-  )
+  return <DataTable hidePagination rowClassName={(row) => !row.original.online && 'grayscale'} table={table} />
 }
 
 // The sentinel doubles as the load-more indicator: it sits at the bottom of the
@@ -151,7 +149,9 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
     <div data-measure>
       <div
         className="grid content-start gap-4"
-        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}
+        // min(320px, 100%) keeps the track from overflowing containers narrower
+        // than the ideal card width (phones, narrow dashboard widgets).
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}
       >
         {visible.map((server) => (
           // content-visibility:auto skips layout/paint for off-screen cards;

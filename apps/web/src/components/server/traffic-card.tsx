@@ -34,7 +34,7 @@ export function TrafficCard({ serverId }: { serverId: string }) {
   }
 
   return (
-    <Card className="mt-4">
+    <Card>
       <Tabs className="gap-0" defaultValue={defaultTab}>
         <CardHeader>
           <CardTitle>{t('traffic_title')}</CardTitle>

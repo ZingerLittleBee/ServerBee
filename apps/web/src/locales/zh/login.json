@@ -9,5 +9,7 @@
   "signing_in": "登录中…",
   "sign_in": "登录",
   "login_failed": "登录失败，请重试。",
+  "unauthorized": "用户名或密码有误，请检查后重试。",
+  "rate_limited": "登录尝试过于频繁，请 15 分钟后再试。",
   "or_continue_with": "或通过以下方式登录"
 }

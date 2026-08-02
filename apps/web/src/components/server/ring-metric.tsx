@@ -13,7 +13,7 @@ export function RingMetric({ color, label, children, value }: RingMetricProps) {
     <div className="flex items-center gap-2">
       <RingChart color={color} compact label={label} value={value} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+        <span className="truncate font-medium text-[10px] text-muted-foreground">{label}</span>
         <span className="truncate text-[10px] text-muted-foreground tabular-nums">{children}</span>
       </div>
     </div>
