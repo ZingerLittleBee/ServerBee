@@ -30,7 +30,7 @@ export function ServerCardActionMenu({ server }: ServerCardActionMenuProps) {
             />
           }
         >
-          <MoreHorizontal aria-hidden="true" className="size-3.5" />
+          <MoreHorizontal aria-hidden="true" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-fit">
           <DropdownMenuItem
@@ -39,7 +39,7 @@ export function ServerCardActionMenu({ server }: ServerCardActionMenuProps) {
               setEditOpen(true)
             }}
           >
-            <Pencil aria-hidden="true" className="size-3.5" />
+            <Pencil aria-hidden="true" />
             {t('servers:detail_edit')}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -48,7 +48,7 @@ export function ServerCardActionMenu({ server }: ServerCardActionMenuProps) {
               setReenrollmentOpen(true)
             }}
           >
-            <RotateCcw aria-hidden="true" className="size-3.5" />
+            <RotateCcw aria-hidden="true" />
             {t('servers:agent_reenrollment.title')}
           </DropdownMenuItem>
         </DropdownMenuContent>

@@ -225,7 +225,7 @@ describe('ServerDetailPage', () => {
     expect(container).toHaveTextContent('1.3.0')
   })
 
-  it('places the upgrade card in its own full-width header row', () => {
+  it('places the upgrade card in its own full-width header row, after the actions in tab order', () => {
     mockUseUptimeDaily.mockReturnValue({
       data: [{ date: '2026-04-14', total: 100, up: 100 }]
     })
@@ -239,8 +239,8 @@ describe('ServerDetailPage', () => {
 
     expect(upgradeCard.parentElement).toHaveClass('sm:col-span-2')
     expect(headerGrid?.children[0]).toContainElement(agentMeta)
-    expect(headerGrid?.children[1]).toContainElement(upgradeCard)
-    expect(headerGrid?.children[2]).toContainElement(editButton)
+    expect(headerGrid?.children[1]).toContainElement(editButton)
+    expect(headerGrid?.children[2]).toContainElement(upgradeCard)
   })
 
   it('shows Agent re-enrollment action for an admin', () => {

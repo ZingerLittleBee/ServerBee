@@ -101,7 +101,7 @@ export function ServersPageToolbar({
       <AlertDialogTrigger
         render={
           <Button disabled={batchDeletePending} size="default" variant="destructive">
-            <Trash2 aria-hidden="true" className="size-3.5" />
+            <Trash2 aria-hidden="true" />
             {t('servers:delete_selected', { count: selectedCount })}
           </Button>
         }

@@ -82,11 +82,16 @@ function computeMetric(
       const total = online.reduce((sum, server) => sum + server.net_in_speed + server.net_out_speed, 0)
       return { value: formatBytes(total), supporting: t('per_second') }
     }
-    case 'health':
+    case 'health': {
+      if (servers.length === 0) {
+        return { value: t('no_data'), supporting: onlineSummary }
+      }
+      const offlineCount = servers.length - onlineCount
       return {
-        value: t(onlineCount > 0 ? 'healthy' : 'no_data'),
+        value: offlineCount === 0 ? t('healthy') : t('offline_count', { count: offlineCount }),
         supporting: onlineSummary
       }
+    }
     default:
       return { value: '--', supporting: onlineSummary }
   }
@@ -97,7 +102,7 @@ const METRIC_LABELS: Record<string, string> = {
   avg_cpu: 'avg_cpu',
   avg_memory: 'avg_memory',
   total_bandwidth: 'total_bandwidth',
-  health: 'healthy'
+  health: 'stat_status'
 }
 
 export function StatNumberWidget({ config, servers, title }: StatNumberWidgetProps) {

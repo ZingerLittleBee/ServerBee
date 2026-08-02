@@ -222,6 +222,9 @@ function ServersListPage() {
       ref={fillRef}
       style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
     >
+      {/* The toolbar carries no visible title; without it the heading outline
+          starts at the card/table headings. */}
+      <h1 className="sr-only">{t('servers:title')}</h1>
       <ServersPageToolbar
         batchDeletePending={batchDeleteMutation.isPending}
         cleanupPending={cleanupMutation.isPending}

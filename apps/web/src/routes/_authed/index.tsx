@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DashboardEditorView } from '@/components/dashboard/dashboard-editor-view'
 import { useAuth } from '@/hooks/use-auth'
 import { useDashboard, useDashboards, useDefaultDashboard, useUpdateDashboard } from '@/hooks/use-dashboard'
@@ -29,6 +30,7 @@ function storeDashboardId(id: string) {
 }
 
 export function DashboardPage() {
+  const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
@@ -63,16 +65,21 @@ export function DashboardPage() {
   }
 
   return (
-    <DashboardEditorView
-      activeDashboardId={activeId}
-      dashboard={dashboard}
-      dashboards={dashboards}
-      isAdmin={isAdmin}
-      isSaving={updateDashboard.isPending}
-      key={activeId || 'no-dashboard'}
-      onSave={handleSave}
-      onSelectDashboard={handleDashboardSelect}
-      servers={servers}
-    />
+    <>
+      {/* The page has no visible title; without it the heading outline starts at
+          the widget headings. */}
+      <h1 className="sr-only">{t('nav_dashboard')}</h1>
+      <DashboardEditorView
+        activeDashboardId={activeId}
+        dashboard={dashboard}
+        dashboards={dashboards}
+        isAdmin={isAdmin}
+        isSaving={updateDashboard.isPending}
+        key={activeId || 'no-dashboard'}
+        onSave={handleSave}
+        onSelectDashboard={handleDashboardSelect}
+        servers={servers}
+      />
+    </>
   )
 }

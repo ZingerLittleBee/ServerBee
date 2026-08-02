@@ -2,6 +2,7 @@
   "title": "Dashboard",
   "servers_online": "{{online}} of {{total}} servers online",
   "stat_servers": "Servers",
+  "stat_status": "Status",
   "offline_count": "{{count}} offline",
   "avg_cpu": "Avg CPU",
   "avg_memory": "Avg Memory",
