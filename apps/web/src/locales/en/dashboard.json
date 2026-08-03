@@ -179,6 +179,10 @@
     },
     "diskIo": {
       "title": "Disk I/O",
+      "legend": {
+        "read": "Read",
+        "write": "Write"
+      },
       "empty": {
         "noData": "No disk I/O data available"
       }

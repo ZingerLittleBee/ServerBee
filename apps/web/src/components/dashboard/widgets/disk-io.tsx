@@ -1,14 +1,5 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import { buildMergedDiskIoSeries } from '@/lib/disk-io'
@@ -25,10 +16,11 @@ interface DiskIoWidgetProps {
 const DEFAULT_HOURS = 24
 const DEFAULT_INTERVAL = 'raw'
 
-const chartConfig = {
-  read_bytes_per_sec: { label: 'Read', color: 'var(--chart-1)' },
-  write_bytes_per_sec: { label: 'Write', color: 'var(--chart-2)' }
-} satisfies ChartConfig
+const LazyMetricLinePlot = lazy(() =>
+  import('@/components/charts/metric-line-plot').then((module) => ({
+    default: module.MetricLinePlot
+  }))
+)
 
 export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   const { t } = useTranslation('dashboard')
@@ -48,6 +40,13 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   }, [records])
 
   const serverName = server?.name ?? t('metricCard.unknownServer')
+  const chartSeries = useMemo(
+    () => [
+      { dataKey: 'read_bytes_per_sec', label: t('widgets.diskIo.legend.read'), color: 'var(--chart-1)' },
+      { dataKey: 'write_bytes_per_sec', label: t('widgets.diskIo.legend.write'), color: 'var(--chart-2)' }
+    ],
+    [t]
+  )
 
   if (isLoading) {
     return (
@@ -71,44 +70,25 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4">
       <div className="mb-3">
         <h3 className="font-semibold text-sm">{t('widgets.diskIo.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
       </div>
-      <div className="min-h-0 flex-1">
-        <ChartContainer className="h-full w-full" config={chartConfig}>
-          <LineChart accessibilityLayer data={chartData}>
-            <CartesianGrid vertical={false} />
-            <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatChartTime} tickLine={false} />
-            <YAxis axisLine={false} tickFormatter={formatSpeed} tickLine={false} width={70} />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(l) => formatChartTime(String(l))}
-                  valueFormatter={(v) => formatSpeed(v)}
-                />
-              }
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            <Line
-              dataKey="read_bytes_per_sec"
-              dot={false}
-              isAnimationActive={false}
-              stroke="var(--color-read_bytes_per_sec)"
-              strokeWidth={2}
-              type="monotone"
-            />
-            <Line
-              dataKey="write_bytes_per_sec"
-              dot={false}
-              isAnimationActive={false}
-              stroke="var(--color-write_bytes_per_sec)"
-              strokeWidth={2}
-              type="monotone"
-            />
-          </LineChart>
-        </ChartContainer>
+      <div className="min-h-0 min-w-0 flex-1">
+        <Suspense fallback={<Skeleton className="h-full min-h-0 w-full" />}>
+          <LazyMetricLinePlot
+            ariaLabel={t('widgets.diskIo.title')}
+            className="h-full min-h-0 w-full"
+            data={chartData}
+            formatTime={formatChartTime}
+            formatTooltipLabel={formatChartTime}
+            formatValue={formatSpeed}
+            formatYAxisValue={formatSpeed}
+            series={chartSeries}
+            timeLabel={t('chart_time')}
+          />
+        </Suspense>
       </div>
     </div>
   )

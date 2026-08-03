@@ -6,7 +6,7 @@ export interface DiskIoSample {
   write_bytes_per_sec: number
 }
 
-export interface DiskIoChartPoint {
+export interface DiskIoChartPoint extends Record<string, unknown> {
   read_bytes_per_sec: number
   timestamp: string
   write_bytes_per_sec: number

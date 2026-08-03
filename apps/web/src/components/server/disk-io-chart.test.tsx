@@ -46,22 +46,15 @@ vi.mock('@/components/ui/tabs', () => ({
   }
 }))
 
-vi.mock('recharts', () => {
-  const createWrapper =
-    (testId: string) =>
-    ({ children }: { children?: ReactNode }) => <div data-testid={testId}>{children}</div>
-
-  return {
-    ResponsiveContainer: createWrapper('responsive-container'),
-    Tooltip: createWrapper('chart-tooltip'),
-    Legend: createWrapper('chart-legend'),
-    CartesianGrid: () => <div data-testid="cartesian-grid" />,
-    XAxis: () => <div data-testid="x-axis" />,
-    YAxis: () => <div data-testid="y-axis" />,
-    LineChart: ({ children }: { children?: ReactNode }) => <div data-testid="line-chart">{children}</div>,
-    Line: ({ dataKey }: { dataKey: string }) => <div data-testid={`line-${dataKey}`} />
-  }
-})
+vi.mock('@/components/charts/metric-line-plot', () => ({
+  MetricLinePlot: ({ series }: { series: { dataKey: string }[] }) => (
+    <div data-testid="metric-line-plot">
+      {series.map((item) => (
+        <div data-testid={`line-${item.dataKey}`} key={item.dataKey} />
+      ))}
+    </div>
+  )
+}))
 
 describe('DiskIoChart', () => {
   it('renders merged and per-disk views', async () => {
@@ -83,6 +76,7 @@ describe('DiskIoChart', () => {
 
     expect(screen.getByText('Disk I/O')).toBeInTheDocument()
     expect(screen.getByTestId('tab-content-merged')).toBeInTheDocument()
+    expect(screen.getByTestId('metric-line-plot')).toBeInTheDocument()
     expect(await screen.findByTestId('line-read_bytes_per_sec')).toBeInTheDocument()
     expect(await screen.findByTestId('line-write_bytes_per_sec')).toBeInTheDocument()
 

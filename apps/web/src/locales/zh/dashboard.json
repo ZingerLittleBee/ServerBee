@@ -179,6 +179,10 @@
     },
     "diskIo": {
       "title": "磁盘 I/O",
+      "legend": {
+        "read": "读取",
+        "write": "写入"
+      },
       "empty": {
         "noData": "暂无磁盘 I/O 数据"
       }

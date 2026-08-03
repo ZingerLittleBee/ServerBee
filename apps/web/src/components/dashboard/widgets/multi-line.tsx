@@ -1,15 +1,6 @@
 import { useQueries } from '@tanstack/react-query'
-import { useCallback, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ServerMetricRecord } from '@/lib/api-schema'
@@ -39,6 +30,12 @@ const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var
 
 const TARGET_POINTS = 300
 const MIN_BUCKET_MS = 60_000
+
+const LazyMetricLinePlot = lazy(() =>
+  import('@/components/charts/metric-line-plot').then((module) => ({
+    default: module.MetricLinePlot
+  }))
+)
 
 interface Bucket {
   counts: Map<string, number>
@@ -152,15 +149,15 @@ export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps
     return map
   }, [servers])
 
-  const chartConfig = useMemo(() => {
-    const cfg: ChartConfig = {}
-    for (let i = 0; i < server_ids.length; i++) {
-      const sid = server_ids[i]
-      const name = serverMap.get(sid)?.name ?? sid.slice(0, 8)
-      cfg[sid] = { label: name, color: CHART_COLORS[i % CHART_COLORS.length] }
-    }
-    return cfg
-  }, [server_ids, serverMap])
+  const chartSeries = useMemo(
+    () =>
+      server_ids.map((sid, index) => ({
+        dataKey: sid,
+        label: serverMap.get(sid)?.name ?? sid.slice(0, 8),
+        color: CHART_COLORS[index % CHART_COLORS.length] ?? 'var(--chart-1)'
+      })),
+    [server_ids, serverMap]
+  )
 
   const chartData = useMemo(
     () => buildBucketedRows(server_ids, queries, serverMap, metric, hours),
@@ -179,42 +176,23 @@ export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{title ?? t('widgets.multiLine.title', { metric: label })}</h3>
-      <div className="min-h-0 flex-1">
-        <ChartContainer className="h-full w-full" config={chartConfig}>
-          <LineChart accessibilityLayer data={chartData}>
-            <CartesianGrid vertical={false} />
-            <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatChartTime} tickLine={false} />
-            <YAxis
-              axisLine={false}
-              tickFormatter={isNetwork ? (v: number) => formatBytes(v) : undefined}
-              tickLine={false}
-              width={isNetwork ? 60 : 45}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(l) => formatChartDateTime(String(l))}
-                  valueFormatter={(v) => (isNetwork ? `${formatBytes(v)}/s` : `${Number(v).toFixed(1)}${unit}`)}
-                />
-              }
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            {server_ids.map((sid) => (
-              <Line
-                connectNulls
-                dataKey={sid}
-                dot={false}
-                isAnimationActive={false}
-                key={sid}
-                stroke={`var(--color-${sid})`}
-                strokeWidth={2}
-                type="monotone"
-              />
-            ))}
-          </LineChart>
-        </ChartContainer>
+      <div className="min-h-0 min-w-0 flex-1">
+        <Suspense fallback={<Skeleton className="h-full min-h-0 w-full" />}>
+          <LazyMetricLinePlot
+            ariaLabel={title ?? t('widgets.multiLine.title', { metric: label })}
+            className="h-full min-h-0 w-full"
+            data={chartData}
+            formatTime={formatChartTime}
+            formatTooltipLabel={formatChartDateTime}
+            formatValue={(value) => (isNetwork ? `${formatBytes(value)}/s` : `${value.toFixed(1)}${unit}`)}
+            formatYAxisValue={isNetwork ? formatBytes : undefined}
+            series={chartSeries}
+            timeLabel={t('chart_time')}
+            yMarginLeft={isNetwork ? 68 : 52}
+          />
+        </Suspense>
       </div>
     </div>
   )
