@@ -48,7 +48,7 @@ crates/
     pinger     — ICMP/TCP/HTTP probe execution
     terminal   — PTY session management (portable-pty)
 apps/
-  web/        — React 19 SPA (TanStack Router + Query, shadcn/ui, Recharts, xterm.js)
+  web/        — React 19 SPA (TanStack Router + Query, shadcn/ui, Bklit charts, xterm.js)
   docs/       — Documentation site (TanStack Start + Fumadocs MDX, CN+EN bilingual)
   ios/        — iOS mobile client (separate Xcode project)
 ```
