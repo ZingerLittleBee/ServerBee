@@ -263,6 +263,13 @@
   opacity: 1 !important;
 }
 
+/* Uptime day columns are 1-2px wide status blocks. Anti-aliased rect edges
+   blend each fill with the card background by a different amount, which reads
+   as "some colors are shorter" — crisp edges keep every day the same size. */
+[data-uptime-timeline] rect {
+  shape-rendering: crispEdges;
+}
+
 /* Fullscreen dialogs on small screens */
 @media (max-width: 639px) {
   [data-slot="dialog-content"] {

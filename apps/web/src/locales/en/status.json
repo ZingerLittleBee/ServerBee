@@ -55,6 +55,8 @@
   "incidents_status_resolved": "resolved",
 
   "uptime_days_ago": "{{count}} days ago",
+  "uptime_date": "Date",
+  "uptime_status": "Status",
   "uptime_today": "Today",
   "uptime_operational": "Operational",
   "uptime_degraded": "Degraded",
