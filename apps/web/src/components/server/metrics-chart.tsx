@@ -1,7 +1,5 @@
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
-
-type XAxisInterval = number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd' | 'equidistantPreserveStart'
+import { useTranslation } from 'react-i18next'
+import { MetricAreaPlot } from '@/components/charts/metric-area-plot'
 
 interface MetricsChartProps {
   color?: string
@@ -14,7 +12,6 @@ interface MetricsChartProps {
   formatValue?: (value: number) => string
   title: string
   unit?: string
-  xAxisInterval?: XAxisInterval
 }
 
 function defaultFormatTime(time: string): string {
@@ -36,57 +33,35 @@ export function MetricsChart({
   formatValue = defaultFormatValue,
   formatTick,
   formatTime = defaultFormatTime,
-  formatTooltipLabel,
-  xAxisInterval
+  formatTooltipLabel
 }: MetricsChartProps) {
-  const chartConfig = {
-    [dataKey]: { label: title, color }
-  } satisfies ChartConfig
+  const { t } = useTranslation('servers')
+  const resolvedFormatTime = formatTime ?? defaultFormatTime
+  const resolvedTooltipLabel = formatTooltipLabel ?? resolvedFormatTime
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="min-w-0 rounded-lg border bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{title}</h3>
-      <ChartContainer className="h-[260px] w-full" config={chartConfig}>
-        <AreaChart accessibilityLayer data={data} margin={{ left: 0, right: 16, top: 5, bottom: 0 }}>
-          <CartesianGrid vertical={false} />
-          <XAxis
-            axisLine={false}
-            dataKey="timestamp"
-            interval={xAxisInterval}
-            tickFormatter={formatTime}
-            tickLine={false}
-          />
-          <YAxis
-            axisLine={false}
-            domain={domain}
-            tickFormatter={(value: number) => {
-              if (value === 0) {
-                return ''
-              }
-              return formatTick ? formatTick(value) : String(value)
-            }}
-            tickLine={false}
-            width={formatTick ? 60 : 45}
-          />
-          <ChartTooltip
-            content={
-              <ChartTooltipContent
-                labelFormatter={(label) => (formatTooltipLabel ?? formatTime)(String(label))}
-                valueFormatter={(v) => `${formatValue(v)}${unit}`}
-              />
-            }
-          />
-          <Area
-            dataKey={dataKey}
-            fill={`var(--color-${dataKey})`}
-            fillOpacity={0.1}
-            isAnimationActive={false}
-            stroke={`var(--color-${dataKey})`}
-            strokeWidth={2}
-            type="monotone"
-          />
-        </AreaChart>
-      </ChartContainer>
+      <MetricAreaPlot
+        ariaLabel={title}
+        className="h-[260px] w-full"
+        color={color}
+        data={data}
+        dataKey={dataKey}
+        formatTime={resolvedFormatTime}
+        formatTooltipLabel={resolvedTooltipLabel}
+        formatValue={(value) => `${formatValue(value)}${unit}`}
+        formatYAxisValue={(value) => {
+          if (value === 0) {
+            return ''
+          }
+          return formatTick ? formatTick(value) : String(value)
+        }}
+        timeLabel={t('chart_time')}
+        valueLabel={title}
+        yDomain={domain}
+        yMarginLeft={formatTick ? 68 : 52}
+      />
     </div>
   )
 }

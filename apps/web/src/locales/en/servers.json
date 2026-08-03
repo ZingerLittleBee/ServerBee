@@ -195,6 +195,7 @@
   "chart_temperature": "Temperature",
   "chart_gpu_usage": "GPU usage",
   "chart_gpu_temp": "GPU temperature",
+  "chart_time": "Time",
   "disk_io_merged": "Merged",
   "disk_io_per_disk": "Per disk",
   "disk_io_read": "Read",

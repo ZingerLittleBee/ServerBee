@@ -45,52 +45,7 @@ import { useAnimatedYDomains } from './use-animated-y-domains'
 import { useChartInteraction } from './use-chart-interaction'
 import { useChartPhaseOrchestrator } from './use-chart-phase-orchestrator'
 import { buildYScalesFromDomains, DEFAULT_Y_AXIS_ID, getPrimaryYScale, groupLinesByYAxisId } from './y-axis-scales'
-import { computeYDomainsByAxis } from './y-domain-utils'
-
-function collectNumericExtents(data: Record<string, unknown>[], dataKeys: string[]) {
-  let minValue = Number.POSITIVE_INFINITY
-  let maxValue = Number.NEGATIVE_INFINITY
-
-  for (const d of data) {
-    for (const key of dataKeys) {
-      const value = d[key]
-      if (typeof value === 'number') {
-        if (value < minValue) {
-          minValue = value
-        }
-        if (value > maxValue) {
-          maxValue = value
-        }
-      }
-    }
-  }
-
-  if (minValue === Number.POSITIVE_INFINITY) {
-    return { minValue: 0, maxValue: 100 }
-  }
-
-  return { minValue, maxValue }
-}
-
-function resolveTimeSeriesYDomain(
-  data: Record<string, unknown>[],
-  dataKeys: string[],
-  yScaleDomainMax: number | undefined
-): [number, number] {
-  if (yScaleDomainMax != null && yScaleDomainMax > 0) {
-    return [0, yScaleDomainMax * 1.1]
-  }
-
-  const { minValue, maxValue } = collectNumericExtents(data, dataKeys)
-
-  if (minValue >= 0) {
-    const top = maxValue <= 0 ? 100 : maxValue * 1.1
-    return [0, top]
-  }
-
-  const padding = (maxValue - minValue) * 0.05 || 1
-  return [minValue - padding, maxValue + padding]
-}
+import { computeYDomainsByAxis, resolveTimeSeriesYDomain, type YDomain } from './y-domain-utils'
 
 function ensureChildKey(child: ReactElement, index: number): ReactElement {
   if (child.key != null) {
@@ -137,6 +92,8 @@ export interface TimeSeriesChartInnerProps {
   /** Animate y-domain on status / data transitions. Default: true */
   yDomainTween?: boolean
   yDomainTweenDuration?: number
+  /** Fixed domain for the primary y-axis. */
+  yScaleDomain?: YDomain
   /** When set, drives the y-axis max instead of scanning `lines` (e.g. stacked bar totals). */
   yScaleDomainMax?: number
 }
@@ -170,6 +127,7 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
   composedStacked,
   composedStackOffsets,
   composedStackGap,
+  yScaleDomain,
   yScaleDomainMax,
   chartStatus = DEFAULT_CHART_STATUS,
   loadingLabel,
@@ -188,10 +146,14 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
     (sourceData: Record<string, unknown>[], dataKeys: string[]) => {
       const axisGroups = groupLinesByYAxisId(lines)
       const usesDefaultOnly = axisGroups.size === 1 && axisGroups.has(DEFAULT_Y_AXIS_ID)
-      const domainMax = usesDefaultOnly && yScaleDomainMax != null ? yScaleDomainMax : undefined
-      return resolveTimeSeriesYDomain(sourceData, dataKeys, domainMax)
+      return resolveTimeSeriesYDomain({
+        data: sourceData,
+        dataKeys,
+        domain: usesDefaultOnly ? yScaleDomain : undefined,
+        domainMax: usesDefaultOnly ? yScaleDomainMax : undefined
+      })
     },
-    [lines, yScaleDomainMax]
+    [lines, yScaleDomain, yScaleDomainMax]
   )
 
   const skeletonData = useMemo(() => {

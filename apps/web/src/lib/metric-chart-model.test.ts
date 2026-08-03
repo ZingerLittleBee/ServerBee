@@ -8,8 +8,7 @@ import {
   makeTickFormatter,
   makeTooltipFormatter,
   pct,
-  toMetricChartRow,
-  xAxisStride
+  toMetricChartRow
 } from './metric-chart-model'
 
 const HH_MM = /^\d{2}:\d{2}$/
@@ -125,26 +124,6 @@ describe('makeTooltipFormatter', () => {
 
   it('leaves short historical ranges to the chart default', () => {
     expect(makeTooltipFormatter(false, 24)).toBeUndefined()
-  })
-})
-
-describe('xAxisStride', () => {
-  it('labels every realtime point', () => {
-    expect(xAxisStride(true, 0, 500)).toBe(0)
-  })
-
-  it('targets roughly 8 labels on long ranges', () => {
-    expect(xAxisStride(false, 168, 168)).toBe(20)
-    expect(xAxisStride(false, 720, 720)).toBe(89)
-  })
-
-  it('never returns a negative stride for tiny datasets', () => {
-    expect(xAxisStride(false, 168, 3)).toBe(0)
-  })
-
-  it('leaves short ranges and empty data to the chart default', () => {
-    expect(xAxisStride(false, 24, 100)).toBeUndefined()
-    expect(xAxisStride(false, 168, 0)).toBeUndefined()
   })
 })
 

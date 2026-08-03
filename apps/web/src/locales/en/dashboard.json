@@ -11,6 +11,7 @@
   "online": "Online",
   "healthy": "Healthy",
   "no_data": "No data",
+  "chart_time": "Time",
   "no_servers_title": "No servers connected yet",
   "no_servers_description": "Servers will appear here once they connect via the agent",
   "ungrouped": "Ungrouped",

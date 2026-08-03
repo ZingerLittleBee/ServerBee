@@ -5,6 +5,56 @@ import { groupLinesByYAxisId, normalizeYAxisId } from './y-axis-scales'
 
 export type YDomain = [number, number]
 
+function collectNumericExtents(data: Record<string, unknown>[], dataKeys: string[]) {
+  let minValue = Number.POSITIVE_INFINITY
+  let maxValue = Number.NEGATIVE_INFINITY
+
+  for (const point of data) {
+    for (const key of dataKeys) {
+      const value = point[key]
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        continue
+      }
+      minValue = Math.min(minValue, value)
+      maxValue = Math.max(maxValue, value)
+    }
+  }
+
+  if (minValue === Number.POSITIVE_INFINITY) {
+    return { minValue: 0, maxValue: 100 }
+  }
+
+  return { minValue, maxValue }
+}
+
+export function resolveTimeSeriesYDomain({
+  data,
+  dataKeys,
+  domain,
+  domainMax
+}: {
+  data: Record<string, unknown>[]
+  dataKeys: string[]
+  domain?: YDomain
+  domainMax?: number
+}): YDomain {
+  if (domain) {
+    return domain
+  }
+  if (domainMax != null && domainMax > 0) {
+    return [0, domainMax * 1.1]
+  }
+
+  const { minValue, maxValue } = collectNumericExtents(data, dataKeys)
+  if (minValue >= 0) {
+    const top = maxValue <= 0 ? 100 : maxValue * 1.1
+    return [0, top]
+  }
+
+  const padding = (maxValue - minValue) * 0.05 || 1
+  return [minValue - padding, maxValue + padding]
+}
+
 /** Apply visx `nice()` to raw domain endpoints for stable grid ticks. */
 export function niceYDomain(domain: YDomain): YDomain {
   const scale = scaleLinear({ domain, range: [0, 1], nice: true })

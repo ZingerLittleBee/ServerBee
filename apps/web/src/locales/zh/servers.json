@@ -195,6 +195,7 @@
   "chart_temperature": "温度",
   "chart_gpu_usage": "GPU 使用率",
   "chart_gpu_temp": "GPU 温度",
+  "chart_time": "时间",
   "disk_io_merged": "汇总",
   "disk_io_per_disk": "按磁盘",
   "disk_io_read": "读取",

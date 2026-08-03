@@ -1,7 +1,5 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/lib/server-catalog'
@@ -17,6 +15,12 @@ interface LineChartWidgetProps {
 
 const DEFAULT_HOURS = 24
 const DEFAULT_INTERVAL = 'raw'
+
+const LazyMetricAreaPlot = lazy(() =>
+  import('@/components/charts/metric-area-plot').then((module) => ({
+    default: module.MetricAreaPlot
+  }))
+)
 
 export function LineChartWidget({ config, servers, title }: LineChartWidgetProps) {
   const { t } = useTranslation('dashboard')
@@ -44,10 +48,6 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
   const serverName = server?.name ?? t('metricCard.unknownServer')
   const isNetwork = isNetworkMetric(metric)
 
-  const chartConfig = {
-    value: { label, color: 'var(--chart-1)' }
-  } satisfies ChartConfig
-
   if (isLoading) {
     return (
       <div className="flex h-full flex-col rounded-lg border bg-card p-4">
@@ -58,41 +58,28 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4">
       <div className="mb-3">
         <h3 className="font-semibold text-sm">{title ?? label}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
       </div>
-      <div className="min-h-0 flex-1">
-        <ChartContainer className="h-full w-full" config={chartConfig}>
-          <AreaChart accessibilityLayer data={chartData}>
-            <CartesianGrid vertical={false} />
-            <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatChartTime} tickLine={false} />
-            <YAxis
-              axisLine={false}
-              tickFormatter={isNetwork ? (v: number) => formatBytes(v) : undefined}
-              tickLine={false}
-              width={isNetwork ? 60 : 45}
-            />
-            <ChartTooltip
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(l) => formatChartTime(String(l))}
-                  valueFormatter={(v) => (isNetwork ? `${formatBytes(v)}/s` : `${Number(v).toFixed(1)}${unit}`)}
-                />
-              }
-            />
-            <Area
-              dataKey="value"
-              fill="var(--color-value)"
-              fillOpacity={0.1}
-              isAnimationActive={false}
-              stroke="var(--color-value)"
-              strokeWidth={2}
-              type="monotone"
-            />
-          </AreaChart>
-        </ChartContainer>
+      <div className="min-h-0 min-w-0 flex-1">
+        <Suspense fallback={<Skeleton className="h-full min-h-0 w-full" />}>
+          <LazyMetricAreaPlot
+            ariaLabel={title ?? label}
+            className="h-full min-h-0 w-full"
+            color="var(--chart-1)"
+            data={chartData}
+            dataKey="value"
+            formatTime={formatChartTime}
+            formatTooltipLabel={formatChartTime}
+            formatValue={(value) => (isNetwork ? `${formatBytes(value)}/s` : `${value.toFixed(1)}${unit}`)}
+            formatYAxisValue={isNetwork ? formatBytes : (value) => String(value)}
+            timeLabel={t('chart_time')}
+            valueLabel={label}
+            yMarginLeft={isNetwork ? 68 : 52}
+          />
+        </Suspense>
       </div>
     </div>
   )

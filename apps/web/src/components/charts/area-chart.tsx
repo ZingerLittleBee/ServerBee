@@ -25,6 +25,7 @@ import {
 } from './chart-phase'
 import { PatternArea } from './pattern-area'
 import { TimeSeriesChartInner } from './time-series-chart-shell'
+import type { YDomain } from './y-domain-utils'
 
 export interface AreaChartProps {
   /** Animation duration in milliseconds. Default: 1100 */
@@ -61,6 +62,8 @@ export interface AreaChartProps {
   xDomain?: [Date, Date]
   /** Full dataset length for x-scale padding when `xDomain` is set. */
   xDomainSlotCount?: number
+  /** Fixed domain for the primary y-axis. */
+  yDomain?: YDomain
   /** Animate y-domain when status or target domain changes. Default: true */
   yDomainTween?: boolean
   /** Animate y-domain over this duration (ms) on status transitions. Default: 500. */
@@ -121,6 +124,7 @@ interface ChartInnerProps {
   xDataKey: string
   xDomain?: [Date, Date]
   xDomainSlotCount?: number
+  yDomain?: YDomain
   yDomainTween: boolean
   yDomainTweenDuration: number
 }
@@ -139,6 +143,7 @@ function ChartInner({
   loadingLabel,
   yDomainTweenDuration,
   yDomainTween,
+  yDomain,
   xDomain,
   xDomainSlotCount,
   tweenYDomainOnXDomainChange,
@@ -170,6 +175,7 @@ function ChartInner({
       xDomainSlotCount={xDomainSlotCount}
       yDomainTween={yDomainTween}
       yDomainTweenDuration={yDomainTweenDuration}
+      yScaleDomain={yDomain}
     >
       {children}
     </TimeSeriesChartInner>
@@ -190,6 +196,7 @@ export function AreaChart({
   loadingLabel,
   yDomainTweenDuration = DEFAULT_Y_DOMAIN_TWEEN_MS,
   yDomainTween = true,
+  yDomain,
   xDomain,
   xDomainSlotCount,
   tweenYDomainOnXDomainChange = false,
@@ -241,6 +248,7 @@ export function AreaChart({
             xDataKey={xDataKey}
             xDomain={xDomain}
             xDomainSlotCount={xDomainSlotCount}
+            yDomain={yDomain}
             yDomainTween={yDomainTween}
             yDomainTweenDuration={yDomainTweenDuration}
           >
