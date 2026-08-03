@@ -3,16 +3,9 @@ import { createFileRoute } from '@tanstack/react-router'
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Crown, Server } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { MetricAreaPlot, type MetricAreaSeries } from '@/components/charts/metric-area-plot'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
@@ -37,7 +30,7 @@ interface TrafficOverviewItem {
   traffic_limit: number | null
 }
 
-interface DailyTrafficItem {
+interface DailyTrafficItem extends Record<string, unknown> {
   bytes_in: number
   bytes_out: number
   date: string
@@ -49,6 +42,15 @@ interface DailyTrafficItem {
 
 type SortField = 'name' | 'total' | 'percent'
 type SortDir = 'asc' | 'desc'
+
+/** Daily buckets are date-only strings, so the axis only needs month-day. */
+function formatDayTick(date: string): string {
+  return date.slice(5, 10)
+}
+
+function formatDayLabel(date: string): string {
+  return date.slice(0, 10)
+}
 
 function getTotal(s: TrafficOverviewItem): number {
   return s.cycle_in + s.cycle_out
@@ -206,11 +208,11 @@ export function TrafficPage() {
     staleTime: 60_000
   })
 
-  const trendConfig = useMemo(
-    () => ({
-      bytes_in: { label: t('traffic_inbound'), color: 'var(--chart-1)' },
-      bytes_out: { label: t('traffic_outbound'), color: 'var(--chart-2)' }
-    }),
+  const trendSeries = useMemo<MetricAreaSeries[]>(
+    () => [
+      { dataKey: 'bytes_in', label: t('traffic_inbound'), color: 'var(--chart-1)' },
+      { dataKey: 'bytes_out', label: t('traffic_outbound'), color: 'var(--chart-2)' }
+    ],
     [t]
   )
 
@@ -345,40 +347,19 @@ export function TrafficPage() {
             <CardTitle>{t('traffic_global_trend')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <ChartContainer className="h-[300px] w-full" config={trendConfig}>
-              <AreaChart accessibilityLayer data={dailyData}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  axisLine={false}
-                  dataKey="date"
-                  tickFormatter={(v: string) => v.slice(5)}
-                  tickLine={false}
-                  tickMargin={10}
-                />
-                <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
-                <ChartTooltip
-                  content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
-                  cursor={false}
-                />
-                <ChartLegend content={<ChartLegendContent />} />
-                <Area
-                  dataKey="bytes_in"
-                  fill="var(--color-bytes_in)"
-                  fillOpacity={0.15}
-                  stroke="var(--color-bytes_in)"
-                  strokeWidth={2}
-                  type="monotone"
-                />
-                <Area
-                  dataKey="bytes_out"
-                  fill="var(--color-bytes_out)"
-                  fillOpacity={0.15}
-                  stroke="var(--color-bytes_out)"
-                  strokeWidth={2}
-                  type="monotone"
-                />
-              </AreaChart>
-            </ChartContainer>
+            <MetricAreaPlot
+              ariaLabel={t('traffic_global_trend')}
+              className="h-[300px] w-full"
+              data={dailyData ?? []}
+              formatTime={formatDayTick}
+              formatTooltipLabel={formatDayLabel}
+              formatValue={formatBytes}
+              formatYAxisValue={formatBytes}
+              series={trendSeries}
+              timeKey="date"
+              timeLabel={t('traffic_chart_date')}
+              yMarginLeft={68}
+            />
           </CardContent>
         </Card>
       )}

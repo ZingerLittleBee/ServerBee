@@ -91,8 +91,7 @@ export default defineConfig(({ mode }) => {
           output: {
             manualChunks: {
               tanstack: ['@tanstack/react-router', '@tanstack/react-query', '@tanstack/react-table'],
-              xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
-              recharts: ['recharts']
+              xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links']
             }
           }
         }
@@ -168,8 +167,7 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: {
             tanstack: ['@tanstack/react-router', '@tanstack/react-query', '@tanstack/react-table'],
-            xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
-            recharts: ['recharts']
+            xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links']
           }
         }
       }
