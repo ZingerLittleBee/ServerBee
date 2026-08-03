@@ -68,15 +68,13 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
           <LazyMetricAreaPlot
             ariaLabel={title ?? label}
             className="h-full min-h-0 w-full"
-            color="var(--chart-1)"
             data={chartData}
-            dataKey="value"
             formatTime={formatChartTime}
             formatTooltipLabel={formatChartTime}
             formatValue={(value) => (isNetwork ? `${formatBytes(value)}/s` : `${value.toFixed(1)}${unit}`)}
             formatYAxisValue={isNetwork ? formatBytes : (value) => String(value)}
+            series={[{ dataKey: 'value', label, color: 'var(--chart-1)' }]}
             timeLabel={t('chart_time')}
-            valueLabel={label}
             yMarginLeft={isNetwork ? 68 : 52}
           />
         </Suspense>

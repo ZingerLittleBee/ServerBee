@@ -45,9 +45,7 @@ export function MetricsChart({
       <MetricAreaPlot
         ariaLabel={title}
         className="h-[260px] w-full"
-        color={color}
         data={data}
-        dataKey={dataKey}
         formatTime={resolvedFormatTime}
         formatTooltipLabel={resolvedTooltipLabel}
         formatValue={(value) => `${formatValue(value)}${unit}`}
@@ -57,8 +55,8 @@ export function MetricsChart({
           }
           return formatTick ? formatTick(value) : String(value)
         }}
+        series={[{ dataKey, label: title, color }]}
         timeLabel={t('chart_time')}
-        valueLabel={title}
         yDomain={domain}
         yMarginLeft={formatTick ? 68 : 52}
       />

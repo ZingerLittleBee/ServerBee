@@ -35,13 +35,11 @@ describe('MetricAreaPlot', () => {
       <MetricAreaPlot
         ariaLabel="CPU usage"
         className="h-full"
-        color="red"
         data={data}
-        dataKey="value"
         formatTooltipLabel={(time) => time}
         formatValue={(value) => `${value.toFixed(1)}%`}
+        series={[{ dataKey: 'value', label: 'CPU usage', color: 'red' }]}
         timeLabel="Time"
-        valueLabel="CPU usage"
         yDomain={[0, 100]}
       />
     )
@@ -53,5 +51,31 @@ describe('MetricAreaPlot', () => {
     expect(screen.getByRole('figure', { name: 'CPU usage' })).toHaveClass('min-w-0')
     expect(screen.getByRole('table', { name: 'CPU usage' })).toBeInTheDocument()
     expect(screen.getAllByRole('row')).toHaveLength(51)
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  })
+
+  it('renders one area per series with a legend and a column per series', () => {
+    render(
+      <MetricAreaPlot
+        ariaLabel="Traffic"
+        className="h-full"
+        data={[{ date: '2026-08-01', bytes_in: 10, bytes_out: 20 }]}
+        formatTooltipLabel={(date) => date}
+        formatValue={(value) => `${value} B`}
+        series={[
+          { dataKey: 'bytes_in', label: 'Inbound', color: 'blue' },
+          { dataKey: 'bytes_out', label: 'Outbound', color: 'green' }
+        ]}
+        timeKey="date"
+        timeLabel="Date"
+      />
+    )
+
+    expect(screen.getAllByTestId('area-series')).toHaveLength(2)
+    expect(screen.getByRole('list')).toBeInTheDocument()
+    // legend entry + table header + table cell
+    expect(screen.getAllByText('Inbound')).toHaveLength(2)
+    expect(screen.getAllByRole('columnheader')).toHaveLength(3)
+    expect(screen.getByRole('cell', { name: '2026-08-01' })).toBeInTheDocument()
   })
 })
