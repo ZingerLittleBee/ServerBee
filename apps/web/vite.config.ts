@@ -9,6 +9,18 @@ import { builtinWidgetsPlugin } from './vite-plugins/builtin-widgets'
 
 const apiRuntimePattern = /^\/api\//
 const pwaRuntimePattern = /^\/pwa-/
+/** Bklit chart vendor deps, kept in their own chunk so app releases do not invalidate them. */
+const chartVendorPackages = [
+  '@visx/curve',
+  '@visx/event',
+  '@visx/grid',
+  '@visx/responsive',
+  '@visx/scale',
+  '@visx/shape',
+  'd3-array',
+  'd3-shape',
+  'motion'
+]
 const routeFileIgnorePattern =
   'components|hooks|types\\.ts|\\.test\\.(ts|tsx)$|-page\\.tsx$|-(form|dialog|section|tab|list|chart|item|toggle|buttons|options|payloads|search|utils)\\.tsx?$'
 
@@ -90,6 +102,7 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           output: {
             manualChunks: {
+              charts: chartVendorPackages,
               tanstack: ['@tanstack/react-router', '@tanstack/react-query', '@tanstack/react-table'],
               xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links']
             }
@@ -166,6 +179,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks: {
+            charts: chartVendorPackages,
             tanstack: ['@tanstack/react-router', '@tanstack/react-query', '@tanstack/react-table'],
             xterm: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links']
           }
