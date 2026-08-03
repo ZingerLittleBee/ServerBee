@@ -2,6 +2,7 @@ import { useCallback, useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Area } from '@/components/charts/area'
 import { AreaChart } from '@/components/charts/area-chart'
+import { formatFiniteChartValue, sampleChartRows } from '@/components/charts/chart-accessibility'
 import { Grid } from '@/components/charts/grid'
 import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
 import { TooltipContent, type TooltipRow } from '@/components/charts/tooltip/tooltip-content'
@@ -13,7 +14,6 @@ import type { NetworkProbeRecord } from '@/lib/network-types'
 
 const BUCKET_MS = 60_000
 const FUTURE_TOLERANCE_MS = 30_000
-const MAX_ACCESSIBLE_ROWS = 50
 
 interface VisibleSeries {
   color: string
@@ -55,18 +55,6 @@ export function buildLatencyChartData(
     .map(([, bucket]) => bucket)
 }
 
-function sampleAccessibleRows(data: Record<string, unknown>[]): Record<string, unknown>[] {
-  if (data.length <= MAX_ACCESSIBLE_ROWS) {
-    return data
-  }
-
-  const lastIndex = data.length - 1
-  const indices = Array.from({ length: MAX_ACCESSIBLE_ROWS }, (_, index) =>
-    Math.round((index / (MAX_ACCESSIBLE_ROWS - 1)) * lastIndex)
-  )
-  return [...new Set(indices)].flatMap((index) => (data[index] ? [data[index]] : []))
-}
-
 function formatTime24(date: Date): string {
   return date.toLocaleTimeString([], {
     hour: '2-digit',
@@ -90,7 +78,7 @@ function formatDateTimeMDHM(timestamp: string): string {
 }
 
 function formatLatency(value: unknown): string {
-  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)} ms` : '--'
+  return formatFiniteChartValue(value, (latency) => `${latency.toFixed(1)} ms`)
 }
 
 export function LatencyChartContent({
@@ -103,7 +91,7 @@ export function LatencyChartContent({
   const { t } = useTranslation('network')
   const titleId = useId()
   const chartData = useMemo(() => buildLatencyChartData(records, targets), [records, targets])
-  const accessibleRows = useMemo(() => sampleAccessibleRows(chartData), [chartData])
+  const accessibleRows = useMemo(() => sampleChartRows(chartData), [chartData])
   const visibleSeries = useMemo<VisibleSeries[]>(
     () =>
       targets.flatMap((target, index) =>
