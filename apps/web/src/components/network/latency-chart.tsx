@@ -1,22 +1,16 @@
-import { useMemo } from 'react'
-import { useTranslation } from 'react-i18next'
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
-import { CHART_COLORS } from '@/lib/chart-colors'
-import { formatDateTime } from '@/lib/format'
+import { lazy, Suspense } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { NetworkProbeRecord } from '@/lib/network-types'
 
-interface TargetInfo {
+export interface TargetInfo {
   color: string
   id: string
   name: string
   visible: boolean
 }
 
-interface LatencyChartProps {
-  // When embedded in a dashboard widget, drop the standalone card chrome and
-  // title and fill the parent height instead of using a fixed height. The host
-  // widget already provides the card, header, and a sized flex container.
+export interface LatencyChartProps {
+  // Dashboard widgets already provide card chrome and a sized flex container.
   embedded?: boolean
   hours?: number
   isRealtime?: boolean
@@ -24,175 +18,18 @@ interface LatencyChartProps {
   targets: TargetInfo[]
 }
 
-function formatTime24(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  })
-}
+const LazyLatencyChartContent = lazy(() =>
+  import('./latency-chart-content').then((module) => ({
+    default: module.LatencyChartContent
+  }))
+)
 
-function formatTimeHM(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-}
-
-function formatDateMD(timestamp: string): string {
-  const d = new Date(timestamp)
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function formatDateTimeMDHM(timestamp: string): string {
-  const d = new Date(timestamp)
-  return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-export function LatencyChart({ records, targets, isRealtime = false, hours = 1, embedded = false }: LatencyChartProps) {
-  const { t } = useTranslation('network')
-  // Build chartConfig for ALL targets (ChartContainer needs all color vars injected)
-  const chartConfig = useMemo(() => {
-    const config: ChartConfig = {}
-    targets.forEach((target, i) => {
-      config[`target_${i}`] = {
-        label: target.name,
-        color: CHART_COLORS[i % CHART_COLORS.length]
-      }
-    })
-    return config
-  }, [targets])
-
-  // Render an Area for EVERY target and toggle visibility via the `hide` prop
-  // rather than unmounting hidden series. Changing the set of <Area> children
-  // makes Recharts re-run the enter animation on the survivors, which blanks the
-  // whole chart for a frame (and can stick until the next re-render). Keeping the
-  // child set stable avoids that flash entirely.
-  const targetsWithIndex = useMemo(() => targets.map((t, i) => ({ ...t, originalIndex: i })), [targets])
-
-  const chartData = useMemo(() => {
-    const bucketMs = 60_000
-    const now = Date.now()
-    const bucketMap = new Map<number, Record<string, unknown>>()
-
-    // Index targets by id once; this memo recomputes on every realtime tick, so a
-    // findIndex per record was O(records * targets).
-    const targetIndexById = new Map(targets.map((t, i) => [t.id, i]))
-    for (const record of records) {
-      const ts = new Date(record.timestamp).getTime()
-      if (ts > now + 30_000) {
-        continue
-      }
-      const bucketKey = Math.floor(ts / bucketMs) * bucketMs
-
-      if (!bucketMap.has(bucketKey)) {
-        bucketMap.set(bucketKey, { timestamp: new Date(bucketKey).toISOString() })
-      }
-      const entry = bucketMap.get(bucketKey)
-      if (entry) {
-        // Use target_${index} as dataKey instead of record.target_id
-        const targetIndex = targetIndexById.get(record.target_id)
-        if (targetIndex !== undefined) {
-          entry[`target_${targetIndex}`] = record.avg_latency
-        }
-      }
-    }
-
-    return Array.from(bucketMap.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([, v]) => v)
-  }, [records, targets])
-
-  const isExtendedRange = hours >= 168
-
-  const tickFormatter = useMemo<(v: string) => string>(() => {
-    if (isExtendedRange) {
-      let lastDate = ''
-      return (v: string) => {
-        const dateStr = formatDateMD(v)
-        if (dateStr === lastDate) {
-          return ''
-        }
-        lastDate = dateStr
-        return dateStr
-      }
-    }
-    return (v: string) => (isRealtime ? formatTime24(v) : formatTimeHM(v))
-  }, [isRealtime, isExtendedRange])
-
-  const tooltipLabelFormatter = useMemo(() => {
-    if (isExtendedRange) {
-      return (label: string) => formatDateTimeMDHM(label)
-    }
-    return (label: string) =>
-      formatDateTime(label, {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      })
-  }, [isExtendedRange])
-
-  if (chartData.length === 0) {
-    if (embedded) {
-      return (
-        <div className="flex h-full items-center justify-center">
-          <p className="text-muted-foreground text-sm">{t('latency_chart_no_data')}</p>
-        </div>
-      )
-    }
-    return (
-      <div className="flex h-[300px] items-center justify-center rounded-lg border bg-card">
-        <p className="text-muted-foreground text-sm">{t('latency_chart_no_data')}</p>
-      </div>
-    )
-  }
-
-  const chart = (
-    <ChartContainer className={embedded ? 'h-full w-full' : 'h-[300px] w-full'} config={chartConfig}>
-      <AreaChart accessibilityLayer data={chartData}>
-        <CartesianGrid vertical={false} />
-        {/* Width-aware tick decimation: a fixed tick count overlaps into an
-            unreadable string on narrow dashboard widgets (min 4-col ≈ 300px). */}
-        <XAxis
-          axisLine={false}
-          dataKey="timestamp"
-          interval="equidistantPreserveStart"
-          minTickGap={32}
-          tickFormatter={tickFormatter}
-          tickLine={false}
-        />
-        <YAxis axisLine={false} tickLine={false} unit=" ms" width={60} />
-        <ChartTooltip
-          content={
-            <ChartTooltipContent labelFormatter={tooltipLabelFormatter} valueFormatter={(v) => `${v.toFixed(1)} ms`} />
-          }
-        />
-        {targetsWithIndex.map(({ id, originalIndex, visible }) => (
-          <Area
-            connectNulls={false}
-            dataKey={`target_${originalIndex}`}
-            fill="transparent"
-            fillOpacity={0}
-            hide={!visible}
-            key={id}
-            stroke={`var(--color-target_${originalIndex})`}
-            strokeWidth={2}
-            type="monotone"
-          />
-        ))}
-      </AreaChart>
-    </ChartContainer>
-  )
-
-  if (embedded) {
-    return chart
-  }
-
+export function LatencyChart(props: LatencyChartProps) {
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{t('latency_title')}</h3>
-      {chart}
-    </div>
+    <Suspense
+      fallback={<Skeleton className={props.embedded ? 'h-full min-h-0 w-full' : 'h-[332px] w-full rounded-lg'} />}
+    >
+      <LazyLatencyChartContent {...props} />
+    </Suspense>
   )
 }
