@@ -71,6 +71,10 @@ export interface BarChartProps {
   /** Fetch / display status. When `"loading"`, a shimmer skeleton replaces the
    * bars (no chart data required). Default: `"ready"`. */
   status?: ChartStatus
+  /** Local extension: fixes the value axis domain, skipping the automatic 10%
+   * headroom and `nice()` rounding. Use for gauges and status strips whose bars
+   * must span the full plot height. */
+  valueDomain?: [number, number]
   /** Key in data for the categorical axis. Default: "name" */
   xDataKey?: string
 }
@@ -162,6 +166,7 @@ interface ChartInnerProps {
   stacked: boolean
   stackGap: number
   status: ChartStatus
+  valueDomain?: [number, number]
   width: number
   xDataKey: string
 }
@@ -191,6 +196,7 @@ const ChartCore = memo(function ChartCore({
   stacked,
   stackGap,
   squareSnap,
+  valueDomain,
   children,
   containerRef,
   onPhaseChange,
@@ -293,12 +299,15 @@ const ChartCore = memo(function ChartCore({
   // Value scale (linear) - for the value axis
   const valueScale = useMemo(() => {
     const range = isHorizontal ? [0, innerWidth] : [innerHeight, 0]
+    if (valueDomain) {
+      return scaleLinear({ range, domain: valueDomain })
+    }
     return scaleLinear({
       range,
       domain: [0, maxValue * 1.1],
       nice: true
     })
-  }, [innerWidth, innerHeight, maxValue, isHorizontal])
+  }, [innerWidth, innerHeight, maxValue, isHorizontal, valueDomain])
 
   const yScales = useMemo(() => {
     if (isHorizontal) {
@@ -308,9 +317,9 @@ const ChartCore = memo(function ChartCore({
       lines,
       data,
       innerHeight,
-      resolveDomain: (dataKeys) => [0, (resolveAxisMax(data, dataKeys, stacked) || 100) * 1.1]
+      resolveDomain: (dataKeys) => valueDomain ?? [0, (resolveAxisMax(data, dataKeys, stacked) || 100) * 1.1]
     })
-  }, [data, innerHeight, isHorizontal, lines, stacked, valueScale])
+  }, [data, innerHeight, isHorizontal, lines, stacked, valueDomain, valueScale])
 
   const primaryYScale = getPrimaryYScale(yScales, valueScale)
 
@@ -651,6 +660,7 @@ export function BarChart({
   stacked = false,
   stackGap = 0,
   squareSnap,
+  valueDomain,
   children,
   onPhaseChange,
   status = 'ready'
@@ -680,6 +690,7 @@ export function BarChart({
             stacked={stacked}
             stackGap={stackGap}
             status={status}
+            valueDomain={valueDomain}
             width={width}
             xDataKey={xDataKey}
           >
