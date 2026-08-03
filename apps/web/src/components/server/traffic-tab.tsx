@@ -216,7 +216,7 @@ function DailyTrendChart({ serverId, t }: { serverId: string; t: (key: string) =
         )}
         {!isLoading && (!data || data.length === 0) && (
           <div className="flex h-[200px] items-center justify-center text-muted-foreground text-sm">
-            No daily traffic data available.
+            {t('traffic_no_daily_data')}
           </div>
         )}
       </CardContent>

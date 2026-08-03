@@ -323,6 +323,7 @@
   "traffic_start": "Start:",
   "traffic_end": "End:",
   "traffic_daily_trend": "Daily traffic trend",
+  "traffic_no_daily_data": "No daily traffic data available.",
   "traffic_history_comparison": "Historical cycle comparison",
   "traffic_configure_prompt": "Configure billing cycle in server settings to view traffic statistics.",
   "traffic_7d": "7d",

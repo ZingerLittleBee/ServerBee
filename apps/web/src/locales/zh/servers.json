@@ -323,6 +323,7 @@
   "traffic_start": "开始：",
   "traffic_end": "结束：",
   "traffic_daily_trend": "每日流量趋势",
+  "traffic_no_daily_data": "暂无每日流量数据。",
   "traffic_history_comparison": "历史周期对比",
   "traffic_configure_prompt": "请在服务器设置中配置计费周期以查看流量统计。",
   "traffic_7d": "7天",
