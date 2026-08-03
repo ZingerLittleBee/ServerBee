@@ -1,15 +1,7 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StackedBarPlot, type StackedBarSeries } from '@/components/charts/stacked-bar-plot'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { SecurityEventDto } from '@/lib/api-schema'
 
@@ -18,11 +10,20 @@ interface Props {
   isLoading?: boolean
 }
 
-interface TimelinePoint {
+interface TimelinePoint extends Record<string, unknown> {
   day: string
   port_scan: number
   ssh_brute_force: number
   ssh_login: number
+}
+
+function formatEventCount(value: number): string {
+  return String(value)
+}
+
+/** Mirrors Recharts `allowDecimals={false}` — event counts are whole numbers. */
+function formatEventCountTick(value: number): string {
+  return Number.isInteger(value) ? String(value) : ''
 }
 
 function toDay(iso: string): string {
@@ -36,12 +37,12 @@ function toDay(iso: string): string {
 export function SecurityTimelineChart({ events, isLoading }: Props) {
   const { t } = useTranslation('security')
 
-  const chartConfig = useMemo<ChartConfig>(
-    () => ({
-      ssh_brute_force: { label: t('event_type.ssh_brute_force'), color: 'var(--chart-1, #dc2626)' },
-      port_scan: { label: t('event_type.port_scan'), color: 'var(--chart-2, #ea580c)' },
-      ssh_login: { label: t('event_type.ssh_login'), color: 'var(--chart-3, #2563eb)' }
-    }),
+  const series = useMemo<StackedBarSeries[]>(
+    () => [
+      { dataKey: 'ssh_brute_force', label: t('event_type.ssh_brute_force'), color: 'var(--chart-1, #dc2626)' },
+      { dataKey: 'port_scan', label: t('event_type.port_scan'), color: 'var(--chart-2, #ea580c)' },
+      { dataKey: 'ssh_login', label: t('event_type.ssh_login'), color: 'var(--chart-3, #2563eb)' }
+    ],
     [t]
   )
 
@@ -74,18 +75,18 @@ export function SecurityTimelineChart({ events, isLoading }: Props) {
     body = <p className="py-10 text-center text-muted-foreground text-sm">{t('timeline.empty')}</p>
   } else {
     body = (
-      <ChartContainer className="h-[240px] w-full" config={chartConfig}>
-        <BarChart accessibilityLayer data={data} maxBarSize={40}>
-          <CartesianGrid vertical={false} />
-          <XAxis axisLine={false} dataKey="day" tickLine={false} tickMargin={8} />
-          <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={40} />
-          <ChartTooltip content={<ChartTooltipContent />} cursor={false} />
-          <ChartLegend content={<ChartLegendContent />} />
-          <Bar dataKey="ssh_brute_force" fill="var(--color-ssh_brute_force)" stackId="events" />
-          <Bar dataKey="port_scan" fill="var(--color-port_scan)" stackId="events" />
-          <Bar dataKey="ssh_login" fill="var(--color-ssh_login)" stackId="events" />
-        </BarChart>
-      </ChartContainer>
+      <StackedBarPlot
+        ariaLabel={t('timeline.title')}
+        categoryKey="day"
+        categoryLabel={t('timeline.date_label')}
+        className="h-[240px] w-full"
+        data={data}
+        formatAxisValue={formatEventCountTick}
+        formatTooltipLabel={(day) => day}
+        formatValue={formatEventCount}
+        marginLeft={44}
+        series={series}
+      />
     )
   }
 

@@ -74,6 +74,7 @@
   },
   "timeline": {
     "title": "Events over time",
+    "date_label": "Date",
     "empty": "No data to display"
   },
   "preset": {

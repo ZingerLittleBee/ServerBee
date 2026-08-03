@@ -49,43 +49,23 @@ vi.mock('@/components/ui/tabs', () => ({
   }
 }))
 
-vi.mock('recharts', () => {
-  const createWrapper =
-    (testId: string) =>
-    ({ children }: { children?: ReactNode }) => <div data-testid={testId}>{children}</div>
-
-  return {
-    ResponsiveContainer: createWrapper('responsive-container'),
-    Tooltip: ({ children, cursor }: { children?: ReactNode; cursor?: boolean }) => (
-      <div data-cursor={String(cursor)} data-testid="chart-tooltip">
-        {children}
-      </div>
-    ),
-    Legend: createWrapper('chart-legend'),
-    CartesianGrid: () => <div data-testid="cartesian-grid" />,
-    XAxis: () => <div data-testid="x-axis" />,
-    YAxis: () => <div data-testid="y-axis" />,
-    BarChart: ({
-      children,
-      data,
-      maxBarSize
-    }: {
-      children?: ReactNode
-      data?: Record<string, unknown>[]
-      maxBarSize?: number
-    }) => {
-      const chartKind = data?.[0] && 'hour' in data[0] ? 'hourly' : 'daily'
-      return (
-        <div data-max-bar-size={maxBarSize} data-testid={`bar-chart-${chartKind}`}>
-          {children}
-        </div>
-      )
-    },
-    Bar: ({ dataKey, stackId }: { dataKey: string; stackId?: string }) => (
-      <div data-key={dataKey} data-stack-id={stackId} data-testid={`bar-${dataKey}`} />
-    )
-  }
-})
+vi.mock('@/components/charts/stacked-bar-plot', () => ({
+  StackedBarPlot: ({
+    categoryKey,
+    data,
+    series
+  }: {
+    categoryKey: string
+    data?: Record<string, unknown>[]
+    series: { dataKey: string; label: string }[]
+  }) => (
+    <div data-rows={data?.length} data-testid={`bar-chart-${categoryKey === 'hour' ? 'hourly' : 'daily'}`}>
+      {series.map((item) => (
+        <div data-label={item.label} data-testid={`bar-${item.dataKey}`} key={item.dataKey} />
+      ))}
+    </div>
+  )
+}))
 
 describe('TrafficCard', () => {
   it('renders one traffic card with tabs that switch between hourly and daily charts', async () => {
@@ -123,10 +103,10 @@ describe('TrafficCard', () => {
     expect(screen.getByTestId('tab-content-hourly')).toBeInTheDocument()
     const hourlyChart = await screen.findByTestId('bar-chart-hourly')
 
-    expect(hourlyChart).toHaveAttribute('data-max-bar-size', '40')
+    expect(hourlyChart).toHaveAttribute('data-rows', '1')
     expect(screen.queryByTestId('bar-chart-daily')).not.toBeInTheDocument()
-    expect(within(hourlyChart).getByTestId('chart-tooltip')).toHaveAttribute('data-cursor', 'false')
-    expect(within(hourlyChart).getByTestId('y-axis')).toBeInTheDocument()
+    expect(within(hourlyChart).getByTestId('bar-bytes_in')).toHaveAttribute('data-label', '↓ In')
+    expect(within(hourlyChart).getByTestId('bar-bytes_out')).toHaveAttribute('data-label', '↑ Out')
     expect(within(cardHeader as HTMLElement).queryByText('2026-03-01 ~ 2026-03-31')).not.toBeInTheDocument()
     expect(cardFooter?.firstElementChild).toHaveTextContent('2026-03-01 ~ 2026-03-31')
     expect(cardFooter?.lastElementChild).toHaveTextContent('↓ In 1.5 KB')
@@ -138,11 +118,9 @@ describe('TrafficCard', () => {
     expect(screen.getByTestId('tab-content-daily')).toBeInTheDocument()
     const dailyChart = await screen.findByTestId('bar-chart-daily')
 
-    expect(dailyChart).toHaveAttribute('data-max-bar-size', '40')
+    expect(dailyChart).toHaveAttribute('data-rows', '1')
     expect(screen.queryByTestId('bar-chart-hourly')).not.toBeInTheDocument()
-    expect(within(dailyChart).getByTestId('chart-tooltip')).toHaveAttribute('data-cursor', 'false')
-    expect(within(dailyChart).getByTestId('y-axis')).toBeInTheDocument()
-    expect(within(card as HTMLElement).getByTestId('bar-bytes_in')).toHaveAttribute('data-stack-id', 'traffic')
-    expect(within(card as HTMLElement).getByTestId('bar-bytes_out')).toHaveAttribute('data-stack-id', 'traffic')
+    expect(within(dailyChart).getByTestId('bar-bytes_in')).toBeInTheDocument()
+    expect(within(dailyChart).getByTestId('bar-bytes_out')).toBeInTheDocument()
   })
 })

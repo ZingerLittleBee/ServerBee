@@ -74,6 +74,7 @@
   },
   "timeline": {
     "title": "事件时序",
+    "date_label": "日期",
     "empty": "暂无数据"
   },
   "preset": {

@@ -1,15 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
+import { StackedBarPlot, type StackedBarSeries } from '@/components/charts/stacked-bar-plot'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
@@ -21,7 +13,7 @@ interface TrafficBarWidgetProps {
   servers: ServerMetrics[]
 }
 
-interface DailyTrafficItem {
+interface DailyTrafficItem extends Record<string, unknown> {
   bytes_in: number
   bytes_out: number
   date: string
@@ -33,11 +25,15 @@ interface ServerTrafficResponse {
 
 const DEFAULT_DAYS = 30
 
-function useTrafficConfig(t: (key: string) => string): ChartConfig {
-  return {
-    bytes_in: { label: t('widgets.trafficBar.legend.inbound'), color: 'var(--chart-1)' },
-    bytes_out: { label: t('widgets.trafficBar.legend.outbound'), color: 'var(--chart-2)' }
-  }
+function useTrafficSeries(t: (key: string) => string): StackedBarSeries[] {
+  return [
+    { dataKey: 'bytes_in', label: t('widgets.trafficBar.legend.inbound'), color: 'var(--chart-1)' },
+    { dataKey: 'bytes_out', label: t('widgets.trafficBar.legend.outbound'), color: 'var(--chart-2)' }
+  ]
+}
+
+function formatDayTick(date: string): string {
+  return date.slice(5)
 }
 
 function hoursToDays(hours?: number): number {
@@ -49,7 +45,7 @@ function hoursToDays(hours?: number): number {
 
 export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   const { t } = useTranslation('dashboard')
-  const trafficConfig = useTrafficConfig(t)
+  const trafficSeries = useTrafficSeries(t)
   const { server_id } = config
   const days = hoursToDays(config.hours)
   const hasServerId = server_id != null && server_id.length > 0
@@ -110,38 +106,17 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
         <p className="text-muted-foreground text-xs">{serverName}</p>
       </div>
       <div className="min-h-0 flex-1">
-        <ChartContainer className="h-full w-full" config={trafficConfig}>
-          <BarChart accessibilityLayer data={data} maxBarSize={40}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              axisLine={false}
-              dataKey="date"
-              tickFormatter={(v: string) => v.slice(5)}
-              tickLine={false}
-              tickMargin={10}
-            />
-            <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
-            <ChartTooltip
-              content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
-              cursor={false}
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            <Bar
-              dataKey="bytes_in"
-              fill="var(--color-bytes_in)"
-              isAnimationActive={false}
-              radius={[0, 0, 4, 4]}
-              stackId="traffic"
-            />
-            <Bar
-              dataKey="bytes_out"
-              fill="var(--color-bytes_out)"
-              isAnimationActive={false}
-              radius={[4, 4, 0, 0]}
-              stackId="traffic"
-            />
-          </BarChart>
-        </ChartContainer>
+        <StackedBarPlot
+          ariaLabel={t('widgets.trafficBar.title')}
+          categoryKey="date"
+          categoryLabel={t('chart_date')}
+          className="h-full"
+          data={data}
+          formatCategory={formatDayTick}
+          formatTooltipLabel={(date) => date}
+          formatValue={formatBytes}
+          series={trafficSeries}
+        />
       </div>
     </div>
   )

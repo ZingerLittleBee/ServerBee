@@ -1,35 +1,70 @@
 import { useTranslation } from 'react-i18next'
+import { StackedBarPlot, type StackedBarSeries } from '@/components/charts/stacked-bar-plot'
 import { Card, CardAction, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTraffic } from '@/hooks/use-traffic'
 import { formatBytes } from '@/lib/utils'
 
-const trafficConfig = {
-  bytes_in: { label: '↓ In', color: 'var(--chart-1)' },
-  bytes_out: { label: '↑ Out', color: 'var(--chart-2)' }
-} satisfies ChartConfig
+const trafficSeries: StackedBarSeries[] = [
+  { dataKey: 'bytes_in', label: '↓ In', color: 'var(--chart-1)' },
+  { dataKey: 'bytes_out', label: '↑ Out', color: 'var(--chart-2)' }
+]
+
+function formatHourTick(hour: string): string {
+  const d = new Date(hour)
+  return `${d.getHours().toString().padStart(2, '0')}:00`
+}
+
+function formatDayTick(date: string): string {
+  return date.slice(5)
+}
+
+function HourlyTrafficChart({ data, t }: { data: Record<string, unknown>[]; t: (key: string) => string }) {
+  return (
+    <StackedBarPlot
+      ariaLabel={t('traffic_hourly')}
+      categoryKey="hour"
+      categoryLabel={t('traffic_chart_hour')}
+      className="h-[260px] w-full"
+      data={data}
+      formatCategory={formatHourTick}
+      formatTooltipLabel={formatHourTick}
+      formatValue={formatBytes}
+      series={trafficSeries}
+    />
+  )
+}
+
+function DailyTrafficChart({ data, t }: { data: Record<string, unknown>[]; t: (key: string) => string }) {
+  return (
+    <StackedBarPlot
+      ariaLabel={t('traffic_daily')}
+      categoryKey="date"
+      categoryLabel={t('traffic_chart_date')}
+      className="h-[260px] w-full"
+      data={data}
+      formatCategory={formatDayTick}
+      formatTooltipLabel={(date) => date}
+      formatValue={formatBytes}
+      series={trafficSeries}
+    />
+  )
+}
 
 export function TrafficCard({ serverId }: { serverId: string }) {
   const { t } = useTranslation('servers')
   const { data, isLoading } = useTraffic(serverId)
-  const hasDaily = (data?.daily.length ?? 0) > 0
-  const hasHourly = (data?.hourly.length ?? 0) > 0
+  const hourly = data?.hourly ?? []
+  const daily = data?.daily ?? []
+  const hasDaily = daily.length > 0
+  const hasHourly = hourly.length > 0
   const defaultTab = hasHourly ? 'hourly' : 'daily'
   const showTabs = hasDaily && hasHourly
 
   if (isLoading || !data) {
     return null
   }
-  if (data.bytes_total === 0 && !hasDaily && !hasHourly) {
+  if (data.bytes_total === 0 && !(hasDaily || hasHourly)) {
     return null
   }
 
@@ -52,168 +87,17 @@ export function TrafficCard({ serverId }: { serverId: string }) {
           {showTabs ? (
             <>
               <TabsContent value="hourly">
-                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
-                  <BarChart accessibilityLayer data={data.hourly} maxBarSize={40}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      axisLine={false}
-                      dataKey="hour"
-                      tickFormatter={(v: string) => {
-                        const d = new Date(v)
-                        return `${d.getHours().toString().padStart(2, '0')}:00`
-                      }}
-                      tickLine={false}
-                      tickMargin={10}
-                    />
-                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
-                    <ChartTooltip
-                      content={
-                        <ChartTooltipContent
-                          labelFormatter={(label) => {
-                            const d = new Date(String(label))
-                            return `${d.getHours().toString().padStart(2, '0')}:00`
-                          }}
-                          valueFormatter={(v) => formatBytes(v)}
-                        />
-                      }
-                      cursor={false}
-                    />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    <Bar
-                      dataKey="bytes_in"
-                      fill="var(--color-bytes_in)"
-                      isAnimationActive={false}
-                      radius={[0, 0, 4, 4]}
-                      stackId="traffic"
-                    />
-                    <Bar
-                      dataKey="bytes_out"
-                      fill="var(--color-bytes_out)"
-                      isAnimationActive={false}
-                      radius={[4, 4, 0, 0]}
-                      stackId="traffic"
-                    />
-                  </BarChart>
-                </ChartContainer>
+                <HourlyTrafficChart data={hourly} t={t} />
               </TabsContent>
 
               <TabsContent value="daily">
-                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
-                  <BarChart accessibilityLayer data={data.daily} maxBarSize={40}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      axisLine={false}
-                      dataKey="date"
-                      tickFormatter={(v: string) => v.slice(5)}
-                      tickLine={false}
-                      tickMargin={10}
-                    />
-                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
-                    <ChartTooltip
-                      content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
-                      cursor={false}
-                    />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    <Bar
-                      dataKey="bytes_in"
-                      fill="var(--color-bytes_in)"
-                      isAnimationActive={false}
-                      radius={[0, 0, 4, 4]}
-                      stackId="traffic"
-                    />
-                    <Bar
-                      dataKey="bytes_out"
-                      fill="var(--color-bytes_out)"
-                      isAnimationActive={false}
-                      radius={[4, 4, 0, 0]}
-                      stackId="traffic"
-                    />
-                  </BarChart>
-                </ChartContainer>
+                <DailyTrafficChart data={daily} t={t} />
               </TabsContent>
             </>
           ) : (
             <>
-              {hasHourly && (
-                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
-                  <BarChart accessibilityLayer data={data.hourly} maxBarSize={40}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      axisLine={false}
-                      dataKey="hour"
-                      tickFormatter={(v: string) => {
-                        const d = new Date(v)
-                        return `${d.getHours().toString().padStart(2, '0')}:00`
-                      }}
-                      tickLine={false}
-                      tickMargin={10}
-                    />
-                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
-                    <ChartTooltip
-                      content={
-                        <ChartTooltipContent
-                          labelFormatter={(label) => {
-                            const d = new Date(String(label))
-                            return `${d.getHours().toString().padStart(2, '0')}:00`
-                          }}
-                          valueFormatter={(v) => formatBytes(v)}
-                        />
-                      }
-                      cursor={false}
-                    />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    <Bar
-                      dataKey="bytes_in"
-                      fill="var(--color-bytes_in)"
-                      isAnimationActive={false}
-                      radius={[0, 0, 4, 4]}
-                      stackId="traffic"
-                    />
-                    <Bar
-                      dataKey="bytes_out"
-                      fill="var(--color-bytes_out)"
-                      isAnimationActive={false}
-                      radius={[4, 4, 0, 0]}
-                      stackId="traffic"
-                    />
-                  </BarChart>
-                </ChartContainer>
-              )}
-
-              {!hasHourly && hasDaily && (
-                <ChartContainer className="h-[260px] w-full" config={trafficConfig}>
-                  <BarChart accessibilityLayer data={data.daily} maxBarSize={40}>
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      axisLine={false}
-                      dataKey="date"
-                      tickFormatter={(v: string) => v.slice(5)}
-                      tickLine={false}
-                      tickMargin={10}
-                    />
-                    <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
-                    <ChartTooltip
-                      content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
-                      cursor={false}
-                    />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    <Bar
-                      dataKey="bytes_in"
-                      fill="var(--color-bytes_in)"
-                      isAnimationActive={false}
-                      radius={[0, 0, 4, 4]}
-                      stackId="traffic"
-                    />
-                    <Bar
-                      dataKey="bytes_out"
-                      fill="var(--color-bytes_out)"
-                      isAnimationActive={false}
-                      radius={[4, 4, 0, 0]}
-                      stackId="traffic"
-                    />
-                  </BarChart>
-                </ChartContainer>
-              )}
+              {hasHourly && <HourlyTrafficChart data={hourly} t={t} />}
+              {!hasHourly && hasDaily && <DailyTrafficChart data={daily} t={t} />}
             </>
           )}
         </CardContent>
