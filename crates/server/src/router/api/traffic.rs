@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use chrono::Utc;
+use chrono::{Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ApiResponse, AppError, ok};
@@ -47,11 +47,28 @@ pub struct CycleQuery {
     pub history: Option<u32>,
 }
 
+#[derive(Deserialize, utoipa::IntoParams)]
+pub struct ServerDailyQuery {
+    /// Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`).
+    pub from: Option<String>,
+    /// Inclusive end date as `YYYY-MM-DD` (default: today).
+    pub to: Option<String>,
+}
+
+/// Fallback window when the caller omits `from`, in days.
+const DEFAULT_DAILY_WINDOW_DAYS: i64 = 30;
+
+fn parse_query_date(value: &str, field: &str) -> Result<NaiveDate, AppError> {
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| AppError::BadRequest(format!("Invalid {field} date, expected YYYY-MM-DD")))
+}
+
 pub fn read_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/servers/{id}/traffic", get(get_traffic))
         .route("/traffic/overview", get(get_traffic_overview))
         .route("/traffic/overview/daily", get(get_traffic_overview_daily))
+        .route("/traffic/{server_id}/daily", get(get_traffic_server_daily))
         .route("/traffic/{server_id}/cycle", get(get_traffic_cycle))
 }
 
@@ -170,6 +187,48 @@ pub async fn get_traffic_overview_daily(
 ) -> Result<Json<ApiResponse<Vec<DailyTraffic>>>, AppError> {
     let days = q.days.unwrap_or(30);
     let daily = TrafficService::overview_daily(&state.db, days).await?;
+    ok(daily)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/traffic/{server_id}/daily",
+    params(
+        ("server_id" = String, Path, description = "Server ID"),
+        ServerDailyQuery,
+    ),
+    responses(
+        (status = 200, description = "Daily traffic breakdown for one server",
+         body = ApiResponse<Vec<DailyTraffic>>),
+        (status = 400, description = "Invalid date range"),
+        (status = 404, description = "Server not found"),
+    ),
+    tag = "traffic",
+    security(("session_cookie" = []), ("api_key" = []), ("bearer_token" = []))
+)]
+pub async fn get_traffic_server_daily(
+    State(state): State<Arc<AppState>>,
+    Path(server_id): Path<String>,
+    Query(q): Query<ServerDailyQuery>,
+) -> Result<Json<ApiResponse<Vec<DailyTraffic>>>, AppError> {
+    ServerService::get_server(&state.db, &server_id).await?;
+
+    let end = match q.to.as_deref() {
+        Some(value) => parse_query_date(value, "to")?,
+        None => Utc::now().date_naive(),
+    };
+    let start = match q.from.as_deref() {
+        Some(value) => parse_query_date(value, "from")?,
+        None => end - Duration::days(DEFAULT_DAILY_WINDOW_DAYS),
+    };
+
+    if start > end {
+        return Err(AppError::BadRequest(
+            "`from` must not be after `to`".to_string(),
+        ));
+    }
+
+    let daily = TrafficService::query_daily_breakdown(&state.db, &server_id, start, end).await?;
     ok(daily)
 }
 

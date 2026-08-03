@@ -202,6 +202,7 @@ impl Modify for SecurityAddon {
         crate::router::api::traffic::get_traffic,
         crate::router::api::traffic::get_traffic_overview,
         crate::router::api::traffic::get_traffic_overview_daily,
+        crate::router::api::traffic::get_traffic_server_daily,
         crate::router::api::traffic::get_traffic_cycle,
         // cost
         crate::router::api::cost::get_cost_overview,

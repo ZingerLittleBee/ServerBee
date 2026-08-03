@@ -814,6 +814,88 @@ async fn traffic_per_server_admin_happy_path() {
 }
 
 #[tokio::test]
+async fn traffic_server_daily_admin_happy_path() {
+    // Admin GET /api/traffic/{server_id}/daily returns the daily breakdown array.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let server_id = create_server(&admin, &base_url, "traffic-srv").await;
+
+    let resp = admin
+        .get(format!(
+            "{}/api/traffic/{}/daily?from=2026-01-01&to=2026-01-31",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["data"].is_array());
+}
+
+#[tokio::test]
+async fn traffic_server_daily_defaults_to_last_30_days() {
+    // Both query params are optional; omitting them must not fail.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let server_id = create_server(&admin, &base_url, "traffic-srv").await;
+
+    let resp = admin
+        .get(format!("{}/api/traffic/{}/daily", base_url, server_id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert!(resp.json::<Value>().await.unwrap()["data"].is_array());
+}
+
+#[tokio::test]
+async fn traffic_server_daily_rejects_bad_range() {
+    // Unparsable dates and inverted ranges are client errors, not 500s.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let server_id = create_server(&admin, &base_url, "traffic-srv").await;
+
+    let malformed = admin
+        .get(format!(
+            "{}/api/traffic/{}/daily?from=not-a-date",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(malformed.status(), 400);
+
+    let inverted = admin
+        .get(format!(
+            "{}/api/traffic/{}/daily?from=2026-02-01&to=2026-01-01",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inverted.status(), 400);
+}
+
+#[tokio::test]
+async fn traffic_server_daily_not_found_404() {
+    // Unknown server id on the daily breakdown -> 404.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+
+    let resp = admin
+        .get(format!("{}/api/traffic/no-such-server/daily", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test]
 async fn traffic_cycle_admin_happy_path() {
     // Admin GET /api/traffic/{server_id}/cycle returns current + history.
     let (base_url, _tmp) = start_test_server().await;
