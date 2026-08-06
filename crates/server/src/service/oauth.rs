@@ -1,6 +1,6 @@
 use chrono::Utc;
 use oauth2::basic::BasicClient;
-use oauth2::{AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
+use oauth2::{AuthUrl, ClientId, ClientSecret, EndpointNotSet, EndpointSet, RedirectUrl, TokenUrl};
 use sea_orm::*;
 use uuid::Uuid;
 
@@ -14,6 +14,9 @@ pub const PROVIDER_GITHUB: &str = "github";
 pub const PROVIDER_GOOGLE: &str = "google";
 pub const PROVIDER_OIDC: &str = "oidc";
 
+pub type OAuthClient =
+    BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
+
 /// User info fetched from the OAuth provider.
 pub struct OAuthUserInfo {
     pub provider_user_id: String,
@@ -25,7 +28,7 @@ pub struct OAuthService;
 
 impl OAuthService {
     /// Build an oauth2 BasicClient for the given provider.
-    pub fn build_client(provider: &str, config: &OAuthConfig) -> Result<BasicClient, AppError> {
+    pub fn build_client(provider: &str, config: &OAuthConfig) -> Result<OAuthClient, AppError> {
         let base_url = config.base_url.trim_end_matches('/');
         let redirect_url = format!("{base_url}/api/auth/oauth/{provider}/callback");
 
@@ -282,7 +285,7 @@ fn build_basic_client(
     auth_url: &str,
     token_url: &str,
     redirect_url: &str,
-) -> Result<BasicClient, AppError> {
+) -> Result<OAuthClient, AppError> {
     build_basic_client_raw(
         &config.client_id,
         &config.client_secret,
@@ -298,21 +301,21 @@ fn build_basic_client_raw(
     auth_url: &str,
     token_url: &str,
     redirect_url: &str,
-) -> Result<BasicClient, AppError> {
-    Ok(BasicClient::new(
-        ClientId::new(client_id.to_string()),
-        Some(ClientSecret::new(client_secret.to_string())),
-        AuthUrl::new(auth_url.to_string())
-            .map_err(|e| AppError::Internal(format!("Invalid auth URL: {e}")))?,
-        Some(
+) -> Result<OAuthClient, AppError> {
+    Ok(BasicClient::new(ClientId::new(client_id.to_string()))
+        .set_client_secret(ClientSecret::new(client_secret.to_string()))
+        .set_auth_uri(
+            AuthUrl::new(auth_url.to_string())
+                .map_err(|e| AppError::Internal(format!("Invalid auth URL: {e}")))?,
+        )
+        .set_token_uri(
             TokenUrl::new(token_url.to_string())
                 .map_err(|e| AppError::Internal(format!("Invalid token URL: {e}")))?,
-        ),
-    )
-    .set_redirect_uri(
-        RedirectUrl::new(redirect_url.to_string())
-            .map_err(|e| AppError::Internal(format!("Invalid redirect URL: {e}")))?,
-    ))
+        )
+        .set_redirect_uri(
+            RedirectUrl::new(redirect_url.to_string())
+                .map_err(|e| AppError::Internal(format!("Invalid redirect URL: {e}")))?,
+        ))
 }
 
 /// Generate a unique username for an OAuth user.
@@ -359,12 +362,7 @@ mod tests {
     use oauth2::CsrfToken;
 
     // Build an OAuthConfig with the requested providers enabled.
-    fn config_with(
-        github: bool,
-        google: bool,
-        oidc: Option<&str>,
-        base_url: &str,
-    ) -> OAuthConfig {
+    fn config_with(github: bool, google: bool, oidc: Option<&str>, base_url: &str) -> OAuthConfig {
         OAuthConfig {
             github: github.then(|| OAuthProviderConfig {
                 client_id: "gh-client".to_string(),
@@ -402,7 +400,11 @@ mod tests {
 
         // Redirect URL is built from base_url + provider callback path.
         assert_eq!(
-            client.redirect_url().expect("redirect url set").url().as_str(),
+            client
+                .redirect_uri()
+                .expect("redirect url set")
+                .url()
+                .as_str(),
             "https://example.com/api/auth/oauth/github/callback"
         );
 
@@ -426,7 +428,11 @@ mod tests {
         let cfg = config_with(true, false, None, "https://example.com/");
         let client = OAuthService::build_client(PROVIDER_GITHUB, &cfg).expect("github client");
         assert_eq!(
-            client.redirect_url().expect("redirect url set").url().as_str(),
+            client
+                .redirect_uri()
+                .expect("redirect url set")
+                .url()
+                .as_str(),
             "https://example.com/api/auth/oauth/github/callback"
         );
     }
@@ -442,7 +448,11 @@ mod tests {
         assert_eq!(auth_url.host_str(), Some("accounts.google.com"));
         assert_eq!(auth_url.path(), "/o/oauth2/v2/auth");
         assert_eq!(
-            client.redirect_url().expect("redirect url set").url().as_str(),
+            client
+                .redirect_uri()
+                .expect("redirect url set")
+                .url()
+                .as_str(),
             "https://srv.test/api/auth/oauth/google/callback"
         );
     }
@@ -587,7 +597,9 @@ mod tests {
             .err()
             .expect("oidc userinfo should be unimplemented");
         match err {
-            AppError::Internal(msg) => assert!(msg.contains("Generic OIDC userinfo not yet implemented")),
+            AppError::Internal(msg) => {
+                assert!(msg.contains("Generic OIDC userinfo not yet implemented"))
+            }
             other => panic!("expected Internal, got {other:?}"),
         }
     }
@@ -873,9 +885,10 @@ mod tests {
         let u = AuthService::create_user(&db, "gwen", "password123", "member")
             .await
             .unwrap();
-        let acc = OAuthService::link_account(&db, &u.id, PROVIDER_GITHUB, &user_info("x", None, None))
-            .await
-            .unwrap();
+        let acc =
+            OAuthService::link_account(&db, &u.id, PROVIDER_GITHUB, &user_info("x", None, None))
+                .await
+                .unwrap();
 
         OAuthService::unlink_account(&db, &acc.id, &u.id)
             .await
@@ -894,9 +907,14 @@ mod tests {
         let intruder = AuthService::create_user(&db, "ivan", "password123", "member")
             .await
             .unwrap();
-        let acc = OAuthService::link_account(&db, &owner.id, PROVIDER_GITHUB, &user_info("y", None, None))
-            .await
-            .unwrap();
+        let acc = OAuthService::link_account(
+            &db,
+            &owner.id,
+            PROVIDER_GITHUB,
+            &user_info("y", None, None),
+        )
+        .await
+        .unwrap();
 
         // Intruder cannot delete owner's account: no row matches id + intruder.id.
         let err = OAuthService::unlink_account(&db, &acc.id, &intruder.id)
