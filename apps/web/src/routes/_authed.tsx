@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppSidebar } from '@/components/app-sidebar'
+import { SiteHeader } from '@/components/site-header'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,8 +13,7 @@ import {
   BreadcrumbSeparator
 } from '@/components/ui/breadcrumb'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { ServersWsContext } from '@/contexts/servers-ws-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useServersWs } from '@/hooks/use-servers-ws'
@@ -217,10 +217,10 @@ function AuthedLayout() {
       <SidebarProvider style={{ '--header-height': 'calc(var(--spacing) * 12)' } as CSSProperties}>
         <AppSidebar />
         <SidebarInset className="min-h-0 overflow-hidden">
-          <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
-            <div className="flex w-full min-w-0 items-center gap-1 px-4 lg:gap-2 lg:px-6">
-              <SidebarTrigger className="-ml-1" />
-              <Separator className="mx-2 data-[orientation=vertical]:h-4" orientation="vertical" />
+          <SiteHeader>
+            {breadcrumbs.length === 1 ? (
+              <h1 className="truncate font-medium text-base">{breadcrumbs[0]?.label}</h1>
+            ) : (
               <Breadcrumb className="min-w-0">
                 <BreadcrumbList className="min-w-0 flex-nowrap">
                   {breadcrumbs.map((crumb, index) => {
@@ -241,8 +241,8 @@ function AuthedLayout() {
                   })}
                 </BreadcrumbList>
               </Breadcrumb>
-            </div>
-          </header>
+            )}
+          </SiteHeader>
           {showOffline && (
             <output className="flex shrink-0 items-center justify-center gap-2 bg-amber-500/15 px-3 py-1.5 text-amber-700 text-xs dark:text-amber-400">
               <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
