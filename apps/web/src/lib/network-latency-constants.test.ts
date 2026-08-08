@@ -8,7 +8,6 @@ import {
   getLossDotBgClass,
   getLossSeverity,
   getSeverityBarColor,
-  getSeveritySquareHeight,
   isLatencyFailure
 } from './network-latency-constants'
 
@@ -74,12 +73,12 @@ describe('network-latency-constants', () => {
   })
 
   describe('getCombinedBarColor', () => {
-    it('maps severity levels to expected hex colors', () => {
-      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0 })).toBe('var(--status-healthy)')
-      expect(getCombinedBarColor({ latencyMs: 400, lossRatio: 0 })).toBe('var(--status-warning)')
-      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0.08 })).toBe('var(--status-danger)')
-      expect(getCombinedBarColor({ latencyMs: null, lossRatio: 1 })).toBe('var(--status-danger)')
-      expect(getCombinedBarColor({ latencyMs: null, lossRatio: null })).toBe('var(--color-border)')
+    it('maps severity levels to the square-grid status colors', () => {
+      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0 })).toBe('var(--network-grid-healthy)')
+      expect(getCombinedBarColor({ latencyMs: 400, lossRatio: 0 })).toBe('var(--network-grid-warning)')
+      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0.08 })).toBe('var(--network-grid-severe)')
+      expect(getCombinedBarColor({ latencyMs: null, lossRatio: 1 })).toBe('var(--network-grid-failed)')
+      expect(getCombinedBarColor({ latencyMs: null, lossRatio: null })).toBe('var(--network-grid-unknown)')
     })
   })
 
@@ -123,22 +122,16 @@ describe('network-latency-constants', () => {
   })
 
   describe('getSeverityBarColor', () => {
-    it('maps severity levels to status colors', () => {
-      expect(getSeverityBarColor('healthy')).toBe('var(--status-healthy)')
-      expect(getSeverityBarColor('warning')).toBe('var(--status-warning)')
-      expect(getSeverityBarColor('severe')).toBe('var(--status-danger)')
-      expect(getSeverityBarColor('failed')).toBe('var(--status-danger)')
-      expect(getSeverityBarColor('unknown')).toBe('var(--color-border)')
+    it('maps severity levels to the square-grid status colors', () => {
+      expect(getSeverityBarColor('healthy')).toBe('var(--network-grid-healthy)')
+      expect(getSeverityBarColor('warning')).toBe('var(--network-grid-warning)')
+      expect(getSeverityBarColor('severe')).toBe('var(--network-grid-severe)')
+      expect(getSeverityBarColor('failed')).toBe('var(--network-grid-failed)')
+      expect(getSeverityBarColor('unknown')).toBe('var(--network-grid-unknown)')
     })
-  })
 
-  describe('getSeveritySquareHeight', () => {
-    it('grows taller as severity worsens inside the 12px grid', () => {
-      expect(getSeveritySquareHeight('unknown')).toBe(4)
-      expect(getSeveritySquareHeight('healthy')).toBe(6)
-      expect(getSeveritySquareHeight('warning')).toBe(8)
-      expect(getSeveritySquareHeight('severe')).toBe(10)
-      expect(getSeveritySquareHeight('failed')).toBe(12)
+    it('keeps severe and failed visually distinct', () => {
+      expect(getSeverityBarColor('severe')).not.toBe(getSeverityBarColor('failed'))
     })
   })
 })

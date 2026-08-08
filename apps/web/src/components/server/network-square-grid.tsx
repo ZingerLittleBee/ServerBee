@@ -5,13 +5,15 @@ import {
   getLatencyStatus,
   getLossSeverity,
   getSeverityBarColor,
-  getSeveritySquareHeight,
   isLatencyFailure
 } from '@/lib/network-latency-constants'
 import { NetworkTargetBreakdown } from './network-target-breakdown'
 import type { ServerCardMetricPoint } from './server-card-network-data'
 
-const SQUARE_WIDTH = 6
+// Uniform marker geometry in the style of status.openai.com: every square is the same
+// size regardless of severity, so the baseline stays calm and color remains the only
+// severity channel.
+const SQUARE_SIZE = 6
 const SQUARE_GAP = 2
 
 interface NetworkSquareGridProps {
@@ -26,8 +28,8 @@ function averageLossRatio(point: ServerCardMetricPoint): number | null {
   return point.targets.reduce((sum, target) => sum + target.lossRatio, 0) / point.targets.length
 }
 
-// Severity is the single source of truth for each square: color, height, data-severity and
-// the abnormal count all derive from it, so the grid can never disagree with itself.
+// Severity is the single source of truth for each square: color, data-severity and the
+// abnormal count all derive from it, so the grid can never disagree with itself.
 function getPointSeverity(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): CombinedSeverity {
   if (kind === 'latency') {
     return getLatencyStatus({ latencyMs: point.value, failed: isLatencyFailure(averageLossRatio(point)) })
@@ -105,8 +107,8 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
                   data-testid="square"
                   style={{
                     backgroundColor: getSeverityBarColor(severity),
-                    height: `${getSeveritySquareHeight(severity)}px`,
-                    width: `${SQUARE_WIDTH}px`
+                    height: `${SQUARE_SIZE}px`,
+                    width: `${SQUARE_SIZE}px`
                   }}
                 />
               }

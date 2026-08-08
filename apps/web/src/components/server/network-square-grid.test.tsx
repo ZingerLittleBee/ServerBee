@@ -59,7 +59,7 @@ describe('NetworkSquareGrid', () => {
     const { container } = renderGrid('latency', [historyPoint])
 
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
-    expect(square?.style.backgroundColor).not.toBe('var(--color-border)')
+    expect(square?.style.backgroundColor).not.toBe('var(--network-grid-unknown)')
   })
 
   it('renders the unknown encoding for points without a value', () => {
@@ -74,8 +74,8 @@ describe('NetworkSquareGrid', () => {
 
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
     expect(square).toHaveAttribute('data-severity', 'unknown')
-    expect(square?.style.backgroundColor).toBe('var(--color-border)')
-    expect(square?.style.height).toBe('4px')
+    expect(square?.style.backgroundColor).toBe('var(--network-grid-unknown)')
+    expect(square?.style.height).toBe('6px')
   })
 
   it('renders at least one square even at zero width', () => {
@@ -108,7 +108,28 @@ describe('NetworkSquareGrid', () => {
     expect(screen.getByRole('img')).toHaveAccessibleName('Packet loss history: 2 samples, latest 12.0%, 1 abnormal')
   })
 
-  it('encodes loss severity through color, height and data-severity at the threshold boundaries', () => {
+  it('gives every square the same fixed geometry regardless of severity', () => {
+    const points = [
+      makeLossPoint(0, 0),
+      makeLossPoint(0.01, 1),
+      makeLossPoint(0.05, 2),
+      makeLossPoint(1, 3),
+      makeLossPoint(null, 4)
+    ]
+
+    const { container } = renderGrid('loss', points)
+
+    // One square per severity (healthy, warning, severe, failed, unknown), each rendered
+    // at the identical 6x6 size: color is the only severity channel.
+    const squares = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="square"]'))
+    expect(squares).toHaveLength(5)
+    for (const square of squares) {
+      expect(square.style.width).toBe('6px')
+      expect(square.style.height).toBe('6px')
+    }
+  })
+
+  it('encodes loss severity through color and data-severity at the threshold boundaries', () => {
     const points = [
       makeLossPoint(0, 0),
       makeLossPoint(0.005, 1),
@@ -122,12 +143,12 @@ describe('NetworkSquareGrid', () => {
 
     // The grid is row-reversed, so the latest point renders first.
     const expected = [
-      { severity: 'unknown', color: 'var(--color-border)', height: '4px' },
-      { severity: 'failed', color: 'var(--status-danger)', height: '12px' },
-      { severity: 'severe', color: 'var(--status-danger)', height: '10px' },
-      { severity: 'warning', color: 'var(--status-warning)', height: '8px' },
-      { severity: 'healthy', color: 'var(--status-healthy)', height: '6px' },
-      { severity: 'healthy', color: 'var(--status-healthy)', height: '6px' }
+      { severity: 'unknown', color: 'var(--network-grid-unknown)' },
+      { severity: 'failed', color: 'var(--network-grid-failed)' },
+      { severity: 'severe', color: 'var(--network-grid-severe)' },
+      { severity: 'warning', color: 'var(--network-grid-warning)' },
+      { severity: 'healthy', color: 'var(--network-grid-healthy)' },
+      { severity: 'healthy', color: 'var(--network-grid-healthy)' }
     ]
     const squares = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="square"]'))
     expect(squares).toHaveLength(expected.length)
@@ -135,8 +156,9 @@ describe('NetworkSquareGrid', () => {
       const square = squares[index]
       expect(square).toHaveAttribute('data-severity', exp.severity)
       expect(square?.style.backgroundColor).toBe(exp.color)
-      expect(square?.style.height).toBe(exp.height)
     })
+    // The four-step progression keeps severe and failed visually distinct.
+    expect(squares[2]?.style.backgroundColor).not.toBe(squares[1]?.style.backgroundColor)
   })
 
   it('marks latency squares with total packet loss as failed', () => {
@@ -144,8 +166,8 @@ describe('NetworkSquareGrid', () => {
 
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
     expect(square).toHaveAttribute('data-severity', 'failed')
-    expect(square?.style.backgroundColor).toBe('var(--status-danger)')
-    expect(square?.style.height).toBe('12px')
+    expect(square?.style.backgroundColor).toBe('var(--network-grid-failed)')
+    expect(square?.style.height).toBe('6px')
   })
 
   describe('contract with buildServerCardNetworkState', () => {
@@ -190,8 +212,8 @@ describe('NetworkSquareGrid', () => {
       // The latest sample renders first inside the row-reversed grid.
       const latestSquare = container.querySelector<HTMLElement>('[data-testid="square"]')
       expect(latestSquare).toHaveAttribute('data-severity', 'warning')
-      expect(latestSquare?.style.backgroundColor).toBe('var(--status-warning)')
-      expect(latestSquare?.style.height).toBe('8px')
+      expect(latestSquare?.style.backgroundColor).toBe('var(--network-grid-warning)')
+      expect(latestSquare?.style.height).toBe('6px')
       expect(container.querySelectorAll('[tabindex], button, a')).toHaveLength(0)
     })
   })

@@ -95,17 +95,28 @@ export function getCombinedSeverity({ latencyMs, lossRatio }: CombinedSeverityIn
   return 'healthy'
 }
 
+// Square-grid status palette in the style of status.openai.com: every marker shares the
+// same fixed geometry, so color is the only severity channel and severe must not collapse
+// into failed. The scoped --network-grid-* tokens (teal → amber → coral → red, plus a
+// muted neutral for unknown) keep the global --status-* fills untouched.
+const SQUARE_GRID_HEALTHY_COLOR = 'var(--network-grid-healthy)'
+const SQUARE_GRID_WARNING_COLOR = 'var(--network-grid-warning)'
+const SQUARE_GRID_SEVERE_COLOR = 'var(--network-grid-severe)'
+const SQUARE_GRID_FAILED_COLOR = 'var(--network-grid-failed)'
+const SQUARE_GRID_UNKNOWN_COLOR = 'var(--network-grid-unknown)'
+
 export function getSeverityBarColor(severity: CombinedSeverity): string {
   switch (severity) {
     case 'healthy':
-      return LATENCY_HEALTHY_BAR_COLOR
+      return SQUARE_GRID_HEALTHY_COLOR
     case 'warning':
-      return LATENCY_WARNING_BAR_COLOR
+      return SQUARE_GRID_WARNING_COLOR
     case 'severe':
+      return SQUARE_GRID_SEVERE_COLOR
     case 'failed':
-      return LATENCY_FAILED_BAR_COLOR
+      return SQUARE_GRID_FAILED_COLOR
     default:
-      return LATENCY_UNKNOWN_BAR_COLOR
+      return SQUARE_GRID_UNKNOWN_COLOR
   }
 }
 
@@ -157,19 +168,4 @@ export function getLossDotBgClass(lossRatio: number | null | undefined): string 
     return 'bg-status-warning'
   }
   return 'bg-status-danger'
-}
-
-const SQUARE_HEIGHT_BY_SEVERITY: Record<CombinedSeverity, number> = {
-  unknown: 4,
-  healthy: 6,
-  warning: 8,
-  severe: 10,
-  failed: 12
-}
-
-// Redundant non-color channel for the 12px-tall square grid: worse states stand taller, so
-// severity stays readable for color-blind users and in grayscale. Colors come from
-// getSeverityBarColor.
-export function getSeveritySquareHeight(severity: CombinedSeverity): number {
-  return SQUARE_HEIGHT_BY_SEVERITY[severity]
 }
