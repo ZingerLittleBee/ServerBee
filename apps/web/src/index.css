@@ -138,13 +138,13 @@
   --status-healthy-text: var(--color-emerald-400);
   --status-warning-text: var(--color-amber-400);
   --status-danger-text: var(--color-red-400);
-  /* Dark surfaces use deep colors near the sRGB saturation boundary, avoiding
-     out-of-gamut chroma increases that browsers clamp to the same result. */
-  --network-grid-healthy: oklch(0.576 0.175 136.991); /* #3f8f00 */
-  --network-grid-warning: oklch(0.7 0.152 70.241); /* #d98b00 */
-  --network-grid-severe: oklch(0.589 0.189 39.043); /* #d44600 */
-  --network-grid-failed: oklch(0.509 0.198 23.459); /* #bd1228 */
-  --network-grid-unknown: oklch(0.45 0 0);
+  /* Dark surfaces use a cool severity spectrum instead of the conventional
+     green, yellow, and red status palette. */
+  --network-grid-healthy: oklch(0.546 0.245 262.881); /* #2563eb */
+  --network-grid-warning: oklch(0.511 0.262 276.966); /* #4f46e5 */
+  --network-grid-severe: oklch(0.541 0.281 293.009); /* #7c3aed */
+  --network-grid-failed: oklch(0.591 0.293 322.896); /* #c026d3 */
+  --network-grid-unknown: oklch(0.439 0 0); /* #525252 */
   --chart-background: oklch(0.145 0 0);
   --chart-foreground: oklch(0.45 0 0);
   --chart-foreground-muted: oklch(0.65 0.01 260);
