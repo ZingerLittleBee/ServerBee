@@ -138,13 +138,13 @@
   --status-healthy-text: var(--color-emerald-400);
   --status-warning-text: var(--color-amber-400);
   --status-danger-text: var(--color-red-400);
-  /* Dark surfaces use a cool severity spectrum instead of the conventional
-     green, yellow, and red status palette. */
-  --network-grid-healthy: oklch(0.546 0.245 262.881); /* #2563eb */
-  --network-grid-warning: oklch(0.511 0.262 276.966); /* #4f46e5 */
-  --network-grid-severe: oklch(0.541 0.281 293.009); /* #7c3aed */
-  --network-grid-failed: oklch(0.591 0.293 322.896); /* #c026d3 */
-  --network-grid-unknown: oklch(0.439 0 0); /* #525252 */
+  /* Dark surfaces retain the conventional severity hues at lower chroma so
+     the markers stay subdued against the card surface. */
+  --network-grid-healthy: oklch(0.535 0.1 130.145);
+  --network-grid-warning: oklch(0.63 0.09 74.836);
+  --network-grid-severe: oklch(0.507 0.11 38.002);
+  --network-grid-failed: oklch(0.461 0.12 24.997);
+  --network-grid-unknown: oklch(0.45 0 0);
   --chart-background: oklch(0.145 0 0);
   --chart-foreground: oklch(0.45 0 0);
   --chart-foreground-muted: oklch(0.65 0.01 260);
