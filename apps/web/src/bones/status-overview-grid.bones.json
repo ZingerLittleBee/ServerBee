@@ -1,7 +1,7 @@
 {
   "breakpoints": {
     "375": {
-      "name": "status-overview",
+      "name": "status-overview-grid",
       "viewportWidth": 343,
       "width": 343,
       "height": 1666,
@@ -1863,7 +1863,7 @@
       ]
     },
     "768": {
-      "name": "status-overview",
+      "name": "status-overview-grid",
       "viewportWidth": 736,
       "width": 736,
       "height": 920,
@@ -3725,7 +3725,7 @@
       ]
     },
     "1024": {
-      "name": "status-overview",
+      "name": "status-overview-grid",
       "viewportWidth": 992,
       "width": 992,
       "height": 676,
@@ -5587,7 +5587,7 @@
       ]
     },
     "1280": {
-      "name": "status-overview",
+      "name": "status-overview-grid",
       "viewportWidth": 1120,
       "width": 1120,
       "height": 646,

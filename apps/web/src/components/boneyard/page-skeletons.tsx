@@ -4,7 +4,8 @@
  * Each component renders the loading branch of one surface: a `BoneSkeleton`
  * whose `name` resolves bones from the generated registry (`@/bones`), sized
  * by the matching capture fixture as hidden children. Names are deterministic
- * and mirrored one-to-one on the `/boneyard-capture` route — renaming here
+ * and mirrored one-to-one on the dev-only capture surface
+ * (`capture-page.tsx`, mounted at /boneyard-capture in dev) — renaming here
  * means renaming there and regenerating bones (`bun run generate:bones`).
  *
  * The two detail skeletons share `ServerDetailFixture` because the public
@@ -17,15 +18,25 @@ import {
   ServerDetailFixture,
   ServiceMonitorDetailFixture,
   StatusNetworkFixture,
-  StatusOverviewFixture,
+  StatusOverviewGridFixture,
+  StatusOverviewListFixture,
   TrafficOverviewFixture
 } from './fixtures'
 
-/** /status — public status overview grid. */
-export function StatusOverviewSkeleton() {
+/** /status — public status overview, grid layout. */
+export function StatusOverviewGridSkeleton() {
   return (
-    <BoneSkeleton loading name="status-overview">
-      <StatusOverviewFixture />
+    <BoneSkeleton loading name="status-overview-grid">
+      <StatusOverviewGridFixture />
+    </BoneSkeleton>
+  )
+}
+
+/** /status — public status overview, list (table) layout. */
+export function StatusOverviewListSkeleton() {
+  return (
+    <BoneSkeleton loading name="status-overview-list">
+      <StatusOverviewListFixture />
     </BoneSkeleton>
   )
 }

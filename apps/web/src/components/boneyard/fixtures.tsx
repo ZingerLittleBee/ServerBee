@@ -5,8 +5,9 @@
  * using static markup and fixed fake data — no queries, no stores, no router
  * navigation, no production data. The same fixture serves two purposes:
  *
- * 1. Build time: `boneyard-js build` renders it on `/boneyard-capture` (via
- *    the Skeleton `fixture` prop) and snapshots its geometry into bones.
+ * 1. Build time: `boneyard-js build` renders it on the dev-only
+ *    `/boneyard-capture` surface (via the Skeleton `fixture` prop) and
+ *    snapshots its geometry into bones.
  * 2. Runtime: while `loading` is true the fixture renders as the Skeleton's
  *    children, hidden with `visibility: hidden`, so the container keeps the
  *    exact loaded-page dimensions and the bone overlay lands without layout
@@ -32,11 +33,13 @@ import {
 import { CountryFlag } from '@/components/country-flag'
 import { StatusBadge } from '@/components/server/status-badge'
 import { ServerSummaryCard } from '@/components/status/server-summary-card'
+import { ServerSummaryRow } from '@/components/status/server-summary-row'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { PublicServerSummary } from '@/lib/api-schema'
+import type { PublicServerSummary, PublicStatusConfig } from '@/lib/api-schema'
+import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -277,24 +280,76 @@ const FIXTURE_SERVERS: PublicServerSummary[] = [
   }
 ]
 
-/** Mirrors the loaded grid layout of `status.index.tsx` (default grid view). */
-export function StatusOverviewFixture() {
+/** Static replica of LayoutToggle (spans, not a focusable toggle group). */
+function LayoutToggleStub({ active }: { active: 'grid' | 'list' }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border p-1">
+      <span
+        className={cn('inline-flex size-8 items-center justify-center rounded-sm', active === 'list' && 'bg-muted')}
+      >
+        <Table2 aria-hidden="true" className="size-4" />
+      </span>
+      <span
+        className={cn('inline-flex size-8 items-center justify-center rounded-sm', active === 'grid' && 'bg-muted')}
+      >
+        <LayoutGrid aria-hidden="true" className="size-4" />
+      </span>
+    </span>
+  )
+}
+
+// Same fallback thresholds the page uses when the status config has none.
+const FIXTURE_UPTIME_THRESHOLDS: Pick<PublicStatusConfig, 'uptime_red_threshold' | 'uptime_yellow_threshold'> = {
+  uptime_red_threshold: 95,
+  uptime_yellow_threshold: 100
+}
+
+/** Mirrors the loaded grid layout of `status.index.tsx`. */
+export function StatusOverviewGridFixture() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-end">
-        <span className="inline-flex items-center gap-1 rounded-md border p-1">
-          <span className="inline-flex size-8 items-center justify-center rounded-sm">
-            <Table2 aria-hidden="true" className="size-4" />
-          </span>
-          <span className="inline-flex size-8 items-center justify-center rounded-sm bg-muted">
-            <LayoutGrid aria-hidden="true" className="size-4" />
-          </span>
-        </span>
+        <LayoutToggleStub active="grid" />
       </div>
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
         {FIXTURE_SERVERS.map((server) => (
           <ServerSummaryCard clickable={false} key={server.id} server={server} />
         ))}
+      </div>
+    </div>
+  )
+}
+
+/** Mirrors the loaded list (table) layout of `status.index.tsx`. */
+export function StatusOverviewListFixture() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-end">
+        <LayoutToggleStub active="list" />
+      </div>
+      <div className="overflow-hidden rounded-md border">
+        <Table className="min-w-[1120px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[220px]">Servers</TableHead>
+              <TableHead className="w-[180px]">CPU</TableHead>
+              <TableHead className="w-[180px]">Memory</TableHead>
+              <TableHead className="w-[184px]">Disk</TableHead>
+              <TableHead className="hidden w-[184px] lg:table-cell">Network In</TableHead>
+              <TableHead className="hidden w-[220px] xl:table-cell">Uptime</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {FIXTURE_SERVERS.map((server) => (
+              <ServerSummaryRow
+                clickable={false}
+                key={server.id}
+                server={server}
+                thresholds={FIXTURE_UPTIME_THRESHOLDS}
+              />
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </div>
   )

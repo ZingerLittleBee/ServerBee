@@ -3,7 +3,8 @@
 import { registerBones } from 'boneyard-js'
 import { configureBoneyard } from 'boneyard-js/react'
 
-import _status_overview from './status-overview.bones.json'
+import _status_overview_grid from './status-overview-grid.bones.json'
+import _status_overview_list from './status-overview-list.bones.json'
 import _status_server_detail from './status-server-detail.bones.json'
 import _status_network_detail from './status-network-detail.bones.json'
 import _server_detail from './server-detail.bones.json'
@@ -13,7 +14,8 @@ import _service_monitor_detail from './service-monitor-detail.bones.json'
 configureBoneyard({"color":"#f5f5f5","darkColor":"#262626","animate":"pulse"})
 
 registerBones({
-  "status-overview": _status_overview,
+  "status-overview-grid": _status_overview_grid,
+  "status-overview-list": _status_overview_list,
   "status-server-detail": _status_server_detail,
   "status-network-detail": _status_network_detail,
   "server-detail": _server_detail,

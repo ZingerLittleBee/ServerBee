@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as BoneyardCaptureRouteImport } from './routes/boneyard-capture'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as StatusIndexRouteImport } from './routes/status.index'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
@@ -66,11 +65,6 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BoneyardCaptureRoute = BoneyardCaptureRouteImport.update({
-  id: '/boneyard-capture',
-  path: '/boneyard-capture',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedRoute = AuthedRouteImport.update({
@@ -279,7 +273,6 @@ const AuthedServersServerIdDockerIndexRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
-  '/boneyard-capture': typeof BoneyardCaptureRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/status': typeof StatusRouteWithChildren
@@ -322,7 +315,6 @@ export interface FileRoutesByFullPath {
   '/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
 }
 export interface FileRoutesByTo {
-  '/boneyard-capture': typeof BoneyardCaptureRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/ip-quality': typeof AuthedIpQualityRoute
@@ -366,7 +358,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_authed': typeof AuthedRouteWithChildren
-  '/boneyard-capture': typeof BoneyardCaptureRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/status': typeof StatusRouteWithChildren
@@ -413,7 +404,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/boneyard-capture'
     | '/login'
     | '/onboarding'
     | '/status'
@@ -456,7 +446,6 @@ export interface FileRouteTypes {
     | '/servers/$serverId/docker/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/boneyard-capture'
     | '/login'
     | '/onboarding'
     | '/ip-quality'
@@ -499,7 +488,6 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_authed'
-    | '/boneyard-capture'
     | '/login'
     | '/onboarding'
     | '/status'
@@ -545,7 +533,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
-  BoneyardCaptureRoute: typeof BoneyardCaptureRoute
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
   StatusRoute: typeof StatusRouteWithChildren
@@ -572,13 +559,6 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/boneyard-capture': {
-      id: '/boneyard-capture'
-      path: '/boneyard-capture'
-      fullPath: '/boneyard-capture'
-      preLoaderRoute: typeof BoneyardCaptureRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed': {
@@ -963,7 +943,6 @@ const StatusRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
-  BoneyardCaptureRoute: BoneyardCaptureRoute,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
   StatusRoute: StatusRouteWithChildren,
