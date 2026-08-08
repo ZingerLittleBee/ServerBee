@@ -4,7 +4,7 @@ import {
   type CombinedSeverity,
   getLatencyStatus,
   getLossSeverity,
-  getSeverityBarColor,
+  getSeveritySquareColor,
   isLatencyFailure
 } from '@/lib/network-latency-constants'
 import { NetworkTargetBreakdown } from './network-target-breakdown'
@@ -29,17 +29,12 @@ function averageLossRatio(point: ServerCardMetricPoint): number | null {
 }
 
 // Severity is the single source of truth for each square: color, data-severity and the
-// abnormal count all derive from it, so the grid can never disagree with itself.
+// summary's severity counts all derive from it, so the grid can never disagree with itself.
 function getPointSeverity(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): CombinedSeverity {
   if (kind === 'latency') {
     return getLatencyStatus({ latencyMs: point.value, failed: isLatencyFailure(averageLossRatio(point)) })
   }
   return getLossSeverity(point.value)
-}
-
-function isAbnormalSquare(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): boolean {
-  const severity = getPointSeverity(point, kind)
-  return severity !== 'healthy' && severity !== 'unknown'
 }
 
 function formatSummaryValue(point: ServerCardMetricPoint | undefined, kind: 'latency' | 'loss'): string {
@@ -78,10 +73,27 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
 export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
   const { t } = useTranslation(['servers'])
   const visible = points.toReversed()
+  // With identical square geometry, color is the only visual severity channel, so the
+  // role="img" summary carries the per-severity breakdown for screen-reader users.
+  const severityCounts: Record<Exclude<CombinedSeverity, 'healthy'>, number> = {
+    warning: 0,
+    severe: 0,
+    failed: 0,
+    unknown: 0
+  }
+  for (const point of points) {
+    const severity = getPointSeverity(point, kind)
+    if (severity !== 'healthy') {
+      severityCounts[severity] += 1
+    }
+  }
   const summary = t(kind === 'latency' ? 'card_latency_history_summary' : 'card_loss_history_summary', {
-    abnormal: points.filter((point) => isAbnormalSquare(point, kind)).length,
+    failed: severityCounts.failed,
     latest: formatSummaryValue(points.at(-1), kind),
-    samples: points.length
+    samples: points.length,
+    severe: severityCounts.severe,
+    unknown: severityCounts.unknown,
+    warning: severityCounts.warning
   })
 
   // Every card renders ~30 squares per grid, so per-square tab stops would drown the page's
@@ -106,7 +118,7 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
                   data-severity={severity}
                   data-testid="square"
                   style={{
-                    backgroundColor: getSeverityBarColor(severity),
+                    backgroundColor: getSeveritySquareColor(severity),
                     height: `${SQUARE_SIZE}px`,
                     width: `${SQUARE_SIZE}px`
                   }}

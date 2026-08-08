@@ -6,13 +6,6 @@ const LATENCY_HEALTHY_TEXT_CLASS = 'text-status-healthy-text'
 const LATENCY_WARNING_TEXT_CLASS = 'text-status-warning-text'
 const LATENCY_FAILED_TEXT_CLASS = 'text-status-danger-text'
 
-// "No data" squares read as an empty slot in the grid, so they take the border
-// tone rather than the near-invisible muted surface.
-export const LATENCY_UNKNOWN_BAR_COLOR = 'var(--color-border)'
-const LATENCY_HEALTHY_BAR_COLOR = 'var(--status-healthy)'
-const LATENCY_WARNING_BAR_COLOR = 'var(--status-warning)'
-const LATENCY_FAILED_BAR_COLOR = 'var(--status-danger)'
-
 export type LatencyStatus = 'unknown' | 'healthy' | 'warning' | 'failed'
 
 interface LatencyStatusInput {
@@ -49,21 +42,6 @@ export function getLatencyTextClass(input: LatencyStatusInput): string {
       return LATENCY_UNKNOWN_TEXT_CLASS
     default:
       return LATENCY_UNKNOWN_TEXT_CLASS
-  }
-}
-
-export function getLatencyBarColor(input: LatencyStatusInput): string {
-  switch (getLatencyStatus(input)) {
-    case 'healthy':
-      return LATENCY_HEALTHY_BAR_COLOR
-    case 'warning':
-      return LATENCY_WARNING_BAR_COLOR
-    case 'failed':
-      return LATENCY_FAILED_BAR_COLOR
-    case 'unknown':
-      return LATENCY_UNKNOWN_BAR_COLOR
-    default:
-      return LATENCY_UNKNOWN_BAR_COLOR
   }
 }
 
@@ -105,7 +83,7 @@ const SQUARE_GRID_SEVERE_COLOR = 'var(--network-grid-severe)'
 const SQUARE_GRID_FAILED_COLOR = 'var(--network-grid-failed)'
 const SQUARE_GRID_UNKNOWN_COLOR = 'var(--network-grid-unknown)'
 
-export function getSeverityBarColor(severity: CombinedSeverity): string {
+export function getSeveritySquareColor(severity: CombinedSeverity): string {
   switch (severity) {
     case 'healthy':
       return SQUARE_GRID_HEALTHY_COLOR
@@ -118,10 +96,6 @@ export function getSeverityBarColor(severity: CombinedSeverity): string {
     default:
       return SQUARE_GRID_UNKNOWN_COLOR
   }
-}
-
-export function getCombinedBarColor(input: CombinedSeverityInput): string {
-  return getSeverityBarColor(getCombinedSeverity(input))
 }
 
 // Packet-loss severity for the square grid, derived from the shared ratio thresholds so

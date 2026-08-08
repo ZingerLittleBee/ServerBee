@@ -90,22 +90,28 @@ describe('NetworkSquareGrid', () => {
 
     const { container } = renderGrid('latency', points)
 
-    expect(screen.getByRole('img')).toHaveAccessibleName('Latency history: 30 samples, latest 79ms, 0 abnormal')
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      'Latency history: 30 samples, latest 79ms, 0 warning, 0 severe, 0 failed, 0 unknown'
+    )
     expect(container.querySelectorAll('[tabindex], button, a')).toHaveLength(0)
   })
 
-  it('counts warning and failed squares as abnormal based on severity', () => {
+  it('summarizes the per-severity breakdown in the accessible name', () => {
     const points = [makePoint(50), makePoint(800), makePoint(120, 1)]
 
     renderGrid('latency', points)
 
-    expect(screen.getByRole('img')).toHaveAccessibleName('Latency history: 3 samples, latest 120ms, 2 abnormal')
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      'Latency history: 3 samples, latest 120ms, 1 warning, 0 severe, 1 failed, 0 unknown'
+    )
   })
 
   it('summarizes packet loss as a percentage', () => {
     renderGrid('loss', [makeLossPoint(0, 0), makeLossPoint(0.12, 1)])
 
-    expect(screen.getByRole('img')).toHaveAccessibleName('Packet loss history: 2 samples, latest 12.0%, 1 abnormal')
+    expect(screen.getByRole('img')).toHaveAccessibleName(
+      'Packet loss history: 2 samples, latest 12.0%, 0 warning, 1 severe, 0 failed, 0 unknown'
+    )
   })
 
   it('gives every square the same fixed geometry regardless of severity', () => {
@@ -208,7 +214,10 @@ describe('NetworkSquareGrid', () => {
 
       const { container } = renderGrid('loss', state.lossPoints)
 
-      expect(screen.getByRole('img')).toHaveAccessibleName('Packet loss history: 30 samples, latest 2.0%, 1 abnormal')
+      // 29 null padding slots read as unknown; only the realtime 2% sample is a warning.
+      expect(screen.getByRole('img')).toHaveAccessibleName(
+        'Packet loss history: 30 samples, latest 2.0%, 1 warning, 0 severe, 0 failed, 29 unknown'
+      )
       // The latest sample renders first inside the row-reversed grid.
       const latestSquare = container.querySelector<HTMLElement>('[data-testid="square"]')
       expect(latestSquare).toHaveAttribute('data-severity', 'warning')

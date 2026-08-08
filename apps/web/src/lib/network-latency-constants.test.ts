@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  getCombinedBarColor,
   getCombinedSeverity,
-  getLatencyBarColor,
   getLatencyStatus,
   getLatencyTextClass,
   getLossDotBgClass,
   getLossSeverity,
-  getSeverityBarColor,
+  getSeveritySquareColor,
   isLatencyFailure
 } from './network-latency-constants'
 
@@ -15,27 +13,23 @@ describe('network-latency-constants', () => {
   it('treats latency below 300ms as healthy', () => {
     expect(getLatencyStatus({ latencyMs: 299 })).toBe('healthy')
     expect(getLatencyTextClass({ latencyMs: 299 })).toBe('text-status-healthy-text')
-    expect(getLatencyBarColor({ latencyMs: 299 })).toBe('var(--status-healthy)')
   })
 
   it('treats latency at or above 300ms as warning', () => {
     expect(getLatencyStatus({ latencyMs: 300 })).toBe('warning')
     expect(getLatencyTextClass({ latencyMs: 300 })).toBe('text-status-warning-text')
-    expect(getLatencyBarColor({ latencyMs: 300 })).toBe('var(--status-warning)')
   })
 
   it('treats explicit failure as failed even without latency', () => {
     expect(isLatencyFailure(1)).toBe(true)
     expect(getLatencyStatus({ latencyMs: null, failed: true })).toBe('failed')
     expect(getLatencyTextClass({ latencyMs: null, failed: true })).toBe('text-status-danger-text')
-    expect(getLatencyBarColor({ latencyMs: null, failed: true })).toBe('var(--status-danger)')
   })
 
   it('keeps missing data muted when there is no failure signal', () => {
     expect(isLatencyFailure(null)).toBe(false)
     expect(getLatencyStatus({ latencyMs: null })).toBe('unknown')
     expect(getLatencyTextClass({ latencyMs: null })).toBe('text-muted-foreground')
-    expect(getLatencyBarColor({ latencyMs: null })).toBe('var(--color-border)')
   })
 
   describe('getCombinedSeverity', () => {
@@ -69,16 +63,6 @@ describe('network-latency-constants', () => {
       expect(getCombinedSeverity({ latencyMs: 50, lossRatio: null })).toBe('healthy')
       expect(getCombinedSeverity({ latencyMs: 400, lossRatio: null })).toBe('warning')
       expect(getCombinedSeverity({ latencyMs: null, lossRatio: 0.1 })).toBe('severe')
-    })
-  })
-
-  describe('getCombinedBarColor', () => {
-    it('maps severity levels to the square-grid status colors', () => {
-      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0 })).toBe('var(--network-grid-healthy)')
-      expect(getCombinedBarColor({ latencyMs: 400, lossRatio: 0 })).toBe('var(--network-grid-warning)')
-      expect(getCombinedBarColor({ latencyMs: 50, lossRatio: 0.08 })).toBe('var(--network-grid-severe)')
-      expect(getCombinedBarColor({ latencyMs: null, lossRatio: 1 })).toBe('var(--network-grid-failed)')
-      expect(getCombinedBarColor({ latencyMs: null, lossRatio: null })).toBe('var(--network-grid-unknown)')
     })
   })
 
@@ -121,17 +105,17 @@ describe('network-latency-constants', () => {
     })
   })
 
-  describe('getSeverityBarColor', () => {
+  describe('getSeveritySquareColor', () => {
     it('maps severity levels to the square-grid status colors', () => {
-      expect(getSeverityBarColor('healthy')).toBe('var(--network-grid-healthy)')
-      expect(getSeverityBarColor('warning')).toBe('var(--network-grid-warning)')
-      expect(getSeverityBarColor('severe')).toBe('var(--network-grid-severe)')
-      expect(getSeverityBarColor('failed')).toBe('var(--network-grid-failed)')
-      expect(getSeverityBarColor('unknown')).toBe('var(--network-grid-unknown)')
+      expect(getSeveritySquareColor('healthy')).toBe('var(--network-grid-healthy)')
+      expect(getSeveritySquareColor('warning')).toBe('var(--network-grid-warning)')
+      expect(getSeveritySquareColor('severe')).toBe('var(--network-grid-severe)')
+      expect(getSeveritySquareColor('failed')).toBe('var(--network-grid-failed)')
+      expect(getSeveritySquareColor('unknown')).toBe('var(--network-grid-unknown)')
     })
 
     it('keeps severe and failed visually distinct', () => {
-      expect(getSeverityBarColor('severe')).not.toBe(getSeverityBarColor('failed'))
+      expect(getSeveritySquareColor('severe')).not.toBe(getSeveritySquareColor('failed'))
     })
   })
 })
