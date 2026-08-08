@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StatusOverviewSkeleton } from '@/components/boneyard/page-skeletons'
 import { LayoutToggle } from '@/components/status/layout-toggle'
 import { ServerSummaryCard } from '@/components/status/server-summary-card'
 import { ServerSummaryRow } from '@/components/status/server-summary-row'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
@@ -68,13 +68,7 @@ function PublicStatusIndex() {
   }
 
   if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 6 }, (_, i) => (
-          <Skeleton className="h-20 rounded-lg" key={`skel-${i.toString()}`} />
-        ))}
-      </div>
-    )
+    return <StatusOverviewSkeleton />
   }
 
   if (error || !servers) {

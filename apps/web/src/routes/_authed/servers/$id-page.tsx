@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CountryFlag } from '@/components/country-flag'
 import { NetworkTab } from '@/components/network/network-tab'
+import { ServerDetailSkeleton } from '@/components/boneyard/page-skeletons'
 import { AgentReenrollmentDialog } from '@/components/server/agent-reenrollment-dialog'
 import { AgentVersionSection } from '@/components/server/agent-version-section'
 import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
@@ -13,7 +14,6 @@ import { StatusBadge } from '@/components/server/status-badge'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
 import { ServerDetailContent } from '@/components/status/server-detail-content'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
@@ -169,16 +169,7 @@ export function ServerDetailPage() {
   const isAdmin = user?.role === 'admin'
 
   if (serverLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-96" />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-        </div>
-      </div>
-    )
+    return <ServerDetailSkeleton />
   }
 
   if (!server) {

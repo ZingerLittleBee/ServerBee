@@ -3,9 +3,9 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StatusNetworkSkeleton } from '@/components/boneyard/page-skeletons'
 import { StatusBadge } from '@/components/server/status-badge'
 import { NetworkDetailContent } from '@/components/status/network-detail-content'
-import { Skeleton } from '@/components/ui/skeleton'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicNetworkServerDetail } from '@/lib/api-schema'
@@ -63,13 +63,7 @@ function PublicNetworkDetailPage() {
   // Wait for the config before choosing between redirect and standalone so we
   // never flash the standalone page on sites that will redirect.
   if (!isStandalone || isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-96" />
-        <Skeleton className="h-48 w-full" />
-      </div>
-    )
+    return <StatusNetworkSkeleton />
   }
 
   if (error || !data) {

@@ -3,11 +3,11 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StatusServerDetailSkeleton } from '@/components/boneyard/page-skeletons'
 import { CountryFlag } from '@/components/country-flag'
 import { PublicNetworkTab } from '@/components/network/public-network-tab'
 import { StatusBadge } from '@/components/server/status-badge'
 import { ServerDetailContent } from '@/components/status/server-detail-content'
-import { Skeleton } from '@/components/ui/skeleton'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
 import { api } from '@/lib/api-client'
 import type { PublicServerDetail } from '@/lib/api-schema'
@@ -56,16 +56,7 @@ function PublicServerDetailPage() {
   }
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-96" />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-        </div>
-      </div>
-    )
+    return <StatusServerDetailSkeleton />
   }
 
   if (error || !data) {
