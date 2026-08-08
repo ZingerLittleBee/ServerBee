@@ -7,3 +7,11 @@ export const SEGMENT_COLOR_VALUE_MAP: Record<UptimeColor, string> = {
   red: 'var(--uptime-down)',
   gray: 'var(--color-muted)'
 }
+
+/** Higher-separation palette shared with the status-history markers. */
+export const STATUS_HISTORY_COLOR_VALUE_MAP: Record<UptimeColor, string> = {
+  green: 'var(--network-grid-healthy)',
+  yellow: 'var(--network-grid-warning)',
+  red: 'var(--network-grid-failed)',
+  gray: 'var(--network-grid-unknown)'
+}

@@ -7,9 +7,12 @@ import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
 import { TooltipContent } from '@/components/charts/tooltip/tooltip-content'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { computeUptimeColor, formatUptimeTooltip, type UptimeColor } from '@/lib/widget-helpers'
-import { SEGMENT_COLOR_VALUE_MAP } from './uptime-timeline-colors'
+import { SEGMENT_COLOR_VALUE_MAP, STATUS_HISTORY_COLOR_VALUE_MAP } from './uptime-timeline-colors'
+
+export type UptimeTimelineAppearance = 'default' | 'status-history'
 
 export interface UptimeTimelineProps {
+  appearance?: UptimeTimelineAppearance
   days: UptimeDailyEntry[]
   height?: number
   rangeDays: number
@@ -23,8 +26,11 @@ export interface UptimeTimelineProps {
 const FULL_HEIGHT_VALUE = 1
 const VALUE_DOMAIN: [number, number] = [0, FULL_HEIGHT_VALUE]
 
-/** Gap between day columns as a fraction of the band, matching the old 1.5px gap at 90 days. */
-const DAY_GAP_RATIO = 0.12
+/** Gaps between day columns as a fraction of the band. */
+const DAY_GAP_RATIOS: Record<UptimeTimelineAppearance, number> = {
+  default: 0.12,
+  'status-history': 0.4
+}
 
 const STATUS_ORDER: UptimeColor[] = ['green', 'yellow', 'red', 'gray']
 
@@ -68,6 +74,7 @@ function buildRows(
 }
 
 export function UptimeTimeline({
+  appearance = 'default',
   days,
   rangeDays,
   yellowThreshold = 100,
@@ -84,6 +91,7 @@ export function UptimeTimeline({
   )
   const accessibleRows = useMemo(() => sampleChartRows(rows), [rows])
   const timelineTitle = `${t('uptime_days_ago', { count: rangeDays })} - ${t('uptime_today')}`
+  const colorValueMap = appearance === 'status-history' ? STATUS_HISTORY_COLOR_VALUE_MAP : SEGMENT_COLOR_VALUE_MAP
 
   return (
     <div className="w-full">
@@ -98,7 +106,7 @@ export function UptimeTimeline({
         <div aria-hidden="true" data-testid="bklit-uptime-timeline" style={{ height }}>
           <BarChart
             aspectRatio=""
-            barGap={DAY_GAP_RATIO}
+            barGap={DAY_GAP_RATIOS[appearance]}
             className="h-full w-full"
             data={rows}
             margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
@@ -118,7 +126,7 @@ export function UptimeTimeline({
                   <TooltipContent
                     rows={[
                       {
-                        color: SEGMENT_COLOR_VALUE_MAP[status],
+                        color: colorValueMap[status],
                         label: t(LEGEND_LABEL_KEYS[status]),
                         value: tooltip.percentage
                       }
@@ -134,7 +142,7 @@ export function UptimeTimeline({
               showDatePill={false}
             />
             {STATUS_ORDER.map((status) => (
-              <Bar animate={false} dataKey={status} fill={SEGMENT_COLOR_VALUE_MAP[status]} key={status} lineCap={0} />
+              <Bar animate={false} dataKey={status} fill={colorValueMap[status]} key={status} lineCap={0} />
             ))}
           </BarChart>
         </div>
@@ -167,7 +175,7 @@ export function UptimeTimeline({
             <span className="flex items-center gap-1" key={status}>
               <span
                 className="inline-block size-2.5 rounded-[2px]"
-                style={{ backgroundColor: SEGMENT_COLOR_VALUE_MAP[status] }}
+                style={{ backgroundColor: colorValueMap[status] }}
               />
               {t(LEGEND_LABEL_KEYS[status])}
             </span>
