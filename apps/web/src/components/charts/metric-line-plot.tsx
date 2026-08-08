@@ -72,20 +72,23 @@ export function MetricLinePlot({
           margin={{ left: yMarginLeft, right: 16, top: 8, bottom: 36 }}
           xDataKey="timestamp"
           yDomain={yDomain}
-          yDomainTweenDuration={200}
+          // Bklit "Updating data smoothly": morph line + y-domain when data changes.
+          yDomainTween
+          yDomainTweenDuration={400}
         >
           <Grid vertical={false} />
-          <XAxis formatValue={formatXAxisValue} numTicks={5} tickMode="domain" />
+          {/* Date pill is off — keep axis labels visible under the crosshair. */}
+          <XAxis fadeOnHover={false} formatValue={formatXAxisValue} numTicks={5} tickMode="domain" />
           <YAxis formatValue={formatYAxisValue} />
           <ChartTooltip
             content={({ point }) => (
               <TooltipContent rows={tooltipRows(point)} title={formatTooltipLabel(String(point.timestamp))} />
             )}
+            formatDatePill={formatXAxisValue}
             showDatePill={false}
           />
           {series.map((item) => (
             <Line
-              animate={false}
               connectNulls
               dataKey={item.dataKey}
               fadeEdges={false}

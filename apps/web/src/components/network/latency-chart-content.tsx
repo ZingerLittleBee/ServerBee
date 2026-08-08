@@ -186,7 +186,7 @@ export function LatencyChartContent({
           yDomainTweenDuration={200}
         >
           <Grid vertical={false} />
-          <XAxis formatValue={axisFormatter} numTicks={5} />
+          <XAxis fadeOnHover={false} formatValue={axisFormatter} numTicks={5} />
           <YAxis formatValue={(value) => `${value.toFixed(0)} ms`} />
           <ChartTooltip
             content={({ point }) => (

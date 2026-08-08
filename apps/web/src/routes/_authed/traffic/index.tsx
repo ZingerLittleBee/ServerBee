@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
+import { curveStep } from '@visx/curve'
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Crown, Server } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -350,7 +351,9 @@ export function TrafficPage() {
             <MetricAreaPlot
               ariaLabel={t('traffic_global_trend')}
               className="h-[300px] w-full"
+              curve={curveStep}
               data={dailyData ?? []}
+              fillOpacity={0.3}
               formatTime={formatDayTick}
               formatTooltipLabel={formatDayLabel}
               formatValue={formatBytes}

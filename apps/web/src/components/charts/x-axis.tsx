@@ -11,6 +11,13 @@ import { LINE_LOADING_PULSE_EASE } from './line-loading-timing'
 const X_AXIS_POSITION_TWEEN_MS = DEFAULT_Y_DOMAIN_TWEEN_MS
 
 export interface XAxisProps {
+  /**
+   * Fade tick labels near the crosshair while hovering so a date pill can
+   * occupy that space. Disable when `ChartTooltip` has `showDatePill={false}`,
+   * otherwise the hovered x value disappears with no replacement.
+   * Default: true
+   */
+  fadeOnHover?: boolean
   /** Format tick labels. Defaults to the built-in abbreviated date. */
   formatValue?: (date: Date) => string
   /** Number of ticks to show (including first and last). Default: 5. */
@@ -33,6 +40,7 @@ interface AxisTick {
 interface XAxisLabelProps {
   animatePosition: boolean
   crosshairX: number | null
+  fadeOnHover: boolean
   hoveredLabel: string | null
   isHovering: boolean
   label: string
@@ -40,29 +48,63 @@ interface XAxisLabelProps {
   x: number
 }
 
+/** Pure opacity for x-axis tick labels under crosshair hover. */
+export function resolveXAxisLabelOpacity({
+  crosshairX,
+  fadeOnHover,
+  hoveredLabel,
+  isHovering,
+  label,
+  tickerHalfWidth,
+  x
+}: {
+  crosshairX: number | null
+  fadeOnHover: boolean
+  hoveredLabel: string | null
+  isHovering: boolean
+  label: string
+  tickerHalfWidth: number
+  x: number
+}): number {
+  if (!(fadeOnHover && isHovering && crosshairX !== null)) {
+    return 1
+  }
+
+  const fadeBuffer = 20
+  const fadeRadius = tickerHalfWidth + fadeBuffer
+  const distance = Math.abs(x - crosshairX)
+
+  if (distance < tickerHalfWidth) {
+    return 0
+  }
+  if (hoveredLabel && label === hoveredLabel) {
+    return 0
+  }
+  if (distance < fadeRadius) {
+    return (distance - tickerHalfWidth) / fadeBuffer
+  }
+  return 1
+}
+
 function XAxisLabel({
   label,
   x,
   crosshairX,
+  fadeOnHover,
   hoveredLabel,
   isHovering,
   tickerHalfWidth,
   animatePosition
 }: XAxisLabelProps) {
-  const fadeBuffer = 20
-  const fadeRadius = tickerHalfWidth + fadeBuffer
-
-  let opacity = 1
-  if (isHovering && crosshairX !== null) {
-    const distance = Math.abs(x - crosshairX)
-    if (distance < tickerHalfWidth) {
-      opacity = 0
-    } else if (hoveredLabel && label === hoveredLabel) {
-      opacity = 0
-    } else if (distance < fadeRadius) {
-      opacity = (distance - tickerHalfWidth) / fadeBuffer
-    }
-  }
+  const opacity = resolveXAxisLabelOpacity({
+    crosshairX,
+    fadeOnHover,
+    hoveredLabel,
+    isHovering,
+    label,
+    tickerHalfWidth,
+    x
+  })
 
   return (
     <div
@@ -558,6 +600,7 @@ const XAxisInner = memo(function XAxisInner({
   numTicks = 5,
   tickerHalfWidth = 50,
   tickMode = 'data',
+  fadeOnHover = true,
   formatValue,
   container
 }: XAxisProps & { container: HTMLDivElement }) {
@@ -629,6 +672,7 @@ const XAxisInner = memo(function XAxisInner({
         <XAxisLabel
           animatePosition={xDomain == null}
           crosshairX={crosshairX}
+          fadeOnHover={fadeOnHover}
           hoveredLabel={hoveredLabel}
           isHovering={isHovering}
           key={`${item.date.getTime()}-${item.x}`}

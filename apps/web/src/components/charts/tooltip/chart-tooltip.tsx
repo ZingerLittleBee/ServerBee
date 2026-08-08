@@ -47,6 +47,8 @@ export interface ChartTooltipProps {
   dotStrokeWidth?: number
   /** Dot style: filled circle or transparent ring. Default: "dot" */
   dotVariant?: 'dot' | 'ring'
+  /** Format the animated date pill. Defaults to the chart's built-in short date labels. */
+  formatDatePill?: (date: Date) => string
   /**
    * Color for the crosshair/indicator line. When a function, receives the hovered point
    * (e.g. for candlestick: match candle color from close vs open). Default: --chart-crosshair.
@@ -94,6 +96,7 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
   content,
   rows: rowsRenderer,
   dotColor: dotColorProp,
+  formatDatePill,
   children,
   className = '',
   container,
@@ -109,6 +112,7 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
 }: ChartTooltipInnerProps) {
   const {
     tooltipData,
+    data,
     width,
     height,
     innerHeight,
@@ -126,7 +130,11 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
   const { tooltipSpring } = useChartConfig()
 
   const isHorizontal = orientation === 'horizontal'
-  const discreteInteraction = dateLabels.length > 60
+  const resolvedDateLabels = useMemo(
+    () => (formatDatePill ? data.map((point) => formatDatePill(xAccessor(point))) : dateLabels),
+    [data, dateLabels, formatDatePill, xAccessor]
+  )
+  const discreteInteraction = resolvedDateLabels.length > 60
 
   const resolvedDotSize = useMemo(() => {
     if (dotVariant !== 'ring' || !bandWidth || lines.length === 0) {
@@ -310,7 +318,7 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
         currentIndex={tooltipData?.index ?? 0}
         discreteInteraction={discreteInteraction}
         enabled={showDatePill && !isHorizontal}
-        labels={dateLabels}
+        labels={resolvedDateLabels}
         springConfig={springConfig}
         visible={visible}
         xWithMargin={xWithMargin}

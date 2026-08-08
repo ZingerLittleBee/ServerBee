@@ -16,6 +16,7 @@ import { SeriesHighlightLayer } from './series-highlight-layer'
 import { SeriesHoverDim } from './series-hover-dim'
 import { SeriesMarkers } from './series-markers'
 import type { SeriesPointMarkerStyle } from './series-point-marker'
+import { useAnimatedSeriesPath } from './use-animated-series-path'
 
 type CurveFactory = NonNullable<ComponentProps<typeof AreaClosed>['curve']>
 
@@ -161,7 +162,8 @@ export function Area({
     xAccessor,
     lines,
     chartPhase,
-    notifyLoadingPulseComplete
+    notifyLoadingPulseComplete,
+    yDomainTweenDuration
   } = useChartStable()
   const yScale = useYScale(yAxisId)
   const { handleLoadingPulseComplete, pulseMode, pulseEpoch, showLoadingPulse, showSeriesContent } =
@@ -198,6 +200,27 @@ export function Area({
   )
   const isDefined = useCallback((datum: Record<string, unknown>) => isAreaDatumDefined(datum, dataKey), [dataKey])
 
+  // Same ready-phase data morph as Line — used when range filters refresh data.
+  // Gaps disable the morph so AreaClosed/LinePath can respect `defined`.
+  const useDataTransitionPath = animate && chartPhase === 'ready' && renderData.every(isDefined)
+  const baselineY = useMemo(() => {
+    const range = yScale.range() as number[]
+    return range[0] ?? innerHeight
+  }, [innerHeight, yScale])
+  const { pathD: animatedPathD, areaPathD: animatedAreaPathD } = useAnimatedSeriesPath({
+    baselineY,
+    chartPhase,
+    curve,
+    dataKey,
+    durationMs: yDomainTweenDuration,
+    enabled: useDataTransitionPath,
+    innerWidth,
+    renderData,
+    xAccessor,
+    xScale,
+    yScale
+  })
+
   const hasDashTail = resolveDashTailBounds(dashFromIndex, data.length)
   // The stroke gradient is only emitted when at least one edge fades, so fall
   // back to the resolved solid color otherwise — avoids an invalid url(#...).
@@ -214,34 +237,51 @@ export function Area({
     visibleStroke = strokePaint
   }
   const shouldMeasurePath = showLine && (showSeriesContent || showLoadingPulse)
+  const useAnimatedFill = useDataTransitionPath && animatedAreaPathD.length > 0
+  const useAnimatedStroke = useDataTransitionPath && animatedPathD.length > 0
 
   const seriesLayers = (
     <>
       {showSeriesContent && showAreaFill ? (
-        <AreaClosed
-          curve={curve}
-          data={renderData}
-          defined={isDefined}
-          fill={areaFill}
-          x={(d) => xScale(xAccessor(d)) ?? 0}
-          y={getY}
-          yScale={yScale}
-        />
+        useAnimatedFill ? (
+          <path d={animatedAreaPathD} fill={areaFill} />
+        ) : (
+          <AreaClosed
+            curve={curve}
+            data={renderData}
+            defined={isDefined}
+            fill={areaFill}
+            x={(d) => xScale(xAccessor(d)) ?? 0}
+            y={getY}
+            yScale={yScale}
+          />
+        )
       ) : null}
 
       {shouldMeasurePath ? (
         <>
-          <LinePath
-            curve={curve}
-            data={renderData}
-            defined={isDefined}
-            innerRef={pathRef}
-            stroke={visibleStroke}
-            strokeLinecap="round"
-            strokeWidth={strokeWidth}
-            x={(d) => xScale(xAccessor(d)) ?? 0}
-            y={getY}
-          />
+          {useAnimatedStroke ? (
+            <path
+              d={animatedPathD}
+              fill="none"
+              ref={pathRef}
+              stroke={visibleStroke}
+              strokeLinecap="round"
+              strokeWidth={strokeWidth}
+            />
+          ) : (
+            <LinePath
+              curve={curve}
+              data={renderData}
+              defined={isDefined}
+              innerRef={pathRef}
+              stroke={visibleStroke}
+              strokeLinecap="round"
+              strokeWidth={strokeWidth}
+              x={(d) => xScale(xAccessor(d)) ?? 0}
+              y={getY}
+            />
+          )}
           {showSeriesStroke ? (
             <SeriesDashTailOverlay
               dashArray={dashArray}

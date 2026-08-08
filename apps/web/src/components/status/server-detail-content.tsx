@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Activity, BarChart3, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type * as React from 'react'
 import { useMemo } from 'react'
@@ -84,6 +84,7 @@ function useMetricSeries(serverId: string, range: TimeRange, isAdminVariant: boo
       )
     },
     enabled: !isAdminVariant && serverId.length > 0,
+    placeholderData: keepPreviousData,
     refetchInterval: 60_000
   })
   return { adminRecords: adminQuery.data, publicMetrics }
@@ -99,6 +100,7 @@ function useAdminGpuRecords(serverId: string, range: TimeRange, isAdminVariant: 
       )
     },
     enabled: isAdminVariant && serverId.length > 0 && !isRealtime,
+    placeholderData: keepPreviousData,
     refetchInterval: 60_000
   })
 }

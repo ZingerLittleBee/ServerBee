@@ -11,13 +11,13 @@ vi.mock('./line-chart', () => ({
 }))
 vi.mock('./line', () => ({
   Line: ({
-    animate,
+    animate = true,
     connectNulls,
     dataKey,
     fadeEdges,
     stroke
   }: {
-    animate: boolean
+    animate?: boolean
     connectNulls: boolean
     dataKey: string
     fadeEdges: boolean
@@ -44,7 +44,7 @@ vi.mock('./y-axis', () => ({ YAxis: () => null }))
 const { MetricLinePlot } = await import('./metric-line-plot')
 
 describe('MetricLinePlot', () => {
-  it('renders bounded accessible rows and stable non-animated series', () => {
+  it('renders bounded accessible rows and morphable series for smooth data updates', () => {
     const data = Array.from({ length: 60 }, (_, index) => ({
       timestamp: `2026-08-03T10:${String(index).padStart(2, '0')}:00.000Z`,
       read: index,
@@ -72,7 +72,8 @@ describe('MetricLinePlot', () => {
     expect(screen.getByTestId('x-axis')).toHaveAttribute('data-tick-mode', 'domain')
     expect(screen.getAllByTestId('line-series')).toHaveLength(2)
     for (const line of screen.getAllByTestId('line-series')) {
-      expect(line).toHaveAttribute('data-animate', 'false')
+      // animate defaults on so range changes morph without remounting the chart.
+      expect(line).toHaveAttribute('data-animate', 'true')
       expect(line).toHaveAttribute('data-connect-nulls', 'true')
       expect(line).toHaveAttribute('data-fade-edges', 'false')
     }

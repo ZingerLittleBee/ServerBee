@@ -71,7 +71,7 @@ export function ResponseTimeChart({ records, t }: ResponseTimeChartProps) {
           yDomainTweenDuration={300}
         >
           <Grid vertical={false} />
-          <XAxis formatValue={formatAxisTime} numTicks={5} />
+          <XAxis fadeOnHover={false} formatValue={formatAxisTime} numTicks={5} />
           <YAxis formatValue={(value) => `${value.toFixed(0)} ms`} />
           <ChartTooltip
             content={({ point }) => (

@@ -1,4 +1,4 @@
-import { type CurveFactory, line as d3Line } from 'd3-shape'
+import { type CurveFactory, area as d3Area, line as d3Line } from 'd3-shape'
 
 export interface SeriesPathPoint {
   key: string
@@ -70,6 +70,21 @@ export function seriesPathFromPoints(points: SeriesPathPoint[], curve: CurveFact
   const generator = d3Line<SeriesPathPoint>()
     .x((point) => point.x)
     .y((point) => point.y)
+    .curve(curve)
+
+  return generator(points) ?? ''
+}
+
+/** Closed area path from animated series points down to a fixed baseline y. */
+export function seriesAreaPathFromPoints(points: SeriesPathPoint[], curve: CurveFactory, baselineY: number): string {
+  if (points.length === 0) {
+    return ''
+  }
+
+  const generator = d3Area<SeriesPathPoint>()
+    .x((point) => point.x)
+    .y0(baselineY)
+    .y1((point) => point.y)
     .curve(curve)
 
   return generator(points) ?? ''

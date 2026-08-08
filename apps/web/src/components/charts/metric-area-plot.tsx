@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import { useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { Area } from './area'
@@ -10,6 +11,8 @@ import { XAxis } from './x-axis'
 import { YAxis } from './y-axis'
 import type { YDomain } from './y-domain-utils'
 
+type CurveFactory = NonNullable<ComponentProps<typeof Area>['curve']>
+
 export interface MetricAreaSeries {
   color: string
   dataKey: string
@@ -19,7 +22,14 @@ export interface MetricAreaSeries {
 export interface MetricAreaPlotProps {
   ariaLabel: string
   className: string
+  /**
+   * Curve for every series area. Default: Area's `curveMonotoneX`.
+   * Use `curveStep` for discrete daily buckets.
+   */
+  curve?: CurveFactory
   data: Record<string, unknown>[]
+  /** Fill opacity for series areas. Default: `0.1`. */
+  fillOpacity?: number
   formatTime?: (time: string) => string
   formatTooltipLabel?: (time: string) => string
   formatValue: (value: number) => string
@@ -41,7 +51,9 @@ function defaultFormatTime(time: string): string {
 export function MetricAreaPlot({
   ariaLabel,
   className,
+  curve,
   data,
+  fillOpacity = 0.1,
   formatTime = defaultFormatTime,
   formatTooltipLabel = formatTime,
   formatValue,
@@ -75,7 +87,10 @@ export function MetricAreaPlot({
           margin={{ left: yMarginLeft, right: 16, top: 8, bottom: 36 }}
           xDataKey={timeKey}
           yDomain={yDomain}
-          yDomainTweenDuration={200}
+          // Bklit "Updating data smoothly": keep one chart instance, tween y-domain
+          // and morph series paths when range/API data changes (no revealSignature).
+          yDomainTween
+          yDomainTweenDuration={400}
         >
           <Grid vertical={false} />
           <XAxis formatValue={formatXAxisValue} numTicks={5} tickMode="domain" />
@@ -84,14 +99,14 @@ export function MetricAreaPlot({
             content={({ point }) => (
               <TooltipContent rows={tooltipRows(point)} title={formatTooltipLabel(String(point[timeKey]))} />
             )}
-            showDatePill={false}
+            formatDatePill={formatXAxisValue}
           />
           {series.map((item) => (
             <Area
-              animate={false}
+              curve={curve}
               dataKey={item.dataKey}
               fill={item.color}
-              fillOpacity={0.1}
+              fillOpacity={fillOpacity}
               key={item.dataKey}
               stroke={item.color}
               strokeWidth={2}

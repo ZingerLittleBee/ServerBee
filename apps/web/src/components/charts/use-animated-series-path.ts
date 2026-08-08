@@ -8,11 +8,17 @@ import {
   computeSeriesPathPoints,
   interpolateSeriesPathPoints,
   type SeriesPathPoint,
+  seriesAreaPathFromPoints,
   seriesPathFromPoints,
   seriesPathTransitionSignature
 } from './series-path-utils'
 
 export interface UseAnimatedSeriesPathOptions {
+  /**
+   * Baseline y for a closed area path (`seriesAreaPathFromPoints`). When set,
+   * the hook also returns `areaPathD` that morphs with the stroke.
+   */
+  baselineY?: number
   chartPhase: string
   curve: CurveFactory
   dataKey: string
@@ -26,6 +32,7 @@ export interface UseAnimatedSeriesPathOptions {
 }
 
 export function useAnimatedSeriesPath({
+  baselineY,
   renderData,
   xAccessor,
   xScale,
@@ -134,8 +141,15 @@ export function useAnimatedSeriesPath({
 
   const activePoints = animatedPoints ?? targetPoints
   const pathD = useMemo(() => seriesPathFromPoints(activePoints, curve), [activePoints, curve])
+  const areaPathD = useMemo(() => {
+    if (baselineY == null) {
+      return ''
+    }
+    return seriesAreaPathFromPoints(activePoints, curve, baselineY)
+  }, [activePoints, baselineY, curve])
 
   return {
+    areaPathD,
     pathD,
     isPathAnimating: animatedPoints != null
   }
