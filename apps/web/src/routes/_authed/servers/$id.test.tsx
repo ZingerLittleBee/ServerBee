@@ -108,8 +108,8 @@ vi.mock('@/components/ui/tabs', () => ({
 }))
 
 vi.mock('@/components/uptime/uptime-timeline', () => ({
-  UptimeTimeline: ({ appearance }: { appearance?: string }) => (
-    <div data-appearance={appearance} data-testid="uptime-timeline">
+  UptimeTimeline: ({ appearance, height }: { appearance?: string; height?: number }) => (
+    <div data-appearance={appearance} data-height={height} data-testid="uptime-timeline">
       uptime
     </div>
   )
@@ -237,6 +237,7 @@ describe('ServerDetailPage', () => {
     render(<ServerDetailPage />)
 
     expect(screen.getByTestId('uptime-timeline')).toHaveAttribute('data-appearance', 'status-history')
+    expect(screen.getByTestId('uptime-timeline')).toHaveAttribute('data-height', '34')
   })
 
   it('places the upgrade card in its own full-width header row, after the actions in tab order', () => {

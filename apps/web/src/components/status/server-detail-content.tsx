@@ -486,7 +486,7 @@ function UptimeCard({ isPublic, serverId }: { isPublic: boolean; serverId: strin
         <h3 className="font-semibold text-sm">{t('uptime_title')}</h3>
         <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '—'}</span>
       </div>
-      <UptimeTimeline appearance="status-history" days={uptimeDays} rangeDays={90} showLabels showLegend />
+      <UptimeTimeline appearance="status-history" days={uptimeDays} height={34} rangeDays={90} showLabels showLegend />
     </div>
   )
 }
