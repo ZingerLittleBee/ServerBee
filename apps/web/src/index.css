@@ -67,7 +67,9 @@
      dark theme flips the colored fills to the brighter 500 shades. */
   --network-grid-healthy: oklch(60% 0.118 184.704); /* teal-600 */
   --network-grid-warning: oklch(66.6% 0.179 58.318); /* amber-600 */
-  --network-grid-severe: oklch(64.6% 0.222 41.116); /* orange-600: coral between amber and red */
+  --network-grid-severe: oklch(
+    64.6% 0.222 41.116
+  ); /* orange-600: coral between amber and red */
   --network-grid-failed: var(--status-danger);
   --network-grid-unknown: oklch(0.65 0 0);
   /* Categorical series palette for multi-series charts (network latency, target
