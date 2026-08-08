@@ -101,13 +101,30 @@ export function GeoIpRow() {
   }, [buttonLabel, download, installed, isCustom, isPending])
   const meta = useMemo(() => (isLoading ? GEOIP_LOADING_META : metaText(status, t)), [isLoading, status, t])
 
+  // CC BY 4.0 attribution for the bundled DB-IP Lite download. Hidden when the
+  // operator points at their own MMDB, which may carry different terms.
+  const description = isCustom ? (
+    t('geoip.description')
+  ) : (
+    <>
+      {t('geoip.description')} · {t('geoip.data_provider')}{' '}
+      <a className="underline hover:text-foreground" href="https://db-ip.com" rel="noreferrer" target="_blank">
+        DB-IP
+      </a>{' '}
+      ({t('geoip.license')}{' '}
+      <a
+        className="underline hover:text-foreground"
+        href="https://creativecommons.org/licenses/by/4.0/"
+        rel="noreferrer"
+        target="_blank"
+      >
+        CC BY 4.0
+      </a>
+      )
+    </>
+  )
+
   return (
-    <SettingsRow
-      action={action}
-      description={t('geoip.description')}
-      icon={GEOIP_ICON}
-      meta={meta}
-      title={t('geoip.title')}
-    />
+    <SettingsRow action={action} description={description} icon={GEOIP_ICON} meta={meta} title={t('geoip.title')} />
   )
 }

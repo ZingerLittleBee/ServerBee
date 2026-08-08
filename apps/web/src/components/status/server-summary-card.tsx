@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { RingChart } from '@/components/ui/ring-chart'
 import type { PublicServerSummary } from '@/lib/api-schema'
 import { computeTrafficQuota } from '@/lib/traffic'
+import { getUtilizationRingColor } from '@/lib/utilization-colors'
 import { cn, formatBytes, formatUptime } from '@/lib/utils'
 
 function clampPercent(value: number): number {
@@ -17,16 +18,6 @@ function clampPercent(value: number): number {
     return 0
   }
   return Math.min(100, Math.max(0, value))
-}
-
-function getRingColor(pct: number, brandColor: string): string {
-  if (pct > 90) {
-    return 'var(--status-danger)'
-  }
-  if (pct > 70) {
-    return 'var(--status-warning)'
-  }
-  return brandColor
 }
 
 function metricPercent(used: number, total: number): number {
@@ -116,13 +107,13 @@ export function ServerSummaryCard({ server, clickable }: Props) {
         <>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
             <RingMetric
-              color={getRingColor(m.cpu, 'var(--color-chart-1)')}
+              color={getUtilizationRingColor(m.cpu)}
               label={t('cpu')}
               subText={`${t('card_load', { ns: 'servers' })} ${m.load_1.toFixed(2)}`}
               value={m.cpu}
             />
             <RingMetric
-              color={getRingColor(memPct, 'var(--color-chart-2)')}
+              color={getUtilizationRingColor(memPct)}
               label={t('memory')}
               subText={
                 <>
@@ -134,7 +125,7 @@ export function ServerSummaryCard({ server, clickable }: Props) {
               value={memPct}
             />
             <RingMetric
-              color={getRingColor(diskPct, 'var(--color-chart-3)')}
+              color={getUtilizationRingColor(diskPct)}
               label={t('disk')}
               subText={
                 <>
@@ -146,7 +137,7 @@ export function ServerSummaryCard({ server, clickable }: Props) {
               value={diskPct}
             />
             <RingMetric
-              color={getRingColor(traffic.pct, 'var(--color-chart-4)')}
+              color={getUtilizationRingColor(traffic.pct)}
               label={t('card_traffic_quota', { ns: 'servers' })}
               subText={
                 <>

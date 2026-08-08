@@ -10,9 +10,12 @@ import { TagChipRow } from '@/components/server/tag-chip'
 import type { TrafficOverviewItem } from '@/hooks/use-traffic-overview'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { computeTrafficQuota } from '@/lib/traffic'
+import {
+  getUtilizationBarColor as getBarColor,
+  getUtilizationTextColor as getBarTextColor
+} from '@/lib/utilization-colors'
 import { cn, formatUptime } from '@/lib/utils'
 import { formatRelativeTime } from '@/lib/widget-helpers'
-import { getBarColor, getBarTextColor } from './metric-bar-colors'
 
 interface MetricBarRowProps {
   ariaLabel?: string

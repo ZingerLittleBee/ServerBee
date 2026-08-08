@@ -69,7 +69,33 @@ describe('RingChart', () => {
   it('applies color to foreground circle stroke', () => {
     const { container } = render(<RingChart color="var(--color-chart-1)" label="CPU" value={50} />)
     const circles = container.querySelectorAll('circle')
-    const foreground = circles[1]
-    expect(foreground.getAttribute('stroke')).toBe('var(--color-chart-1)')
+    const foreground = circles[1] as SVGCircleElement
+    expect(foreground.style.stroke).toBe('var(--color-chart-1)')
+  })
+
+  it('maps value to stroke-dashoffset on a unit pathLength scale', () => {
+    const { container, rerender } = render(<RingChart color="#3b82f6" label="CPU" value={0} />)
+    const foreground = () => container.querySelectorAll('circle')[1] as SVGCircleElement
+
+    expect(foreground().getAttribute('pathLength')).toBe('100')
+    expect(foreground().style.strokeDasharray).toBe('100')
+    expect(foreground().style.strokeDashoffset).toBe('100')
+
+    rerender(<RingChart color="#3b82f6" label="CPU" value={50} />)
+    expect(foreground().style.strokeDashoffset).toBe('50')
+
+    rerender(<RingChart color="#3b82f6" label="CPU" value={100} />)
+    expect(foreground().style.strokeDashoffset).toBe('0')
+  })
+
+  it('enables CSS transitions for arc length and stroke color', () => {
+    const { container } = render(<RingChart color="var(--status-healthy)" label="CPU" value={40} />)
+    const foreground = container.querySelectorAll('circle')[1] as SVGCircleElement
+
+    expect(foreground.style.transition).toContain('stroke-dashoffset')
+    expect(foreground.style.transition).toContain('stroke')
+    expect(foreground.className.baseVal || foreground.getAttribute('class') || '').toContain(
+      'motion-reduce:[transition:none]'
+    )
   })
 })

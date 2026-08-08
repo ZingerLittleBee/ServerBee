@@ -164,16 +164,17 @@
     },
     "serverMap": {
       "title": "服务器地图",
+      "total": "总计",
       "serverCount_one": "{{count}} 台服务器",
       "serverCount_other": "{{count}} 台服务器",
       "empty": {
         "noGeoIP": "GeoIP 数据库未安装",
-        "noLocationData": "暂无服务器位置数据"
+        "noLocationData": "暂无服务器位置数据",
+        "mapUnavailable": "地图数据不可用"
       },
       "actions": {
         "downloadGeoIP": "下载 GeoIP 数据库"
-      },
-      "attribution": "GeoIP by DB-IP"
+      }
     },
     "uptimeTimeline": {
       "title": "可用时间线"

@@ -72,36 +72,36 @@ describe('GaugeWidget', () => {
     expect(container.querySelector('[data-testid="gauge-svg"]')).not.toBeNull()
   })
 
-  it('uses the normal-range gradient (chart-1 → chart-2) when value < 70', () => {
+  it('uses the healthy status tone when value is low (≤70)', () => {
     const { container } = render(
       <GaugeWidget config={{ metric: 'cpu', server_id: '1' }} servers={[makeServer('1', { cpu: 50 })]} />
     )
 
     expect(getStops(container)).toEqual({
-      start: 'var(--chart-1)',
-      end: 'var(--chart-2)'
+      start: 'var(--status-healthy)',
+      end: 'var(--status-healthy)'
     })
   })
 
-  it('uses the warning gradient (chart-3 → chart-5) when value is in [70, 90)', () => {
+  it('uses the warning status tone when value is high (70–90]', () => {
     const { container } = render(
       <GaugeWidget config={{ metric: 'cpu', server_id: '1' }} servers={[makeServer('1', { cpu: 75 })]} />
     )
 
     expect(getStops(container)).toEqual({
-      start: 'var(--chart-3)',
-      end: 'var(--chart-5)'
+      start: 'var(--status-warning)',
+      end: 'var(--status-warning)'
     })
   })
 
-  it('uses the critical gradient (chart-4 → chart-3) when value >= 90', () => {
+  it('uses the danger status tone when value is very high (>90)', () => {
     const { container } = render(
       <GaugeWidget config={{ metric: 'cpu', server_id: '1' }} servers={[makeServer('1', { cpu: 95 })]} />
     )
 
     expect(getStops(container)).toEqual({
-      start: 'var(--chart-4)',
-      end: 'var(--chart-3)'
+      start: 'var(--status-danger)',
+      end: 'var(--status-danger)'
     })
   })
 

@@ -164,16 +164,17 @@
     },
     "serverMap": {
       "title": "Server Map",
+      "total": "Total",
       "serverCount_one": "{{count}} server",
       "serverCount_other": "{{count}} servers",
       "empty": {
         "noGeoIP": "GeoIP database not installed",
-        "noLocationData": "No server location data available"
+        "noLocationData": "No server location data available",
+        "mapUnavailable": "Map data unavailable"
       },
       "actions": {
         "downloadGeoIP": "Download GeoIP Database"
-      },
-      "attribution": "GeoIP by DB-IP"
+      }
     },
     "uptimeTimeline": {
       "title": "Uptime Timeline"
