@@ -140,11 +140,11 @@
   --status-danger-text: var(--color-red-400);
   /* Dark surfaces amplify the history markers' visual weight. Lower only
      their lightness while preserving the Claude hue and chroma anchors. */
-  --network-grid-healthy: oklch(0.625 0.167 130.145);
-  --network-grid-warning: oklch(0.72 0.153 74.836);
-  --network-grid-severe: oklch(0.597 0.178 38.002);
-  --network-grid-failed: oklch(0.551 0.194 24.997);
-  --network-grid-unknown: oklch(0.54 0 0);
+  --network-grid-healthy: oklch(0.585 0.167 130.145);
+  --network-grid-warning: oklch(0.68 0.153 74.836);
+  --network-grid-severe: oklch(0.557 0.178 38.002);
+  --network-grid-failed: oklch(0.511 0.194 24.997);
+  --network-grid-unknown: oklch(0.5 0 0);
   --chart-background: oklch(0.145 0 0);
   --chart-foreground: oklch(0.45 0 0);
   --chart-foreground-muted: oklch(0.65 0.01 260);
