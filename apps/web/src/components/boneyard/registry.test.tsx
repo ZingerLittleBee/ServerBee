@@ -34,7 +34,9 @@ describe('generated bones registry', () => {
 
   it('captures every major loading surface at the configured breakpoints', () => {
     for (const [name, data] of Object.entries(GENERATED)) {
-      expect(Object.keys(data.breakpoints).sort(), name).toEqual(EXPECTED_BREAKPOINTS)
+      // Breakpoint keys are strings ("375", "1024", …): sort numerically,
+      // since the default lexicographic order scrambles magnitudes.
+      expect(Object.keys(data.breakpoints).sort((a, b) => Number(a) - Number(b)), name).toEqual(EXPECTED_BREAKPOINTS)
       for (const result of Object.values(data.breakpoints)) {
         expect(result.bones.length, name).toBeGreaterThan(0)
       }

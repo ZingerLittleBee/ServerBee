@@ -28,7 +28,9 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = ResizeObserverMock
 }
 
-if (typeof Element.prototype.scrollIntoView === 'undefined') {
+// Guarded on Element itself: node-environment test files (e.g. the vite
+// config test) run this setup without DOM globals.
+if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView === 'undefined') {
   Element.prototype.scrollIntoView = () => undefined
 }
 

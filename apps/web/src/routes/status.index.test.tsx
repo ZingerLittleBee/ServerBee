@@ -53,6 +53,30 @@ vi.mock('@/components/status/layout-toggle', () => ({
   LayoutToggle: () => null
 }))
 
+/**
+ * Deterministic in-memory localStorage seam. The runtime's global
+ * localStorage is unavailable without --localstorage-file, and
+ * useStatusLayout reads storage synchronously on first render, so each test
+ * installs a fresh stub instead of depending on that experimental global.
+ */
+function createLocalStorageStub(): Storage {
+  const store = new Map<string, string>()
+  return {
+    get length() {
+      return store.size
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key)
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value))
+    }
+  }
+}
+
 async function renderPage() {
   const { Route } = await import('./status.index')
   const Page = (Route as { component: React.ComponentType }).component
@@ -61,6 +85,7 @@ async function renderPage() {
 
 describe('PublicStatusIndex', () => {
   beforeEach(() => {
+    vi.stubGlobal('localStorage', createLocalStorageStub())
     serversState.data = undefined
     serversState.error = null
     serversState.isLoading = false
@@ -70,6 +95,7 @@ describe('PublicStatusIndex', () => {
 
   afterEach(() => {
     cleanup()
+    vi.unstubAllGlobals()
   })
 
   it('renders the grid skeleton while loading with the default layout', async () => {

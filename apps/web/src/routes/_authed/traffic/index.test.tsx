@@ -20,10 +20,20 @@ vi.mock('@/lib/api-client', () => ({
   api: { get: vi.fn() }
 }))
 
+// Mirror the real module's full export list: chart.tsx reads Tooltip (and
+// renders Legend/ResponsiveContainer) from this module, so a partial mock
+// throws the moment chart.tsx is evaluated.
 vi.mock('@/components/ui/recharts-lazy', () => ({
   Area: () => null,
   AreaChart: () => null,
+  Bar: () => null,
+  BarChart: () => null,
   CartesianGrid: () => null,
+  Legend: () => null,
+  Line: () => null,
+  LineChart: () => null,
+  ResponsiveContainer: () => null,
+  Tooltip: () => null,
   XAxis: () => null,
   YAxis: () => null
 }))

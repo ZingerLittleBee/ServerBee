@@ -1,3 +1,8 @@
+// @vitest-environment node
+// Importing the real vite config pulls in esbuild, whose
+// `TextEncoder().encode("") instanceof Uint8Array` invariant breaks under
+// jsdom's realm-mismatched globals. This test exercises no DOM, so node is
+// the correct environment for it.
 import type { ProxyOptions, UserConfig } from 'vite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import config from './vite.config'

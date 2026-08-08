@@ -28,7 +28,8 @@ vi.mock('@tanstack/react-query', () => ({
 }))
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
+  // CountryFlag destructures `i18n` and reads `i18n.language`.
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } })
 }))
 
 vi.mock('@/lib/api-client', () => ({
