@@ -588,7 +588,7 @@ const FIXTURE_TRAFFIC_ROWS = [
 /** Mirrors the loaded layout of `_authed/traffic/index.tsx`. */
 export function TrafficOverviewFixture() {
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
       <h1 className="mb-6 font-bold text-2xl">Traffic Overview</h1>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

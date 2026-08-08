@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Container, HardDrive, Network } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { PageBody } from '@/components/layout/page-body'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import { CAP_DOCKER, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
@@ -90,85 +91,87 @@ function DockerPage() {
     : null
 
   return (
-    <div>
-      <div className="mb-6">
-        <Link
-          className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
-          params={{ id: serverId }}
-          search={{ range: 'realtime' }}
-          to="/servers/$id"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" />
-          {t('backToServer')}
-        </Link>
+    <PageBody>
+      <div>
+        <div className="mb-6">
+          <Link
+            className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
+            params={{ id: serverId }}
+            search={{ range: 'realtime' }}
+            to="/servers/$id"
+          >
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            {t('backToServer')}
+          </Link>
 
-        <div className="flex items-center gap-3">
-          <Container aria-hidden="true" className="size-6" />
-          <h1 className="font-bold text-2xl">Docker</h1>
-          <div className="ml-auto flex items-center gap-2">
-            <Button onClick={() => setNetworksOpen(true)} size="sm" variant="outline">
-              <Network aria-hidden="true" className="mr-1.5 size-4" />
-              {t('networksButton')}
-            </Button>
-            <Button onClick={() => setVolumesOpen(true)} size="sm" variant="outline">
-              <HardDrive aria-hidden="true" className="mr-1.5 size-4" />
-              {t('volumesButton')}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {!dockerAvailable && (
-        <div className="flex min-h-[400px] items-center justify-center rounded-lg border border-dashed">
-          <div className="text-center">
-            <Container aria-hidden="true" className="mx-auto mb-3 size-10 text-muted-foreground" />
-            <p className="text-muted-foreground text-sm">{t('notAvailable.title')}</p>
-            <p className="mt-1 text-muted-foreground text-xs">{t('notAvailable.description')}</p>
-          </div>
-        </div>
-      )}
-
-      {dockerAvailable && !hasContainers && (
-        <div className="space-y-6">
-          <DockerOverview containers={[]} dockerVersion={dockerInfo?.docker_version} stats={[]} />
-
-          <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-            <div className="text-center">
-              <Container aria-hidden="true" className="mx-auto mb-3 size-8 text-muted-foreground" />
-              <p className="text-muted-foreground text-sm">{t('noContainers.title')}</p>
-              <p className="mt-1 text-muted-foreground text-xs">{t('noContainers.description')}</p>
+          <div className="flex items-center gap-3">
+            <Container aria-hidden="true" className="size-6" />
+            <h1 className="font-bold text-2xl">Docker</h1>
+            <div className="ml-auto flex items-center gap-2">
+              <Button onClick={() => setNetworksOpen(true)} size="sm" variant="outline">
+                <Network aria-hidden="true" className="mr-1.5 size-4" />
+                {t('networksButton')}
+              </Button>
+              <Button onClick={() => setVolumesOpen(true)} size="sm" variant="outline">
+                <HardDrive aria-hidden="true" className="mr-1.5 size-4" />
+                {t('volumesButton')}
+              </Button>
             </div>
           </div>
-
-          <DockerEvents events={events ?? []} />
         </div>
-      )}
 
-      {dockerAvailable && hasContainers && (
-        <div className="space-y-6">
-          <DockerOverview containers={containers} dockerVersion={dockerInfo?.docker_version} stats={stats ?? []} />
+        {!dockerAvailable && (
+          <div className="flex min-h-[400px] items-center justify-center rounded-lg border border-dashed">
+            <div className="text-center">
+              <Container aria-hidden="true" className="mx-auto mb-3 size-10 text-muted-foreground" />
+              <p className="text-muted-foreground text-sm">{t('notAvailable.title')}</p>
+              <p className="mt-1 text-muted-foreground text-xs">{t('notAvailable.description')}</p>
+            </div>
+          </div>
+        )}
 
-          <ContainerList containers={containers} onSelect={setSelectedContainer} stats={stats ?? []} />
+        {dockerAvailable && !hasContainers && (
+          <div className="space-y-6">
+            <DockerOverview containers={[]} dockerVersion={dockerInfo?.docker_version} stats={[]} />
 
-          <DockerEvents events={events ?? []} />
-        </div>
-      )}
+            <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
+              <div className="text-center">
+                <Container aria-hidden="true" className="mx-auto mb-3 size-8 text-muted-foreground" />
+                <p className="text-muted-foreground text-sm">{t('noContainers.title')}</p>
+                <p className="mt-1 text-muted-foreground text-xs">{t('noContainers.description')}</p>
+              </div>
+            </div>
 
-      <ContainerDetailDialog
-        container={liveSelectedContainer}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedContainer(null)
-          }
-        }}
-        open={selectedContainer !== null}
-        serverId={serverId}
-        stats={stats ?? []}
-      />
+            <DockerEvents events={events ?? []} />
+          </div>
+        )}
 
-      <DockerNetworksDialog onOpenChange={setNetworksOpen} open={networksOpen} serverId={serverId} />
+        {dockerAvailable && hasContainers && (
+          <div className="space-y-6">
+            <DockerOverview containers={containers} dockerVersion={dockerInfo?.docker_version} stats={stats ?? []} />
 
-      <DockerVolumesDialog onOpenChange={setVolumesOpen} open={volumesOpen} serverId={serverId} />
-    </div>
+            <ContainerList containers={containers} onSelect={setSelectedContainer} stats={stats ?? []} />
+
+            <DockerEvents events={events ?? []} />
+          </div>
+        )}
+
+        <ContainerDetailDialog
+          container={liveSelectedContainer}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedContainer(null)
+            }
+          }}
+          open={selectedContainer !== null}
+          serverId={serverId}
+          stats={stats ?? []}
+        />
+
+        <DockerNetworksDialog onOpenChange={setNetworksOpen} open={networksOpen} serverId={serverId} />
+
+        <DockerVolumesDialog onOpenChange={setVolumesOpen} open={volumesOpen} serverId={serverId} />
+      </div>
+    </PageBody>
   )
 }

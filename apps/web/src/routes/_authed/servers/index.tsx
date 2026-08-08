@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table/data-table'
+import { PageBody } from '@/components/layout/page-body'
 import { AddServerDialog } from '@/components/server/add-server-dialog'
 import { ServerCard } from '@/components/server/server-card'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
@@ -210,68 +211,70 @@ function ServersListPage() {
   }
 
   return (
-    <div
-      className={cn(
-        // The mobile max-w is the shared page-root clamp: without a definite
-        // width ceiling the table's intrinsic min-w-max propagates up through
-        // <main> and the DataTable's ScrollArea stops scrolling horizontally.
-        // It matches <main>'s p-3 exactly, so it never narrows the grid view.
-        'w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full',
-        viewMode === 'table' && 'flex min-h-0 flex-col'
-      )}
-      ref={fillRef}
-      style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
-    >
-      {/* The toolbar carries no visible title; without it the heading outline
+    <PageBody>
+      <div
+        className={cn(
+          // The mobile max-w is the shared page-root clamp: without a definite
+          // width ceiling the table's intrinsic min-w-max propagates up through
+          // <main> and the DataTable's ScrollArea stops scrolling horizontally.
+          // It matches PageBody's p-3 exactly, so it never narrows the grid view.
+          'w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full',
+          viewMode === 'table' && 'flex min-h-0 flex-col'
+        )}
+        ref={fillRef}
+        style={viewMode === 'table' && viewportHeight ? { height: viewportHeight } : undefined}
+      >
+        {/* The toolbar carries no visible title; without it the heading outline
           starts at the card/table headings. */}
-      <h1 className="sr-only">{t('servers:title')}</h1>
-      <ServersPageToolbar
-        batchDeletePending={batchDeleteMutation.isPending}
-        cleanupPending={cleanupMutation.isPending}
-        isAdmin={isAdmin}
-        onAddServer={() => setAddOpen(true)}
-        onBatchDelete={handleBatchDelete}
-        onCleanup={() => cleanupMutation.mutate()}
-        onSearchChange={setSearch}
-        onToggleSelectMode={toggleSelectMode}
-        onViewModeChange={setViewMode}
-        orphanCount={orphanCount}
-        search={search}
-        selectedCount={selectedCount}
-        selectMode={selectMode}
-        table={table}
-        viewMode={viewMode}
-      />
+        <h1 className="sr-only">{t('servers:title')}</h1>
+        <ServersPageToolbar
+          batchDeletePending={batchDeleteMutation.isPending}
+          cleanupPending={cleanupMutation.isPending}
+          isAdmin={isAdmin}
+          onAddServer={() => setAddOpen(true)}
+          onBatchDelete={handleBatchDelete}
+          onCleanup={() => cleanupMutation.mutate()}
+          onSearchChange={setSearch}
+          onToggleSelectMode={toggleSelectMode}
+          onViewModeChange={setViewMode}
+          orphanCount={orphanCount}
+          search={search}
+          selectedCount={selectedCount}
+          selectMode={selectMode}
+          table={table}
+          viewMode={viewMode}
+        />
 
-      {servers.length === 0 && <ServersEmptyState />}
-      {hasNoMatches && <ServersNoResults onClear={() => setSearch('')} query={search} />}
-      {hasResults && viewMode === 'table' && (
-        <DataTable fillHeight rowClassName={(row) => !row.original.online && 'grayscale'} table={table} />
-      )}
-      {hasResults && viewMode === 'grid' && (
-        <div
-          className="grid gap-4"
-          // min(320px, 100%) keeps the track from overflowing viewports narrower
-          // than the ideal card width instead of clipping the cards.
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}
-        >
-          {filtered.map((server) => (
-            <div className="-m-1 p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
-              <ServerCard
-                costEntry={costByServerId.get(server.id)}
-                networkBucketSeconds={networkBucketSeconds}
-                networkSummary={networkSummaryByServerId.get(server.id)}
-                server={server}
-                trafficEntry={trafficByServerId.get(server.id)}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+        {servers.length === 0 && <ServersEmptyState />}
+        {hasNoMatches && <ServersNoResults onClear={() => setSearch('')} query={search} />}
+        {hasResults && viewMode === 'table' && (
+          <DataTable fillHeight rowClassName={(row) => !row.original.online && 'grayscale'} table={table} />
+        )}
+        {hasResults && viewMode === 'grid' && (
+          <div
+            className="grid gap-4"
+            // min(320px, 100%) keeps the track from overflowing viewports narrower
+            // than the ideal card width instead of clipping the cards.
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}
+          >
+            {filtered.map((server) => (
+              <div className="-m-1 p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
+                <ServerCard
+                  costEntry={costByServerId.get(server.id)}
+                  networkBucketSeconds={networkBucketSeconds}
+                  networkSummary={networkSummaryByServerId.get(server.id)}
+                  server={server}
+                  trafficEntry={trafficByServerId.get(server.id)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
 
-      {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
-      {isAdmin && <AddServerDialog onClose={() => setAddOpen(false)} open={addOpen} />}
-    </div>
+        {editingId !== null && <EditWrapper onClose={() => setEditingId(null)} serverId={editingId} />}
+        {isAdmin && <AddServerDialog onClose={() => setAddOpen(false)} open={addOpen} />}
+      </div>
+    </PageBody>
   )
 }
 

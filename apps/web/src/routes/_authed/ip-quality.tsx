@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { PageBody } from '@/components/layout/page-body'
 import { IpQualityContent } from '@/components/status/ip-quality-content'
 import { useIpQualityOverview, useIpQualityServices } from '@/hooks/use-ip-quality-api'
 import { useServerList } from '@/lib/server-catalog'
@@ -16,6 +17,14 @@ function IpQualityOverviewPage() {
   const isLoading = overviewLoading || servicesLoading || serversLoading
 
   return (
-    <IpQualityContent isLoading={isLoading} overview={overview} servers={servers} services={services} variant="admin" />
+    <PageBody>
+      <IpQualityContent
+        isLoading={isLoading}
+        overview={overview}
+        servers={servers}
+        services={services}
+        variant="admin"
+      />
+    </PageBody>
   )
 }

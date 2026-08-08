@@ -5,6 +5,7 @@ import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ServiceMonitorDetailSkeleton } from '@/components/boneyard/page-skeletons'
+import { PageBody } from '@/components/layout/page-body'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -291,10 +292,12 @@ function toDisplayValue(value: unknown): string {
 
 function DetailItem({ label, value }: { label: string; value: unknown }) {
   return (
-    <div>
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="break-all font-mono text-sm">{toDisplayValue(value)}</dd>
-    </div>
+    <PageBody>
+      <div>
+        <dt className="text-muted-foreground text-xs">{label}</dt>
+        <dd className="break-all font-mono text-sm">{toDisplayValue(value)}</dd>
+      </div>
+    </PageBody>
   )
 }
 
@@ -408,14 +411,20 @@ export function ServiceMonitorDetailPage() {
   })
 
   if (isLoading) {
-    return <ServiceMonitorDetailSkeleton />
+    return (
+      <PageBody>
+        <ServiceMonitorDetailSkeleton />
+      </PageBody>
+    )
   }
 
   if (!data) {
     return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <p className="text-muted-foreground">{t('notFound')}</p>
-      </div>
+      <PageBody>
+        <div className="flex min-h-[400px] items-center justify-center">
+          <p className="text-muted-foreground">{t('notFound')}</p>
+        </div>
+      </PageBody>
     )
   }
 

@@ -177,7 +177,7 @@ function DashboardEditorViewContent({
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
       <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <DashboardSwitcher
           currentId={activeDashboardId}

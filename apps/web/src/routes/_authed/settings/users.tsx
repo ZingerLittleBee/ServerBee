@@ -4,6 +4,7 @@ import { Plus, Trash2, UserCog } from 'lucide-react'
 import { type FormEvent, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -153,192 +154,197 @@ function UsersPage() {
   }
 
   return (
-    <div className="max-w-2xl space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="font-semibold text-lg">{t('users.count')}</h2>
-        <Dialog onOpenChange={(open) => dispatch({ type: 'setShowForm', value: open })} open={state.showForm}>
-          <DialogTrigger render={<Button size="sm" variant="outline" />}>
-            <Plus className="size-4" />
-            {t('users.add')}
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>{t('users.add')}</DialogTitle>
-              <DialogDescription>{t('users.add_description')}</DialogDescription>
-            </DialogHeader>
-            <form className="space-y-3" id="create-user-form" onSubmit={handleCreate}>
-              <Input
-                aria-label={t('users.username')}
-                autoComplete="username"
-                name="username"
-                onChange={(e) => dispatch({ type: 'setNewUsername', value: e.target.value })}
-                placeholder={t('users.username')}
-                required
-                spellCheck={false}
-                type="text"
-                value={state.newUsername}
-              />
-              <Input
-                aria-label={t('users.password_hint')}
-                autoComplete="new-password"
-                minLength={6}
-                name="password"
-                onChange={(e) => dispatch({ type: 'setNewPassword', value: e.target.value })}
-                placeholder={t('users.password_hint')}
-                required
-                type="password"
-                value={state.newPassword}
-              />
-              <Select
-                items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
-                onValueChange={(value) => value !== null && dispatch({ type: 'setNewRole', value })}
-                value={state.newRole}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">{t('users.role_member')}</SelectItem>
-                  <SelectItem value="admin">{t('users.role_admin')}</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground text-xs">
-                {state.newRole === 'admin' ? t('users.role_hint_admin') : t('users.role_hint_member')}
-              </p>
-              {createMutation.error && <p className="text-destructive text-sm">{createMutation.error.message}</p>}
-            </form>
-            <DialogFooter>
-              <Button onClick={() => dispatch({ type: 'closeCreateForm' })} size="sm" type="button" variant="ghost">
-                {t('common:cancel')}
-              </Button>
-              <Button disabled={createMutation.isPending} form="create-user-form" size="sm" type="submit">
-                {t('common:create')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton className="h-12" key={`skel-${i.toString()}`} />
-          ))}
-        </div>
-      )}
-      {!isLoading && (!users || users.length === 0) && (
-        <p className="text-center text-muted-foreground text-sm">{t('users.no_users')}</p>
-      )}
-      {users && users.length > 0 && (
-        <div className="divide-y rounded-md border">
-          {users.map((user) => (
-            <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between" key={user.id}>
-              <div className="flex min-w-0 items-center gap-3">
-                <UserCog aria-hidden="true" className="size-4 text-muted-foreground" />
-                <div>
-                  <p className="font-medium text-sm">
-                    {user.username}
-                    {user.has_2fa && (
-                      <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 font-normal text-green-700 text-xs dark:bg-green-900/30 dark:text-green-400">
-                        {t('users.two_factor')}
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-muted-foreground text-xs">
-                    {state.editingId === user.id ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Select
-                          items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
-                          onValueChange={(value) => value !== null && dispatch({ type: 'setEditRole', value })}
-                          value={state.editRole}
-                        >
-                          <SelectTrigger aria-label={t('users.role_label')} className="h-6 text-xs" size="sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="member">{t('users.role_member')}</SelectItem>
-                            <SelectItem value="admin">{t('users.role_admin')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <button
-                          className="rounded text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => updateMutation.mutate({ id: user.id, role: state.editRole })}
-                          type="button"
-                        >
-                          {t('common:save')}
-                        </button>
-                        <button
-                          className="rounded text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => dispatch({ type: 'stopEditing' })}
-                          type="button"
-                        >
-                          {t('common:cancel')}
-                        </button>
-                      </span>
-                    ) : (
-                      <span>
-                        {t('users.role_label')}{' '}
-                        <button
-                          className="rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => dispatch({ type: 'startEditing', id: user.id, role: user.role })}
-                          type="button"
-                        >
-                          {user.role === 'admin' ? t('users.role_admin') : t('users.role_member')}
-                        </button>
-                        {' · '}
-                        {t('users.created')} {formatDateShort(user.created_at)}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-              {currentUser?.user_id !== user.id && (
-                <AlertDialog
-                  onOpenChange={(open) => {
-                    if (!open) {
-                      dispatch({ type: 'setDeleteUserId', value: null })
-                    }
-                  }}
-                  open={state.deleteUserId === user.id}
+    <PageBody>
+      <div className="max-w-2xl space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="font-semibold text-lg">{t('users.count')}</h2>
+          <Dialog onOpenChange={(open) => dispatch({ type: 'setShowForm', value: open })} open={state.showForm}>
+            <DialogTrigger render={<Button size="sm" variant="outline" />}>
+              <Plus className="size-4" />
+              {t('users.add')}
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t('users.add')}</DialogTitle>
+                <DialogDescription>{t('users.add_description')}</DialogDescription>
+              </DialogHeader>
+              <form className="space-y-3" id="create-user-form" onSubmit={handleCreate}>
+                <Input
+                  aria-label={t('users.username')}
+                  autoComplete="username"
+                  name="username"
+                  onChange={(e) => dispatch({ type: 'setNewUsername', value: e.target.value })}
+                  placeholder={t('users.username')}
+                  required
+                  spellCheck={false}
+                  type="text"
+                  value={state.newUsername}
+                />
+                <Input
+                  aria-label={t('users.password_hint')}
+                  autoComplete="new-password"
+                  minLength={6}
+                  name="password"
+                  onChange={(e) => dispatch({ type: 'setNewPassword', value: e.target.value })}
+                  placeholder={t('users.password_hint')}
+                  required
+                  type="password"
+                  value={state.newPassword}
+                />
+                <Select
+                  items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
+                  onValueChange={(value) => value !== null && dispatch({ type: 'setNewRole', value })}
+                  value={state.newRole}
                 >
-                  <AlertDialogTrigger
-                    onClick={() => dispatch({ type: 'setDeleteUserId', value: user.id })}
-                    render={
-                      <Button
-                        aria-label={`${t('users.delete')} ${user.username}`}
-                        disabled={deleteMutation.isPending}
-                        size="sm"
-                        variant="destructive"
-                      />
-                    }
-                  >
-                    <Trash2 aria-hidden="true" className="size-3.5" />
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
-                      <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => {
-                          deleteMutation.mutate(user.id)
-                          dispatch({ type: 'setDeleteUserId', value: null })
-                        }}
-                        variant="destructive"
-                      >
-                        {t('common:delete')}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
-          ))}
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">{t('users.role_member')}</SelectItem>
+                    <SelectItem value="admin">{t('users.role_admin')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">
+                  {state.newRole === 'admin' ? t('users.role_hint_admin') : t('users.role_hint_member')}
+                </p>
+                {createMutation.error && <p className="text-destructive text-sm">{createMutation.error.message}</p>}
+              </form>
+              <DialogFooter>
+                <Button onClick={() => dispatch({ type: 'closeCreateForm' })} size="sm" type="button" variant="ghost">
+                  {t('common:cancel')}
+                </Button>
+                <Button disabled={createMutation.isPending} form="create-user-form" size="sm" type="submit">
+                  {t('common:create')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
-      )}
-      {deleteMutation.error && <p className="text-destructive text-sm">{deleteMutation.error.message}</p>}
-    </div>
+
+        {isLoading && (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton className="h-12" key={`skel-${i.toString()}`} />
+            ))}
+          </div>
+        )}
+        {!isLoading && (!users || users.length === 0) && (
+          <p className="text-center text-muted-foreground text-sm">{t('users.no_users')}</p>
+        )}
+        {users && users.length > 0 && (
+          <div className="divide-y rounded-md border">
+            {users.map((user) => (
+              <div
+                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                key={user.id}
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <UserCog aria-hidden="true" className="size-4 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium text-sm">
+                      {user.username}
+                      {user.has_2fa && (
+                        <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 font-normal text-green-700 text-xs dark:bg-green-900/30 dark:text-green-400">
+                          {t('users.two_factor')}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      {state.editingId === user.id ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Select
+                            items={{ member: t('users.role_member'), admin: t('users.role_admin') }}
+                            onValueChange={(value) => value !== null && dispatch({ type: 'setEditRole', value })}
+                            value={state.editRole}
+                          >
+                            <SelectTrigger aria-label={t('users.role_label')} className="h-6 text-xs" size="sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="member">{t('users.role_member')}</SelectItem>
+                              <SelectItem value="admin">{t('users.role_admin')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <button
+                            className="rounded text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={() => updateMutation.mutate({ id: user.id, role: state.editRole })}
+                            type="button"
+                          >
+                            {t('common:save')}
+                          </button>
+                          <button
+                            className="rounded text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={() => dispatch({ type: 'stopEditing' })}
+                            type="button"
+                          >
+                            {t('common:cancel')}
+                          </button>
+                        </span>
+                      ) : (
+                        <span>
+                          {t('users.role_label')}{' '}
+                          <button
+                            className="rounded font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            onClick={() => dispatch({ type: 'startEditing', id: user.id, role: user.role })}
+                            type="button"
+                          >
+                            {user.role === 'admin' ? t('users.role_admin') : t('users.role_member')}
+                          </button>
+                          {' · '}
+                          {t('users.created')} {formatDateShort(user.created_at)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {currentUser?.user_id !== user.id && (
+                  <AlertDialog
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        dispatch({ type: 'setDeleteUserId', value: null })
+                      }
+                    }}
+                    open={state.deleteUserId === user.id}
+                  >
+                    <AlertDialogTrigger
+                      onClick={() => dispatch({ type: 'setDeleteUserId', value: user.id })}
+                      render={
+                        <Button
+                          aria-label={`${t('users.delete')} ${user.username}`}
+                          disabled={deleteMutation.isPending}
+                          size="sm"
+                          variant="destructive"
+                        />
+                      }
+                    >
+                      <Trash2 aria-hidden="true" className="size-3.5" />
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t('common:confirm_title')}</AlertDialogTitle>
+                        <AlertDialogDescription>{t('common:confirm_delete_message')}</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => {
+                            deleteMutation.mutate(user.id)
+                            dispatch({ type: 'setDeleteUserId', value: null })
+                          }}
+                          variant="destructive"
+                        >
+                          {t('common:delete')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {deleteMutation.error && <p className="text-destructive text-sm">{deleteMutation.error.message}</p>}
+      </div>
+    </PageBody>
   )
 }

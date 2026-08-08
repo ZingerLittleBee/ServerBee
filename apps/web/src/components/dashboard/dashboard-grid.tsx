@@ -510,7 +510,7 @@ export function DashboardGrid({
           className={cn('dashboard-grid', isEditing && 'dashboard-grid--editing')}
           compactor={compactor}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
-          gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
+          gridConfig={{ cols: COLS, containerPadding: [0, 0], rowHeight: ROW_HEIGHT, margin: MARGIN }}
           key={cancelEpoch}
           layout={renderedLayout}
           onDrag={(next) => updateLiveLayout(next)}

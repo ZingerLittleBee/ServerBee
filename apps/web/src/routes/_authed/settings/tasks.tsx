@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Play, Terminal } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import { ScheduledTaskList } from '@/components/task/scheduled-task-list'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -24,7 +25,7 @@ function TasksPage() {
   const { t } = useTranslation(['settings', 'common'])
 
   return (
-    <div>
+    <PageBody>
       <Tabs className="max-w-3xl" defaultValue="oneshot">
         <TabsList>
           <TabsTrigger value="oneshot">{t('tasks.tab_oneshot', { defaultValue: 'One-shot' })}</TabsTrigger>
@@ -37,7 +38,7 @@ function TasksPage() {
           <ScheduledTaskList />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageBody>
   )
 }
 

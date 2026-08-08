@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
+import { PageBody } from '@/components/layout/page-body'
 import { api } from '@/lib/api-client'
 import type { Notification, NotificationGroup } from '@/lib/api-schema'
 import {
@@ -28,11 +29,11 @@ function NotificationsPage() {
   })
 
   return (
-    <div>
+    <PageBody>
       <div className="max-w-2xl space-y-6">
         <NotificationChannelsSection isLoading={isLoading} notifications={notifications} />
         <NotificationGroupsSection groups={groups} notifications={notifications} />
       </div>
-    </div>
+    </PageBody>
   )
 }

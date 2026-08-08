@@ -252,7 +252,7 @@ function AuthedLayout() {
           <ScrollArea className="min-h-0 flex-1 overflow-hidden" contentClassName="min-w-0!">
             {/* SidebarInset already renders the page's <main> landmark; this is only
                 the skip-link target. */}
-            <div className="flex min-h-full min-w-0 flex-col p-3 pt-0 sm:p-4 sm:pt-0" id="main-content" tabIndex={-1}>
+            <div className="flex min-h-full min-w-0 flex-col" id="main-content" tabIndex={-1}>
               <Outlet />
             </div>
           </ScrollArea>

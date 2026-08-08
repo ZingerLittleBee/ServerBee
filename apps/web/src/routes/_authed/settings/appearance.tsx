@@ -4,6 +4,7 @@ import { Loader2, Upload } from 'lucide-react'
 import { type ChangeEvent, type FormEvent, useEffect, useReducer, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Input } from '@/components/ui/input'
@@ -311,12 +312,12 @@ export function AppearancePage() {
   const { t } = useTranslation('settings')
 
   return (
-    <div>
+    <PageBody>
       <h1 className="mb-6 font-bold text-2xl">{t('appearance.title')}</h1>
       <div className="max-w-3xl space-y-6">
         <WidgetModulesNotice />
         <BrandSettingsSection />
       </div>
-    </div>
+    </PageBody>
   )
 }

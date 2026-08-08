@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AddBlockDrawer, type AddBlockInitialValues } from '@/components/firewall/add-block-drawer'
+import { PageBody } from '@/components/layout/page-body'
 import { SecurityEventDetailDrawer } from '@/components/security/event-detail-drawer'
 import { SecurityEventTable } from '@/components/security/event-table'
 import { SecurityKpiCards } from '@/components/security/kpi-cards'
@@ -126,140 +127,148 @@ function SecurityIndexPage() {
   }, [eventsQuery.data, state.firstSeenOnly])
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-semibold text-2xl">{t('page_title', { defaultValue: 'Security Events' })}</h1>
-        <div className="flex gap-1 rounded-md border bg-card p-1">
-          {(['24h', '7d', '30d'] as const).map((key) => (
-            <Button
-              key={key}
-              onClick={() => dispatch({ type: 'setRange', value: key })}
-              size="sm"
-              variant={state.range === key ? 'default' : 'ghost'}
-            >
-              {t(`range.${key}`, { defaultValue: key })}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      <SecurityKpiCards serverId={filters.server_id} since={since} />
-
-      <div className="flex flex-wrap gap-2 rounded-md border bg-card p-3">
-        <Select
-          items={[
-            { value: '__all__', label: t('filter.server_all', { defaultValue: 'All servers' }) },
-            ...(servers ?? []).map((s) => ({ value: s.id, label: s.name }))
-          ]}
-          onValueChange={(value) => dispatch({ type: 'setServerId', value: value === '__all__' ? '' : (value ?? '') })}
-          value={state.serverId || '__all__'}
-        >
-          <SelectTrigger className="h-9 w-[180px]">
-            <SelectValue placeholder={t('filter.server', { defaultValue: 'All servers' })} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">{t('filter.server_all', { defaultValue: 'All servers' })}</SelectItem>
-            {servers?.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.name}
-              </SelectItem>
+    <PageBody>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="font-semibold text-2xl">{t('page_title', { defaultValue: 'Security Events' })}</h1>
+          <div className="flex gap-1 rounded-md border bg-card p-1">
+            {(['24h', '7d', '30d'] as const).map((key) => (
+              <Button
+                key={key}
+                onClick={() => dispatch({ type: 'setRange', value: key })}
+                size="sm"
+                variant={state.range === key ? 'default' : 'ghost'}
+              >
+                {t(`range.${key}`, { defaultValue: key })}
+              </Button>
             ))}
-          </SelectContent>
-        </Select>
+          </div>
+        </div>
 
-        <Select
-          items={[
-            { value: '__all__', label: t('filter.event_type_all', { defaultValue: 'All types' }) },
-            { value: 'ssh_brute_force', label: t('event_type.ssh_brute_force', { defaultValue: 'SSH Brute Force' }) },
-            { value: 'port_scan', label: t('event_type.port_scan', { defaultValue: 'Port Scan' }) },
-            { value: 'ssh_login', label: t('event_type.ssh_login', { defaultValue: 'SSH Login' }) }
-          ]}
-          onValueChange={(value) => dispatch({ type: 'setEventType', value: value === '__all__' ? '' : (value ?? '') })}
-          value={state.eventType || '__all__'}
-        >
-          <SelectTrigger className="h-9 w-[180px]">
-            <SelectValue placeholder={t('filter.event_type', { defaultValue: 'All types' })} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">{t('filter.event_type_all', { defaultValue: 'All types' })}</SelectItem>
-            <SelectItem value="ssh_brute_force">
-              {t('event_type.ssh_brute_force', { defaultValue: 'SSH Brute Force' })}
-            </SelectItem>
-            <SelectItem value="port_scan">{t('event_type.port_scan', { defaultValue: 'Port Scan' })}</SelectItem>
-            <SelectItem value="ssh_login">{t('event_type.ssh_login', { defaultValue: 'SSH Login' })}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SecurityKpiCards serverId={filters.server_id} since={since} />
 
-        <Select
-          items={[
-            { value: '__all__', label: t('filter.severity_all', { defaultValue: 'All severities' }) },
-            { value: 'critical', label: t('severity.critical', { defaultValue: 'Critical' }) },
-            { value: 'high', label: t('severity.high', { defaultValue: 'High' }) },
-            { value: 'medium', label: t('severity.medium', { defaultValue: 'Medium' }) },
-            { value: 'low', label: t('severity.low', { defaultValue: 'Low' }) }
-          ]}
-          onValueChange={(value) => dispatch({ type: 'setSeverity', value: value === '__all__' ? '' : (value ?? '') })}
-          value={state.severity || '__all__'}
-        >
-          <SelectTrigger className="h-9 w-[160px]">
-            <SelectValue placeholder={t('filter.severity', { defaultValue: 'All severities' })} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">{t('filter.severity_all', { defaultValue: 'All severities' })}</SelectItem>
-            <SelectItem value="critical">{t('severity.critical', { defaultValue: 'Critical' })}</SelectItem>
-            <SelectItem value="high">{t('severity.high', { defaultValue: 'High' })}</SelectItem>
-            <SelectItem value="medium">{t('severity.medium', { defaultValue: 'Medium' })}</SelectItem>
-            <SelectItem value="low">{t('severity.low', { defaultValue: 'Low' })}</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap gap-2 rounded-md border bg-card p-3">
+          <Select
+            items={[
+              { value: '__all__', label: t('filter.server_all', { defaultValue: 'All servers' }) },
+              ...(servers ?? []).map((s) => ({ value: s.id, label: s.name }))
+            ]}
+            onValueChange={(value) =>
+              dispatch({ type: 'setServerId', value: value === '__all__' ? '' : (value ?? '') })
+            }
+            value={state.serverId || '__all__'}
+          >
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue placeholder={t('filter.server', { defaultValue: 'All servers' })} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t('filter.server_all', { defaultValue: 'All servers' })}</SelectItem>
+              {servers?.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        <Input
-          aria-label={t('filter.source_ip', { defaultValue: 'Source IP' })}
-          className="w-[180px]"
-          onChange={(e) => dispatch({ type: 'setSourceIp', value: e.target.value })}
-          placeholder={t('filter.source_ip', { defaultValue: 'Source IP' })}
-          value={state.sourceIp}
+          <Select
+            items={[
+              { value: '__all__', label: t('filter.event_type_all', { defaultValue: 'All types' }) },
+              { value: 'ssh_brute_force', label: t('event_type.ssh_brute_force', { defaultValue: 'SSH Brute Force' }) },
+              { value: 'port_scan', label: t('event_type.port_scan', { defaultValue: 'Port Scan' }) },
+              { value: 'ssh_login', label: t('event_type.ssh_login', { defaultValue: 'SSH Login' }) }
+            ]}
+            onValueChange={(value) =>
+              dispatch({ type: 'setEventType', value: value === '__all__' ? '' : (value ?? '') })
+            }
+            value={state.eventType || '__all__'}
+          >
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue placeholder={t('filter.event_type', { defaultValue: 'All types' })} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t('filter.event_type_all', { defaultValue: 'All types' })}</SelectItem>
+              <SelectItem value="ssh_brute_force">
+                {t('event_type.ssh_brute_force', { defaultValue: 'SSH Brute Force' })}
+              </SelectItem>
+              <SelectItem value="port_scan">{t('event_type.port_scan', { defaultValue: 'Port Scan' })}</SelectItem>
+              <SelectItem value="ssh_login">{t('event_type.ssh_login', { defaultValue: 'SSH Login' })}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select
+            items={[
+              { value: '__all__', label: t('filter.severity_all', { defaultValue: 'All severities' }) },
+              { value: 'critical', label: t('severity.critical', { defaultValue: 'Critical' }) },
+              { value: 'high', label: t('severity.high', { defaultValue: 'High' }) },
+              { value: 'medium', label: t('severity.medium', { defaultValue: 'Medium' }) },
+              { value: 'low', label: t('severity.low', { defaultValue: 'Low' }) }
+            ]}
+            onValueChange={(value) =>
+              dispatch({ type: 'setSeverity', value: value === '__all__' ? '' : (value ?? '') })
+            }
+            value={state.severity || '__all__'}
+          >
+            <SelectTrigger className="h-9 w-[160px]">
+              <SelectValue placeholder={t('filter.severity', { defaultValue: 'All severities' })} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">{t('filter.severity_all', { defaultValue: 'All severities' })}</SelectItem>
+              <SelectItem value="critical">{t('severity.critical', { defaultValue: 'Critical' })}</SelectItem>
+              <SelectItem value="high">{t('severity.high', { defaultValue: 'High' })}</SelectItem>
+              <SelectItem value="medium">{t('severity.medium', { defaultValue: 'Medium' })}</SelectItem>
+              <SelectItem value="low">{t('severity.low', { defaultValue: 'Low' })}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Input
+            aria-label={t('filter.source_ip', { defaultValue: 'Source IP' })}
+            className="w-[180px]"
+            onChange={(e) => dispatch({ type: 'setSourceIp', value: e.target.value })}
+            placeholder={t('filter.source_ip', { defaultValue: 'Source IP' })}
+            value={state.sourceIp}
+          />
+
+          <label className="flex items-center gap-2 text-muted-foreground text-sm">
+            <input
+              checked={state.firstSeenOnly}
+              className="accent-primary"
+              onChange={(e) => dispatch({ type: 'setFirstSeenOnly', value: e.target.checked })}
+              type="checkbox"
+            />
+            {t('filter.first_seen_only', { defaultValue: 'First-seen only' })}
+          </label>
+        </div>
+
+        <SecurityTimelineChart events={allEvents} isLoading={eventsQuery.isLoading} />
+
+        <SecurityEventTable
+          events={allEvents}
+          hasNextPage={eventsQuery.hasNextPage}
+          isFetchingNextPage={eventsQuery.isFetchingNextPage}
+          isLoading={eventsQuery.isLoading}
+          onBlockSourceIp={
+            isAdmin ? (event) => dispatch({ type: 'blockSourceIp', sourceIp: event.source_ip }) : undefined
+          }
+          onFetchNextPage={() => eventsQuery.fetchNextPage()}
+          onRowClick={(event) => dispatch({ type: 'setActiveEvent', value: event })}
+          onSourceIpClick={(ip) => dispatch({ type: 'setSourceIp', value: ip })}
         />
 
-        <label className="flex items-center gap-2 text-muted-foreground text-sm">
-          <input
-            checked={state.firstSeenOnly}
-            className="accent-primary"
-            onChange={(e) => dispatch({ type: 'setFirstSeenOnly', value: e.target.checked })}
-            type="checkbox"
-          />
-          {t('filter.first_seen_only', { defaultValue: 'First-seen only' })}
-        </label>
+        <SecurityEventDetailDrawer
+          event={state.activeEvent}
+          onOpenChange={(open) => {
+            if (!open) {
+              dispatch({ type: 'setActiveEvent', value: null })
+            }
+          }}
+        />
+        <AddBlockDrawer
+          initialValues={state.blockInitial}
+          onOpenChange={(open) => dispatch({ type: 'setBlockOpen', value: open })}
+          open={state.blockOpen}
+        />
       </div>
-
-      <SecurityTimelineChart events={allEvents} isLoading={eventsQuery.isLoading} />
-
-      <SecurityEventTable
-        events={allEvents}
-        hasNextPage={eventsQuery.hasNextPage}
-        isFetchingNextPage={eventsQuery.isFetchingNextPage}
-        isLoading={eventsQuery.isLoading}
-        onBlockSourceIp={
-          isAdmin ? (event) => dispatch({ type: 'blockSourceIp', sourceIp: event.source_ip }) : undefined
-        }
-        onFetchNextPage={() => eventsQuery.fetchNextPage()}
-        onRowClick={(event) => dispatch({ type: 'setActiveEvent', value: event })}
-        onSourceIpClick={(ip) => dispatch({ type: 'setSourceIp', value: ip })}
-      />
-
-      <SecurityEventDetailDrawer
-        event={state.activeEvent}
-        onOpenChange={(open) => {
-          if (!open) {
-            dispatch({ type: 'setActiveEvent', value: null })
-          }
-        }}
-      />
-      <AddBlockDrawer
-        initialValues={state.blockInitial}
-        onOpenChange={(open) => dispatch({ type: 'setBlockOpen', value: open })}
-        open={state.blockOpen}
-      />
-    </div>
+    </PageBody>
   )
 }

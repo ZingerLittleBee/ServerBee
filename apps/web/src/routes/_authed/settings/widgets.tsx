@@ -10,6 +10,7 @@ import {
   useUninstallWidgetModule,
   useWidgetModules
 } from '@/api/widget-modules'
+import { PageBody } from '@/components/layout/page-body'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -106,7 +107,7 @@ function WidgetsPage() {
   }
 
   return (
-    <div>
+    <PageBody>
       <div className="max-w-3xl space-y-6">
         <div className="space-y-3">
           <h2 className="font-semibold text-lg">{t('widgets.install_from_url')}</h2>
@@ -245,6 +246,6 @@ function WidgetsPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageBody>
   )
 }
