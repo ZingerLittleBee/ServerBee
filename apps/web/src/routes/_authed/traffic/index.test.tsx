@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const overviewState = vi.hoisted(() => ({ data: undefined as unknown, isLoading: false }))
@@ -82,7 +82,11 @@ describe('TrafficPage', () => {
     const { container } = await renderPage()
 
     expect(screen.getByText('traffic_overview_title')).toBeInTheDocument()
-    expect(screen.getByText('Web Server 01')).toBeInTheDocument()
+    // The name legitimately appears in both the highest-usage stat card and
+    // the ranking table row; scope the assertion to the table under test.
+    const table = container.querySelector('table')
+    expect(table).not.toBeNull()
+    expect(within(table as HTMLElement).getByText('Web Server 01')).toBeInTheDocument()
     expect(container.querySelector('[data-boneyard]')).toBeNull()
   })
 

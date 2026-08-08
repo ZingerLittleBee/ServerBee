@@ -1,11 +1,17 @@
 import '@testing-library/jest-dom'
 import i18next from 'i18next'
-import '@/lib/i18n'
 
-// Force English in tests so assertions on translated strings are deterministic
-// regardless of the jsdom navigator language.
-if (i18next.language !== 'en') {
-  i18next.changeLanguage('en')
+// The i18n module syncs <html lang> at import time, which needs a DOM.
+// Node-environment test files (the vite config test) skip that browser-only
+// initialization entirely.
+if (typeof document !== 'undefined') {
+  await import('@/lib/i18n')
+
+  // Force English in tests so assertions on translated strings are
+  // deterministic regardless of the jsdom navigator language.
+  if (i18next.language !== 'en') {
+    i18next.changeLanguage('en')
+  }
 }
 
 class ResizeObserverMock {
