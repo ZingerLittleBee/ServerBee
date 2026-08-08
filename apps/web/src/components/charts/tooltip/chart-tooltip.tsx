@@ -246,7 +246,12 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
 
       {/* Dots on bars/lines - show for vertical charts only */}
       {showDots && visible && !isHorizontal && (
-        <svg aria-hidden="true" className="pointer-events-none absolute inset-0 z-10" height="100%" width="100%">
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 overflow-visible"
+          height="100%"
+          width="100%"
+        >
           <g transform={`translate(${margin.left},${margin.top})`}>
             {lines.map((line, index) => {
               const y = tooltipData?.yPositions[line.dataKey]
