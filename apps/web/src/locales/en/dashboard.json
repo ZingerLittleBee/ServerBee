@@ -11,6 +11,8 @@
   "online": "Online",
   "healthy": "Healthy",
   "no_data": "No data",
+  "chart_time": "Time",
+  "chart_date": "Date",
   "no_servers_title": "No servers connected yet",
   "no_servers_description": "Servers will appear here once they connect via the agent",
   "ungrouped": "Ungrouped",
@@ -162,22 +164,27 @@
     },
     "serverMap": {
       "title": "Server Map",
+      "total": "Total",
       "serverCount_one": "{{count}} server",
       "serverCount_other": "{{count}} servers",
       "empty": {
         "noGeoIP": "GeoIP database not installed",
-        "noLocationData": "No server location data available"
+        "noLocationData": "No server location data available",
+        "mapUnavailable": "Map data unavailable"
       },
       "actions": {
         "downloadGeoIP": "Download GeoIP Database"
-      },
-      "attribution": "GeoIP by DB-IP"
+      }
     },
     "uptimeTimeline": {
       "title": "Uptime Timeline"
     },
     "diskIo": {
       "title": "Disk I/O",
+      "legend": {
+        "read": "Read",
+        "write": "Write"
+      },
       "empty": {
         "noData": "No disk I/O data available"
       }

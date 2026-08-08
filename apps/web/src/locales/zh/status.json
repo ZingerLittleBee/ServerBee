@@ -55,6 +55,8 @@
   "incidents_status_resolved": "已解决",
 
   "uptime_days_ago": "{{count}} 天前",
+  "uptime_date": "日期",
+  "uptime_status": "状态",
   "uptime_today": "今天",
   "uptime_operational": "正常运行",
   "uptime_degraded": "性能下降",

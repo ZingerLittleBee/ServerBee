@@ -147,16 +147,13 @@ function buildRealtimeState(
       synthetic: false,
       targets,
       timestamp,
-      value: avgLossRatio == null ? null : avgLossRatio * 100
+      value: avgLossRatio
     }
   })
 
   return {
     currentAvgLatency: latencyPoints.at(-1)?.value ?? null,
-    currentAvgLossRatio: (() => {
-      const lastLossPoint = lossPoints.at(-1)?.value
-      return lastLossPoint == null ? null : lastLossPoint / 100
-    })(),
+    currentAvgLossRatio: lossPoints.at(-1)?.value ?? null,
     latencyPoints,
     lossPoints
   }
@@ -230,7 +227,7 @@ function buildFallbackState(
       synthetic: true,
       targets: bucketTargets,
       timestamp,
-      value: lossValue == null ? null : lossValue * 100
+      value: lossValue
     })
   }
 
@@ -238,10 +235,7 @@ function buildFallbackState(
     currentAvgLatency:
       latencyPoints.at(-1)?.value ??
       average(fallbackTargets.flatMap((target) => (target.latency == null ? [] : [target.latency]))),
-    currentAvgLossRatio:
-      lossPoints.at(-1)?.value == null
-        ? average(fallbackTargets.map((target) => target.lossRatio))
-        : (lossPoints.at(-1)?.value ?? 0) / 100,
+    currentAvgLossRatio: lossPoints.at(-1)?.value ?? average(fallbackTargets.map((target) => target.lossRatio)),
     latencyPoints,
     lossPoints
   }
@@ -256,10 +250,7 @@ function mergeStates(
 
   return {
     currentAvgLatency: latencyPoints.at(-1)?.value ?? null,
-    currentAvgLossRatio: (() => {
-      const lastLossPoint = lossPoints.at(-1)?.value
-      return lastLossPoint == null ? null : lastLossPoint / 100
-    })(),
+    currentAvgLossRatio: lossPoints.at(-1)?.value ?? null,
     latencyPoints,
     lossPoints
   }

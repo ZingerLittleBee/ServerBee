@@ -22,6 +22,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@tanstack/react-query', () => ({
+  keepPreviousData: (previousData: unknown) => previousData,
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     if (queryKey[0] === 'servers') {
       return { data: [] }
@@ -108,7 +109,11 @@ vi.mock('@/components/ui/tabs', () => ({
 }))
 
 vi.mock('@/components/uptime/uptime-timeline', () => ({
-  UptimeTimeline: () => <div data-testid="uptime-timeline">uptime</div>
+  UptimeTimeline: ({ appearance, height }: { appearance?: string; height?: number }) => (
+    <div data-appearance={appearance} data-height={height} data-testid="uptime-timeline">
+      uptime
+    </div>
+  )
 }))
 
 vi.mock('@/components/security/server-security-tab', () => ({
@@ -234,6 +239,17 @@ describe('ServerDetailPage', () => {
     const { container } = render(<ServerDetailPage />)
 
     expect(container).toHaveTextContent('1.3.0')
+  })
+
+  it('uses the status-history appearance for the uptime timeline', () => {
+    mockUseUptimeDaily.mockReturnValue({
+      data: [{ date: '2026-04-14', downtime_incidents: 0, online_minutes: 1440, total_minutes: 1440 }]
+    })
+
+    render(<ServerDetailPage />)
+
+    expect(screen.getByTestId('uptime-timeline')).toHaveAttribute('data-appearance', 'status-history')
+    expect(screen.getByTestId('uptime-timeline')).toHaveAttribute('data-height', '34')
   })
 
   it('places the upgrade card in its own full-width header row, after the actions in tab order', () => {

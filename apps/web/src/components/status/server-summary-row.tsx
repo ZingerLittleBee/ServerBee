@@ -10,6 +10,7 @@ import { TableCell, TableRow } from '@/components/ui/table'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import type { PublicServerSummary, PublicStatusConfig } from '@/lib/api-schema'
 import { computeTrafficQuota } from '@/lib/traffic'
+import { getUtilizationBarColor, getUtilizationTextColor } from '@/lib/utilization-colors'
 import { cn } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 
@@ -34,31 +35,11 @@ function finiteMetric(value: number | null | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-function getBarColor(pct: number): string {
-  if (pct > 90) {
-    return 'bg-status-danger'
-  }
-  if (pct > 70) {
-    return 'bg-status-warning'
-  }
-  return 'bg-status-healthy'
-}
-
-function getBarTextColor(pct: number): string {
-  if (pct > 90) {
-    return 'text-status-danger-text'
-  }
-  if (pct > 70) {
-    return 'text-status-warning-text'
-  }
-  return 'text-foreground'
-}
-
 function PositionIndicator({ pct }: { pct: number }) {
   const clamped = clampPercent(pct)
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div className={cn('h-full rounded-full', getBarColor(clamped))} style={{ width: `${clamped}%` }} />
+      <div className={cn('h-full rounded-full', getUtilizationBarColor(clamped))} style={{ width: `${clamped}%` }} />
     </div>
   )
 }
@@ -74,7 +55,7 @@ function ResourceMetric({ icon, pct, value }: { icon: ReactNode; pct: number; va
       <div className="flex h-4 items-center gap-1.5 font-mono text-[10px] text-muted-foreground tabular-nums">
         <span className="inline-flex size-3.5 flex-none text-muted-foreground">{icon}</span>
         <span className="min-w-0 truncate">{value}</span>
-        <span className={cn('ml-auto font-semibold', getBarTextColor(roundedPct))}>{roundedPct}%</span>
+        <span className={cn('ml-auto font-semibold', getUtilizationTextColor(roundedPct))}>{roundedPct}%</span>
       </div>
       <div className="flex h-4 items-center">
         <PositionIndicator pct={pct} />

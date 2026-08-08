@@ -1,14 +1,6 @@
 import { useTranslation } from 'react-i18next'
+import { MetricLinePlot, type MetricLineSeries } from '@/components/charts/metric-line-plot'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { DiskIoChartPoint, DiskIoSeries } from '@/lib/disk-io'
 import { formatSpeed } from '@/lib/utils'
@@ -25,40 +17,30 @@ interface DiskIoChartProps {
 }
 
 function DiskIoLineChart({
-  config,
+  ariaLabel,
   data,
-  formatTime = defaultFormatTime
+  formatTime = defaultFormatTime,
+  series,
+  timeLabel
 }: {
-  config: ChartConfig
+  ariaLabel: string
   data: DiskIoChartPoint[]
   formatTime?: (time: string) => string
+  series: MetricLineSeries[]
+  timeLabel: string
 }) {
   return (
-    <ChartContainer className="h-[260px] w-full" config={config}>
-      <LineChart accessibilityLayer data={data}>
-        <CartesianGrid vertical={false} />
-        <XAxis axisLine={false} dataKey="timestamp" tickFormatter={formatTime} tickLine={false} />
-        <YAxis axisLine={false} tickFormatter={formatSpeed} tickLine={false} width={70} />
-        <ChartTooltip content={<ChartTooltipContent hideLabel valueFormatter={(value) => formatSpeed(value)} />} />
-        <ChartLegend content={<ChartLegendContent />} />
-        <Line
-          dataKey="read_bytes_per_sec"
-          dot={false}
-          isAnimationActive={false}
-          stroke="var(--color-read_bytes_per_sec)"
-          strokeWidth={2}
-          type="monotone"
-        />
-        <Line
-          dataKey="write_bytes_per_sec"
-          dot={false}
-          isAnimationActive={false}
-          stroke="var(--color-write_bytes_per_sec)"
-          strokeWidth={2}
-          type="monotone"
-        />
-      </LineChart>
-    </ChartContainer>
+    <MetricLinePlot
+      ariaLabel={ariaLabel}
+      className="h-[260px] w-full"
+      data={data}
+      formatTime={formatTime}
+      formatTooltipLabel={formatTime}
+      formatValue={formatSpeed}
+      formatYAxisValue={formatSpeed}
+      series={series}
+      timeLabel={timeLabel}
+    />
   )
 }
 
@@ -69,13 +51,13 @@ export function DiskIoChart({ formatTime, mergedData, perDiskData }: DiskIoChart
     return null
   }
 
-  const chartConfig = {
-    read_bytes_per_sec: { label: t('disk_io_read'), color: 'var(--chart-1)' },
-    write_bytes_per_sec: { label: t('disk_io_write'), color: 'var(--chart-2)' }
-  } satisfies ChartConfig
+  const chartSeries: MetricLineSeries[] = [
+    { dataKey: 'read_bytes_per_sec', label: t('disk_io_read'), color: 'var(--chart-1)' },
+    { dataKey: 'write_bytes_per_sec', label: t('disk_io_write'), color: 'var(--chart-2)' }
+  ]
 
   return (
-    <Card>
+    <Card className="min-w-0">
       <Tabs defaultValue="merged">
         <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>{t('chart_disk_io')}</CardTitle>
@@ -85,17 +67,29 @@ export function DiskIoChart({ formatTime, mergedData, perDiskData }: DiskIoChart
           </TabsList>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="min-w-0">
           <TabsContent value="merged">
-            <DiskIoLineChart config={chartConfig} data={mergedData} formatTime={formatTime} />
+            <DiskIoLineChart
+              ariaLabel={t('chart_disk_io')}
+              data={mergedData}
+              formatTime={formatTime}
+              series={chartSeries}
+              timeLabel={t('chart_time')}
+            />
           </TabsContent>
 
           <TabsContent value="per-disk">
             <div className="space-y-4">
               {perDiskData.map((series) => (
-                <div key={series.name}>
+                <div className="min-w-0" key={series.name}>
                   <h4 className="mb-3 font-medium text-sm">{series.name}</h4>
-                  <DiskIoLineChart config={chartConfig} data={series.data} formatTime={formatTime} />
+                  <DiskIoLineChart
+                    ariaLabel={`${t('chart_disk_io')} · ${series.name}`}
+                    data={series.data}
+                    formatTime={formatTime}
+                    series={chartSeries}
+                    timeLabel={t('chart_time')}
+                  />
                 </div>
               ))}
             </div>

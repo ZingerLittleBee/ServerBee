@@ -1,18 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeft, Play, RefreshCw } from 'lucide-react'
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ServiceMonitorDetailSkeleton } from '@/components/boneyard/page-skeletons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
 import { formatDateTime } from '@/lib/format'
+
+const LazyResponseTimeChart = lazy(() =>
+  import('@/components/service-monitors/response-time-chart').then((module) => ({
+    default: module.ResponseTimeChart
+  }))
+)
 
 export const Route = createFileRoute('/_authed/service-monitors/$id')({
   component: ServiceMonitorDetailPage
@@ -129,69 +134,6 @@ function StatsRow({ records, t }: { records: ServiceMonitorRecord[]; t: (key: st
           <p className="font-bold text-sm">{stats.lastCheck ? formatDateTime(stats.lastCheck) : '--'}</p>
         </CardContent>
       </Card>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Response Time Chart
-// ---------------------------------------------------------------------------
-
-function ResponseTimeChart({ records, t }: { records: ServiceMonitorRecord[]; t: (key: string) => string }) {
-  const chartData = useMemo(() => {
-    // Records come in desc order from API, reverse for chronological chart
-    return [...records].reverse().map((r) => ({
-      timestamp: r.time,
-      latency: r.success ? r.latency : null
-    }))
-  }, [records])
-
-  const latencyConfig = {
-    latency: { label: t('chart.latency'), color: 'var(--chart-4)' }
-  } satisfies ChartConfig
-
-  if (chartData.length === 0) {
-    return (
-      <div className="rounded-lg border bg-card p-6 text-center text-muted-foreground text-sm">
-        {t('chart.noRecords')}
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{t('chart.responseTime')}</h3>
-      <ChartContainer className="h-[260px] w-full" config={latencyConfig}>
-        <AreaChart accessibilityLayer data={chartData}>
-          <CartesianGrid vertical={false} />
-          <XAxis
-            axisLine={false}
-            dataKey="timestamp"
-            tickFormatter={(v: string) =>
-              new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-            }
-            tickLine={false}
-          />
-          <YAxis axisLine={false} tickLine={false} width={50} />
-          <ChartTooltip
-            content={
-              <ChartTooltipContent
-                labelFormatter={(label) => formatDateTime(String(label), { hour12: false })}
-                valueFormatter={(v) => `${Number(v).toFixed(1)} ms`}
-              />
-            }
-          />
-          <Area
-            connectNulls={false}
-            dataKey="latency"
-            fill="var(--color-latency)"
-            fillOpacity={0.1}
-            stroke="var(--color-latency)"
-            strokeWidth={2}
-            type="monotone"
-          />
-        </AreaChart>
-      </ChartContainer>
     </div>
   )
 }
@@ -532,7 +474,9 @@ export function ServiceMonitorDetailPage() {
         <StatsRow records={records} t={t} />
 
         {/* Response Time Chart */}
-        <ResponseTimeChart records={records} t={t} />
+        <Suspense fallback={<Skeleton className="h-[310px] w-full" />}>
+          <LazyResponseTimeChart records={records} t={t} />
+        </Suspense>
 
         {/* Type-Specific Detail */}
         {latestRecord && Object.keys(latestDetail).length > 0 && (

@@ -1,15 +1,18 @@
-import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Bar } from '@/components/charts/bar'
+import { BarChart } from '@/components/charts/bar-chart'
+import { sampleChartRows } from '@/components/charts/chart-accessibility'
+import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
+import { TooltipContent } from '@/components/charts/tooltip/tooltip-content'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
-import { computeUptimeColor, formatUptimeTooltip } from '@/lib/widget-helpers'
-import {
-  buildTimelineBackground,
-  buildTimelineGeometry,
-  SEGMENT_BACKGROUND_VALUE_MAP
-} from './uptime-timeline-geometry'
+import { computeUptimeColor, formatUptimeTooltip, type UptimeColor } from '@/lib/widget-helpers'
+import { SEGMENT_COLOR_VALUE_MAP, STATUS_HISTORY_COLOR_VALUE_MAP } from './uptime-timeline-colors'
+
+export type UptimeTimelineAppearance = 'default' | 'status-history'
 
 export interface UptimeTimelineProps {
+  appearance?: UptimeTimelineAppearance
   days: UptimeDailyEntry[]
   height?: number
   rangeDays: number
@@ -19,21 +22,59 @@ export interface UptimeTimelineProps {
   yellowThreshold?: number
 }
 
-const SEGMENT_GAP = 1.5
-const FALLBACK_SEGMENT_WIDTH = 4
+/** Every day fills the full plot height; only its color carries the status. */
+const FULL_HEIGHT_VALUE = 1
+const VALUE_DOMAIN: [number, number] = [0, FULL_HEIGHT_VALUE]
 
-// Promotes the painted track to its own compositor layer so the browser snaps
-// the gradient to whole device pixels. Without this, when the track lands on
-// a fractional CSS y position (eg. after a scroll), the AA at the top/bottom
-// rows blends each color with the page background. In dark mode the resulting
-// blend luminance differs per color (emerald vs amber vs red), which reads as
-// "different colors have different heights".
-const PIXEL_SNAP_TRANSFORM = 'translateZ(0)'
+/** Gaps between day columns as a fraction of the band. */
+const DAY_GAP_RATIOS: Record<UptimeTimelineAppearance, number> = {
+  default: 0.12,
+  'status-history': 0.3
+}
 
-const POPUP_CLASS =
-  'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) flex-col rounded-md border bg-popover px-3 py-1.5 text-popover-foreground text-xs shadow-md data-[state=delayed-open]:animate-in data-closed:animate-out data-open:animate-in'
+const STATUS_ORDER: UptimeColor[] = ['green', 'yellow', 'red', 'gray']
+
+const LEGEND_LABEL_KEYS: Record<UptimeColor, string> = {
+  green: 'uptime_operational',
+  yellow: 'uptime_degraded',
+  red: 'uptime_down',
+  gray: 'uptime_no_data'
+}
+
+interface TimelineRow extends Record<string, unknown> {
+  entry: UptimeDailyEntry
+  label: string
+  status: UptimeColor
+}
+
+function buildRows(
+  days: UptimeDailyEntry[],
+  rangeDays: number,
+  yellowThreshold: number,
+  redThreshold: number
+): TimelineRow[] {
+  const slice = days.slice(-rangeDays)
+  const padCount = Math.max(0, rangeDays - slice.length)
+  const padded: UptimeDailyEntry[] = Array.from({ length: padCount }, () => ({
+    date: '',
+    online_minutes: 0,
+    total_minutes: 0,
+    downtime_incidents: 0
+  }))
+
+  return [...padded, ...slice].map((entry, index) => {
+    const status = computeUptimeColor(entry.online_minutes, entry.total_minutes, yellowThreshold, redThreshold)
+    return {
+      entry,
+      label: entry.date || `pad-${index.toString()}`,
+      status,
+      [status]: FULL_HEIGHT_VALUE
+    }
+  })
+}
 
 export function UptimeTimeline({
+  appearance = 'default',
   days,
   rangeDays,
   yellowThreshold = 100,
@@ -43,65 +84,14 @@ export function UptimeTimeline({
   height = 28
 }: UptimeTimelineProps) {
   const { t } = useTranslation('status')
-  const timelineRef = useRef<HTMLDivElement>(null)
-  const [timelineWidth, setTimelineWidth] = useState(0)
 
-  // One handle per timeline instance — lets the 90 detached triggers share a
-  // single tooltip popup instead of each spawning its own Root/Portal/Popup.
-  const [handle] = useState(() => TooltipPrimitive.createHandle<UptimeDailyEntry>())
-
-  useLayoutEffect(() => {
-    const element = timelineRef.current
-    if (!element) {
-      return undefined
-    }
-
-    const measure = () => {
-      setTimelineWidth(Math.max(0, Math.floor(element.getBoundingClientRect().width)))
-    }
-
-    measure()
-
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', measure)
-      return () => window.removeEventListener('resize', measure)
-    }
-
-    const observer = new ResizeObserver(measure)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [])
-
-  const segments = useMemo(() => {
-    const slice = days.slice(-rangeDays)
-    const padCount = rangeDays - slice.length
-    const padded: UptimeDailyEntry[] = Array.from({ length: padCount }, () => ({
-      date: '',
-      online_minutes: 0,
-      total_minutes: 0,
-      downtime_incidents: 0
-    }))
-    return [...padded, ...slice]
-  }, [days, rangeDays])
-
-  const drawableWidth =
-    timelineWidth || segments.length * FALLBACK_SEGMENT_WIDTH + Math.max(0, segments.length - 1) * SEGMENT_GAP
-  const geometry = useMemo(
-    () => buildTimelineGeometry({ count: segments.length, gap: SEGMENT_GAP, width: drawableWidth }),
-    [segments.length, drawableWidth]
+  const rows = useMemo(
+    () => buildRows(days, rangeDays, yellowThreshold, redThreshold),
+    [days, rangeDays, yellowThreshold, redThreshold]
   )
-  const segmentColors = useMemo(
-    () =>
-      segments.map((entry) =>
-        computeUptimeColor(entry.online_minutes, entry.total_minutes, yellowThreshold, redThreshold)
-      ),
-    [segments, yellowThreshold, redThreshold]
-  )
-  const trackBackground = useMemo(
-    () => buildTimelineBackground({ colors: segmentColors, geometry }),
-    [geometry, segmentColors]
-  )
+  const accessibleRows = useMemo(() => sampleChartRows(rows), [rows])
   const timelineTitle = `${t('uptime_days_ago', { count: rangeDays })} - ${t('uptime_today')}`
+  const colorValueMap = appearance === 'status-history' ? STATUS_HISTORY_COLOR_VALUE_MAP : SEGMENT_COLOR_VALUE_MAP
 
   return (
     <div className="w-full">
@@ -112,94 +102,84 @@ export function UptimeTimeline({
         </div>
       )}
 
-      <TooltipPrimitive.Root handle={handle}>
-        {({ payload: entry }) => {
-          const tooltip = entry ? formatUptimeTooltip(entry) : null
-          return (
-            <TooltipPrimitive.Portal>
-              <TooltipPrimitive.Positioner align="center" className="isolate z-50" side="top" sideOffset={4}>
-                <TooltipPrimitive.Popup className={POPUP_CLASS}>
-                  <p className="font-medium">{tooltip?.date || t('uptime_no_data')}</p>
-                  {tooltip && (
-                    <>
-                      <p className="text-muted-foreground">
-                        {tooltip.percentage} &middot; {tooltip.duration}
-                      </p>
-                      <p className="text-muted-foreground">{tooltip.incidents}</p>
-                    </>
-                  )}
-                </TooltipPrimitive.Popup>
-              </TooltipPrimitive.Positioner>
-            </TooltipPrimitive.Portal>
-          )
-        }}
-      </TooltipPrimitive.Root>
-
-      <figure
-        aria-label={timelineTitle}
-        className="w-full"
-        data-uptime-timeline=""
-        ref={timelineRef}
-        style={{ height, margin: 0 }}
-      >
-        <div className="relative h-full w-full">
-          <div
-            aria-hidden
-            className="absolute inset-0 overflow-hidden rounded-[4px]"
-            data-uptime-track-paint=""
-            style={{ backgroundImage: trackBackground, transform: PIXEL_SNAP_TRANSFORM }}
-          />
-          {segments.map((entry, i) => {
-            const color = segmentColors[i]
-            const segment = geometry[i]
-            if (!(color && segment) || segment.width <= 0) {
-              return null
-            }
-            return (
-              <TooltipPrimitive.Trigger
-                data-segment={color}
-                handle={handle}
-                key={`segment-${entry.date || `pad-${i.toString()}`}`}
-                payload={entry}
-                render={
-                  <div
-                    className="absolute top-0 h-full rounded-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    style={{ left: segment.x, width: segment.width }}
-                  />
+      <figure aria-label={timelineTitle} className="w-full" data-uptime-timeline="" style={{ margin: 0 }}>
+        <div aria-hidden="true" data-testid="bklit-uptime-timeline" style={{ height }}>
+          <BarChart
+            aspectRatio=""
+            barGap={DAY_GAP_RATIOS[appearance]}
+            className="h-full w-full"
+            data={rows}
+            margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+            stacked
+            valueDomain={VALUE_DOMAIN}
+            xDataKey="label"
+          >
+            <ChartTooltip
+              content={({ point }) => {
+                const entry = point.entry as UptimeDailyEntry | undefined
+                if (!entry?.date) {
+                  return <TooltipContent rows={[]} title={t('uptime_no_data')} />
                 }
-              />
-            )
-          })}
+                const tooltip = formatUptimeTooltip(entry)
+                const status = point.status as UptimeColor
+                return (
+                  <TooltipContent
+                    rows={[
+                      {
+                        color: colorValueMap[status],
+                        label: t(LEGEND_LABEL_KEYS[status]),
+                        value: tooltip.percentage
+                      }
+                    ]}
+                    title={tooltip.date}
+                  >
+                    <p className="text-chart-tooltip-muted text-xs">
+                      {tooltip.duration} &middot; {tooltip.incidents}
+                    </p>
+                  </TooltipContent>
+                )
+              }}
+              showDatePill={false}
+            />
+            {STATUS_ORDER.map((status) => (
+              <Bar animate={false} dataKey={status} fill={colorValueMap[status]} key={status} lineCap={0} />
+            ))}
+          </BarChart>
         </div>
+
+        <table className="sr-only">
+          <caption>{timelineTitle}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t('uptime_date')}</th>
+              <th scope="col">{t('uptime_status')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accessibleRows.map((row) => {
+              const { entry, label, status } = row as TimelineRow
+              return (
+                <tr key={label}>
+                  <td>{entry.date || t('uptime_no_data')}</td>
+                  <td>{t(LEGEND_LABEL_KEYS[status])}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </figure>
 
       {showLegend && (
         <div className="mt-2 flex gap-4 text-muted-foreground text-xs">
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block size-2.5 rounded-[2px]"
-              style={{ backgroundColor: SEGMENT_BACKGROUND_VALUE_MAP.green }}
-            />
-            {t('uptime_operational')}
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block size-2.5 rounded-[2px]"
-              style={{ backgroundColor: SEGMENT_BACKGROUND_VALUE_MAP.yellow }}
-            />
-            {t('uptime_degraded')}
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block size-2.5 rounded-[2px]"
-              style={{ backgroundColor: SEGMENT_BACKGROUND_VALUE_MAP.red }}
-            />
-            {t('uptime_down')}
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block size-2.5 rounded-[2px] bg-muted" />
-            {t('uptime_no_data')}
-          </span>
+          {STATUS_ORDER.map((status) => (
+            <span className="flex items-center gap-1" key={status}>
+              <span
+                className="inline-block size-2.5 rounded-[2px]"
+                style={{ backgroundColor: colorValueMap[status] }}
+              />
+              {t(LEGEND_LABEL_KEYS[status])}
+            </span>
+          ))}
         </div>
       )}
     </div>

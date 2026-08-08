@@ -3,7 +3,7 @@ import type { ServerMetricRecord } from '@/lib/api-schema'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { extractLiveMetric, extractRecordMetric } from '@/lib/widget-helpers'
 
-export interface MetricSeriesPoint {
+export interface MetricSeriesPoint extends Record<string, unknown> {
   t: number
   v: number
 }

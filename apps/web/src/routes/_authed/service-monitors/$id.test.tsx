@@ -85,20 +85,8 @@ vi.mock('react-i18next', () => ({
   })
 }))
 
-vi.mock('recharts', () => ({
-  Area: () => null,
-  AreaChart: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  CartesianGrid: () => null,
-  XAxis: () => null,
-  YAxis: () => null
-}))
-
-vi.mock('@/components/ui/recharts-lazy', () => ({
-  Area: () => null,
-  AreaChart: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  CartesianGrid: () => null,
-  XAxis: () => null,
-  YAxis: () => null
+vi.mock('@/components/service-monitors/response-time-chart', () => ({
+  ResponseTimeChart: () => null
 }))
 
 vi.mock('sonner', () => ({
@@ -127,10 +115,8 @@ vi.mock('@/components/ui/card', () => ({
   CardTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>
 }))
 
-vi.mock('@/components/ui/chart', () => ({
-  ChartContainer: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  ChartTooltip: () => null,
-  ChartTooltipContent: () => null
+vi.mock('@/components/ui/skeleton', () => ({
+  Skeleton: (props: Record<string, unknown>) => <div {...props} />
 }))
 
 vi.mock('@/components/ui/table', () => ({

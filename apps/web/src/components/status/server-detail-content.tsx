@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Activity, BarChart3, ShieldAlert, ShieldCheck } from 'lucide-react'
 import type * as React from 'react'
 import { useMemo } from 'react'
@@ -33,8 +33,7 @@ import {
   type MetricChartSpec,
   makeTickFormatter,
   makeTooltipFormatter,
-  toMetricChartRow,
-  xAxisStride
+  toMetricChartRow
 } from '@/lib/metric-chart-model'
 import { useLiveServers } from '@/lib/server-catalog'
 import { type RangeKey, rangesForVariant, resolveRange, type TimeRange } from '@/lib/server-detail-nav'
@@ -85,6 +84,7 @@ function useMetricSeries(serverId: string, range: TimeRange, isAdminVariant: boo
       )
     },
     enabled: !isAdminVariant && serverId.length > 0,
+    placeholderData: keepPreviousData,
     refetchInterval: 60_000
   })
   return { adminRecords: adminQuery.data, publicMetrics }
@@ -100,6 +100,7 @@ function useAdminGpuRecords(serverId: string, range: TimeRange, isAdminVariant: 
       )
     },
     enabled: isAdminVariant && serverId.length > 0 && !isRealtime,
+    placeholderData: keepPreviousData,
     refetchInterval: 60_000
   })
 }
@@ -141,7 +142,6 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
 
   const chartFormatTime = useChartTickFormatter(isRealtime, range, chartData)
   const tooltipFormatTime = useTooltipFormatter(isRealtime, range)
-  const xAxisInterval = useXAxisInterval(isRealtime, range, chartData.length)
   const gpuChartData = useGpuChartData(isAdminVariant, gpuRecords, publicMetrics)
 
   const diskIoMergedData = useMemo(
@@ -225,7 +225,6 @@ export function ServerDetailContent(props: ServerDetailContentProps) {
             ranges={ranges}
             serverId={serverId}
             variant={isPublic ? 'public' : 'admin'}
-            xAxisInterval={xAxisInterval}
           />
         </>
       }
@@ -343,10 +342,6 @@ function useChartTickFormatter(isRealtime: boolean, range: TimeRange, chartData:
   return useMemo(() => makeTickFormatter(isRealtime, range.hours, chartData), [isRealtime, chartData, range])
 }
 
-function useXAxisInterval(isRealtime: boolean, range: TimeRange, dataLength: number) {
-  return useMemo(() => xAxisStride(isRealtime, range.hours, dataLength), [isRealtime, range, dataLength])
-}
-
 function useTooltipFormatter(isRealtime: boolean, range: TimeRange) {
   return useMemo(() => makeTooltipFormatter(isRealtime, range.hours), [isRealtime, range])
 }
@@ -380,8 +375,7 @@ function MetricsTabContent({
   formatTime,
   formatTooltipLabel,
   serverId,
-  variant,
-  xAxisInterval
+  variant
 }: {
   availableMetrics: AvailableMetrics
   chartData: Record<string, unknown>[]
@@ -398,7 +392,6 @@ function MetricsTabContent({
   formatTooltipLabel: ((time: string) => string) | undefined
   serverId: string
   variant: 'admin' | 'public'
-  xAxisInterval?: number | 'preserveStart' | 'preserveEnd' | 'preserveStartEnd' | 'equidistantPreserveStart'
 }) {
   const { t } = useTranslation('servers')
   const hasGpuTemp = gpuChartData.some((d) => 'gpu_temp' in d && d.gpu_temp != null)
@@ -443,7 +436,6 @@ function MetricsTabContent({
             key={spec.dataKey}
             title={t(spec.labelKey)}
             unit={spec.unit}
-            xAxisInterval={xAxisInterval}
           />
         ))}
       </div>
@@ -496,7 +488,7 @@ function UptimeCard({ isPublic, serverId }: { isPublic: boolean; serverId: strin
         <h3 className="font-semibold text-sm">{t('uptime_title')}</h3>
         <span className="font-medium text-sm">{uptimePct !== null ? `${uptimePct.toFixed(2)}%` : '—'}</span>
       </div>
-      <UptimeTimeline days={uptimeDays} rangeDays={90} showLabels showLegend />
+      <UptimeTimeline appearance="status-history" days={uptimeDays} height={34} rangeDays={90} showLabels showLegend />
     </div>
   )
 }

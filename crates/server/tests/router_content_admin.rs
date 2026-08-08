@@ -8,8 +8,36 @@
 
 mod common;
 
+use chrono::NaiveDate;
 use common::{create_server, http_client, login_admin, login_as_new_user, start_test_server};
+use sea_orm::{ActiveModelTrait, Database, Set};
 use serde_json::{Value, json};
+use serverbee_server::entity::traffic_daily;
+
+/// Open the temp SQLite file the test server is already serving.
+async fn connect_test_db(tmp: &tempfile::TempDir) -> sea_orm::DatabaseConnection {
+    let db_url = format!("sqlite://{}/test.db?mode=rwc", tmp.path().display());
+    Database::connect(db_url).await.expect("connect test db")
+}
+
+async fn insert_traffic_daily(
+    db: &sea_orm::DatabaseConnection,
+    server_id: &str,
+    date: &str,
+    bytes_in: i64,
+    bytes_out: i64,
+) {
+    traffic_daily::ActiveModel {
+        server_id: Set(server_id.to_string()),
+        date: Set(NaiveDate::parse_from_str(date, "%Y-%m-%d").expect("valid date")),
+        bytes_in: Set(bytes_in),
+        bytes_out: Set(bytes_out),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .expect("insert traffic_daily");
+}
 
 /// A minimal but valid PNG payload: the 8-byte magic header plus padding so it
 /// passes the `>= 4 bytes` + `PNG_MAGIC` checks in `extract_and_validate_image`.
@@ -811,6 +839,148 @@ async fn traffic_per_server_admin_happy_path() {
     assert_eq!(body["data"]["bytes_total"], 0);
     assert!(body["data"]["cycle_start"].is_string());
     assert!(body["data"]["daily"].is_array());
+}
+
+#[tokio::test]
+async fn traffic_server_daily_admin_happy_path() {
+    // Admin GET /api/traffic/{server_id}/daily returns the daily breakdown array.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let server_id = create_server(&admin, &base_url, "traffic-srv").await;
+
+    let resp = admin
+        .get(format!(
+            "{}/api/traffic/{}/daily?from=2026-01-01&to=2026-01-31",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["data"].is_array());
+}
+
+#[tokio::test]
+async fn traffic_server_daily_defaults_to_last_30_days() {
+    // Both query params are optional; omitting them must not fail.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let server_id = create_server(&admin, &base_url, "traffic-srv").await;
+
+    let resp = admin
+        .get(format!("{}/api/traffic/{}/daily", base_url, server_id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert!(resp.json::<Value>().await.unwrap()["data"].is_array());
+}
+
+#[tokio::test]
+async fn traffic_server_daily_default_from_is_exactly_30_inclusive_days() {
+    // Omitting `from` with a fixed `to` must open an inclusive 30-day window ending
+    // on `to`: for to=2026-03-31 the start is 2026-03-02 (not 2026-03-01).
+    // Boundary rows prove inclusion/exclusion — not just 200 + array shape.
+    let (base_url, tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let server_id = create_server(&admin, &base_url, "traffic-30d").await;
+
+    let db = connect_test_db(&tmp).await;
+    // One day before the correct window start → must be excluded.
+    insert_traffic_daily(&db, &server_id, "2026-03-01", 1, 1).await;
+    // Correct inclusive window start (day 1 of 30 ending 2026-03-31) → included.
+    insert_traffic_daily(&db, &server_id, "2026-03-02", 2, 2).await;
+    // Window end (`to`) → included.
+    insert_traffic_daily(&db, &server_id, "2026-03-31", 3, 3).await;
+    // One day after `to` → excluded even though data exists.
+    insert_traffic_daily(&db, &server_id, "2026-04-01", 4, 4).await;
+
+    let resp = admin
+        .get(format!(
+            "{}/api/traffic/{}/daily?to=2026-03-31",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let dates: Vec<&str> = body["data"]
+        .as_array()
+        .expect("data array")
+        .iter()
+        .map(|row| row["date"].as_str().expect("date string"))
+        .collect();
+
+    assert!(
+        !dates.contains(&"2026-03-01"),
+        "day before the 30-day window must be excluded, got {dates:?}"
+    );
+    assert!(
+        dates.contains(&"2026-03-02"),
+        "inclusive window start must be included, got {dates:?}"
+    );
+    assert!(
+        dates.contains(&"2026-03-31"),
+        "window end (`to`) must be included, got {dates:?}"
+    );
+    assert!(
+        !dates.contains(&"2026-04-01"),
+        "day after `to` must be excluded, got {dates:?}"
+    );
+    assert_eq!(
+        dates,
+        vec!["2026-03-02", "2026-03-31"],
+        "only the two in-window seeded rows should be returned"
+    );
+}
+
+#[tokio::test]
+async fn traffic_server_daily_rejects_bad_range() {
+    // Unparsable dates and inverted ranges are client errors, not 500s.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+    let server_id = create_server(&admin, &base_url, "traffic-srv").await;
+
+    let malformed = admin
+        .get(format!(
+            "{}/api/traffic/{}/daily?from=not-a-date",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(malformed.status(), 400);
+
+    let inverted = admin
+        .get(format!(
+            "{}/api/traffic/{}/daily?from=2026-02-01&to=2026-01-01",
+            base_url, server_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(inverted.status(), 400);
+}
+
+#[tokio::test]
+async fn traffic_server_daily_not_found_404() {
+    // Unknown server id on the daily breakdown -> 404.
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+
+    let resp = admin
+        .get(format!("{}/api/traffic/no-such-server/daily", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
 }
 
 #[tokio::test]

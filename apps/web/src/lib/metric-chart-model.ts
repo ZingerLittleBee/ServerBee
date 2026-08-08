@@ -4,7 +4,7 @@ import { formatBytes } from '@/lib/utils'
 
 /**
  * Chart model for the server-detail Metrics tab: every transform between
- * API/WS payloads and Recharts rows lives here, testable through this
+ * API/WS payloads and chart rows lives here, testable through this
  * interface. Rendering (and the trivial admin/public branch glue) stays in
  * `server-detail-content.tsx`.
  */
@@ -235,22 +235,6 @@ export function makeTooltipFormatter(isRealtime: boolean, rangeHours: number): (
   }
   if (rangeHours >= LONG_RANGE_HOURS) {
     return (time: string) => `${formatMonthDay(time)} ${formatHourMinute(time)}`
-  }
-  return undefined
-}
-
-/**
- * Recharts X-axis `interval` (stride = N+1 ticks). Long ranges produce 168/720
- * hourly samples — labelling every one collapses into illegible overlap, so we
- * target roughly 8 evenly spaced labels.
- */
-export function xAxisStride(isRealtime: boolean, rangeHours: number, dataLength: number): number | undefined {
-  if (isRealtime) {
-    return 0
-  }
-  if (rangeHours >= LONG_RANGE_HOURS && dataLength > 0) {
-    const targetLabels = 8
-    return Math.max(0, Math.floor(dataLength / targetLabels) - 1)
   }
   return undefined
 }

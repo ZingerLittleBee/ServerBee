@@ -2,6 +2,7 @@ import { Activity, Cpu, Gauge as GaugeIcon, HardDrive, MemoryStick, Network } fr
 import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/lib/server-catalog'
+import { getUtilizationRingColor } from '@/lib/utilization-colors'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { GaugeConfig } from '@/lib/widget-types'
 
@@ -28,14 +29,10 @@ interface Gradient {
   start: string
 }
 
+/** Solid severity tone (same fill at both stops) so gauges match ring/bar language. */
 function getGaugeGradient(value: number): Gradient {
-  if (value >= 90) {
-    return { start: 'var(--chart-4)', end: 'var(--chart-3)' }
-  }
-  if (value >= 70) {
-    return { start: 'var(--chart-3)', end: 'var(--chart-5)' }
-  }
-  return { start: 'var(--chart-1)', end: 'var(--chart-2)' }
+  const color = getUtilizationRingColor(value)
+  return { start: color, end: color }
 }
 
 function getMetricIcon(metric: string) {

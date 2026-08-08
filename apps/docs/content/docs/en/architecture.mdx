@@ -15,7 +15,7 @@ This page describes ServerBee's internal architecture for developers and operato
 |  +---------------------------------------------+ |
 |  | Frontend (React SPA, embedded via rust-embed)| |
 |  | React 19, TanStack Router/Query             | |
-|  | shadcn/ui, Tailwind CSS v4, Recharts        | |
+|  | shadcn/ui, Tailwind CSS v4, Bklit charts        | |
 |  +---------------------------------------------+ |
 |  +---------------------------------------------+ |
 |  | Server (Rust)                                | |
@@ -110,7 +110,7 @@ A React 19 single-page application, embedded into the server binary via `rust-em
 - **Data fetching** -- TanStack Query for REST, native WebSocket for real-time updates (sharing the same cache)
 - **UI components** -- shadcn/ui with the base-nova theme
 - **Styling** -- Tailwind CSS v4
-- **Charts** -- Recharts via shadcn Chart wrappers
+- **Charts** -- Bklit chart primitives (visx) behind shared wrappers in `components/charts/`
 - **Terminal** -- xterm.js web terminal emulator
 - **Build** -- Vite 7
 

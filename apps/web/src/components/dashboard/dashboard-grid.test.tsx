@@ -205,6 +205,32 @@ describe('DashboardGrid', () => {
     expect(widgetShell).toHaveStyle({ height: '240px' })
   })
 
+  it('lifts a stale below-minH widget to its type minimum in the single-column list', () => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 600 })
+
+    render(
+      <DashboardGrid
+        isEditing={false}
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={[
+          {
+            ...widgets[0],
+            id: 'w-squashed',
+            widget_type: 'metric-card',
+            config_json: '{"metric":"cpu","server_id":"srv-1"}',
+            grid_h: 2
+          }
+        ]}
+      />
+    )
+
+    // metric-card declares minH 3, so 2 persisted rows must still render 3 * 80px.
+    expect(screen.getByTestId('widget-w-squashed').parentElement?.parentElement).toHaveStyle({ height: '240px' })
+  })
+
   it('renders single-column list when the measured dashboard content width is narrow', () => {
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 768 })
     mockContainerWidth = 520

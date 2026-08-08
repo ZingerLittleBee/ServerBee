@@ -59,6 +59,9 @@ describe('vite config boneyard integration', () => {
       saved[key] = process.env[key]
       delete process.env[key]
     }
+    // Override any repository-local .env value so prod-proxy safety tests
+    // always exercise the read-only default.
+    process.env.ALLOW_WRITES = '0'
   })
 
   afterEach(() => {

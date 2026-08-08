@@ -30,6 +30,7 @@
       "!**/target",
       "!apps/ios",
       "!apps/web/openapi.json",
+      "!apps/web/public/world-countries.json",
       "!apps/web/src/bones",
       "!apps/web/src/lib/api-types.ts",
       "!templates"

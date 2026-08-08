@@ -14,8 +14,8 @@ interface VisibilityGateProps {
 /**
  * Defers rendering of {children} until the wrapper enters the viewport (or
  * comes within `rootMargin`). Used to avoid paying the React mount cost of
- * off-screen dashboard widgets — recharts widgets call getBBox during mount
- * which triggers forced reflow.
+ * off-screen dashboard widgets — chart widgets measure their container during
+ * mount, which triggers forced reflow.
  *
  * When `disabled` is true the children render immediately, but the same div
  * wrapper is preserved so toggling `disabled` (e.g. entering/exiting edit

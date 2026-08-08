@@ -1434,7 +1434,7 @@ export interface paths {
          *     will consume it via `POST /api/agent/register`.
          * @description `caps` is accepted in the request for the install.sh `--caps` arg but is
          *     NOT persisted on the server row. The server row always starts at
-         *     `CAP_DEFAULT`; the operator can edit capabilities afterwards.
+         *     `CAP_DEFAULT`; the Agent later reports its locally configured capabilities.
          */
         post: operations["create_server"];
         delete?: never;
@@ -2145,6 +2145,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_traffic_cycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/traffic/{server_id}/daily": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_traffic_server_daily"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9619,6 +9635,48 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_CycleResponse"];
                 };
+            };
+            /** @description Server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_traffic_server_daily: {
+        parameters: {
+            query?: {
+                /** @description Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`). */
+                from?: string | null;
+                /** @description Inclusive end date as `YYYY-MM-DD` (default: today). */
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                /** @description Server ID */
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daily traffic breakdown for one server */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_Vec_DailyTraffic"];
+                };
+            };
+            /** @description Invalid date range */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Server not found */
             404: {

@@ -11,6 +11,8 @@
   "online": "在线",
   "healthy": "健康",
   "no_data": "暂无数据",
+  "chart_time": "时间",
+  "chart_date": "日期",
   "no_servers_title": "暂无服务器连接",
   "no_servers_description": "服务器通过 Agent 连接后将显示在此处",
   "ungrouped": "未分组",
@@ -162,22 +164,27 @@
     },
     "serverMap": {
       "title": "服务器地图",
+      "total": "总计",
       "serverCount_one": "{{count}} 台服务器",
       "serverCount_other": "{{count}} 台服务器",
       "empty": {
         "noGeoIP": "GeoIP 数据库未安装",
-        "noLocationData": "暂无服务器位置数据"
+        "noLocationData": "暂无服务器位置数据",
+        "mapUnavailable": "地图数据不可用"
       },
       "actions": {
         "downloadGeoIP": "下载 GeoIP 数据库"
-      },
-      "attribution": "GeoIP by DB-IP"
+      }
     },
     "uptimeTimeline": {
       "title": "可用时间线"
     },
     "diskIo": {
       "title": "磁盘 I/O",
+      "legend": {
+        "read": "读取",
+        "write": "写入"
+      },
       "empty": {
         "noData": "暂无磁盘 I/O 数据"
       }

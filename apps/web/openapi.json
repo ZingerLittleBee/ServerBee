@@ -4962,7 +4962,7 @@
           "servers"
         ],
         "summary": "Create a pending server row and a server-bound enrollment in a single\ntransaction. The server row is inserted with `token_hash = NULL` (pending),\n`capabilities = CAP_DEFAULT`, and `protocol_version = 1`. The operator-\nsupplied `tags` are persisted in `server_tags`, and the global default\nnetwork probe targets are applied to the new server. The returned plaintext\nenrollment `code` is shown exactly once — the install command on the agent\nwill consume it via `POST /api/agent/register`.",
-        "description": "`caps` is accepted in the request for the install.sh `--caps` arg but is\nNOT persisted on the server row. The server row always starts at\n`CAP_DEFAULT`; the operator can edit capabilities afterwards.",
+        "description": "`caps` is accepted in the request for the install.sh `--caps` arg but is\nNOT persisted on the server row. The server row always starts at\n`CAP_DEFAULT`; the Agent later reports its locally configured capabilities.",
         "operationId": "create_server",
         "requestBody": {
           "content": {
@@ -7572,6 +7572,78 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/traffic/{server_id}/daily": {
+      "get": {
+        "tags": [
+          "traffic"
+        ],
+        "operationId": "get_traffic_server_daily",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Inclusive end date as `YYYY-MM-DD` (default: today).",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily traffic breakdown for one server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_DailyTraffic"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid date range"
           },
           "404": {
             "description": "Server not found"

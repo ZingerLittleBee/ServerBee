@@ -2,15 +2,14 @@
 
 ## 概述
 
-Server 详情页 realtime 模式下有 7 个 Recharts 图表随 WebSocket 数据实时更新，是性能热点。
+Server 详情页 realtime 模式下有 7 个图表随 WebSocket 数据实时更新，是性能热点。
 
 ## 优化措施
 
 | 措施 | 文件 | 说明 |
 |------|------|------|
 | 渲染节流 | `hooks/use-realtime-metrics.ts` | `RENDER_THROTTLE_MS=2000`，限制最多每 2 秒触发一次 re-render |
-| 缩短动画 | `components/server/metrics-chart.tsx` | `animationDuration={800}`（默认 1500ms），避免与 2s 更新周期叠加 |
-| 缩短动画 | `components/server/disk-io-chart.tsx` | 同上 |
+| 关闭序列动画 | `components/charts/metric-area-plot.tsx` | `<Area animate={false}>`，避免与 2s 更新周期叠加；容器入场动画保留 500ms |
 
 ---
 

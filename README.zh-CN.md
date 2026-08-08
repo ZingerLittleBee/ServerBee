@@ -131,7 +131,7 @@ make cargo-clippy     # Rust 代码检查
 
 > `make dev-full` 启动带 HMR 的 Vite(`http://localhost:5173`),并代理 `/api/*` 到 `:9527` 的 Rust 服务端。在 **设置** 页生成一次性 enrollment code 即可接入开发用 Agent。
 
-**技术栈:** Rust(Axum 0.8 · sea-orm · SQLite WAL)· React 19(Vite 7 · TanStack Router/Query · Recharts · shadcn/ui · Tailwind CSS v4)· Rust Agent(sysinfo · tokio-tungstenite)。
+**技术栈:** Rust(Axum 0.8 · sea-orm · SQLite WAL)· React 19(Vite 7 · TanStack Router/Query · Bklit · shadcn/ui · Tailwind CSS v4)· Rust Agent(sysinfo · tokio-tungstenite)。
 
 ### 测试与质量
 

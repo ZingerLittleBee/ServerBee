@@ -172,6 +172,7 @@
   "recent_days_ago": "{{count}} 天前",
 
   "latency_title": "延迟 (ms)",
+  "latency_time": "时间",
   "latency_inbound": "入站",
   "latency_outbound": "出站",
   "latency_no_data": "暂无数据",

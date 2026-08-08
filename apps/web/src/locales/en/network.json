@@ -172,6 +172,7 @@
   "recent_days_ago": "{{count}}d ago",
 
   "latency_title": "Latency (ms)",
+  "latency_time": "Time",
   "latency_inbound": "Inbound",
   "latency_outbound": "Outbound",
   "latency_no_data": "No data available",

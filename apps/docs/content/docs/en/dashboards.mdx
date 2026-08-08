@@ -77,7 +77,7 @@ The widget shows an installation prompt when GeoIP data is missing.
 
 ## Performance & Widget Capacity
 
-The dashboard uses viewport-gated lazy mounting (IntersectionObserver): off-screen widgets do not mount their charts at first paint, so cold-load cost barely grows with widget count. **While scrolling**, however, charts (built on recharts) measure SVG text synchronously (`getBBox` / text size). When many widgets enter the viewport at once, those forced reflows accumulate and the scroll noticeably stutters.
+The dashboard uses viewport-gated lazy mounting (IntersectionObserver): off-screen widgets do not mount their charts at first paint, so cold-load cost barely grows with widget count. **While scrolling**, however, charts measure their container and SVG text synchronously. When many widgets enter the viewport at once, those forced reflows accumulate and the scroll noticeably stutters.
 
 Measured (desktop Chrome, no CPU/network throttling, **local backend**, widgets mixed across line-chart / gauge / multi-line / disk-io):
 
@@ -85,7 +85,7 @@ Measured (desktop Chrome, no CPU/network throttling, **local backend**, widgets 
 |--------------|---------------|-----------|
 | ≤ 30         | ~360 ms       | Smooth    |
 | 30 – 60      | ~360 ms       | Usable, mild jank during fast scroll |
-| > 60         | ~360 ms       | Visible stutter while scrolling, main thread saturated by recharts text measurement |
+| > 60         | ~360 ms       | Visible stutter while scrolling, main thread saturated by chart layout measurement |
 
 Against a remote server over the public internet, cold-load LCP grows with the number of **in-viewport** charts, because each one waits on its own history query before painting — a 40-widget dashboard measured over WAN loads in seconds, not ~360 ms. The scrolling characteristics above still apply.
 

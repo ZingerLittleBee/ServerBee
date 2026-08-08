@@ -1,13 +1,8 @@
 import { render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
-import { UptimeTimeline } from './uptime-timeline'
-import { buildTimelineBackground, buildTimelineGeometry } from './uptime-timeline-geometry'
-
-const LEFT_PIXEL_STYLE_RE = /left: \d+(?:\.\d+)?px/
-const WIDTH_PIXEL_STYLE_RE = /width: \d+(?:\.\d+)?px/
-const PIXEL_SNAP_TRANSFORM_RE = /transform:\s*translateZ\(0\)/
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -25,12 +20,48 @@ vi.mock('react-i18next', () => ({
           return 'Down'
         case 'uptime_no_data':
           return 'No data'
+        case 'uptime_date':
+          return 'Date'
+        case 'uptime_status':
+          return 'Status'
         default:
           return key
       }
     }
   })
 }))
+
+vi.mock('@/components/charts/bar-chart', () => ({
+  BarChart: ({
+    barGap,
+    children,
+    data,
+    valueDomain
+  }: {
+    barGap?: number
+    children: ReactNode
+    data: Record<string, unknown>[]
+    valueDomain?: [number, number]
+  }) => (
+    <div
+      data-bar-gap={barGap}
+      data-count={data.length}
+      data-testid="bar-chart"
+      data-value-domain={JSON.stringify(valueDomain)}
+    >
+      {children}
+    </div>
+  )
+}))
+vi.mock('@/components/charts/bar', () => ({
+  Bar: ({ dataKey, fill, lineCap }: { dataKey: string; fill: string; lineCap: number }) => (
+    <div data-fill={fill} data-key={dataKey} data-line-cap={lineCap} data-testid="bar-series" />
+  )
+}))
+vi.mock('@/components/charts/tooltip/chart-tooltip', () => ({ ChartTooltip: () => null }))
+vi.mock('@/components/charts/tooltip/tooltip-content', () => ({ TooltipContent: () => null }))
+
+const { UptimeTimeline } = await import('./uptime-timeline')
 
 function makeEntry(overrides: Partial<UptimeDailyEntry> = {}): UptimeDailyEntry {
   return {
@@ -51,106 +82,97 @@ function makeEntries(count: number, overrides: Partial<UptimeDailyEntry> = {}): 
   )
 }
 
+/** Status cells of the screen-reader table, one row per rendered day. */
+function statusCells(): string[] {
+  return screen
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) => row.querySelectorAll('td')[1]?.textContent ?? '')
+}
+
 describe('UptimeTimeline', () => {
-  it('renders correct number of segments', () => {
-    const days = makeEntries(30)
-    const { container } = render(<UptimeTimeline days={days} rangeDays={30} />)
-    const segments = container.querySelectorAll('[data-segment]')
-    expect(segments).toHaveLength(30)
+  it('renders one full-height column per day across the four status series', () => {
+    render(<UptimeTimeline days={makeEntries(30)} rangeDays={30} />)
+
+    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-count', '30')
+    // Bars must span the whole plot height, so the domain skips the auto headroom.
+    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-value-domain', '[0,1]')
+
+    const series = screen.getAllByTestId('bar-series')
+    expect(series.map((s) => s.getAttribute('data-key'))).toEqual(['green', 'yellow', 'red', 'gray'])
+    // Square segment ends, matching the previous painted track.
+    expect(series[0]).toHaveAttribute('data-line-cap', '0')
+    expect(series[0]).toHaveAttribute('data-fill', 'var(--uptime-operational)')
   })
 
-  it('renders every segment as a pixel-stable DOM tracker block', () => {
+  it('uses the spaced status-history appearance when requested', () => {
+    render(<UptimeTimeline appearance="status-history" days={makeEntries(90)} rangeDays={90} />)
+
+    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-bar-gap', '0.3')
+    expect(screen.getAllByTestId('bar-series').map((series) => series.getAttribute('data-fill'))).toEqual([
+      'var(--network-grid-healthy)',
+      'var(--network-grid-warning)',
+      'var(--network-grid-failed)',
+      'var(--network-grid-unknown)'
+    ])
+  })
+
+  it('classifies each day into a status series', () => {
     const days = [
       makeEntry({ date: '2026-03-01', online_minutes: 1440, total_minutes: 1440 }),
       makeEntry({ date: '2026-03-02', online_minutes: 1400, total_minutes: 1440 }),
-      makeEntry({ date: '2026-03-03', online_minutes: 1000, total_minutes: 1440 })
+      makeEntry({ date: '2026-03-03', online_minutes: 1000, total_minutes: 1440 }),
+      makeEntry({ date: '2026-03-04', online_minutes: 0, total_minutes: 0 })
     ]
-    const { container } = render(<UptimeTimeline days={days} rangeDays={3} />)
-    const tracker = container.querySelector('[data-uptime-timeline]')
-    const paintLayer = container.querySelector('[data-uptime-track-paint]')
-    const segments = container.querySelectorAll('[data-segment]')
+    render(<UptimeTimeline days={days} rangeDays={4} />)
 
-    expect(container.querySelector('svg')).toBeNull()
-    expect(tracker).toHaveStyle({ height: '28px' })
-    expect(paintLayer).toBeInTheDocument()
-    expect(paintLayer?.getAttribute('class')).toContain('absolute')
-    expect(paintLayer?.getAttribute('class')).toContain('inset-0')
-    // Composite to a GPU layer so the gradient is pixel-snapped after scroll,
-    // otherwise dark-mode AA blends each color differently and segments look
-    // like they have different heights.
-    expect(paintLayer?.getAttribute('style')).toMatch(PIXEL_SNAP_TRANSFORM_RE)
-    expect(segments).toHaveLength(3)
-    for (const segment of segments) {
-      expect(segment.getAttribute('class')).toContain('absolute')
-      expect(segment.getAttribute('class')).toContain('top-0')
-      expect(segment.getAttribute('class')).toContain('h-full')
-      expect(segment.getAttribute('class')).toContain('rounded-none')
-      expect(segment.getAttribute('class')).not.toContain('rounded-[1px]')
-      expect(segment.getAttribute('class')).not.toContain('bg-')
-      expect(segment.getAttribute('style')).toMatch(LEFT_PIXEL_STYLE_RE)
-      expect(segment.getAttribute('style')).toMatch(WIDTH_PIXEL_STYLE_RE)
-    }
-  })
-
-  it('renders green segments for 100% uptime', () => {
-    const days = makeEntries(10)
-    const { container } = render(<UptimeTimeline days={days} rangeDays={10} />)
-    const segments = container.querySelectorAll('[data-segment="green"]')
-    expect(segments).toHaveLength(10)
-  })
-
-  it('renders yellow segments for degraded uptime', () => {
-    const days = makeEntries(5, { online_minutes: 1400, total_minutes: 1440 })
-    const { container } = render(<UptimeTimeline days={days} rangeDays={5} />)
-    const segments = container.querySelectorAll('[data-segment="yellow"]')
-    expect(segments).toHaveLength(5)
-  })
-
-  it('renders red segments for low uptime', () => {
-    const days = makeEntries(5, { online_minutes: 1000, total_minutes: 1440 })
-    const { container } = render(<UptimeTimeline days={days} rangeDays={5} />)
-    const segments = container.querySelectorAll('[data-segment="red"]')
-    expect(segments).toHaveLength(5)
-  })
-
-  it('renders gray segments for no data', () => {
-    const days = makeEntries(5, { online_minutes: 0, total_minutes: 0 })
-    const { container } = render(<UptimeTimeline days={days} rangeDays={5} />)
-    const segments = container.querySelectorAll('[data-segment="gray"]')
-    expect(segments).toHaveLength(5)
+    expect(statusCells()).toEqual(['Operational', 'Degraded', 'Down', 'No data'])
   })
 
   it('respects custom thresholds', () => {
-    // 98.6% uptime should be green with threshold of 98
-    const days = makeEntries(3, { online_minutes: 1420, total_minutes: 1440 })
-    const { container } = render(<UptimeTimeline days={days} rangeDays={3} redThreshold={90} yellowThreshold={98} />)
-    const segments = container.querySelectorAll('[data-segment="green"]')
-    expect(segments).toHaveLength(3)
+    // 98.6% uptime is operational once the yellow threshold drops to 98.
+    render(
+      <UptimeTimeline
+        days={makeEntries(3, { online_minutes: 1420, total_minutes: 1440 })}
+        rangeDays={3}
+        redThreshold={90}
+        yellowThreshold={98}
+      />
+    )
+
+    expect(statusCells()).toEqual(['Operational', 'Operational', 'Operational'])
+  })
+
+  it('pads missing days with no-data columns', () => {
+    render(<UptimeTimeline days={makeEntries(5)} rangeDays={10} />)
+
+    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-count', '10')
+    expect(statusCells().filter((status) => status === 'No data')).toHaveLength(5)
+  })
+
+  it('exposes the timeline as a labelled figure with a screen-reader table', () => {
+    render(<UptimeTimeline days={makeEntries(90)} rangeDays={90} />)
+
+    expect(screen.getByRole('figure', { name: '90 days ago - Today' })).toBeInTheDocument()
+    // 50-row accessibility sample plus the header row.
+    expect(screen.getAllByRole('row')).toHaveLength(51)
   })
 
   it('shows labels when showLabels is true', () => {
-    const days = makeEntries(90)
-    render(<UptimeTimeline days={days} rangeDays={90} showLabels />)
+    render(<UptimeTimeline days={makeEntries(90)} rangeDays={90} showLabels />)
+
     expect(screen.getByText('90 days ago')).toBeInTheDocument()
     expect(screen.getByText('Today')).toBeInTheDocument()
   })
 
   it('shows legend when showLegend is true', () => {
-    const days = makeEntries(30)
-    render(<UptimeTimeline days={days} rangeDays={30} showLegend />)
-    expect(screen.getByText('Operational')).toBeInTheDocument()
-    expect(screen.getByText('Degraded')).toBeInTheDocument()
-    expect(screen.getByText('Down')).toBeInTheDocument()
-    expect(screen.getByText('No data')).toBeInTheDocument()
-  })
+    render(<UptimeTimeline days={makeEntries(30)} rangeDays={30} showLegend />)
 
-  it('pads with gray when fewer days than rangeDays', () => {
-    const days = makeEntries(5)
-    const { container } = render(<UptimeTimeline days={days} rangeDays={10} />)
-    const allSegments = container.querySelectorAll('[data-segment]')
-    expect(allSegments).toHaveLength(10)
-    const graySegments = container.querySelectorAll('[data-segment="gray"]')
-    expect(graySegments).toHaveLength(5)
+    // Each label also appears in the screen-reader table, so match the swatch row.
+    const legend = screen.getByText('Down').closest('div')
+    expect(legend).toHaveTextContent('Operational')
+    expect(legend).toHaveTextContent('Degraded')
+    expect(legend).toHaveTextContent('No data')
   })
 })
 
@@ -172,50 +194,5 @@ describe('computeAggregateUptime', () => {
   it('returns 100 for full uptime', () => {
     const days = makeEntries(5)
     expect(computeAggregateUptime(days)).toBe(100)
-  })
-})
-
-describe('buildTimelineGeometry', () => {
-  it('preserves the requested visual gap between adjacent segments', () => {
-    const geometry = buildTimelineGeometry({ count: 5, gap: 1.5, width: 101 })
-
-    expect(geometry).toHaveLength(5)
-    for (let i = 0; i < geometry.length - 1; i += 1) {
-      const gap = geometry[i + 1].x - (geometry[i].x + geometry[i].width)
-      expect(gap).toBeCloseTo(1.5)
-    }
-  })
-
-  it('keeps the final segment inside the measured track width', () => {
-    const geometry = buildTimelineGeometry({ count: 5, gap: 1.5, width: 100 })
-    const lastSegment = geometry.at(-1)
-
-    expect(lastSegment).toBeDefined()
-    expect((lastSegment?.x ?? 0) + (lastSegment?.width ?? 0)).toBeCloseTo(100)
-  })
-
-  it('returns an empty array when count or width is non-positive', () => {
-    expect(buildTimelineGeometry({ count: 0, gap: 1.5, width: 100 })).toEqual([])
-    expect(buildTimelineGeometry({ count: 5, gap: 1.5, width: 0 })).toEqual([])
-  })
-})
-
-describe('buildTimelineBackground', () => {
-  it('renders all colored blocks in one hard-stop background layer', () => {
-    const geometry = [
-      { x: 0, width: 10 },
-      { x: 12, width: 10 },
-      { x: 24, width: 10 }
-    ]
-
-    expect(buildTimelineBackground({ colors: ['green', 'yellow', 'red'], geometry })).toBe(
-      'linear-gradient(to right, var(--uptime-operational) 0px 10px, transparent 10px 12px, var(--uptime-degraded) 12px 22px, transparent 22px 24px, var(--uptime-down) 24px 34px)'
-    )
-  })
-
-  it('uses the muted token for no-data blocks', () => {
-    expect(buildTimelineBackground({ colors: ['gray'], geometry: [{ x: 0, width: 10 }] })).toBe(
-      'linear-gradient(to right, var(--color-muted) 0px 10px)'
-    )
   })
 })

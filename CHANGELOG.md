@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dashboard charts redrawn on a new rendering engine** -- Every metric, traffic, latency, and security chart now shares one chart toolkit with consistent tooltips, axis labels, and legends, and each chart exposes a screen-reader table of its data
+
+- **Uptime timeline uses the same chart tooltip as everything else** -- Hovering a day now shows its status, percentage, downtime, and incident count in the standard chart tooltip, and the 90-day strip is readable as a table by screen readers
+
+### Fixed
+
+- **Daily traffic trend shows data again** -- A server's Traffic tab asked for a daily breakdown endpoint that was never implemented, so the chart always reported "no daily traffic data"
+
+- **Narrow-screen dashboard widgets keep their minimum height** -- On phones, a widget saved smaller than its type allows was squashed until parts of it (such as the metric card sparkline) disappeared
+
 ## [1.0.0-alpha.12] - 2026-08-03
 
 ### Added

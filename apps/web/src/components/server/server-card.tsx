@@ -10,6 +10,7 @@ import { getLossTextClass, isLatencyFailure } from '@/lib/network-latency-consta
 import { latencyColorClass, type NetworkServerSummary } from '@/lib/network-types'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { computeTrafficQuota } from '@/lib/traffic'
+import { getUtilizationRingColor } from '@/lib/utilization-colors'
 import { cn, formatBytes, formatUptime } from '@/lib/utils'
 import { useUpgradeJobsStore } from '@/stores/upgrade-jobs-store'
 import { CountryFlag } from '../country-flag'
@@ -54,16 +55,6 @@ function osIcon(os: string | null): string {
     return '😈'
   }
   return ''
-}
-
-function getRingColor(pct: number, brandColor: string): string {
-  if (pct > 90) {
-    return 'var(--status-danger)'
-  }
-  if (pct > 70) {
-    return 'var(--status-warning)'
-  }
-  return brandColor
 }
 
 function formatLatency(ms: number | null): string {
@@ -125,7 +116,7 @@ const ServerCardInner = ({
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 ring-1 ring-foreground/10',
+        'flex w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/10',
         // Pending cards have far less content than active ones; stretch them to
         // fill the grid cell so a "Waiting for agent…" tile matches the height of
         // its data-rich siblings instead of leaving a short, mismatched gap.
@@ -176,29 +167,21 @@ const ServerCardInner = ({
       ) : (
         <>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <RingMetric
-              color={getRingColor(server.cpu, 'var(--color-chart-1)')}
-              label={t('col_cpu')}
-              value={server.cpu}
-            >
+            <RingMetric color={getUtilizationRingColor(server.cpu)} label={t('col_cpu')} value={server.cpu}>
               {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
             </RingMetric>
-            <RingMetric
-              color={getRingColor(memoryPct, 'var(--color-chart-2)')}
-              label={t('col_memory')}
-              value={memoryPct}
-            >
+            <RingMetric color={getUtilizationRingColor(memoryPct)} label={t('col_memory')} value={memoryPct}>
               <span className="font-medium text-foreground">{formatBytes(server.mem_used)}</span>
               <span className="mx-0.5">/</span>
               {formatBytes(server.mem_total)}
             </RingMetric>
-            <RingMetric color={getRingColor(diskPct, 'var(--color-chart-3)')} label={t('col_disk')} value={diskPct}>
+            <RingMetric color={getUtilizationRingColor(diskPct)} label={t('col_disk')} value={diskPct}>
               <span className="font-medium text-foreground">{formatBytes(server.disk_used)}</span>
               <span className="mx-0.5">/</span>
               {formatBytes(server.disk_total)}
             </RingMetric>
             <RingMetric
-              color={getRingColor(trafficRingPct, 'var(--color-chart-4)')}
+              color={getUtilizationRingColor(trafficRingPct)}
               label={t('card_traffic_quota')}
               value={trafficRingPct}
             >

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import { useServerDetail } from '@/lib/server-catalog'
@@ -20,6 +20,9 @@ export function useServerRecords(id: string, hours: number, interval: string, op
       )
     },
     enabled: !!id && id.length > 0 && (options?.enabled ?? true),
+    // Keep the prior window visible while the next range loads so charts can
+    // morph (Bklit yDomainTween / path transition) instead of blanking out.
+    placeholderData: keepPreviousData,
     refetchInterval: 60_000
   })
 }

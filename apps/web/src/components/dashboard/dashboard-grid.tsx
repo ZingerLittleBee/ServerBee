@@ -66,6 +66,14 @@ const MOBILE_QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
 
 const WIDGET_TYPE_MAP = new Map<string, WidgetTypeDefinition>(WIDGET_TYPES.map((widget) => [widget.id, widget]))
 
+// The grid enforces each widget type's minH on desktop, but the single-column
+// branch used the persisted grid_h verbatim, so a stale layout saved below minH
+// squashed the widget until inner flex rows collapsed to zero height.
+function mobileHeightPx(widget: DashboardWidget): number {
+  const minH = WIDGET_TYPE_MAP.get(widget.widget_type)?.minH ?? 0
+  return Math.max(widget.grid_h, minH) * MOBILE_ROW_PX
+}
+
 function pxToGridUnits(px: number): number {
   return Math.max(2, Math.ceil((px + MARGIN_Y) / (ROW_HEIGHT + MARGIN_Y)))
 }
@@ -467,7 +475,7 @@ export function DashboardGrid({
       <div className="space-y-4" ref={containerRef}>
         {sortedWidgets.map((widget) => {
           const isAuto = getStrategy(widget.id).kind === 'content-height'
-          const mobileHeight = widget.grid_h * MOBILE_ROW_PX
+          const mobileHeight = mobileHeightPx(widget)
           return (
             <div className="relative" data-widget-id={widget.id} key={widget.id}>
               {isEditing && (

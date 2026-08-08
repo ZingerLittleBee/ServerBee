@@ -1,20 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StackedBarPlot, type StackedBarSeries } from '@/components/charts/stacked-bar-plot'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  type ChartConfig,
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent
-} from '@/components/ui/chart'
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import { formatDateShort } from '@/lib/format'
 import { cn, formatBytes } from '@/lib/utils'
+import { inclusiveUtcDateWindow } from './traffic-day-range'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,7 +31,7 @@ interface CycleData {
   }>
 }
 
-interface DailyItem {
+interface DailyItem extends Record<string, unknown> {
   bytes_in: number
   bytes_out: number
   date: string
@@ -49,11 +42,20 @@ interface DailyItem {
 // ---------------------------------------------------------------------------
 
 // Localized Inbound/Outbound series labels, shared by both traffic charts.
-function trafficChartConfig(t: (key: string) => string): ChartConfig {
-  return {
-    bytes_in: { label: t('traffic_inbound'), color: 'var(--chart-1)' },
-    bytes_out: { label: t('traffic_outbound'), color: 'var(--chart-2)' }
-  }
+function trafficChartSeries(t: (key: string) => string): StackedBarSeries[] {
+  return [
+    { dataKey: 'bytes_in', label: t('traffic_inbound'), color: 'var(--chart-1)' },
+    { dataKey: 'bytes_out', label: t('traffic_outbound'), color: 'var(--chart-2)' }
+  ]
+}
+
+function formatDayTick(date: string): string {
+  return date.slice(5)
+}
+
+/** Cycle periods read as "2026-03-01 ~ 2026-03-31"; the axis only has room for the start. */
+function formatCycleTick(period: string): string {
+  return period.split(' ~ ')[0] ?? period
 }
 
 // ---------------------------------------------------------------------------
@@ -155,15 +157,11 @@ function CycleOverviewCard({ cycle, t }: { cycle: CycleData['current']; t: (key:
 
 function DailyTrendChart({ serverId, t }: { serverId: string; t: (key: string) => string }) {
   const [dayRange, setDayRange] = useState<DayRange>(30)
-  const dailyConfig = useMemo(() => trafficChartConfig(t), [t])
+  const dailySeries = useMemo(() => trafficChartSeries(t), [t])
 
-  const fromDate = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - dayRange)
-    return d.toISOString().slice(0, 10)
-  }, [dayRange])
-
-  const toDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  // Inclusive UTC window of exactly `dayRange` calendar days (including today).
+  // Avoids local setDate + toISOString day-shift across timezones / DST.
+  const { from: fromDate, to: toDate } = useMemo(() => inclusiveUtcDateWindow(dayRange), [dayRange])
 
   const { data, isLoading } = useQuery<DailyItem[]>({
     queryKey: ['traffic', serverId, 'daily', dayRange],
@@ -201,42 +199,21 @@ function DailyTrendChart({ serverId, t }: { serverId: string; t: (key: string) =
       <CardContent>
         {isLoading && <Skeleton className="h-[260px] w-full" />}
         {!isLoading && data && data.length > 0 && (
-          <ChartContainer className="h-[260px] w-full" config={dailyConfig}>
-            <BarChart accessibilityLayer data={data} maxBarSize={40}>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                axisLine={false}
-                dataKey="date"
-                tickFormatter={(v: string) => v.slice(5)}
-                tickLine={false}
-                tickMargin={10}
-              />
-              <YAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} width={60} />
-              <ChartTooltip
-                content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
-                cursor={false}
-              />
-              <ChartLegend content={<ChartLegendContent />} />
-              <Bar
-                dataKey="bytes_in"
-                fill="var(--color-bytes_in)"
-                isAnimationActive={false}
-                radius={[0, 0, 4, 4]}
-                stackId="traffic"
-              />
-              <Bar
-                dataKey="bytes_out"
-                fill="var(--color-bytes_out)"
-                isAnimationActive={false}
-                radius={[4, 4, 0, 0]}
-                stackId="traffic"
-              />
-            </BarChart>
-          </ChartContainer>
+          <StackedBarPlot
+            ariaLabel={t('traffic_daily_trend')}
+            categoryKey="date"
+            categoryLabel={t('traffic_chart_date')}
+            className="h-[260px] w-full"
+            data={data}
+            formatCategory={formatDayTick}
+            formatTooltipLabel={(date) => date}
+            formatValue={formatBytes}
+            series={dailySeries}
+          />
         )}
         {!isLoading && (!data || data.length === 0) && (
           <div className="flex h-[200px] items-center justify-center text-muted-foreground text-sm">
-            No daily traffic data available.
+            {t('traffic_no_daily_data')}
           </div>
         )}
       </CardContent>
@@ -258,7 +235,6 @@ function HistoryCycleChart({ history, t }: { history: CycleData['history']; t: (
     bytes_in: h.bytes_in,
     bytes_out: h.bytes_out
   }))
-  const historyConfig = trafficChartConfig(t)
 
   return (
     <Card>
@@ -266,32 +242,19 @@ function HistoryCycleChart({ history, t }: { history: CycleData['history']; t: (
         <CardTitle>{t('traffic_history_comparison')}</CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer className="h-[260px] w-full" config={historyConfig}>
-          <BarChart accessibilityLayer data={chartData} layout="vertical" maxBarSize={24}>
-            <CartesianGrid horizontal={false} />
-            <XAxis axisLine={false} tickFormatter={formatBytes} tickLine={false} type="number" />
-            <YAxis axisLine={false} dataKey="period" tickLine={false} type="category" width={80} />
-            <ChartTooltip
-              content={<ChartTooltipContent hideLabel valueFormatter={(v) => formatBytes(v)} />}
-              cursor={false}
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            <Bar
-              dataKey="bytes_in"
-              fill="var(--color-bytes_in)"
-              isAnimationActive={false}
-              radius={[0, 0, 4, 4]}
-              stackId="cycle"
-            />
-            <Bar
-              dataKey="bytes_out"
-              fill="var(--color-bytes_out)"
-              isAnimationActive={false}
-              radius={[4, 4, 0, 0]}
-              stackId="cycle"
-            />
-          </BarChart>
-        </ChartContainer>
+        <StackedBarPlot
+          ariaLabel={t('traffic_history_comparison')}
+          categoryKey="period"
+          categoryLabel={t('traffic_chart_period')}
+          className="h-[260px] w-full"
+          data={chartData}
+          formatCategory={formatCycleTick}
+          formatTooltipLabel={(period) => period}
+          formatValue={formatBytes}
+          maxBarWidth={24}
+          orientation="horizontal"
+          series={trafficChartSeries(t)}
+        />
       </CardContent>
     </Card>
   )

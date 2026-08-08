@@ -1,16 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from '@/components/ui/recharts-lazy'
+import { MetricAreaPlot, type MetricAreaSeries } from '@/components/charts/metric-area-plot'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { PingRecord } from '@/lib/api-schema'
 import { formatDateTime } from '@/lib/format'
 
-const PING_CHART_CONFIG = {
-  latency: { label: 'Latency', color: 'var(--chart-4)' }
-} satisfies ChartConfig
+function formatLatency(value: number): string {
+  return `${value.toFixed(1)}ms`
+}
+
+function formatClockTime(time: string): string {
+  return new Date(time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+function formatRecordTime(time: string): string {
+  return formatDateTime(time, { hour12: false })
+}
 
 function createPingRecordWindow() {
   const now = new Date()
@@ -23,6 +30,10 @@ function createPingRecordWindow() {
 export function PingResultsChart({ taskId }: { taskId: string }) {
   const { t } = useTranslation('settings')
   const { from, to } = useMemo(createPingRecordWindow, [])
+  const series = useMemo<MetricAreaSeries[]>(
+    () => [{ dataKey: 'latency', label: t('ping.chart_latency'), color: 'var(--chart-4)' }],
+    [t]
+  )
 
   const { data: records, isLoading } = useQuery<PingRecord[]>({
     queryKey: ['ping-records', taskId, from, to],
@@ -57,37 +68,17 @@ export function PingResultsChart({ taskId }: { taskId: string }) {
         <span>{t('ping.avg_latency', { value: avgLatency.toFixed(1) })}</span>
         <span>{t('ping.record_count', { count: records.length })}</span>
       </div>
-      <ChartContainer className="h-[180px] w-full" config={PING_CHART_CONFIG}>
-        <AreaChart accessibilityLayer data={chartData}>
-          <CartesianGrid vertical={false} />
-          <XAxis
-            axisLine={false}
-            dataKey="timestamp"
-            tickFormatter={(value: string) =>
-              new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-            }
-            tickLine={false}
-          />
-          <YAxis axisLine={false} tickLine={false} width={40} />
-          <ChartTooltip
-            content={
-              <ChartTooltipContent
-                labelFormatter={(label) => formatDateTime(String(label), { hour12: false })}
-                valueFormatter={(value) => `${value.toFixed(1)}ms`}
-              />
-            }
-          />
-          <Area
-            connectNulls={false}
-            dataKey="latency"
-            fill="var(--color-latency)"
-            fillOpacity={0.1}
-            stroke="var(--color-latency)"
-            strokeWidth={2}
-            type="monotone"
-          />
-        </AreaChart>
-      </ChartContainer>
+      <MetricAreaPlot
+        ariaLabel={t('ping.chart_label')}
+        className="h-[180px] w-full"
+        data={chartData}
+        formatTime={formatClockTime}
+        formatTooltipLabel={formatRecordTime}
+        formatValue={formatLatency}
+        series={series}
+        timeLabel={t('ping.chart_time')}
+        yMarginLeft={48}
+      />
     </div>
   )
 }

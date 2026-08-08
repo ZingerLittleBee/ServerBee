@@ -131,7 +131,7 @@ make cargo-clippy     # Rust lint
 
 > `make dev-full` runs Vite with HMR at `http://localhost:5173`, proxies `/api/*` to the Rust server at `:9527`, creates a development Server, and prints its one-time Agent enrollment command.
 
-**Stack:** Rust (Axum 0.8 · sea-orm · SQLite WAL) · React 19 (Vite 7 · TanStack Router/Query · Recharts · shadcn/ui · Tailwind CSS v4) · Rust agents (sysinfo · tokio-tungstenite).
+**Stack:** Rust (Axum 0.8 · sea-orm · SQLite WAL) · React 19 (Vite 7 · TanStack Router/Query · Bklit · shadcn/ui · Tailwind CSS v4) · Rust agents (sysinfo · tokio-tungstenite).
 
 ### Testing & quality
 

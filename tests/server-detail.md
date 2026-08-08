@@ -157,14 +157,14 @@
 
 ---
 
-## 三、shadcn Chart 图表
+## 三、Bklit 图表
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
 | C1 | MetricsChart 渲染 | `/servers/:id` → 实时模式 | CPU/Memory/Disk/Network In/Network Out/Load 共 6 个图表正常渲染，每个带边框圆角卡片 + h3 标题 | ✅ |
 | C2 | MetricsChart Tooltip 格式化 | hover CPU 图表 | CPU 显示 `xx.x%`；Network In 显示 formatBytes 格式（如 `48.8 KB`） | ⏭️ headless 模式无法验证 hover |
 | C3 | MetricsChart 历史切换 | 点击 1h/6h/24h | 图表切换为历史数据，含 Temperature 图表，X 轴时间格式 HH:mm | ✅ |
-| C4 | AreaChart 样式 | 查看图表 | fillOpacity=0.1, strokeWidth=2, animationDuration=800, type="monotone" | ✅ 代码逻辑验证 |
+| C4 | Area 样式 | 查看图表 | fillOpacity=0.1, strokeWidth=2, `animate={false}`, curve=monotone | ✅ 代码逻辑验证 |
 | C5 | 浅色主题 | 浅色模式下查看所有图表 | 颜色、背景、文字对比度正常 | ✅ 截图验证 |
 | C6 | 深色主题 | 深色模式下查看所有图表 | 颜色、背景、文字对比度正常 | ✅ 截图验证 |
 

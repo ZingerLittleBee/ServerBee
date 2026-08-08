@@ -6,13 +6,6 @@ const LATENCY_HEALTHY_TEXT_CLASS = 'text-status-healthy-text'
 const LATENCY_WARNING_TEXT_CLASS = 'text-status-warning-text'
 const LATENCY_FAILED_TEXT_CLASS = 'text-status-danger-text'
 
-// "No data" squares read as an empty slot in the grid, so they take the border
-// tone rather than the near-invisible muted surface.
-export const LATENCY_UNKNOWN_BAR_COLOR = 'var(--color-border)'
-const LATENCY_HEALTHY_BAR_COLOR = 'var(--status-healthy)'
-const LATENCY_WARNING_BAR_COLOR = 'var(--status-warning)'
-const LATENCY_FAILED_BAR_COLOR = 'var(--status-danger)'
-
 export type LatencyStatus = 'unknown' | 'healthy' | 'warning' | 'failed'
 
 interface LatencyStatusInput {
@@ -52,21 +45,6 @@ export function getLatencyTextClass(input: LatencyStatusInput): string {
   }
 }
 
-export function getLatencyBarColor(input: LatencyStatusInput): string {
-  switch (getLatencyStatus(input)) {
-    case 'healthy':
-      return LATENCY_HEALTHY_BAR_COLOR
-    case 'warning':
-      return LATENCY_WARNING_BAR_COLOR
-    case 'failed':
-      return LATENCY_FAILED_BAR_COLOR
-    case 'unknown':
-      return LATENCY_UNKNOWN_BAR_COLOR
-    default:
-      return LATENCY_UNKNOWN_BAR_COLOR
-  }
-}
-
 export const LOSS_WARNING_THRESHOLD_RATIO = 0.01
 export const LOSS_SEVERE_THRESHOLD_RATIO = 0.05
 
@@ -95,18 +73,47 @@ export function getCombinedSeverity({ latencyMs, lossRatio }: CombinedSeverityIn
   return 'healthy'
 }
 
-export function getCombinedBarColor(input: CombinedSeverityInput): string {
-  switch (getCombinedSeverity(input)) {
+// Square-grid status palette in the style of status.openai.com: every marker shares the
+// same fixed geometry, so color is the only severity channel and severe must not collapse
+// into failed. The scoped --network-grid-* tokens (teal → amber → coral → red, plus a
+// muted neutral for unknown) keep the global --status-* fills untouched.
+const SQUARE_GRID_HEALTHY_COLOR = 'var(--network-grid-healthy)'
+const SQUARE_GRID_WARNING_COLOR = 'var(--network-grid-warning)'
+const SQUARE_GRID_SEVERE_COLOR = 'var(--network-grid-severe)'
+const SQUARE_GRID_FAILED_COLOR = 'var(--network-grid-failed)'
+const SQUARE_GRID_UNKNOWN_COLOR = 'var(--network-grid-unknown)'
+
+export function getSeverityMarkerColor(severity: CombinedSeverity): string {
+  switch (severity) {
     case 'healthy':
-      return LATENCY_HEALTHY_BAR_COLOR
+      return SQUARE_GRID_HEALTHY_COLOR
     case 'warning':
-      return LATENCY_WARNING_BAR_COLOR
+      return SQUARE_GRID_WARNING_COLOR
     case 'severe':
+      return SQUARE_GRID_SEVERE_COLOR
     case 'failed':
-      return LATENCY_FAILED_BAR_COLOR
+      return SQUARE_GRID_FAILED_COLOR
     default:
-      return LATENCY_UNKNOWN_BAR_COLOR
+      return SQUARE_GRID_UNKNOWN_COLOR
   }
+}
+
+// Packet-loss severity for the square grid, derived from the shared ratio thresholds so
+// the grid's encoding can never drift from the text and dot tones below.
+export function getLossSeverity(lossRatio: number | null | undefined): CombinedSeverity {
+  if (lossRatio == null) {
+    return 'unknown'
+  }
+  if (lossRatio >= NETWORK_FAILURE_PACKET_LOSS_RATIO) {
+    return 'failed'
+  }
+  if (lossRatio >= LOSS_SEVERE_THRESHOLD_RATIO) {
+    return 'severe'
+  }
+  if (lossRatio >= LOSS_WARNING_THRESHOLD_RATIO) {
+    return 'warning'
+  }
+  return 'healthy'
 }
 
 // Text tone for an end-to-end packet loss ratio, shared by the server card, its
@@ -135,30 +142,4 @@ export function getLossDotBgClass(lossRatio: number | null | undefined): string 
     return 'bg-status-warning'
   }
   return 'bg-status-danger'
-}
-
-export function getLatencySquareColor({ latencyMs, lossRatio }: CombinedSeverityInput): string {
-  if (lossRatio != null && lossRatio >= NETWORK_FAILURE_PACKET_LOSS_RATIO) {
-    return LATENCY_FAILED_BAR_COLOR
-  }
-  if (latencyMs == null) {
-    return LATENCY_UNKNOWN_BAR_COLOR
-  }
-  if (latencyMs < LATENCY_HEALTHY_THRESHOLD_MS) {
-    return LATENCY_HEALTHY_BAR_COLOR
-  }
-  return LATENCY_WARNING_BAR_COLOR
-}
-
-export function getLossSquareColor(lossRatio: number | null | undefined): string {
-  if (lossRatio == null) {
-    return LATENCY_UNKNOWN_BAR_COLOR
-  }
-  if (lossRatio < LOSS_WARNING_THRESHOLD_RATIO) {
-    return LATENCY_HEALTHY_BAR_COLOR
-  }
-  if (lossRatio < LOSS_SEVERE_THRESHOLD_RATIO) {
-    return LATENCY_WARNING_BAR_COLOR
-  }
-  return LATENCY_FAILED_BAR_COLOR
 }
