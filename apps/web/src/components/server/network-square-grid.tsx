@@ -11,10 +11,10 @@ import { NetworkTargetBreakdown } from './network-target-breakdown'
 import type { ServerCardMetricPoint } from './server-card-network-data'
 
 // Uniform narrow markers in the style of status.openai.com fill the history row's height.
-// Their shared square silhouette keeps every severity at the same visual height and avoids
-// color-dependent corner antialiasing.
+// Their shared silhouette keeps every severity at the same visual height; the small radius
+// softens the taller markers without turning them into pills.
 const MARKER_WIDTH = 5
-const MARKER_HEIGHT = 14
+const MARKER_HEIGHT = 16
 const MARKER_GAP = 4
 
 interface NetworkSquareGridProps {
@@ -107,7 +107,7 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
   return (
     <div
       aria-label={summary}
-      className="flex h-3.5 w-full flex-row-reverse overflow-hidden"
+      className="flex h-4 w-full flex-row-reverse overflow-hidden"
       role="img"
       style={{ gap: `${MARKER_GAP}px` }}
     >
@@ -118,7 +118,7 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
             <TooltipTrigger
               render={
                 <div
-                  className="flex-none"
+                  className="flex-none rounded-[1px]"
                   data-severity={severity}
                   data-testid="square"
                   style={{
