@@ -39,7 +39,7 @@ export function RingChart({ value, size, strokeWidth, color, label, compact = fa
             cy={VIEWBOX / 2}
             fill="none"
             r={radius}
-            stroke="rgba(128,128,128,0.15)"
+            stroke="var(--metric-ring-track)"
             strokeWidth={resolvedStroke}
           />
           <circle

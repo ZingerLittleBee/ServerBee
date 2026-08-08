@@ -53,13 +53,14 @@
   --uptime-operational: var(--status-healthy);
   --uptime-degraded: var(--status-warning);
   --uptime-down: var(--status-danger);
+  --metric-ring-track: rgb(128 128 128 / 15%);
   /* Claude Status history anchors. The localized role="img" summary carries
      the non-color severity breakdown. */
   --network-grid-healthy: oklch(0.685 0.167 130.145); /* #76ad2a */
   --network-grid-warning: oklch(0.78 0.153 74.836); /* #f0a72a */
   --network-grid-severe: oklch(0.657 0.178 38.002); /* #e86135 */
   --network-grid-failed: oklch(0.611 0.194 24.997); /* #e04343 */
-  --network-grid-unknown: oklch(0.6 0 0);
+  --network-grid-unknown: var(--metric-ring-track);
   /* Categorical series palette for multi-series charts (network latency, target
      legend dots). Theme-independent: the same 12 hues read acceptably on both
      surfaces, and swapping them per theme would re-color a series when the user

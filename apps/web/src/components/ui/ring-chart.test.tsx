@@ -46,6 +46,13 @@ describe('RingChart', () => {
     expect(circles.length).toBe(2)
   })
 
+  it('uses the shared metric track color for the background circle', () => {
+    const { container } = render(<RingChart color="#3b82f6" label="CPU" value={50} />)
+    const background = container.querySelector('circle')
+
+    expect(background).toHaveAttribute('stroke', 'var(--metric-ring-track)')
+  })
+
   it('renders the center percentage with tabular figures so it does not jitter', () => {
     render(<RingChart color="#3b82f6" label="CPU" value={72.3} />)
     expect(screen.getByText('72')).toHaveClass('tabular-nums')
