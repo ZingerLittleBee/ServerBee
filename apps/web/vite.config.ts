@@ -2,6 +2,7 @@ import path from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
+import { boneyardPlugin } from 'boneyard-js/vite'
 import { defineConfig, loadEnv } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { createDevProxy } from './vite/dev-proxy'
@@ -31,6 +32,15 @@ function requireProdProxyEnv(env: Record<string, string>, name: string) {
 export default defineConfig(({ mode }) => {
   const repoRoot = path.resolve(import.meta.dirname, '../..')
 
+  // Boneyard auto-captures bones from the fixture-only /boneyard-capture
+  // route when a dev server starts and on HMR (the plugin is apply: 'serve',
+  // so builds are unaffected). Capture visits only the local dev server, so
+  // prod-proxy mode keeps its safety model — no production data is involved.
+  // `bun run generate:bones` drives the CLI against its own ephemeral server
+  // and sets BONEYARD_SKIP_PLUGIN=1 so the plugin's auto-capture cannot race
+  // the CLI's committed output there.
+  const boneyardPlugins = process.env.BONEYARD_SKIP_PLUGIN === '1' ? [] : [boneyardPlugin()]
+
   if (mode === 'prod-proxy') {
     const env = loadEnv(mode, repoRoot, '')
     const target = requireProdProxyEnv(env, 'SERVERBEE_PROD_URL')
@@ -44,6 +54,7 @@ export default defineConfig(({ mode }) => {
           autoCodeSplitting: true
         }),
         react(),
+        ...boneyardPlugins,
         tailwindcss(),
         VitePWA({
           registerType: 'autoUpdate',
@@ -120,6 +131,7 @@ export default defineConfig(({ mode }) => {
         autoCodeSplitting: true
       }),
       react(),
+      ...boneyardPlugins,
       builtinWidgetsPlugin(),
       tailwindcss(),
       VitePWA({
