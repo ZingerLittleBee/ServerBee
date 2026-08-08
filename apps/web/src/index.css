@@ -53,17 +53,16 @@
   --uptime-operational: var(--status-healthy);
   --uptime-degraded: var(--status-warning);
   --uptime-down: var(--status-danger);
-  /* Network history markers use a restrained teal → amber → coral → red
-     progression plus a neutral slot for missing data. Every light-theme fill
-     shares L=0.600, and each hue uses roughly 75% of its maximum sRGB chroma.
-     This keeps their apparent weight even while preserving the semantic hue
-     progression. All five fills remain in gamut and clear the WCAG 3:1
-     graphical-object threshold on the white card (≈3.8-4.3:1). These tokens are
-     scoped to the grid so other status signals retain the global palette. */
-  --network-grid-healthy: oklch(0.6 0.079 184.704);
-  --network-grid-warning: oklch(0.6 0.097 70.08);
-  --network-grid-severe: oklch(0.6 0.123 47.604);
-  --network-grid-failed: oklch(0.6 0.183 25.331);
+  /* Network history markers use the four anchor colors sampled from
+     status.claude.com: olive green → amber → orange → red. The palette stays
+     theme-independent because every anchor remains readable on the dark card;
+     the localized role="img" summary carries the non-color severity breakdown.
+     These tokens are scoped to the grid so other status signals retain the
+     global palette. */
+  --network-grid-healthy: oklch(0.685 0.167 130.145); /* #76ad2a */
+  --network-grid-warning: oklch(0.78 0.153 74.836); /* approx. #f0a72a */
+  --network-grid-severe: oklch(0.657 0.178 38.002); /* #e86135 */
+  --network-grid-failed: oklch(0.611 0.194 24.997); /* #e04343 */
   --network-grid-unknown: oklch(0.6 0 0);
   /* Categorical series palette for multi-series charts (network latency, target
      legend dots). Theme-independent: the same 12 hues read acceptably on both
@@ -143,12 +142,7 @@
   --status-healthy-text: var(--color-emerald-400);
   --status-warning-text: var(--color-amber-400);
   --status-danger-text: var(--color-red-400);
-  /* Dark-theme marker fills share L=0.720 and the same relative-chroma method.
-     They remain in sRGB and reach ≈6.8-7.5:1 against the dark card. */
-  --network-grid-healthy: oklch(0.72 0.095 184.704);
-  --network-grid-warning: oklch(0.72 0.117 70.08);
-  --network-grid-severe: oklch(0.72 0.141 47.604);
-  --network-grid-failed: oklch(0.72 0.131 25.331);
+  /* Claude has no missing-data color; keep that slot theme-aware. */
   --network-grid-unknown: oklch(0.72 0 0);
   --chart-background: oklch(0.145 0 0);
   --chart-foreground: oklch(0.45 0 0);
