@@ -29,7 +29,7 @@ const VALUE_DOMAIN: [number, number] = [0, FULL_HEIGHT_VALUE]
 /** Gaps between day columns as a fraction of the band. */
 const DAY_GAP_RATIOS: Record<UptimeTimelineAppearance, number> = {
   default: 0.12,
-  'status-history': 0.4
+  'status-history': 0.3
 }
 
 const STATUS_ORDER: UptimeColor[] = ['green', 'yellow', 'red', 'gray']

@@ -108,7 +108,7 @@ describe('UptimeTimeline', () => {
   it('uses the spaced status-history appearance when requested', () => {
     render(<UptimeTimeline appearance="status-history" days={makeEntries(90)} rangeDays={90} />)
 
-    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-bar-gap', '0.4')
+    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-bar-gap', '0.3')
     expect(screen.getAllByTestId('bar-series').map((series) => series.getAttribute('data-fill'))).toEqual([
       'var(--network-grid-healthy)',
       'var(--network-grid-warning)',
