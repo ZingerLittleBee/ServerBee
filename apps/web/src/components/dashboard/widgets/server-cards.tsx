@@ -154,9 +154,10 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
         style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}
       >
         {visible.map((server) => (
-          // content-visibility:auto skips layout/paint for off-screen cards;
-          // contain-intrinsic-size reserves their height so scrolling stays smooth.
-          <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
+          // content-visibility:auto adds paint containment. The negative margin
+          // keeps the grid geometry unchanged while padding leaves room for the
+          // card shadow, preventing it from being clipped into dark corners.
+          <div className="-m-1 p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
             <ServerCard server={server} />
           </div>
         ))}

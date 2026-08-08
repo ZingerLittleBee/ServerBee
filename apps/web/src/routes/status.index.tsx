@@ -80,7 +80,7 @@ function PublicStatusIndex() {
       {layout === 'grid' ? (
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {servers.map((s) => (
-            <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={s.id}>
+            <div className="-m-1 p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={s.id}>
               <ServerSummaryCard clickable={clickable} server={s} />
             </div>
           ))}

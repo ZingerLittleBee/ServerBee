@@ -256,7 +256,7 @@ function ServersListPage() {
           style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}
         >
           {filtered.map((server) => (
-            <div className="[contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
+            <div className="-m-1 p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
               <ServerCard
                 costEntry={costByServerId.get(server.id)}
                 networkBucketSeconds={networkBucketSeconds}
