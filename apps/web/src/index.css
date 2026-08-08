@@ -53,17 +53,15 @@
   --uptime-operational: var(--status-healthy);
   --uptime-degraded: var(--status-warning);
   --uptime-down: var(--status-danger);
-  /* Network history markers use the four anchor colors sampled from
-     status.claude.com: olive green → amber → orange → red. The palette stays
-     theme-independent because every anchor remains readable on the dark card;
-     the localized role="img" summary carries the non-color severity breakdown.
-     These tokens are scoped to the grid so other status signals retain the
-     global palette. */
-  --network-grid-healthy: oklch(0.685 0.167 130.145); /* #76ad2a */
-  --network-grid-warning: oklch(0.78 0.153 74.836); /* approx. #f0a72a */
-  --network-grid-severe: oklch(0.657 0.178 38.002); /* #e86135 */
-  --network-grid-failed: oklch(0.611 0.194 24.997); /* #e04343 */
-  --network-grid-unknown: oklch(0.6 0 0);
+  /* Network history markers keep Claude's olive → amber → orange → red hue
+     progression, but share one perceptual lightness so equal-size markers have
+     equal visual weight. The localized role="img" summary carries the
+     non-color severity breakdown. */
+  --network-grid-healthy: oklch(0.68 0.167 130.145);
+  --network-grid-warning: oklch(0.68 0.153 74.836);
+  --network-grid-severe: oklch(0.68 0.178 38.002);
+  --network-grid-failed: oklch(0.68 0.194 24.997);
+  --network-grid-unknown: oklch(0.68 0 0);
   /* Categorical series palette for multi-series charts (network latency, target
      legend dots). Theme-independent: the same 12 hues read acceptably on both
      surfaces, and swapping them per theme would re-color a series when the user
@@ -142,8 +140,6 @@
   --status-healthy-text: var(--color-emerald-400);
   --status-warning-text: var(--color-amber-400);
   --status-danger-text: var(--color-red-400);
-  /* Claude has no missing-data color; keep that slot theme-aware. */
-  --network-grid-unknown: oklch(0.72 0 0);
   --chart-background: oklch(0.145 0 0);
   --chart-foreground: oklch(0.45 0 0);
   --chart-foreground-muted: oklch(0.65 0.01 260);
