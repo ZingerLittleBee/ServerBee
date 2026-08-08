@@ -116,7 +116,7 @@ const ServerCardInner = ({
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 shadow-sm ring-1 ring-black/5 dark:ring-white/10',
+        'flex w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/10',
         // Pending cards have far less content than active ones; stretch them to
         // fill the grid cell so a "Waiting for agent…" tile matches the height of
         // its data-rich siblings instead of leaving a short, mismatched gap.
