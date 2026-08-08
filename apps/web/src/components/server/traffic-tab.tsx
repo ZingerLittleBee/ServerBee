@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import { formatDateShort } from '@/lib/format'
 import { cn, formatBytes } from '@/lib/utils'
+import { inclusiveUtcDateWindow } from './traffic-day-range'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,13 +159,9 @@ function DailyTrendChart({ serverId, t }: { serverId: string; t: (key: string) =
   const [dayRange, setDayRange] = useState<DayRange>(30)
   const dailySeries = useMemo(() => trafficChartSeries(t), [t])
 
-  const fromDate = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() - dayRange)
-    return d.toISOString().slice(0, 10)
-  }, [dayRange])
-
-  const toDate = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  // Inclusive UTC window of exactly `dayRange` calendar days (including today).
+  // Avoids local setDate + toISOString day-shift across timezones / DST.
+  const { from: fromDate, to: toDate } = useMemo(() => inclusiveUtcDateWindow(dayRange), [dayRange])
 
   const { data, isLoading } = useQuery<DailyItem[]>({
     queryKey: ['traffic', serverId, 'daily', dayRange],

@@ -49,18 +49,25 @@ pub struct CycleQuery {
 
 #[derive(Deserialize, utoipa::IntoParams)]
 pub struct ServerDailyQuery {
-    /// Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`).
+    /// Inclusive start date as `YYYY-MM-DD` (default: start of a 30-day
+    /// inclusive window ending at `to`, i.e. `to` minus 29 days).
     pub from: Option<String>,
     /// Inclusive end date as `YYYY-MM-DD` (default: today).
     pub to: Option<String>,
 }
 
-/// Fallback window when the caller omits `from`, in days.
+/// Number of calendar dates in the default inclusive window (including `to`).
 const DEFAULT_DAILY_WINDOW_DAYS: i64 = 30;
 
 fn parse_query_date(value: &str, field: &str) -> Result<NaiveDate, AppError> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .map_err(|_| AppError::BadRequest(format!("Invalid {field} date, expected YYYY-MM-DD")))
+}
+
+/// Inclusive start for a default window of [`DEFAULT_DAILY_WINDOW_DAYS`] calendar
+/// dates ending on `end` (`end` is day N of N).
+fn default_daily_from(end: NaiveDate) -> NaiveDate {
+    end - Duration::days(DEFAULT_DAILY_WINDOW_DAYS - 1)
 }
 
 pub fn read_router() -> Router<Arc<AppState>> {
@@ -219,7 +226,7 @@ pub async fn get_traffic_server_daily(
     };
     let start = match q.from.as_deref() {
         Some(value) => parse_query_date(value, "from")?,
-        None => end - Duration::days(DEFAULT_DAILY_WINDOW_DAYS),
+        None => default_daily_from(end),
     };
 
     if start > end {
