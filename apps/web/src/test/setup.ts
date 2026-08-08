@@ -55,3 +55,33 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
     dispatchEvent: () => false
   })) as unknown as typeof window.matchMedia
 }
+
+// Node's experimental global localStorage accessor can shadow jsdom's in a
+// worker and is undefined without --localstorage-file (merely reading it
+// emits an ExperimentalWarning). Install a deterministic in-memory Storage
+// for every jsdom test file instead: unconditionally via defineProperty,
+// never read-first, so it holds regardless of Node's accessor state.
+// Node-environment test files (no window) are left untouched.
+if (typeof window !== 'undefined') {
+  const store = new Map<string, string>()
+  const storage: Storage = {
+    get length() {
+      return store.size
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => store.get(key) ?? null,
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key)
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value))
+    }
+  }
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: storage,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  })
+}
