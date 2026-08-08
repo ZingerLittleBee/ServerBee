@@ -1,21 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { StatusOverviewGridSkeleton, StatusOverviewListSkeleton } from '@/components/boneyard/page-skeletons'
 import { LayoutToggle } from '@/components/status/layout-toggle'
 import { ServerSummaryCard } from '@/components/status/server-summary-card'
 import { ServerSummaryRow } from '@/components/status/server-summary-row'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { usePublicStatusConfig } from '@/hooks/use-public-status'
+import { useStatusLayout } from '@/hooks/use-status-layout'
 import { api } from '@/lib/api-client'
 import type { PublicServerSummary, PublicStatusConfig } from '@/lib/api-schema'
 
 export const Route = createFileRoute('/status/')({
   component: PublicStatusIndex
 })
-
-const STORAGE_KEY = 'serverbee.status.layout'
 
 const DEFAULT_THRESHOLDS: Pick<PublicStatusConfig, 'uptime_red_threshold' | 'uptime_yellow_threshold'> = {
   uptime_red_threshold: 95,
@@ -38,26 +36,7 @@ function PublicStatusIndex() {
     enabled
   })
 
-  const [layout, setLayout] = useState<'list' | 'grid'>('grid')
-
-  useEffect(() => {
-    let stored: 'list' | 'grid' | null = null
-    try {
-      stored = localStorage.getItem(STORAGE_KEY) as 'list' | 'grid' | null
-    } catch {
-      // localStorage may be unavailable (private mode / disabled storage)
-    }
-    setLayout(stored ?? config?.default_layout ?? 'grid')
-  }, [config?.default_layout])
-
-  const onLayoutChange = (next: 'list' | 'grid') => {
-    setLayout(next)
-    try {
-      localStorage.setItem(STORAGE_KEY, next)
-    } catch {
-      // ignore storage failures (private mode / quota)
-    }
-  }
+  const [layout, onLayoutChange] = useStatusLayout(config?.default_layout)
 
   if (config?.enabled === false) {
     return (
@@ -68,13 +47,9 @@ function PublicStatusIndex() {
   }
 
   if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: 6 }, (_, i) => (
-          <Skeleton className="h-20 rounded-lg" key={`skel-${i.toString()}`} />
-        ))}
-      </div>
-    )
+    // Same effective layout the loaded page will render, so the skeleton
+    // matches the incoming content instead of jumping between layouts.
+    return layout === 'list' ? <StatusOverviewListSkeleton /> : <StatusOverviewGridSkeleton />
   }
 
   if (error || !servers) {

@@ -2,6 +2,7 @@ import path from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
+import { boneyardPlugin } from 'boneyard-js/vite'
 import { defineConfig, loadEnv } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { createDevProxy } from './vite/dev-proxy'
@@ -31,6 +32,18 @@ function requireProdProxyEnv(env: Record<string, string>, name: string) {
 export default defineConfig(({ mode }) => {
   const repoRoot = path.resolve(import.meta.dirname, '../..')
 
+  // Boneyard's vite plugin auto-captures bones on dev-server start and HMR,
+  // launching Playwright and rewriting the committed src/bones artifacts with
+  // its register-only registry template (dropping the CLI's
+  // configureBoneyard call). Ordinary `bun run dev` and `make web-dev-prod`
+  // must stay free of that, so the plugin is strictly opt-in via
+  // BONEYARD_AUTO_CAPTURE=1. The authoritative regeneration path is the
+  // explicit `bun run generate:bones` CLI flow. Even when opted in, capture
+  // visits only the local dev server's fixture-only /boneyard-capture
+  // surface, so prod-proxy mode keeps its safety model — no production data
+  // is involved and the createDevProxy guards below are untouched.
+  const boneyardPlugins = process.env.BONEYARD_AUTO_CAPTURE === '1' ? [boneyardPlugin()] : []
+
   if (mode === 'prod-proxy') {
     const env = loadEnv(mode, repoRoot, '')
     const target = requireProdProxyEnv(env, 'SERVERBEE_PROD_URL')
@@ -44,6 +57,7 @@ export default defineConfig(({ mode }) => {
           autoCodeSplitting: true
         }),
         react(),
+        ...boneyardPlugins,
         tailwindcss(),
         VitePWA({
           registerType: 'autoUpdate',
@@ -120,6 +134,7 @@ export default defineConfig(({ mode }) => {
         autoCodeSplitting: true
       }),
       react(),
+      ...boneyardPlugins,
       builtinWidgetsPlugin(),
       tailwindcss(),
       VitePWA({
