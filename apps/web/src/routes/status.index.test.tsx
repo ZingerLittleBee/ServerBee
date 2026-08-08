@@ -11,7 +11,9 @@ const serversState = vi.hoisted(() => ({
 const configState = vi.hoisted(() => ({ defaultLayout: 'grid' as 'grid' | 'list' }))
 
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (config: unknown) => config,
+  // Mirror the real Route class, which exposes the createFileRoute options
+  // on its public `options` property (Route.options.component).
+  createFileRoute: () => (config: unknown) => ({ options: config }),
   Link: ({ children, to, ...rest }: { children: ReactNode; to: string }) => (
     <a href={to} {...rest}>
       {children}
@@ -77,9 +79,26 @@ function createLocalStorageStub(): Storage {
   }
 }
 
+function isRouteComponent(value: unknown): value is React.ComponentType {
+  return typeof value === 'function'
+}
+
+/**
+ * Typed seam for the route's public `options.component` (typed `unknown` by
+ * TanStack): narrows it to a renderable component, or fails with a clear
+ * error when the createFileRoute mock did not provide one.
+ */
+function requireRouteComponent(route: { options: { component?: unknown } }): React.ComponentType {
+  const { component } = route.options
+  if (!isRouteComponent(component)) {
+    throw new Error('Route options.component is missing or not a function — check the createFileRoute mock')
+  }
+  return component
+}
+
 async function renderPage() {
   const { Route } = await import('./status.index')
-  const Page = (Route as { component: React.ComponentType }).component
+  const Page = requireRouteComponent(Route)
   return render(<Page />)
 }
 
@@ -129,7 +148,7 @@ describe('PublicStatusIndex', () => {
     localStorage.setItem(STATUS_LAYOUT_STORAGE_KEY, 'list')
     serversState.isLoading = true
     const { Route } = await import('./status.index')
-    const Page = (Route as { component: React.ComponentType }).component
+    const Page = requireRouteComponent(Route)
     const { container, rerender } = render(<Page />)
 
     expect(container.querySelector('[data-boneyard="status-overview-list"]')).not.toBeNull()

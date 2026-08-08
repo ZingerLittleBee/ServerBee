@@ -12,6 +12,9 @@ const mockNavigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => ({
     ...config,
+    // The real Route class exposes the createFileRoute options on its
+    // public `options` property (Route.options.component).
+    options: config,
     useParams: () => ({ serverId: 'srv-1' }),
     useSearch: () => ({})
   }),
@@ -50,9 +53,26 @@ vi.mock('@/components/network/public-network-tab', () => ({
   PublicNetworkTab: () => <div data-testid="public-network-tab" />
 }))
 
+function isRouteComponent(value: unknown): value is React.ComponentType {
+  return typeof value === 'function'
+}
+
+/**
+ * Typed seam for the route's public `options.component` (typed `unknown` by
+ * TanStack): narrows it to a renderable component, or fails with a clear
+ * error when the createFileRoute mock did not provide one.
+ */
+function requireRouteComponent(route: { options: { component?: unknown } }): React.ComponentType {
+  const { component } = route.options
+  if (!isRouteComponent(component)) {
+    throw new Error('Route options.component is missing or not a function — check the createFileRoute mock')
+  }
+  return component
+}
+
 async function renderPage() {
   const { Route } = await import('./status.server.$serverId')
-  const Page = (Route as { component: React.ComponentType }).component
+  const Page = requireRouteComponent(Route)
   return render(<Page />)
 }
 
