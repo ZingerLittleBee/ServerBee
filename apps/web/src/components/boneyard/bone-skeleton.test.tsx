@@ -50,25 +50,29 @@ describe('BoneSkeleton', () => {
     expect(container.querySelectorAll('[data-boneyard-bone]')).toHaveLength(1)
   })
 
-  it('keeps children mounted but hidden from paint and assistive tech while loading', () => {
+  it('keeps children mounted but out of the accessibility tree while loading', () => {
     const { container } = render(
       <BoneSkeleton initialBones={TEST_BONES} loading name="test-surface">
-        <p>Real content</p>
+        <button type="button">Real action</button>
       </BoneSkeleton>
     )
 
+    // boneyard hides content with visibility:hidden (no aria-hidden). That
+    // removes children from the accessibility tree and focus order — assert
+    // this effective behavior instead of an attribute upstream does not set.
     const content = container.querySelector('[data-boneyard-content]') as HTMLElement
-    expect(content.getAttribute('aria-hidden')).toBe('true')
     expect(content.style.visibility).toBe('hidden')
     // Children stay mounted so the container keeps the loaded page's
-    // dimensions (no layout shift when bones resolve).
-    expect(screen.getByText('Real content')).toBeInTheDocument()
+    // dimensions (no layout shift when bones resolve)...
+    expect(screen.getByText('Real action')).toBeInTheDocument()
+    // ...but they are neither visible nor focusable to users.
+    expect(screen.queryByRole('button', { name: 'Real action' })).toBeNull()
   })
 
-  it('renders children instead of bones once loading completes', () => {
+  it('restores children to the accessibility tree once loading completes', () => {
     const { container } = render(
       <BoneSkeleton initialBones={TEST_BONES} loading={false} name="test-surface">
-        <p>Real content</p>
+        <button type="button">Real action</button>
       </BoneSkeleton>
     )
 
@@ -76,8 +80,7 @@ describe('BoneSkeleton', () => {
     expect(container.querySelector('[data-boneyard]')?.getAttribute('aria-busy')).toBeNull()
     const content = container.querySelector('[data-boneyard-content]') as HTMLElement
     expect(content.style.visibility).toBe('')
-    expect(content.getAttribute('aria-hidden')).toBeNull()
-    expect(screen.getByText('Real content')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Real action' })).toBeInTheDocument()
   })
 
   it('injects pulse keyframes when motion is allowed', () => {
@@ -103,17 +106,27 @@ describe('BoneSkeleton', () => {
     expect(container.querySelectorAll('style')).toHaveLength(0)
   })
 
-  it('renders nothing while loading when the name has no registered bones', () => {
+  it('shows the generic visible fallback when the name has no registered bones', () => {
     const { container } = render(
       <BoneSkeleton loading name="unregistered-surface">
         <p>Fixture content</p>
       </BoneSkeleton>
     )
 
-    // fallback defaults to null: fake fixture content must never flash when
-    // bones are missing (e.g. registry not regenerated yet).
-    expect(container.querySelector('[data-boneyard="unregistered-surface"]')).not.toBeNull()
-    expect(container.querySelectorAll('[data-boneyard-bone]')).toHaveLength(0)
+    // Loading semantics stay intact even without bones.
+    const el = container.querySelector('[data-boneyard="unregistered-surface"]')
+    expect(el).not.toBeNull()
+    expect(el?.getAttribute('aria-busy')).toBe('true')
+
+    // The fallback replaces children entirely: fake fixture content never
+    // renders, and the page is not left permanently blank.
     expect(screen.queryByText('Fixture content')).toBeNull()
+    const fallback = container.querySelector('[data-boneyard-fallback]')
+    expect(fallback).not.toBeNull()
+    expect(fallback?.getAttribute('aria-hidden')).toBe('true')
+
+    // Generic inert placeholders only: no fake data, nothing focusable.
+    expect(fallback?.textContent).toBe('')
+    expect(fallback?.querySelectorAll('button, a, input, select, textarea, [tabindex]')).toHaveLength(0)
   })
 })
