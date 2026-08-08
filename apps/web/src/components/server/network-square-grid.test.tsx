@@ -75,7 +75,7 @@ describe('NetworkSquareGrid', () => {
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
     expect(square).toHaveAttribute('data-severity', 'unknown')
     expect(square?.style.backgroundColor).toBe('var(--network-grid-unknown)')
-    expect(square?.style.height).toBe('16px')
+    expect(square?.style.height).toBe('18px')
   })
 
   it('renders at least one square even at zero width', () => {
@@ -127,14 +127,14 @@ describe('NetworkSquareGrid', () => {
     const { container } = renderGrid('loss', points)
 
     // One marker per severity (healthy, warning, severe, failed, unknown), each rendered
-    // at the identical 5x16 size with a subtle 1px radius and a 4px rhythm between markers.
-    expect(screen.getByRole('img')).toHaveClass('h-4')
+    // at the identical 5x18 size with a subtle 1px radius and a 4px rhythm between markers.
+    expect(screen.getByRole('img')).toHaveClass('h-[18px]')
     expect(screen.getByRole('img')).toHaveStyle({ gap: '4px' })
     const squares = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="square"]'))
     expect(squares).toHaveLength(5)
     for (const square of squares) {
       expect(square.style.width).toBe('5px')
-      expect(square.style.height).toBe('16px')
+      expect(square.style.height).toBe('18px')
       expect(square).toHaveClass('rounded-[1px]')
     }
   })
@@ -177,7 +177,7 @@ describe('NetworkSquareGrid', () => {
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
     expect(square).toHaveAttribute('data-severity', 'failed')
     expect(square?.style.backgroundColor).toBe('var(--network-grid-failed)')
-    expect(square?.style.height).toBe('16px')
+    expect(square?.style.height).toBe('18px')
   })
 
   describe('contract with buildServerCardNetworkState', () => {
@@ -226,7 +226,7 @@ describe('NetworkSquareGrid', () => {
       const latestSquare = container.querySelector<HTMLElement>('[data-testid="square"]')
       expect(latestSquare).toHaveAttribute('data-severity', 'warning')
       expect(latestSquare?.style.backgroundColor).toBe('var(--network-grid-warning)')
-      expect(latestSquare?.style.height).toBe('16px')
+      expect(latestSquare?.style.height).toBe('18px')
       expect(container.querySelectorAll('[tabindex], button, a')).toHaveLength(0)
     })
   })
