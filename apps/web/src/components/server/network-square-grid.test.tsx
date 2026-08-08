@@ -127,12 +127,14 @@ describe('NetworkSquareGrid', () => {
     const { container } = renderGrid('loss', points)
 
     // One marker per severity (healthy, warning, severe, failed, unknown), each rendered
-    // at the identical 5x12 size: color is the only severity channel.
+    // at the identical 5x12 size with sharp edges and a 3px rhythm between markers.
+    expect(screen.getByRole('img')).toHaveStyle({ gap: '3px' })
     const squares = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="square"]'))
     expect(squares).toHaveLength(5)
     for (const square of squares) {
       expect(square.style.width).toBe('5px')
       expect(square.style.height).toBe('12px')
+      expect(square).not.toHaveClass('rounded-[1px]')
     }
   })
 

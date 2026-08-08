@@ -15,7 +15,7 @@ import type { ServerCardMetricPoint } from './server-card-network-data'
 // apparent height difference between severity levels.
 const MARKER_WIDTH = 5
 const MARKER_HEIGHT = 12
-const MARKER_GAP = 2
+const MARKER_GAP = 3
 
 interface NetworkSquareGridProps {
   kind: 'latency' | 'loss'
@@ -100,9 +100,9 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
     warning: severityCounts.warning
   })
 
-  // Every card renders ~30 squares per grid, so per-square tab stops would drown the page's
+  // Every card renders ~30 markers per grid, so per-marker tab stops would drown the page's
   // Tab order. Instead the grid is a single labelled image: assistive tech gets the summary,
-  // pointer users still get the per-square tooltip. `role="img"` makes the squares
+  // pointer users still get the per-marker tooltip. `role="img"` makes the markers
   // presentational, so they need no individual labels.
   return (
     <div
@@ -118,7 +118,7 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
             <TooltipTrigger
               render={
                 <div
-                  className="flex-none rounded-[1px]"
+                  className="flex-none"
                   data-severity={severity}
                   data-testid="square"
                   style={{
