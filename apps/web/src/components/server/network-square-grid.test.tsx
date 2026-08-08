@@ -127,7 +127,7 @@ describe('NetworkSquareGrid', () => {
     const { container } = renderGrid('loss', points)
 
     // One marker per severity (healthy, warning, severe, failed, unknown), each rendered
-    // at the identical 5x14 size with a subtle 1px radius and a 4px rhythm between markers.
+    // at the identical 5x14 size with sharp corners and a 4px rhythm between markers.
     expect(screen.getByRole('img')).toHaveClass('h-3.5')
     expect(screen.getByRole('img')).toHaveStyle({ gap: '4px' })
     const squares = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="square"]'))
@@ -135,7 +135,7 @@ describe('NetworkSquareGrid', () => {
     for (const square of squares) {
       expect(square.style.width).toBe('5px')
       expect(square.style.height).toBe('14px')
-      expect(square).toHaveClass('rounded-[1px]')
+      expect(square).not.toHaveClass('rounded-[1px]')
     }
   })
 
