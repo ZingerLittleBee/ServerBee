@@ -61,7 +61,7 @@
   --network-grid-healthy: oklch(0.68 0.167 130.145);
   --network-grid-warning: oklch(0.64 0.153 74.836);
   --network-grid-severe: oklch(0.7 0.178 38.002);
-  --network-grid-failed: oklch(0.72 0.194 24.997);
+  --network-grid-failed: oklch(0.69 0.194 24.997);
   --network-grid-unknown: oklch(0.68 0 0);
   /* Categorical series palette for multi-series charts (network latency, target
      legend dots). Theme-independent: the same 12 hues read acceptably on both
