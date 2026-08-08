@@ -38,6 +38,18 @@ describe('boneyard capture surface', () => {
     expect(routeTree).not.toContain('boneyard-capture')
   })
 
+  it('keeps the capture-page import expression behind the compile-time DEV gate', () => {
+    // Rollup can only tree-shake the capture chunk when the import()
+    // expression itself is unreachable in prod — a top-level lazy import
+    // outside the import.meta.env.DEV gate stays reachable and ships.
+    const source = readFileSync(resolve(import.meta.dirname, '../../routes/__root.tsx'), 'utf8')
+    const importIndex = source.indexOf("import('@/components/boneyard/capture-page')")
+    expect(importIndex).toBeGreaterThan(-1)
+    const declarationIndex = source.lastIndexOf('const BoneyardCapturePage', importIndex)
+    expect(declarationIndex).toBeGreaterThan(-1)
+    expect(source.slice(declarationIndex, importIndex)).toContain('import.meta.env.DEV')
+  })
+
   it('still renders every named fixture for the explicit generation workflow', async () => {
     // Simulate the CLI's build mode so Skeleton renders fixtures for capture.
     ;(window as unknown as Record<string, unknown>).__BONEYARD_BUILD = true
