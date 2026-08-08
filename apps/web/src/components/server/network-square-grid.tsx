@@ -14,7 +14,7 @@ import type { ServerCardMetricPoint } from './server-card-network-data'
 // Their shared silhouette keeps every severity at the same visual height; the small radius
 // softens the taller markers without turning them into pills.
 const MARKER_WIDTH = 5
-const MARKER_HEIGHT = 34
+const MARKER_HEIGHT = 18
 const MARKER_GAP = 3
 
 interface NetworkSquareGridProps {
@@ -107,7 +107,7 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
   return (
     <div
       aria-label={summary}
-      className="flex h-[34px] w-full flex-row-reverse overflow-hidden"
+      className="flex h-[18px] w-full flex-row-reverse overflow-hidden"
       role="img"
       style={{ gap: `${MARKER_GAP}px` }}
     >
