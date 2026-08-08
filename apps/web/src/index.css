@@ -53,25 +53,18 @@
   --uptime-operational: var(--status-healthy);
   --uptime-degraded: var(--status-warning);
   --uptime-down: var(--status-danger);
-  /* Network history square grid, in the style of status.openai.com: every marker
-     shares the same fixed geometry, so color is the only severity channel. A
-     restrained teal → amber → coral → red progression plus a muted neutral slot
-     for missing data, scoped to the grid so the global --status-* fills (dots,
-     meters, rings, uptime timeline) are not recolored. The 6px squares are
-     graphical objects, so every state must clear the WCAG 3:1 non-text contrast
-     bar on the card: the light theme uses the 600 shades (teal ≈3.7:1,
-     amber ≈3.2:1, coral ≈3.6:1 — the 500 fills used elsewhere only reach
-     2.1-2.9:1 on white), failed reuses --status-danger (red-500, ≈3.8:1), and
-     the neutral slot is a ≈3.2:1 gray. Hues are literal Tailwind palette copies
-     for the same tree-shaking reason as the chart-series palette below; the
-     dark theme flips the colored fills to the brighter 500 shades. */
-  --network-grid-healthy: oklch(60% 0.118 184.704); /* teal-600 */
-  --network-grid-warning: oklch(66.6% 0.179 58.318); /* amber-600 */
-  --network-grid-severe: oklch(
-    64.6% 0.222 41.116
-  ); /* orange-600: coral between amber and red */
-  --network-grid-failed: var(--status-danger);
-  --network-grid-unknown: oklch(0.65 0 0);
+  /* Network history markers use a restrained teal → amber → coral → red
+     progression plus a neutral slot for missing data. Every light-theme fill
+     shares L=0.600, and each hue uses roughly 75% of its maximum sRGB chroma.
+     This keeps their apparent weight even while preserving the semantic hue
+     progression. All five fills remain in gamut and clear the WCAG 3:1
+     graphical-object threshold on the white card (≈3.8-4.3:1). These tokens are
+     scoped to the grid so other status signals retain the global palette. */
+  --network-grid-healthy: oklch(0.6 0.079 184.704);
+  --network-grid-warning: oklch(0.6 0.097 70.08);
+  --network-grid-severe: oklch(0.6 0.123 47.604);
+  --network-grid-failed: oklch(0.6 0.183 25.331);
+  --network-grid-unknown: oklch(0.6 0 0);
   /* Categorical series palette for multi-series charts (network latency, target
      legend dots). Theme-independent: the same 12 hues read acceptably on both
      surfaces, and swapping them per theme would re-color a series when the user
@@ -150,14 +143,13 @@
   --status-healthy-text: var(--color-emerald-400);
   --status-warning-text: var(--color-amber-400);
   --status-danger-text: var(--color-red-400);
-  /* The square-grid fills are the exception: the light theme needed the 600
-     shades to clear 3:1 on white, so they flip to the brighter 500 shades here,
-     where they sit even further above 3:1 on the dark card. Failed stays on
-     --status-danger and the neutral gray keeps its shared value; both already
-     read on this surface. */
-  --network-grid-healthy: oklch(70.4% 0.14 182.503); /* teal-500 */
-  --network-grid-warning: oklch(76.9% 0.188 70.08); /* amber-500 */
-  --network-grid-severe: oklch(70.5% 0.213 47.604); /* orange-500 */
+  /* Dark-theme marker fills share L=0.720 and the same relative-chroma method.
+     They remain in sRGB and reach ≈6.8-7.5:1 against the dark card. */
+  --network-grid-healthy: oklch(0.72 0.095 184.704);
+  --network-grid-warning: oklch(0.72 0.117 70.08);
+  --network-grid-severe: oklch(0.72 0.141 47.604);
+  --network-grid-failed: oklch(0.72 0.131 25.331);
+  --network-grid-unknown: oklch(0.72 0 0);
   --chart-background: oklch(0.145 0 0);
   --chart-foreground: oklch(0.45 0 0);
   --chart-foreground-muted: oklch(0.65 0.01 260);
