@@ -138,12 +138,12 @@
   --status-healthy-text: var(--color-emerald-400);
   --status-warning-text: var(--color-amber-400);
   --status-danger-text: var(--color-red-400);
-  /* Dark surfaces amplify the history markers' visual weight. Lower only
-     their lightness while preserving the Claude hue and chroma anchors. */
-  --network-grid-healthy: oklch(0.535 0.167 130.145);
-  --network-grid-warning: oklch(0.63 0.153 74.836);
-  --network-grid-severe: oklch(0.507 0.178 38.002);
-  --network-grid-failed: oklch(0.461 0.194 24.997);
+  /* Dark surfaces amplify the history markers' visual weight. Lower their
+     lightness while raising chroma for a deep, nearly saturated palette. */
+  --network-grid-healthy: oklch(0.535 0.2 130.145);
+  --network-grid-warning: oklch(0.63 0.18 74.836);
+  --network-grid-severe: oklch(0.507 0.21 38.002);
+  --network-grid-failed: oklch(0.461 0.22 24.997);
   --network-grid-unknown: oklch(0.45 0 0);
   --chart-background: oklch(0.145 0 0);
   --chart-foreground: oklch(0.45 0 0);
