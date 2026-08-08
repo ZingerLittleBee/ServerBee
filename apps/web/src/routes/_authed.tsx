@@ -1,4 +1,5 @@
 import { createFileRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
+import type { CSSProperties } from 'react'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppSidebar } from '@/components/app-sidebar'
@@ -213,16 +214,13 @@ function AuthedLayout() {
       >
         {t('a11y.skip_to_content')}
       </a>
-      <SidebarProvider>
+      <SidebarProvider style={{ '--header-height': 'calc(var(--spacing) * 12)' } as CSSProperties}>
         <AppSidebar />
         <SidebarInset className="min-h-0 overflow-hidden">
-          <header className="flex h-14 shrink-0 items-center justify-between gap-2 px-3 sm:h-16 sm:px-4">
-            <div className="flex min-w-0 items-center gap-2">
+          <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+            <div className="flex w-full min-w-0 items-center gap-1 px-4 lg:gap-2 lg:px-6">
               <SidebarTrigger className="-ml-1" />
-              <Separator
-                className="mr-1 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center sm:mr-2"
-                orientation="vertical"
-              />
+              <Separator className="mx-2 data-[orientation=vertical]:h-4" orientation="vertical" />
               <Breadcrumb className="min-w-0">
                 <BreadcrumbList className="min-w-0 flex-nowrap">
                   {breadcrumbs.map((crumb, index) => {
@@ -232,7 +230,7 @@ function AuthedLayout() {
                       <Fragment key={crumb.label}>
                         <BreadcrumbItem className={hiddenOnMobile ? 'hidden md:block' : 'min-w-0'}>
                           {isLast || !crumb.to ? (
-                            <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>
+                            <BreadcrumbPage className="truncate font-medium text-base">{crumb.label}</BreadcrumbPage>
                           ) : (
                             <BreadcrumbLink render={<Link to={crumb.to} />}>{crumb.label}</BreadcrumbLink>
                           )}
