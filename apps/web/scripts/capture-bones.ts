@@ -3,10 +3,10 @@
  * *.bones.json) through the boneyard CLI's supported flow:
  *
  *   1. Starts an ephemeral Vite dev server on a fixed port with the boneyard
- *      vite plugin disabled (BONEYARD_SKIP_PLUGIN=1) so the plugin's
- *      dev-start auto-capture cannot race the CLI's output.
+ *      vite plugin's auto-capture force-disabled (BONEYARD_AUTO_CAPTURE=0)
+ *      so a globally exported opt-in cannot race the CLI's output.
  *   2. Runs `boneyard-js build` against the fixture-only /boneyard-capture
- *      route. Passing an explicit non-root URL puts the CLI in single-page
+ *      surface. Passing an explicit non-root URL puts the CLI in single-page
  *      mode, so capture is deterministic — no link crawling, no filesystem
  *      route scanning, no backend, no credentials, no production data.
  *
@@ -22,7 +22,7 @@ import { createServer } from 'vite'
 const CAPTURE_PORT = 5199
 const webRoot = resolve(import.meta.dirname, '..')
 
-process.env.BONEYARD_SKIP_PLUGIN = '1'
+process.env.BONEYARD_AUTO_CAPTURE = '0'
 
 const server = await createServer({
   configFile: resolve(webRoot, 'vite.config.ts'),

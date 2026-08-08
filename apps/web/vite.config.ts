@@ -32,14 +32,17 @@ function requireProdProxyEnv(env: Record<string, string>, name: string) {
 export default defineConfig(({ mode }) => {
   const repoRoot = path.resolve(import.meta.dirname, '../..')
 
-  // Boneyard auto-captures bones from the fixture-only /boneyard-capture
-  // route when a dev server starts and on HMR (the plugin is apply: 'serve',
-  // so builds are unaffected). Capture visits only the local dev server, so
-  // prod-proxy mode keeps its safety model — no production data is involved.
-  // `bun run generate:bones` drives the CLI against its own ephemeral server
-  // and sets BONEYARD_SKIP_PLUGIN=1 so the plugin's auto-capture cannot race
-  // the CLI's committed output there.
-  const boneyardPlugins = process.env.BONEYARD_SKIP_PLUGIN === '1' ? [] : [boneyardPlugin()]
+  // Boneyard's vite plugin auto-captures bones on dev-server start and HMR,
+  // launching Playwright and rewriting the committed src/bones artifacts with
+  // its register-only registry template (dropping the CLI's
+  // configureBoneyard call). Ordinary `bun run dev` and `make web-dev-prod`
+  // must stay free of that, so the plugin is strictly opt-in via
+  // BONEYARD_AUTO_CAPTURE=1. The authoritative regeneration path is the
+  // explicit `bun run generate:bones` CLI flow. Even when opted in, capture
+  // visits only the local dev server's fixture-only /boneyard-capture
+  // surface, so prod-proxy mode keeps its safety model — no production data
+  // is involved and the createDevProxy guards below are untouched.
+  const boneyardPlugins = process.env.BONEYARD_AUTO_CAPTURE === '1' ? [boneyardPlugin()] : []
 
   if (mode === 'prod-proxy') {
     const env = loadEnv(mode, repoRoot, '')
