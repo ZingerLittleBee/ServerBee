@@ -99,7 +99,7 @@ describe('buildServerCardNetworkState', () => {
       { latency: 70, lossRatio: 0.04, targetId: 'target-1', targetName: 'Shanghai' },
       { latency: 90, lossRatio: 0.05, targetId: 'target-2', targetName: 'Beijing' }
     ])
-    expect(state.lossPoints.at(-1)?.value).toBe(4.5)
+    expect(state.lossPoints.at(-1)?.value).toBeCloseTo(0.045)
   })
 
   it('falls back to summary sparkline data when realtime samples are absent', () => {
@@ -125,7 +125,7 @@ describe('buildServerCardNetworkState', () => {
     expect(state.currentAvgLatency).toBe(40)
     expect(state.currentAvgLossRatio).toBe(0.03)
     expect(state.latencyPoints.at(-1)?.value).toBe(40)
-    expect(state.lossPoints.at(-1)?.value).toBe(3)
+    expect(state.lossPoints.at(-1)?.value).toBe(0.03)
     // Sparkline-only fallback has no per-target history, so every point
     // surfaces the per-target snapshot from summary.targets in its tooltip
     // instead of a single "average" pseudo-target.
@@ -226,6 +226,6 @@ describe('buildServerCardNetworkState', () => {
     expect(state.latencyPoints.at(-1)?.value).toBe(60)
     expect(state.lossPoints).toHaveLength(30)
     expect(state.lossPoints[0].value).toBeNull()
-    expect(state.lossPoints.at(-1)?.value).toBe(4)
+    expect(state.lossPoints.at(-1)?.value).toBe(0.04)
   })
 })

@@ -3,11 +3,12 @@ import {
   getCombinedBarColor,
   getCombinedSeverity,
   getLatencyBarColor,
-  getLatencySquareColor,
   getLatencyStatus,
   getLatencyTextClass,
   getLossDotBgClass,
-  getLossSquareColor,
+  getLossSeverity,
+  getSeverityBarColor,
+  getSeveritySquareHeight,
   isLatencyFailure
 } from './network-latency-constants'
 
@@ -94,45 +95,50 @@ describe('network-latency-constants', () => {
     })
   })
 
-  describe('getLatencySquareColor', () => {
-    it('returns muted for null latency', () => {
-      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 0 })).toBe('var(--color-border)')
+  describe('getLossSeverity', () => {
+    it('returns unknown for missing loss', () => {
+      expect(getLossSeverity(null)).toBe('unknown')
+      expect(getLossSeverity(undefined)).toBe('unknown')
     })
 
-    it('returns failed color when loss indicates probe failure', () => {
-      expect(getLatencySquareColor({ latencyMs: 40, lossRatio: 1 })).toBe('var(--status-danger)')
-      expect(getLatencySquareColor({ latencyMs: null, lossRatio: 1 })).toBe('var(--status-danger)')
-    })
-
-    it('returns healthy color below threshold', () => {
-      expect(getLatencySquareColor({ latencyMs: 50, lossRatio: 0 })).toBe('var(--status-healthy)')
-      expect(getLatencySquareColor({ latencyMs: 299, lossRatio: 0 })).toBe('var(--status-healthy)')
-    })
-
-    it('returns warning color at or above threshold', () => {
-      expect(getLatencySquareColor({ latencyMs: 300, lossRatio: 0 })).toBe('var(--status-warning)')
-      expect(getLatencySquareColor({ latencyMs: 500, lossRatio: 0 })).toBe('var(--status-warning)')
-    })
-  })
-
-  describe('getLossSquareColor', () => {
-    it('returns muted for null loss', () => {
-      expect(getLossSquareColor(null)).toBe('var(--color-border)')
-    })
-
-    it('returns healthy when loss is below warning threshold', () => {
-      expect(getLossSquareColor(0)).toBe('var(--status-healthy)')
-      expect(getLossSquareColor(0.009)).toBe('var(--status-healthy)')
+    it('returns healthy below the warning threshold', () => {
+      expect(getLossSeverity(0)).toBe('healthy')
+      expect(getLossSeverity(0.005)).toBe('healthy')
+      expect(getLossSeverity(0.009)).toBe('healthy')
     })
 
     it('returns warning between warning and severe thresholds', () => {
-      expect(getLossSquareColor(0.01)).toBe('var(--status-warning)')
-      expect(getLossSquareColor(0.049)).toBe('var(--status-warning)')
+      expect(getLossSeverity(0.01)).toBe('warning')
+      expect(getLossSeverity(0.049)).toBe('warning')
     })
 
-    it('returns failed at or above severe threshold', () => {
-      expect(getLossSquareColor(0.05)).toBe('var(--status-danger)')
-      expect(getLossSquareColor(1)).toBe('var(--status-danger)')
+    it('returns severe above the severe threshold but below total failure', () => {
+      expect(getLossSeverity(0.05)).toBe('severe')
+      expect(getLossSeverity(0.99)).toBe('severe')
+    })
+
+    it('returns failed at total packet loss', () => {
+      expect(getLossSeverity(1)).toBe('failed')
+    })
+  })
+
+  describe('getSeverityBarColor', () => {
+    it('maps severity levels to status colors', () => {
+      expect(getSeverityBarColor('healthy')).toBe('var(--status-healthy)')
+      expect(getSeverityBarColor('warning')).toBe('var(--status-warning)')
+      expect(getSeverityBarColor('severe')).toBe('var(--status-danger)')
+      expect(getSeverityBarColor('failed')).toBe('var(--status-danger)')
+      expect(getSeverityBarColor('unknown')).toBe('var(--color-border)')
+    })
+  })
+
+  describe('getSeveritySquareHeight', () => {
+    it('grows taller as severity worsens inside the 12px grid', () => {
+      expect(getSeveritySquareHeight('unknown')).toBe(4)
+      expect(getSeveritySquareHeight('healthy')).toBe(6)
+      expect(getSeveritySquareHeight('warning')).toBe(8)
+      expect(getSeveritySquareHeight('severe')).toBe(10)
+      expect(getSeveritySquareHeight('failed')).toBe(12)
     })
   })
 })

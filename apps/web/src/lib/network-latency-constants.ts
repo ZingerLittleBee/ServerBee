@@ -95,8 +95,8 @@ export function getCombinedSeverity({ latencyMs, lossRatio }: CombinedSeverityIn
   return 'healthy'
 }
 
-export function getCombinedBarColor(input: CombinedSeverityInput): string {
-  switch (getCombinedSeverity(input)) {
+export function getSeverityBarColor(severity: CombinedSeverity): string {
+  switch (severity) {
     case 'healthy':
       return LATENCY_HEALTHY_BAR_COLOR
     case 'warning':
@@ -107,6 +107,28 @@ export function getCombinedBarColor(input: CombinedSeverityInput): string {
     default:
       return LATENCY_UNKNOWN_BAR_COLOR
   }
+}
+
+export function getCombinedBarColor(input: CombinedSeverityInput): string {
+  return getSeverityBarColor(getCombinedSeverity(input))
+}
+
+// Packet-loss severity for the square grid, derived from the shared ratio thresholds so
+// the grid's encoding can never drift from the text and dot tones below.
+export function getLossSeverity(lossRatio: number | null | undefined): CombinedSeverity {
+  if (lossRatio == null) {
+    return 'unknown'
+  }
+  if (lossRatio >= NETWORK_FAILURE_PACKET_LOSS_RATIO) {
+    return 'failed'
+  }
+  if (lossRatio >= LOSS_SEVERE_THRESHOLD_RATIO) {
+    return 'severe'
+  }
+  if (lossRatio >= LOSS_WARNING_THRESHOLD_RATIO) {
+    return 'warning'
+  }
+  return 'healthy'
 }
 
 // Text tone for an end-to-end packet loss ratio, shared by the server card, its
@@ -137,28 +159,17 @@ export function getLossDotBgClass(lossRatio: number | null | undefined): string 
   return 'bg-status-danger'
 }
 
-export function getLatencySquareColor({ latencyMs, lossRatio }: CombinedSeverityInput): string {
-  if (lossRatio != null && lossRatio >= NETWORK_FAILURE_PACKET_LOSS_RATIO) {
-    return LATENCY_FAILED_BAR_COLOR
-  }
-  if (latencyMs == null) {
-    return LATENCY_UNKNOWN_BAR_COLOR
-  }
-  if (latencyMs < LATENCY_HEALTHY_THRESHOLD_MS) {
-    return LATENCY_HEALTHY_BAR_COLOR
-  }
-  return LATENCY_WARNING_BAR_COLOR
+const SQUARE_HEIGHT_BY_SEVERITY: Record<CombinedSeverity, number> = {
+  unknown: 4,
+  healthy: 6,
+  warning: 8,
+  severe: 10,
+  failed: 12
 }
 
-export function getLossSquareColor(lossRatio: number | null | undefined): string {
-  if (lossRatio == null) {
-    return LATENCY_UNKNOWN_BAR_COLOR
-  }
-  if (lossRatio < LOSS_WARNING_THRESHOLD_RATIO) {
-    return LATENCY_HEALTHY_BAR_COLOR
-  }
-  if (lossRatio < LOSS_SEVERE_THRESHOLD_RATIO) {
-    return LATENCY_WARNING_BAR_COLOR
-  }
-  return LATENCY_FAILED_BAR_COLOR
+// Redundant non-color channel for the 12px-tall square grid: worse states stand taller, so
+// severity stays readable for color-blind users and in grayscale. Colors come from
+// getSeverityBarColor.
+export function getSeveritySquareHeight(severity: CombinedSeverity): number {
+  return SQUARE_HEIGHT_BY_SEVERITY[severity]
 }

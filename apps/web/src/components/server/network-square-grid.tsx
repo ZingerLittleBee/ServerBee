@@ -1,10 +1,17 @@
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { getLatencySquareColor, getLossSquareColor, LATENCY_UNKNOWN_BAR_COLOR } from '@/lib/network-latency-constants'
+import {
+  type CombinedSeverity,
+  getLatencyStatus,
+  getLossSeverity,
+  getSeverityBarColor,
+  getSeveritySquareHeight,
+  isLatencyFailure
+} from '@/lib/network-latency-constants'
 import { NetworkTargetBreakdown } from './network-target-breakdown'
 import type { ServerCardMetricPoint } from './server-card-network-data'
 
-const SQUARE_SIZE = 6
+const SQUARE_WIDTH = 6
 const SQUARE_GAP = 2
 
 interface NetworkSquareGridProps {
@@ -19,29 +26,25 @@ function averageLossRatio(point: ServerCardMetricPoint): number | null {
   return point.targets.reduce((sum, target) => sum + target.lossRatio, 0) / point.targets.length
 }
 
-function getSquareColor(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): string {
-  if (point.value == null) {
-    return LATENCY_UNKNOWN_BAR_COLOR
-  }
+// Severity is the single source of truth for each square: color, height, data-severity and
+// the abnormal count all derive from it, so the grid can never disagree with itself.
+function getPointSeverity(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): CombinedSeverity {
   if (kind === 'latency') {
-    return getLatencySquareColor({ latencyMs: point.value, lossRatio: averageLossRatio(point) })
+    return getLatencyStatus({ latencyMs: point.value, failed: isLatencyFailure(averageLossRatio(point)) })
   }
-  return getLossSquareColor(point.value)
+  return getLossSeverity(point.value)
 }
 
-// The healthy square color, resolved through the public color helper so the summary label
-// can never drift from the thresholds the squares are actually painted with.
-const HEALTHY_SQUARE_COLOR = getLossSquareColor(0)
-
 function isAbnormalSquare(point: ServerCardMetricPoint, kind: 'latency' | 'loss'): boolean {
-  const color = getSquareColor(point, kind)
-  return color !== HEALTHY_SQUARE_COLOR && color !== LATENCY_UNKNOWN_BAR_COLOR
+  const severity = getPointSeverity(point, kind)
+  return severity !== 'healthy' && severity !== 'unknown'
 }
 
 function formatSummaryValue(point: ServerCardMetricPoint | undefined, kind: 'latency' | 'loss'): string {
   if (point?.value == null) {
     return '-'
   }
+  // Loss point values are ratios (0..1), so the summary formats them as percentages.
   return kind === 'latency' ? `${point.value.toFixed(0)}ms` : `${(point.value * 100).toFixed(1)}%`
 }
 
@@ -90,26 +93,30 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
       role="img"
       style={{ gap: `${SQUARE_GAP}px` }}
     >
-      {visible.map((point) => (
-        <Tooltip key={point.timestamp}>
-          <TooltipTrigger
-            render={
-              <div
-                className="flex-none rounded-[1px]"
-                data-testid="square"
-                style={{
-                  backgroundColor: getSquareColor(point, kind),
-                  height: `${SQUARE_SIZE}px`,
-                  width: `${SQUARE_SIZE}px`
-                }}
-              />
-            }
-          />
-          <TooltipContent className="grid min-w-48 gap-1.5" sideOffset={4}>
-            <PointTooltip point={point} t={t} />
-          </TooltipContent>
-        </Tooltip>
-      ))}
+      {visible.map((point) => {
+        const severity = getPointSeverity(point, kind)
+        return (
+          <Tooltip key={point.timestamp}>
+            <TooltipTrigger
+              render={
+                <div
+                  className="flex-none rounded-[1px]"
+                  data-severity={severity}
+                  data-testid="square"
+                  style={{
+                    backgroundColor: getSeverityBarColor(severity),
+                    height: `${getSeveritySquareHeight(severity)}px`,
+                    width: `${SQUARE_WIDTH}px`
+                  }}
+                />
+              }
+            />
+            <TooltipContent className="grid min-w-48 gap-1.5" sideOffset={4}>
+              <PointTooltip point={point} t={t} />
+            </TooltipContent>
+          </Tooltip>
+        )
+      })}
     </div>
   )
 }
