@@ -18,18 +18,7 @@
  * (tabs, toggles, buttons) is replicated with inert markup so fixtures never
  * expose focusable fake controls.
  */
-import {
-  ArrowDownToLine,
-  ArrowLeft,
-  ArrowUpFromLine,
-  Crown,
-  LayoutGrid,
-  Pencil,
-  Play,
-  Server,
-  Table2,
-  Terminal as TerminalIcon
-} from 'lucide-react'
+import { ArrowLeft, LayoutGrid, Pencil, Play, Server, Table2, Terminal as TerminalIcon } from 'lucide-react'
 import { CountryFlag } from '@/components/country-flag'
 import { StatusBadge } from '@/components/server/status-badge'
 import { ServerSummaryCard } from '@/components/status/server-summary-card'
@@ -261,7 +250,7 @@ const FIXTURE_SERVERS: PublicServerSummary[] = [
       mem_used: 402_653_184,
       net_in_speed: 12_800,
       net_in_transfer: 1_610_612_736,
-      net_out_speed: 6_400,
+      net_out_speed: 6400,
       net_out_transfer: 536_870_912,
       process_count: 52,
       swap_total: 0,
@@ -359,7 +348,13 @@ export function StatusOverviewListFixture() {
 // Server detail (public /status/server/$serverId and authed /servers/$id)
 // ---------------------------------------------------------------------------
 
-const DETAIL_META_PUBLIC = ['Debian 12', 'AMD EPYC 7702P (4 cores) x86_64', '16 GB', '5.15.0-91-generic', 'ap-northeast-1']
+const DETAIL_META_PUBLIC = [
+  'Debian 12',
+  'AMD EPYC 7702P (4 cores) x86_64',
+  '16 GB',
+  '5.15.0-91-generic',
+  'ap-northeast-1'
+]
 
 const DETAIL_META_ADMIN = [
   'Ubuntu 24.04',
@@ -544,10 +539,7 @@ export function StatusNetworkFixture() {
         <TabListStub tabs={['All targets', 'By provider']} />
         <div className="flex flex-wrap gap-2 pt-2">
           {FIXTURE_TARGETS.map((target) => (
-            <div
-              className="flex min-w-[160px] items-center gap-3 rounded-lg border bg-card px-3 py-2"
-              key={target.id}
-            >
+            <div className="flex min-w-[160px] items-center gap-3 rounded-lg border bg-card px-3 py-2" key={target.id}>
               <div aria-hidden="true" className="size-3 shrink-0 rounded-full bg-muted" />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-sm">{target.name}</p>
@@ -763,7 +755,9 @@ export function ServiceMonitorDetailFixture() {
                       </span>
                     </TableCell>
                     <TableCell className="font-mono text-xs">{record.latency}</TableCell>
-                    <TableCell className="max-w-[300px] truncate text-muted-foreground text-xs">{record.error}</TableCell>
+                    <TableCell className="max-w-[300px] truncate text-muted-foreground text-xs">
+                      {record.error}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

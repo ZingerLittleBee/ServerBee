@@ -51,9 +51,14 @@ function DefaultFallback() {
  *   generic placeholder blocks keep the page visibly loading. The fallback
  *   pulses when motion is allowed and is fully static under reduced motion.
  */
-export function BoneSkeleton({ animate, fallback = <DefaultFallback />, select = 'viewport', ...props }: SkeletonProps) {
+export function BoneSkeleton({
+  animate,
+  fallback = <DefaultFallback />,
+  select = 'viewport',
+  ...props
+}: SkeletonProps) {
   const reducedMotion = useReducedMotion()
   return <Skeleton animate={reducedMotion ? 'solid' : animate} fallback={fallback} select={select} {...props} />
 }
 
-export type { SkeletonProps as BoneSkeletonProps }
+export type BoneSkeletonProps = SkeletonProps

@@ -1,6 +1,6 @@
 /**
- * Regenerates the committed boneyard artifacts (src/bones/registry.ts +
- * *.bones.json) through the boneyard CLI's supported flow:
+ * Regenerates the committed boneyard artifacts (src/bones/registry.ts and
+ * the *.bones.json files) through the boneyard CLI's supported flow:
  *
  *   1. Starts an ephemeral Vite dev server on a fixed port with the boneyard
  *      vite plugin's auto-capture force-disabled (BONEYARD_AUTO_CAPTURE=0)

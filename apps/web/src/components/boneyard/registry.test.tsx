@@ -26,6 +26,9 @@ const GENERATED = {
 
 const EXPECTED_BREAKPOINTS = ['375', '768', '1024', '1280']
 
+// Distinctive fixture-copy markers that must never leak into generated bones.
+const FIXTURE_COPY_PATTERN = /fixture-|tokyo|fra-core|db-replica|cache-eu/i
+
 describe('generated bones registry', () => {
   afterEach(() => {
     cleanup()
@@ -36,7 +39,10 @@ describe('generated bones registry', () => {
     for (const [name, data] of Object.entries(GENERATED)) {
       // Breakpoint keys are strings ("375", "1024", …): sort numerically,
       // since the default lexicographic order scrambles magnitudes.
-      expect(Object.keys(data.breakpoints).sort((a, b) => Number(a) - Number(b)), name).toEqual(EXPECTED_BREAKPOINTS)
+      expect(
+        Object.keys(data.breakpoints).sort((a, b) => Number(a) - Number(b)),
+        name
+      ).toEqual(EXPECTED_BREAKPOINTS)
       for (const result of Object.values(data.breakpoints)) {
         expect(result.bones.length, name).toBeGreaterThan(0)
       }
@@ -68,7 +74,7 @@ describe('generated bones registry', () => {
       // Fixture copy uses distinctive fake names; none may leak into the
       // generated artifacts (proves the capture is geometry-only).
       const serialized = JSON.stringify(data)
-      expect(serialized).not.toMatch(/fixture-|tokyo|fra-core|db-replica|cache-eu/i)
+      expect(serialized).not.toMatch(FIXTURE_COPY_PATTERN)
     }
   })
 

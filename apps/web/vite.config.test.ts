@@ -5,8 +5,8 @@
 // the correct environment for it.
 import type { ProxyOptions, UserConfig } from 'vite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import config from './vite.config'
 import type { DevProxyHookEventMap } from './vite/dev-proxy'
+import config from './vite.config'
 
 const callConfig = config as unknown as (env: { command: 'serve'; mode: string }) => Promise<UserConfig> | UserConfig
 
@@ -30,7 +30,9 @@ function captureProxyHandlers(proxy: ProxyOptions): ProxyHandlers {
   const handlers: ProxyHandlers = {}
   const registrar = {
     on<K extends keyof DevProxyHookEventMap>(event: K, handler: (...args: DevProxyHookEventMap[K]) => void) {
-      ;(handlers[event] ??= []).push(handler)
+      const list = handlers[event] ?? []
+      list.push(handler)
+      handlers[event] = list
     }
   }
   proxy.configure?.(registrar as never, proxy)
@@ -127,7 +129,10 @@ describe('vite config boneyard integration', () => {
       { method: 'POST', url: '/api/servers' } as never,
       writeRes as never
     )
-    expect(writeRes.writeHead).toHaveBeenCalledWith(403, expect.objectContaining({ 'content-type': 'application/json' }))
+    expect(writeRes.writeHead).toHaveBeenCalledWith(
+      403,
+      expect.objectContaining({ 'content-type': 'application/json' })
+    )
     expect(writeProxyReq.destroy).toHaveBeenCalled()
     expect(writeProxyReq.setHeader).not.toHaveBeenCalled()
 
