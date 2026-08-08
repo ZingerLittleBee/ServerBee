@@ -2,7 +2,7 @@
 
 import { curveMonotoneX } from '@visx/curve'
 import { AreaClosed, LinePath } from '@visx/shape'
-import { type ComponentProps, useCallback, useId, useMemo, useRef, useState } from 'react'
+import { type ComponentProps, type ReactNode, useCallback, useId, useMemo, useRef, useState } from 'react'
 import { AreaGradientDefs } from './area-gradient-defs'
 import { chartCssVars, useChartStable, useYScale } from './chart-context'
 import type { ChartPhase, LoadingStyle } from './chart-phase'
@@ -240,23 +240,26 @@ export function Area({
   const useAnimatedFill = useDataTransitionPath && animatedAreaPathD.length > 0
   const useAnimatedStroke = useDataTransitionPath && animatedPathD.length > 0
 
+  let areaFillLayer: ReactNode = null
+  if (showSeriesContent && showAreaFill) {
+    areaFillLayer = useAnimatedFill ? (
+      <path d={animatedAreaPathD} fill={areaFill} />
+    ) : (
+      <AreaClosed
+        curve={curve}
+        data={renderData}
+        defined={isDefined}
+        fill={areaFill}
+        x={(d) => xScale(xAccessor(d)) ?? 0}
+        y={getY}
+        yScale={yScale}
+      />
+    )
+  }
+
   const seriesLayers = (
     <>
-      {showSeriesContent && showAreaFill ? (
-        useAnimatedFill ? (
-          <path d={animatedAreaPathD} fill={areaFill} />
-        ) : (
-          <AreaClosed
-            curve={curve}
-            data={renderData}
-            defined={isDefined}
-            fill={areaFill}
-            x={(d) => xScale(xAccessor(d)) ?? 0}
-            y={getY}
-            yScale={yScale}
-          />
-        )
-      ) : null}
+      {areaFillLayer}
 
       {shouldMeasurePath ? (
         <>

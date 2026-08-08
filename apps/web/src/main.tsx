@@ -7,6 +7,10 @@ import { createRoot } from 'react-dom/client'
 import { toast } from 'sonner'
 import './index.css'
 import '@/lib/i18n'
+// Registers the generated boneyard bones (src/bones) once at the app root so
+// every named <BoneSkeleton> resolves its skeleton in any route. Regenerate
+// with `bun run generate:bones` after changing a captured layout.
+import './bones/registry'
 import { router } from './router'
 import { mountRuntimeBridge } from './widgets-runtime/runtime-bridge'
 

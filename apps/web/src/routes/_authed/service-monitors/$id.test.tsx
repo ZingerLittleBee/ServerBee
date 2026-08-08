@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const monitorState = vi.hoisted(() => ({ isLoading: false, notFound: false }))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="/">{children}</a>,
@@ -17,6 +19,12 @@ vi.mock('@tanstack/react-query', () => ({
   }),
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     if (queryKey[0] === 'service-monitor') {
+      if (monitorState.isLoading) {
+        return { data: undefined, isLoading: true }
+      }
+      if (monitorState.notFound) {
+        return { data: undefined, isLoading: false }
+      }
       return {
         data: {
           config_json: '{}',
@@ -130,10 +138,39 @@ vi.mock('@/lib/api-client', () => ({
 const { ServiceMonitorDetailPage } = await import('./$id')
 
 describe('ServiceMonitorDetailPage', () => {
+  beforeEach(() => {
+    monitorState.isLoading = false
+    monitorState.notFound = false
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
   it('renders when the latest record detail payload is null JSON', () => {
-    render(<ServiceMonitorDetailPage />)
+    const { container } = render(<ServiceMonitorDetailPage />)
 
     expect(screen.getByText('Test SSL Monitor')).toBeInTheDocument()
     expect(screen.getByText('history.title')).toBeInTheDocument()
+    expect(container.querySelector('[data-boneyard]')).toBeNull()
+  })
+
+  it('renders the generated service-monitor-detail skeleton while loading', () => {
+    monitorState.isLoading = true
+    const { container } = render(<ServiceMonitorDetailPage />)
+
+    const skeleton = container.querySelector('[data-boneyard="service-monitor-detail"]')
+    expect(skeleton).not.toBeNull()
+    expect(skeleton?.getAttribute('aria-busy')).toBe('true')
+    expect(screen.queryByText('Test SSL Monitor')).toBeNull()
+  })
+
+  it('keeps the not-found branch free of skeleton markup', () => {
+    monitorState.notFound = true
+    const { container } = render(<ServiceMonitorDetailPage />)
+
+    expect(screen.getByText('notFound')).toBeInTheDocument()
+    expect(screen.queryByText('Test SSL Monitor')).toBeNull()
+    expect(container.querySelector('[data-boneyard]')).toBeNull()
   })
 })

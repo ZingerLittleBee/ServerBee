@@ -4,6 +4,7 @@ import { ArrowLeft, Play, RefreshCw } from 'lucide-react'
 import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { ServiceMonitorDetailSkeleton } from '@/components/boneyard/page-skeletons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -407,18 +408,7 @@ export function ServiceMonitorDetailPage() {
   })
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-4 w-96" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-        <Skeleton className="h-64" />
-      </div>
-    )
+    return <ServiceMonitorDetailSkeleton />
   }
 
   if (!data) {

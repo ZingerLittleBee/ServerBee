@@ -4,10 +4,10 @@ import { curveStep } from '@visx/curve'
 import { AlertTriangle, ArrowDownToLine, ArrowUpFromLine, Crown, Server } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { TrafficOverviewSkeleton } from '@/components/boneyard/page-skeletons'
 import { MetricAreaPlot, type MetricAreaSeries } from '@/components/charts/metric-area-plot'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/lib/api-client'
 import { cn, formatBytes } from '@/lib/utils'
@@ -255,18 +255,7 @@ export function TrafficPage() {
   const isLoading = overviewLoading || dailyLoading
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton className="h-24" key={`stat-${i.toString()}`} />
-          ))}
-        </div>
-        <Skeleton className="h-64" />
-        <Skeleton className="h-96" />
-      </div>
-    )
+    return <TrafficOverviewSkeleton />
   }
 
   return (

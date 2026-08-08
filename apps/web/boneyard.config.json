@@ -1,0 +1,9 @@
+{
+  "breakpoints": [375, 768, 1024, 1280],
+  "out": "./src/bones",
+  "wait": 1000,
+  "routes": ["/boneyard-capture"],
+  "color": "#f5f5f5",
+  "darkColor": "#262626",
+  "animate": "pulse"
+}
