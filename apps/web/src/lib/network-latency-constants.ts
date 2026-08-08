@@ -83,7 +83,7 @@ const SQUARE_GRID_SEVERE_COLOR = 'var(--network-grid-severe)'
 const SQUARE_GRID_FAILED_COLOR = 'var(--network-grid-failed)'
 const SQUARE_GRID_UNKNOWN_COLOR = 'var(--network-grid-unknown)'
 
-export function getSeveritySquareColor(severity: CombinedSeverity): string {
+export function getSeverityMarkerColor(severity: CombinedSeverity): string {
   switch (severity) {
     case 'healthy':
       return SQUARE_GRID_HEALTHY_COLOR

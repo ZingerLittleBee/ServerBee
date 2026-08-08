@@ -5,7 +5,7 @@ import {
   getLatencyTextClass,
   getLossDotBgClass,
   getLossSeverity,
-  getSeveritySquareColor,
+  getSeverityMarkerColor,
   isLatencyFailure
 } from './network-latency-constants'
 
@@ -105,17 +105,17 @@ describe('network-latency-constants', () => {
     })
   })
 
-  describe('getSeveritySquareColor', () => {
+  describe('getSeverityMarkerColor', () => {
     it('maps severity levels to the square-grid status colors', () => {
-      expect(getSeveritySquareColor('healthy')).toBe('var(--network-grid-healthy)')
-      expect(getSeveritySquareColor('warning')).toBe('var(--network-grid-warning)')
-      expect(getSeveritySquareColor('severe')).toBe('var(--network-grid-severe)')
-      expect(getSeveritySquareColor('failed')).toBe('var(--network-grid-failed)')
-      expect(getSeveritySquareColor('unknown')).toBe('var(--network-grid-unknown)')
+      expect(getSeverityMarkerColor('healthy')).toBe('var(--network-grid-healthy)')
+      expect(getSeverityMarkerColor('warning')).toBe('var(--network-grid-warning)')
+      expect(getSeverityMarkerColor('severe')).toBe('var(--network-grid-severe)')
+      expect(getSeverityMarkerColor('failed')).toBe('var(--network-grid-failed)')
+      expect(getSeverityMarkerColor('unknown')).toBe('var(--network-grid-unknown)')
     })
 
     it('keeps severe and failed visually distinct', () => {
-      expect(getSeveritySquareColor('severe')).not.toBe(getSeveritySquareColor('failed'))
+      expect(getSeverityMarkerColor('severe')).not.toBe(getSeverityMarkerColor('failed'))
     })
   })
 })

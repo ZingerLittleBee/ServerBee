@@ -75,7 +75,7 @@ describe('NetworkSquareGrid', () => {
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
     expect(square).toHaveAttribute('data-severity', 'unknown')
     expect(square?.style.backgroundColor).toBe('var(--network-grid-unknown)')
-    expect(square?.style.height).toBe('6px')
+    expect(square?.style.height).toBe('12px')
   })
 
   it('renders at least one square even at zero width', () => {
@@ -115,7 +115,7 @@ describe('NetworkSquareGrid', () => {
     )
   })
 
-  it('gives every square the same fixed geometry regardless of severity', () => {
+  it('renders every marker as the same fixed narrow bar regardless of severity', () => {
     const points = [
       makeLossPoint(0, 0),
       makeLossPoint(0.01, 1),
@@ -126,13 +126,13 @@ describe('NetworkSquareGrid', () => {
 
     const { container } = renderGrid('loss', points)
 
-    // One square per severity (healthy, warning, severe, failed, unknown), each rendered
-    // at the identical 6x6 size: color is the only severity channel.
+    // One marker per severity (healthy, warning, severe, failed, unknown), each rendered
+    // at the identical 5x12 size: color is the only severity channel.
     const squares = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="square"]'))
     expect(squares).toHaveLength(5)
     for (const square of squares) {
-      expect(square.style.width).toBe('6px')
-      expect(square.style.height).toBe('6px')
+      expect(square.style.width).toBe('5px')
+      expect(square.style.height).toBe('12px')
     }
   })
 
@@ -174,7 +174,7 @@ describe('NetworkSquareGrid', () => {
     const square = container.querySelector<HTMLElement>('[data-testid="square"]')
     expect(square).toHaveAttribute('data-severity', 'failed')
     expect(square?.style.backgroundColor).toBe('var(--network-grid-failed)')
-    expect(square?.style.height).toBe('6px')
+    expect(square?.style.height).toBe('12px')
   })
 
   describe('contract with buildServerCardNetworkState', () => {
@@ -223,7 +223,7 @@ describe('NetworkSquareGrid', () => {
       const latestSquare = container.querySelector<HTMLElement>('[data-testid="square"]')
       expect(latestSquare).toHaveAttribute('data-severity', 'warning')
       expect(latestSquare?.style.backgroundColor).toBe('var(--network-grid-warning)')
-      expect(latestSquare?.style.height).toBe('6px')
+      expect(latestSquare?.style.height).toBe('12px')
       expect(container.querySelectorAll('[tabindex], button, a')).toHaveLength(0)
     })
   })

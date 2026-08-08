@@ -4,17 +4,18 @@ import {
   type CombinedSeverity,
   getLatencyStatus,
   getLossSeverity,
-  getSeveritySquareColor,
+  getSeverityMarkerColor,
   isLatencyFailure
 } from '@/lib/network-latency-constants'
 import { NetworkTargetBreakdown } from './network-target-breakdown'
 import type { ServerCardMetricPoint } from './server-card-network-data'
 
-// Uniform marker geometry in the style of status.openai.com: every square is the same
-// size regardless of severity, so the baseline stays calm and color remains the only
-// severity channel.
-const SQUARE_SIZE = 6
-const SQUARE_GAP = 2
+// Uniform narrow markers in the style of status.openai.com fill the history row's height.
+// Their shared silhouette prevents color weight and corner antialiasing from creating an
+// apparent height difference between severity levels.
+const MARKER_WIDTH = 5
+const MARKER_HEIGHT = 12
+const MARKER_GAP = 2
 
 interface NetworkSquareGridProps {
   kind: 'latency' | 'loss'
@@ -73,7 +74,7 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
 export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
   const { t } = useTranslation(['servers'])
   const visible = points.toReversed()
-  // With identical square geometry, color is the only visual severity channel, so the
+  // With identical marker geometry, color is the only visual severity channel, so the
   // role="img" summary carries the per-severity breakdown for screen-reader users.
   const severityCounts: Record<Exclude<CombinedSeverity, 'healthy'>, number> = {
     warning: 0,
@@ -106,9 +107,9 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
   return (
     <div
       aria-label={summary}
-      className="flex h-3 w-full flex-row-reverse items-end overflow-hidden"
+      className="flex h-3 w-full flex-row-reverse overflow-hidden"
       role="img"
-      style={{ gap: `${SQUARE_GAP}px` }}
+      style={{ gap: `${MARKER_GAP}px` }}
     >
       {visible.map((point) => {
         const severity = getPointSeverity(point, kind)
@@ -121,9 +122,9 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
                   data-severity={severity}
                   data-testid="square"
                   style={{
-                    backgroundColor: getSeveritySquareColor(severity),
-                    height: `${SQUARE_SIZE}px`,
-                    width: `${SQUARE_SIZE}px`
+                    backgroundColor: getSeverityMarkerColor(severity),
+                    height: `${MARKER_HEIGHT}px`,
+                    width: `${MARKER_WIDTH}px`
                   }}
                 />
               }
