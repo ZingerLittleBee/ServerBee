@@ -54,13 +54,14 @@
   --uptime-degraded: var(--status-warning);
   --uptime-down: var(--status-danger);
   /* Network history markers keep Claude's olive → amber → orange → red hue
-     progression, but share one perceptual lightness so equal-size markers have
-     equal visual weight. The localized role="img" summary carries the
-     non-color severity breakdown. */
+     progression. Their lightness is optically compensated: bright amber is
+     pulled down while denser orange and red are lifted, so equal-size markers
+     carry more even visual weight. The localized role="img" summary carries
+     the non-color severity breakdown. */
   --network-grid-healthy: oklch(0.68 0.167 130.145);
-  --network-grid-warning: oklch(0.68 0.153 74.836);
-  --network-grid-severe: oklch(0.68 0.178 38.002);
-  --network-grid-failed: oklch(0.68 0.194 24.997);
+  --network-grid-warning: oklch(0.64 0.153 74.836);
+  --network-grid-severe: oklch(0.7 0.178 38.002);
+  --network-grid-failed: oklch(0.72 0.194 24.997);
   --network-grid-unknown: oklch(0.68 0 0);
   /* Categorical series palette for multi-series charts (network latency, target
      legend dots). Theme-independent: the same 12 hues read acceptably on both
