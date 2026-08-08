@@ -31,3 +31,19 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 if (typeof Element.prototype.scrollIntoView === 'undefined') {
   Element.prototype.scrollIntoView = () => undefined
 }
+
+// jsdom has no matchMedia. boneyard's Skeleton (dark-mode detection) and the
+// useReducedMotion hook both call it, so provide a no-preference default;
+// individual tests override window.matchMedia to simulate specific queries.
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false
+  })) as unknown as typeof window.matchMedia
+}

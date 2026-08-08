@@ -213,10 +213,21 @@ describe('ServerDetailPage', () => {
     mockUseCostInsights.mockReturnValue({ data: undefined })
   })
 
+  it('renders the generated server-detail skeleton while the server query loads', () => {
+    mockUseServer.mockReturnValue({ data: undefined, isLoading: true })
+    const { container } = render(<ServerDetailPage />)
+
+    const skeleton = container.querySelector('[data-boneyard="server-detail"]')
+    expect(skeleton).not.toBeNull()
+    expect(skeleton?.getAttribute('aria-busy')).toBe('true')
+    expect(screen.queryByText('detail_edit')).toBeNull()
+  })
+
   it('keeps bottom padding on the page container', () => {
     const { container } = render(<ServerDetailPage />)
 
     expect(container.firstElementChild).toHaveClass('pb-6')
+    expect(container.querySelector('[data-boneyard]')).toBeNull()
   })
 
   it('passes latest agent version into the version section', () => {
