@@ -89,12 +89,18 @@ export function useChartInteraction({
       }
 
       const yPositions: Record<string, number> = {}
+      let hasFiniteValue = false
       for (const line of lines) {
         const value = d[line.dataKey]
-        if (typeof value === 'number') {
+        if (typeof value === 'number' && Number.isFinite(value)) {
           const axisScale = yScales[normalizeYAxisId(line.yAxisId)] ?? yScale
           yPositions[line.dataKey] = axisScale(value) ?? 0
+          hasFiniteValue = true
         }
+      }
+
+      if (!hasFiniteValue) {
+        return null
       }
 
       return {
@@ -178,9 +184,11 @@ export function useChartInteraction({
       const tooltip = resolveTooltipFromX(chartX)
       if (tooltip) {
         scheduleTooltip(tooltip)
+      } else {
+        clearTooltip()
       }
     },
-    [getChartX, resolveTooltipFromX, resolveIndexFromX, scheduleTooltip]
+    [clearTooltip, getChartX, resolveTooltipFromX, resolveIndexFromX, scheduleTooltip]
   )
 
   const handleMouseLeave = useCallback(() => {
@@ -225,6 +233,8 @@ export function useChartInteraction({
         const tooltip = resolveTooltipFromX(chartX)
         if (tooltip) {
           scheduleTooltip(tooltip)
+        } else {
+          clearTooltip()
         }
       } else if (event.touches.length === 2) {
         event.preventDefault()
@@ -261,6 +271,8 @@ export function useChartInteraction({
         const tooltip = resolveTooltipFromX(chartX)
         if (tooltip) {
           scheduleTooltip(tooltip)
+        } else {
+          clearTooltip()
         }
       } else if (event.touches.length === 2) {
         event.preventDefault()
@@ -280,7 +292,7 @@ export function useChartInteraction({
         })
       }
     },
-    [getChartX, resolveTooltipFromX, resolveIndexFromX, scheduleTooltip]
+    [clearTooltip, getChartX, resolveTooltipFromX, resolveIndexFromX, scheduleTooltip]
   )
 
   const handleTouchEnd = useCallback(() => {
