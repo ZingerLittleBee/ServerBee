@@ -88,6 +88,9 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
     }
   }
   const summary = t(kind === 'latency' ? 'card_latency_history_summary' : 'card_loss_history_summary', {
+    // The abnormal total is derived from the same counts (warning + severe + failed),
+    // so the summary can never disagree with the breakdown.
+    abnormal: severityCounts.warning + severityCounts.severe + severityCounts.failed,
     failed: severityCounts.failed,
     latest: formatSummaryValue(points.at(-1), kind),
     samples: points.length,

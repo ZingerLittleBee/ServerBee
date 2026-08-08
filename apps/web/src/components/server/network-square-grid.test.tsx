@@ -91,18 +91,19 @@ describe('NetworkSquareGrid', () => {
     const { container } = renderGrid('latency', points)
 
     expect(screen.getByRole('img')).toHaveAccessibleName(
-      'Latency history: 30 samples, latest 79ms, 0 warning, 0 severe, 0 failed, 0 unknown'
+      'Latency history: 30 samples, latest 79ms, 0 abnormal, 0 warning, 0 severe, 0 failed, 0 unknown'
     )
     expect(container.querySelectorAll('[tabindex], button, a')).toHaveLength(0)
   })
 
-  it('summarizes the per-severity breakdown in the accessible name', () => {
+  it('summarizes the abnormal total and per-severity breakdown in the accessible name', () => {
     const points = [makePoint(50), makePoint(800), makePoint(120, 1)]
 
     renderGrid('latency', points)
 
+    // abnormal is the warning + severe + failed total derived from the same counts.
     expect(screen.getByRole('img')).toHaveAccessibleName(
-      'Latency history: 3 samples, latest 120ms, 1 warning, 0 severe, 1 failed, 0 unknown'
+      'Latency history: 3 samples, latest 120ms, 2 abnormal, 1 warning, 0 severe, 1 failed, 0 unknown'
     )
   })
 
@@ -110,7 +111,7 @@ describe('NetworkSquareGrid', () => {
     renderGrid('loss', [makeLossPoint(0, 0), makeLossPoint(0.12, 1)])
 
     expect(screen.getByRole('img')).toHaveAccessibleName(
-      'Packet loss history: 2 samples, latest 12.0%, 0 warning, 1 severe, 0 failed, 0 unknown'
+      'Packet loss history: 2 samples, latest 12.0%, 1 abnormal, 0 warning, 1 severe, 0 failed, 0 unknown'
     )
   })
 
@@ -216,7 +217,7 @@ describe('NetworkSquareGrid', () => {
 
       // 29 null padding slots read as unknown; only the realtime 2% sample is a warning.
       expect(screen.getByRole('img')).toHaveAccessibleName(
-        'Packet loss history: 30 samples, latest 2.0%, 1 warning, 0 severe, 0 failed, 29 unknown'
+        'Packet loss history: 30 samples, latest 2.0%, 1 abnormal, 1 warning, 0 severe, 0 failed, 29 unknown'
       )
       // The latest sample renders first inside the row-reversed grid.
       const latestSquare = container.querySelector<HTMLElement>('[data-testid="square"]')
