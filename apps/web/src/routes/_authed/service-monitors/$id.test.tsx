@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const monitorState = vi.hoisted(() => ({ isLoading: false }))
+const monitorState = vi.hoisted(() => ({ isLoading: false, notFound: false }))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: ReactNode }) => <a href="/">{children}</a>,
@@ -21,6 +21,9 @@ vi.mock('@tanstack/react-query', () => ({
     if (queryKey[0] === 'service-monitor') {
       if (monitorState.isLoading) {
         return { data: undefined, isLoading: true }
+      }
+      if (monitorState.notFound) {
+        return { data: undefined, isLoading: false }
       }
       return {
         data: {
@@ -151,6 +154,7 @@ const { ServiceMonitorDetailPage } = await import('./$id')
 describe('ServiceMonitorDetailPage', () => {
   beforeEach(() => {
     monitorState.isLoading = false
+    monitorState.notFound = false
   })
 
   afterEach(() => {
@@ -173,5 +177,14 @@ describe('ServiceMonitorDetailPage', () => {
     expect(skeleton).not.toBeNull()
     expect(skeleton?.getAttribute('aria-busy')).toBe('true')
     expect(screen.queryByText('Test SSL Monitor')).toBeNull()
+  })
+
+  it('keeps the not-found branch free of skeleton markup', () => {
+    monitorState.notFound = true
+    const { container } = render(<ServiceMonitorDetailPage />)
+
+    expect(screen.getByText('notFound')).toBeInTheDocument()
+    expect(screen.queryByText('Test SSL Monitor')).toBeNull()
+    expect(container.querySelector('[data-boneyard]')).toBeNull()
   })
 })
