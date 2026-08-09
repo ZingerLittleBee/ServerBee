@@ -190,6 +190,17 @@ describe('buildServerCardNetworkState', () => {
     expect(state.currentAvgLossRatio).toBe(0.04)
   })
 
+  it('left-pads an empty history so the card can reserve a full latency grid slot', () => {
+    const state = buildServerCardNetworkState(makeSummary(), {})
+
+    expect(state.latencyPoints).toHaveLength(30)
+    expect(state.lossPoints).toHaveLength(30)
+    expect(state.latencyPoints.every((point) => point.value == null)).toBe(true)
+    expect(state.lossPoints.every((point) => point.value == null)).toBe(true)
+    expect(state.currentAvgLatency).toBeNull()
+    expect(state.currentAvgLossRatio).toBeNull()
+  })
+
   it('left-pads trends so recent points stay right-aligned in a full-width chart', () => {
     const summary = makeSummary({
       targets: [

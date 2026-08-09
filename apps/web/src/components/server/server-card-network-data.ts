@@ -89,11 +89,10 @@ function buildFallbackTargets(
 }
 
 function padMetricPoints(points: readonly ServerCardMetricPoint[]): ServerCardMetricPoint[] {
+  // Always emit a full-width window — including when history is empty — so
+  // server cards can reserve the latency/loss grid slot as a stable placeholder
+  // rather than collapsing the section between online and offline tiles.
   const trimmedPoints = points.slice(-MAX_TREND_POINTS)
-  if (trimmedPoints.length === 0) {
-    return []
-  }
-
   const paddingLength = MAX_TREND_POINTS - trimmedPoints.length
 
   return [

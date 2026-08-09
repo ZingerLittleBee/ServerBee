@@ -99,8 +99,6 @@ const ServerCardInner = ({
     [networkSummary, realtimeData, networkBucketSeconds]
   )
 
-  const hasNetworkData = latencyPoints.length > 0
-
   const {
     used: trafficUsed,
     limit: trafficLimit,
@@ -230,38 +228,35 @@ const ServerCardInner = ({
             />
           </div>
 
-          {hasNetworkData && (
-            <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
-              <div className="flex items-baseline justify-between">
-                <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
-                <NetworkMetricValue targets={currentTargets}>
-                  <span
-                    className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(
-                      currentAvgLatency,
-                      {
-                        failed: isLatencyFailure(currentAvgLossRatio)
-                      }
-                    )}`}
-                  >
-                    {formatLatency(currentAvgLatency)}
-                    <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
-                  </span>
-                </NetworkMetricValue>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
-                <NetworkMetricValue targets={currentTargets}>
-                  <span
-                    className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}
-                  >
-                    {formatPacketLoss(currentAvgLossRatio)}
-                  </span>
-                </NetworkMetricValue>
-              </div>
-              <NetworkSquareGrid kind="latency" points={latencyPoints} />
-              <NetworkSquareGrid kind="loss" points={lossPoints} />
-            </section>
-          )}
+          {/* Always reserve this slot (even with empty/padded probe history) so
+              online and offline cards keep the same body structure and height. */}
+          <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
+              <NetworkMetricValue targets={currentTargets}>
+                <span
+                  className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(currentAvgLatency, {
+                    failed: isLatencyFailure(currentAvgLossRatio)
+                  })}`}
+                >
+                  {formatLatency(currentAvgLatency)}
+                  <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
+                </span>
+              </NetworkMetricValue>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
+              <NetworkMetricValue targets={currentTargets}>
+                <span
+                  className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}
+                >
+                  {formatPacketLoss(currentAvgLossRatio)}
+                </span>
+              </NetworkMetricValue>
+            </div>
+            <NetworkSquareGrid kind="latency" points={latencyPoints} />
+            <NetworkSquareGrid kind="loss" points={lossPoints} />
+          </section>
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
             <div className="flex items-baseline justify-between">

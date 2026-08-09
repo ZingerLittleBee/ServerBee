@@ -174,10 +174,11 @@ describe('ServerCard', () => {
     expect(screen.getByText('card_load_trend')).toBeDefined()
   })
 
-  it('does not render network quality section when no data', () => {
+  it('reserves the network quality section as a placeholder when no probe data exists', () => {
     renderCard(makeServer())
-    expect(screen.queryByText('card_latency')).toBeNull()
-    expect(screen.queryByText('card_packet_loss')).toBeNull()
+    expect(screen.getByLabelText('card_network_quality')).toBeDefined()
+    expect(screen.getByText('card_latency')).toBeDefined()
+    expect(screen.getByText('card_packet_loss')).toBeDefined()
   })
 
   it('renders latency and loss square grids when network data is present', () => {
