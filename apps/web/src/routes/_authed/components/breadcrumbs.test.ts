@@ -36,9 +36,8 @@ describe('buildBreadcrumbs', () => {
     expect(buildBreadcrumbs('/', translate)).toEqual([])
   })
 
-  it('leaves the security index without a header title crumb', () => {
-    expect(buildBreadcrumbs('/security', translate)).toEqual([])
-    expect(buildBreadcrumbs('/security/', translate)).toEqual([])
+  it('keeps the security index title crumb in the header', () => {
+    expect(buildBreadcrumbs('/security', translate)).toEqual([{ label: 'nav_security_events' }])
   })
 })
 
