@@ -7,10 +7,11 @@ use dashmap::DashMap;
 use serverbee_common::constants::MAX_FILE_CHUNK_SIZE;
 use serverbee_common::protocol::AgentMessage;
 use serverbee_common::types::{FileEntry, FileType};
-use tokio::sync::mpsc;
+use sha2::{Digest, Sha256};
+use tokio::sync::{Mutex, mpsc};
 
-use crate::config::FileConfig;
 use crate::capability_grants::CapabilityAuthority;
+use crate::config::FileConfig;
 
 /// Events produced by background file transfer tasks, sent to the reporter loop.
 #[allow(clippy::enum_variant_names)]
@@ -60,8 +61,8 @@ impl From<FileEvent> for AgentMessage {
 struct UploadState {
     path: PathBuf,
     tmp_path: PathBuf,
-    #[allow(dead_code)]
     size: u64,
+    next_offset: u64,
 }
 
 /// Tracks that a download is active (used for cancellation).
@@ -78,6 +79,8 @@ pub struct FileManager {
     capabilities: Arc<CapabilityAuthority>,
     active_downloads: DashMap<String, DownloadState>,
     active_uploads: DashMap<String, UploadState>,
+    active_upload_targets: DashMap<PathBuf, String>,
+    upload_start_lock: Mutex<()>,
 }
 
 impl FileManager {
@@ -93,6 +96,8 @@ impl FileManager {
             capabilities,
             active_downloads: DashMap::new(),
             active_uploads: DashMap::new(),
+            active_upload_targets: DashMap::new(),
+            upload_start_lock: Mutex::new(()),
         }
     }
 
@@ -430,7 +435,11 @@ impl FileManager {
             entry.value().handle.abort();
         }
         self.active_downloads.clear();
+        for entry in self.active_uploads.iter() {
+            let _ = std::fs::remove_file(&entry.value().tmp_path);
+        }
         self.active_uploads.clear();
+        self.active_upload_targets.clear();
     }
 
     /// Start an upload: create the .sb-part temporary file.
@@ -468,9 +477,34 @@ impl FileManager {
             );
         }
 
-        let tmp_path = target.with_extension("sb-part");
-        // Create empty file
-        tokio::fs::write(&tmp_path, b"").await?;
+        let _start_guard = self.upload_start_lock.lock().await;
+        if self.active_uploads.contains_key(&transfer_id) {
+            anyhow::bail!("Upload transfer '{}' already exists", transfer_id);
+        }
+        match self.active_upload_targets.entry(target.clone()) {
+            dashmap::mapref::entry::Entry::Occupied(_) => {
+                anyhow::bail!("Another upload already targets '{}'", path);
+            }
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(transfer_id.clone());
+            }
+        }
+
+        let transfer_hash = hex::encode(Sha256::digest(transfer_id.as_bytes()));
+        let file_name = target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow::anyhow!("Invalid target filename"))?;
+        let tmp_path = parent.join(format!(".{file_name}.{}.sb-part", &transfer_hash[..16]));
+        if let Err(error) = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .await
+        {
+            self.active_upload_targets.remove(&target);
+            return Err(error.into());
+        }
 
         self.active_uploads.insert(
             transfer_id,
@@ -478,6 +512,7 @@ impl FileManager {
                 path: target,
                 tmp_path,
                 size,
+                next_offset: 0,
             },
         );
 
@@ -491,14 +526,38 @@ impl FileManager {
         offset: u64,
         data: &str,
     ) -> anyhow::Result<u64> {
-        let state = self
-            .active_uploads
-            .get(transfer_id)
-            .ok_or_else(|| anyhow::anyhow!("Unknown upload transfer '{}'", transfer_id))?;
-
         let decoded = BASE64
             .decode(data)
             .map_err(|e| anyhow::anyhow!("Invalid base64 chunk: {}", e))?;
+        if decoded.len() > MAX_FILE_CHUNK_SIZE {
+            anyhow::bail!(
+                "Upload chunk size {} exceeds maximum {}",
+                decoded.len(),
+                MAX_FILE_CHUNK_SIZE
+            );
+        }
+
+        let mut state = self
+            .active_uploads
+            .get_mut(transfer_id)
+            .ok_or_else(|| anyhow::anyhow!("Unknown upload transfer '{}'", transfer_id))?;
+        if offset != state.next_offset {
+            anyhow::bail!(
+                "Unexpected upload offset {} (expected {})",
+                offset,
+                state.next_offset
+            );
+        }
+        let new_offset = offset
+            .checked_add(decoded.len() as u64)
+            .ok_or_else(|| anyhow::anyhow!("Upload offset overflow"))?;
+        if new_offset > state.size || new_offset > self.config.max_file_size {
+            anyhow::bail!(
+                "Upload data exceeds declared size {} (would write {})",
+                state.size,
+                new_offset
+            );
+        }
 
         use tokio::io::{AsyncSeekExt, AsyncWriteExt};
         let mut file = tokio::fs::OpenOptions::new()
@@ -508,8 +567,17 @@ impl FileManager {
         file.seek(std::io::SeekFrom::Start(offset)).await?;
         file.write_all(&decoded).await?;
         file.flush().await?;
+        state.next_offset = new_offset;
 
-        Ok(offset + decoded.len() as u64)
+        Ok(new_offset)
+    }
+
+    /// Abort an upload and release its temporary file and target reservation.
+    pub async fn abort_upload(&self, transfer_id: &str) {
+        if let Some((_, state)) = self.active_uploads.remove(transfer_id) {
+            self.active_upload_targets.remove(&state.path);
+            let _ = tokio::fs::remove_file(&state.tmp_path).await;
+        }
     }
 
     /// Finalize an upload: rename .sb-part to the target path.
@@ -519,7 +587,22 @@ impl FileManager {
             .remove(transfer_id)
             .ok_or_else(|| anyhow::anyhow!("Unknown upload transfer '{}'", transfer_id))?;
 
-        tokio::fs::rename(&state.tmp_path, &state.path).await?;
+        if state.next_offset != state.size {
+            let _ = tokio::fs::remove_file(&state.tmp_path).await;
+            self.active_upload_targets.remove(&state.path);
+            anyhow::bail!(
+                "Upload incomplete: received {} of {} bytes",
+                state.next_offset,
+                state.size
+            );
+        }
+
+        if let Err(error) = tokio::fs::rename(&state.tmp_path, &state.path).await {
+            let _ = tokio::fs::remove_file(&state.tmp_path).await;
+            self.active_upload_targets.remove(&state.path);
+            return Err(error.into());
+        }
+        self.active_upload_targets.remove(&state.path);
         Ok(())
     }
 }
@@ -733,7 +816,7 @@ async fn download_file(
 mod tests {
     use super::*;
     use serverbee_common::constants::CAP_FILE;
-        use tempfile::TempDir;
+    use tempfile::TempDir;
 
     fn make_config(root: &str) -> FileConfig {
         FileConfig {
@@ -1068,7 +1151,7 @@ mod tests {
         // Touch the parent (root) — it's already there from TempDir.
         // start_upload validates the parent, not the file itself.
 
-        mgr.start_upload("t1".into(), file_path.to_str().unwrap().into(), 100)
+        mgr.start_upload("t1".into(), file_path.to_str().unwrap().into(), 13)
             .await
             .unwrap();
 
@@ -1370,7 +1453,12 @@ mod tests {
         let missing = tmp.path().join("does_not_exist.txt");
         let result = mgr.validate_path(missing.to_str().unwrap());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Cannot resolve path"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Cannot resolve path")
+        );
     }
 
     // ---- list_dir branches ----
@@ -1427,7 +1515,11 @@ mod tests {
 
         let entries = mgr.list_dir("/").await.unwrap();
         assert!(!entries.is_empty());
-        assert!(entries.iter().all(|e| matches!(e.file_type, FileType::Directory)));
+        assert!(
+            entries
+                .iter()
+                .all(|e| matches!(e.file_type, FileType::Directory))
+        );
     }
 
     #[tokio::test]
@@ -1556,9 +1648,16 @@ mod tests {
         std::fs::write(&path, "").unwrap();
 
         // "!!!" is not valid base64.
-        let result = mgr.write_file(path.to_str().unwrap(), "!!!not-base64!!!").await;
+        let result = mgr
+            .write_file(path.to_str().unwrap(), "!!!not-base64!!!")
+            .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid base64 content"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid base64 content")
+        );
     }
 
     #[tokio::test]
@@ -1661,7 +1760,9 @@ mod tests {
 
         let from = tmp.path().join("not_here.txt");
         let to = tmp.path().join("dest.txt");
-        let result = mgr.rename_path(from.to_str().unwrap(), to.to_str().unwrap()).await;
+        let result = mgr
+            .rename_path(from.to_str().unwrap(), to.to_str().unwrap())
+            .await;
         assert!(result.is_err());
     }
 
@@ -1676,7 +1777,9 @@ mod tests {
         // Destination filename matches a deny pattern (*.key).
         let to = tmp.path().join("secret.key");
 
-        let result = mgr.rename_path(from.to_str().unwrap(), to.to_str().unwrap()).await;
+        let result = mgr
+            .rename_path(from.to_str().unwrap(), to.to_str().unwrap())
+            .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("deny pattern"));
         assert!(from.exists());
@@ -1696,7 +1799,9 @@ mod tests {
         // Destination parent (tmp) is outside the allowed root.
         let to = tmp.path().join("escaped.txt");
 
-        let result = mgr.rename_path(from.to_str().unwrap(), to.to_str().unwrap()).await;
+        let result = mgr
+            .rename_path(from.to_str().unwrap(), to.to_str().unwrap())
+            .await;
         assert!(result.is_err());
         assert!(from.exists());
     }
@@ -1791,7 +1896,10 @@ mod tests {
             }
         }
         assert_eq!(reported_size, total as u64);
-        assert!(chunk_count >= 2, "expected multiple chunks, got {chunk_count}");
+        assert!(
+            chunk_count >= 2,
+            "expected multiple chunks, got {chunk_count}"
+        );
         assert_eq!(reassembled, payload);
     }
 
@@ -1873,7 +1981,12 @@ mod tests {
             .start_upload("up_big".into(), path.to_str().unwrap().into(), 51)
             .await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("exceeds max_file_size"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("exceeds max_file_size")
+        );
     }
 
     #[tokio::test]
@@ -1918,7 +2031,12 @@ mod tests {
         let data = BASE64.encode(b"x");
         let result = mgr.receive_chunk("ghost", 0, &data).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown upload transfer"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown upload transfer")
+        );
     }
 
     #[tokio::test]
@@ -1934,7 +2052,12 @@ mod tests {
 
         let result = mgr.receive_chunk("uc", 0, "%%%not-base64%%%").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid base64 chunk"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid base64 chunk")
+        );
     }
 
     #[tokio::test]
@@ -1944,7 +2067,7 @@ mod tests {
         let mgr = make_manager(config);
 
         let path = tmp.path().join("multi_upload.bin");
-        mgr.start_upload("um".into(), path.to_str().unwrap().into(), 1000)
+        mgr.start_upload("um".into(), path.to_str().unwrap().into(), 10)
             .await
             .unwrap();
 
@@ -1968,7 +2091,7 @@ mod tests {
         let mgr = make_manager(config);
 
         let path = tmp.path().join("empty_chunk.bin");
-        mgr.start_upload("ue".into(), path.to_str().unwrap().into(), 100)
+        mgr.start_upload("ue".into(), path.to_str().unwrap().into(), 0)
             .await
             .unwrap();
 
@@ -1991,7 +2114,84 @@ mod tests {
 
         let result = mgr.finish_upload("never-started").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown upload transfer"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unknown upload transfer")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_receive_chunk_rejects_out_of_order_offset() {
+        let tmp = TempDir::new().unwrap();
+        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let path = tmp.path().join("ordered.bin");
+        mgr.start_upload("ordered".into(), path.to_str().unwrap().into(), 2)
+            .await
+            .unwrap();
+
+        let error = mgr
+            .receive_chunk("ordered", 1, &BASE64.encode(b"x"))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("Unexpected upload offset"));
+    }
+
+    #[tokio::test]
+    async fn test_receive_chunk_rejects_data_beyond_declared_size() {
+        let tmp = TempDir::new().unwrap();
+        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let path = tmp.path().join("bounded.bin");
+        mgr.start_upload("bounded".into(), path.to_str().unwrap().into(), 1)
+            .await
+            .unwrap();
+
+        let error = mgr
+            .receive_chunk("bounded", 0, &BASE64.encode(b"xx"))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("exceeds declared size"));
+    }
+
+    #[tokio::test]
+    async fn test_finish_upload_rejects_incomplete_data_and_removes_temp_file() {
+        let tmp = TempDir::new().unwrap();
+        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let path = tmp.path().join("incomplete.bin");
+        mgr.start_upload("incomplete".into(), path.to_str().unwrap().into(), 2)
+            .await
+            .unwrap();
+        let temp_path = mgr
+            .active_uploads
+            .get("incomplete")
+            .unwrap()
+            .tmp_path
+            .clone();
+        mgr.receive_chunk("incomplete", 0, &BASE64.encode(b"x"))
+            .await
+            .unwrap();
+
+        let error = mgr.finish_upload("incomplete").await.unwrap_err();
+        assert!(error.to_string().contains("Upload incomplete"));
+        assert!(!temp_path.exists());
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn test_start_upload_rejects_concurrent_same_target() {
+        let tmp = TempDir::new().unwrap();
+        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let path = tmp.path().join("shared.bin");
+        mgr.start_upload("first".into(), path.to_str().unwrap().into(), 1)
+            .await
+            .unwrap();
+
+        let error = mgr
+            .start_upload("second".into(), path.to_str().unwrap().into(), 1)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("already targets"));
     }
 
     // ---- find_existing_ancestor ----

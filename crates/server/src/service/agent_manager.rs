@@ -8,7 +8,9 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use serverbee_common::constants::{CAP_DOCKER, has_capability};
 use serverbee_common::docker_types::*;
-use serverbee_common::protocol::{AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant};
+use serverbee_common::protocol::{
+    AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant,
+};
 use serverbee_common::types::{LiveMetrics, SystemReport, TracerouteHop};
 
 use crate::error::AppError;
@@ -508,6 +510,11 @@ impl AgentManager {
         self.register_pending_request_with_ttl(msg_id, std::time::Duration::from_secs(60))
     }
 
+    /// Remove a pending response slot when the request owner stops waiting.
+    pub fn cancel_pending_request(&self, msg_id: &str) {
+        self.pending_requests.remove(msg_id);
+    }
+
     /// Send a request to an agent and await its correlated reply.
     ///
     /// Owns the whole request/reply choreography: generates the correlation id,
@@ -662,7 +669,10 @@ impl AgentManager {
         mirror_caps: u32,
         cap_bit: u32,
     ) -> Option<&'static str> {
-        if has_capability(self.effective_capabilities_or(server_id, mirror_caps), cap_bit) {
+        if has_capability(
+            self.effective_capabilities_or(server_id, mirror_caps),
+            cap_bit,
+        ) {
             None
         } else {
             Some("agent_capability_disabled")
@@ -709,7 +719,8 @@ impl AgentManager {
         for (id, caps, features_json) in servers {
             // Seed the last-known agent capabilities from the persisted mirror
             // so display/enforcement has a value before the agent reconnects.
-            self.agent_local_capabilities.insert(id.clone(), caps as u32);
+            self.agent_local_capabilities
+                .insert(id.clone(), caps as u32);
             let features: Vec<String> = serde_json::from_str(&features_json).unwrap_or_default();
             self.features.insert(id, features);
         }
@@ -765,11 +776,7 @@ impl AgentManager {
 
     // --- Traceroute cache ---
 
-    pub fn insert_traceroute_placeholder(
-        &self,
-        request_id: &str,
-        meta: TracerouteRequestMeta,
-    ) {
+    pub fn insert_traceroute_placeholder(&self, request_id: &str, meta: TracerouteRequestMeta) {
         self.traceroute_results.insert(
             request_id.to_string(),
             TracerouteCacheEntry {
@@ -820,21 +827,25 @@ impl AgentManager {
     }
 
     pub fn get_traceroute_snapshot(&self, request_id: &str) -> Option<TracerouteSnapshot> {
-        self.traceroute_results.get(request_id).map(|e| TracerouteSnapshot {
-            server_id: e.meta.server_id.clone(),
-            target: e.meta.target.clone(),
-            protocol: e.meta.protocol,
-            started_at: e.meta.started_at,
-            round: e.round,
-            total_rounds: e.total_rounds,
-            completed: e.completed,
-            hops: e.hops.clone(),
-            error: e.error.clone(),
-        })
+        self.traceroute_results
+            .get(request_id)
+            .map(|e| TracerouteSnapshot {
+                server_id: e.meta.server_id.clone(),
+                target: e.meta.target.clone(),
+                protocol: e.meta.protocol,
+                started_at: e.meta.started_at,
+                round: e.round,
+                total_rounds: e.total_rounds,
+                completed: e.completed,
+                hops: e.hops.clone(),
+                error: e.error.clone(),
+            })
     }
 
     pub fn get_traceroute_meta(&self, request_id: &str) -> Option<TracerouteRequestMeta> {
-        self.traceroute_results.get(request_id).map(|e| e.meta.clone())
+        self.traceroute_results
+            .get(request_id)
+            .map(|e| e.meta.clone())
     }
 
     pub fn set_traceroute_meta_protocol(&self, request_id: &str, protocol: RecordedProtocol) {
@@ -852,7 +863,6 @@ impl AgentManager {
             now.duration_since(anchor).as_secs() < 120
         });
     }
-
 }
 
 /// Clean up Docker viewer tracking, features, and broadcast availability change.
@@ -939,12 +949,22 @@ mod tests {
             },
         );
         let hop = TracerouteHop {
-            hop: 1, ip: None, hostname: None,
-            rtt1: None, rtt2: None, rtt3: None, asn: None,
+            hop: 1,
+            ip: None,
+            hostname: None,
+            rtt1: None,
+            rtt2: None,
+            rtt3: None,
+            asn: None,
             ips: vec!["10.0.0.1".into()],
-            total_sent: Some(2), total_recv: Some(2), loss_pct: Some(0.0),
-            best_ms: Some(1.0), worst_ms: Some(1.0), avg_ms: Some(1.0),
-            stddev_ms: Some(0.0), jitter_ms: Some(0.0),
+            total_sent: Some(2),
+            total_recv: Some(2),
+            loss_pct: Some(0.0),
+            best_ms: Some(1.0),
+            worst_ms: Some(1.0),
+            avg_ms: Some(1.0),
+            stddev_ms: Some(0.0),
+            jitter_ms: Some(0.0),
         };
         m.update_traceroute_round("rid", 1, 5, vec![hop.clone()], false, None);
         m.update_traceroute_round("rid", 5, 5, vec![hop.clone()], true, None);
@@ -1187,10 +1207,7 @@ mod tests {
     fn test_capability_denied_reason_falls_back_to_mirror_then_agent_report() {
         let (mgr, _rx) = make_manager();
         // No agent report yet: the persisted mirror gates the decision.
-        assert_eq!(
-            mgr.capability_denied_reason("s1", CAP_FILE, CAP_FILE),
-            None
-        );
+        assert_eq!(mgr.capability_denied_reason("s1", CAP_FILE, CAP_FILE), None);
         assert_eq!(
             mgr.capability_denied_reason("s1", CAP_FILE, CAP_EXEC),
             Some("agent_capability_disabled")

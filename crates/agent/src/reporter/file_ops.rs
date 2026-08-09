@@ -146,15 +146,21 @@ where
             offset,
             data,
         } => {
-            let msg = match file_manager.receive_chunk(&transfer_id, offset, &data).await {
+            let msg = match file_manager
+                .receive_chunk(&transfer_id, offset, &data)
+                .await
+            {
                 Ok(new_offset) => AgentMessage::FileUploadAck {
                     transfer_id,
                     offset: new_offset,
                 },
-                Err(e) => AgentMessage::FileUploadError {
-                    transfer_id,
-                    error: e.to_string(),
-                },
+                Err(e) => {
+                    file_manager.abort_upload(&transfer_id).await;
+                    AgentMessage::FileUploadError {
+                        transfer_id,
+                        error: e.to_string(),
+                    }
+                }
             };
             send_msg(write, &msg).await?;
         }

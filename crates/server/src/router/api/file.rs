@@ -925,6 +925,7 @@ async fn upload_file(
         })
         .await
         .map_err(|_| {
+            state.agent_manager.cancel_pending_request(&init_ack_key);
             state.file_transfers.remove(&transfer_id);
             let _ = std::fs::remove_file(&temp_upload);
             AppError::Internal("Failed to send to agent".into())
@@ -950,6 +951,7 @@ async fn upload_file(
             return Err(AppError::Internal("Agent rejected upload".into()));
         }
         Err(_) => {
+            state.agent_manager.cancel_pending_request(&init_ack_key);
             state
                 .file_transfers
                 .mark_failed(&transfer_id, "Upload start timeout".into());
@@ -1002,6 +1004,7 @@ async fn upload_file(
             })
             .await
             .map_err(|_| {
+                state.agent_manager.cancel_pending_request(&ack_msg_id);
                 state
                     .file_transfers
                     .mark_failed(&transfer_id, "Failed to send chunk".into());
@@ -1012,10 +1015,20 @@ async fn upload_file(
         match tokio::time::timeout(Duration::from_secs(30), ack_rx).await {
             Ok(Ok(AgentMessage::FileUploadAck {
                 offset: ack_offset, ..
-            })) => {
+            })) if ack_offset == offset + n as u64 => {
                 state
                     .file_transfers
                     .update_progress(&transfer_id, ack_offset);
+            }
+            Ok(Ok(AgentMessage::FileUploadAck {
+                offset: ack_offset, ..
+            })) => {
+                state.file_transfers.mark_failed(
+                    &transfer_id,
+                    format!("Unexpected upload ack offset {ack_offset}"),
+                );
+                let _ = tokio::fs::remove_file(&temp_upload).await;
+                return Err(AppError::Internal("Unexpected upload ack offset".into()));
             }
             Ok(Ok(AgentMessage::FileUploadError { error, .. })) => {
                 state
@@ -1025,7 +1038,11 @@ async fn upload_file(
                 return Err(AppError::BadRequest(format!("Upload failed: {error}")));
             }
             Ok(Ok(_)) => {
-                // Might be upload ack received via different path; continue
+                state
+                    .file_transfers
+                    .mark_failed(&transfer_id, "Unexpected upload response".into());
+                let _ = tokio::fs::remove_file(&temp_upload).await;
+                return Err(AppError::Internal("Unexpected upload response".into()));
             }
             Ok(Err(_)) => {
                 state
@@ -1037,6 +1054,7 @@ async fn upload_file(
                 ));
             }
             Err(_) => {
+                state.agent_manager.cancel_pending_request(&ack_msg_id);
                 state
                     .file_transfers
                     .mark_failed(&transfer_id, "Upload timeout".into());
@@ -1051,19 +1069,22 @@ async fn upload_file(
     // Clean up the upload temp file
     let _ = tokio::fs::remove_file(&temp_upload).await;
 
-    // Send upload end
+    // Register before sending so a fast agent cannot complete before the
+    // response slot exists.
+    let complete_msg_id = AgentManager::upload_complete_key(&transfer_id);
+    let complete_rx = state
+        .agent_manager
+        .register_pending_request(complete_msg_id.clone());
+
     sender
         .send(ServerMessage::FileUploadEnd {
             transfer_id: transfer_id.clone(),
         })
         .await
-        .map_err(|_| AppError::Internal("Failed to send upload end".into()))?;
-
-    // Wait for upload complete or error
-    let complete_msg_id = AgentManager::upload_complete_key(&transfer_id);
-    let complete_rx = state
-        .agent_manager
-        .register_pending_request(complete_msg_id);
+        .map_err(|_| {
+            state.agent_manager.cancel_pending_request(&complete_msg_id);
+            AppError::Internal("Failed to send upload end".into())
+        })?;
 
     match tokio::time::timeout(Duration::from_secs(30), complete_rx).await {
         Ok(Ok(AgentMessage::FileUploadComplete { .. })) => {
@@ -1075,7 +1096,12 @@ async fn upload_file(
                 .mark_failed(&transfer_id, error.clone());
             return Err(AppError::BadRequest(format!("Upload failed: {error}")));
         }
-        Ok(Ok(_)) => {}
+        Ok(Ok(_)) => {
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, "Unexpected upload response".into());
+            return Err(AppError::Internal("Unexpected upload response".into()));
+        }
         Ok(Err(_)) => {
             state
                 .file_transfers
@@ -1083,8 +1109,13 @@ async fn upload_file(
             return Err(AppError::Internal("Agent disconnected".into()));
         }
         Err(_) => {
-            // Timeout waiting for complete, but data was sent. Mark as ready optimistically.
-            state.file_transfers.mark_ready(&transfer_id);
+            state.agent_manager.cancel_pending_request(&complete_msg_id);
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, "Upload completion timeout".into());
+            return Err(AppError::RequestTimeout(
+                "Agent did not confirm upload completion".into(),
+            ));
         }
     }
 
