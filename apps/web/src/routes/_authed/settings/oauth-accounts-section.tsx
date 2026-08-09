@@ -41,7 +41,7 @@ export function OAuthAccountsSection() {
   })
 
   return (
-    <div className="rounded-lg border bg-card p-6">
+    <section>
       <h2 className="mb-4 font-semibold text-lg">{t('security.linked_accounts')}</h2>
 
       {isLoading && (
@@ -116,6 +116,6 @@ export function OAuthAccountsSection() {
           ))}
         </div>
       )}
-    </div>
+    </section>
   )
 }

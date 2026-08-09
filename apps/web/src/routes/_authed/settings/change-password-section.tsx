@@ -77,7 +77,7 @@ export function ChangePasswordSection() {
   }
 
   return (
-    <div className="rounded-lg border bg-card p-6">
+    <section>
       <h2 className="mb-4 font-semibold text-lg">{t('security.change_password')}</h2>
 
       <form className="max-w-xs space-y-3" onSubmit={handleSubmit}>
@@ -134,6 +134,6 @@ export function ChangePasswordSection() {
           {state.changePending ? t('security.changing') : t('security.change_password')}
         </Button>
       </form>
-    </div>
+    </section>
   )
 }

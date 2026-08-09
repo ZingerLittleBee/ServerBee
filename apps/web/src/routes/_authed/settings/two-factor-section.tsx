@@ -130,14 +130,14 @@ export function TwoFactorSection() {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border bg-card p-6">
+      <section>
         <Skeleton className="h-20" />
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="rounded-lg border bg-card p-6">
+    <section>
       <div className="mb-4 flex items-center gap-2">
         <Smartphone aria-hidden="true" className="size-5" />
         <h2 className="font-semibold text-lg">{t('security.two_factor')}</h2>
@@ -243,6 +243,6 @@ export function TwoFactorSection() {
           </Button>
         </div>
       )}
-    </div>
+    </section>
   )
 }
