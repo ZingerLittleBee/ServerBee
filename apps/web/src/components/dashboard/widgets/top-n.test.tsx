@@ -166,8 +166,8 @@ describe('TopNWidget', () => {
     expect(screen.queryByTestId('bar-y-axis')).not.toBeInTheDocument()
 
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-key', 'value')
-    // Single theme foreground fill for every bar.
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', 'var(--foreground)')
+    // Single theme chart accent for every bar.
+    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', 'var(--chart-1)')
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-line-cap', '5')
     expect(screen.getByTestId('bar-value-axis')).toBeInTheDocument()
 

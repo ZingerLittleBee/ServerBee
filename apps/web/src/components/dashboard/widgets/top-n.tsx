@@ -39,8 +39,8 @@ const LABEL_INSET_PX = 8
 /** Bars narrower than this put the name to the right of the fill (outside). */
 const MIN_INNER_LABEL_WIDTH_PX = 56
 
-/** Single theme ink fill — uses the UI foreground token. */
-const BAR_FILL = 'var(--foreground)'
+/** Single theme chart accent — same token as primary plot series. */
+const BAR_FILL = 'var(--chart-1)'
 
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
 
@@ -48,8 +48,8 @@ function labelClassForBar(inside: boolean): string {
   if (!inside) {
     return 'text-foreground'
   }
-  // Invert against the foreground fill (light on dark ink / dark on light ink).
-  return 'text-background'
+  // chart-1 is mid-chroma blue (L ≈ 0.67–0.71) in both themes — white reads.
+  return 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.45)]'
 }
 
 function formatValue(metric: string, value: number): string {
