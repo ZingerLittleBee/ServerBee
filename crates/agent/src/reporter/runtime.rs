@@ -447,44 +447,151 @@ async fn execute_command(
 ) -> serverbee_common::types::TaskResult {
     let timeout_secs = timeout.unwrap_or(DEFAULT_COMMAND_TIMEOUT_SECS);
 
-    let result = tokio::time::timeout(
-        Duration::from_secs(timeout_secs as u64),
-        tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .output(),
-    )
-    .await;
+    let mut process = tokio::process::Command::new("sh");
+    process
+        .arg("-c")
+        .arg(command)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        process.as_std_mut().process_group(0);
+    }
 
-    match result {
-        Ok(Ok(output)) => {
-            let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr);
+    let mut child = match process.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return command_error(task_id, format!("Failed to execute command: {error}"));
+        }
+    };
+    let process_group_id = child.id();
+    let mut stdout_task = child
+        .stdout
+        .take()
+        .map(|stdout| tokio::spawn(read_pipe(stdout)));
+    let mut stderr_task = child
+        .stderr
+        .take()
+        .map(|stderr| tokio::spawn(read_pipe(stderr)));
+
+    let execution = async {
+        let status = child.wait().await?;
+        let stdout = collect_pipe(stdout_task.take()).await;
+        let stderr = collect_pipe(stderr_task.take()).await;
+        Ok::<_, std::io::Error>((status, stdout, stderr))
+    };
+    match tokio::time::timeout(Duration::from_secs(timeout_secs as u64), execution).await {
+        Ok(Ok((status, stdout, stderr))) => {
+            let mut combined = String::from_utf8_lossy(&stdout).to_string();
+            let stderr = String::from_utf8_lossy(&stderr);
             if !stderr.is_empty() {
                 combined.push('\n');
                 combined.push_str(&stderr);
             }
             if combined.len() > MAX_TASK_OUTPUT_SIZE {
-                combined.truncate(MAX_TASK_OUTPUT_SIZE);
+                let mut boundary = MAX_TASK_OUTPUT_SIZE;
+                while !combined.is_char_boundary(boundary) {
+                    boundary -= 1;
+                }
+                combined.truncate(boundary);
                 combined.push_str("\n... (output truncated)");
             }
             serverbee_common::types::TaskResult {
                 task_id: task_id.to_string(),
                 output: combined,
-                exit_code: output.status.code().unwrap_or(-1),
+                exit_code: status.code().unwrap_or(-1),
             }
         }
-        Ok(Err(e)) => serverbee_common::types::TaskResult {
-            task_id: task_id.to_string(),
-            output: format!("Failed to execute command: {e}"),
-            exit_code: -1,
-        },
-        Err(_) => serverbee_common::types::TaskResult {
-            task_id: task_id.to_string(),
-            output: format!("Command timed out after {timeout_secs}s"),
-            exit_code: -1,
-        },
+        Ok(Err(error)) => {
+            terminate_command_tree(&mut child, process_group_id).await;
+            command_error(task_id, format!("Failed to execute command: {error}"))
+        }
+        Err(_) => {
+            terminate_command_tree(&mut child, process_group_id).await;
+            let _ = collect_pipe(stdout_task.take()).await;
+            let _ = collect_pipe(stderr_task.take()).await;
+            command_error(task_id, format!("Command timed out after {timeout_secs}s"))
+        }
     }
+}
+
+fn command_error(task_id: &str, output: String) -> serverbee_common::types::TaskResult {
+    serverbee_common::types::TaskResult {
+        task_id: task_id.to_string(),
+        output,
+        exit_code: -1,
+    }
+}
+
+async fn read_pipe<R>(mut pipe: R) -> std::io::Result<Vec<u8>>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::AsyncReadExt;
+
+    let mut retained = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let read = pipe.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        let remaining = (MAX_TASK_OUTPUT_SIZE + 1).saturating_sub(retained.len());
+        retained.extend_from_slice(&chunk[..read.min(remaining)]);
+    }
+    Ok(retained)
+}
+
+async fn collect_pipe(task: Option<tokio::task::JoinHandle<std::io::Result<Vec<u8>>>>) -> Vec<u8> {
+    match task {
+        Some(task) => match task.await {
+            Ok(Ok(bytes)) => bytes,
+            Ok(Err(error)) => {
+                tracing::warn!(error = %error, "Failed to read command output pipe");
+                Vec::new()
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "Command output reader task failed");
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    }
+}
+
+async fn terminate_command_tree(child: &mut tokio::process::Child, process_group_id: Option<u32>) {
+    #[cfg(unix)]
+    if let Some(pid) = process_group_id.and_then(|pid| i32::try_from(pid).ok()) {
+        // The shell is the process-group leader, so a negative PID reaches the
+        // shell and every descendant it spawned.
+        let result = unsafe { libc::kill(-pid, libc::SIGKILL) };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                tracing::warn!(pid, error = %error, "Failed to kill command process group");
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    if let Some(pid) = process_group_id {
+        let result = tokio::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status()
+            .await;
+        if let Err(error) = result {
+            tracing::warn!(pid, error = %error, "Failed to run taskkill for command tree");
+        }
+    }
+
+    if let Err(error) = child.start_kill()
+        && error.kind() != std::io::ErrorKind::InvalidInput
+    {
+        tracing::warn!(error = %error, "Failed to kill command process");
+    }
+    let _ = child.wait().await;
 }
 
 #[cfg(test)]
@@ -548,6 +655,40 @@ mod tests {
             r.output.contains("timed out"),
             "timeout branch must report it"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_execute_command_timeout_kills_descendant_processes() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let pid_path = temp.path().join("child.pid");
+        let command = format!(
+            "sleep 30 & child=$!; echo $child > '{}'; printf launched",
+            pid_path.display()
+        );
+
+        let result = execute_command("t-tree-timeout", &command, Some(1)).await;
+        assert_eq!(result.exit_code, -1);
+        assert!(result.output.contains("timed out"));
+
+        let pid: i32 = std::fs::read_to_string(&pid_path)
+            .expect("child pid should be recorded before timeout")
+            .trim()
+            .parse()
+            .expect("child pid should be numeric");
+        let mut gone = false;
+        for _ in 0..20 {
+            let exists = unsafe { libc::kill(pid, 0) } == 0;
+            if !exists && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        if !gone {
+            let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
+        }
+        assert!(gone, "timed-out command descendant {pid} is still alive");
     }
 
     // ----------------------------------------------------------------------
