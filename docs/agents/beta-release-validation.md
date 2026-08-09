@@ -140,6 +140,23 @@ Run the iOS test scheme on a named Simulator and require a nonzero test count wi
 
 ## Release dry-run and authorization
 
+Use the repository release entrypoint to preview the exact cut:
+
+```bash
+make publish VERSION=1.0.0-beta.1 DRY_RUN=1
+```
+
+When the preview has been reviewed but external writes are not yet authorized,
+prepare and commit the release locally without pushing or tagging:
+
+```bash
+make publish VERSION=1.0.0-beta.1 PREPARE_ONLY=1 YES=1
+```
+
+Run `make publish VERSION=1.0.0-beta.1 YES=1` only after explicit authorization.
+That command pushes the release commit and annotated tag; the tag-triggered GitHub
+Actions workflow builds the assets and creates the prerelease.
+
 Before any external write, present:
 
 - The exact release commit and clean worktree status.

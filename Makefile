@@ -63,7 +63,7 @@ COMMAND_TARGETS := \
 	docker-down \
 	docker-logs
 
-.PHONY: menu recent help $(COMMAND_TARGETS)
+.PHONY: menu recent help publish $(COMMAND_TARGETS)
 
 menu:
 	@$(MENU_RUNNER) menu
@@ -72,6 +72,9 @@ recent:
 	@$(MENU_RUNNER) recent
 
 help: menu
+
+publish:
+	@VERSION='$(VERSION)' DRY_RUN='$(DRY_RUN)' YES='$(YES)' PREPARE_ONLY='$(PREPARE_ONLY)' ./scripts/publish.sh
 
 $(COMMAND_TARGETS):
 	@$(MENU_RUNNER) run $@
