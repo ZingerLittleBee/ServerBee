@@ -291,8 +291,10 @@ describe('WidgetConfigDialog', () => {
     expect(screen.getByText('Highest first')).toBeInTheDocument()
     expect(screen.getByText('Lowest first')).toBeInTheDocument()
     expect(screen.getByText('Count')).toBeInTheDocument()
-    expect(screen.getByText('Bar color')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('#8EC5FF')).toBeInTheDocument()
+    // Label + ColorPickerPopover trigger both surface the same string.
+    expect(screen.getAllByText('Bar color').length).toBeGreaterThanOrEqual(1)
+    // Trigger shows hex without the leading #.
+    expect(screen.getByText('8EC5FF')).toBeInTheDocument()
   })
 
   it('renders a server multi-select for alert-list widget', () => {

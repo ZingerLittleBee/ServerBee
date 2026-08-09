@@ -7,6 +7,7 @@ import { MarkdownContent } from '@/components/dashboard/markdown-content'
 import { DEFAULT_TOP_N_BAR_COLOR, normalizeTopNBarColor } from '@/components/dashboard/widgets/top-n'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ColorPickerPopover } from '@/components/ui/color-picker'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -627,33 +628,36 @@ function TopNForm({
         value={config.count}
       />
       <div className="space-y-1.5">
-        <Label htmlFor="top-n-bar-color">{t('widgets.common.labels.color')}</Label>
-        <div className="flex items-center gap-2">
-          <input
-            aria-label={t('widgets.common.labels.color')}
-            className="h-8 w-10 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
-            id="top-n-bar-color"
-            onChange={(event) => onChange({ ...config, color: event.target.value.toUpperCase() })}
-            type="color"
-            value={colorValue.toLowerCase()}
-          />
-          <Input
-            className="font-mono uppercase"
-            onChange={(event) => {
-              const next = event.target.value.trim()
-              if (next.length === 0) {
-                // Empty clears the override so the widget uses its built-in default.
-                const { color: _removed, ...rest } = config
-                onChange(rest)
-                return
-              }
-              onChange({ ...config, color: next })
-            }}
-            placeholder={DEFAULT_TOP_N_BAR_COLOR}
-            spellCheck={false}
-            value={config.color ?? DEFAULT_TOP_N_BAR_COLOR}
-          />
-        </div>
+        <Label>{t('widgets.common.labels.color')}</Label>
+        {/* Fluid Functionalism ColorPickerPopover — HEX/RGB/HSL/OKLCH + eyedropper.
+            https://www.fluidfunctionalism.com/docs/color-picker */}
+        <ColorPickerPopover
+          defaultFormat="hex"
+          onTriggerRemove={() => {
+            const { color: _removed, ...rest } = config
+            onChange(rest)
+          }}
+          onValueChange={(value) => {
+            const next = normalizeTopNBarColor(value) ?? value
+            onChange({ ...config, color: next })
+          }}
+          swatches={[
+            DEFAULT_TOP_N_BAR_COLOR,
+            '#60A5FA',
+            '#34D399',
+            '#FBBF24',
+            '#F87171',
+            '#A78BFA',
+            '#F472B6',
+            '#94A3B8'
+          ]}
+          triggerClassName="w-full"
+          triggerLabel={t('widgets.common.labels.color')}
+          triggerLabelPosition="left"
+          triggerShowRemove={Boolean(config.color)}
+          triggerShowValue
+          value={colorValue}
+        />
       </div>
     </>
   )
