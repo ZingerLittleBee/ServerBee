@@ -44,26 +44,27 @@ const MIN_INNER_LABEL_WIDTH_PX = 56
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
 
 /**
- * Series fills whose OKLCH lightness sits above ~0.73 (amber-500, lime-500).
- * White label text fails contrast on those; use near-black instead (better-colors
- * light-bg → dark text rule).
+ * How much of the raw series hue remains after softening. Full 500-level
+ * series colors are intentionally loud for multi-line charts; top-n bars sit
+ * as large fills on a card and need a calmer mix (better-colors: lower chroma
+ * emphasis for non-primary surfaces).
  */
-const LIGHT_BAR_FILLS = new Set<string>(['var(--chart-series-4)', 'var(--chart-series-11)'])
+const RANK_COLOR_SERIES_MIX = 42
 
 function rankColor(rankIndex: number): string {
-  return CHART_COLORS[rankIndex % CHART_COLORS.length] ?? CHART_COLORS[0]
+  const series = CHART_COLORS[rankIndex % CHART_COLORS.length] ?? CHART_COLORS[0]
+  // Mix toward the card so light mode yields soft pastels and dark mode yields
+  // deeper, less neon fills — hue stays categorical, intensity drops.
+  return `color-mix(in oklch, ${series} ${RANK_COLOR_SERIES_MIX}%, var(--card))`
 }
 
-function labelClassForBar(color: string, inside: boolean): string {
+function labelClassForBar(_color: string, inside: boolean): string {
   if (!inside) {
     return 'text-foreground'
   }
-  if (LIGHT_BAR_FILLS.has(color)) {
-    return 'text-zinc-950'
-  }
-  // Mid-chroma series blues/reds/violets (L ≈ 0.58–0.72) take white with a
-  // soft shadow so thin glyphs stay crisp on the fill.
-  return 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.5)]'
+  // Softened fills land mid-light in light mode and mid-dark in dark mode;
+  // theme-aware near-black / near-white keeps names readable on both.
+  return 'text-zinc-950 dark:text-zinc-50'
 }
 
 function formatValue(metric: string, value: number): string {

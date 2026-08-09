@@ -198,10 +198,11 @@ describe('TopNWidget', () => {
     }[]
 
     expect(chartData.map((row) => row.name)).toEqual(['High', 'Mid', 'Low'])
+    // Softened categorical fills (series hue mixed into the card surface).
     expect(chartData.map((row) => row.color)).toEqual([
-      'var(--chart-series-1)',
-      'var(--chart-series-2)',
-      'var(--chart-series-3)'
+      'color-mix(in oklch, var(--chart-series-1) 42%, var(--card))',
+      'color-mix(in oklch, var(--chart-series-2) 42%, var(--card))',
+      'color-mix(in oklch, var(--chart-series-3) 42%, var(--card))'
     ])
   })
 
