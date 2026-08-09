@@ -218,11 +218,17 @@ describe('ServerCard', () => {
     expect(screen.getByText('common:status.offline')).toBeDefined()
   })
 
-  it('desaturates offline cards without diluting text contrast', () => {
+  it('marks offline cards with a muted surface and desaturates metrics only', () => {
     const { container } = renderCard(makeServer({ online: false }))
     const card = container.firstElementChild as HTMLElement
+    const metrics = card.querySelector('.grayscale')
 
-    expect(card.className).toContain('grayscale')
+    // Surface + destructive ring make offline scannable next to live cards.
+    expect(card.className).toContain('bg-muted/70')
+    expect(card.className).toContain('ring-destructive/35')
+    // Grayscale is scoped to metrics so the StatusBadge keeps its red pill.
+    expect(card.className).not.toContain('grayscale')
+    expect(metrics).not.toBeNull()
     expect(card.className).not.toMatch(REGEX_OPACITY_UTILITY)
     // A translucent scrim stacked over the body pushed it to 1.82:1.
     expect(container.innerHTML).not.toContain('bg-background/')
