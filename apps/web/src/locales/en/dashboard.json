@@ -216,7 +216,10 @@
         "labelOptional": "Label (optional)",
         "layout": "Layout",
         "layoutGrid": "Grid",
-        "layoutList": "List"
+        "layoutList": "List",
+        "color": "Chart color",
+        "colorPrimary": "Primary color",
+        "colorSecondary": "Secondary color"
       },
       "placeholders": {
         "selectServer": "Select server",

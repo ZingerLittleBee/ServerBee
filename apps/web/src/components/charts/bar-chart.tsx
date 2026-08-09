@@ -132,9 +132,11 @@ function extractBarConfigs(children: ReactNode): LineConfig[] {
       (props && typeof props.dataKey === 'string' && props.dataKey.length > 0)
 
     if (isBarComponent && props?.dataKey) {
-      // Use stroke for tooltip dot color if provided, otherwise fall back to fill
-      // This allows gradient/pattern fills to have a solid dot color
-      const dotColor = props.stroke || props.fill || 'var(--chart-line-primary)'
+      // Use stroke for tooltip dot color if provided, otherwise fall back to a
+      // static fill. Per-datum fill resolvers (functions) skip the series-level
+      // stroke — callers supply row colors via custom tooltip content.
+      const staticFill = typeof props.fill === 'string' ? props.fill : undefined
+      const dotColor = props.stroke || staticFill || 'var(--chart-line-primary)'
       configs.push({
         dataKey: props.dataKey,
         stroke: dotColor,

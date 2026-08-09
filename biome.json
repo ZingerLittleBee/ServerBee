@@ -33,6 +33,10 @@
       "!apps/web/public/world-countries.json",
       "!apps/web/src/bones",
       "!apps/web/src/lib/api-types.ts",
+      "!apps/web/src/components/ui/color-picker.tsx",
+      "!apps/web/src/components/ui/fluid",
+      "!apps/web/src/lib/fluid",
+      "!apps/web/src/hooks/use-proximity-hover.ts",
       "!templates"
     ]
   },

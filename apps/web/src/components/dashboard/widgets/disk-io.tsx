@@ -5,6 +5,11 @@ import { useServerRecords } from '@/hooks/use-api'
 import { buildMergedDiskIoSeries } from '@/lib/disk-io'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { formatSpeed } from '@/lib/utils'
+import {
+  DEFAULT_WIDGET_CHART_COLOR,
+  DEFAULT_WIDGET_CHART_COLOR_SECONDARY,
+  resolveWidgetColor
+} from '@/lib/widget-color'
 import { formatChartTime } from '@/lib/widget-helpers'
 import type { DiskIoConfig } from '@/lib/widget-types'
 
@@ -42,10 +47,18 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   const serverName = server?.name ?? t('metricCard.unknownServer')
   const chartSeries = useMemo(
     () => [
-      { dataKey: 'read_bytes_per_sec', label: t('widgets.diskIo.legend.read'), color: 'var(--chart-1)' },
-      { dataKey: 'write_bytes_per_sec', label: t('widgets.diskIo.legend.write'), color: 'var(--chart-2)' }
+      {
+        dataKey: 'read_bytes_per_sec',
+        label: t('widgets.diskIo.legend.read'),
+        color: resolveWidgetColor(config.color, DEFAULT_WIDGET_CHART_COLOR)
+      },
+      {
+        dataKey: 'write_bytes_per_sec',
+        label: t('widgets.diskIo.legend.write'),
+        color: resolveWidgetColor(config.color_secondary, DEFAULT_WIDGET_CHART_COLOR_SECONDARY)
+      }
     ],
-    [t]
+    [config.color, config.color_secondary, t]
   )
 
   if (isLoading) {

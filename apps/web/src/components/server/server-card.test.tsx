@@ -174,10 +174,11 @@ describe('ServerCard', () => {
     expect(screen.getByText('card_load_trend')).toBeDefined()
   })
 
-  it('does not render network quality section when no data', () => {
+  it('reserves the network quality section as a placeholder when no probe data exists', () => {
     renderCard(makeServer())
-    expect(screen.queryByText('card_latency')).toBeNull()
-    expect(screen.queryByText('card_packet_loss')).toBeNull()
+    expect(screen.getByLabelText('card_network_quality')).toBeDefined()
+    expect(screen.getByText('card_latency')).toBeDefined()
+    expect(screen.getByText('card_packet_loss')).toBeDefined()
   })
 
   it('renders latency and loss square grids when network data is present', () => {
@@ -234,6 +235,55 @@ describe('ServerCard', () => {
     expect(container.innerHTML).not.toContain('bg-background/')
   })
 
+  it('disables latency/loss tooltips on offline cards', () => {
+    const { container } = renderCard(makeServer({ online: false }), {
+      networkSummary: makeSummary({
+        targets: [
+          {
+            availability: 0.99,
+            avg_latency: 40,
+            max_latency: 45,
+            min_latency: 35,
+            packet_loss: 0.01,
+            provider: 'ct',
+            target_id: 'target-1',
+            target_name: 'Shanghai Telecom'
+          }
+        ]
+      })
+    })
+
+    // NetworkMetricValue tooltips use a button trigger; offline must not mount one.
+    const networkSection = screen.getByLabelText('card_network_quality')
+    expect(networkSection.querySelector('button')).toBeNull()
+    // Square-grid markers stay as plain divs (no tooltip trigger wrappers).
+    expect(container.querySelectorAll('[data-testid="square"]').length).toBeGreaterThan(0)
+    expect(networkSection.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0)
+  })
+
+  it('keeps latency/loss tooltips on online cards with target data', () => {
+    renderCard(makeServer({ online: true }), {
+      networkSummary: makeSummary({
+        targets: [
+          {
+            availability: 0.99,
+            avg_latency: 40,
+            max_latency: 45,
+            min_latency: 35,
+            packet_loss: 0.01,
+            provider: 'ct',
+            target_id: 'target-1',
+            target_name: 'Shanghai Telecom'
+          }
+        ]
+      })
+    })
+
+    const networkSection = screen.getByLabelText('card_network_quality')
+    // NetworkMetricValue wraps the current value in a button trigger for keyboard access.
+    expect(networkSection.querySelector('button')).not.toBeNull()
+  })
+
   it('gives the truncated name a title so the full value stays reachable', () => {
     renderCard(makeServer({ name: 'a-very-long-server-name-that-will-be-clipped' }))
     const heading = screen.getByRole('heading', { level: 3 })
@@ -253,5 +303,10 @@ describe('ServerCard', () => {
   it('lets the card shrink below the ideal 320px card width', () => {
     const { container } = renderCard(makeServer())
     expect((container.firstElementChild as HTMLElement).className).toContain('min-w-0')
+  })
+
+  it('stretches to fill the grid cell so online and offline heights match', () => {
+    const { container } = renderCard(makeServer({ online: false }))
+    expect((container.firstElementChild as HTMLElement).className).toContain('h-full')
   })
 })

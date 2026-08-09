@@ -8,15 +8,16 @@ interface MetricCardHeaderProps {
   serverName: string
 }
 
+/** `accent` is a full CSS color (`#RRGGBB` or `var(--chart-1)`). */
 export function MetricCardHeader({ Icon, label, serverName, accent }: MetricCardHeaderProps) {
   return (
     <div className="flex items-center gap-2.5">
       <div
         className={cn('flex size-8 shrink-0 items-center justify-center rounded-lg')}
         data-testid="metric-card-icon"
-        style={{ backgroundColor: `color-mix(in oklab, var(${accent}) 18%, transparent)` }}
+        style={{ backgroundColor: `color-mix(in oklab, ${accent} 18%, transparent)` }}
       >
-        <Icon className="size-4" style={{ color: `var(${accent})` }} />
+        <Icon className="size-4" style={{ color: accent }} />
       </div>
       <span className="font-semibold text-sm leading-tight">{label}</span>
       <span className="ml-auto truncate text-muted-foreground text-xs leading-tight">{serverName}</span>

@@ -37,7 +37,15 @@ vi.mock('./grid', () => ({
     <div data-horizontal={String(horizontal)} data-testid="grid" data-vertical={String(vertical)} />
   )
 }))
-vi.mock('./tooltip/chart-tooltip', () => ({ ChartTooltip: () => null }))
+vi.mock('./tooltip/chart-tooltip', () => ({
+  ChartTooltip: ({ datePillLabels, showDatePill }: { datePillLabels?: readonly string[]; showDatePill?: boolean }) => (
+    <div
+      data-date-pill-count={datePillLabels?.length ?? 0}
+      data-show-date-pill={showDatePill === false ? 'false' : 'true'}
+      data-testid="chart-tooltip"
+    />
+  )
+}))
 vi.mock('./tooltip/tooltip-content', () => ({ TooltipContent: () => null }))
 vi.mock('./bar-x-axis', () => ({ BarXAxis: () => <div data-testid="bar-x-axis" /> }))
 vi.mock('./bar-y-axis', () => ({ BarYAxis: () => <div data-testid="bar-y-axis" /> }))
@@ -82,6 +90,9 @@ describe('StackedBarPlot', () => {
     expect(screen.getByTestId('grid')).toHaveAttribute('data-horizontal', 'true')
     expect(screen.getByTestId('bar-x-axis')).toBeInTheDocument()
     expect(screen.getByTestId('y-axis')).toBeInTheDocument()
+    // Vertical bars: bottom date pill highlights the hovered category.
+    expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-show-date-pill', 'true')
+    expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-date-pill-count', '60')
     expect(screen.getAllByText('Inbound')).toHaveLength(2)
     expect(screen.getByRole('table', { name: 'Traffic' })).toBeInTheDocument()
     // 50 sampled rows + header

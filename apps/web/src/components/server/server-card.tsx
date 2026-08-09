@@ -99,8 +99,6 @@ const ServerCardInner = ({
     [networkSummary, realtimeData, networkBucketSeconds]
   )
 
-  const hasNetworkData = latencyPoints.length > 0
-
   const {
     used: trafficUsed,
     limit: trafficLimit,
@@ -115,11 +113,10 @@ const ServerCardInner = ({
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/10',
-        // Pending cards have far less content than active ones; stretch them to
-        // fill the grid cell so a "Waiting for agent…" tile matches the height of
-        // its data-rich siblings instead of leaving a short, mismatched gap.
-        isPending && 'h-full',
+        // Always stretch to the grid cell so online / offline / pending tiles in
+        // the same row share one height even when body sections differ (e.g. the
+        // network-quality block only renders when probe history exists).
+        'flex h-full w-full min-w-0 max-w-[480px] flex-col gap-3 rounded-xl bg-card p-3 shadow-sm ring-1 ring-foreground/10',
         // Offline: dim the surface and tint the ring with destructive so the
         // card is scannable next to online tiles. Keep the StatusBadge (and
         // title) outside any grayscale filter so the red offline pill stays
@@ -166,7 +163,7 @@ const ServerCardInner = ({
           <PendingEnrollmentSummary enrollment={server.agent_authority?.outstanding_offer} />
         </div>
       ) : (
-        <div className={cn('flex min-w-0 flex-col gap-3', isOffline && 'grayscale')}>
+        <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col gap-3', isOffline && 'grayscale')}>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
             <RingMetric color={getUtilizationRingColor(server.cpu)} label={t('col_cpu')} value={server.cpu}>
               {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
@@ -231,38 +228,37 @@ const ServerCardInner = ({
             />
           </div>
 
-          {hasNetworkData && (
-            <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
-              <div className="flex items-baseline justify-between">
-                <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
-                <NetworkMetricValue targets={currentTargets}>
-                  <span
-                    className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(
-                      currentAvgLatency,
-                      {
-                        failed: isLatencyFailure(currentAvgLossRatio)
-                      }
-                    )}`}
-                  >
-                    {formatLatency(currentAvgLatency)}
-                    <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
-                  </span>
-                </NetworkMetricValue>
-              </div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
-                <NetworkMetricValue targets={currentTargets}>
-                  <span
-                    className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}
-                  >
-                    {formatPacketLoss(currentAvgLossRatio)}
-                  </span>
-                </NetworkMetricValue>
-              </div>
-              <NetworkSquareGrid kind="latency" points={latencyPoints} />
-              <NetworkSquareGrid kind="loss" points={lossPoints} />
-            </section>
-          )}
+          {/* Always reserve this slot (even with empty/padded probe history) so
+              online and offline cards keep the same body structure and height.
+              Offline tiles keep the visuals but drop tooltips — stale probe
+              breakdowns are not actionable while the agent is down. */}
+          <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
+              <NetworkMetricValue targets={currentTargets} tooltips={!isOffline}>
+                <span
+                  className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(currentAvgLatency, {
+                    failed: isLatencyFailure(currentAvgLossRatio)
+                  })}`}
+                >
+                  {formatLatency(currentAvgLatency)}
+                  <span className="ml-0.5 font-medium text-[10px] text-muted-foreground">ms</span>
+                </span>
+              </NetworkMetricValue>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
+              <NetworkMetricValue targets={currentTargets} tooltips={!isOffline}>
+                <span
+                  className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}
+                >
+                  {formatPacketLoss(currentAvgLossRatio)}
+                </span>
+              </NetworkMetricValue>
+            </div>
+            <NetworkSquareGrid kind="latency" points={latencyPoints} tooltips={!isOffline} />
+            <NetworkSquareGrid kind="loss" points={lossPoints} tooltips={!isOffline} />
+          </section>
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
             <div className="flex items-baseline justify-between">
@@ -311,7 +307,11 @@ const ServerCardInner = ({
             )}
           </div>
 
-          <TagChips tags={server.tags} />
+          {/* Stick tags to the bottom so leftover height from taller siblings lands
+              as breathing room above the chips, not as a ragged trailing gap. */}
+          <div className="mt-auto">
+            <TagChips tags={server.tags} />
+          </div>
         </div>
       )}
     </div>

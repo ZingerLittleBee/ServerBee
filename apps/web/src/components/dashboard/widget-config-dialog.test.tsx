@@ -21,6 +21,9 @@ const translations: Record<string, string> = {
   'widgets.common.labels.maxOptional': 'Max value (optional)',
   'widgets.common.labels.labelOptional': 'Label (optional)',
   'widgets.common.labels.sortOrder': 'Sort',
+  'widgets.common.labels.color': 'Chart color',
+  'widgets.common.labels.colorPrimary': 'Primary color',
+  'widgets.common.labels.colorSecondary': 'Secondary color',
   'widgets.common.sort.desc': 'Highest first',
   'widgets.common.sort.asc': 'Lowest first',
   'widgets.common.hints.allServersWhenEmpty': 'Leave empty to include all servers',
@@ -281,7 +284,7 @@ describe('WidgetConfigDialog', () => {
     expect(screen.getByPlaceholderText('100')).toBeInTheDocument()
   })
 
-  it('renders sort selector and count field for top-n widget', () => {
+  it('renders sort selector, count field, and color picker for top-n widget', () => {
     render(
       <WidgetConfigDialog onOpenChange={noop} onSubmit={noop} open servers={mockServers as never} widgetType="top-n" />
     )
@@ -290,6 +293,24 @@ describe('WidgetConfigDialog', () => {
     expect(screen.getByText('Highest first')).toBeInTheDocument()
     expect(screen.getByText('Lowest first')).toBeInTheDocument()
     expect(screen.getByText('Count')).toBeInTheDocument()
+    // Label + ColorPickerPopover trigger both surface the same string.
+    expect(screen.getAllByText('Chart color').length).toBeGreaterThanOrEqual(1)
+    // Trigger shows hex without the leading #.
+    expect(screen.getByText('8EC5FF')).toBeInTheDocument()
+  })
+
+  it('renders a chart color field for line-chart widgets', () => {
+    render(
+      <WidgetConfigDialog
+        onOpenChange={noop}
+        onSubmit={noop}
+        open
+        servers={mockServers as never}
+        widgetType="line-chart"
+      />
+    )
+
+    expect(screen.getAllByText('Chart color').length).toBeGreaterThanOrEqual(1)
   })
 
   it('renders a server multi-select for alert-list widget', () => {

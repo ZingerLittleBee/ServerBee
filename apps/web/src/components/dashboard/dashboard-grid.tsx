@@ -450,11 +450,18 @@ export function DashboardGrid({
       const resolved = deoverlapLayout(snapped)
       dispatchLayoutRuntime({ type: 'commit-layout', baseLayout, layout: resolved })
 
-      const coarseLayout = resolved.map((item) => ({
-        ...item,
-        y: Math.round(item.y / SCALE),
-        h: Math.round(item.h / SCALE)
-      }))
+      // Persist in coarse units. Aspect-square cells use width as the tier key
+      // and keep h === w; converting the pixel-square *fine* height via
+      // Math.round(h / SCALE) would inflate grid_h (and then nearestTier)
+      // every time the gauge is moved/resized.
+      const coarseLayout = resolved.map((item) => {
+        const strategy = getStrategy(item.i)
+        const y = Math.round(item.y / SCALE)
+        if (strategy.kind === 'aspect-square') {
+          return { ...item, y, h: item.w }
+        }
+        return { ...item, y, h: Math.round(item.h / SCALE) }
+      })
       const patch = layoutToPatch(coarseLayout, widgets)
       if (patch.length > 0) {
         onLayoutChange(patch)

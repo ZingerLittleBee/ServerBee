@@ -3,6 +3,7 @@ import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { getUtilizationRingColor } from '@/lib/utilization-colors'
+import { normalizeWidgetColor } from '@/lib/widget-color'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { GaugeConfig } from '@/lib/widget-types'
 
@@ -30,7 +31,11 @@ interface Gradient {
 }
 
 /** Solid severity tone (same fill at both stops) so gauges match ring/bar language. */
-function getGaugeGradient(value: number): Gradient {
+function getGaugeGradient(value: number, overrideColor?: string): Gradient {
+  const custom = normalizeWidgetColor(overrideColor)
+  if (custom) {
+    return { start: custom, end: custom }
+  }
   const color = getUtilizationRingColor(value)
   return { start: color, end: color }
 }
@@ -101,7 +106,7 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
   }
 
   const label = config.label ?? metricLabel(metric, t)
-  const gradient = getGaugeGradient(value)
+  const gradient = getGaugeGradient(value, config.color)
   const Icon = getMetricIcon(metric)
 
   const progressSweep = max > 0 ? (value / max) * SWEEP : 0

@@ -5,12 +5,15 @@ import type { ServerCardTooltipTarget } from './server-card-network-data'
 
 export function NetworkMetricValue({
   children,
-  targets
+  targets,
+  tooltips = true
 }: {
   children: ReactElement
   targets: readonly ServerCardTooltipTarget[]
+  /** When false (e.g. offline cards), render the value without a hover/focus breakdown. */
+  tooltips?: boolean
 }) {
-  if (targets.length === 0) {
+  if (!(tooltips && targets.length > 0)) {
     return children
   }
   // Base UI's default trigger is a real button, so the per-target breakdown is reachable by

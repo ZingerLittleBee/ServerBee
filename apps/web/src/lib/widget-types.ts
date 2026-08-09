@@ -236,6 +236,8 @@ export interface StatNumberConfig {
 export type MetricCardMetric = 'cpu' | 'memory' | 'network' | 'disk_io'
 
 export interface MetricCardConfig {
+  /** Sparkline / accent color as `#RRGGBB`. Falls back to the metric default. */
+  color?: string
   label?: string
   metric: MetricCardMetric
   server_id: string
@@ -249,6 +251,8 @@ export interface ServerCardsConfig {
 }
 
 export interface GaugeConfig {
+  /** Ring stroke color as `#RRGGBB`. When omitted, severity-based colors are used. */
+  color?: string
   label?: string
   max?: number
   metric: string
@@ -256,6 +260,8 @@ export interface GaugeConfig {
 }
 
 export interface LineChartConfig {
+  /** Series stroke/fill color as `#RRGGBB`. Defaults to `#8EC5FF` when omitted. */
+  color?: string
   hours?: number
   interval?: string
   metric: string
@@ -270,6 +276,8 @@ export interface MultiLineConfig {
 }
 
 export interface TopNConfig {
+  /** Bar fill color as `#RRGGBB`. Defaults to `#8EC5FF` when omitted. */
+  color?: string
   count?: number
   metric: string
   sort?: 'asc' | 'desc'
@@ -285,11 +293,19 @@ export interface ServiceStatusConfig {
 }
 
 export interface TrafficBarConfig {
+  /** Inbound bar color as `#RRGGBB`. */
+  color?: string
+  /** Outbound bar color as `#RRGGBB`. */
+  color_secondary?: string
   hours?: number
   server_id: string
 }
 
 export interface DiskIoConfig {
+  /** Disk-read series color as `#RRGGBB`. */
+  color?: string
+  /** Disk-write series color as `#RRGGBB`. */
+  color_secondary?: string
   hours?: number
   interval?: string
   server_id: string

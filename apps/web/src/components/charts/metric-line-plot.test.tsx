@@ -34,10 +34,26 @@ vi.mock('./line', () => ({
   )
 }))
 vi.mock('./grid', () => ({ Grid: () => null }))
-vi.mock('./tooltip/chart-tooltip', () => ({ ChartTooltip: () => null }))
+vi.mock('./tooltip/chart-tooltip', () => ({
+  ChartTooltip: ({
+    formatDatePill,
+    showDatePill
+  }: {
+    formatDatePill?: (date: Date) => string
+    showDatePill?: boolean
+  }) => (
+    <div
+      data-date-pill-label={formatDatePill?.(new Date('2026-08-03T10:15:00.000Z'))}
+      data-show-date-pill={showDatePill === false ? 'false' : 'true'}
+      data-testid="chart-tooltip"
+    />
+  )
+}))
 vi.mock('./tooltip/tooltip-content', () => ({ TooltipContent: () => null }))
 vi.mock('./x-axis', () => ({
-  XAxis: ({ tickMode }: { tickMode: string }) => <div data-testid="x-axis" data-tick-mode={tickMode} />
+  XAxis: ({ fadeOnHover, tickMode }: { fadeOnHover?: boolean; tickMode: string }) => (
+    <div data-fade-on-hover={fadeOnHover === false ? 'false' : 'true'} data-testid="x-axis" data-tick-mode={tickMode} />
+  )
 }))
 vi.mock('./y-axis', () => ({ YAxis: () => null }))
 
@@ -70,6 +86,10 @@ describe('MetricLinePlot', () => {
     expect(screen.getByRole('figure', { name: 'Disk I/O' })).toHaveClass('min-w-0')
     expect(screen.getByTestId('line-chart')).toHaveAttribute('data-y-domain', '[0,100]')
     expect(screen.getByTestId('x-axis')).toHaveAttribute('data-tick-mode', 'domain')
+    // Bottom date pill + axis fade (same pattern as MetricAreaPlot / latency).
+    expect(screen.getByTestId('x-axis')).toHaveAttribute('data-fade-on-hover', 'true')
+    expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-show-date-pill', 'true')
+    expect(screen.getByTestId('chart-tooltip').getAttribute('data-date-pill-label')).toBeTruthy()
     expect(screen.getAllByTestId('line-series')).toHaveLength(2)
     for (const line of screen.getAllByTestId('line-series')) {
       // animate defaults on so range changes morph without remounting the chart.

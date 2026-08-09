@@ -102,6 +102,55 @@
   --chart-scale-04: oklch(0.68 0.02 106);
   --chart-scale-05: oklch(0.55 0.025 106);
   --chart-scale-pattern-color: oklch(0.96 0.005 106);
+  /* Fluid Functionalism surface ladder (color-picker popover elevation). */
+  --surface-1: #fafafa;
+  --surface-2: #fcfcfc;
+  --surface-3: #ffffff;
+  --surface-4: #ffffff;
+  --surface-5: #ffffff;
+  --surface-6: #ffffff;
+  --surface-7: #ffffff;
+  --surface-8: #ffffff;
+  --shadow-color: rgb(0 0 0 / 0.06);
+  --shadow-1: 0 0 0 1px var(--shadow-color);
+  --shadow-2:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color);
+  --shadow-3:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
+    0 3px 3px -1.5px var(--shadow-color);
+  --shadow-4:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color), 0 3px 3px -1.5px var(
+      --shadow-color
+    ),
+    0 6px 6px -3px var(--shadow-color);
+  --shadow-5:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color), 0 3px 3px -1.5px var(
+      --shadow-color
+    ),
+    0 6px 6px -3px var(--shadow-color), 0 12px 12px -6px var(--shadow-color);
+  --shadow-6:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color), 0 3px 3px -1.5px var(
+      --shadow-color
+    ),
+    0 6px 6px -3px var(--shadow-color), 0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(
+      --shadow-color
+    );
+  --shadow-7:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color), 0 3px 3px -1.5px var(
+      --shadow-color
+    ),
+    0 6px 6px -3px var(--shadow-color), 0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(
+      --shadow-color
+    ),
+    0 48px 48px -24px var(--shadow-color);
+  --shadow-8:
+    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color), 0 3px 3px -1.5px var(
+      --shadow-color
+    ),
+    0 6px 6px -3px var(--shadow-color), 0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(
+      --shadow-color
+    ),
+    0 48px 48px -24px var(--shadow-color), 0 96px 96px -48px var(--shadow-color);
 }
 
 .dark {
@@ -161,6 +210,76 @@
   --chart-scale-04: oklch(0.58 0.06 270);
   --chart-scale-05: oklch(0.68 0.07 270);
   --chart-scale-pattern-color: oklch(0.145 0 0);
+  /* Fluid Functionalism surface ladder (dark). */
+  --surface-1: #171717;
+  --surface-2: #1e1e1e;
+  --surface-3: #252525;
+  --surface-4: #2c2c2c;
+  --surface-5: #333333;
+  --surface-6: #3a3a3a;
+  --surface-7: #414141;
+  --surface-8: #484848;
+  --dm-hi-base: rgb(255 255 255 / 0.01);
+  --dm-hi-mid: rgb(255 255 255 / 0.02);
+  --dm-hi-high: rgb(255 255 255 / 0.04);
+  --dm-hi-peak: rgb(255 255 255 / 0.06);
+  --dm-ring-base: rgb(255 255 255 / 0.02);
+  --dm-ring-mid: rgb(255 255 255 / 0.04);
+  --dm-ring-high: rgb(255 255 255 / 0.06);
+  --dm-drop: rgb(0 0 0 / 0.18);
+  --shadow-1: inset 0 0 0 1px var(--dm-ring-base);
+  --shadow-2:
+    inset 0 1px 0 0 var(--dm-hi-base), inset 0 0 0 1px var(--dm-ring-base),
+    0 1px 1px -0.5px var(--dm-drop);
+  --shadow-3:
+    inset 0 1px 0 0 var(--dm-hi-mid), inset 0 0 0 1px var(--dm-ring-base), 0 0 0 1px rgb(
+      0 0 0 / 0.12
+    ),
+    0 1px 1px -0.5px var(--dm-drop), 0 3px 3px -1.5px var(--dm-drop);
+  --shadow-4:
+    inset 0 1px 0 0 var(--dm-hi-mid), inset 0 0 0 1px var(--dm-ring-mid), 0 0 0 1px rgb(
+      0 0 0 / 0.14
+    ),
+    0 1px 1px -0.5px var(--dm-drop), 0 3px 3px -1.5px var(--dm-drop), 0 6px 6px -3px var(
+      --dm-drop
+    );
+  --shadow-5:
+    inset 0 1px 0 0 var(--dm-hi-high), inset 0 0 0 1px var(--dm-ring-mid), 0 0 0 1px rgb(
+      0 0 0 / 0.16
+    ),
+    0 1px 1px -0.5px var(--dm-drop), 0 3px 3px -1.5px var(--dm-drop), 0 6px 6px -3px var(
+      --dm-drop
+    ),
+    0 12px 12px -6px var(--dm-drop);
+  --shadow-6:
+    inset 0 1px 0 0 var(--dm-hi-high), inset 0 0 0 1px var(--dm-ring-high), 0 0 0 1px rgb(
+      0 0 0 / 0.18
+    ),
+    0 1px 1px -0.5px var(--dm-drop), 0 3px 3px -1.5px var(--dm-drop), 0 6px 6px -3px var(
+      --dm-drop
+    ),
+    0 12px 12px -6px var(--dm-drop), 0 24px 24px -12px var(--dm-drop);
+  --shadow-7:
+    inset 0 1px 0 0 var(--dm-hi-peak), inset 0 0 0 1px var(--dm-ring-high), 0 0 0 1px rgb(
+      0 0 0 / 0.2
+    ),
+    0 1px 1px -0.5px var(--dm-drop), 0 3px 3px -1.5px var(--dm-drop), 0 6px 6px -3px var(
+      --dm-drop
+    ),
+    0 12px 12px -6px var(--dm-drop), 0 24px 24px -12px var(--dm-drop), 0 48px 48px -24px var(
+      --dm-drop
+    );
+  --shadow-8:
+    inset 0 1px 0 0 var(--dm-hi-peak), inset 0 0 0 1px var(--dm-ring-high), 0 0 0 1px rgb(
+      0 0 0 / 0.22
+    ),
+    0 1px 1px -0.5px var(--dm-drop), 0 3px 3px -1.5px var(--dm-drop), 0 6px 6px -3px var(
+      --dm-drop
+    ),
+    0 12px 12px -6px var(--dm-drop), 0 24px 24px -12px var(--dm-drop), 0 48px 48px -24px var(
+      --dm-drop
+    ),
+    0 96px 96px -48px var(--dm-drop);
 }
 
 @theme inline {
@@ -183,6 +302,22 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+  --color-surface-5: var(--surface-5);
+  --color-surface-6: var(--surface-6);
+  --color-surface-7: var(--surface-7);
+  --color-surface-8: var(--surface-8);
+  --shadow-surface-1: var(--shadow-1);
+  --shadow-surface-2: var(--shadow-2);
+  --shadow-surface-3: var(--shadow-3);
+  --shadow-surface-4: var(--shadow-4);
+  --shadow-surface-5: var(--shadow-5);
+  --shadow-surface-6: var(--shadow-6);
+  --shadow-surface-7: var(--shadow-7);
+  --shadow-surface-8: var(--shadow-8);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);

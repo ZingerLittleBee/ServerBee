@@ -29,10 +29,10 @@ function makeLossPoint(value: number | null, index: number): ServerCardMetricPoi
   }
 }
 
-function renderGrid(kind: 'latency' | 'loss', points: readonly ServerCardMetricPoint[]) {
+function renderGrid(kind: 'latency' | 'loss', points: readonly ServerCardMetricPoint[], tooltips?: boolean) {
   return render(
     <TooltipProvider>
-      <NetworkSquareGrid kind={kind} points={points} />
+      <NetworkSquareGrid kind={kind} points={points} tooltips={tooltips} />
     </TooltipProvider>
   )
 }
@@ -94,6 +94,40 @@ describe('NetworkSquareGrid', () => {
       'Latency history: 30 samples, latest 79ms, 0 abnormal, 0 warning, 0 severe, 0 failed, 0 unknown'
     )
     expect(container.querySelectorAll('[tabindex], button, a')).toHaveLength(0)
+  })
+
+  it('skips tooltip wrappers when tooltips are disabled', () => {
+    const points = [makePoint(50), makePoint(80)]
+
+    const { container } = renderGrid('latency', points, false)
+
+    expect(container.querySelectorAll('[data-testid="square"]')).toHaveLength(2)
+    // TooltipTrigger would add interactive wrappers; plain markers stay non-interactive.
+    expect(container.querySelectorAll('[tabindex], button, a, [data-slot="tooltip-trigger"]')).toHaveLength(0)
+  })
+
+  it('keeps tooltip triggers on online samples that have target breakdowns', () => {
+    const points = [makePoint(50), makePoint(80)]
+
+    const { container } = renderGrid('latency', points, true)
+
+    expect(container.querySelectorAll('[data-testid="square"]')).toHaveLength(2)
+    // Base UI merges handlers onto the rendered host; data-slot marks the trigger.
+    expect(container.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(2)
+  })
+
+  it('does not mount tooltips for empty padding slots even when tooltips are enabled', () => {
+    const padding: ServerCardMetricPoint = {
+      synthetic: true,
+      targets: [],
+      timestamp: 'padding-0',
+      value: null
+    }
+
+    const { container } = renderGrid('latency', [padding], true)
+
+    expect(container.querySelectorAll('[data-testid="square"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0)
   })
 
   it('summarizes the abnormal total and per-severity breakdown in the accessible name', () => {

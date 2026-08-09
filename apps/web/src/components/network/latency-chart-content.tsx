@@ -132,6 +132,10 @@ export function LatencyChartContent({
           }),
     [isExtendedRange]
   )
+  // Date pill under the crosshair mirrors detail-page MetricAreaPlot: same
+  // detailed label as the tooltip title so the hovered x value stays readable
+  // while nearby axis ticks fade.
+  const formatDatePill = useCallback((date: Date) => tooltipLabelFormatter(date.toISOString()), [tooltipLabelFormatter])
   const tooltipRows = useCallback(
     (point: Record<string, unknown>): TooltipRow[] =>
       visibleSeries.flatMap((series) => {
@@ -186,13 +190,15 @@ export function LatencyChartContent({
           yDomainTweenDuration={200}
         >
           <Grid vertical={false} />
-          <XAxis fadeOnHover={false} formatValue={axisFormatter} numTicks={5} />
+          {/* Match detail MetricsChart / MetricAreaPlot: domain ticks + fade so
+              ChartTooltip's date pill can highlight the hovered x value. */}
+          <XAxis formatValue={axisFormatter} numTicks={5} tickMode="domain" />
           <YAxis formatValue={(value) => `${value.toFixed(0)} ms`} />
           <ChartTooltip
             content={({ point }) => (
               <TooltipContent rows={tooltipRows(point)} title={tooltipLabelFormatter(String(point.timestamp))} />
             )}
-            showDatePill={false}
+            formatDatePill={formatDatePill}
           />
           {visibleSeries.map((series) => (
             <Area

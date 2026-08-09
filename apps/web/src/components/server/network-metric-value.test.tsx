@@ -6,10 +6,10 @@ import type { ServerCardTooltipTarget } from './server-card-network-data'
 
 const targets: ServerCardTooltipTarget[] = [{ latency: 106, lossRatio: 0, targetId: 't1', targetName: 'Tokyo' }]
 
-function renderValue(withTargets: readonly ServerCardTooltipTarget[]) {
+function renderValue(withTargets: readonly ServerCardTooltipTarget[], tooltips?: boolean) {
   return render(
     <TooltipProvider>
-      <NetworkMetricValue targets={withTargets}>
+      <NetworkMetricValue targets={withTargets} tooltips={tooltips}>
         <span className="font-semibold">106ms</span>
       </NetworkMetricValue>
     </TooltipProvider>
@@ -19,6 +19,13 @@ function renderValue(withTargets: readonly ServerCardTooltipTarget[]) {
 describe('NetworkMetricValue', () => {
   it('renders the value untouched when there is no breakdown to show', () => {
     const { container } = renderValue([])
+
+    expect(screen.getByText('106ms')).toBeInTheDocument()
+    expect(container.querySelector('button')).toBeNull()
+  })
+
+  it('renders the value without a trigger when tooltips are disabled', () => {
+    const { container } = renderValue(targets, false)
 
     expect(screen.getByText('106ms')).toBeInTheDocument()
     expect(container.querySelector('button')).toBeNull()
