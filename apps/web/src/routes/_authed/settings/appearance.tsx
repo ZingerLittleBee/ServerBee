@@ -309,11 +309,8 @@ function WidgetModulesNotice() {
 }
 
 export function AppearancePage() {
-  const { t } = useTranslation('settings')
-
   return (
     <PageBody>
-      <h1 className="mb-6 font-bold text-2xl">{t('appearance.title')}</h1>
       <div className="max-w-3xl space-y-6">
         <WidgetModulesNotice />
         <BrandSettingsSection />

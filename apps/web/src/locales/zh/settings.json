@@ -306,7 +306,6 @@
   "tasks.scheduled.no_runs": "暂无执行记录",
   "tasks.scheduled.confirm_delete": "确定删除此定时任务？",
 
-  "appearance.title": "外观",
   "appearance.theme_moved_title": "主题已迁移",
   "appearance.theme_moved_description": "颜色主题和自定义主题包已被可安装的 Widget 模块取代，请前往 Widgets 页面管理。",
   "appearance.theme_moved_cta": "前往 Widgets",

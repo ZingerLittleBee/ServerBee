@@ -306,7 +306,6 @@
   "tasks.scheduled.no_runs": "No execution history",
   "tasks.scheduled.confirm_delete": "Delete this scheduled task?",
 
-  "appearance.title": "Appearance",
   "appearance.theme_moved_title": "Themes have moved",
   "appearance.theme_moved_description": "Color themes and custom theme packages have been replaced by installable widget modules. Manage them on the Widgets page.",
   "appearance.theme_moved_cta": "Go to Widgets",
