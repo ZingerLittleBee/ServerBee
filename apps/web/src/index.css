@@ -277,15 +277,9 @@
   content: none !important;
 }
 
+/* Resize handles stay fully visible in edit mode so layout controls are
+   obvious without requiring hover. */
 .dashboard-grid--editing > .react-grid-item > .dashboard-resize-handle {
-  opacity: 0.8 !important;
-}
-
-.dashboard-grid--editing > .react-grid-item:hover > .dashboard-resize-handle,
-.dashboard-grid--editing > .react-grid-item.resizing > .dashboard-resize-handle,
-.dashboard-grid--editing
-  > .react-grid-item.react-draggable-dragging
-  > .dashboard-resize-handle {
   opacity: 1 !important;
 }
 
