@@ -39,8 +39,8 @@ const LABEL_INSET_PX = 8
 /** Bars narrower than this put the name to the right of the fill (outside). */
 const MIN_INNER_LABEL_WIDTH_PX = 56
 
-/** Single theme brand fill — same primary token as buttons / key chrome. */
-const BAR_FILL = 'var(--primary)'
+/** Single theme ink fill — uses the UI foreground token. */
+const BAR_FILL = 'var(--foreground)'
 
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
 
@@ -48,8 +48,8 @@ function labelClassForBar(inside: boolean): string {
   if (!inside) {
     return 'text-foreground'
   }
-  // primary-foreground is defined for contrast on the primary surface.
-  return 'text-primary-foreground'
+  // Invert against the foreground fill (light on dark ink / dark on light ink).
+  return 'text-background'
 }
 
 function formatValue(metric: string, value: number): string {
