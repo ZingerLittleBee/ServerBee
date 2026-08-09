@@ -26,7 +26,7 @@ curl -s -b /tmp/sb-cookies.txt http://localhost:9527/api/servers \
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
-| PS-1 | UI 触发升级下载来自官方仓库 | 1. 确认 `agent.toml` 无 `[upgrade]` 节（或 `release_repo_url` 未设置）<br>2. 在 `/servers/:id` 点击"Upgrade Agent"<br>3. 选择比当前版本更高的版本号并确认 | 升级进度面板出现；Agent 日志显示从 `https://github.com/ZingerLittleBee/ServerBee/releases/download/v{version}/{asset}` 下载 binary，从 `.../checksums.txt` 下载校验文件；哈希比对通过；binary 替换；Agent 以新版本重启 | ⬜ |
+| PS-1 | UI 触发升级下载来自官方仓库 | 1. 确认 `agent.toml` 无 `[upgrade]` 节（或 `release_repo_url` 未设置）<br>2. 在 `/servers/:id` 点击"Upgrade Agent"<br>3. 选择比当前版本更高的版本号并确认 | 升级进度面板出现；Agent 日志显示从 `https://github.com/ZingerLittleBee/ServerBee/releases/download/v{version}/{asset}` 下载 binary，从 `.../sha256sums.txt` 下载校验文件；哈希比对通过；binary 替换；Agent 以新版本重启 | ⬜ |
 | PS-2 | 升级阶段依次出现 | 观察进度面板 | 按序出现 `downloading → verifying → installing → restarting`；每阶段状态图标和文案正确 | ⬜ |
 | PS-3 | 升级完成后版本号更新 | 等待 Agent 重连（通常 10–30 秒） | 服务器详情页 header 版本号更新为目标版本；无需手动刷新（WebSocket 实时推送） | ⬜ |
 
@@ -34,7 +34,7 @@ curl -s -b /tmp/sb-cookies.txt http://localhost:9527/api/servers \
 
 ## 二、自定义来源（镜像 / 私有 release 仓库）
 
-**前置**：准备一个镜像地址，目录结构与 GitHub Releases 相同（`download/v{version}/{asset}` 和 `download/v{version}/checksums.txt`），通过 HTTPS 可访问。
+**前置**：准备一个镜像地址，目录结构与 GitHub Releases 相同（`download/v{version}/{asset}` 和 `download/v{version}/sha256sums.txt`），通过 HTTPS 可访问。
 
 **`agent.toml` 配置**：
 
@@ -108,12 +108,12 @@ release_cert_spki_sha256 = "<64-hex-chars>"
 
 ## 六、恶意/被攻陷 Server 模拟
 
-**场景说明**：攻陷的 Server 可能伪造 `Upgrade` 消息，植入恶意 `download_url` 和 `sha256` 以诱导 Agent 下载恶意 binary。本特性的防护点是：Agent **忽略** Server 提供的这两个字段，始终从本地 pinned 来源推导 URL，并对比 pinned 来源的 `checksums.txt`。
+**场景说明**：攻陷的 Server 可能伪造 `Upgrade` 消息，植入恶意 `download_url` 和 `sha256` 以诱导 Agent 下载恶意 binary。本特性的防护点是：Agent **忽略** Server 提供的这两个字段，始终从本地 pinned 来源推导 URL，并对比 pinned 来源的 `sha256sums.txt`。
 
 | # | 测试场景 | 操作步骤 | 预期结果 | 状态 |
 |---|---------|---------|---------|------|
 | PS-16 | 伪造 `download_url` 被忽略 | 修改 Server 代码（测试用），让 `trigger_upgrade` 发送含 `download_url: "https://evil.example.com/malware"` 的 Upgrade 消息；重启 Server 并触发升级 | Agent 日志无访问 `evil.example.com` 记录；下载仍来自本地配置的 pinned 来源；正常流程继续 | ⬜ |
-| PS-17 | 伪造 `sha256` 被忽略 | Server 发送 `sha256: "deadbeef..."`（任意值）；checksums.txt 来自 pinned 来源 | Agent 使用 pinned 来源的 `checksums.txt` 做哈希验证，不使用 Server 提供的 `sha256`；验证逻辑正确，升级按预期成功或失败（取决于实际哈希） | ⬜ |
+| PS-17 | 伪造 `sha256` 被忽略 | Server 发送 `sha256: "deadbeef..."`（任意值）；sha256sums.txt 来自 pinned 来源 | Agent 使用 pinned 来源的 `sha256sums.txt` 做哈希验证，不使用 Server 提供的 `sha256`；验证逻辑正确，升级按预期成功或失败（取决于实际哈希） | ⬜ |
 
 ---
 

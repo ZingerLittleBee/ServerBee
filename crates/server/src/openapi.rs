@@ -30,7 +30,6 @@ impl Modify for SecurityAddon {
 #[openapi(
     info(
         title = "ServerBee API",
-        version = "0.2.1",
         description = "ServerBee VPS monitoring probe API. All responses are wrapped in `{\"data\": <value>}`. Errors return `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.",
     ),
     modifiers(&SecurityAddon),

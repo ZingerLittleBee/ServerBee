@@ -149,6 +149,7 @@ Avg-latency cutoffs used to classify network-probe records as `high_latency` / `
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `rate_limit.register_max` | u32 | `10` | Maximum agent registrations per IP within 15-minute window. Admins can clear active windows via Settings → Rate limits |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `upgrade.release_base_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
 | `SERVERBEE_UPGRADE__LATEST_VERSION_URL` | `upgrade.latest_version_url` | string | `""` | Optional custom URL for latest version API. If empty, uses GitHub API |
+| `SERVERBEE_UPGRADE__CHANNEL` | `upgrade.channel` | string | `stable` | Release channel used by the dashboard version check: `stable` or `beta` |
 | `SERVERBEE_FILE__MAX_UPLOAD_SIZE` | `file.max_upload_size` | u64 | `104857600` (100 MB) | Maximum file upload size in bytes |
 
 ## Agent
@@ -195,7 +196,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
-| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `upgrade.release_repo_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/checksums.txt` works. The compiled-in default can only be changed at build time via the `SERVERBEE_RELEASE_REPO` environment variable when compiling the agent (not a runtime setting). At runtime, override via this `SERVERBEE_UPGRADE__RELEASE_REPO_URL` env var, the `[upgrade] release_repo_url` config, or the `--release-repo` CLI flag |
+| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `upgrade.release_repo_url` | string | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/sha256sums.txt` works. The compiled-in default can only be changed at build time via the `SERVERBEE_RELEASE_REPO` environment variable when compiling the agent (not a runtime setting). At runtime, override via this `SERVERBEE_UPGRADE__RELEASE_REPO_URL` env var, the `[upgrade] release_repo_url` config, or the `--release-repo` CLI flag |
 | `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `upgrade.release_cert_spki_sha256` | string | `""` | Optional TLS certificate SPKI pin for the release host. Must be 64 lowercase hex chars (SHA-256 of the leaf cert SubjectPublicKeyInfo DER). Empty = disabled. If set, the Agent additionally pins the leaf cert SPKI after standard chain validation. Invalid (non-64/non-hex) values are rejected at startup |
 
 ### Security (Agent)

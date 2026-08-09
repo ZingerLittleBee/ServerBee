@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: iOS Build
+  test:
+    name: iOS Test
     runs-on: macos-15
     defaults:
       run:
@@ -37,6 +37,6 @@ jobs:
         with:
           platform: iOS
           scheme: ServerBee
-          action: build
+          action: test
           working-directory: apps/ios
           trust-plugins: true

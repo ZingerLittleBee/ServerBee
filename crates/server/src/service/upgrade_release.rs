@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::config::UpgradeConfig;
+use crate::config::{UpgradeChannel, UpgradeConfig};
 
 const SUCCESS_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 const FAILURE_CACHE_TTL: Duration = Duration::from_secs(60);
@@ -55,6 +55,7 @@ pub struct UpgradeReleaseService {
     client: reqwest::Client,
     release_base_url: String,
     latest_version_url: String,
+    channel: UpgradeChannel,
     cache: RwLock<Option<CachedLatestVersion>>,
 }
 
@@ -71,6 +72,7 @@ impl UpgradeReleaseService {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             release_base_url: config.release_base_url.clone(),
             latest_version_url: config.latest_version_url.clone(),
+            channel: config.channel,
             cache: RwLock::new(None),
         }
     }
@@ -97,8 +99,15 @@ impl UpgradeReleaseService {
     }
 
     async fn fetch_latest(&self) -> LatestAgentVersionResponse {
-        let latest_version_url = if self.latest_version_url.trim().is_empty() {
-            match github_latest_release_api(&self.release_base_url) {
+        let custom_latest_url = !self.latest_version_url.trim().is_empty();
+        let latest_version_url = if custom_latest_url {
+            self.latest_version_url.clone()
+        } else {
+            let derived = match self.channel {
+                UpgradeChannel::Stable => github_latest_release_api(&self.release_base_url),
+                UpgradeChannel::Beta => github_prerelease_api(&self.release_base_url),
+            };
+            match derived {
                 Some(url) => url,
                 None => {
                     return LatestAgentVersionResponse {
@@ -110,8 +119,6 @@ impl UpgradeReleaseService {
                     };
                 }
             }
-        } else {
-            self.latest_version_url.clone()
         };
 
         let response = match self.client.get(&latest_version_url).send().await {
@@ -147,6 +154,34 @@ impl UpgradeReleaseService {
             }
         };
 
+        if !custom_latest_url && self.channel == UpgradeChannel::Beta {
+            let releases = match serde_json::from_str::<Vec<GitHubLatestRelease>>(&body) {
+                Ok(releases) => releases,
+                Err(error) => {
+                    return LatestAgentVersionResponse {
+                        version: None,
+                        released_at: None,
+                        error: Some(format!("Failed to parse prerelease response: {error}")),
+                    };
+                }
+            };
+            let Some(release) = releases
+                .into_iter()
+                .find(|release| release.prerelease && !release.draft)
+            else {
+                return LatestAgentVersionResponse {
+                    version: None,
+                    released_at: None,
+                    error: Some("No beta release is available".into()),
+                };
+            };
+            return LatestAgentVersionResponse {
+                version: Some(normalize_release_tag(&release.tag_name).to_string()),
+                released_at: release.published_at,
+                error: None,
+            };
+        }
+
         if let Ok(github_release) = serde_json::from_str::<GitHubLatestRelease>(&body) {
             return LatestAgentVersionResponse {
                 version: Some(normalize_release_tag(&github_release.tag_name).to_string()),
@@ -176,6 +211,14 @@ pub fn normalize_release_tag(tag: &str) -> &str {
 }
 
 pub fn github_latest_release_api(release_base_url: &str) -> Option<String> {
+    github_release_api(release_base_url, true)
+}
+
+pub fn github_prerelease_api(release_base_url: &str) -> Option<String> {
+    github_release_api(release_base_url, false)
+}
+
+fn github_release_api(release_base_url: &str, latest: bool) -> Option<String> {
     let url = reqwest::Url::parse(release_base_url).ok()?;
     if url.host_str()? != "github.com" {
         return None;
@@ -190,9 +233,14 @@ pub fn github_latest_release_api(release_base_url: &str) -> Option<String> {
         return None;
     }
 
+    let suffix = if latest {
+        "releases/latest"
+    } else {
+        "releases?per_page=100"
+    };
     Some(format!(
-        "https://api.github.com/repos/{}/{}/releases/latest",
-        segments[0], segments[1]
+        "https://api.github.com/repos/{}/{}/{}",
+        segments[0], segments[1], suffix
     ))
 }
 
@@ -201,6 +249,10 @@ struct GitHubLatestRelease {
     tag_name: String,
     #[serde(default)]
     published_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    prerelease: bool,
+    #[serde(default)]
+    draft: bool,
 }
 
 #[cfg(test)]
@@ -216,6 +268,32 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    #[test]
+    fn github_prerelease_api_url_is_derived_from_release_base_url() {
+        assert_eq!(
+            github_prerelease_api("https://github.com/ZingerLittleBee/ServerBee/releases"),
+            Some(
+                "https://api.github.com/repos/ZingerLittleBee/ServerBee/releases?per_page=100"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn beta_release_selection_skips_stable_and_draft_releases() {
+        let body = r#"[
+            {"tag_name":"v1.0.0","published_at":null,"prerelease":false,"draft":false},
+            {"tag_name":"v1.1.0-beta.2","published_at":null,"prerelease":true,"draft":true},
+            {"tag_name":"v1.1.0-beta.1","published_at":null,"prerelease":true,"draft":false}
+        ]"#;
+        let releases: Vec<GitHubLatestRelease> = serde_json::from_str(body).unwrap();
+        let selected = releases
+            .into_iter()
+            .find(|release| release.prerelease && !release.draft)
+            .expect("published beta release");
+        assert_eq!(normalize_release_tag(&selected.tag_name), "1.1.0-beta.1");
     }
 
     #[test]
@@ -451,8 +529,7 @@ mod tests {
             error: None,
         };
         let json = serde_json::to_string(&original).expect("serialize");
-        let parsed: LatestAgentVersionResponse =
-            serde_json::from_str(&json).expect("deserialize");
+        let parsed: LatestAgentVersionResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.version, original.version);
         assert_eq!(parsed.released_at, original.released_at);
         assert_eq!(parsed.error, original.error);
@@ -475,6 +552,7 @@ mod tests {
         let config = UpgradeConfig {
             release_base_url: "https://github.com/owner/repo/releases".into(),
             latest_version_url: "https://example.com/latest.json".into(),
+            ..UpgradeConfig::default()
         };
         let service = UpgradeReleaseService::new(&config);
         assert_eq!(
@@ -518,6 +596,7 @@ mod tests {
         let config = UpgradeConfig {
             release_base_url: "https://gitlab.com/owner/repo/releases".into(),
             latest_version_url: String::new(),
+            ..UpgradeConfig::default()
         };
         let service = UpgradeReleaseService::new(&config);
 
@@ -556,6 +635,7 @@ mod tests {
         let config = UpgradeConfig {
             release_base_url: "https://example.com/not/a/release".into(),
             latest_version_url: String::new(),
+            ..UpgradeConfig::default()
         };
         let service = UpgradeReleaseService::new(&config);
 
@@ -575,6 +655,7 @@ mod tests {
         let config = UpgradeConfig {
             release_base_url: "https://example.com/x".into(),
             latest_version_url: "   ".into(),
+            ..UpgradeConfig::default()
         };
         let service = UpgradeReleaseService::new(&config);
 
@@ -596,7 +677,10 @@ mod tests {
         let derived = github_latest_release_api(&config.release_base_url);
         assert_eq!(
             derived,
-            Some("https://api.github.com/repos/ZingerLittleBee/ServerBee/releases/latest".to_string())
+            Some(
+                "https://api.github.com/repos/ZingerLittleBee/ServerBee/releases/latest"
+                    .to_string()
+            )
         );
     }
 
@@ -608,8 +692,7 @@ mod tests {
     fn github_release_body_normalizes_tag_and_keeps_published_at() {
         // A GitHub-shaped body wins the first parse branch; its 'v' prefix is stripped.
         let body = r#"{"tag_name":"v6.1.2","published_at":"2025-02-02T08:30:00Z"}"#;
-        let github: GitHubLatestRelease =
-            serde_json::from_str(body).expect("github body parses");
+        let github: GitHubLatestRelease = serde_json::from_str(body).expect("github body parses");
         let response = LatestAgentVersionResponse {
             version: Some(normalize_release_tag(&github.tag_name).to_string()),
             released_at: github.published_at,
@@ -668,7 +751,9 @@ mod tests {
         let response = LatestAgentVersionResponse {
             version: None,
             released_at: None,
-            error: Some(format!("Failed to parse latest version response: {parse_err}")),
+            error: Some(format!(
+                "Failed to parse latest version response: {parse_err}"
+            )),
         };
         assert!(
             response
@@ -699,6 +784,7 @@ mod tests {
         let config = UpgradeConfig {
             release_base_url: "https://example.com/no/releases".into(),
             latest_version_url: String::new(),
+            ..UpgradeConfig::default()
         };
         let service = UpgradeReleaseService::new(&config);
 
@@ -746,6 +832,7 @@ mod tests {
         let config = UpgradeConfig {
             release_base_url: "https://example.com/no/releases".into(),
             latest_version_url: String::new(),
+            ..UpgradeConfig::default()
         };
         let service = UpgradeReleaseService::new(&config);
         *service.cache.write().await = Some(CachedLatestVersion {
@@ -781,7 +868,10 @@ mod tests {
             },
             expires_at: Instant::now(),
         };
-        assert!(cached.is_expired(), "expiry at-or-before now must be expired");
+        assert!(
+            cached.is_expired(),
+            "expiry at-or-before now must be expired"
+        );
         assert_eq!(cached.ttl_remaining(), Duration::ZERO);
     }
 

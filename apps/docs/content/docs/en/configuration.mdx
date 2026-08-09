@@ -210,7 +210,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/checksums.txt` works. Compile-time default is overridable via the `SERVERBEE_RELEASE_REPO` build-time env |
+| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Pinned release source base URL the Agent downloads upgrades from. Any HTTPS host mirroring the GitHub releases path layout `{base}/download/v{version}/{asset}` and `{base}/download/v{version}/sha256sums.txt` works. Compile-time default is overridable via the `SERVERBEE_RELEASE_REPO` build-time env |
 | `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `""` | Optional TLS certificate SPKI pin for the release host. 64 lowercase hex chars = SHA-256 of the leaf cert SubjectPublicKeyInfo DER. Empty = disabled. If set, the Agent additionally pins the leaf cert SPKI after standard chain validation. Invalid (non-64/non-hex) values are rejected at startup |
 
 #### Security (Agent)
@@ -357,6 +357,7 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 |-----|------|---------|-------------|
 | `release_base_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Base URL for agent upgrade release assets. The server appends `/download/v{version}/` to construct the asset download URL |
 | `latest_version_url` | string | `""` | Optional custom URL for latest version API. If empty, the server queries GitHub API to determine the latest version. Use this to override with a custom version endpoint |
+| `channel` | string | `"stable"` | Release channel used by the dashboard version check. Set to `"beta"` to select the newest published GitHub prerelease |
 
 ### `[file]` -- File Upload (Server-side)
 
@@ -463,7 +464,7 @@ The agent downloads upgrades from a locally-pinned release source rather than tr
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `release_repo_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Base URL for agent upgrade release assets. Must replicate the GitHub releases directory layout: `{base}/download/v{version}/{asset}` for binaries and `{base}/download/v{version}/checksums.txt` for checksum verification. The compile-time default is overridable via the `SERVERBEE_RELEASE_REPO` build-time env var |
+| `release_repo_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Base URL for agent upgrade release assets. Must replicate the GitHub releases directory layout: `{base}/download/v{version}/{asset}` for binaries and `{base}/download/v{version}/sha256sums.txt` for checksum verification. The compile-time default is overridable via the `SERVERBEE_RELEASE_REPO` build-time env var |
 | `release_cert_spki_sha256` | string | `""` | Optional TLS SPKI pin for the release host. Set to 64 lowercase hex characters (SHA-256 of the leaf certificate's SubjectPublicKeyInfo DER encoding). Empty disables pinning. If set, the agent additionally validates the leaf cert SPKI after standard chain validation. Invalid format (non-64-char or non-hex) is rejected at startup |
 
 **Configuration precedence** (highest wins):

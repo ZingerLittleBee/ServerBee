@@ -685,11 +685,11 @@ fn spawn_external_ip_refresh(
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use serverbee_common::constants::CapabilityDeniedReason;
     use crate::config::{
         CapabilitiesConfig, CollectorConfig, FileConfig, IpChangeConfig, LogConfig, SecurityConfig,
         UpgradeConfig,
     };
+    use serverbee_common::constants::CapabilityDeniedReason;
     use tokio_tungstenite::tungstenite::http::Response;
 
     #[test]
@@ -1009,8 +1009,13 @@ mod tests {
     #[tokio::test]
     async fn test_emit_upgrade_progress_sends_progress_message() {
         let (tx, mut rx) = mpsc::channel::<AgentMessage>(4);
-        emit_upgrade_progress(&tx, Some("job-7".to_string()), "1.2.3", UpgradeStage::Verifying)
-            .await;
+        emit_upgrade_progress(
+            &tx,
+            Some("job-7".to_string()),
+            "1.2.3",
+            UpgradeStage::Verifying,
+        )
+        .await;
         let msg = rx.recv().await.expect("progress message expected");
         match msg {
             AgentMessage::UpgradeProgress {
@@ -1169,13 +1174,17 @@ mod tests {
             capabilities: None,
         };
         let json = serde_json::to_string(&welcome).unwrap();
-        ws.send(WsMessage::Text(json.into())).await.expect("send welcome");
+        ws.send(WsMessage::Text(json.into()))
+            .await
+            .expect("send welcome");
     }
 
     /// Send any `ServerMessage` as a text frame.
     async fn send_server_msg(ws: &mut ServerWs, msg: &ServerMessage) {
         let json = serde_json::to_string(msg).unwrap();
-        ws.send(WsMessage::Text(json.into())).await.expect("send server msg");
+        ws.send(WsMessage::Text(json.into()))
+            .await
+            .expect("send server msg");
     }
 
     /// Send a raw text frame verbatim. Used for hand-rolled JSON (entries whose
@@ -1216,7 +1225,13 @@ mod tests {
     async fn handshake_collect_system_info(ws: &mut ServerWs) -> AgentMessage {
         let info = read_agent_until(ws, |m| matches!(m, AgentMessage::SystemInfo { .. })).await;
         if let AgentMessage::SystemInfo { msg_id, .. } = &info {
-            send_server_msg(ws, &ServerMessage::Ack { msg_id: msg_id.clone() }).await;
+            send_server_msg(
+                ws,
+                &ServerMessage::Ack {
+                    msg_id: msg_id.clone(),
+                },
+            )
+            .await;
         }
         info
     }
@@ -1278,7 +1293,10 @@ mod tests {
 
         // Server-initiated Close makes connect_and_report return Ok(()).
         let connect = connect.expect("connect loop should finish before the timeout");
-        assert!(connect.is_ok(), "clean server Close should yield Ok: {connect:?}");
+        assert!(
+            connect.is_ok(),
+            "clean server Close should yield Ok: {connect:?}"
+        );
     }
 
     #[tokio::test]
@@ -1434,7 +1452,10 @@ mod tests {
             .expect("server task timed out")
             .expect("server task panicked");
         let connect = connect.expect("connect loop should finish before the timeout");
-        assert!(connect.is_ok(), "clean close after sync should be Ok: {connect:?}");
+        assert!(
+            connect.is_ok(),
+            "clean close after sync should be Ok: {connect:?}"
+        );
     }
 
     #[tokio::test]
@@ -1452,7 +1473,8 @@ mod tests {
         let server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
             send_welcome(&mut ws, 30).await;
-            let _ = read_agent_until(&mut ws, |m| matches!(m, AgentMessage::SystemInfo { .. })).await;
+            let _ =
+                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::SystemInfo { .. })).await;
             ws.send(WsMessage::Close(None)).await.ok();
             // Drain until the agent's side of the close arrives / stream ends.
             while let Some(Ok(frame)) = ws.next().await {
@@ -1469,7 +1491,10 @@ mod tests {
             .expect("server task panicked");
 
         let connect = connect.expect("connect loop should finish before the timeout");
-        assert!(connect.is_ok(), "server Close must yield Ok(()): {connect:?}");
+        assert!(
+            connect.is_ok(),
+            "server Close must yield Ok(()): {connect:?}"
+        );
     }
 
     #[tokio::test]
@@ -1966,14 +1991,18 @@ mod tests {
             )
             .await;
             let ack =
-                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::FileUploadAck { .. })).await;
+                read_agent_until(&mut ws, |m| matches!(m, AgentMessage::FileUploadAck { .. }))
+                    .await;
             ws.send(WsMessage::Close(None)).await.ok();
             ack
         });
 
         let ack = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
         match ack {
-            AgentMessage::FileUploadAck { transfer_id, offset } => {
+            AgentMessage::FileUploadAck {
+                transfer_id,
+                offset,
+            } => {
                 assert_eq!(transfer_id, "up-1");
                 assert_eq!(offset, 0, "fresh upload starts at offset 0");
             }
@@ -2296,8 +2325,15 @@ async fn perform_upgrade(
     macro_rules! fail {
         ($stage:expr, $msg:expr) => {{
             let msg: String = $msg;
-            emit_upgrade_failure(&tx, job_id.clone(), version.to_string(), $stage, msg.clone(), None)
-                .await;
+            emit_upgrade_failure(
+                &tx,
+                job_id.clone(),
+                version.to_string(),
+                $stage,
+                msg.clone(),
+                None,
+            )
+            .await;
             anyhow::bail!(msg);
         }};
     }
@@ -2317,11 +2353,10 @@ async fn perform_upgrade(
     };
 
     // 3. 推导 URL(忽略 Server 的 download_url/sha256)
-    let (binary_url, checksums_url) =
-        match derive_urls(&upgrade_cfg.release_repo_url, version) {
-            Ok(v) => v,
-            Err(e) => fail!(UpgradeStage::Downloading, format!("derive url: {e}")),
-        };
+    let (binary_url, checksums_url) = match derive_urls(&upgrade_cfg.release_repo_url, version) {
+        Ok(v) => v,
+        Err(e) => fail!(UpgradeStage::Downloading, format!("derive url: {e}")),
+    };
 
     // 4. 专用 client
     let client = match build_upgrade_client(spki.as_deref()) {
@@ -2331,7 +2366,7 @@ async fn perform_upgrade(
 
     tracing::info!("Downloading agent v{version} from pinned source {binary_url}");
 
-    // 5. 拉 checksums.txt
+    // 5. 拉 sha256sums.txt
     let checksums = match client.get(&checksums_url).send().await {
         Ok(r) if r.status().is_success() => match r.text().await {
             Ok(t) => t,
@@ -2372,7 +2407,7 @@ async fn perform_upgrade(
             format!("checksum mismatch: expected {want_hash}, got {actual}")
         );
     }
-    tracing::info!("Checksum verified against pinned checksums.txt");
+    tracing::info!("Checksum verified against pinned sha256sums.txt");
 
     // 8. 落盘 + 替换 + 重启(沿用原逻辑)
     let current_exe = std::env::current_exe()?;

@@ -71,6 +71,7 @@ After installation, manage your deployment with the `serverbee` CLI (automatical
 ```bash
 sudo serverbee status
 sudo serverbee upgrade -y
+sudo serverbee upgrade --channel beta -y
 sudo serverbee restart
 sudo serverbee config
 sudo serverbee env
@@ -80,6 +81,8 @@ sudo serverbee uninstall agent -y
 <Callout type="info">
 `install server` / `install agent` are bootstrap commands. If the binary already exists in `/usr/local/bin`, the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
 </Callout>
+
+Stable releases are selected by default. For beta testing, pass `--channel beta` to install or upgrade the newest published prerelease, or use `--version vX.Y.Z-beta.N` to pin an exact release. The CLI refuses to replace an installed version with an older SemVer.
 
 ## Docker Compose (Recommended)
 

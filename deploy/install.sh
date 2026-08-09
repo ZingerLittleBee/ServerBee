@@ -60,6 +60,8 @@ MANAGED_COMPONENTS=""
 UNMANAGED_COMPONENTS=""
 INIT=""
 RESOLVED_VERSION=""
+REQUESTED_VERSION=""
+RELEASE_CHANNEL="${SERVERBEE_CHANNEL:-stable}"
 CLI_REFRESHED=""
 
 # ─── Agent capability toggles ────────────────────────────────────────────────
@@ -371,9 +373,9 @@ tr_text() {
     esac
 }
 
-# Docs site language segment (apps/docs is bilingual: cn / en).
+# Docs site language segment (apps/docs is bilingual: zh / en).
 docs_lang() {
-    [ "${LANG_CODE:-en}" = "zh" ] && echo "cn" || echo "en"
+    [ "${LANG_CODE:-en}" = "zh" ] && echo "zh" || echo "en"
 }
 
 # Translate + printf for parametrized strings (no trailing newline added).
@@ -617,6 +619,8 @@ parse_args() {
             --domain)        DOMAIN="$2"; shift 2 ;;
             --email)         EMAIL="$2"; shift 2 ;;
             --lang)          LANG_CODE="$2"; normalize_lang; shift 2 ;;
+            --version)       REQUESTED_VERSION="$2"; shift 2 ;;
+            --channel)       RELEASE_CHANNEL="$2"; shift 2 ;;
             --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
             --caps)          set_caps_from_cli "$2"; shift 2 ;;
             --purge)         PURGE=true; shift ;;
@@ -662,13 +666,92 @@ get_latest_version() {
         return
     fi
     local tag
-    tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep '"tag_name"' \
-        | head -1 \
-        | sed 's/.*"tag_name": *"//;s/".*//')
+    if [ -n "$REQUESTED_VERSION" ]; then
+        case "$REQUESTED_VERSION" in
+            v*) tag="$REQUESTED_VERSION" ;;
+            *) tag="v${REQUESTED_VERSION}" ;;
+        esac
+    else
+        case "$RELEASE_CHANNEL" in
+            stable)
+                tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+                    | grep '"tag_name"' \
+                    | head -1 \
+                    | sed 's/.*"tag_name": *"//;s/".*//')
+                ;;
+            beta)
+                tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+                    | awk '
+                        /^  \{/ { in_release=1; tag=""; prerelease=0; draft=0 }
+                        in_release && /"tag_name":/ {
+                            line=$0
+                            sub(/^.*"tag_name": *"/, "", line)
+                            sub(/".*$/, "", line)
+                            tag=line
+                        }
+                        in_release && /"prerelease": true/ { prerelease=1 }
+                        in_release && /"draft": true/ { draft=1 }
+                        in_release && /^  }[,]?$/ {
+                            if (tag != "" && prerelease && !draft) { print tag; exit }
+                            in_release=0
+                        }
+                    ')
+                ;;
+            *) error "Invalid release channel: ${RELEASE_CHANNEL} (expected stable or beta)" ;;
+        esac
+    fi
     [ -z "$tag" ] && error "Failed to get latest version from GitHub"
+    semver_is_valid "$tag" || error "Invalid release version: ${tag}"
     RESOLVED_VERSION="$tag"
     echo "$tag"
+}
+
+semver_is_valid() {
+    awk -v version="${1#v}" 'BEGIN {
+        exit(version ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$/ ? 0 : 1)
+    }'
+}
+
+semver_is_greater() {
+    awk -v target="${1#v}" -v current="${2#v}" '
+        function compare_identifiers(left, right, left_numeric, right_numeric) {
+            left_numeric = left ~ /^[0-9]+$/
+            right_numeric = right ~ /^[0-9]+$/
+            if (left_numeric && right_numeric) return (left + 0 > right + 0) ? 1 : ((left + 0 < right + 0) ? -1 : 0)
+            if (left_numeric != right_numeric) return left_numeric ? -1 : 1
+            return (left > right) ? 1 : ((left < right) ? -1 : 0)
+        }
+        function split_version(version, core, prerelease, plus, dash) {
+            plus = index(version, "+")
+            if (plus) version = substr(version, 1, plus - 1)
+            dash = index(version, "-")
+            parsed_core = dash ? substr(version, 1, dash - 1) : version
+            parsed_pre = dash ? substr(version, dash + 1) : ""
+        }
+        BEGIN {
+            split_version(target); target_core=parsed_core; target_pre=parsed_pre
+            split_version(current); current_core=parsed_core; current_pre=parsed_pre
+            split(target_core, target_parts, ".")
+            split(current_core, current_parts, ".")
+            for (i=1; i<=3; i++) {
+                left=target_parts[i] + 0; right=current_parts[i] + 0
+                if (left != right) exit(left > right ? 0 : 1)
+            }
+            if (target_pre == "" && current_pre != "") exit 0
+            if (target_pre != "" && current_pre == "") exit 1
+            if (target_pre == current_pre) exit 1
+            target_count=split(target_pre, target_ids, ".")
+            current_count=split(current_pre, current_ids, ".")
+            count=(target_count > current_count ? target_count : current_count)
+            for (i=1; i<=count; i++) {
+                if (i > target_count) exit 1
+                if (i > current_count) exit 0
+                compared=compare_identifiers(target_ids[i], current_ids[i])
+                if (compared != 0) exit(compared > 0 ? 0 : 1)
+            }
+            exit 1
+        }
+    '
 }
 
 docker_image_tag() {
@@ -2530,6 +2613,10 @@ upgrade_component() {
         refresh_cli_from_release "$latest_version"
         info "serverbee-${component} is already up to date (${current_version})"
         return
+    fi
+
+    if [ -n "$current_version" ] && ! semver_is_greater "$latest_version" "$current_version"; then
+        error "Refusing downgrade: target ${latest_version} is not newer than ${current_version}"
     fi
 
     if [ -z "$current_version" ]; then

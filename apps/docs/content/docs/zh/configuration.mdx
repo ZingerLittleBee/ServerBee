@@ -210,7 +210,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Agent 下载升级包时使用的固定发布源基础 URL。任何镜像 HTTPS 主机只要复现 GitHub Releases 的路径布局 `{base}/download/v{version}/{asset}` 和 `{base}/download/v{version}/checksums.txt` 即可。编译时默认值可通过构建期环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
+| `SERVERBEE_UPGRADE__RELEASE_REPO_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Agent 下载升级包时使用的固定发布源基础 URL。任何镜像 HTTPS 主机只要复现 GitHub Releases 的路径布局 `{base}/download/v{version}/{asset}` 和 `{base}/download/v{version}/sha256sums.txt` 即可。编译时默认值可通过构建期环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
 | `SERVERBEE_UPGRADE__RELEASE_CERT_SPKI_SHA256` | `""` | 可选的发布源 TLS 证书 SPKI Pin。64 位小写十六进制字符 = 叶证书 SubjectPublicKeyInfo DER 的 SHA-256。留空则禁用。设置后，Agent 在标准证书链验证通过后额外校验叶证书 SPKI。格式非法（非 64 位或含非十六进制字符）时启动即报错 |
 
 #### 安全事件检测（Security，Agent）
@@ -357,6 +357,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 |----|------|--------|------|
 | `release_base_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Agent 升级 Release 资产的基础 URL。Server 会在此 URL 后拼接 `/download/v{version}/` 构造资产下载地址 |
 | `latest_version_url` | string | `""` | 可选的自定义最新版本 API URL。留空则由 Server 查询 GitHub API 确定最新版本。可用此项覆盖为自定义版本接口 |
+| `channel` | string | `"stable"` | 控制台版本检测使用的发布渠道。设为 `"beta"` 时选择最新已发布的 GitHub prerelease |
 
 ### `[file]` —— 文件上传（Server 端）
 
@@ -463,7 +464,7 @@ Agent 从本地固定的发布源下载升级包，而不信任 Server 下发的
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `release_repo_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Agent 升级 Release 资产的基础 URL。必须复现 GitHub Releases 目录布局：二进制为 `{base}/download/v{version}/{asset}`，校验文件为 `{base}/download/v{version}/checksums.txt`。编译时默认值可通过构建期环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
+| `release_repo_url` | string | `"https://github.com/ZingerLittleBee/ServerBee/releases"` | Agent 升级 Release 资产的基础 URL。必须复现 GitHub Releases 目录布局：二进制为 `{base}/download/v{version}/{asset}`，校验文件为 `{base}/download/v{version}/sha256sums.txt`。编译时默认值可通过构建期环境变量 `SERVERBEE_RELEASE_REPO` 覆盖 |
 | `release_cert_spki_sha256` | string | `""` | 可选的发布源 TLS SPKI Pin。设为 64 位小写十六进制字符（叶证书 SubjectPublicKeyInfo DER 编码的 SHA-256）。留空则禁用 Pin。设置后，Agent 在标准证书链验证通过后额外校验叶证书 SPKI。格式非法（非 64 位或含非十六进制字符）时启动即报错 |
 
 **配置优先级**（越靠前越高）：

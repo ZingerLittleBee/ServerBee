@@ -17,8 +17,80 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  preflight:
+    name: Release Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Validate version and changelog
+        id: version
+        shell: bash
+        run: |
+          if [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            echo "::error::Release must run from an existing v* tag"
+            exit 1
+          fi
+
+          if [[ "$GITHUB_REF" != "refs/tags/v$VERSION" ]]; then
+            echo "::error::Selected ref $GITHUB_REF does not match v$VERSION"
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid semantic version: $VERSION"
+            exit 1
+          fi
+
+          CARGO_VERSION=$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)
+          WEB_VERSION=$(bun -e "console.log(require('./apps/web/package.json').version)")
+          if [[ "$CARGO_VERSION" != "$VERSION" || "$WEB_VERSION" != "$VERSION" ]]; then
+            echo "::error::Version mismatch: tag=$VERSION cargo=$CARGO_VERSION web=$WEB_VERSION"
+            exit 1
+          fi
+
+          awk -v version="$VERSION" '
+            $0 == "## [" version "]" { found=1; next }
+            /^## \[/ { if (found) exit }
+            found { print }
+          ' CHANGELOG.md > changelog_body.md
+          if [[ ! -s changelog_body.md ]]; then
+            echo "::error::CHANGELOG.md has no non-empty section for $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install frontend dependencies
+        working-directory: apps/web
+        run: bun install --frozen-lockfile
+
+      - name: Test and build frontend
+        working-directory: apps/web
+        run: bun run test && bun run build
+
+      - name: Check frontend formatting and lint
+        run: bun x ultracite check
+
+      - name: Test Rust workspace
+        run: cargo test --workspace
+
+      - name: Lint Rust workspace
+        run: cargo clippy --workspace -- -D warnings
+
   build-linux:
     name: Build (${{ matrix.target }})
+    needs: preflight
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -68,6 +140,7 @@ jobs:
 
   build-other:
     name: Build (${{ matrix.target }})
+    needs: preflight
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -127,7 +200,7 @@ jobs:
 
   docker:
     name: Docker (${{ matrix.component }})
-    needs: [build-linux]
+    needs: [preflight, build-linux, build-other]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -170,23 +243,11 @@ jobs:
         id: owner
         run: echo "lowercase=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-      - name: Extract version
-        id: version
-        run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::No version provided and GITHUB_REF ($GITHUB_REF) is not a v* tag"
-            exit 1
-          fi
-
       - name: Compute image tags
         id: tags
         run: |
           IMAGE="ghcr.io/${{ steps.owner.outputs.lowercase }}/${{ matrix.image }}"
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.preflight.outputs.version }}"
           {
             echo "list<<EOF"
             echo "$IMAGE:$VERSION"
@@ -208,28 +269,17 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build-linux, build-other]
+    needs: [preflight, build-linux, build-other, docker]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Extract version
-        id: version
-        run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::No version provided and GITHUB_REF ($GITHUB_REF) is not a v* tag"
-            exit 1
-          fi
 
       - name: Extract changelog
         id: changelog
         run: |
           # Extract the section between ## [version] and the next ## [
-          awk '/^## \[${{ steps.version.outputs.version }}\]/{found=1; next} /^## \[/{if(found) exit} found' CHANGELOG.md > changelog_body.md
+          awk '/^## \[${{ needs.preflight.outputs.version }}\]/{found=1; next} /^## \[/{if(found) exit} found' CHANGELOG.md > changelog_body.md
+          test -s changelog_body.md
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -248,7 +298,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.preflight.outputs.version }}
           body_path: changelog_body.md
           files: artifacts/*
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          prerelease: ${{ contains(needs.preflight.outputs.version, '-') }}
+          make_latest: ${{ !contains(needs.preflight.outputs.version, '-') }}

@@ -142,7 +142,7 @@ describe('NetworkTab', () => {
     render(<NetworkTab serverId="server-1" />)
 
     expect(screen.getByText(lastProbePattern)).toBeInTheDocument()
-    expect(screen.getByText('上海电信')).toBeInTheDocument()
+    expect(screen.getAllByText('上海电信').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByRole('button', { name: traceroutePattern })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: exportCsvPattern })).toBeInTheDocument()
   })

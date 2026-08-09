@@ -1,23 +1,33 @@
 //! Pinned-source 自升级:来源推导、防降级、TLS 加固。
 
-use std::sync::Arc;
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::WebPkiServerVerifier;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
+use std::sync::Arc;
 
 /// 返回当前构建对应的 release asset 文件名(与 release.yml 命名一致)。
 pub fn current_asset_name() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    { "serverbee-agent-linux-amd64" }
+    {
+        "serverbee-agent-linux-amd64"
+    }
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    { "serverbee-agent-linux-arm64" }
+    {
+        "serverbee-agent-linux-arm64"
+    }
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    { "serverbee-agent-darwin-amd64" }
+    {
+        "serverbee-agent-darwin-amd64"
+    }
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    { "serverbee-agent-darwin-arm64" }
+    {
+        "serverbee-agent-darwin-arm64"
+    }
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    { "serverbee-agent-windows-amd64.exe" }
+    {
+        "serverbee-agent-windows-amd64.exe"
+    }
     #[cfg(not(any(
         all(target_os = "linux", target_arch = "x86_64"),
         all(target_os = "linux", target_arch = "aarch64"),
@@ -25,7 +35,9 @@ pub fn current_asset_name() -> &'static str {
         all(target_os = "macos", target_arch = "aarch64"),
         all(target_os = "windows", target_arch = "x86_64"),
     )))]
-    { "serverbee-agent-unsupported" }
+    {
+        "serverbee-agent-unsupported"
+    }
 }
 
 /// 由 release base + 版本号推导 (binary_url, checksums_url)。
@@ -37,7 +49,7 @@ pub fn derive_urls(base: &str, version: &str) -> anyhow::Result<(String, String)
     }
     let asset = current_asset_name();
     let binary = format!("{base}/download/v{version}/{asset}");
-    let checksums = format!("{base}/download/v{version}/checksums.txt");
+    let checksums = format!("{base}/download/v{version}/sha256sums.txt");
     Ok((binary, checksums))
 }
 
@@ -54,7 +66,7 @@ pub fn ensure_upgrade(current: &str, target: &str) -> anyhow::Result<()> {
     }
 }
 
-/// 从 `sha256sum` 风格的 checksums.txt 文本中取指定 asset 的小写 hex 哈希。
+/// 从 `sha256sum` 风格的 sha256sums.txt 文本中取指定 asset 的小写 hex 哈希。
 pub fn checksum_for(checksums: &str, asset_name: &str) -> anyhow::Result<String> {
     for line in checksums.lines() {
         let mut parts = line.split_whitespace();
@@ -67,7 +79,7 @@ pub fn checksum_for(checksums: &str, asset_name: &str) -> anyhow::Result<String>
             return Ok(hash.to_lowercase());
         }
     }
-    anyhow::bail!("asset {asset_name} not found in checksums.txt")
+    anyhow::bail!("asset {asset_name} not found in sha256sums.txt")
 }
 
 /// 规范化并校验配置的 SPKI pin:去首尾空白、转小写,必须 64 位 hex。
@@ -198,15 +210,17 @@ pub fn build_upgrade_client(spki_pin: Option<&str>) -> anyhow::Result<reqwest::C
 
     let client = reqwest::Client::builder()
         .use_preconfigured_tls(tls)
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            match redirect_decision(attempt.url().scheme(), attempt.previous().len()) {
+        .redirect(reqwest::redirect::Policy::custom(
+            |attempt| match redirect_decision(attempt.url().scheme(), attempt.previous().len()) {
                 RedirectAction::Follow => attempt.follow(),
                 RedirectAction::StopNonHttps => attempt.error("non-https redirect blocked"),
                 RedirectAction::StopTooMany => attempt.error("too many redirects"),
-            }
-        }))
+            },
+        ))
         .user_agent("ServerBee-Agent")
-        .timeout(std::time::Duration::from_secs(UPGRADE_DOWNLOAD_TIMEOUT_SECS))
+        .timeout(std::time::Duration::from_secs(
+            UPGRADE_DOWNLOAD_TIMEOUT_SECS,
+        ))
         .build()?;
     Ok(client)
 }
@@ -254,7 +268,7 @@ mod tests {
         assert!(bin.contains("/download/v1.2.3/serverbee-agent-"));
         assert_eq!(
             sums,
-            "https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.2.3/checksums.txt"
+            "https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.2.3/sha256sums.txt"
         );
     }
 
@@ -305,7 +319,10 @@ mod tests {
         let valid = "b".repeat(64);
         assert_eq!(normalize_spki_pin(&valid).unwrap(), Some(valid.clone()));
         // Uppercase is normalised to lowercase without error.
-        assert_eq!(normalize_spki_pin(&valid.to_uppercase()).unwrap(), Some(valid));
+        assert_eq!(
+            normalize_spki_pin(&valid.to_uppercase()).unwrap(),
+            Some(valid)
+        );
 
         // Non-empty but wrong length → Err: triggers exit(1) at startup.
         assert!(normalize_spki_pin("abc123").is_err());
@@ -359,7 +376,10 @@ mod tests {
             Some("https://m.example/releases".into())
         );
         let v2 = vec!["bin".into(), "--release-repo=https://x/releases".into()];
-        assert_eq!(parse_release_repo_arg(v2), Some("https://x/releases".into()));
+        assert_eq!(
+            parse_release_repo_arg(v2),
+            Some("https://x/releases".into())
+        );
         assert_eq!(parse_release_repo_arg(vec!["bin".into()]), None);
         // --release-repo with no following arg → None
         assert_eq!(
@@ -394,7 +414,7 @@ mod tests {
         // Multiple trailing slashes are stripped; the asset path is appended.
         let (bin, sums) = derive_urls("https://host/releases///", "2.0.0").unwrap();
         assert!(bin.starts_with("https://host/releases/download/v2.0.0/"));
-        assert_eq!(sums, "https://host/releases/download/v2.0.0/checksums.txt");
+        assert_eq!(sums, "https://host/releases/download/v2.0.0/sha256sums.txt");
         // The binary URL embeds the current platform asset name.
         assert!(bin.contains(current_asset_name()));
     }
@@ -530,7 +550,7 @@ mod tests {
         // so both URLs contain the `download/v/` segment with no version digits.
         let (bin, sums) = derive_urls("https://host/releases", "").unwrap();
         assert!(bin.starts_with("https://host/releases/download/v/"));
-        assert_eq!(sums, "https://host/releases/download/v/checksums.txt");
+        assert_eq!(sums, "https://host/releases/download/v/sha256sums.txt");
     }
 
     #[test]

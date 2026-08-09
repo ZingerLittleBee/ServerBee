@@ -239,6 +239,10 @@ jobs:
         working-directory: apps/web
         run: bun run tsc -b
 
+      - name: Test
+        working-directory: apps/web
+        run: bun run test
+
       - name: Lint
         run: bun x ultracite check
 

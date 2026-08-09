@@ -22,14 +22,14 @@
 ServerBee 在一处统一监控你的所有服务器。中心 **Server** 通过 WebSocket 接收来自轻量 **Agent** 的指标,存入内嵌 SQLite,并提供实时 React 仪表盘 —— 无外部数据库,无沉重运行时。
 
 - 🪶 **极致轻量** —— Agent 冷启动约 4.3 MB、稳态约 27 MB,Server 即便管理大量节点也保持精简。
-- ⚡ **实时刷新** —— WebSocket 实时仪表盘,涵盖 CPU、内存、磁盘、网络、负载、温度、GPU、磁盘 I/O。
+- ⚡ **实时刷新** —— WebSocket 实时仪表盘,涵盖 CPU、内存、磁盘、网络、负载、温度、磁盘 I/O,以及自行使用 `--features gpu` 构建 Agent 后可用的 NVIDIA GPU 指标(预编译二进制不含 GPU 支持)。
 - 📦 **单一二进制** —— Server 与内嵌 Web UI 打包成一个文件,支持 Docker、一行脚本、Railway 部署。
 - 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、状态页等功能。
 - 🔒 **默认安全** —— OAuth + 2FA、RBAC、审计日志、一次性 Agent 注册、Agent 自主掌管的能力门控。
 - ✅ **充分测试** —— 3800+ 自动化测试,其中集成套件通过 mock-agent 测试桩驱动真实路由、经由 HTTP + WebSocket 演练控制面;每次 CI 全部通过。
 
 > [!NOTE]
-> ServerBee 正在活跃开发中(`v1.0.0-alpha.7`),迭代频繁。
+> ServerBee 正在活跃开发中(`v1.0.0-alpha.12`),迭代频繁。
 
 ## 快速开始
 
@@ -60,7 +60,7 @@ Agent 首次连接时会保存每服务器 token 并自动重连 —— code 只
 
 | | |
 |---|---|
-| **📊 监控** | 实时指标(CPU/内存/磁盘/网络/负载/温度/GPU/磁盘 I/O)· 历史图表(1h–30d)· Docker 容器统计、日志与事件 · 按计费周期统计月度流量并预测 · 成本洞察(burn rate、资源单价、0–100 价值评分) |
+| **📊 监控** | 实时指标(CPU/内存/磁盘/网络/负载/温度/磁盘 I/O,以及可选的自行构建 NVIDIA GPU 支持)· 历史图表(1h–30d)· Docker 容器统计、日志与事件 · 按计费周期统计月度流量并预测 · 成本洞察(burn rate、资源单价、0–100 价值评分) |
 | **🔔 告警** | 14+ 指标类型 · 阈值 / 离线 / 流量 / 到期规则 · Webhook、Telegram、Bark、邮件、APNs 渠道,支持通知组 |
 | **🌐 网络** | Ping 探测(ICMP/TCP/HTTP)· 网络质量监控(96 个中国三网 + 国际预设)· 服务监控(SSL/DNS/HTTP 关键字/TCP/WHOIS)· IP 质量与流媒体解锁检测,含欺诈风险评分 |
 | **🛠️ 远程管理** | 浏览器 Web 终端(WS 上的 PTY)· 沙箱化文件管理 + Monaco 编辑器 · 基于 nftables 的防火墙封禁 · Agent 自主掌管的能力门控(支持主机本地临时授权)· Agent 自动更新 |
@@ -108,6 +108,7 @@ interval = 3           # 上报间隔(秒)
 ```bash
 sudo serverbee status         # 查看所有组件状态
 sudo serverbee upgrade -y     # 升级到最新版
+sudo serverbee upgrade --channel beta -y  # 升级到最新 beta
 sudo serverbee restart        # 重启服务
 sudo serverbee config         # 查看 / 修改配置
 sudo serverbee uninstall agent -y

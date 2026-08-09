@@ -279,12 +279,22 @@ impl Default for SchedulerConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UpgradeChannel {
+    #[default]
+    Stable,
+    Beta,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpgradeConfig {
     #[serde(default = "default_release_base_url")]
     pub release_base_url: String,
     #[serde(default)]
     pub latest_version_url: String,
+    #[serde(default)]
+    pub channel: UpgradeChannel,
 }
 
 fn default_release_base_url() -> String {
@@ -296,6 +306,7 @@ impl Default for UpgradeConfig {
         Self {
             release_base_url: default_release_base_url(),
             latest_version_url: String::new(),
+            channel: UpgradeChannel::Stable,
         }
     }
 }
@@ -661,6 +672,24 @@ mod tests {
     }
 
     #[test]
+    fn upgrade_channel_defaults_to_stable_and_accepts_beta() {
+        assert_eq!(UpgradeConfig::default().channel, UpgradeChannel::Stable);
+
+        let config: UpgradeConfig = toml::from_str("channel = \"beta\"").unwrap();
+        assert_eq!(config.channel, UpgradeChannel::Beta);
+        assert!(toml::from_str::<UpgradeConfig>("channel = \"nightly\"").is_err());
+    }
+
+    #[test]
+    fn app_config_load_rejects_invalid_explicit_values() {
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_DATABASE__MAX_CONNECTIONS", "not-a-number");
+            assert!(AppConfig::load().is_err());
+            Ok(())
+        });
+    }
+
+    #[test]
     fn dev_demo_data_defaults_to_disabled_and_reads_env_var() {
         let cfg = AppConfig::default();
         assert!(!cfg.dev.demo_data);
@@ -807,5 +836,4 @@ mod tests {
         let warnings = cfg.validate_warnings();
         assert!(!warnings.iter().any(|w| w.contains("matches risk_provider")));
     }
-
 }

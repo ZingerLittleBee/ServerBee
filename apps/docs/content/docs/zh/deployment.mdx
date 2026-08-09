@@ -71,6 +71,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 ```bash
 sudo serverbee status
 sudo serverbee upgrade -y
+sudo serverbee upgrade --channel beta -y
 sudo serverbee restart
 sudo serverbee config
 sudo serverbee env
@@ -80,6 +81,8 @@ sudo serverbee uninstall agent -y
 <Callout type="info">
 `install server` / `install agent` 是引导命令。如果 `/usr/local/bin` 中已经存在对应二进制，安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 二进制时，请改用 `upgrade`（或手动替换二进制）。
 </Callout>
+
+默认选择稳定版本。参与 beta 测试时，可在安装或升级命令中传入 `--channel beta` 选择最新已发布的预发布版本，也可用 `--version vX.Y.Z-beta.N` 固定精确版本。CLI 会拒绝用较旧的 SemVer 覆盖当前安装。
 
 ## Docker Compose（推荐）
 

@@ -22,14 +22,14 @@ English | [简体中文](./README.zh-CN.md)
 ServerBee watches all your servers from one place. A central **server** receives metrics from lightweight **agents** over WebSocket, stores them in embedded SQLite, and serves a real-time React dashboard — no external database, no heavy runtime.
 
 - 🪶 **Tiny footprint** — agents use ~4.3 MB at cold start and ~27 MB in steady state, and the server stays lightweight as your fleet grows.
-- ⚡ **Real-time** — live WebSocket dashboard for CPU, memory, disk, network, load, temperature, GPU, and disk I/O.
+- ⚡ **Real-time** — live WebSocket dashboard for CPU, memory, disk, network, load, temperature, disk I/O, and optional NVIDIA GPU metrics from a self-built Agent (`--features gpu`; prebuilt binaries exclude GPU support).
 - 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
 - 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, status pages, and more.
 - 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, agent-owned capability gates.
 - ✅ **Battle-tested** — 3,800+ automated tests, including integration suites that drive the real router over HTTP + WebSocket via a mock-agent harness; green on every CI run.
 
 > [!NOTE]
-> ServerBee is in active development (`v1.0.0-alpha.7`). Expect rapid iteration.
+> ServerBee is in active development (`v1.0.0-alpha.12`). Expect rapid iteration.
 
 ## Quick Start
 
@@ -60,7 +60,7 @@ The Agent generates and persists its run token before claiming the offer, then r
 
 | | |
 |---|---|
-| **📊 Monitoring** | Real-time metrics (CPU/mem/disk/network/load/temp/GPU/disk I/O) · historical charts (1h–30d) · Docker container stats, logs & events · monthly traffic statistics with billing-cycle prediction · cost insights (burn rate, per-resource unit cost, 0–100 value score) |
+| **📊 Monitoring** | Real-time metrics (CPU/mem/disk/network/load/temp/disk I/O, plus optional self-built NVIDIA GPU support) · historical charts (1h–30d) · Docker container stats, logs & events · monthly traffic statistics with billing-cycle prediction · cost insights (burn rate, per-resource unit cost, 0–100 value score) |
 | **🔔 Alerts** | 14+ metric types · threshold / offline / traffic / expiration rules · Webhook, Telegram, Bark, Email & APNs channels with notification groups |
 | **🌐 Network** | Ping monitoring (ICMP/TCP/HTTP) · network-quality probing (96 China 3-ISP + international presets) · service monitors (SSL/DNS/HTTP-keyword/TCP/WHOIS) · IP-quality & streaming-unlock detection with fraud scoring |
 | **🛠️ Remote management** | Browser web terminal (PTY over WS) · sandboxed file manager with Monaco editor · firewall blocklist via nftables · agent-owned capability gates with host-local temporary grants · agent auto-update |
@@ -108,6 +108,7 @@ The installer drops a `serverbee` CLI at `/usr/local/bin/serverbee`:
 ```bash
 sudo serverbee status         # status of all components
 sudo serverbee upgrade -y     # upgrade to latest
+sudo serverbee upgrade --channel beta -y  # upgrade to the latest beta
 sudo serverbee restart        # restart services
 sudo serverbee config         # view / set config
 sudo serverbee uninstall agent -y
