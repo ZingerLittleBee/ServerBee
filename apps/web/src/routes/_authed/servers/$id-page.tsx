@@ -12,6 +12,7 @@ import { CapabilitiesDialog } from '@/components/server/capabilities-dialog'
 import { ServerEditDialog } from '@/components/server/server-edit-dialog'
 import { StatusBadge } from '@/components/server/status-badge'
 import { UpgradeJobBadge } from '@/components/server/upgrade-job-badge'
+import { SiteHeaderActions } from '@/components/site-header'
 import { ServerDetailContent } from '@/components/status/server-detail-content'
 import { Button } from '@/components/ui/button'
 import { useServer } from '@/hooks/use-api'
@@ -107,7 +108,7 @@ function ServerActionButtons({
   // Gate online/offline-specific buttons on liveHydrated so the button list does
   // not flicker while online-only Terminal/Files/Docker actions hydrate.
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <Button onClick={onEditOpen} size="sm" variant="outline">
         <Pencil aria-hidden="true" className="mr-1 size-4" />
         {t('detail_edit')}
@@ -200,44 +201,38 @@ export function ServerDetailPage() {
 
   return (
     <div className="pb-6">
-      <div className="mb-6">
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3">
-              <CountryFlag className="text-xl" code={server.country_code} />
-              <h1 className="font-bold text-2xl">{server.name}</h1>
-              <StatusBadge status={isOnline ? 'online' : 'offline'} />
-              <UpgradeJobBadge job={upgradeJob} />
-            </div>
-            <ServerInfoMeta server={server} />
+      <SiteHeaderActions>
+        <ServerActionButtons
+          dockerEnabled={dockerEnabled}
+          fileEnabled={fileEnabled}
+          id={id}
+          isAdmin={isAdmin}
+          isOnline={isOnline}
+          liveHydrated={liveHydrated}
+          onEditOpen={() => setEditOpen(true)}
+          onReenrollmentOpen={() => setReenrollmentOpen(true)}
+          serverWithCaps={serverWithCaps}
+          terminalEnabled={terminalEnabled}
+        />
+      </SiteHeaderActions>
+
+      <div className="mb-6 space-y-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <CountryFlag className="text-xl" code={server.country_code} />
+            <h1 className="font-bold text-2xl">{server.name}</h1>
+            <StatusBadge status={isOnline ? 'online' : 'offline'} />
+            <UpgradeJobBadge job={upgradeJob} />
           </div>
-          {/* DOM order matches the rendered order: the actions sit beside the
-              title on sm+, so they must follow it in the tab sequence. The
-              version section spans both columns and falls to the second row. */}
-          <div className="sm:justify-self-end">
-            <ServerActionButtons
-              dockerEnabled={dockerEnabled}
-              fileEnabled={fileEnabled}
-              id={id}
-              isAdmin={isAdmin}
-              isOnline={isOnline}
-              liveHydrated={liveHydrated}
-              onEditOpen={() => setEditOpen(true)}
-              onReenrollmentOpen={() => setReenrollmentOpen(true)}
-              serverWithCaps={serverWithCaps}
-              terminalEnabled={terminalEnabled}
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <AgentVersionSection
-              agentVersion={server.agent_version}
-              configuredCapabilities={serverWithCaps.capabilities}
-              effectiveCapabilities={serverWithCaps.effective_capabilities}
-              latestVersion={latestAgentVersion?.version ?? null}
-              serverId={id}
-            />
-          </div>
+          <ServerInfoMeta server={server} />
         </div>
+        <AgentVersionSection
+          agentVersion={server.agent_version}
+          configuredCapabilities={serverWithCaps.capabilities}
+          effectiveCapabilities={serverWithCaps.effective_capabilities}
+          latestVersion={latestAgentVersion?.version ?? null}
+          serverId={id}
+        />
       </div>
 
       <ServerDetailContent
