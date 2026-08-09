@@ -6,6 +6,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { formatBytes } from '@/lib/utils'
+import {
+  DEFAULT_WIDGET_CHART_COLOR,
+  DEFAULT_WIDGET_CHART_COLOR_SECONDARY,
+  resolveWidgetColor
+} from '@/lib/widget-color'
 import type { TrafficBarConfig } from '@/lib/widget-types'
 
 interface TrafficBarWidgetProps {
@@ -25,11 +30,22 @@ interface ServerTrafficResponse {
 
 const DEFAULT_DAYS = 30
 
-function useTrafficSeries(t: (key: string) => string): StackedBarSeries[] {
-  return [
-    { dataKey: 'bytes_in', label: t('widgets.trafficBar.legend.inbound'), color: 'var(--chart-1)' },
-    { dataKey: 'bytes_out', label: t('widgets.trafficBar.legend.outbound'), color: 'var(--chart-2)' }
-  ]
+function useTrafficSeries(t: (key: string) => string, color?: string, colorSecondary?: string): StackedBarSeries[] {
+  return useMemo(
+    () => [
+      {
+        dataKey: 'bytes_in',
+        label: t('widgets.trafficBar.legend.inbound'),
+        color: resolveWidgetColor(color, DEFAULT_WIDGET_CHART_COLOR)
+      },
+      {
+        dataKey: 'bytes_out',
+        label: t('widgets.trafficBar.legend.outbound'),
+        color: resolveWidgetColor(colorSecondary, DEFAULT_WIDGET_CHART_COLOR_SECONDARY)
+      }
+    ],
+    [color, colorSecondary, t]
+  )
 }
 
 function formatDayTick(date: string): string {
@@ -45,7 +61,7 @@ function hoursToDays(hours?: number): number {
 
 export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   const { t } = useTranslation('dashboard')
-  const trafficSeries = useTrafficSeries(t)
+  const trafficSeries = useTrafficSeries(t, config.color, config.color_secondary)
   const { server_id } = config
   const days = hoursToDays(config.hours)
   const hasServerId = server_id != null && server_id.length > 0

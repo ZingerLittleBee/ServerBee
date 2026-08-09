@@ -10,6 +10,12 @@ import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
 import { TooltipContent, type TooltipRow } from '@/components/charts/tooltip/tooltip-content'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
+import {
+  DEFAULT_WIDGET_CHART_COLOR,
+  hexRelativeLuminance,
+  normalizeWidgetColor,
+  resolveWidgetColor
+} from '@/lib/widget-color'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { TopNConfig } from '@/lib/widget-types'
 
@@ -39,47 +45,17 @@ const LABEL_INSET_PX = 8
 /** Bars narrower than this put the name to the right of the fill (outside). */
 const MIN_INNER_LABEL_WIDTH_PX = 56
 
-/** Default bar fill when the widget config omits `color`. */
-export const DEFAULT_TOP_N_BAR_COLOR = '#8EC5FF'
+/** @deprecated Prefer `DEFAULT_WIDGET_CHART_COLOR` from `@/lib/widget-color`. */
+export const DEFAULT_TOP_N_BAR_COLOR = DEFAULT_WIDGET_CHART_COLOR
 
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
-const HEX6_RE = /^#[0-9A-Fa-f]{6}$/
-const HEX3_RE = /^#[0-9A-Fa-f]{3}$/
 
-/** Normalize user-entered hex (`#RGB`, `#RRGGBB`, optional leading `#`) to `#RRGGBB`. */
-export function normalizeTopNBarColor(value: string | undefined | null): string | null {
-  if (value == null) {
-    return null
-  }
-  const trimmed = value.trim()
-  if (trimmed.length === 0) {
-    return null
-  }
-  const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`
-  if (HEX6_RE.test(withHash)) {
-    return withHash.toUpperCase()
-  }
-  if (HEX3_RE.test(withHash)) {
-    const r = withHash[1]
-    const g = withHash[2]
-    const b = withHash[3]
-    return `#${r}${r}${g}${g}${b}${b}`.toUpperCase()
-  }
-  return null
-}
+/** @deprecated Prefer `normalizeWidgetColor` from `@/lib/widget-color`. */
+export const normalizeTopNBarColor = normalizeWidgetColor
 
+/** @deprecated Prefer `resolveWidgetColor` from `@/lib/widget-color`. */
 export function resolveTopNBarColor(value: string | undefined | null): string {
-  return normalizeTopNBarColor(value) ?? DEFAULT_TOP_N_BAR_COLOR
-}
-
-/** Relative luminance of `#RRGGBB` (sRGB). Used to pick label ink on the bar. */
-function hexRelativeLuminance(hex: string): number {
-  const raw = hex.replace('#', '')
-  const channels = [0, 2, 4].map((offset) => {
-    const channel = Number.parseInt(raw.slice(offset, offset + 2), 16) / 255
-    return channel <= 0.039_28 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+  return resolveWidgetColor(value, DEFAULT_WIDGET_CHART_COLOR)
 }
 
 function labelClassForBar(fillHex: string, inside: boolean): string {

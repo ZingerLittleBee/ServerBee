@@ -4,6 +4,7 @@ import { useServerRecords } from '@/hooks/use-api'
 import { useMetricSeries } from '@/hooks/use-metric-series'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn } from '@/lib/utils'
+import { normalizeWidgetColor } from '@/lib/widget-color'
 import type { MetricCardConfig } from '@/lib/widget-types'
 import { METRIC_CARD_SPECS } from './metric-card/metric-card-config'
 import { MetricCardHeader } from './metric-card/metric-card-header'
@@ -61,6 +62,9 @@ export function MetricCardWidget({ config, servers }: MetricCardWidgetProps) {
   const formattedValue = dimmed ? '—' : spec.formatValue(series.current)
   const formattedPeak = formatStat(series.peak, spec.formatValue)
   const formattedAvg = formatStat(series.avg, spec.formatValue)
+  // Custom hex wins; otherwise keep the metric's CSS-variable accent token.
+  const customColor = normalizeWidgetColor(config.color)
+  const accent = customColor ?? `var(${spec.accent})`
 
   return (
     <div
@@ -71,7 +75,7 @@ export function MetricCardWidget({ config, servers }: MetricCardWidgetProps) {
       data-metric={config.metric}
       data-testid="metric-card-widget"
     >
-      <MetricCardHeader accent={spec.accent} Icon={spec.icon} label={label} serverName={server.name} />
+      <MetricCardHeader accent={accent} Icon={spec.icon} label={label} serverName={server.name} />
       <MetricCardValue
         delta={server.online ? series.oneHourDelta : null}
         deltaTone={spec.deltaTone}
@@ -80,7 +84,7 @@ export function MetricCardWidget({ config, servers }: MetricCardWidgetProps) {
         pastLabel={t('metricCard.past1h')}
       />
       <div className="min-h-0 flex-1">
-        <MetricCardSparkline accent={spec.accent} points={series.points} />
+        <MetricCardSparkline accent={accent} points={series.points} />
       </div>
       <MetricCardStats
         avg={formattedAvg}

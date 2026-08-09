@@ -4,7 +4,6 @@ import { LayoutGrid, List } from 'lucide-react'
 import { useId, useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MarkdownContent } from '@/components/dashboard/markdown-content'
-import { DEFAULT_TOP_N_BAR_COLOR, normalizeTopNBarColor } from '@/components/dashboard/widgets/top-n'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ColorPickerPopover } from '@/components/ui/color-picker'
@@ -16,6 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
+import {
+  DEFAULT_WIDGET_CHART_COLOR,
+  DEFAULT_WIDGET_CHART_COLOR_SECONDARY,
+  normalizeWidgetColor,
+  WIDGET_COLOR_SWATCHES
+} from '@/lib/widget-color'
 import { parseConfig } from '@/lib/widget-helpers'
 import type {
   AlertListConfig,
@@ -445,6 +450,12 @@ function MetricCardForm({
           value={label}
         />
       </div>
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        label={t('widgets.common.labels.color')}
+        onChange={(next) => onChange(next as Partial<MetricCardConfig>)}
+        value={config.color}
+      />
     </>
   )
 }
@@ -493,6 +504,12 @@ function GaugeForm({
         t={t}
         value={config.max}
       />
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        label={t('widgets.common.labels.color')}
+        onChange={(next) => onChange(next as Partial<GaugeConfig>)}
+        value={config.color}
+      />
     </>
   )
 }
@@ -529,6 +546,12 @@ function LineChartForm({
         onChange={(v) => onChange({ ...config, hours: Number(v) })}
         t={t}
         value={String(config.hours ?? '24')}
+      />
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        label={t('widgets.common.labels.color')}
+        onChange={(next) => onChange(next as Partial<LineChartConfig>)}
+        value={config.color}
       />
     </>
   )
@@ -578,6 +601,48 @@ function useSortOptions(t: (key: string) => string): { label: string; value: str
   ]
 }
 
+/** Fluid ColorPickerPopover field shared by single-host chart widgets. */
+function WidgetColorField({
+  label,
+  value,
+  defaultColor = DEFAULT_WIDGET_CHART_COLOR,
+  fieldKey = 'color',
+  config,
+  onChange
+}: {
+  config: Record<string, unknown>
+  defaultColor?: string
+  fieldKey?: string
+  label: string
+  onChange: (config: Record<string, unknown>) => void
+  value: string | undefined
+}) {
+  const colorValue = normalizeWidgetColor(value) ?? defaultColor
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <ColorPickerPopover
+        defaultFormat="hex"
+        onTriggerRemove={() => {
+          const next = { ...config }
+          delete next[fieldKey]
+          onChange(next)
+        }}
+        onValueChange={(nextValue) => {
+          onChange({ ...config, [fieldKey]: normalizeWidgetColor(nextValue) ?? nextValue })
+        }}
+        swatches={[...WIDGET_COLOR_SWATCHES]}
+        triggerClassName="w-full"
+        triggerLabel={label}
+        triggerLabelPosition="left"
+        triggerShowRemove={Boolean(value)}
+        triggerShowValue
+        value={colorValue}
+      />
+    </div>
+  )
+}
+
 function TopNForm({
   config,
   onChange,
@@ -589,8 +654,6 @@ function TopNForm({
 }) {
   const TOP_N_METRICS = useTopNMetrics(t)
   const SORT_OPTIONS = useSortOptions(t)
-  // Color picker needs a valid 6-digit hex; fall back to the widget default for the swatch.
-  const colorValue = normalizeTopNBarColor(config.color) ?? DEFAULT_TOP_N_BAR_COLOR
   return (
     <>
       <MetricSelect
@@ -627,38 +690,12 @@ function TopNForm({
         t={t}
         value={config.count}
       />
-      <div className="space-y-1.5">
-        <Label>{t('widgets.common.labels.color')}</Label>
-        {/* Fluid Functionalism ColorPickerPopover — HEX/RGB/HSL/OKLCH + eyedropper.
-            https://www.fluidfunctionalism.com/docs/color-picker */}
-        <ColorPickerPopover
-          defaultFormat="hex"
-          onTriggerRemove={() => {
-            const { color: _removed, ...rest } = config
-            onChange(rest)
-          }}
-          onValueChange={(value) => {
-            const next = normalizeTopNBarColor(value) ?? value
-            onChange({ ...config, color: next })
-          }}
-          swatches={[
-            DEFAULT_TOP_N_BAR_COLOR,
-            '#60A5FA',
-            '#34D399',
-            '#FBBF24',
-            '#F87171',
-            '#A78BFA',
-            '#F472B6',
-            '#94A3B8'
-          ]}
-          triggerClassName="w-full"
-          triggerLabel={t('widgets.common.labels.color')}
-          triggerLabelPosition="left"
-          triggerShowRemove={Boolean(config.color)}
-          triggerShowValue
-          value={colorValue}
-        />
-      </div>
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        label={t('widgets.common.labels.color')}
+        onChange={(next) => onChange(next as Partial<TopNConfig>)}
+        value={config.color}
+      />
     </>
   )
 }
@@ -776,6 +813,20 @@ function TrafficBarForm({
           </SelectContent>
         </Select>
       </div>
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        label={t('widgets.common.labels.colorPrimary')}
+        onChange={(next) => onChange(next as Partial<TrafficBarConfig>)}
+        value={config.color}
+      />
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        defaultColor={DEFAULT_WIDGET_CHART_COLOR_SECONDARY}
+        fieldKey="color_secondary"
+        label={t('widgets.common.labels.colorSecondary')}
+        onChange={(next) => onChange(next as Partial<TrafficBarConfig>)}
+        value={config.color_secondary}
+      />
     </>
   )
 }
@@ -804,6 +855,20 @@ function DiskIoForm({
         onChange={(v) => onChange({ ...config, hours: Number(v) })}
         t={t}
         value={String(config.hours ?? '24')}
+      />
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        label={t('widgets.common.labels.colorPrimary')}
+        onChange={(next) => onChange(next as Partial<DiskIoConfig>)}
+        value={config.color}
+      />
+      <WidgetColorField
+        config={config as Record<string, unknown>}
+        defaultColor={DEFAULT_WIDGET_CHART_COLOR_SECONDARY}
+        fieldKey="color_secondary"
+        label={t('widgets.common.labels.colorSecondary')}
+        onChange={(next) => onChange(next as Partial<DiskIoConfig>)}
+        value={config.color_secondary}
       />
     </>
   )

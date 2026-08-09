@@ -11,5 +11,6 @@ export function MetricCardSparkline({ points, accent }: MetricCardSparklineProps
     return <div className="h-full w-full" data-testid="metric-card-sparkline-empty" />
   }
 
-  return <SparklinePlot className="h-full w-full" color={`var(${accent})`} data={points} dataKey="v" />
+  // `accent` is a full CSS color (`#RRGGBB` or `var(--chart-1)`).
+  return <SparklinePlot className="h-full w-full" color={accent} data={points} dataKey="v" />
 }

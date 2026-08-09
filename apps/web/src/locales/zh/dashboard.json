@@ -217,7 +217,9 @@
         "layout": "布局",
         "layoutGrid": "网格",
         "layoutList": "列表",
-        "color": "条形颜色"
+        "color": "图表颜色",
+        "colorPrimary": "主色",
+        "colorSecondary": "辅色"
       },
       "placeholders": {
         "selectServer": "选择服务器",

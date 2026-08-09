@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { formatBytes } from '@/lib/utils'
+import { DEFAULT_WIDGET_CHART_COLOR, resolveWidgetColor } from '@/lib/widget-color'
 import { extractRecordMetric, formatChartTime, isNetworkMetric, METRIC_UNITS, metricLabel } from '@/lib/widget-helpers'
 import type { LineChartConfig } from '@/lib/widget-types'
 
@@ -47,6 +48,7 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
   const unit = METRIC_UNITS[metric] ?? ''
   const serverName = server?.name ?? t('metricCard.unknownServer')
   const isNetwork = isNetworkMetric(metric)
+  const seriesColor = resolveWidgetColor(config.color, DEFAULT_WIDGET_CHART_COLOR)
 
   if (isLoading) {
     return (
@@ -73,7 +75,7 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
             formatTooltipLabel={formatChartTime}
             formatValue={(value) => (isNetwork ? `${formatBytes(value)}/s` : `${value.toFixed(1)}${unit}`)}
             formatYAxisValue={isNetwork ? formatBytes : (value) => String(value)}
-            series={[{ dataKey: 'value', label, color: 'var(--chart-1)' }]}
+            series={[{ dataKey: 'value', label, color: seriesColor }]}
             timeLabel={t('chart_time')}
             yMarginLeft={isNetwork ? 68 : 52}
           />

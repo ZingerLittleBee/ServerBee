@@ -217,7 +217,9 @@
         "layout": "Layout",
         "layoutGrid": "Grid",
         "layoutList": "List",
-        "color": "Bar color"
+        "color": "Chart color",
+        "colorPrimary": "Primary color",
+        "colorSecondary": "Secondary color"
       },
       "placeholders": {
         "selectServer": "Select server",
