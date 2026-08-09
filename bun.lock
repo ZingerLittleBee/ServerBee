@@ -48,7 +48,7 @@
     },
     "apps/web": {
       "name": "@serverbee/web",
-      "version": "1.0.0-alpha.12",
+      "version": "1.0.0-beta.1",
       "dependencies": {
         "@base-ui/react": "^1.2.0",
         "@fontsource-variable/inter": "^5.2.8",
