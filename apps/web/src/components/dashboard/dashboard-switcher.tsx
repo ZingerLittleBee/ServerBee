@@ -1,4 +1,4 @@
-import { PencilIcon, PlusIcon, Star, TrashIcon } from 'lucide-react'
+import { MoreHorizontal, PencilIcon, PlusIcon, Star, TrashIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -13,6 +13,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateDashboard, useDeleteDashboard, useUpdateDashboard } from '@/hooks/use-dashboard'
@@ -126,60 +133,60 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
         </SelectContent>
       </Select>
 
-      {isAdmin && !isDefault && (
-        <Button
-          aria-label={t('set_default')}
-          onClick={handleSetDefault}
-          size="icon-sm"
-          title={t('set_default')}
-          variant="ghost"
-        >
-          <Star className="size-4" />
-        </Button>
-      )}
-
-      {isAdmin && current && (
-        <Button
-          aria-label={t('rename_dashboard')}
-          onClick={() => {
-            setRenameName(current.name)
-            setRenameDialogOpen(true)
-          }}
-          size="icon-sm"
-          title={t('rename_dashboard')}
-          variant="ghost"
-        >
-          <PencilIcon className="size-4" />
-        </Button>
-      )}
-
       {isAdmin && (
-        <Button
-          onClick={() => {
-            setNewName('')
-            setNewDialogOpen(true)
-          }}
-          size="sm"
-          variant="outline"
-        >
-          <PlusIcon className="mr-1 size-4" />
-          {t('new_dashboard')}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                aria-label={t('manage_dashboard')}
+                size="icon-sm"
+                title={t('manage_dashboard')}
+                variant="outline"
+              />
+            }
+          >
+            <MoreHorizontal className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44">
+            <DropdownMenuItem
+              onClick={() => {
+                setNewName('')
+                setNewDialogOpen(true)
+              }}
+            >
+              <PlusIcon />
+              {t('new_dashboard')}
+            </DropdownMenuItem>
+            {current && (
+              <DropdownMenuItem
+                onClick={() => {
+                  setRenameName(current.name)
+                  setRenameDialogOpen(true)
+                }}
+              >
+                <PencilIcon />
+                {t('rename_dashboard')}
+              </DropdownMenuItem>
+            )}
+            {!isDefault && (
+              <DropdownMenuItem onClick={handleSetDefault}>
+                <Star />
+                {t('set_default')}
+              </DropdownMenuItem>
+            )}
+            {!isDefault && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} variant="destructive">
+                  <TrashIcon />
+                  {t('delete_dashboard')}
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
 
-      {isAdmin && !isDefault && (
-        <Button
-          aria-label={t('delete_dashboard')}
-          onClick={() => setDeleteDialogOpen(true)}
-          size="icon-sm"
-          title={t('delete_dashboard')}
-          variant="ghost"
-        >
-          <TrashIcon className="size-4 text-destructive" />
-        </Button>
-      )}
-
-      {/* New dashboard dialog */}
       <Dialog onOpenChange={setNewDialogOpen} open={newDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -203,7 +210,6 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
         </DialogContent>
       </Dialog>
 
-      {/* Rename dashboard dialog */}
       <Dialog onOpenChange={setRenameDialogOpen} open={renameDialogOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -227,7 +233,6 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirmation dialog */}
       <AlertDialog onOpenChange={setDeleteDialogOpen} open={deleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

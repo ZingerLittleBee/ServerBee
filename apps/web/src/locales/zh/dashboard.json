@@ -30,6 +30,7 @@
   "lock_widget_position": "锁定组件位置",
   "unlock_widget_position": "解锁组件位置",
   "new_dashboard": "新建仪表盘",
+  "manage_dashboard": "管理仪表盘",
   "delete_dashboard": "删除仪表盘",
   "delete_dashboard_confirm": "确定要删除 \"{{name}}\" 吗？此操作不可撤销。",
   "select_dashboard": "选择仪表盘",
