@@ -266,8 +266,6 @@ export function TrafficPage() {
   return (
     <PageBody>
       <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
-        <h1 className="mb-6 font-bold text-2xl">{t('traffic_overview_title')}</h1>
-
         {hasOverviewData ? (
           <>
             {/* Stat cards */}

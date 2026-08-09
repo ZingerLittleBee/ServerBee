@@ -589,8 +589,6 @@ const FIXTURE_TRAFFIC_ROWS = [
 export function TrafficOverviewFixture() {
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
-      <h1 className="mb-6 font-bold text-2xl">Traffic Overview</h1>
-
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <TrafficStatCardStub label="Cycle Inbound" value="992 GB" />
         <TrafficStatCardStub label="Cycle Outbound" value="248 GB" />

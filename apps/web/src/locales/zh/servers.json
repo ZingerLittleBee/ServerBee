@@ -303,7 +303,6 @@
   "traffic_tab_cycle": "月度",
   "traffic_exceed_warning": "预计将超出限额 (~{{percent}}%)",
 
-  "traffic_overview_title": "流量总览",
   "traffic_cycle_inbound": "周期入站",
   "traffic_cycle_outbound": "周期出站",
   "traffic_highest_usage": "最高用量",

@@ -303,7 +303,6 @@
   "traffic_tab_cycle": "Monthly",
   "traffic_exceed_warning": "Predicted to exceed limit (~{{percent}}%)",
 
-  "traffic_overview_title": "Traffic overview",
   "traffic_cycle_inbound": "Cycle inbound",
   "traffic_cycle_outbound": "Cycle outbound",
   "traffic_highest_usage": "Highest usage",
