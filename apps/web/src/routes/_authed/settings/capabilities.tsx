@@ -3,6 +3,7 @@ import { type ColumnDef, getCoreRowModel, type Table, useReactTable } from '@tan
 import { Check, Minus, Search, ShieldAlert } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { PageBody } from '@/components/layout/page-body'
 import { TemporaryBadge } from '@/components/server/temporary-badge'
 import { DataTable } from '@/components/ui/data-table'
 import { Input } from '@/components/ui/input'
@@ -163,42 +164,44 @@ export function CapabilitiesPage() {
   })
 
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <p className="mb-6 min-w-0 text-muted-foreground text-sm">{t('capabilities.description')}</p>
+    <PageBody>
+      <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+        <p className="mb-6 min-w-0 text-muted-foreground text-sm">{t('capabilities.description')}</p>
 
-      <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
-          <Search
-            aria-hidden="true"
-            className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            autoComplete="off"
-            className="pl-9"
-            name="search"
-            onChange={(e) => navigate({ search: { q: e.target.value } })}
-            placeholder={t('capabilities.search')}
-            type="text"
-            value={search}
-          />
+        <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
+            <Search
+              aria-hidden="true"
+              className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              autoComplete="off"
+              className="pl-9"
+              name="search"
+              onChange={(e) => navigate({ search: { q: e.target.value } })}
+              placeholder={t('capabilities.search')}
+              type="text"
+              value={search}
+            />
+          </div>
+          <p className="text-muted-foreground text-sm sm:shrink-0">
+            {t('capabilities.summary', { total: servers.length, online: onlineCount })}
+          </p>
         </div>
-        <p className="text-muted-foreground text-sm sm:shrink-0">
-          {t('capabilities.summary', { total: servers.length, online: onlineCount })}
-        </p>
+
+        <CapabilitiesTableContent
+          isLoading={isLoading}
+          noResults={t('capabilities.no_servers')}
+          servers={servers}
+          table={table}
+        />
+
+        {filtered.length > 0 && search.length > 0 && (
+          <p className="mt-3 text-muted-foreground text-xs">
+            {t('capabilities.footer_showing', { filtered: filtered.length, total: servers.length })}
+          </p>
+        )}
       </div>
-
-      <CapabilitiesTableContent
-        isLoading={isLoading}
-        noResults={t('capabilities.no_servers')}
-        servers={servers}
-        table={table}
-      />
-
-      {filtered.length > 0 && search.length > 0 && (
-        <p className="mt-3 text-muted-foreground text-xs">
-          {t('capabilities.footer_showing', { filtered: filtered.length, total: servers.length })}
-        </p>
-      )}
-    </div>
+    </PageBody>
   )
 }

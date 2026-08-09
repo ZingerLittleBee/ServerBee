@@ -148,7 +148,7 @@ export function NetworkProbeTargetsTab({
 
   if (targetsLoading) {
     return (
-      <div className="max-w-4xl space-y-2 p-4">
+      <div className="max-w-4xl space-y-2">
         {Array.from({ length: 3 }, (_, i) => (
           <Skeleton className="h-10" key={`skel-${i.toString()}`} />
         ))}

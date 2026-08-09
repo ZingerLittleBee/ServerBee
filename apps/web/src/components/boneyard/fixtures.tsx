@@ -385,8 +385,8 @@ function RangeButtonsStub({ labels }: { labels: string[] }) {
 
 /**
  * Mirrors the loaded server detail layout shared by the public status detail
- * and the authed detail page (both render `ServerDetailContent` under a
- * back-link + title + meta header). `variant="admin"` adds the action row,
+ * and the authed detail page. The public variant includes its local back link;
+ * `variant="admin"` relies on the app breadcrumb and adds the action row,
  * agent version card, and the wider admin tab set.
  */
 export function ServerDetailFixture({ variant }: { variant: 'admin' | 'public' }) {
@@ -398,7 +398,7 @@ export function ServerDetailFixture({ variant }: { variant: 'admin' | 'public' }
   return (
     <div>
       <div className="mb-6">
-        <BackLinkStub />
+        {!isAdmin && <BackLinkStub />}
         {isAdmin ? (
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
             <div className="min-w-0 flex-1">
@@ -588,9 +588,7 @@ const FIXTURE_TRAFFIC_ROWS = [
 /** Mirrors the loaded layout of `_authed/traffic/index.tsx`. */
 export function TrafficOverviewFixture() {
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <h1 className="mb-6 font-bold text-2xl">Traffic Overview</h1>
-
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <TrafficStatCardStub label="Cycle Inbound" value="992 GB" />
         <TrafficStatCardStub label="Cycle Outbound" value="248 GB" />

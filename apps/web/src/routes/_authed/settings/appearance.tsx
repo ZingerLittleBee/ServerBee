@@ -4,6 +4,7 @@ import { Loader2, Upload } from 'lucide-react'
 import { type ChangeEvent, type FormEvent, useEffect, useReducer, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Input } from '@/components/ui/input'
@@ -192,7 +193,7 @@ function BrandSettingsSection() {
   }
 
   return (
-    <div className="rounded-lg border bg-card p-6">
+    <section>
       <h2 className="mb-1 font-semibold text-lg">{t('appearance.brand_settings')}</h2>
       <p className="mb-4 text-muted-foreground text-sm">{t('appearance.brand_description')}</p>
 
@@ -290,33 +291,32 @@ function BrandSettingsSection() {
           {mutation.isPending ? t('common:saving') : t('common:save')}
         </Button>
       </form>
-    </div>
+    </section>
   )
 }
 
 function WidgetModulesNotice() {
   const { t } = useTranslation('settings')
   return (
-    <div className="rounded-lg border bg-card p-6">
+    <section>
       <h2 className="mb-1 font-semibold text-lg">{t('appearance.theme_moved_title')}</h2>
       <p className="mb-4 text-muted-foreground text-sm">{t('appearance.theme_moved_description')}</p>
       <Link className={buttonVariants()} to="/settings/widgets">
         {t('appearance.theme_moved_cta')}
       </Link>
-    </div>
+    </section>
   )
 }
 
 export function AppearancePage() {
-  const { t } = useTranslation('settings')
-
   return (
-    <div>
-      <h1 className="mb-6 font-bold text-2xl">{t('appearance.title')}</h1>
-      <div className="max-w-3xl space-y-6">
-        <WidgetModulesNotice />
-        <BrandSettingsSection />
+    <PageBody>
+      <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+        <div className="w-full min-w-0 max-w-3xl space-y-8">
+          <WidgetModulesNotice />
+          <BrandSettingsSection />
+        </div>
       </div>
-    </div>
+    </PageBody>
   )
 }

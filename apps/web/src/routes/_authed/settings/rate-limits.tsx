@@ -4,6 +4,7 @@ import { RefreshCw, ShieldOff, Trash2 } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,140 +123,144 @@ function RateLimitsPage() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-muted-foreground text-sm">
-            {t('rate_limit.description', { minutes: data?.window_minutes ?? 15 })}
-          </p>
-          {data && (
-            <p className="text-muted-foreground text-xs">
-              {t('rate_limit.limits', {
-                login: data.login_max,
-                register: data.register_max,
-                minutes: data.window_minutes
-              })}
+    <PageBody>
+      <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-muted-foreground text-sm">
+              {t('rate_limit.description', { minutes: data?.window_minutes ?? 15 })}
             </p>
-          )}
+            {data && (
+              <p className="text-muted-foreground text-xs">
+                {t('rate_limit.limits', {
+                  login: data.login_max,
+                  register: data.register_max,
+                  minutes: data.window_minutes
+                })}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              disabled={isFetching}
+              onClick={() => {
+                refetch().catch(() => {
+                  // Refetch error surfaces via query state — non-critical here.
+                })
+              }}
+              size="sm"
+              variant="outline"
+            >
+              <RefreshCw className={isFetching ? 'mr-2 size-4 animate-spin' : 'mr-2 size-4'} />
+              {t('rate_limit.refresh')}
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    disabled={!data || data.entries.length === 0 || resetMutation.isPending}
+                    size="sm"
+                    variant="destructive"
+                  >
+                    <Trash2 className="mr-2 size-4" />
+                    {t('rate_limit.clear_all')}
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('rate_limit.clear_all_confirm_title')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('rate_limit.clear_all_confirm_description')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearAll}>{t('rate_limit.clear_all')}</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            disabled={isFetching}
-            onClick={() => {
-              refetch().catch(() => {
-                // Refetch error surfaces via query state — non-critical here.
-              })
-            }}
-            size="sm"
-            variant="outline"
-          >
-            <RefreshCw className={isFetching ? 'mr-2 size-4 animate-spin' : 'mr-2 size-4'} />
-            {t('rate_limit.refresh')}
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger
-              render={
-                <Button
-                  disabled={!data || data.entries.length === 0 || resetMutation.isPending}
-                  size="sm"
-                  variant="destructive"
-                >
-                  <Trash2 className="mr-2 size-4" />
-                  {t('rate_limit.clear_all')}
-                </Button>
-              }
-            />
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('rate_limit.clear_all_confirm_title')}</AlertDialogTitle>
-                <AlertDialogDescription>{t('rate_limit.clear_all_confirm_description')}</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                <AlertDialogAction onClick={handleClearAll}>{t('rate_limit.clear_all')}</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </div>
 
-      {data && data.entries.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-2 text-sm">
-          <Badge variant="secondary">{t('rate_limit.summary_total', { count: summary.total })}</Badge>
-          {summary.blocked > 0 && (
-            <Badge variant="destructive">{t('rate_limit.summary_blocked', { count: summary.blocked })}</Badge>
-          )}
-        </div>
-      )}
+        {data && data.entries.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2 text-sm">
+            <Badge variant="secondary">{t('rate_limit.summary_total', { count: summary.total })}</Badge>
+            {summary.blocked > 0 && (
+              <Badge variant="destructive">{t('rate_limit.summary_blocked', { count: summary.blocked })}</Badge>
+            )}
+          </div>
+        )}
 
-      {isLoading && (
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-      )}
+        {isLoading && (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        )}
 
-      {!isLoading && data && data.entries.length === 0 && (
-        <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground text-sm">
-          {t('rate_limit.empty')}
-        </div>
-      )}
+        {!isLoading && data && data.entries.length === 0 && (
+          <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground text-sm">
+            {t('rate_limit.empty')}
+          </div>
+        )}
 
-      {!isLoading && data && data.entries.length > 0 && (
-        <ScrollArea className="w-full rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('rate_limit.column_scope')}</TableHead>
-                <TableHead>{t('rate_limit.column_ip')}</TableHead>
-                <TableHead>{t('rate_limit.column_count')}</TableHead>
-                <TableHead>{t('rate_limit.column_window_start')}</TableHead>
-                <TableHead>{t('rate_limit.column_remaining')}</TableHead>
-                <TableHead>{t('rate_limit.column_status')}</TableHead>
-                <TableHead className="text-right">{t('rate_limit.column_actions')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.entries.map((entry) => (
-                <TableRow key={`${entry.scope}-${entry.ip}`}>
-                  <TableCell>
-                    <Badge variant={entry.scope === 'register' ? 'default' : 'outline'}>
-                      {entry.scope === 'register' ? t('rate_limit.scope_register') : t('rate_limit.scope_login')}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{entry.ip}</TableCell>
-                  <TableCell className="tabular-nums">
-                    {entry.count} / {entry.max}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{formatTimestamp(entry.window_start)}</TableCell>
-                  <TableCell className="text-xs tabular-nums">
-                    {formatSecondsRemaining(entry.seconds_remaining)}
-                  </TableCell>
-                  <TableCell>
-                    {entry.blocked ? (
-                      <Badge variant="destructive">{t('rate_limit.status_blocked')}</Badge>
-                    ) : (
-                      <Badge variant="secondary">{t('rate_limit.status_active')}</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      disabled={resetMutation.isPending}
-                      onClick={() => handleResetOne(entry)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      <ShieldOff className="mr-2 size-4" />
-                      {t('rate_limit.unblock')}
-                    </Button>
-                  </TableCell>
+        {!isLoading && data && data.entries.length > 0 && (
+          <ScrollArea className="w-full rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t('rate_limit.column_scope')}</TableHead>
+                  <TableHead>{t('rate_limit.column_ip')}</TableHead>
+                  <TableHead>{t('rate_limit.column_count')}</TableHead>
+                  <TableHead>{t('rate_limit.column_window_start')}</TableHead>
+                  <TableHead>{t('rate_limit.column_remaining')}</TableHead>
+                  <TableHead>{t('rate_limit.column_status')}</TableHead>
+                  <TableHead className="text-right">{t('rate_limit.column_actions')}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </ScrollArea>
-      )}
-    </div>
+              </TableHeader>
+              <TableBody>
+                {data.entries.map((entry) => (
+                  <TableRow key={`${entry.scope}-${entry.ip}`}>
+                    <TableCell>
+                      <Badge variant={entry.scope === 'register' ? 'default' : 'outline'}>
+                        {entry.scope === 'register' ? t('rate_limit.scope_register') : t('rate_limit.scope_login')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{entry.ip}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {entry.count} / {entry.max}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {formatTimestamp(entry.window_start)}
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      {formatSecondsRemaining(entry.seconds_remaining)}
+                    </TableCell>
+                    <TableCell>
+                      {entry.blocked ? (
+                        <Badge variant="destructive">{t('rate_limit.status_blocked')}</Badge>
+                      ) : (
+                        <Badge variant="secondary">{t('rate_limit.status_active')}</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        disabled={resetMutation.isPending}
+                        onClick={() => handleResetOne(entry)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <ShieldOff className="mr-2 size-4" />
+                        {t('rate_limit.unblock')}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        )}
+      </div>
+    </PageBody>
   )
 }

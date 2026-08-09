@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardEditorView } from '@/components/dashboard/dashboard-editor-view'
+import { PageBody } from '@/components/layout/page-body'
 import { useAuth } from '@/hooks/use-auth'
 import { useDashboard, useDashboards, useDefaultDashboard, useUpdateDashboard } from '@/hooks/use-dashboard'
 import { withMockServers } from '@/lib/dev-mock-servers'
@@ -65,7 +66,7 @@ export function DashboardPage() {
   }
 
   return (
-    <>
+    <PageBody>
       {/* The page has no visible title; without it the heading outline starts at
           the widget headings. */}
       <h1 className="sr-only">{t('nav_dashboard')}</h1>
@@ -80,6 +81,6 @@ export function DashboardPage() {
         onSelectDashboard={handleDashboardSelect}
         servers={servers}
       />
-    </>
+    </PageBody>
   )
 }

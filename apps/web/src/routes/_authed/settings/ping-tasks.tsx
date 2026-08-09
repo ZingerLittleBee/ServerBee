@@ -4,6 +4,7 @@ import { Activity, BarChart3, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,7 +66,7 @@ function PingTasksPage() {
   })
 
   return (
-    <div>
+    <PageBody>
       <div className="max-w-3xl space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="font-semibold text-lg">{t('ping.probe_tasks')}</h2>
@@ -209,6 +210,6 @@ function PingTasksPage() {
           </div>
         )}
       </div>
-    </div>
+    </PageBody>
   )
 }

@@ -5,6 +5,7 @@ import { Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -191,95 +192,97 @@ function AuditLogsPage() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex items-center justify-end gap-4">
-        <AlertDialog onOpenChange={setClearOpen} open={clearOpen}>
-          <AlertDialogTrigger
-            render={
-              <Button disabled={clearMutation.isPending || total === 0} size="sm" variant="destructive">
-                <Trash2 aria-hidden="true" className="mr-1.5 size-4" />
-                {t('audit.clear')}
-              </Button>
-            }
-          />
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t('audit.clear_confirm_title')}</AlertDialogTitle>
-              <AlertDialogDescription>{t('audit.clear_confirm_description')}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={clearMutation.isPending}
-                onClick={() => clearMutation.mutate()}
-                variant="destructive"
-              >
-                {t('audit.clear')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-        <div className="flex w-full flex-col gap-1 sm:w-56">
-          <label className="text-muted-foreground text-xs" htmlFor="audit-filter-action">
-            {t('audit.filter_action')}
-          </label>
-          <Select items={actionItems} onValueChange={handleActionChange} value={action || ALL_VALUE}>
-            <SelectTrigger className="w-full" id="audit-filter-action">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {actionItems.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex w-full flex-col gap-1 sm:w-56">
-          <label className="text-muted-foreground text-xs" htmlFor="audit-filter-user">
-            {t('audit.filter_user')}
-          </label>
-          <Select items={userItems} onValueChange={handleUserChange} value={user_id || ALL_VALUE}>
-            <SelectTrigger className="w-full" id="audit-filter-user">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {userItems.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="w-full min-w-0">
-        {isLoading && !data ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }, (_, i) => (
-              <Skeleton className="h-10 w-full" key={`skeleton-${i.toString()}`} />
-            ))}
+    <PageBody>
+      <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+          <div className="flex w-full flex-col gap-1 sm:w-56">
+            <label className="text-muted-foreground text-xs" htmlFor="audit-filter-action">
+              {t('audit.filter_action')}
+            </label>
+            <Select items={actionItems} onValueChange={handleActionChange} value={action || ALL_VALUE}>
+              <SelectTrigger className="w-full" id="audit-filter-action">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {actionItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        ) : (
-          <>
-            <DataTable noResults={t('audit.no_entries')} table={table} />
-            {totalPages > 1 && (
-              <>
-                <DataTablePagination table={table} />
-                <p className="mt-1 text-center text-muted-foreground text-xs">
-                  {t('audit.pagination', { total, page: page + 1, pages: totalPages })}
-                </p>
-              </>
-            )}
-          </>
-        )}
+
+          <div className="flex w-full flex-col gap-1 sm:w-56">
+            <label className="text-muted-foreground text-xs" htmlFor="audit-filter-user">
+              {t('audit.filter_user')}
+            </label>
+            <Select items={userItems} onValueChange={handleUserChange} value={user_id || ALL_VALUE}>
+              <SelectTrigger className="w-full" id="audit-filter-user">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {userItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex w-full justify-end sm:ml-auto sm:w-auto">
+            <AlertDialog onOpenChange={setClearOpen} open={clearOpen}>
+              <AlertDialogTrigger
+                render={
+                  <Button disabled={clearMutation.isPending || total === 0} size="sm" variant="destructive">
+                    <Trash2 aria-hidden="true" className="mr-1.5 size-4" />
+                    {t('audit.clear')}
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('audit.clear_confirm_title')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('audit.clear_confirm_description')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={clearMutation.isPending}
+                    onClick={() => clearMutation.mutate()}
+                    variant="destructive"
+                  >
+                    {t('audit.clear')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </div>
+
+        <div className="w-full min-w-0">
+          {isLoading && !data ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }, (_, i) => (
+                <Skeleton className="h-10 w-full" key={`skeleton-${i.toString()}`} />
+              ))}
+            </div>
+          ) : (
+            <>
+              <DataTable noResults={t('audit.no_entries')} table={table} />
+              {totalPages > 1 && (
+                <>
+                  <DataTablePagination table={table} />
+                  <p className="mt-1 text-center text-muted-foreground text-xs">
+                    {t('audit.pagination', { total, page: page + 1, pages: totalPages })}
+                  </p>
+                </>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </PageBody>
   )
 }

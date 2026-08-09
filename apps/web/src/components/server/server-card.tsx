@@ -20,7 +20,6 @@ import { NetworkSquareGrid } from './network-square-grid'
 import { PendingActionMenu } from './pending-action-menu'
 import { PendingEnrollmentSummary } from './pending-enrollment-summary'
 import { RingMetric } from './ring-metric'
-import { ServerCardActionMenu } from './server-card-action-menu'
 import { buildServerCardNetworkState } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
 import { deriveServerStatus } from './status-dot-utils'
@@ -121,15 +120,19 @@ const ServerCardInner = ({
         // fill the grid cell so a "Waiting for agent…" tile matches the height of
         // its data-rich siblings instead of leaving a short, mismatched gap.
         isPending && 'h-full',
-        // Offline cards drop their status colors and sit on a dimmer surface, but
-        // the text keeps its full-contrast tokens. Never dilute the copy with a
-        // translucent scrim — the StatusBadge label carries the offline meaning.
-        isOffline && 'bg-muted/40 grayscale'
+        // Offline: dim the surface and tint the ring with destructive so the
+        // card is scannable next to online tiles. Keep the StatusBadge (and
+        // title) outside any grayscale filter so the red offline pill stays
+        // saturated — that is the primary status cue.
+        isOffline && 'bg-muted/70 ring-destructive/35 dark:bg-muted/55 dark:ring-destructive/45'
       )}
     >
       <div className="flex items-center justify-between">
         <Link
-          className="flex items-center gap-1 truncate border-transparent border-b pb-px hover:border-current"
+          className={cn(
+            'flex items-center gap-1 truncate border-transparent border-b pb-px hover:border-current',
+            isOffline && 'text-muted-foreground'
+          )}
           params={{ id: server.id }}
           search={{ range: 'realtime' }}
           to="/servers/$id"
@@ -147,14 +150,12 @@ const ServerCardInner = ({
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
           <StatusBadge status={status} />
-          {isPending ? (
+          {isPending && (
             <PendingActionMenu
               outstandingOffer={server.agent_authority?.outstanding_offer ?? null}
               serverId={server.id}
               serverName={server.name}
             />
-          ) : (
-            <ServerCardActionMenu server={server} />
           )}
         </div>
       </div>
@@ -165,7 +166,7 @@ const ServerCardInner = ({
           <PendingEnrollmentSummary enrollment={server.agent_authority?.outstanding_offer} />
         </div>
       ) : (
-        <>
+        <div className={cn('flex min-w-0 flex-col gap-3', isOffline && 'grayscale')}>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
             <RingMetric color={getUtilizationRingColor(server.cpu)} label={t('col_cpu')} value={server.cpu}>
               {t('card_load')} <span className="font-medium text-foreground">{formatLoad(server.load1)}</span>
@@ -311,7 +312,7 @@ const ServerCardInner = ({
           </div>
 
           <TagChips tags={server.tags} />
-        </>
+        </div>
       )}
     </div>
   )

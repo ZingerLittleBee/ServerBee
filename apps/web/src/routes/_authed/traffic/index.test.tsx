@@ -81,7 +81,7 @@ describe('TrafficPage', () => {
     dailyState.data = []
     const { container } = await renderPage()
 
-    expect(screen.getByText('traffic_overview_title')).toBeInTheDocument()
+    expect(screen.queryByText('traffic_overview_title')).toBeNull()
     // The name legitimately appears in both the highest-usage stat card and
     // the ranking table row; scope the assertion to the table under test.
     const table = container.querySelector('table')

@@ -1,13 +1,14 @@
-import { PencilIcon, PlusIcon, SaveIcon, XIcon } from 'lucide-react'
+import { PlusIcon, SaveIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { SiteHeaderActions, SiteHeaderLeading } from '@/components/site-header'
 import { Button } from '@/components/ui/button'
 import type { WidgetInput } from '@/hooks/use-dashboard'
 import { useDashboardEditor } from '@/hooks/use-dashboard-editor'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import type { Dashboard, DashboardWithWidgets } from '@/lib/widget-types'
 import { DashboardGrid } from './dashboard-grid'
-import { DashboardSwitcher } from './dashboard-switcher'
+import { DashboardAdminMenu, DashboardSwitcher } from './dashboard-switcher'
 import { WidgetConfigDialog } from './widget-config-dialog'
 import { WidgetPicker, type WidgetPickerSelection } from './widget-picker'
 
@@ -177,22 +178,13 @@ function DashboardEditorViewContent({
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <DashboardSwitcher
-          currentId={activeDashboardId}
-          dashboards={dashboards}
-          isAdmin={isAdmin}
-          onSelect={handleDashboardSelect}
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && !editor.isEditing && isDashboardReady && (
-            <Button onClick={handleEdit} size="sm" variant="outline">
-              <PencilIcon className="mr-1 size-4" />
-              {t('edit')}
-            </Button>
-          )}
-          {editor.isEditing && (
+    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+      <SiteHeaderLeading>
+        <DashboardSwitcher currentId={activeDashboardId} dashboards={dashboards} onSelect={handleDashboardSelect} />
+      </SiteHeaderLeading>
+      <SiteHeaderActions>
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {editor.isEditing ? (
             <>
               <Button onClick={() => setPickerOpen(true)} size="sm" variant="outline">
                 <PlusIcon className="mr-1 size-4" />
@@ -207,9 +199,19 @@ function DashboardEditorViewContent({
                 {t('cancel')}
               </Button>
             </>
+          ) : (
+            isAdmin && (
+              <DashboardAdminMenu
+                canEdit={isDashboardReady}
+                currentId={activeDashboardId}
+                dashboards={dashboards}
+                onEdit={handleEdit}
+                onSelect={handleDashboardSelect}
+              />
+            )
           )}
         </div>
-      </div>
+      </SiteHeaderActions>
 
       {isDashboardReady && displayWidgets.length === 0 && !editor.isEditing && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">

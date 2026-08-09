@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import { SecurityAlertPresets } from '@/components/security/alert-presets'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
@@ -81,7 +82,7 @@ function AlertsPage() {
   })
 
   return (
-    <div>
+    <PageBody>
       <div className="max-w-4xl space-y-6">
         <SecurityAlertPresets />
 
@@ -120,6 +121,6 @@ function AlertsPage() {
           states={states}
         />
       </div>
-    </div>
+    </PageBody>
   )
 }

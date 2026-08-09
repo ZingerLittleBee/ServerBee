@@ -103,7 +103,7 @@ export function IpQualityCatalogTab({
 
   if (servicesLoading) {
     return (
-      <div className="max-w-4xl space-y-2 p-4">
+      <div className="max-w-4xl space-y-2">
         {Array.from({ length: 4 }, (_, i) => (
           <Skeleton className="h-10" key={`skel-${i.toString()}`} />
         ))}

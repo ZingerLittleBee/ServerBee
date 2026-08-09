@@ -83,7 +83,7 @@ describe('MetricAreaPlot', () => {
     expect(screen.getByTestId('x-axis')).toHaveAttribute('data-tick-mode', 'domain')
     expect(screen.getByTestId('x-axis')).toHaveAttribute('data-fade-on-hover', 'true')
     expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-show-date-pill', 'true')
-    expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-date-pill-label', '10:15')
+    expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-date-pill-label', '2026-08-03T10:15:00.000Z')
     expect(screen.getByRole('figure', { name: 'CPU usage' })).toHaveClass('min-w-0')
     expect(screen.getByRole('table', { name: 'CPU usage' })).toBeInTheDocument()
     expect(screen.getAllByRole('row')).toHaveLength(51)
@@ -140,5 +140,22 @@ describe('MetricAreaPlot', () => {
       expect(series).toHaveAttribute('data-curve', 'custom')
       expect(series).toHaveAttribute('data-fill-opacity', '0.3')
     }
+  })
+
+  it('formats the interactive date pill independently from suppressed axis ticks', () => {
+    render(
+      <MetricAreaPlot
+        ariaLabel="CPU usage"
+        className="h-full"
+        data={[{ timestamp: '2026-08-03T10:15:00.000Z', value: 14.4 }]}
+        formatTime={() => ''}
+        formatTooltipLabel={(time) => time.slice(11, 19)}
+        formatValue={(value) => `${value.toFixed(1)}%`}
+        series={[{ dataKey: 'value', label: 'CPU usage', color: 'blue' }]}
+        timeLabel="Time"
+      />
+    )
+
+    expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-date-pill-label', '10:15:00')
   })
 })

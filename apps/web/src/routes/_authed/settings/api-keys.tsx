@@ -4,6 +4,7 @@ import { Copy, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -97,7 +98,7 @@ function ApiKeysPage() {
   }
 
   return (
-    <div>
+    <PageBody>
       <div className="max-w-2xl space-y-6">
         <div className="space-y-3">
           <h2 className="font-semibold text-lg">{t('api_keys.create_new')}</h2>
@@ -220,6 +221,6 @@ function ApiKeysPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageBody>
   )
 }

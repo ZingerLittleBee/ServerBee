@@ -4,6 +4,7 @@ import { type FormEvent, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CustomServiceDialog } from '@/components/ip-quality/custom-service-dialog'
+import { PageBody } from '@/components/layout/page-body'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/hooks/use-auth'
@@ -132,68 +133,74 @@ export function IpQualitySettingsPage() {
   }
 
   return (
-    <div className="flex min-h-0 w-full min-w-0 max-w-[calc(100vw-1.5rem)] flex-1 flex-col overflow-hidden sm:max-w-full">
-      <Tabs
-        className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col"
-        onValueChange={(value) => navigate({ search: { tab: value } })}
-        value={activeTab}
-      >
-        <div className="flex w-full max-w-full flex-col items-stretch gap-3 sm:max-w-4xl sm:flex-row sm:items-center sm:justify-between">
-          <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="catalog">{t('settings_tab_catalog')}</TabsTrigger>
-            <TabsTrigger value="settings">{t('settings_tab_settings')}</TabsTrigger>
-          </TabsList>
-          {activeTab === 'catalog' && isAdmin && (
-            <Button className="w-full sm:w-auto" onClick={openAddDialog} size="sm" variant="outline">
-              <Plus className="size-4" />
-              {t('settings_add_custom')}
-            </Button>
-          )}
-        </div>
+    <PageBody className="flex-1">
+      <div className="flex min-h-0 w-full min-w-0 max-w-[calc(100vw-1.5rem)] flex-1 flex-col overflow-hidden sm:max-w-full">
+        <Tabs
+          className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col"
+          onValueChange={(value) => {
+            if (isIpQualityTab(value)) {
+              navigate({ search: { tab: value } })
+            }
+          }}
+          value={activeTab}
+        >
+          <div className="flex w-full max-w-full flex-col items-stretch gap-3 sm:max-w-4xl sm:flex-row sm:items-center sm:justify-between">
+            <TabsList className="w-full sm:w-auto">
+              <TabsTrigger value="catalog">{t('settings_tab_catalog')}</TabsTrigger>
+              <TabsTrigger value="settings">{t('settings_tab_settings')}</TabsTrigger>
+            </TabsList>
+            {activeTab === 'catalog' && isAdmin && (
+              <Button className="w-full sm:w-auto" onClick={openAddDialog} size="sm" variant="outline">
+                <Plus className="size-4" />
+                {t('settings_add_custom')}
+              </Button>
+            )}
+          </div>
 
-        {/* Tab 1: Service Catalog */}
-        <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="catalog">
-          <IpQualityCatalogTab
-            builtinServices={builtinServices}
-            customServices={customServices}
-            isAdmin={isAdmin}
-            onDelete={setDeleteServiceId}
-            onEdit={openEditDialog}
-            onToggleBuiltin={handleToggleBuiltin}
-            servicesLoading={servicesLoading}
-            updateServicePending={updateService.isPending}
-          />
-        </TabsContent>
+          {/* Tab 1: Service Catalog */}
+          <TabsContent className="flex min-h-0 flex-1 flex-col overflow-hidden" value="catalog">
+            <IpQualityCatalogTab
+              builtinServices={builtinServices}
+              customServices={customServices}
+              isAdmin={isAdmin}
+              onDelete={setDeleteServiceId}
+              onEdit={openEditDialog}
+              onToggleBuiltin={handleToggleBuiltin}
+              servicesLoading={servicesLoading}
+              updateServicePending={updateService.isPending}
+            />
+          </TabsContent>
 
-        {/* Tab 2: Settings */}
-        <TabsContent className="min-h-0 overflow-hidden" value="settings">
-          <IpQualitySettingsTab
-            defaultIntervalHours={intervalHours}
-            isAdmin={isAdmin}
-            onSubmit={handleSaveSettings}
-            updatePending={updateSetting.isPending}
-          />
-        </TabsContent>
-      </Tabs>
+          {/* Tab 2: Settings */}
+          <TabsContent className="min-h-0 overflow-hidden" value="settings">
+            <IpQualitySettingsTab
+              defaultIntervalHours={intervalHours}
+              isAdmin={isAdmin}
+              onSubmit={handleSaveSettings}
+              updatePending={updateSetting.isPending}
+            />
+          </TabsContent>
+        </Tabs>
 
-      {/* Create / Edit custom service dialog */}
-      <CustomServiceDialog
-        onOpenChange={(open) => {
-          setDialogOpen(open)
-          if (!open) {
-            setEditingService(null)
-          }
-        }}
-        open={dialogOpen}
-        service={editingService}
-      />
+        {/* Create / Edit custom service dialog */}
+        <CustomServiceDialog
+          onOpenChange={(open) => {
+            setDialogOpen(open)
+            if (!open) {
+              setEditingService(null)
+            }
+          }}
+          open={dialogOpen}
+          service={editingService}
+        />
 
-      <IpQualityDeleteDialog
-        onClose={() => setDeleteServiceId(null)}
-        onConfirm={handleDeleteConfirm}
-        open={deleteServiceId !== null}
-        pending={deleteService.isPending}
-      />
-    </div>
+        <IpQualityDeleteDialog
+          onClose={() => setDeleteServiceId(null)}
+          onConfirm={handleDeleteConfirm}
+          open={deleteServiceId !== null}
+          pending={deleteService.isPending}
+        />
+      </div>
+    </PageBody>
   )
 }

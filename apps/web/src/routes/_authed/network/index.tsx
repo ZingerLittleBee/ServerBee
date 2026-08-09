@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { PageBody } from '@/components/layout/page-body'
 import { NetworkOverviewContent } from '@/components/status/network-overview-content'
 import { useNetworkOverview } from '@/hooks/use-network-api'
 
@@ -15,12 +16,14 @@ function NetworkOverviewPage() {
   const navigate = Route.useNavigate()
 
   return (
-    <NetworkOverviewContent
-      data={summaries}
-      isLoading={isLoading}
-      onSearchChange={(q) => navigate({ search: { q } })}
-      search={search}
-      variant="admin"
-    />
+    <PageBody>
+      <NetworkOverviewContent
+        data={summaries}
+        isLoading={isLoading}
+        onSearchChange={(q) => navigate({ search: { q } })}
+        search={search}
+        variant="admin"
+      />
+    </PageBody>
   )
 }

@@ -480,7 +480,6 @@ export function DashboardGrid({
             <div className="relative" data-widget-id={widget.id} key={widget.id}>
               {isEditing && (
                 <EditOverlay
-                  forceVisible
                   isStatic={isWidgetStatic(widget.config_json)}
                   onDelete={() => onWidgetDelete(widget.id)}
                   onEdit={() => onWidgetEdit(widget.id)}
@@ -510,7 +509,7 @@ export function DashboardGrid({
           className={cn('dashboard-grid', isEditing && 'dashboard-grid--editing')}
           compactor={compactor}
           dragConfig={{ enabled: isEditing, bounded: false, threshold: 3 }}
-          gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: MARGIN }}
+          gridConfig={{ cols: COLS, containerPadding: [0, 0], rowHeight: ROW_HEIGHT, margin: MARGIN }}
           key={cancelEpoch}
           layout={renderedLayout}
           onDrag={(next) => updateLiveLayout(next)}
@@ -558,13 +557,11 @@ export function DashboardGrid({
 }
 
 function EditOverlay({
-  forceVisible,
   isStatic,
   onEdit,
   onDelete,
   onToggleStatic
 }: {
-  forceVisible?: boolean
   isStatic?: boolean
   onDelete: () => void
   onEdit: () => void
@@ -574,12 +571,9 @@ function EditOverlay({
   const toggleStaticLabel = isStatic ? t('unlock_widget_position') : t('lock_widget_position')
 
   return (
-    <div
-      className={cn(
-        'absolute top-1 right-1 z-10 flex gap-1 transition-opacity [div:hover>&]:opacity-100',
-        forceVisible ? 'opacity-100' : 'opacity-0'
-      )}
-    >
+    // Always visible in edit mode (not hover-only). Elevated chip so actions
+    // stay scannable over busy chart widgets without competing as primary CTAs.
+    <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 rounded-lg bg-background p-1 shadow-md ring-1 ring-foreground/10">
       {onToggleStatic && (
         <Button
           aria-label={toggleStaticLabel}
@@ -590,7 +584,7 @@ function EditOverlay({
           }}
           size="icon-sm"
           title={toggleStaticLabel}
-          variant="outline"
+          variant="secondary"
         >
           {isStatic ? <LockIcon className="size-3.5" /> : <UnlockIcon className="size-3.5" />}
         </Button>
@@ -604,7 +598,7 @@ function EditOverlay({
         }}
         size="icon-sm"
         title={t('configure_widget')}
-        variant="outline"
+        variant="secondary"
       >
         <PencilIcon className="size-3.5" />
       </Button>

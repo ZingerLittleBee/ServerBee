@@ -30,6 +30,7 @@
   "lock_widget_position": "Lock widget position",
   "unlock_widget_position": "Unlock widget position",
   "new_dashboard": "New Dashboard",
+  "manage_dashboard": "Manage dashboard",
   "delete_dashboard": "Delete Dashboard",
   "delete_dashboard_confirm": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
   "select_dashboard": "Select dashboard",

@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { PageBody } from '@/components/layout/page-body'
 import { SecurityEventDetailDrawer } from '@/components/security/event-detail-drawer'
 import { SecurityEventTable } from '@/components/security/event-table'
 import { SecurityKpiCards } from '@/components/security/kpi-cards'
+import { type SecurityRangeKey, SecurityRangeToggle } from '@/components/security/range-toggle'
 import { SecurityTimelineChart } from '@/components/security/timeline-chart'
 import { Button } from '@/components/ui/button'
 import { useSecurityEvents } from '@/hooks/use-security-events'
@@ -14,7 +16,7 @@ export const Route = createFileRoute('/_authed/security/$serverId')({
   component: SecurityServerPage
 })
 
-type RangeKey = '24h' | '7d' | '30d'
+type RangeKey = SecurityRangeKey
 
 const RANGE_HOURS: Record<RangeKey, number> = {
   '24h': 24,
@@ -48,46 +50,42 @@ function SecurityServerPage() {
   }, [eventsQuery.data])
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <Button
-            className="mb-2 -ml-2"
-            nativeButton={false}
-            render={<Link to="/security" />}
-            size="sm"
-            variant="ghost"
-          >
-            {t('per_server.back', { defaultValue: '← Back to Security' })}
-          </Button>
-          <h1 className="truncate font-semibold text-2xl">{server?.name ?? serverId}</h1>
-          <p className="text-muted-foreground text-sm">
-            {t('per_server.subtitle', { defaultValue: 'Security events' })}
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-1 rounded-md border bg-card p-1">
-          {(['24h', '7d', '30d'] as const).map((key) => (
-            <Button key={key} onClick={() => setRange(key)} size="sm" variant={range === key ? 'default' : 'ghost'}>
-              {t(`range.${key}`, { defaultValue: key })}
+    <PageBody>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <Button
+              className="mb-2 -ml-2"
+              nativeButton={false}
+              render={<Link to="/security" />}
+              size="sm"
+              variant="ghost"
+            >
+              {t('per_server.back', { defaultValue: '← Back to Security' })}
             </Button>
-          ))}
+            <h1 className="truncate font-semibold text-2xl">{server?.name ?? serverId}</h1>
+            <p className="text-muted-foreground text-sm">
+              {t('per_server.subtitle', { defaultValue: 'Security events' })}
+            </p>
+          </div>
+          <SecurityRangeToggle className="shrink-0" onValueChange={setRange} value={range} />
         </div>
+
+        <SecurityKpiCards serverId={serverId} since={since} />
+
+        <SecurityTimelineChart events={events} isLoading={eventsQuery.isLoading} />
+
+        <SecurityEventTable
+          events={events}
+          hasNextPage={eventsQuery.hasNextPage}
+          isFetchingNextPage={eventsQuery.isFetchingNextPage}
+          isLoading={eventsQuery.isLoading}
+          onFetchNextPage={() => eventsQuery.fetchNextPage()}
+          onRowClick={(event) => setActiveEvent(event)}
+        />
+
+        <SecurityEventDetailDrawer event={activeEvent} onOpenChange={(open) => !open && setActiveEvent(null)} />
       </div>
-
-      <SecurityKpiCards serverId={serverId} since={since} />
-
-      <SecurityTimelineChart events={events} isLoading={eventsQuery.isLoading} />
-
-      <SecurityEventTable
-        events={events}
-        hasNextPage={eventsQuery.hasNextPage}
-        isFetchingNextPage={eventsQuery.isFetchingNextPage}
-        isLoading={eventsQuery.isLoading}
-        onFetchNextPage={() => eventsQuery.fetchNextPage()}
-        onRowClick={(event) => setActiveEvent(event)}
-      />
-
-      <SecurityEventDetailDrawer event={activeEvent} onOpenChange={(open) => !open && setActiveEvent(null)} />
-    </div>
+    </PageBody>
   )
 }

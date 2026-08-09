@@ -212,6 +212,20 @@ describe('WidgetRenderer', () => {
     expect(renderCounts.gauge).toBe(2)
   })
 
+  it('does not remount content when only is_static toggles', () => {
+    const unlocked = makeWidget('line-chart', { metric: 'cpu', server_id: 's1' })
+    const locked = makeWidget('line-chart', { metric: 'cpu', server_id: 's1', is_static: true })
+    const server = makeServer({ id: 's1', name: 'Primary', cpu: 20 })
+
+    const { rerender } = render(<WidgetRenderer servers={[server]} widget={unlocked} />)
+
+    expect(renderCounts['line-chart']).toBe(1)
+
+    rerender(<WidgetRenderer servers={[server]} widget={locked} />)
+
+    expect(renderCounts['line-chart']).toBe(1)
+  })
+
   describe('module widgets', () => {
     beforeEach(() => {
       useWidgetRegistry.setState({ modules: new Map(), failures: new Map() })

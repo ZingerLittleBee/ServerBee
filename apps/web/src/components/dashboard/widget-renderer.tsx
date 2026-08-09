@@ -133,12 +133,30 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
   }
 }
 
+/**
+ * `is_static` only toggles grid drag/resize. Including it in remount keys or
+ * memo deps remounts charts every lock/unlock click. Strip it for content
+ * identity while keeping real config edits as remount/reset triggers.
+ */
+function contentConfigFingerprint(configJson: string): string {
+  try {
+    const config = JSON.parse(configJson) as Record<string, unknown>
+    if (!Object.hasOwn(config, 'is_static')) {
+      return configJson
+    }
+    const { is_static: _isStatic, ...rest } = config
+    return JSON.stringify(rest)
+  } catch {
+    return configJson
+  }
+}
+
 function areWidgetContentPropsEqual(prev: WidgetRendererProps, next: WidgetRendererProps): boolean {
   if (
     prev.widget.id !== next.widget.id ||
     prev.widget.widget_type !== next.widget.widget_type ||
-    prev.widget.config_json !== next.widget.config_json ||
-    prev.widget.title !== next.widget.title
+    prev.widget.title !== next.widget.title ||
+    contentConfigFingerprint(prev.widget.config_json) !== contentConfigFingerprint(next.widget.config_json)
   ) {
     return false
   }
@@ -150,7 +168,10 @@ const MemoizedWidgetContent = memo(WidgetContent, areWidgetContentPropsEqual)
 
 export function WidgetRenderer({ widget, servers }: WidgetRendererProps) {
   return (
-    <WidgetErrorBoundary fallback={<ErrorFallback />} key={`${widget.id}-${widget.config_json}`}>
+    <WidgetErrorBoundary
+      fallback={<ErrorFallback />}
+      key={`${widget.id}-${widget.widget_type}-${widget.title ?? ''}-${contentConfigFingerprint(widget.config_json)}`}
+    >
       <MemoizedWidgetContent servers={servers} widget={widget} />
     </WidgetErrorBoundary>
   )

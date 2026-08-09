@@ -4,6 +4,7 @@ import { Smartphone, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import { MobilePairDialog } from '@/components/mobile-pair-dialog'
 import {
   AlertDialog,
@@ -98,9 +99,9 @@ function MobileDevicesPage() {
   }
 
   return (
-    <div>
+    <PageBody>
       <div className="max-w-2xl space-y-6">
-        <div className="rounded-lg border bg-card p-6">
+        <section>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h2 className="font-semibold text-lg">{t('mobile.devices')}</h2>
@@ -184,8 +185,8 @@ function MobileDevicesPage() {
               ))}
             </div>
           )}
-        </div>
+        </section>
       </div>
-    </div>
+    </PageBody>
   )
 }

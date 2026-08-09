@@ -2,6 +2,7 @@ import type { Table } from '@tanstack/react-table'
 import { LayoutGrid, ListChecks, Plus, Search, Table2, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
+import { SiteHeaderActions } from '@/components/site-header'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -137,37 +138,37 @@ export function ServersPageToolbar({
     </Button>
   )
 
-  const rowActions = (
-    <>
-      {viewToggle}
-      {cleanupButton}
-      {batchDeleteButton}
-      {addServerButton}
-    </>
-  )
-
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-      <div className="relative min-w-0 flex-1 sm:max-w-sm">
-        <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          aria-label={t('servers:search_placeholder')}
-          autoComplete="off"
-          className="pl-9"
-          name="search"
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={t('servers:search_placeholder')}
-          type="text"
-          value={search}
-        />
+    <SiteHeaderActions>
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        {/* Search may shrink; icon actions stay fixed so they never wrap under or get squeezed. */}
+        <div className="relative w-40 min-w-0 max-w-[40vw] shrink sm:w-48">
+          <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label={t('servers:search_placeholder')}
+            autoComplete="off"
+            className="h-8 min-w-0 pl-9"
+            name="search"
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder={t('servers:search_placeholder')}
+            type="text"
+            value={search}
+          />
+        </div>
+        {viewMode === 'table' && (
+          <DataTableToolbar
+            className="hidden min-w-0 shrink p-0 md:flex md:w-auto"
+            table={table}
+            trailingActions={selectModeButton}
+          />
+        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {viewToggle}
+          {cleanupButton}
+          {batchDeleteButton}
+          {addServerButton}
+        </div>
       </div>
-      {viewMode === 'table' ? (
-        <DataTableToolbar className="w-full p-0 sm:w-auto sm:flex-1" table={table} trailingActions={selectModeButton}>
-          {rowActions}
-        </DataTableToolbar>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:justify-end">{rowActions}</div>
-      )}
-    </div>
+    </SiteHeaderActions>
   )
 }

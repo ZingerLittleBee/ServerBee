@@ -8,7 +8,7 @@ function TerminalPageShell() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="mt-3 flex-1" />
         </div>

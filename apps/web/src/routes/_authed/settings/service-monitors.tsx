@@ -4,6 +4,7 @@ import { Eye, Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { type FormEvent, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { PageBody } from '@/components/layout/page-body'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -780,150 +781,157 @@ export function ServiceMonitorsPage() {
   }
 
   return (
-    <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] overflow-hidden sm:max-w-full">
-      <div className="w-full min-w-0 max-w-full lg:max-w-5xl">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="min-w-0 text-muted-foreground text-sm">{t('page.description')}</p>
-          <Button className="w-full shrink-0 sm:w-auto" onClick={openCreate} size="sm">
-            <Plus className="size-4" />
-            {tCommon('actions.addMonitor')}
-          </Button>
-        </div>
-
-        {isLoading && (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }, (_, i) => (
-              <Skeleton className="h-12" key={`skel-${i.toString()}`} />
-            ))}
-          </div>
-        )}
-
-        {!isLoading && (!monitors || monitors.length === 0) && (
-          <div className="rounded-lg border bg-card p-12 text-center">
-            <p className="text-muted-foreground">{t('empty.noMonitors')}</p>
-            <Button className="mt-4" onClick={openCreate} size="sm" variant="outline">
+    <PageBody>
+      <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+        <div className="w-full min-w-0 max-w-full lg:max-w-5xl">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="min-w-0 text-muted-foreground text-sm">{t('page.description')}</p>
+            <Button className="w-full shrink-0 sm:w-auto" onClick={openCreate} size="sm">
               <Plus className="size-4" />
-              {t('empty.createFirst')}
+              {tCommon('actions.addMonitor')}
             </Button>
           </div>
-        )}
 
-        {monitors && monitors.length > 0 && (
-          <div className="min-w-0 overflow-hidden rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('table.status')}</TableHead>
-                  <TableHead>{t('table.name')}</TableHead>
-                  <TableHead>{t('table.type')}</TableHead>
-                  <TableHead>{t('table.target')}</TableHead>
-                  <TableHead>{t('table.interval')}</TableHead>
-                  <TableHead>{t('table.enabled')}</TableHead>
-                  <TableHead>{t('table.lastChecked')}</TableHead>
-                  <TableHead className="text-right">{t('table.actions')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {monitors.map((monitor) => (
-                  <TableRow key={monitor.id}>
-                    <TableCell>
-                      <StatusDot status={monitor.last_status} t={t} />
-                    </TableCell>
-                    <TableCell className="font-medium">{monitor.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{TYPE_LABELS[monitor.monitor_type] ?? monitor.monitor_type}</Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate font-mono text-xs">{monitor.target}</TableCell>
-                    <TableCell>{monitor.interval}s</TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={monitor.enabled}
-                        onCheckedChange={(checked) => toggleMutation.mutate({ id: monitor.id, enabled: checked })}
-                        size="sm"
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">
-                      {monitor.last_checked_at ? formatDateTime(monitor.last_checked_at) : tCommon('status.never')}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Link params={{ id: monitor.id }} to="/service-monitors/$id">
-                          <Button aria-label={t('aria.viewDetails')} size="sm" variant="ghost">
-                            <Eye className="size-3.5" />
-                          </Button>
-                        </Link>
-                        <Button
-                          aria-label={t('aria.triggerCheck')}
-                          disabled={triggerMutation.isPending}
-                          onClick={() => triggerMutation.mutate(monitor.id)}
-                          size="sm"
-                          variant="ghost"
-                        >
-                          <Play className="size-3.5" />
-                        </Button>
-                        <Button aria-label={t('aria.edit')} onClick={() => openEdit(monitor)} size="sm" variant="ghost">
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <AlertDialog
-                          onOpenChange={(open) => {
-                            if (!open) {
-                              setDeleteId(null)
-                            }
-                          }}
-                          open={deleteId === monitor.id}
-                        >
-                          <AlertDialogTrigger
-                            onClick={() => setDeleteId(monitor.id)}
-                            render={
-                              <Button
-                                aria-label={`${t('aria.deleteMonitor')} ${monitor.name}`}
-                                disabled={deleteMutation.isPending}
-                                size="sm"
-                                variant="ghost"
-                              />
-                            }
-                          >
-                            <Trash2 className="size-3.5 text-destructive" />
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>{tCommon('confirm_title')}</AlertDialogTitle>
-                              <AlertDialogDescription>{tCommon('confirm_delete_message')}</AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => {
-                                  deleteMutation.mutate(monitor.id)
-                                  setDeleteId(null)
-                                }}
-                                variant="destructive"
-                              >
-                                {tCommon('delete')}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </TableCell>
+          {isLoading && (
+            <div className="space-y-2">
+              {Array.from({ length: 3 }, (_, i) => (
+                <Skeleton className="h-12" key={`skel-${i.toString()}`} />
+              ))}
+            </div>
+          )}
+
+          {!isLoading && (!monitors || monitors.length === 0) && (
+            <div className="rounded-lg border bg-card p-12 text-center">
+              <p className="text-muted-foreground">{t('empty.noMonitors')}</p>
+              <Button className="mt-4" onClick={openCreate} size="sm" variant="outline">
+                <Plus className="size-4" />
+                {t('empty.createFirst')}
+              </Button>
+            </div>
+          )}
+
+          {monitors && monitors.length > 0 && (
+            <div className="min-w-0 overflow-hidden rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('table.status')}</TableHead>
+                    <TableHead>{t('table.name')}</TableHead>
+                    <TableHead>{t('table.type')}</TableHead>
+                    <TableHead>{t('table.target')}</TableHead>
+                    <TableHead>{t('table.interval')}</TableHead>
+                    <TableHead>{t('table.enabled')}</TableHead>
+                    <TableHead>{t('table.lastChecked')}</TableHead>
+                    <TableHead className="text-right">{t('table.actions')}</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
+                </TableHeader>
+                <TableBody>
+                  {monitors.map((monitor) => (
+                    <TableRow key={monitor.id}>
+                      <TableCell>
+                        <StatusDot status={monitor.last_status} t={t} />
+                      </TableCell>
+                      <TableCell className="font-medium">{monitor.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{TYPE_LABELS[monitor.monitor_type] ?? monitor.monitor_type}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate font-mono text-xs">{monitor.target}</TableCell>
+                      <TableCell>{monitor.interval}s</TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={monitor.enabled}
+                          onCheckedChange={(checked) => toggleMutation.mutate({ id: monitor.id, enabled: checked })}
+                          size="sm"
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        {monitor.last_checked_at ? formatDateTime(monitor.last_checked_at) : tCommon('status.never')}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Link params={{ id: monitor.id }} to="/service-monitors/$id">
+                            <Button aria-label={t('aria.viewDetails')} size="sm" variant="ghost">
+                              <Eye className="size-3.5" />
+                            </Button>
+                          </Link>
+                          <Button
+                            aria-label={t('aria.triggerCheck')}
+                            disabled={triggerMutation.isPending}
+                            onClick={() => triggerMutation.mutate(monitor.id)}
+                            size="sm"
+                            variant="ghost"
+                          >
+                            <Play className="size-3.5" />
+                          </Button>
+                          <Button
+                            aria-label={t('aria.edit')}
+                            onClick={() => openEdit(monitor)}
+                            size="sm"
+                            variant="ghost"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <AlertDialog
+                            onOpenChange={(open) => {
+                              if (!open) {
+                                setDeleteId(null)
+                              }
+                            }}
+                            open={deleteId === monitor.id}
+                          >
+                            <AlertDialogTrigger
+                              onClick={() => setDeleteId(monitor.id)}
+                              render={
+                                <Button
+                                  aria-label={`${t('aria.deleteMonitor')} ${monitor.name}`}
+                                  disabled={deleteMutation.isPending}
+                                  size="sm"
+                                  variant="ghost"
+                                />
+                              }
+                            >
+                              <Trash2 className="size-3.5 text-destructive" />
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>{tCommon('confirm_title')}</AlertDialogTitle>
+                                <AlertDialogDescription>{tCommon('confirm_delete_message')}</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{tCommon('cancel')}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => {
+                                    deleteMutation.mutate(monitor.id)
+                                    setDeleteId(null)
+                                  }}
+                                  variant="destructive"
+                                >
+                                  {tCommon('delete')}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
 
-      <MonitorFormDialog
-        editing={editing}
-        onClose={() => {
-          setDialogOpen(false)
-          setEditing(null)
-        }}
-        onSubmit={handleFormSubmit}
-        open={dialogOpen}
-        pending={createMutation.isPending || updateMutation.isPending}
-      />
-    </div>
+        <MonitorFormDialog
+          editing={editing}
+          onClose={() => {
+            setDialogOpen(false)
+            setEditing(null)
+          }}
+          onSubmit={handleFormSubmit}
+          open={dialogOpen}
+          pending={createMutation.isPending || updateMutation.isPending}
+        />
+      </div>
+    </PageBody>
   )
 }

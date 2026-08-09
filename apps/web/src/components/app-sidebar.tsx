@@ -108,7 +108,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar variant="inset" {...props}>
-      <SidebarHeader>
+      {/* pb-0 + first group pt-1: avoid stacking default p-2 on header and group
+          (16px) which leaves a large gap under the logo. */}
+      <SidebarHeader className="pb-0">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton render={<Link to="/" />} size="lg">
@@ -119,8 +121,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>{t('nav_dashboard')}</SidebarGroupLabel>
+        <SidebarGroup className="pt-1">
           <SidebarMenu>
             {monitorItems.map((item) => {
               const isActive = matchRoute({ to: item.to, fuzzy: item.to === '/servers' })

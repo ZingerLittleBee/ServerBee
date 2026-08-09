@@ -66,6 +66,7 @@ export function MetricAreaPlot({
 }: MetricAreaPlotProps) {
   const accessibleRows = useMemo(() => sampleChartRows(data), [data])
   const formatXAxisValue = useCallback((date: Date) => formatTime(date.toISOString()), [formatTime])
+  const formatDatePillValue = useCallback((date: Date) => formatTooltipLabel(date.toISOString()), [formatTooltipLabel])
   const tooltipRows = useCallback(
     (point: Record<string, unknown>): TooltipRow[] =>
       series.map((item) => ({
@@ -99,7 +100,7 @@ export function MetricAreaPlot({
             content={({ point }) => (
               <TooltipContent rows={tooltipRows(point)} title={formatTooltipLabel(String(point[timeKey]))} />
             )}
-            formatDatePill={formatXAxisValue}
+            formatDatePill={formatDatePillValue}
           />
           {series.map((item) => (
             <Area

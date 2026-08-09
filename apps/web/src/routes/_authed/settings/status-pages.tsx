@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { PageBody } from '@/components/layout/page-body'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useServerList } from '@/lib/server-catalog'
 import { StatusPageConfigForm } from './status-page-config-form'
@@ -28,7 +29,7 @@ function StatusPagesManagement() {
   const { data: servers } = useServerList()
 
   return (
-    <div>
+    <PageBody>
       <Tabs
         className="max-w-5xl"
         onValueChange={(value) => {
@@ -56,6 +57,6 @@ function StatusPagesManagement() {
           <StatusPageMaintenanceTab servers={servers ?? []} />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageBody>
   )
 }

@@ -1,15 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { lazy, Suspense } from 'react'
 import { ServerDetailSkeleton } from '@/components/boneyard/page-skeletons'
+import { PageBody } from '@/components/layout/page-body'
 import { parseServerDetailSearch } from '@/lib/server-detail-nav'
 
 const LazyServerDetailPage = lazy(() => import('./$id-page').then((m) => ({ default: m.ServerDetailPage })))
 
 function ServerDetailPageShell() {
   return (
-    <Suspense fallback={<ServerDetailSkeleton />}>
-      <LazyServerDetailPage />
-    </Suspense>
+    <PageBody>
+      <Suspense fallback={<ServerDetailSkeleton />}>
+        <LazyServerDetailPage />
+      </Suspense>
+    </PageBody>
   )
 }
 

@@ -248,13 +248,6 @@ export function NetworkOverviewContent({
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="font-bold text-2xl">{t('overview_title')}</h1>
-        <p className="text-muted-foreground text-sm">
-          {onlineServers} / {totalServers} {t('online_servers').toLowerCase()}
-        </p>
-      </div>
-
       {totalServers > 0 && (
         <div className="mb-6 grid gap-4 sm:grid-cols-3">
           <StatCard icon={Server} label={t('total_servers')} value={totalServers} />

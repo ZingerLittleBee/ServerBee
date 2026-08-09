@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SiteHeader, SiteHeaderActionsProvider } from '@/components/site-header'
 import type { ServerCostInsights } from '@/lib/api-schema'
 
 const REGEX_DETAIL_EXPIRED = /detail_expired/
@@ -182,7 +183,26 @@ vi.mock('@/stores/upgrade-jobs-store', () => ({
   useUpgradeJobsStore: () => undefined
 }))
 
+vi.mock('@/components/ui/separator', () => ({
+  Separator: () => <span aria-hidden="true" />
+}))
+
+vi.mock('@/components/ui/sidebar', () => ({
+  SidebarTrigger: () => <button type="button">Menu</button>
+}))
+
 const { ServerDetailPage } = await import('./$id-page')
+
+function renderDetailPage() {
+  return render(
+    <SiteHeaderActionsProvider>
+      <SiteHeader>
+        <span>breadcrumb</span>
+      </SiteHeader>
+      <ServerDetailPage />
+    </SiteHeaderActionsProvider>
+  )
+}
 
 describe('ServerDetailPage', () => {
   beforeEach(() => {
@@ -220,7 +240,7 @@ describe('ServerDetailPage', () => {
 
   it('renders the generated server-detail skeleton while the server query loads', () => {
     mockUseServer.mockReturnValue({ data: undefined, isLoading: true })
-    const { container } = render(<ServerDetailPage />)
+    const { container } = renderDetailPage()
 
     const skeleton = container.querySelector('[data-boneyard="server-detail"]')
     expect(skeleton).not.toBeNull()
@@ -229,16 +249,18 @@ describe('ServerDetailPage', () => {
   })
 
   it('keeps bottom padding on the page container', () => {
-    const { container } = render(<ServerDetailPage />)
+    renderDetailPage()
 
-    expect(container.firstElementChild).toHaveClass('pb-6')
-    expect(container.querySelector('[data-boneyard]')).toBeNull()
+    const page = screen.getByRole('heading', { name: 'test-server' }).closest('.pb-6')
+    expect(page).not.toBeNull()
+    expect(page?.querySelector('[data-boneyard]')).toBeNull()
+    expect(screen.queryByText('detail_back')).not.toBeInTheDocument()
   })
 
   it('passes latest agent version into the version section', () => {
-    const { container } = render(<ServerDetailPage />)
+    renderDetailPage()
 
-    expect(container).toHaveTextContent('1.3.0')
+    expect(screen.getByTestId('agent-version-section')).toHaveTextContent('1.3.0')
   })
 
   it('uses the status-history appearance for the uptime timeline', () => {
@@ -246,32 +268,22 @@ describe('ServerDetailPage', () => {
       data: [{ date: '2026-04-14', downtime_incidents: 0, online_minutes: 1440, total_minutes: 1440 }]
     })
 
-    render(<ServerDetailPage />)
+    renderDetailPage()
 
     expect(screen.getByTestId('uptime-timeline')).toHaveAttribute('data-appearance', 'status-history')
     expect(screen.getByTestId('uptime-timeline')).toHaveAttribute('data-height', '34')
   })
 
-  it('places the upgrade card in its own full-width header row, after the actions in tab order', () => {
-    mockUseUptimeDaily.mockReturnValue({
-      data: [{ date: '2026-04-14', total: 100, up: 100 }]
-    })
+  it('renders server actions in the site header titlebar', () => {
+    renderDetailPage()
 
-    render(<ServerDetailPage />)
-
-    const agentMeta = screen.getByText('detail_agent_label')
-    const upgradeCard = screen.getByTestId('agent-version-section')
-    const editButton = screen.getByText('detail_edit')
-    const headerGrid = upgradeCard.parentElement?.parentElement
-
-    expect(upgradeCard.parentElement).toHaveClass('sm:col-span-2')
-    expect(headerGrid?.children[0]).toContainElement(agentMeta)
-    expect(headerGrid?.children[1]).toContainElement(editButton)
-    expect(headerGrid?.children[2]).toContainElement(upgradeCard)
+    const editButton = screen.getByRole('button', { name: 'detail_edit' })
+    expect(screen.getByRole('banner')).toContainElement(editButton)
+    expect(screen.getByTestId('agent-version-section')).toBeInTheDocument()
   })
 
   it('shows Agent re-enrollment action for an admin', () => {
-    render(<ServerDetailPage />)
+    renderDetailPage()
 
     expect(screen.getByText('Agent re-enrollment')).toBeInTheDocument()
   })
@@ -332,7 +344,7 @@ describe('ServerDetailPage', () => {
       } satisfies ServerCostInsights
     })
 
-    render(<ServerDetailPage />)
+    renderDetailPage()
 
     expect(screen.getByText('cost_advisory_expired_billing')).toBeInTheDocument()
     expect(screen.getByText(REGEX_EDIT_CYCLE_MONTHLY)).toBeInTheDocument()
@@ -381,7 +393,7 @@ describe('ServerDetailPage', () => {
       } satisfies ServerCostInsights
     })
 
-    render(<ServerDetailPage />)
+    renderDetailPage()
 
     expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
     expect(screen.getByText('cost_invalid_missing_billing_cycle')).toBeInTheDocument()

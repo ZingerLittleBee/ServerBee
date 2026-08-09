@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SiteHeader, SiteHeaderActionsProvider } from '@/components/site-header'
 import type { Dashboard, DashboardWithWidgets } from '@/lib/widget-types'
 import { DashboardEditorView } from './dashboard-editor-view'
 
@@ -26,7 +27,22 @@ vi.mock('./dashboard-switcher', () => ({
         switch-dashboard
       </button>
     </div>
-  )
+  ),
+  DashboardAdminMenu: ({
+    canEdit,
+    onEdit
+  }: {
+    canEdit: boolean
+    currentId: string
+    dashboards: unknown[]
+    onEdit: () => void
+    onSelect: (id: string) => void
+  }) =>
+    canEdit ? (
+      <button onClick={onEdit} type="button">
+        edit
+      </button>
+    ) : null
 }))
 
 vi.mock('./dashboard-grid', () => ({
@@ -108,6 +124,25 @@ vi.mock('./widget-config-dialog', () => ({
     ) : null
 }))
 
+vi.mock('@/components/ui/separator', () => ({
+  Separator: () => <span aria-hidden="true" />
+}))
+
+vi.mock('@/components/ui/sidebar', () => ({
+  SidebarTrigger: () => <button type="button">Menu</button>
+}))
+
+function renderEditor(ui: ReactNode) {
+  return render(
+    <SiteHeaderActionsProvider>
+      <SiteHeader>
+        <span>header</span>
+      </SiteHeader>
+      {ui}
+    </SiteHeaderActionsProvider>
+  )
+}
+
 const dashboards: Dashboard[] = [
   {
     id: 'dash-1',
@@ -173,7 +208,7 @@ describe('DashboardEditorView', () => {
   it('saves committed layout changes from the editor draft', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
 
-    render(
+    renderEditor(
       <DashboardEditorView
         activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
@@ -208,7 +243,7 @@ describe('DashboardEditorView', () => {
   })
 
   it('cancel restores server widgets after deleting from the draft', () => {
-    render(
+    renderEditor(
       <DashboardEditorView
         activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
@@ -236,7 +271,7 @@ describe('DashboardEditorView', () => {
   it('adds a widget through the picker and config flow using the editor hook draft', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
 
-    render(
+    renderEditor(
       <DashboardEditorView
         activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
@@ -285,7 +320,7 @@ describe('DashboardEditorView', () => {
   })
 
   it('shows the add widget action in the top toolbar only while editing', () => {
-    render(
+    renderEditor(
       <DashboardEditorView
         activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
@@ -308,7 +343,7 @@ describe('DashboardEditorView', () => {
   it('updates an existing widget through the edit flow and saves the changed payload', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
 
-    render(
+    renderEditor(
       <DashboardEditorView
         activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
@@ -347,7 +382,7 @@ describe('DashboardEditorView', () => {
   })
 
   it('resets edit and dialog state when the dashboard id changes', () => {
-    const { rerender } = render(
+    const { rerender } = renderEditor(
       <DashboardEditorView
         activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
@@ -366,16 +401,21 @@ describe('DashboardEditorView', () => {
     expect(screen.getByTestId('widget-config-dialog')).toBeInTheDocument()
 
     rerender(
-      <DashboardEditorView
-        activeDashboardId={secondaryDashboard.id}
-        dashboard={secondaryDashboard}
-        dashboards={dashboards}
-        isAdmin
-        isSaving={false}
-        onSave={vi.fn().mockResolvedValue(undefined)}
-        onSelectDashboard={vi.fn()}
-        servers={[]}
-      />
+      <SiteHeaderActionsProvider>
+        <SiteHeader>
+          <span>header</span>
+        </SiteHeader>
+        <DashboardEditorView
+          activeDashboardId={secondaryDashboard.id}
+          dashboard={secondaryDashboard}
+          dashboards={dashboards}
+          isAdmin
+          isSaving={false}
+          onSave={vi.fn().mockResolvedValue(undefined)}
+          onSelectDashboard={vi.fn()}
+          servers={[]}
+        />
+      </SiteHeaderActionsProvider>
     )
 
     expect(screen.queryByRole('button', { name: 'save' })).not.toBeInTheDocument()
@@ -393,7 +433,7 @@ describe('DashboardEditorView', () => {
       expect(screen.queryByTestId('widget-config-dialog')).not.toBeInTheDocument()
     })
 
-    render(
+    renderEditor(
       <DashboardEditorView
         activeDashboardId={primaryDashboard.id}
         dashboard={primaryDashboard}
@@ -416,7 +456,7 @@ describe('DashboardEditorView', () => {
   })
 
   it('keeps the selected dashboard id while the next dashboard is still loading', () => {
-    render(
+    renderEditor(
       <DashboardEditorView
         activeDashboardId="dash-2"
         dashboard={undefined}

@@ -160,10 +160,8 @@
   "cleanup_success_other": "Cleaned up {{count}} servers",
   "cleanup_none": "No unconnected servers to clean up",
 
-  "detail_back": "Back to dashboard",
   "detail_edit": "Edit",
   "detail_agent_reenrollment": "Agent re-enrollment",
-  "card_actions": "Server actions",
   "detail_terminal": "Terminal",
   "detail_files": "Files",
   "detail_docker": "Docker",
@@ -304,7 +302,6 @@
   "traffic_tab_cycle": "Monthly",
   "traffic_exceed_warning": "Predicted to exceed limit (~{{percent}}%)",
 
-  "traffic_overview_title": "Traffic overview",
   "traffic_cycle_inbound": "Cycle inbound",
   "traffic_cycle_outbound": "Cycle outbound",
   "traffic_highest_usage": "Highest usage",
