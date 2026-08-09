@@ -44,12 +44,13 @@ export function widgetsToLayout(widgets: DashboardWidget[]): Layout {
       h = Math.min(h, maxH)
     }
 
-    // Aspect-square widgets persist as w_coarse === h_coarse. If historical data
-    // somehow has them out of sync (or grid_w not at a legal tier), snap here so
-    // the cell renders square on first load. Next user drag/resize writes back.
+    // Aspect-square widgets persist as w_coarse === h_coarse, with *width* as
+    // the tier key. Prefer w over max(w, h): a previous bug re-quantized the
+    // pixel-square fine height into coarse h, which inflated grid_h and would
+    // keep growing cells if we still snapped to max(w, h) on load.
     const sizing = WIDGET_TYPE_MAP.get(widget.widget_type)?.sizing
     if (sizing?.kind === 'aspect-square') {
-      const tier = nearestTier(Math.max(w, h), sizing.tiers)
+      const tier = nearestTier(w, sizing.tiers)
       w = tier
       h = tier
     }

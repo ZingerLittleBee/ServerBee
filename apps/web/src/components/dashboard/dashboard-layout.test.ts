@@ -50,12 +50,13 @@ const widgets: DashboardWidget[] = [
 
 describe('widgetsToLayout', () => {
   describe('aspect-square clamp', () => {
-    it('snaps a non-square gauge to the nearest tier (uses max of w/h)', () => {
-      // grid_w=3, grid_h=5 → max=5 → nearest tier in [2,3,4,5,6] is 5
+    it('snaps a non-square gauge to the nearest tier using width only', () => {
+      // grid_w=3, grid_h=5 → tier follows w=3 (not max(w,h)=5) so a corrupted
+      // tall fine-height never upgrades the cell on load.
       const widget = makeWidget({ grid_w: 3, grid_h: 5 })
       const [item] = widgetsToLayout([widget])
-      expect(item.w).toBe(5)
-      expect(item.h).toBe(5)
+      expect(item.w).toBe(3)
+      expect(item.h).toBe(3)
     })
 
     it('preserves a gauge already at a legal tier', () => {
