@@ -56,6 +56,7 @@ vi.mock('@/components/charts/bar-chart', () => ({
     xDataKey?: string
   }) => (
     <div
+      data-chart-data={JSON.stringify(data)}
       data-margin-left={margin?.left ?? ''}
       data-orientation={orientation}
       data-rows={data.length}
@@ -70,8 +71,21 @@ vi.mock('@/components/charts/bar-chart', () => ({
 }))
 
 vi.mock('@/components/charts/bar', () => ({
-  Bar: ({ dataKey, fill, lineCap }: { dataKey: string; fill?: string; lineCap?: number }) => (
-    <div data-fill={fill} data-key={dataKey} data-line-cap={lineCap} data-testid="bar-series" />
+  Bar: ({
+    dataKey,
+    fill,
+    lineCap
+  }: {
+    dataKey: string
+    fill?: string | ((point: Record<string, unknown>, index: number) => string)
+    lineCap?: number
+  }) => (
+    <div
+      data-fill-kind={typeof fill === 'function' ? 'resolver' : 'static'}
+      data-key={dataKey}
+      data-line-cap={lineCap}
+      data-testid="bar-series"
+    />
   )
 }))
 
@@ -152,7 +166,8 @@ describe('TopNWidget', () => {
     expect(screen.queryByTestId('bar-y-axis')).not.toBeInTheDocument()
 
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-key', 'value')
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', 'var(--chart-1)')
+    // Per-rank palette via fill resolver (CHART_COLORS), not a single chart-1.
+    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill-kind', 'resolver')
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-line-cap', '5')
     expect(screen.getByTestId('bar-value-axis')).toBeInTheDocument()
 
@@ -162,6 +177,32 @@ describe('TopNWidget', () => {
     expect(rows[1]).toHaveTextContent('90.0%')
     expect(rows[2]).toHaveTextContent('Mid')
     expect(rows[3]).toHaveTextContent('Low')
+  })
+
+  it('assigns distinct series colors by rank order', () => {
+    render(
+      <TopNWidget
+        config={{ metric: 'cpu', count: 3, sort: 'desc' }}
+        servers={[
+          makeServer('a', { cpu: 10, name: 'Low' }),
+          makeServer('b', { cpu: 90, name: 'High' }),
+          makeServer('c', { cpu: 50, name: 'Mid' })
+        ]}
+      />
+    )
+
+    const chartData = JSON.parse(screen.getByTestId('bar-chart').getAttribute('data-chart-data') ?? '[]') as {
+      color: string
+      id: string
+      name: string
+    }[]
+
+    expect(chartData.map((row) => row.name)).toEqual(['High', 'Mid', 'Low'])
+    expect(chartData.map((row) => row.color)).toEqual([
+      'var(--chart-series-1)',
+      'var(--chart-series-2)',
+      'var(--chart-series-3)'
+    ])
   })
 
   it('shows an empty state when no online servers are available', () => {

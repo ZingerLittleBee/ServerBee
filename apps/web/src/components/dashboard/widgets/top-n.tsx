@@ -8,6 +8,7 @@ import { useChart, useChartStable } from '@/components/charts/chart-context'
 import { Grid } from '@/components/charts/grid'
 import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
 import { TooltipContent, type TooltipRow } from '@/components/charts/tooltip/tooltip-content'
+import { CHART_COLORS } from '@/lib/chart-colors'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
@@ -19,6 +20,7 @@ interface TopNWidgetProps {
 }
 
 interface TopNRow {
+  color: string
   id: string
   name: string
   value: number
@@ -40,6 +42,29 @@ const LABEL_INSET_PX = 8
 const MIN_INNER_LABEL_WIDTH_PX = 56
 
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
+
+/**
+ * Series fills whose OKLCH lightness sits above ~0.73 (amber-500, lime-500).
+ * White label text fails contrast on those; use near-black instead (better-colors
+ * light-bg → dark text rule).
+ */
+const LIGHT_BAR_FILLS = new Set<string>(['var(--chart-series-4)', 'var(--chart-series-11)'])
+
+function rankColor(rankIndex: number): string {
+  return CHART_COLORS[rankIndex % CHART_COLORS.length] ?? CHART_COLORS[0]
+}
+
+function labelClassForBar(color: string, inside: boolean): string {
+  if (!inside) {
+    return 'text-foreground'
+  }
+  if (LIGHT_BAR_FILLS.has(color)) {
+    return 'text-zinc-950'
+  }
+  // Mid-chroma series blues/reds/violets (L ≈ 0.58–0.72) take white with a
+  // soft shadow so thin glyphs stay crisp on the fill.
+  return 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.5)]'
+}
 
 function formatValue(metric: string, value: number): string {
   if (metric === 'bandwidth' || metric === 'network' || metric === 'disk_io') {
@@ -66,6 +91,7 @@ function chartHeightForCount(count: number): number {
 }
 
 interface TopNBarLabelsProps {
+  getColor: (id: string) => string
   getName: (id: string) => string
 }
 
@@ -74,7 +100,7 @@ interface TopNBarLabelsProps {
  * post-overlay child of `BarChart` so it can read band geometry from context
  * without reserving a separate category axis.
  */
-function TopNBarLabels({ getName }: TopNBarLabelsProps) {
+function TopNBarLabels({ getColor, getName }: TopNBarLabelsProps) {
   const { containerRef } = useChartStable()
   const [mounted, setMounted] = useState(false)
   const { barScale, bandWidth, barXAccessor, data, margin, yScale, hoveredBarIndex } = useChart()
@@ -96,8 +122,10 @@ function TopNBarLabels({ getName }: TopNBarLabelsProps) {
       const barWidthPx = Math.max(0, (yScale(value) ?? 0) - zeroX)
       const inside = barWidthPx >= MIN_INNER_LABEL_WIDTH_PX
       const bandY = barScale(id) ?? 0
+      const color = getColor(id)
       return {
         barWidthPx,
+        color,
         id,
         index,
         inside,
@@ -106,7 +134,7 @@ function TopNBarLabels({ getName }: TopNBarLabelsProps) {
         bandHeight: bandWidth
       }
     })
-  }, [barScale, bandWidth, barXAccessor, data, getName, margin.top, yScale])
+  }, [barScale, bandWidth, barXAccessor, data, getColor, getName, margin.top, yScale])
 
   if (!(mounted && container)) {
     return null
@@ -135,10 +163,7 @@ function TopNBarLabels({ getName }: TopNBarLabelsProps) {
             <span
               className={cn(
                 'truncate font-medium text-xs transition-opacity duration-150',
-                // chart-1 is a mid-chroma blue in both themes — white reads on the
-                // fill. Outside the bar, fall back to foreground so names stay
-                // legible on the card surface when the value is tiny.
-                item.inside ? 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.5)]' : 'text-foreground',
+                labelClassForBar(item.color, item.inside),
                 isHovered ? 'opacity-100' : 'opacity-90'
               )}
             >
@@ -172,16 +197,24 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
 
     withMetric.sort((a, b) => (sort === 'desc' ? b.value - a.value : a.value - b.value))
 
-    return withMetric.slice(0, count)
+    // Color by rank (not server id) so #1 always lands on series-1 and the
+    // palette reshuffles when the ranking changes — categorical variety
+    // without implying a metric severity scale.
+    return withMetric.slice(0, count).map((row, rankIndex) => ({
+      ...row,
+      color: rankColor(rankIndex)
+    }))
   }, [servers, metric, count, sort])
 
   const nameById = useMemo(() => new Map(ranked.map((row) => [row.id, row.name])), [ranked])
+  const colorById = useMemo(() => new Map(ranked.map((row) => [row.id, row.color])), [ranked])
 
   const chartData = useMemo(
     // Band scale range is [0, height] (SVG y grows downward), so the first
     // domain entry paints at the top — keep rank order as-is (#1 first).
     () =>
       ranked.map((row) => ({
+        color: row.color,
         id: row.id,
         name: row.name,
         value: row.value
@@ -197,6 +230,11 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
   }, [metric])
 
   const getName = useCallback((id: string) => nameById.get(id) ?? id, [nameById])
+  const getColor = useCallback((id: string) => colorById.get(id) ?? rankColor(0), [colorById])
+  const resolveBarFill = useCallback(
+    (point: Record<string, unknown>) => (typeof point.color === 'string' ? point.color : rankColor(0)),
+    []
+  )
   const formatValueTick = useCallback((value: number) => formatAxisValue(metric, value), [metric])
   const tooltipRows = useCallback(
     (point: Record<string, unknown>): TooltipRow[] => {
@@ -204,7 +242,8 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         return []
       }
-      return [{ color: 'var(--chart-1)', label: metricName, value: formatValue(metric, value) }]
+      const color = typeof point.color === 'string' ? point.color : rankColor(0)
+      return [{ color, label: metricName, value: formatValue(metric, value) }]
     },
     [metric, metricName]
   )
@@ -246,8 +285,8 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
                   content={({ point }) => <TooltipContent rows={tooltipRows(point)} title={tooltipTitle(point)} />}
                   showDatePill={false}
                 />
-                <Bar dataKey="value" fill="var(--chart-1)" lineCap={BAR_CORNER_RADIUS} />
-                <TopNBarLabels getName={getName} />
+                <Bar dataKey="value" fill={resolveBarFill} lineCap={BAR_CORNER_RADIUS} />
+                <TopNBarLabels getColor={getColor} getName={getName} />
               </BarChart>
             </div>
 

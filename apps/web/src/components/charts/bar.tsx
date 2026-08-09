@@ -43,6 +43,8 @@ function barDepthPerspectiveRise(
   return barDepthAndRise(absOffset, naturalHeight, maxDepth).perspectiveRise
 }
 
+export type BarFill = string | ((point: Record<string, unknown>, index: number) => string)
+
 export interface BarProps {
   /** Whether to animate the bars. Default: true */
   animate?: boolean
@@ -52,8 +54,12 @@ export interface BarProps {
   dataKey: string
   /** Opacity when not hovered (when another bar is hovered). Default: 0.3 */
   fadedOpacity?: number
-  /** Fill color for the bar. Can be a color, gradient url, or pattern url. Default: var(--chart-line-primary) */
-  fill?: string
+  /**
+   * Fill color for the bar. A solid color / gradient / pattern url, or a
+   * per-datum resolver for categorical palettes (e.g. ranked top-n bars).
+   * Default: var(--chart-line-primary)
+   */
+  fill?: BarFill
   /** Gap between grouped bars in pixels. Default: 4 */
   groupGap?: number
   /** Line cap style for bar ends: "round", "butt", or a number for custom radius. Default: "round" */
@@ -349,6 +355,7 @@ const BarInner = memo(function BarInner({
 
         // Use categoryValue as key since it's the unique identifier from data
         const barKey = `bar-${dataKey}-${categoryValue}`
+        const resolvedFill = typeof fill === 'function' ? fill(d, i) : fill
 
         // Apply rounded corners:
         // - For non-stacked: always apply
@@ -364,7 +371,7 @@ const BarInner = memo(function BarInner({
               animationType={animationType}
               enterTransition={enterTransition}
               fadedOpacity={fadedOpacity}
-              fill={fill}
+              fill={resolvedFill}
               height={barHeight}
               index={i}
               innerHeight={innerHeight}
@@ -385,7 +392,7 @@ const BarInner = memo(function BarInner({
         // Static bar after animation completes
         return (
           <rect
-            fill={fill}
+            fill={resolvedFill}
             height={barHeight}
             key={barKey}
             opacity={isFaded ? fadedOpacity : 1}
