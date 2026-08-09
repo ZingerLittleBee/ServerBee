@@ -198,12 +198,8 @@ describe('TopNWidget', () => {
     }[]
 
     expect(chartData.map((row) => row.name)).toEqual(['High', 'Mid', 'Low'])
-    // Softened categorical fills (series hue mixed into the card surface).
-    expect(chartData.map((row) => row.color)).toEqual([
-      'color-mix(in oklch, var(--chart-series-1) 42%, var(--card))',
-      'color-mix(in oklch, var(--chart-series-2) 42%, var(--card))',
-      'color-mix(in oklch, var(--chart-series-3) 42%, var(--card))'
-    ])
+    // Main theme chart palette (same tokens as MetricsChart / other plots).
+    expect(chartData.map((row) => row.color)).toEqual(['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)'])
   })
 
   it('shows an empty state when no online servers are available', () => {

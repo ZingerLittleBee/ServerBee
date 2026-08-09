@@ -8,7 +8,6 @@ import { useChart, useChartStable } from '@/components/charts/chart-context'
 import { Grid } from '@/components/charts/grid'
 import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
 import { TooltipContent, type TooltipRow } from '@/components/charts/tooltip/tooltip-content'
-import { CHART_COLORS } from '@/lib/chart-colors'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
@@ -44,27 +43,31 @@ const MIN_INNER_LABEL_WIDTH_PX = 56
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
 
 /**
- * How much of the raw series hue remains after softening. Full 500-level
- * series colors are intentionally loud for multi-line charts; top-n bars sit
- * as large fills on a card and need a calmer mix (better-colors: lower chroma
- * emphasis for non-primary surfaces).
+ * Main app chart palette (`--chart-1`…`5` from the theme). Same tokens as
+ * MetricsChart / other dashboard plots — calmer than the multi-series
+ * `--chart-series-*` set used for network latency legends.
  */
-const RANK_COLOR_SERIES_MIX = 42
+const TOP_N_CHART_COLORS = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)'
+] as const
 
 function rankColor(rankIndex: number): string {
-  const series = CHART_COLORS[rankIndex % CHART_COLORS.length] ?? CHART_COLORS[0]
-  // Mix toward the card so light mode yields soft pastels and dark mode yields
-  // deeper, less neon fills — hue stays categorical, intensity drops.
-  return `color-mix(in oklch, ${series} ${RANK_COLOR_SERIES_MIX}%, var(--card))`
+  return TOP_N_CHART_COLORS[rankIndex % TOP_N_CHART_COLORS.length] ?? TOP_N_CHART_COLORS[0]
 }
 
-function labelClassForBar(_color: string, inside: boolean): string {
+function labelClassForBar(color: string, inside: boolean): string {
   if (!inside) {
     return 'text-foreground'
   }
-  // Softened fills land mid-light in light mode and mid-dark in dark mode;
-  // theme-aware near-black / near-white keeps names readable on both.
-  return 'text-zinc-950 dark:text-zinc-50'
+  // chart-3 is the light amber/gold (L ≈ 0.8 light / 0.77 dark) — white fails.
+  if (color === 'var(--chart-3)') {
+    return 'text-zinc-950'
+  }
+  return 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.5)]'
 }
 
 function formatValue(metric: string, value: number): string {
