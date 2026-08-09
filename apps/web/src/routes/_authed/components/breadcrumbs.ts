@@ -46,7 +46,7 @@ export function buildBreadcrumbs(
   translate: (key: string) => string,
   serverDetailName?: string
 ): BreadcrumbEntry[] {
-  // Dashboard owns the title bar via SiteHeaderActions (switcher + edit controls);
+  // Dashboard owns the title bar (leading switcher + trailing edit controls);
   // keep the crumb list empty so the header does not also render "Dashboard".
   if (pathname === '/') {
     return []

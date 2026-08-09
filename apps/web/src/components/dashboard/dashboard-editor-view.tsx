@@ -1,7 +1,7 @@
 import { PencilIcon, PlusIcon, SaveIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SiteHeaderActions } from '@/components/site-header'
+import { SiteHeaderActions, SiteHeaderLeading } from '@/components/site-header'
 import { Button } from '@/components/ui/button'
 import type { WidgetInput } from '@/hooks/use-dashboard'
 import { useDashboardEditor } from '@/hooks/use-dashboard-editor'
@@ -179,14 +179,16 @@ function DashboardEditorViewContent({
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+      <SiteHeaderLeading>
+        <DashboardSwitcher
+          currentId={activeDashboardId}
+          dashboards={dashboards}
+          isAdmin={isAdmin}
+          onSelect={handleDashboardSelect}
+        />
+      </SiteHeaderLeading>
       <SiteHeaderActions>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-          <DashboardSwitcher
-            currentId={activeDashboardId}
-            dashboards={dashboards}
-            isAdmin={isAdmin}
-            onSelect={handleDashboardSelect}
-          />
           {isAdmin && !editor.isEditing && isDashboardReady && (
             <Button onClick={handleEdit} size="sm" variant="outline">
               <PencilIcon className="mr-1 size-4" />
