@@ -82,6 +82,12 @@ jobs:
       - name: Check frontend formatting and lint
         run: bun x ultracite check
 
+      - name: Validate installer upgrade rollback
+        run: |
+          dash -n deploy/install.sh deploy/test-install-upgrade.sh
+          dash deploy/test-install-upgrade.sh
+          shellcheck --shell=dash --severity=warning deploy/install.sh deploy/test-install-upgrade.sh
+
       - name: Test Rust workspace
         run: cargo test --workspace
 

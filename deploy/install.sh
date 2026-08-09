@@ -63,6 +63,8 @@ RESOLVED_VERSION=""
 REQUESTED_VERSION=""
 RELEASE_CHANNEL="${SERVERBEE_CHANNEL:-stable}"
 CLI_REFRESHED=""
+UPGRADE_HEALTH_ATTEMPTS=30
+UPGRADE_STABILITY_CHECKS=10
 
 # ─── Agent capability toggles ────────────────────────────────────────────────
 # Keys MUST match the CapabilityKey strings in crates/common/src/constants.rs.
@@ -1359,7 +1361,10 @@ prompt_agent_capabilities() {
 download_verified() {
     local url dest filename version sums want got
     url="$1"; dest="$2"; filename="$3"; version="$4"
-    curl -fsSL -o "$dest" "$url" || error "Download failed: $url"
+    curl -fsSL -o "$dest" "$url" || {
+        rm -f "$dest"
+        error "Download failed: $url"
+    }
 
     sums=$(curl -fsSL "https://github.com/${REPO}/releases/download/${version}/sha256sums.txt" 2>/dev/null || true)
     if [ -z "$sums" ]; then
@@ -1401,9 +1406,16 @@ svc_action() {
 
 svc_is_active() {
     case "$INIT" in
-        systemd) systemctl is-active "serverbee-$1" 2>/dev/null || echo inactive ;;
+        systemd) systemctl is-active --quiet "serverbee-$1" 2>/dev/null && echo active || echo inactive ;;
         openrc)  rc-service "serverbee-$1" status >/dev/null 2>&1 && echo active || echo inactive ;;
         *)       echo unknown ;;
+    esac
+}
+
+svc_restart_count() {
+    case "$INIT" in
+        systemd) systemctl show "serverbee-$1" --property=NRestarts --value 2>/dev/null || true ;;
+        *)       : ;;
     esac
 }
 
@@ -2646,21 +2658,125 @@ upgrade_component() {
     info "serverbee-${component} upgraded to ${latest_version}"
 }
 
+probe_upgrade_candidate() {
+    local component candidate expected reported
+    component="$1"; candidate="$2"; expected="${3#v}"
+
+    # Agent releases expose a side-effect-free version probe before loading
+    # configuration or opening network connections. Server candidates are
+    # validated by the signed checksum manifest and service stability check.
+    [ "$component" = agent ] || return 0
+    reported=$("$candidate" --serverbee-upgrade-probe 2>/dev/null) || return 1
+    [ "${reported#v}" = "$expected" ]
+}
+
+wait_for_upgrade_stability() {
+    local component attempt stable baseline_restarts current_restarts state
+    component="$1"
+    attempt=0
+    stable=0
+    baseline_restarts=$(svc_restart_count "$component")
+
+    while [ "$attempt" -lt "$UPGRADE_HEALTH_ATTEMPTS" ]; do
+        state=$(svc_is_active "$component")
+        current_restarts=$(svc_restart_count "$component")
+        if [ -n "$baseline_restarts" ] && [ "$current_restarts" != "$baseline_restarts" ]; then
+            return 1
+        fi
+        if [ "$state" = active ]; then
+            stable=$((stable + 1))
+            [ "$stable" -ge "$UPGRADE_STABILITY_CHECKS" ] && return 0
+        else
+            stable=0
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    return 1
+}
+
+rollback_binary_upgrade() {
+    local component target backup action
+    component="$1"; target="$2"; backup="$3"
+
+    warn "Upgrade failed; restoring the previous serverbee-${component} binary..."
+    svc_action stop "$component" >/dev/null 2>&1 || true
+    if ! mv -f "$backup" "$target"; then
+        warn "Automatic rollback could not restore ${backup}; manual recovery is required."
+        return 1
+    fi
+    action=start
+    [ "$(svc_is_active "$component")" = active ] && action=restart
+    if ! svc_action "$action" "$component"; then
+        warn "The previous binary was restored, but serverbee-${component} could not be restarted."
+        return 1
+    fi
+    if ! wait_for_upgrade_stability "$component"; then
+        warn "The previous binary was restored, but serverbee-${component} did not remain healthy."
+        return 1
+    fi
+    info "Rollback completed; serverbee-${component} is running the previous binary."
+}
+
 upgrade_binary() {
-    local component version os arch filename url
+    local component version os arch filename url target candidate backup logs
     component="$1"; version="$2"
     os=$(detect_os)
     arch=$(detect_arch)
 
     filename="serverbee-${component}-${os}-${arch}"
     url="https://github.com/${REPO}/releases/download/${version}/${filename}"
-    info "Downloading ${filename} ${version}..."
-    download_verified "$url" "/tmp/serverbee-${component}" "$filename" "$version"
-    chmod +x "/tmp/serverbee-${component}"
+    target="${INSTALL_DIR}/serverbee-${component}"
+    backup="${target}.rollback"
+    [ -f "$target" ] || error "Installed binary not found: ${target}"
+    if [ -e "$backup" ] || [ -L "$backup" ]; then
+        error "Stale rollback backup found: ${backup}. Restore or remove it before upgrading."
+    fi
+    candidate=$(mktemp "${INSTALL_DIR}/.serverbee-${component}.upgrade.XXXXXX") \
+        || error "Could not create an upgrade candidate in ${INSTALL_DIR}"
 
-    svc_action stop "$component" 2>/dev/null || true
-    mv "/tmp/serverbee-${component}" "${INSTALL_DIR}/serverbee-${component}"
-    svc_action start "$component"
+    info "Downloading ${filename} ${version}..."
+    download_verified "$url" "$candidate" "$filename" "$version"
+    chmod 755 "$candidate" || {
+        rm -f "$candidate"
+        error "Could not make the upgrade candidate executable"
+    }
+    if ! probe_upgrade_candidate "$component" "$candidate" "$version"; then
+        rm -f "$candidate"
+        error "Candidate version probe failed for serverbee-${component} ${version}"
+    fi
+
+    if ! svc_action stop "$component" 2>/dev/null && [ "$(svc_is_active "$component")" = active ]; then
+        rm -f "$candidate"
+        error "Could not stop serverbee-${component}; the existing binary was not changed"
+    fi
+    if ! mv "$target" "$backup"; then
+        rm -f "$candidate"
+        error "Could not create rollback backup: ${backup}"
+    fi
+    if ! mv "$candidate" "$target"; then
+        mv -f "$backup" "$target" 2>/dev/null || true
+        svc_action start "$component" >/dev/null 2>&1 || true
+        error "Could not install the serverbee-${component} upgrade candidate"
+    fi
+
+    if ! svc_action start "$component"; then
+        if rollback_binary_upgrade "$component" "$target" "$backup"; then
+            error "serverbee-${component} ${version} failed to start; the previous version was restored"
+        fi
+        error "serverbee-${component} ${version} failed to start and automatic rollback was incomplete"
+    fi
+    if ! wait_for_upgrade_stability "$component"; then
+        logs=$(svc_logs_tail "$component" 20 || true)
+        [ -z "$logs" ] || warn "Recent serverbee-${component} logs:\n${logs}"
+        if rollback_binary_upgrade "$component" "$target" "$backup"; then
+            error "serverbee-${component} ${version} did not remain healthy; the previous version was restored"
+        fi
+        error "serverbee-${component} ${version} did not remain healthy and automatic rollback was incomplete"
+    fi
+
+    rm -f "$backup"
+    info "serverbee-${component} remained healthy for ${UPGRADE_STABILITY_CHECKS} seconds."
 }
 
 upgrade_docker() {
