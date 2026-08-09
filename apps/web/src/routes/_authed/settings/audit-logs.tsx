@@ -194,36 +194,7 @@ function AuditLogsPage() {
   return (
     <PageBody>
       <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
-        <div className="mb-6 flex items-center justify-end gap-4">
-          <AlertDialog onOpenChange={setClearOpen} open={clearOpen}>
-            <AlertDialogTrigger
-              render={
-                <Button disabled={clearMutation.isPending || total === 0} size="sm" variant="destructive">
-                  <Trash2 aria-hidden="true" className="mr-1.5 size-4" />
-                  {t('audit.clear')}
-                </Button>
-              }
-            />
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>{t('audit.clear_confirm_title')}</AlertDialogTitle>
-                <AlertDialogDescription>{t('audit.clear_confirm_description')}</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
-                <AlertDialogAction
-                  disabled={clearMutation.isPending}
-                  onClick={() => clearMutation.mutate()}
-                  variant="destructive"
-                >
-                  {t('audit.clear')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
           <div className="flex w-full flex-col gap-1 sm:w-56">
             <label className="text-muted-foreground text-xs" htmlFor="audit-filter-action">
               {t('audit.filter_action')}
@@ -258,6 +229,35 @@ function AuditLogsPage() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex w-full justify-end sm:ml-auto sm:w-auto">
+            <AlertDialog onOpenChange={setClearOpen} open={clearOpen}>
+              <AlertDialogTrigger
+                render={
+                  <Button disabled={clearMutation.isPending || total === 0} size="sm" variant="destructive">
+                    <Trash2 aria-hidden="true" className="mr-1.5 size-4" />
+                    {t('audit.clear')}
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t('audit.clear_confirm_title')}</AlertDialogTitle>
+                  <AlertDialogDescription>{t('audit.clear_confirm_description')}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t('common:cancel')}</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={clearMutation.isPending}
+                    onClick={() => clearMutation.mutate()}
+                    variant="destructive"
+                  >
+                    {t('audit.clear')}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
 
