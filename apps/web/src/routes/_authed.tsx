@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AppSidebar } from '@/components/app-sidebar'
-import { SiteHeader } from '@/components/site-header'
+import { SiteHeader, SiteHeaderActionsProvider } from '@/components/site-header'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -143,56 +143,58 @@ function AuthedLayout() {
 
   return (
     <ServersWsContext.Provider value={wsContextValue}>
-      <a
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:ring-2 focus:ring-ring"
-        href="#main-content"
-      >
-        {t('a11y.skip_to_content')}
-      </a>
-      <SidebarProvider style={{ '--header-height': 'calc(var(--spacing) * 12)' } as CSSProperties}>
-        <AppSidebar />
-        <SidebarInset className="min-h-0 overflow-hidden">
-          <SiteHeader>
-            {breadcrumbs.length === 1 ? (
-              <h1 className="truncate font-medium text-base">{breadcrumbs[0]?.label}</h1>
-            ) : (
-              <Breadcrumb className="min-w-0">
-                <BreadcrumbList className="min-w-0 flex-nowrap">
-                  {breadcrumbs.map((crumb, index) => {
-                    const isLast = index === breadcrumbs.length - 1
-                    const hiddenOnMobile = index === 0 && breadcrumbs.length > 1
-                    return (
-                      <Fragment key={crumb.label}>
-                        <BreadcrumbItem className={hiddenOnMobile ? 'hidden md:block' : 'min-w-0'}>
-                          {isLast || !crumb.to ? (
-                            <BreadcrumbPage className="truncate font-medium text-base">{crumb.label}</BreadcrumbPage>
-                          ) : (
-                            <BreadcrumbLink render={<Link to={crumb.to} />}>{crumb.label}</BreadcrumbLink>
-                          )}
-                        </BreadcrumbItem>
-                        {!isLast && <BreadcrumbSeparator className={hiddenOnMobile ? 'hidden md:block' : ''} />}
-                      </Fragment>
-                    )
-                  })}
-                </BreadcrumbList>
-              </Breadcrumb>
+      <SiteHeaderActionsProvider>
+        <a
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:ring-2 focus:ring-ring"
+          href="#main-content"
+        >
+          {t('a11y.skip_to_content')}
+        </a>
+        <SidebarProvider style={{ '--header-height': 'calc(var(--spacing) * 12)' } as CSSProperties}>
+          <AppSidebar />
+          <SidebarInset className="min-h-0 overflow-hidden">
+            <SiteHeader>
+              {breadcrumbs.length === 1 ? (
+                <h1 className="truncate font-medium text-base">{breadcrumbs[0]?.label}</h1>
+              ) : (
+                <Breadcrumb className="min-w-0">
+                  <BreadcrumbList className="min-w-0 flex-nowrap">
+                    {breadcrumbs.map((crumb, index) => {
+                      const isLast = index === breadcrumbs.length - 1
+                      const hiddenOnMobile = index === 0 && breadcrumbs.length > 1
+                      return (
+                        <Fragment key={crumb.label}>
+                          <BreadcrumbItem className={hiddenOnMobile ? 'hidden md:block' : 'min-w-0'}>
+                            {isLast || !crumb.to ? (
+                              <BreadcrumbPage className="truncate font-medium text-base">{crumb.label}</BreadcrumbPage>
+                            ) : (
+                              <BreadcrumbLink render={<Link to={crumb.to} />}>{crumb.label}</BreadcrumbLink>
+                            )}
+                          </BreadcrumbItem>
+                          {!isLast && <BreadcrumbSeparator className={hiddenOnMobile ? 'hidden md:block' : ''} />}
+                        </Fragment>
+                      )
+                    })}
+                  </BreadcrumbList>
+                </Breadcrumb>
+              )}
+            </SiteHeader>
+            {showOffline && (
+              <output className="flex shrink-0 items-center justify-center gap-2 bg-amber-500/15 px-3 py-1.5 text-amber-700 text-xs dark:text-amber-400">
+                <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
+                {t('connection_lost')}
+              </output>
             )}
-          </SiteHeader>
-          {showOffline && (
-            <output className="flex shrink-0 items-center justify-center gap-2 bg-amber-500/15 px-3 py-1.5 text-amber-700 text-xs dark:text-amber-400">
-              <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
-              {t('connection_lost')}
-            </output>
-          )}
-          <ScrollArea className="min-h-0 flex-1 overflow-hidden" contentClassName="min-w-0!">
-            {/* SidebarInset already renders the page's <main> landmark; this is only
-                the skip-link target. */}
-            <div className="flex min-h-full min-w-0 flex-col" id="main-content" tabIndex={-1}>
-              <Outlet />
-            </div>
-          </ScrollArea>
-        </SidebarInset>
-      </SidebarProvider>
+            <ScrollArea className="min-h-0 flex-1 overflow-hidden" contentClassName="min-w-0!">
+              {/* SidebarInset already renders the page's <main> landmark; this is only
+                  the skip-link target. */}
+              <div className="flex min-h-full min-w-0 flex-col" id="main-content" tabIndex={-1}>
+                <Outlet />
+              </div>
+            </ScrollArea>
+          </SidebarInset>
+        </SidebarProvider>
+      </SiteHeaderActionsProvider>
     </ServersWsContext.Provider>
   )
 }

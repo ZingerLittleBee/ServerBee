@@ -60,7 +60,7 @@ export function DataTableToolbar<TData>({
         <DataTableViewOptions align="start" table={table} />
         {trailingActions}
       </div>
-      <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">{children}</div>
+      {children && <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">{children}</div>}
     </div>
   )
 }
