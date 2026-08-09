@@ -12,6 +12,7 @@ use axum::extract::ConnectInfo;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 
+use crate::middleware::auth::AuthenticatedConnection;
 use crate::middleware::auth::resolve_ws_connection;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
@@ -20,9 +21,8 @@ use crate::state::AppState;
 
 /// What a gated WS pump needs from the pre-upgrade checks.
 pub(super) struct WsGate {
-    pub user_id: String,
+    pub auth: AuthenticatedConnection,
     pub ip: String,
-    pub mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// Admin gate for control-plane WS routes (terminal, docker logs).
@@ -44,7 +44,7 @@ pub(super) async fn admin_capability_gate(
     let Some(conn) = resolve_ws_connection(headers, state).await else {
         return Err(axum::http::StatusCode::UNAUTHORIZED.into_response());
     };
-    let user_id = conn.user.user_id;
+    let user_id = conn.user.user_id.clone();
 
     if conn.user.role != "admin" {
         let detail = serde_json::json!({
@@ -61,17 +61,40 @@ pub(super) async fn admin_capability_gate(
     }
 
     if let Err(error) =
-        require_capability_audited(state, server_id, capability, &user_id, &ip, denied_action)
-            .await
+        require_capability_audited(state, server_id, capability, &user_id, &ip, denied_action).await
     {
         return Err(error.into_response());
     }
 
-    Ok(WsGate {
-        user_id,
-        ip,
-        mobile_expires: conn.mobile_expires,
-    })
+    Ok(WsGate { auth: conn, ip })
+}
+
+#[cfg(test)]
+const AUTH_LEASE_RECHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
+#[cfg(not(test))]
+const AUTH_LEASE_RECHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Resolves when a WebSocket's persisted credential is revoked or its user
+/// policy changes. Temporary database failures are logged and retried so an
+/// availability incident does not disconnect every active client at once.
+pub(super) async fn auth_lease_invalidated(state: &AppState, auth: &AuthenticatedConnection) {
+    let mut interval = tokio::time::interval(AUTH_LEASE_RECHECK_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    interval.tick().await;
+    loop {
+        interval.tick().await;
+        match auth.lease_is_valid(state).await {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => {
+                tracing::warn!(
+                    user_id = %auth.user.user_id,
+                    error = %error,
+                    "Failed to refresh WebSocket authorization lease"
+                );
+            }
+        }
+    }
 }
 
 /// Resolves when a fixed-lifetime mobile token expires; pends forever for web
@@ -84,5 +107,118 @@ pub(super) async fn mobile_token_expired(expires: Option<chrono::DateTime<chrono
             tokio::time::sleep(dur).await;
         }
         None => std::future::pending::<()>().await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::entity::user;
+    use crate::service::auth::{AuthService, LoginParams};
+    use crate::test_utils::setup_test_db;
+    use sea_orm::{ActiveModelTrait, Set};
+
+    #[tokio::test]
+    async fn session_logout_invalidates_existing_ws_lease() {
+        let (db, _temp) = setup_test_db().await;
+        AuthService::create_user(&db, "ws-user", "password123", "member")
+            .await
+            .expect("create user");
+        let (session, _) = AuthService::login(
+            &db,
+            LoginParams {
+                username: "ws-user",
+                password: "password123",
+                totp_code: None,
+                ip: "127.0.0.1",
+                user_agent: "test",
+                session_ttl: 3600,
+            },
+        )
+        .await
+        .expect("login");
+        let state = AppState::new(db, AppConfig::default())
+            .await
+            .expect("app state");
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "cookie",
+            format!("session_token={}", session.token)
+                .parse()
+                .expect("cookie header"),
+        );
+        let auth = resolve_ws_connection(&headers, &state)
+            .await
+            .expect("authenticated connection");
+        assert!(auth.lease_is_valid(&state).await.expect("lease check"));
+
+        AuthService::logout(&state.db, &session.token)
+            .await
+            .expect("logout");
+        tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            auth_lease_invalidated(&state, &auth),
+        )
+        .await
+        .expect("revoked lease should resolve");
+    }
+
+    #[tokio::test]
+    async fn api_key_deletion_invalidates_existing_ws_lease() {
+        let (db, _temp) = setup_test_db().await;
+        let user = AuthService::create_user(&db, "key-user", "password123", "admin")
+            .await
+            .expect("create user");
+        let (key, secret) = AuthService::create_api_key(&db, &user.id, "ws")
+            .await
+            .expect("create API key");
+        let state = AppState::new(db, AppConfig::default())
+            .await
+            .expect("app state");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", secret.parse().expect("API key header"));
+        let auth = resolve_ws_connection(&headers, &state)
+            .await
+            .expect("authenticated connection");
+
+        AuthService::delete_api_key(&state.db, &key.id, &user.id)
+            .await
+            .expect("delete API key");
+        tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            auth_lease_invalidated(&state, &auth),
+        )
+        .await
+        .expect("revoked lease should resolve");
+    }
+
+    #[tokio::test]
+    async fn role_change_invalidates_existing_ws_lease() {
+        let (db, _temp) = setup_test_db().await;
+        let user = AuthService::create_user(&db, "role-user", "password123", "admin")
+            .await
+            .expect("create user");
+        let (_, secret) = AuthService::create_api_key(&db, &user.id, "ws")
+            .await
+            .expect("create API key");
+        let state = AppState::new(db, AppConfig::default())
+            .await
+            .expect("app state");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", secret.parse().expect("API key header"));
+        let auth = resolve_ws_connection(&headers, &state)
+            .await
+            .expect("authenticated connection");
+
+        let mut active: user::ActiveModel = user.into();
+        active.role = Set("member".to_string());
+        active.update(&state.db).await.expect("demote user");
+        tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            auth_lease_invalidated(&state, &auth),
+        )
+        .await
+        .expect("role change should invalidate lease");
     }
 }

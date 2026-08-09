@@ -7,7 +7,9 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
+use crate::entity::{api_key, session, user};
 use crate::service::auth::AuthService;
 use crate::state::AppState;
 
@@ -67,6 +69,42 @@ pub struct AuthenticatedConnection {
     /// (mobile) session, whatever header carried it. Web sessions renew on
     /// use (sliding expiry) and API keys never expire, so both yield `None`.
     pub mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
+    pub credential: ConnectionCredential,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConnectionCredential {
+    Session { id: String },
+    ApiKey { id: String },
+}
+
+impl AuthenticatedConnection {
+    /// Re-check the persisted credential and user policy for a long-lived
+    /// connection. Role changes deliberately invalidate the lease so a socket
+    /// cannot retain privileges captured during its handshake.
+    pub async fn lease_is_valid(&self, state: &AppState) -> Result<bool, sea_orm::DbErr> {
+        let current_user = match &self.credential {
+            ConnectionCredential::Session { id } => session::Entity::find_by_id(id)
+                .filter(session::Column::ExpiresAt.gt(chrono::Utc::now()))
+                .find_also_related(user::Entity)
+                .one(&state.db)
+                .await?
+                .and_then(|(session, user)| {
+                    (session.user_id == self.user.user_id)
+                        .then_some(user)
+                        .flatten()
+                }),
+            ConnectionCredential::ApiKey { id } => api_key::Entity::find_by_id(id)
+                .find_also_related(user::Entity)
+                .one(&state.db)
+                .await?
+                .and_then(|(key, user)| {
+                    (key.user_id == self.user.user_id).then_some(user).flatten()
+                }),
+        };
+        Ok(current_user
+            .is_some_and(|user| !user.must_change_password && user.role == self.user.role))
+    }
 }
 
 /// Resolve the authenticated connection (if any) from a request's headers.
@@ -96,12 +134,13 @@ pub async fn resolve_connection(
         return Some(AuthenticatedConnection {
             user: CurrentUser::from(user),
             mobile_expires: mobile_expiry(&session),
+            credential: ConnectionCredential::Session { id: session.id },
         });
     }
 
     // Try API key header
     if let Some(key) = extract_api_key(headers)
-        && let Some(user) = AuthService::validate_api_key(&state.db, &key)
+        && let Some((user, api_key)) = AuthService::validate_api_key_with_model(&state.db, &key)
             .await
             .ok()
             .flatten()
@@ -109,6 +148,7 @@ pub async fn resolve_connection(
         return Some(AuthenticatedConnection {
             user: CurrentUser::from(user),
             mobile_expires: None,
+            credential: ConnectionCredential::ApiKey { id: api_key.id },
         });
     }
 
@@ -122,6 +162,7 @@ pub async fn resolve_connection(
         return Some(AuthenticatedConnection {
             user: CurrentUser::from(user),
             mobile_expires: mobile_expiry(&session),
+            credential: ConnectionCredential::Session { id: session.id },
         });
     }
 

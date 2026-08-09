@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use sea_orm::{EntityTrait, QueryOrder};
 
 use crate::entity::server_tag;
-use crate::middleware::auth::resolve_ws_connection;
+use crate::middleware::auth::{AuthenticatedConnection, resolve_ws_connection};
 use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::server::ServerService;
 use crate::state::AppState;
@@ -34,23 +34,19 @@ async fn browser_ws_handler(
     // lives in `middleware::auth`; this adapter only maps the verdict onto
     // the browser WS protocol.
     match resolve_ws_connection(&headers, &state).await {
-        Some(conn) => {
-            let is_admin = conn.user.role == "admin";
-            ws.max_message_size(MAX_WS_MESSAGE_SIZE).on_upgrade(move |socket| {
-                handle_browser_ws(socket, state, is_admin, conn.mobile_expires)
-            })
-        }
+        Some(conn) => ws
+            .max_message_size(MAX_WS_MESSAGE_SIZE)
+            .on_upgrade(move |socket| handle_browser_ws(socket, state, conn)),
         None => axum::http::StatusCode::UNAUTHORIZED.into_response(),
     }
 }
 
-async fn handle_browser_ws(
-    socket: WebSocket,
-    state: Arc<AppState>,
-    is_admin: bool,
-    mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
-) {
+async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>, auth: AuthenticatedConnection) {
     let (mut ws_sink, mut ws_stream) = socket.split();
+    let is_admin = auth.user.role == "admin";
+    let mobile_expires = auth.mobile_expires;
+    let auth_lease = super::session::auth_lease_invalidated(&state, &auth);
+    tokio::pin!(auth_lease);
 
     let connection_id = uuid::Uuid::new_v4().to_string();
 
@@ -122,6 +118,14 @@ async fn handle_browser_ws(
                 let _ = ws_sink.send(Message::Close(Some(axum::extract::ws::CloseFrame {
                     code: 4001,
                     reason: "token expired".into(),
+                }))).await;
+                break;
+            }
+            () = &mut auth_lease => {
+                tracing::debug!(user_id = %auth.user.user_id, "Browser WS authorization revoked");
+                let _ = ws_sink.send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                    code: 4003,
+                    reason: "authorization revoked".into(),
                 }))).await;
                 break;
             }

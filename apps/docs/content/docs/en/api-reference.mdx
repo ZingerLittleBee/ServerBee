@@ -191,7 +191,7 @@ Only one offer may be outstanding per Server. Its terminal outcome is exactly on
 
 | Path | Auth | Description |
 |------|------|-------------|
-| `/api/agent/ws?token=<agent_token>` | Agent token query parameter | Agent metrics, commands, pings, files, Docker, traceroute |
+| `/api/agent/ws` | Agent Bearer token (`?token=` accepted for legacy Agents) | Agent metrics, commands, pings, files, Docker, traceroute |
 | `/api/ws/servers` | Session cookie, API key, or Bearer token | Browser/mobile real-time server updates |
 | `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy; JSON text messages with terminal data base64-encoded |
 | `/api/ws/docker/logs/{server_id}` | Authenticated + `CAP_DOCKER` | Per-container Docker log streaming |

@@ -6,7 +6,7 @@ pub mod ws;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::http::HeaderValue;
+use axum::http::{HeaderValue, Request};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
@@ -19,7 +19,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .nest("/api", api::router(state.clone()))
-        // Agent WS: /api/agent/ws?token=<token> (no auth middleware, uses token param)
+        // Agent WS authenticates inside the handler. Current agents use the
+        // Authorization header; the handler retains query-token compatibility
+        // for upgrades from older releases.
         .nest("/api", ws::agent::router())
         // Browser WS: /api/ws/servers (auth checked inside handler)
         .nest("/api", ws::browser::router())
@@ -53,6 +55,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             axum::http::HeaderName::from_static("x-permitted-cross-domain-policies"),
             HeaderValue::from_static("none"),
         ))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
+                tracing::info_span!(
+                    "http_request",
+                    method = %request.method(),
+                    path = %request.uri().path()
+                )
+            }),
+        )
         .with_state(state)
 }

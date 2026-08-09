@@ -226,6 +226,58 @@ async fn browser_ws_connects_with_session_cookie() {
     );
 }
 
+#[tokio::test]
+async fn browser_ws_closes_after_session_logout() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    let login = client
+        .post(format!("{}/api/auth/login", base_url))
+        .json(&serde_json::json!({ "username": "admin", "password": "testpass" }))
+        .send()
+        .await
+        .expect("login failed");
+    let cookie = login
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .expect("login should set a cookie")
+        .to_str()
+        .expect("cookie should be valid text")
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_string();
+
+    let ws_url = format!("{}/api/ws/servers", base_url.replace("http://", "ws://"));
+    let mut request = ws_url.into_client_request().expect("WS request");
+    request.headers_mut().insert(
+        "Cookie",
+        HeaderValue::from_str(&cookie).expect("cookie header"),
+    );
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("browser WebSocket connection");
+    let (_sink, mut reader) = browser_ws.split();
+    assert_eq!(recv_browser_text(&mut reader).await["type"], "full_sync");
+
+    let logout = client
+        .post(format!("{}/api/auth/logout", base_url))
+        .header(reqwest::header::COOKIE, &cookie)
+        .send()
+        .await
+        .expect("logout failed");
+    assert_eq!(logout.status(), 200);
+
+    let message = tokio::time::timeout(Duration::from_secs(5), reader.next())
+        .await
+        .expect("revoked WebSocket should close promptly")
+        .expect("server should send a close frame")
+        .expect("WebSocket read should succeed");
+    assert!(
+        matches!(message, tungstenite::Message::Close(_)),
+        "expected close frame after logout, got {message:?}"
+    );
+}
+
 // ── Member API key authenticates (read-only, not admin-gated) ─────────────
 
 #[tokio::test]

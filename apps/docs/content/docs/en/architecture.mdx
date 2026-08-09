@@ -120,7 +120,7 @@ The built frontend is embedded into the server binary at compile time, so there 
 
 All communication uses WebSocket. Every message is a JSON text frame; terminal I/O data is carried inside the message's `data` field, base64-encoded. The current protocol version is `4`, sent to the agent in the `Welcome` message on connect.
 
-The agent connects to `ws://<server>/api/agent/ws?token=<agent_token>`.
+The agent connects to `ws://<server>/api/agent/ws` and authenticates with `Authorization: Bearer <agent_token>`. The Server temporarily accepts the legacy `?token=` form so older Agents can reconnect and upgrade.
 
 ### Agent to Server (`AgentMessage`)
 
@@ -326,13 +326,15 @@ Request arrives
 - An enrollment offer is bound to one Server, single-use, and short-lived. Its lifecycle is owned by the Agent Authority module.
 - Before claiming an offer, the Agent generates and persists its run token, then submits it as `proposed_run_token`. The Server never generates or returns that token.
 - The run token is hashed with argon2 and stored in the `servers` table; only the Agent retains the plaintext.
-- Agents authenticate by providing the raw token as a query parameter on the WebSocket connection.
+- Agents authenticate with the `Authorization: Bearer <agent_token>` header. Current Agents never place the raw token in the URI; query-token authentication remains a deprecated compatibility path for older releases.
 - WebSocket admission has two stages: preflight validation before the HTTP upgrade, then final validation while holding the Server lifecycle lock. Authority transitions and frame dispatch share that lock, so a revoked or replaced connection cannot race through after fencing.
 - Every authority/offer transition appends a secret-free event. Events retain a snapshot of the Server identity and survive Server deletion.
 
 ### Role-Based Access
 
 Two roles exist: `admin` (full access) and `member` (read-only dashboard access).
+
+Browser-facing WebSockets re-check the persisted session or API key and the user's role while connected. Logout, API-key deletion, password-reset session revocation, account deletion, or a role change closes the existing socket within two seconds instead of preserving handshake-time privileges.
 
 | Resource | Admin | Member | API Key | Agent |
 |----------|-------|--------|---------|-------|

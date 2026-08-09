@@ -10,6 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::middleware::auth::AuthenticatedConnection;
 use crate::service::audit::AuditService;
 use crate::service::high_risk_audit::DockerLogsAuditContext;
 use crate::state::AppState;
@@ -43,14 +44,7 @@ async fn docker_logs_ws_handler(
         Ok(gate) => ws
             .max_message_size(MAX_WS_MESSAGE_SIZE)
             .on_upgrade(move |socket| {
-                handle_docker_logs_ws(
-                    socket,
-                    state,
-                    server_id,
-                    gate.user_id,
-                    gate.ip,
-                    gate.mobile_expires,
-                )
+                handle_docker_logs_ws(socket, state, server_id, gate.auth, gate.ip)
             }),
         Err(response) => response,
     }
@@ -82,11 +76,14 @@ async fn handle_docker_logs_ws(
     socket: WebSocket,
     state: Arc<AppState>,
     server_id: String,
-    user_id: String,
+    auth: AuthenticatedConnection,
     ip: String,
-    mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     let (mut ws_sink, mut ws_stream) = socket.split();
+    let user_id = auth.user.user_id.clone();
+    let mobile_expires = auth.mobile_expires;
+    let auth_lease = super::session::auth_lease_invalidated(&state, &auth);
+    tokio::pin!(auth_lease);
 
     let session_id = uuid::Uuid::new_v4().to_string();
 
@@ -200,6 +197,10 @@ async fn handle_docker_logs_ws(
             () = super::session::mobile_token_expired(mobile_expires) => {
                 tracing::debug!("Docker logs session {session_id} mobile token expired, closing");
                 break "token_expired";
+            }
+            () = &mut auth_lease => {
+                tracing::debug!(user_id, "Docker logs WS authorization revoked");
+                break "authorization_revoked";
             }
         }
     };

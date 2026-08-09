@@ -120,7 +120,7 @@ icon: Boxes
 
 所有通信都使用 WebSocket。所有消息均为 JSON 文本帧；终端 I/O 数据放在消息的 `data` 字段中，以 base64 编码。当前协议版本为 `4`，连接时通过 `Welcome` 消息下发给 Agent。
 
-Agent 的连接地址为 `ws://<server>/api/agent/ws?token=<agent_token>`。
+Agent 连接到 `ws://<server>/api/agent/ws`，并使用 `Authorization: Bearer <agent_token>` 认证。Server 暂时兼容旧版 Agent 使用的 `?token=` 形式，以便其重新连接并完成升级。
 
 ### Agent -> Server（`AgentMessage`）
 
@@ -326,13 +326,15 @@ ServerBee 支持三种认证机制，均在认证中间件中校验：
 - Enrollment offer 绑定到一个 Server，单次使用且短时有效，其生命周期由 Agent Authority 模块统一管理。
 - Agent 在 claim offer 前生成并持久化 run token，然后将其作为 `proposed_run_token` 提交。Server 不生成也不返回该 token。
 - Run token 以 argon2 哈希存储在 `servers` 表，只有 Agent 保留明文。
-- Agent 在 WebSocket 连接的查询参数中提供原始 token 进行认证。
+- Agent 使用 `Authorization: Bearer <agent_token>` Header 认证。当前 Agent 不再把原始 token 放入 URI；query token 仅作为旧版本兼容路径保留。
 - WebSocket admission 分两阶段：HTTP upgrade 前做 preflight，再持有 Server lifecycle lock 做最终校验。Authority 转换与消息分发共享该锁，被吊销或替换的连接无法在 fencing 后抢跑。
 - 每次 authority/offer 转换都会追加一个不含密钥的事件。事件保存 Server 身份快照，并在 Server 删除后继续保留。
 
 ### 基于角色的访问控制（RBAC）
 
 存在两种角色：`admin`（完全访问）和 `member`（只读仪表盘访问）。
+
+面向浏览器的 WebSocket 会在连接期间重新检查持久化 Session 或 API Key 以及用户角色。登出、删除 API Key、密码重置导致的 Session 吊销、删除账号或变更角色后，现有连接会在两秒内关闭，不会继续保留握手时的权限。
 
 | 资源 | Admin | Member | API Key | Agent |
 |------|-------|--------|---------|-------|

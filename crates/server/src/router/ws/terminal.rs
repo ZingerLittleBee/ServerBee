@@ -10,6 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::middleware::auth::AuthenticatedConnection;
 use crate::service::agent_manager::TerminalSessionEvent;
 use crate::service::audit::AuditService;
 use crate::service::high_risk_audit::TerminalAuditContext;
@@ -40,16 +41,11 @@ async fn terminal_ws_handler(
     )
     .await
     {
-        Ok(gate) => ws.max_message_size(MAX_WS_MESSAGE_SIZE).on_upgrade(move |socket| {
-            handle_terminal_ws(
-                socket,
-                state,
-                server_id,
-                gate.user_id,
-                gate.ip,
-                gate.mobile_expires,
-            )
-        }),
+        Ok(gate) => ws
+            .max_message_size(MAX_WS_MESSAGE_SIZE)
+            .on_upgrade(move |socket| {
+                handle_terminal_ws(socket, state, server_id, gate.auth, gate.ip)
+            }),
         Err(response) => response,
     }
 }
@@ -66,11 +62,14 @@ async fn handle_terminal_ws(
     socket: WebSocket,
     state: Arc<AppState>,
     server_id: String,
-    user_id: String,
+    auth: AuthenticatedConnection,
     ip: String,
-    mobile_expires: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     let (mut ws_sink, mut ws_stream) = socket.split();
+    let user_id = auth.user.user_id.clone();
+    let mobile_expires = auth.mobile_expires;
+    let auth_lease = super::session::auth_lease_invalidated(&state, &auth);
+    tokio::pin!(auth_lease);
 
     // Create unique session ID
     let session_id = uuid::Uuid::new_v4().to_string();
@@ -230,6 +229,13 @@ async fn handle_terminal_ws(
                 let msg = serde_json::json!({"type": "error", "error": "Session token expired"});
                 let _ = ws_sink.send(Message::Text(msg.to_string().into())).await;
                 close_reason = "token_expired".to_string();
+                break;
+            }
+            () = &mut auth_lease => {
+                tracing::debug!(user_id, "Terminal WS authorization revoked");
+                let msg = serde_json::json!({"type": "error", "error": "Authorization revoked"});
+                let _ = ws_sink.send(Message::Text(msg.to_string().into())).await;
+                close_reason = "authorization_revoked".to_string();
                 break;
             }
         }

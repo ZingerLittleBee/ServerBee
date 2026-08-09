@@ -314,6 +314,18 @@ impl AuthService {
         db: &DatabaseConnection,
         key: &str,
     ) -> Result<Option<user::Model>, AppError> {
+        Ok(Self::validate_api_key_with_model(db, key)
+            .await?
+            .map(|(user, _)| user))
+    }
+
+    /// Validate an API key and return both its user and persisted key row.
+    /// Long-lived transports retain the row ID so deletion can revoke an
+    /// already-established connection without keeping the secret in memory.
+    pub async fn validate_api_key_with_model(
+        db: &DatabaseConnection,
+        key: &str,
+    ) -> Result<Option<(user::Model, api_key::Model)>, AppError> {
         if !key.starts_with("serverbee_") || key.len() < 18 {
             return Ok(None);
         }
@@ -332,11 +344,11 @@ impl AuthService {
                 let candidate_user_id = candidate.user_id.clone();
                 let mut active: api_key::ActiveModel = candidate.into();
                 active.last_used_at = Set(Some(Utc::now()));
-                active.update(db).await?;
+                let api_key = active.update(db).await?;
 
                 // Fetch user
                 let user = user::Entity::find_by_id(&candidate_user_id).one(db).await?;
-                return Ok(user);
+                return Ok(user.map(|user| (user, api_key)));
             }
         }
 

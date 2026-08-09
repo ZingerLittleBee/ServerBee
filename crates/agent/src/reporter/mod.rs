@@ -79,7 +79,7 @@ impl Reporter {
                             tracing::error!(
                                 "Agent token rejected {reregister_attempts} times consecutively, \
                                  giving up re-registration. Check server URL and ensure the WebSocket \
-                                 endpoint is accessible (token is sent via query parameter)."
+                                 endpoint preserves the Authorization header."
                             );
                         } else {
                             reregister_attempts += 1;
@@ -494,8 +494,7 @@ fn build_ws_request(
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 
-    let ws_url = format!("{}?token={}", build_ws_url(config)?, config.token);
-    let mut request = ws_url.into_client_request()?;
+    let mut request = build_ws_url(config)?.into_client_request()?;
     request
         .headers_mut()
         .insert(AUTHORIZATION, format!("Bearer {}", config.token).parse()?);
@@ -756,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_ws_request_carries_query_token_and_authorization_header() {
+    fn test_build_ws_request_keeps_token_out_of_uri() {
         let config = AgentConfig {
             server_url: "https://example.com".to_string(),
             token: "agent-token-123".to_string(),
@@ -772,10 +771,7 @@ mod tests {
 
         let request = build_ws_request(&config).expect("request should build");
 
-        assert_eq!(
-            request.uri().to_string(),
-            "wss://example.com/api/agent/ws?token=agent-token-123"
-        );
+        assert_eq!(request.uri().to_string(), "wss://example.com/api/agent/ws");
         assert_eq!(
             request
                 .headers()

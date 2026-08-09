@@ -191,7 +191,7 @@ curl https://your-server/api/auth/me \
 
 | 路径 | 认证 | 说明 |
 |------|------|------|
-| `/api/agent/ws?token=<agent_token>` | Agent token 查询参数 | Agent 指标、命令、Ping、文件、Docker、Traceroute |
+| `/api/agent/ws` | Agent Bearer token（兼容旧 Agent 的 `?token=`） | Agent 指标、命令、Ping、文件、Docker、Traceroute |
 | `/api/ws/servers` | Session cookie、API Key 或 Bearer token | 浏览器/移动端实时服务器更新 |
 | `/api/ws/terminal/{server_id}` | 已认证 Admin + `CAP_TERMINAL` | Web 终端代理；JSON 文本消息，终端数据 base64 编码 |
 | `/api/ws/docker/logs/{server_id}` | 已认证 + `CAP_DOCKER` | 按容器流式传输 Docker 日志 |

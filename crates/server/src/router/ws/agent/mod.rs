@@ -45,8 +45,8 @@ fn extract_agent_token(headers: &HeaderMap, query: &OptionalWsQuery) -> Option<S
     {
         return Some(token.to_string());
     }
-    // Fall back to the query param for proxies/load balancers that strip the
-    // Authorization header.
+    // Deprecated compatibility path for agents released before header-only
+    // authentication. New agents never place credentials in the URI.
     if let Some(ref token) = query.token {
         return Some(token.clone());
     }
@@ -77,8 +77,14 @@ async fn agent_ws_handler(
 
     let query_present = query.token.as_ref().is_some_and(|token| !token.is_empty());
     let auth_present = headers.get("authorization").is_some();
+    if query_present && !auth_present {
+        tracing::warn!(
+            "Agent WS from {addr} uses deprecated query-token authentication; upgrade the Agent"
+        );
+    }
 
-    // Extract agent token from Authorization header or query param
+    // Extract the Agent token from the Authorization header, with a legacy
+    // query fallback so deployed alpha agents can still connect and upgrade.
     let token = match extract_agent_token(&headers, &query) {
         Some(t) => t,
         None => {
