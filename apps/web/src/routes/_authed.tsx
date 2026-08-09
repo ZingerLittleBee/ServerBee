@@ -18,82 +18,17 @@ import { ServersWsContext } from '@/contexts/servers-ws-context'
 import { useAuth } from '@/hooks/use-auth'
 import { useServersWs } from '@/hooks/use-servers-ws'
 import { useWidgetModuleBootstrap } from '@/hooks/use-widget-module-bootstrap'
+import { useServerDetail } from '@/lib/server-catalog'
 import type { ConnectionState } from '@/lib/ws-client'
+import { type BreadcrumbEntry, buildBreadcrumbs, getServerDetailId } from './_authed/components/breadcrumbs'
 
-const ROUTE_LABELS: Record<string, string> = {
-  '/': 'nav_dashboard',
-  '/servers': 'nav_servers',
-  '/network': 'nav_network',
-  '/traffic': 'nav_traffic',
-  '/terminal': 'nav_terminal',
-  '/files': 'nav_files',
-  '/service-monitors': 'nav_service_monitors',
-  '/security': 'nav_security_events',
-  '/ip-quality': 'nav_ip_quality',
-  '/settings': 'nav_settings',
-  '/settings/users': 'nav_users',
-  '/settings/notifications': 'nav_notifications',
-  '/settings/alerts': 'nav_alerts',
-  '/settings/ping-tasks': 'nav_ping_tasks',
-  '/settings/service-monitors': 'nav_service_monitors',
-  '/settings/status-pages': 'nav_status_pages',
-  '/settings/network-probes': 'nav_network_probes',
-  '/settings/firewall': 'nav_firewall',
-  '/settings/ip-quality': 'nav_ip_quality_settings',
-  '/settings/tasks': 'nav_commands',
-  '/settings/capabilities': 'nav_capabilities',
-  '/settings/api-keys': 'nav_api_keys',
-  '/settings/mobile-devices': 'nav_mobile_devices',
-  '/settings/rate-limits': 'nav_rate_limits',
-  '/settings/security': 'nav_security',
-  '/settings/appearance': 'nav_appearance',
-  '/settings/widgets': 'nav_widgets',
-  '/settings/audit-logs': 'nav_audit_logs'
-}
-
-interface BreadcrumbEntry {
-  label: string
-  to?: string
-}
-
-const TRAILING_SLASH_RE = /\/$/
-
-function useBreadcrumbs(): BreadcrumbEntry[] {
+function useBreadcrumbs(enabled: boolean): BreadcrumbEntry[] {
   const { pathname } = useLocation()
   const { t } = useTranslation()
+  const serverDetailId = getServerDetailId(pathname)
+  const { data: server } = useServerDetail(serverDetailId, { enabled })
 
-  return useMemo(() => {
-    if (pathname === '/') {
-      return [{ label: t('nav_dashboard') }]
-    }
-
-    const segments = pathname.replace(TRAILING_SLASH_RE, '').split('/').filter(Boolean)
-    const crumbs: BreadcrumbEntry[] = []
-
-    let accumulated = ''
-    for (let i = 0; i < segments.length; i++) {
-      accumulated += `/${segments[i]}`
-      const labelKey = ROUTE_LABELS[accumulated]
-      const isLast = i === segments.length - 1
-
-      if (labelKey) {
-        crumbs.push({
-          label: t(labelKey),
-          to: isLast ? undefined : accumulated
-        })
-      }
-    }
-
-    if (crumbs.length === 0) {
-      const firstSegment = segments[0]
-      const parentKey = ROUTE_LABELS[`/${firstSegment}`]
-      if (parentKey) {
-        crumbs.push({ label: t(parentKey), to: `/${firstSegment}` })
-      }
-    }
-
-    return crumbs
-  }, [pathname, t])
+  return useMemo(() => buildBreadcrumbs(pathname, t, server?.name), [pathname, server?.name, t])
 }
 
 // Fail-closed admin gating: every route under /settings (and the /settings index)
@@ -118,7 +53,7 @@ function AuthedLayout() {
   const { isAuthenticated, isLoading, user } = useAuth()
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const breadcrumbs = useBreadcrumbs()
+  const breadcrumbs = useBreadcrumbs(isAuthenticated && !isLoading && user?.must_change_password !== true)
   const { pathname } = useLocation()
   const shouldConnectWs = isAuthenticated && !isLoading && user?.must_change_password !== true
   const wsRef = useServersWs(shouldConnectWs)

@@ -233,6 +233,7 @@ describe('ServerDetailPage', () => {
 
     expect(container.firstElementChild).toHaveClass('pb-6')
     expect(container.querySelector('[data-boneyard]')).toBeNull()
+    expect(screen.queryByText('detail_back')).not.toBeInTheDocument()
   })
 
   it('passes latest agent version into the version section', () => {

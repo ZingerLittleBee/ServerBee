@@ -160,7 +160,6 @@
   "cleanup_success_other": "Cleaned up {{count}} servers",
   "cleanup_none": "No unconnected servers to clean up",
 
-  "detail_back": "Back to dashboard",
   "detail_edit": "Edit",
   "detail_agent_reenrollment": "Agent re-enrollment",
   "card_actions": "Server actions",

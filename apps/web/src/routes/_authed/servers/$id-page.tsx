@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi, Link } from '@tanstack/react-router'
-import { ArrowLeft, Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ServerDetailSkeleton } from '@/components/boneyard/page-skeletons'
@@ -201,14 +201,6 @@ export function ServerDetailPage() {
   return (
     <div className="pb-6">
       <div className="mb-6">
-        <Link
-          className="mb-3 inline-flex items-center gap-1 text-muted-foreground text-sm hover:text-foreground"
-          to="/"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" />
-          {t('detail_back')}
-        </Link>
-
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">

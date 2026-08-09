@@ -160,7 +160,6 @@
   "cleanup_success_other": "已清理 {{count}} 台服务器",
   "cleanup_none": "没有需要清理的未连接服务器",
 
-  "detail_back": "返回仪表盘",
   "detail_edit": "编辑",
   "detail_agent_reenrollment": "Agent 重新接入",
   "card_actions": "服务器操作",
