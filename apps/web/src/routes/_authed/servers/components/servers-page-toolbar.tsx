@@ -140,13 +140,14 @@ export function ServersPageToolbar({
 
   return (
     <SiteHeaderActions>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-        <div className="relative w-[min(100%,20rem)] min-w-0">
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        {/* Search may shrink; icon actions stay fixed so they never wrap under or get squeezed. */}
+        <div className="relative w-40 min-w-0 max-w-[40vw] shrink sm:w-48">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             aria-label={t('servers:search_placeholder')}
             autoComplete="off"
-            className="h-8 pl-9"
+            className="h-8 min-w-0 pl-9"
             name="search"
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={t('servers:search_placeholder')}
@@ -156,15 +157,17 @@ export function ServersPageToolbar({
         </div>
         {viewMode === 'table' && (
           <DataTableToolbar
-            className="w-auto min-w-0 p-0 sm:flex-none"
+            className="hidden min-w-0 shrink p-0 md:flex md:w-auto"
             table={table}
             trailingActions={selectModeButton}
           />
         )}
-        {viewToggle}
-        {cleanupButton}
-        {batchDeleteButton}
-        {addServerButton}
+        <div className="flex shrink-0 items-center gap-2">
+          {viewToggle}
+          {cleanupButton}
+          {batchDeleteButton}
+          {addServerButton}
+        </div>
       </div>
     </SiteHeaderActions>
   )
