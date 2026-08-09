@@ -1414,6 +1414,41 @@ svc_is_active() {
     esac
 }
 
+server_health_url() {
+    local listen host port
+    listen="${SERVERBEE_SERVER__LISTEN:-}"
+    if [ -z "$listen" ] && [ -f "${CONFIG_DIR}/server.toml" ]; then
+        listen=$(awk '
+            /^[[:space:]]*\[server\][[:space:]]*$/ { in_server=1; next }
+            in_server && /^[[:space:]]*\[/ { exit }
+            in_server && /^[[:space:]]*listen[[:space:]]*=/ {
+                sub(/^[^=]*=[[:space:]]*/, "")
+                gsub(/^[[:space:]]*"|"[[:space:]]*$/, "")
+                print
+                exit
+            }
+        ' "${CONFIG_DIR}/server.toml")
+    fi
+    : "${listen:=0.0.0.0:9527}"
+
+    case "$listen" in
+        0.0.0.0:*) host="127.0.0.1"; port="${listen##*:}" ;;
+        \[::\]:*) host="[::1]"; port="${listen##*:}" ;;
+        \[*\]:*) host="${listen%:*}"; port="${listen##*:}" ;;
+        *:*) host="${listen%:*}"; port="${listen##*:}" ;;
+        *) return 1 ;;
+    esac
+    printf 'http://%s:%s/healthz\n' "$host" "$port"
+}
+
+svc_health_check() {
+    local component url
+    component="$1"
+    [ "$component" = server ] || return 0
+    url=$(server_health_url) || return 1
+    curl -fsS --max-time 2 "$url" >/dev/null 2>&1
+}
+
 svc_restart_count() {
     case "$INIT" in
         systemd) systemctl show "serverbee-$1" --property=NRestarts --value 2>/dev/null || true ;;
@@ -2683,7 +2718,7 @@ wait_for_upgrade_stability() {
         if [ -n "$baseline_restarts" ] && [ "$current_restarts" != "$baseline_restarts" ]; then
             return 1
         fi
-        if [ "$state" = active ]; then
+        if [ "$state" = active ] && svc_health_check "$component"; then
             stable=$((stable + 1))
             [ "$stable" -ge "$UPGRADE_STABILITY_CHECKS" ] && return 0
         else

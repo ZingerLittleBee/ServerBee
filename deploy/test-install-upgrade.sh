@@ -47,6 +47,8 @@ setup_case() {
     TEST_FAIL_CANDIDATE_START=false
     TEST_RESTART_MODE=stable
     TEST_SERVICE_STATE=active
+    TEST_COMPONENT=agent
+    TEST_SERVER_HEALTH_MODE=healthy
     mkdir -p "$INSTALL_DIR"
     : > "$ACTION_LOG"
     write_probe_binary "${INSTALL_DIR}/serverbee-agent" "1.0.0-alpha.12"
@@ -61,7 +63,7 @@ sleep() { :; }
 
 svc_restart_count() {
     local installed_version count
-    installed_version=$("${INSTALL_DIR}/serverbee-agent" --serverbee-upgrade-probe)
+    installed_version=$("${INSTALL_DIR}/serverbee-${TEST_COMPONENT}" --serverbee-upgrade-probe)
     if [ "$TEST_RESTART_MODE" = candidate-increments ] && [ "$installed_version" = "1.0.0-beta.1" ]; then
         count=$(cat "${CASE_DIR}/restart-count" 2>/dev/null || echo 0)
         echo $((count + 1)) > "${CASE_DIR}/restart-count"
@@ -93,13 +95,22 @@ svc_is_active() {
     if [ "$TEST_SERVICE_STATE" != active ]; then
         echo inactive
     elif [ "$TEST_ACTIVE_MODE" = candidate-inactive ]; then
-        installed_version=$("${INSTALL_DIR}/serverbee-agent" --serverbee-upgrade-probe)
+        installed_version=$("${INSTALL_DIR}/serverbee-${TEST_COMPONENT}" --serverbee-upgrade-probe)
         [ "$installed_version" = "1.0.0-beta.1" ] && echo inactive || echo active
     elif [ "$TEST_ACTIVE_MODE" = active ]; then
         echo active
     else
         echo inactive
     fi
+}
+
+svc_health_check() {
+    local component installed_version
+    component="$1"
+    [ "$component" = server ] || return 0
+    installed_version=$("${INSTALL_DIR}/serverbee-server" --serverbee-upgrade-probe)
+    [ "$TEST_SERVER_HEALTH_MODE" != candidate-unhealthy ] \
+        || [ "$installed_version" != "1.0.0-beta.1" ]
 }
 
 test_successful_upgrade() {
@@ -162,6 +173,34 @@ test_health_failure_rolls_back() {
 start agent
 stop agent
 start agent"
+}
+
+test_server_http_health_failure_rolls_back() {
+    setup_case server-http-health-failure
+    TEST_COMPONENT=server
+    TEST_SERVER_HEALTH_MODE='candidate-unhealthy'
+    mv "${INSTALL_DIR}/serverbee-agent" "${INSTALL_DIR}/serverbee-server"
+
+    if (upgrade_binary server v1.0.0-beta.1) >/dev/null 2>&1; then
+        fail "Server candidate without a healthy HTTP endpoint unexpectedly succeeded"
+    fi
+    assert_eq "$("${INSTALL_DIR}/serverbee-server" --serverbee-upgrade-probe)" "1.0.0-alpha.12"
+    [ ! -e "${INSTALL_DIR}/serverbee-server.rollback" ] || fail "rollback backup was not consumed"
+    assert_eq "$(cat "$ACTION_LOG")" "stop server
+start server
+stop server
+start server"
+}
+
+test_server_health_url_uses_configured_listener() {
+    setup_case server-health-url
+    CONFIG_DIR="${CASE_DIR}/etc"
+    mkdir -p "$CONFIG_DIR"
+    printf '%s\n' '[server]' 'listen = "0.0.0.0:9743"' > "${CONFIG_DIR}/server.toml"
+    assert_eq "$(server_health_url)" "http://127.0.0.1:9743/healthz"
+
+    printf '%s\n' '[server]' 'listen = "[::]:9744"' > "${CONFIG_DIR}/server.toml"
+    assert_eq "$(server_health_url)" "http://[::1]:9744/healthz"
 }
 
 test_restart_during_stability_window_rolls_back() {
@@ -328,6 +367,8 @@ test_probe_mismatch_preserves_current_binary
 test_server_candidate_probe_requires_exact_version
 test_start_failure_rolls_back
 test_health_failure_rolls_back
+test_server_http_health_failure_rolls_back
+test_server_health_url_uses_configured_listener
 test_restart_during_stability_window_rolls_back
 test_stale_backup_blocks_upgrade
 test_successful_docker_upgrade
