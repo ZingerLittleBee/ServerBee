@@ -30,6 +30,7 @@ const ToggleGroupContext = React.createContext<ToggleGroupContextValue>({
 })
 
 function ToggleGroup({
+  animated = true,
   children,
   className,
   multiple,
@@ -41,13 +42,15 @@ function ToggleGroup({
   ...props
 }: ToggleGroupPrimitive.Props &
   VariantProps<typeof toggleVariants> & {
+    /** When false, the active indicator snaps with no layoutId spring. Default true. */
+    animated?: boolean
     orientation?: 'horizontal' | 'vertical'
     spacing?: number
   }) {
   const layoutId = useId()
   const reduce = useReducedMotion()
-  // Sliding indicator only makes sense for exclusive (single) selection.
-  const animateIndicator = multiple === false
+  // Sliding indicator only for exclusive selection when animation is enabled.
+  const animateIndicator = animated && multiple === false && !reduce
   const selectedKey = Array.isArray(value) ? value.map(String).join('\0') : ''
   const contextValue = useMemo(
     () => ({
@@ -62,26 +65,35 @@ function ToggleGroup({
     [animateIndicator, layoutId, orientation, selectedKey, size, spacing, variant]
   )
 
+  const group = (
+    <ToggleGroupPrimitive
+      className={cn(
+        'group/toggle-group flex w-full flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-vertical:flex-col data-vertical:items-stretch data-[size=sm]:rounded-[min(var(--radius-md),10px)]',
+        !animateIndicator && className
+      )}
+      data-orientation={orientation}
+      data-size={size}
+      data-slot="toggle-group"
+      data-spacing={spacing}
+      data-variant={variant}
+      multiple={multiple}
+      style={{ '--gap': spacing } as React.CSSProperties}
+      value={value}
+      {...props}
+    >
+      <ToggleGroupContext.Provider value={contextValue}>{children}</ToggleGroupContext.Provider>
+    </ToggleGroupPrimitive>
+  )
+
+  if (!animateIndicator) {
+    return group
+  }
+
   return (
-    <MotionConfig transition={reduce ? { duration: 0 } : SPRING_INDICATOR}>
+    <MotionConfig transition={SPRING_INDICATOR}>
       {/* layoutRoot scopes layoutId projection so scroll containers don't skew the glide. */}
       <motion.div className={cn('w-fit max-w-full', className)} layoutRoot>
-        <ToggleGroupPrimitive
-          className={cn(
-            'group/toggle-group flex w-full flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-vertical:flex-col data-vertical:items-stretch data-[size=sm]:rounded-[min(var(--radius-md),10px)]'
-          )}
-          data-orientation={orientation}
-          data-size={size}
-          data-slot="toggle-group"
-          data-spacing={spacing}
-          data-variant={variant}
-          multiple={multiple}
-          style={{ '--gap': spacing } as React.CSSProperties}
-          value={value}
-          {...props}
-        >
-          <ToggleGroupContext.Provider value={contextValue}>{children}</ToggleGroupContext.Provider>
-        </ToggleGroupPrimitive>
+        {group}
       </motion.div>
     </MotionConfig>
   )

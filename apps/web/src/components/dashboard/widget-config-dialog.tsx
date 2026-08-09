@@ -644,6 +644,7 @@ function ServerCardsForm({
       <div className="space-y-1.5">
         <Label>{t('widgets.common.labels.layout')}</Label>
         <ToggleGroup
+          animated={false}
           className="w-full"
           multiple={false}
           onValueChange={(value) => value.length > 0 && onChange({ ...config, layout: value[0] as ServerCardsLayout })}
