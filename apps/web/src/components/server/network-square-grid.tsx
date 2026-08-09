@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -73,20 +74,12 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
   )
 }
 
-function Marker({ point, kind }: { kind: 'latency' | 'loss'; point: ServerCardMetricPoint }) {
-  const severity = getPointSeverity(point, kind)
-  return (
-    <div
-      className="flex-none rounded-[1px]"
-      data-severity={severity}
-      data-testid="square"
-      style={{
-        backgroundColor: getSeverityMarkerColor(severity),
-        height: `${MARKER_HEIGHT}px`,
-        width: `${MARKER_WIDTH}px`
-      }}
-    />
-  )
+function markerStyle(severity: CombinedSeverity): CSSProperties {
+  return {
+    backgroundColor: getSeverityMarkerColor(severity),
+    height: `${MARKER_HEIGHT}px`,
+    width: `${MARKER_WIDTH}px`
+  }
 }
 
 export function NetworkSquareGrid({ points, kind, tooltips = true }: NetworkSquareGridProps) {
@@ -122,6 +115,10 @@ export function NetworkSquareGrid({ points, kind, tooltips = true }: NetworkSqua
   // Tab order. Instead the grid is a single labelled image: assistive tech gets the summary,
   // pointer users still get the per-marker tooltip (when enabled). `role="img"` makes the
   // markers presentational, so they need no individual labels.
+  //
+  // TooltipTrigger must receive a host DOM node via `render={<div />}` so Base UI can
+  // merge hover/focus handlers. Custom components that do not forward props would silently
+  // disable tooltips on online cards.
   return (
     <div
       aria-label={summary}
@@ -130,12 +127,32 @@ export function NetworkSquareGrid({ points, kind, tooltips = true }: NetworkSqua
       style={{ gap: `${MARKER_GAP}px` }}
     >
       {visible.map((point) => {
-        if (!tooltips) {
-          return <Marker key={point.timestamp} kind={kind} point={point} />
+        const severity = getPointSeverity(point, kind)
+        // Offline (tooltips=false) and empty padding slots stay plain markers — no empty
+        // popovers. Online samples with target breakdowns keep interactive tooltips.
+        if (!(tooltips && point.targets.length > 0)) {
+          return (
+            <div
+              className="flex-none rounded-[1px]"
+              data-severity={severity}
+              data-testid="square"
+              key={point.timestamp}
+              style={markerStyle(severity)}
+            />
+          )
         }
         return (
           <Tooltip key={point.timestamp}>
-            <TooltipTrigger render={<Marker kind={kind} point={point} />} />
+            <TooltipTrigger
+              render={
+                <div
+                  className="flex-none rounded-[1px]"
+                  data-severity={severity}
+                  data-testid="square"
+                  style={markerStyle(severity)}
+                />
+              }
+            />
             <TooltipContent className="grid min-w-48 gap-1.5" sideOffset={4}>
               <PointTooltip point={point} t={t} />
             </TooltipContent>

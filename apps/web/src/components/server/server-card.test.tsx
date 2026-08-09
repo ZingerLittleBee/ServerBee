@@ -261,6 +261,29 @@ describe('ServerCard', () => {
     expect(networkSection.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0)
   })
 
+  it('keeps latency/loss tooltips on online cards with target data', () => {
+    renderCard(makeServer({ online: true }), {
+      networkSummary: makeSummary({
+        targets: [
+          {
+            availability: 0.99,
+            avg_latency: 40,
+            max_latency: 45,
+            min_latency: 35,
+            packet_loss: 0.01,
+            provider: 'ct',
+            target_id: 'target-1',
+            target_name: 'Shanghai Telecom'
+          }
+        ]
+      })
+    })
+
+    const networkSection = screen.getByLabelText('card_network_quality')
+    // NetworkMetricValue wraps the current value in a button trigger for keyboard access.
+    expect(networkSection.querySelector('button')).not.toBeNull()
+  })
+
   it('gives the truncated name a title so the full value stays reachable', () => {
     renderCard(makeServer({ name: 'a-very-long-server-name-that-will-be-clipped' }))
     const heading = screen.getByRole('heading', { level: 3 })

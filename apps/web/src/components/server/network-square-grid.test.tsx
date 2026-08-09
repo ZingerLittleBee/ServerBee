@@ -106,6 +106,30 @@ describe('NetworkSquareGrid', () => {
     expect(container.querySelectorAll('[tabindex], button, a, [data-slot="tooltip-trigger"]')).toHaveLength(0)
   })
 
+  it('keeps tooltip triggers on online samples that have target breakdowns', () => {
+    const points = [makePoint(50), makePoint(80)]
+
+    const { container } = renderGrid('latency', points, true)
+
+    expect(container.querySelectorAll('[data-testid="square"]')).toHaveLength(2)
+    // Base UI merges handlers onto the rendered host; data-slot marks the trigger.
+    expect(container.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(2)
+  })
+
+  it('does not mount tooltips for empty padding slots even when tooltips are enabled', () => {
+    const padding: ServerCardMetricPoint = {
+      synthetic: true,
+      targets: [],
+      timestamp: 'padding-0',
+      value: null
+    }
+
+    const { container } = renderGrid('latency', [padding], true)
+
+    expect(container.querySelectorAll('[data-testid="square"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0)
+  })
+
   it('summarizes the abnormal total and per-severity breakdown in the accessible name', () => {
     const points = [makePoint(50), makePoint(800), makePoint(120, 1)]
 
