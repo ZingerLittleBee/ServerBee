@@ -1,4 +1,4 @@
-import { MoreHorizontal, PencilIcon, PlusIcon, Star, TrashIcon } from 'lucide-react'
+import { MoreHorizontal, PencilIcon, PlusIcon, SquarePen, Star, TrashIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -159,7 +159,7 @@ export function DashboardAdminMenu({ canEdit, currentId, dashboards, onEdit, onS
         <DropdownMenuContent align="end" className="min-w-44">
           {canEdit && (
             <DropdownMenuItem onClick={onEdit}>
-              <PencilIcon />
+              <SquarePen />
               {t('edit')}
             </DropdownMenuItem>
           )}
