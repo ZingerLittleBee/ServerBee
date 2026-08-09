@@ -256,10 +256,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y dash shellcheck
 
       - name: POSIX syntax check (dash -n)
-        run: dash -n deploy/install.sh deploy/test-install-upgrade.sh
+        run: |
+          dash -n deploy/install.sh deploy/test-install-upgrade.sh
+          dash -n scripts/extract-changelog.sh scripts/test-extract-changelog.sh
 
       - name: Test upgrade rollback
         run: dash deploy/test-install-upgrade.sh
 
+      - name: Test changelog extraction
+        run: dash scripts/test-extract-changelog.sh
+
       - name: Portability lint (shellcheck --shell=dash)
-        run: shellcheck --shell=dash --severity=warning deploy/install.sh deploy/test-install-upgrade.sh
+        run: |
+          shellcheck --shell=dash --severity=warning deploy/install.sh deploy/test-install-upgrade.sh
+          shellcheck --shell=dash --severity=warning scripts/extract-changelog.sh scripts/test-extract-changelog.sh

@@ -60,12 +60,7 @@ jobs:
             exit 1
           fi
 
-          awk -v version="$VERSION" '
-            $0 == "## [" version "]" { found=1; next }
-            /^## \[/ { if (found) exit }
-            found { print }
-          ' CHANGELOG.md > changelog_body.md
-          if [[ ! -s changelog_body.md ]]; then
+          if ! scripts/extract-changelog.sh "$VERSION" > changelog_body.md; then
             echo "::error::CHANGELOG.md has no non-empty section for $VERSION"
             exit 1
           fi
@@ -84,9 +79,10 @@ jobs:
 
       - name: Validate installer upgrade rollback
         run: |
-          dash -n deploy/install.sh deploy/test-install-upgrade.sh
+          dash -n deploy/install.sh deploy/test-install-upgrade.sh scripts/extract-changelog.sh scripts/test-extract-changelog.sh
           dash deploy/test-install-upgrade.sh
-          shellcheck --shell=dash --severity=warning deploy/install.sh deploy/test-install-upgrade.sh
+          dash scripts/test-extract-changelog.sh
+          shellcheck --shell=dash --severity=warning deploy/install.sh deploy/test-install-upgrade.sh scripts/extract-changelog.sh scripts/test-extract-changelog.sh
 
       - name: Test Rust workspace
         run: cargo test --workspace
@@ -283,9 +279,7 @@ jobs:
       - name: Extract changelog
         id: changelog
         run: |
-          # Extract the section between ## [version] and the next ## [
-          awk '/^## \[${{ needs.preflight.outputs.version }}\]/{found=1; next} /^## \[/{if(found) exit} found' CHANGELOG.md > changelog_body.md
-          test -s changelog_body.md
+          scripts/extract-changelog.sh '${{ needs.preflight.outputs.version }}' > changelog_body.md
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
