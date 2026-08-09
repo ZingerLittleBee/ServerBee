@@ -4,7 +4,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use serverbee_common::constants::{UPGRADE_PROBE_ARG, is_upgrade_probe};
+use serverbee_common::constants::UPGRADE_PROBE_ARG;
+#[cfg(test)]
+use serverbee_common::constants::is_upgrade_probe;
 
 pub const PARENT_WATCHDOG_ENV: &str = "SERVERBEE_UPGRADE_PARENT_WATCHDOG";
 const STARTUP_HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
