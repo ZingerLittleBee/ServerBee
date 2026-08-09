@@ -81,7 +81,7 @@ vi.mock('@/components/charts/bar', () => ({
     lineCap?: number
   }) => (
     <div
-      data-fill-kind={typeof fill === 'function' ? 'resolver' : 'static'}
+      data-fill={typeof fill === 'string' ? fill : 'resolver'}
       data-key={dataKey}
       data-line-cap={lineCap}
       data-testid="bar-series"
@@ -166,8 +166,8 @@ describe('TopNWidget', () => {
     expect(screen.queryByTestId('bar-y-axis')).not.toBeInTheDocument()
 
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-key', 'value')
-    // Per-rank palette via fill resolver (CHART_COLORS), not a single chart-1.
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill-kind', 'resolver')
+    // Single theme primary fill for every bar.
+    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', 'var(--primary)')
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-line-cap', '5')
     expect(screen.getByTestId('bar-value-axis')).toBeInTheDocument()
 
@@ -177,29 +177,6 @@ describe('TopNWidget', () => {
     expect(rows[1]).toHaveTextContent('90.0%')
     expect(rows[2]).toHaveTextContent('Mid')
     expect(rows[3]).toHaveTextContent('Low')
-  })
-
-  it('assigns distinct series colors by rank order', () => {
-    render(
-      <TopNWidget
-        config={{ metric: 'cpu', count: 3, sort: 'desc' }}
-        servers={[
-          makeServer('a', { cpu: 10, name: 'Low' }),
-          makeServer('b', { cpu: 90, name: 'High' }),
-          makeServer('c', { cpu: 50, name: 'Mid' })
-        ]}
-      />
-    )
-
-    const chartData = JSON.parse(screen.getByTestId('bar-chart').getAttribute('data-chart-data') ?? '[]') as {
-      color: string
-      id: string
-      name: string
-    }[]
-
-    expect(chartData.map((row) => row.name)).toEqual(['High', 'Mid', 'Low'])
-    // Main theme chart palette (same tokens as MetricsChart / other plots).
-    expect(chartData.map((row) => row.color)).toEqual(['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)'])
   })
 
   it('shows an empty state when no online servers are available', () => {

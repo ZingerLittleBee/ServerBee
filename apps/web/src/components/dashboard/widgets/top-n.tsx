@@ -19,7 +19,6 @@ interface TopNWidgetProps {
 }
 
 interface TopNRow {
-  color: string
   id: string
   name: string
   value: number
@@ -40,34 +39,17 @@ const LABEL_INSET_PX = 8
 /** Bars narrower than this put the name to the right of the fill (outside). */
 const MIN_INNER_LABEL_WIDTH_PX = 56
 
+/** Single theme brand fill — same primary token as buttons / key chrome. */
+const BAR_FILL = 'var(--primary)'
+
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
 
-/**
- * Main app chart palette (`--chart-1`…`5` from the theme). Same tokens as
- * MetricsChart / other dashboard plots — calmer than the multi-series
- * `--chart-series-*` set used for network latency legends.
- */
-const TOP_N_CHART_COLORS = [
-  'var(--chart-1)',
-  'var(--chart-2)',
-  'var(--chart-3)',
-  'var(--chart-4)',
-  'var(--chart-5)'
-] as const
-
-function rankColor(rankIndex: number): string {
-  return TOP_N_CHART_COLORS[rankIndex % TOP_N_CHART_COLORS.length] ?? TOP_N_CHART_COLORS[0]
-}
-
-function labelClassForBar(color: string, inside: boolean): string {
+function labelClassForBar(inside: boolean): string {
   if (!inside) {
     return 'text-foreground'
   }
-  // chart-3 is the light amber/gold (L ≈ 0.8 light / 0.77 dark) — white fails.
-  if (color === 'var(--chart-3)') {
-    return 'text-zinc-950'
-  }
-  return 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.5)]'
+  // primary-foreground is defined for contrast on the primary surface.
+  return 'text-primary-foreground'
 }
 
 function formatValue(metric: string, value: number): string {
@@ -95,7 +77,6 @@ function chartHeightForCount(count: number): number {
 }
 
 interface TopNBarLabelsProps {
-  getColor: (id: string) => string
   getName: (id: string) => string
 }
 
@@ -104,7 +85,7 @@ interface TopNBarLabelsProps {
  * post-overlay child of `BarChart` so it can read band geometry from context
  * without reserving a separate category axis.
  */
-function TopNBarLabels({ getColor, getName }: TopNBarLabelsProps) {
+function TopNBarLabels({ getName }: TopNBarLabelsProps) {
   const { containerRef } = useChartStable()
   const [mounted, setMounted] = useState(false)
   const { barScale, bandWidth, barXAccessor, data, margin, yScale, hoveredBarIndex } = useChart()
@@ -126,10 +107,8 @@ function TopNBarLabels({ getColor, getName }: TopNBarLabelsProps) {
       const barWidthPx = Math.max(0, (yScale(value) ?? 0) - zeroX)
       const inside = barWidthPx >= MIN_INNER_LABEL_WIDTH_PX
       const bandY = barScale(id) ?? 0
-      const color = getColor(id)
       return {
         barWidthPx,
-        color,
         id,
         index,
         inside,
@@ -138,7 +117,7 @@ function TopNBarLabels({ getColor, getName }: TopNBarLabelsProps) {
         bandHeight: bandWidth
       }
     })
-  }, [barScale, bandWidth, barXAccessor, data, getColor, getName, margin.top, yScale])
+  }, [barScale, bandWidth, barXAccessor, data, getName, margin.top, yScale])
 
   if (!(mounted && container)) {
     return null
@@ -167,7 +146,7 @@ function TopNBarLabels({ getColor, getName }: TopNBarLabelsProps) {
             <span
               className={cn(
                 'truncate font-medium text-xs transition-opacity duration-150',
-                labelClassForBar(item.color, item.inside),
+                labelClassForBar(item.inside),
                 isHovered ? 'opacity-100' : 'opacity-90'
               )}
             >
@@ -201,24 +180,16 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
 
     withMetric.sort((a, b) => (sort === 'desc' ? b.value - a.value : a.value - b.value))
 
-    // Color by rank (not server id) so #1 always lands on series-1 and the
-    // palette reshuffles when the ranking changes — categorical variety
-    // without implying a metric severity scale.
-    return withMetric.slice(0, count).map((row, rankIndex) => ({
-      ...row,
-      color: rankColor(rankIndex)
-    }))
+    return withMetric.slice(0, count)
   }, [servers, metric, count, sort])
 
   const nameById = useMemo(() => new Map(ranked.map((row) => [row.id, row.name])), [ranked])
-  const colorById = useMemo(() => new Map(ranked.map((row) => [row.id, row.color])), [ranked])
 
   const chartData = useMemo(
     // Band scale range is [0, height] (SVG y grows downward), so the first
     // domain entry paints at the top — keep rank order as-is (#1 first).
     () =>
       ranked.map((row) => ({
-        color: row.color,
         id: row.id,
         name: row.name,
         value: row.value
@@ -234,11 +205,6 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
   }, [metric])
 
   const getName = useCallback((id: string) => nameById.get(id) ?? id, [nameById])
-  const getColor = useCallback((id: string) => colorById.get(id) ?? rankColor(0), [colorById])
-  const resolveBarFill = useCallback(
-    (point: Record<string, unknown>) => (typeof point.color === 'string' ? point.color : rankColor(0)),
-    []
-  )
   const formatValueTick = useCallback((value: number) => formatAxisValue(metric, value), [metric])
   const tooltipRows = useCallback(
     (point: Record<string, unknown>): TooltipRow[] => {
@@ -246,8 +212,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         return []
       }
-      const color = typeof point.color === 'string' ? point.color : rankColor(0)
-      return [{ color, label: metricName, value: formatValue(metric, value) }]
+      return [{ color: BAR_FILL, label: metricName, value: formatValue(metric, value) }]
     },
     [metric, metricName]
   )
@@ -289,8 +254,8 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
                   content={({ point }) => <TooltipContent rows={tooltipRows(point)} title={tooltipTitle(point)} />}
                   showDatePill={false}
                 />
-                <Bar dataKey="value" fill={resolveBarFill} lineCap={BAR_CORNER_RADIUS} />
-                <TopNBarLabels getColor={getColor} getName={getName} />
+                <Bar dataKey="value" fill={BAR_FILL} lineCap={BAR_CORNER_RADIUS} />
+                <TopNBarLabels getName={getName} />
               </BarChart>
             </div>
 
