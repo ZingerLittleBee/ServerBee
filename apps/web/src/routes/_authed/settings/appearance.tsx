@@ -194,105 +194,103 @@ function BrandSettingsSection() {
 
   return (
     <section>
-      <h2 className="mb-2 px-1 font-medium text-muted-foreground text-sm">{t('appearance.brand_settings')}</h2>
-      <div className="space-y-4 px-1">
-        <p className="text-muted-foreground text-sm">{t('appearance.brand_description')}</p>
+      <h2 className="mb-1 font-semibold text-lg">{t('appearance.brand_settings')}</h2>
+      <p className="mb-4 text-muted-foreground text-sm">{t('appearance.brand_description')}</p>
 
-        <form className="max-w-lg space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-1.5">
-            <label className="font-medium text-sm" htmlFor="site-title">
-              {t('appearance.site_title')}
-            </label>
-            <Input
-              id="site-title"
-              onChange={(e) => dispatchForm({ type: 'siteTitleChanged', value: e.target.value })}
-              placeholder="ServerBee"
-              value={form.siteTitle}
+      <form className="max-w-lg space-y-4" onSubmit={handleSubmit}>
+        <div className="space-y-1.5">
+          <label className="font-medium text-sm" htmlFor="site-title">
+            {t('appearance.site_title')}
+          </label>
+          <Input
+            id="site-title"
+            onChange={(e) => dispatchForm({ type: 'siteTitleChanged', value: e.target.value })}
+            placeholder="ServerBee"
+            value={form.siteTitle}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="font-medium text-sm" htmlFor="footer-text">
+            {t('appearance.footer_text')}
+          </label>
+          <Input
+            id="footer-text"
+            onChange={(e) => dispatchForm({ type: 'footerTextChanged', value: e.target.value })}
+            placeholder={t('appearance.footer_placeholder')}
+            value={form.footerText}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="font-medium text-sm" htmlFor="logo-upload">
+            {t('appearance.logo')}
+          </label>
+          <div className="flex items-center gap-3">
+            {form.logoPreview && (
+              <img
+                alt={t('appearance.logo_preview')}
+                className="size-10 rounded-md border object-contain"
+                height={40}
+                src={form.logoPreview}
+                width={40}
+              />
+            )}
+            <Button onClick={() => logoInputRef.current?.click()} size="sm" type="button" variant="outline">
+              <Upload className="size-3.5" />
+              {t('appearance.upload_logo')}
+            </Button>
+            <input
+              accept=".png,.ico,image/png,image/x-icon"
+              className="hidden"
+              id="logo-upload"
+              onChange={(e) => handleFileChange(e, 'logo')}
+              ref={logoInputRef}
+              type="file"
             />
           </div>
+          <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
+        </div>
 
-          <div className="space-y-1.5">
-            <label className="font-medium text-sm" htmlFor="footer-text">
-              {t('appearance.footer_text')}
-            </label>
-            <Input
-              id="footer-text"
-              onChange={(e) => dispatchForm({ type: 'footerTextChanged', value: e.target.value })}
-              placeholder={t('appearance.footer_placeholder')}
-              value={form.footerText}
+        <div className="space-y-1.5">
+          <label className="font-medium text-sm" htmlFor="favicon-upload">
+            {t('appearance.favicon')}
+          </label>
+          <div className="flex items-center gap-3">
+            {form.faviconPreview && (
+              <img
+                alt={t('appearance.favicon_preview')}
+                className="size-8 rounded border object-contain"
+                height={32}
+                src={form.faviconPreview}
+                width={32}
+              />
+            )}
+            <Button onClick={() => faviconInputRef.current?.click()} size="sm" type="button" variant="outline">
+              <Upload className="size-3.5" />
+              {t('appearance.upload_favicon')}
+            </Button>
+            <input
+              accept=".png,.ico,image/png,image/x-icon"
+              className="hidden"
+              id="favicon-upload"
+              onChange={(e) => handleFileChange(e, 'favicon')}
+              ref={faviconInputRef}
+              type="file"
             />
           </div>
+          <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
+        </div>
 
-          <div className="space-y-1.5">
-            <label className="font-medium text-sm" htmlFor="logo-upload">
-              {t('appearance.logo')}
-            </label>
-            <div className="flex items-center gap-3">
-              {form.logoPreview && (
-                <img
-                  alt={t('appearance.logo_preview')}
-                  className="size-10 rounded-md border object-contain"
-                  height={40}
-                  src={form.logoPreview}
-                  width={40}
-                />
-              )}
-              <Button onClick={() => logoInputRef.current?.click()} size="sm" type="button" variant="outline">
-                <Upload className="size-3.5" />
-                {t('appearance.upload_logo')}
-              </Button>
-              <input
-                accept=".png,.ico,image/png,image/x-icon"
-                className="hidden"
-                id="logo-upload"
-                onChange={(e) => handleFileChange(e, 'logo')}
-                ref={logoInputRef}
-                type="file"
-              />
-            </div>
-            <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
-          </div>
+        {mutation.error && (
+          <p className="text-destructive text-sm">{mutation.error.message || t('appearance.save_failed')}</p>
+        )}
 
-          <div className="space-y-1.5">
-            <label className="font-medium text-sm" htmlFor="favicon-upload">
-              {t('appearance.favicon')}
-            </label>
-            <div className="flex items-center gap-3">
-              {form.faviconPreview && (
-                <img
-                  alt={t('appearance.favicon_preview')}
-                  className="size-8 rounded border object-contain"
-                  height={32}
-                  src={form.faviconPreview}
-                  width={32}
-                />
-              )}
-              <Button onClick={() => faviconInputRef.current?.click()} size="sm" type="button" variant="outline">
-                <Upload className="size-3.5" />
-                {t('appearance.upload_favicon')}
-              </Button>
-              <input
-                accept=".png,.ico,image/png,image/x-icon"
-                className="hidden"
-                id="favicon-upload"
-                onChange={(e) => handleFileChange(e, 'favicon')}
-                ref={faviconInputRef}
-                type="file"
-              />
-            </div>
-            <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
-          </div>
-
-          {mutation.error && (
-            <p className="text-destructive text-sm">{mutation.error.message || t('appearance.save_failed')}</p>
-          )}
-
-          <Button disabled={mutation.isPending} type="submit">
-            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-            {mutation.isPending ? t('common:saving') : t('common:save')}
-          </Button>
-        </form>
-      </div>
+        <Button disabled={mutation.isPending} type="submit">
+          {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+          {mutation.isPending ? t('common:saving') : t('common:save')}
+        </Button>
+      </form>
     </section>
   )
 }
@@ -301,13 +299,11 @@ function WidgetModulesNotice() {
   const { t } = useTranslation('settings')
   return (
     <section>
-      <h2 className="mb-2 px-1 font-medium text-muted-foreground text-sm">{t('appearance.theme_moved_title')}</h2>
-      <div className="space-y-4 px-1">
-        <p className="text-muted-foreground text-sm">{t('appearance.theme_moved_description')}</p>
-        <Link className={buttonVariants()} to="/settings/widgets">
-          {t('appearance.theme_moved_cta')}
-        </Link>
-      </div>
+      <h2 className="mb-1 font-semibold text-lg">{t('appearance.theme_moved_title')}</h2>
+      <p className="mb-4 text-muted-foreground text-sm">{t('appearance.theme_moved_description')}</p>
+      <Link className={buttonVariants()} to="/settings/widgets">
+        {t('appearance.theme_moved_cta')}
+      </Link>
     </section>
   )
 }
