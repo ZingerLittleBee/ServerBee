@@ -1456,6 +1456,13 @@ svc_restart_count() {
     esac
 }
 
+svc_reset_failed() {
+    case "$INIT" in
+        systemd) systemctl reset-failed "serverbee-$1" >/dev/null 2>&1 || true ;;
+        *) : ;;
+    esac
+}
+
 svc_logs_tail() {
     # $1 = component   $2 = number of lines
     case "$INIT" in
@@ -2740,6 +2747,7 @@ rollback_binary_upgrade() {
         warn "Automatic rollback could not restore ${backup}; manual recovery is required."
         return 1
     fi
+    svc_reset_failed "$component"
     action=start
     [ "$(svc_is_active "$component")" = active ] && action=restart
     if ! svc_action "$action" "$component"; then

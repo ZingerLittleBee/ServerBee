@@ -113,6 +113,10 @@ svc_health_check() {
         || [ "$installed_version" != "1.0.0-beta.1" ]
 }
 
+svc_reset_failed() {
+    printf 'reset-failed %s\n' "$1" >> "$ACTION_LOG"
+}
+
 test_successful_upgrade() {
     setup_case success
     upgrade_binary agent v1.0.0-beta.1 >/dev/null
@@ -157,6 +161,7 @@ test_start_failure_rolls_back() {
     assert_eq "$(cat "$ACTION_LOG")" "stop agent
 start agent
 stop agent
+reset-failed agent
 start agent"
 }
 
@@ -172,6 +177,7 @@ test_health_failure_rolls_back() {
     assert_eq "$(cat "$ACTION_LOG")" "stop agent
 start agent
 stop agent
+reset-failed agent
 start agent"
 }
 
@@ -189,6 +195,7 @@ test_server_http_health_failure_rolls_back() {
     assert_eq "$(cat "$ACTION_LOG")" "stop server
 start server
 stop server
+reset-failed server
 start server"
 }
 
