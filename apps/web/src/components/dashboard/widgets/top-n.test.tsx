@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import { Children, isValidElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/lib/server-catalog'
 
@@ -22,28 +23,48 @@ vi.mock('react-i18next', () => ({
   })
 }))
 
+function chartChildrenWithoutBarLabels(children: ReactNode): ReactNode[] {
+  const kept: ReactNode[] = []
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) {
+      kept.push(child)
+      return
+    }
+    const type = child.type as { displayName?: string; name?: string }
+    if (type.displayName === 'TopNBarLabels' || type.name === 'TopNBarLabels') {
+      return
+    }
+    kept.push(child)
+  })
+  return kept
+}
+
 vi.mock('@/components/charts/bar-chart', () => ({
   BarChart: ({
     children,
     data,
+    margin,
     orientation,
     valueDomain,
     xDataKey
   }: {
-    children?: React.ReactNode
+    children?: ReactNode
     data: Record<string, unknown>[]
+    margin?: { left?: number }
     orientation?: string
     valueDomain?: [number, number]
     xDataKey?: string
   }) => (
     <div
+      data-margin-left={margin?.left ?? ''}
       data-orientation={orientation}
       data-rows={data.length}
       data-testid="bar-chart"
       data-value-domain={valueDomain ? JSON.stringify(valueDomain) : ''}
       data-x-key={xDataKey}
     >
-      {children}
+      {/* Drop post-overlay labels — they need a live ChartProvider. */}
+      {chartChildrenWithoutBarLabels(children)}
     </div>
   )
 }))
@@ -54,11 +75,18 @@ vi.mock('@/components/charts/bar', () => ({
   )
 }))
 
-vi.mock('@/components/charts/bar-y-axis', () => ({ BarYAxis: () => <div data-testid="bar-y-axis" /> }))
 vi.mock('@/components/charts/bar-value-axis', () => ({ BarValueAxis: () => <div data-testid="bar-value-axis" /> }))
 vi.mock('@/components/charts/grid', () => ({ Grid: () => null }))
 vi.mock('@/components/charts/tooltip/chart-tooltip', () => ({ ChartTooltip: () => null }))
 vi.mock('@/components/charts/tooltip/tooltip-content', () => ({ TooltipContent: () => null }))
+vi.mock('@/components/charts/chart-context', () => ({
+  useChart: () => {
+    throw new Error('useChart should not run in unit tests for TopNWidget')
+  },
+  useChartStable: () => {
+    throw new Error('useChartStable should not run in unit tests for TopNWidget')
+  }
+}))
 
 const { TopNWidget } = await import('./top-n')
 
@@ -119,11 +147,13 @@ describe('TopNWidget', () => {
     expect(chart).toHaveAttribute('data-rows', '3')
     expect(chart).toHaveAttribute('data-x-key', 'id')
     expect(chart).toHaveAttribute('data-value-domain', '[0,100]')
+    // No reserved category axis — names render on the bars via TopNBarLabels.
+    expect(chart).toHaveAttribute('data-margin-left', '8')
+    expect(screen.queryByTestId('bar-y-axis')).not.toBeInTheDocument()
 
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-key', 'value')
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', 'var(--chart-1)')
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-line-cap', '5')
-    expect(screen.getByTestId('bar-y-axis')).toBeInTheDocument()
     expect(screen.getByTestId('bar-value-axis')).toBeInTheDocument()
 
     // Accessible table lists rank order high → low (desc).

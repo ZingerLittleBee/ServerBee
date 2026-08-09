@@ -1,14 +1,15 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Bar } from '@/components/charts/bar'
 import { BarChart } from '@/components/charts/bar-chart'
 import { BarValueAxis } from '@/components/charts/bar-value-axis'
-import { BarYAxis } from '@/components/charts/bar-y-axis'
+import { useChart, useChartStable } from '@/components/charts/chart-context'
 import { Grid } from '@/components/charts/grid'
 import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
 import { TooltipContent, type TooltipRow } from '@/components/charts/tooltip/tooltip-content'
 import type { ServerMetrics } from '@/lib/server-catalog'
-import { formatBytes } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { TopNConfig } from '@/lib/widget-types'
 
@@ -31,8 +32,12 @@ const MAX_BAR_WIDTH = 28
 const ROW_HEIGHT_PX = 36
 /** Room for value-axis ticks under the plot. */
 const CHART_BOTTOM_PAD_PX = 32
-/** Left gutter for category labels (server names). */
-const CATEGORY_MARGIN_LEFT = 96
+/** Plot insets — no left category axis; names live on the bars. */
+const PLOT_MARGIN = { left: 8, right: 16, top: 4, bottom: 28 } as const
+/** Horizontal padding between bar edge and the name label. */
+const LABEL_INSET_PX = 8
+/** Bars narrower than this put the name to the right of the fill (outside). */
+const MIN_INNER_LABEL_WIDTH_PX = 56
 
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
 
@@ -59,6 +64,96 @@ function formatAxisValue(metric: string, value: number): string {
 function chartHeightForCount(count: number): number {
   return Math.max(ROW_HEIGHT_PX, count * ROW_HEIGHT_PX) + CHART_BOTTOM_PAD_PX
 }
+
+interface TopNBarLabelsProps {
+  getName: (id: string) => string
+}
+
+/**
+ * Name labels painted on (or just past) each horizontal bar. Lives as a
+ * post-overlay child of `BarChart` so it can read band geometry from context
+ * without reserving a separate category axis.
+ */
+function TopNBarLabels({ getName }: TopNBarLabelsProps) {
+  const { containerRef } = useChartStable()
+  const [mounted, setMounted] = useState(false)
+  const { barScale, bandWidth, barXAccessor, data, margin, yScale, hoveredBarIndex } = useChart()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const container = containerRef.current
+  const labels = useMemo(() => {
+    if (!(barScale && bandWidth && barXAccessor)) {
+      return []
+    }
+    const zeroX = yScale(0) ?? 0
+    return data.map((point, index) => {
+      const id = barXAccessor(point)
+      const rawValue = point.value
+      const value = typeof rawValue === 'number' && Number.isFinite(rawValue) ? rawValue : 0
+      const barWidthPx = Math.max(0, (yScale(value) ?? 0) - zeroX)
+      const inside = barWidthPx >= MIN_INNER_LABEL_WIDTH_PX
+      const bandY = barScale(id) ?? 0
+      return {
+        barWidthPx,
+        id,
+        index,
+        inside,
+        name: getName(id),
+        y: bandY + margin.top,
+        bandHeight: bandWidth
+      }
+    })
+  }, [barScale, bandWidth, barXAccessor, data, getName, margin.top, yScale])
+
+  if (!(mounted && container)) {
+    return null
+  }
+
+  return createPortal(
+    <div className="pointer-events-none absolute inset-0" data-testid="top-n-bar-labels">
+      {labels.map((item) => {
+        const isHovered = hoveredBarIndex === item.index
+        return (
+          <div
+            className="absolute flex items-center"
+            key={item.id}
+            style={{
+              height: item.bandHeight,
+              left: item.inside ? margin.left + LABEL_INSET_PX : margin.left + item.barWidthPx + LABEL_INSET_PX,
+              maxWidth: item.inside
+                ? Math.max(0, item.barWidthPx - LABEL_INSET_PX * 2)
+                : Math.max(
+                    0,
+                    (container.clientWidth || 0) - margin.left - item.barWidthPx - LABEL_INSET_PX - margin.right
+                  ),
+              top: item.y
+            }}
+          >
+            <span
+              className={cn(
+                'truncate font-medium text-xs transition-opacity duration-150',
+                // chart-1 is a mid-chroma blue in both themes — white reads on the
+                // fill. Outside the bar, fall back to foreground so names stay
+                // legible on the card surface when the value is tiny.
+                item.inside ? 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.5)]' : 'text-foreground',
+                isHovered ? 'opacity-100' : 'opacity-90'
+              )}
+            >
+              {item.name}
+            </span>
+          </div>
+        )
+      })}
+    </div>,
+    container
+  )
+}
+// Render above bars / interaction overlay so names stay visible while hovering.
+;(TopNBarLabels as typeof TopNBarLabels & { __isPostOverlay?: boolean }).__isPostOverlay = true
+TopNBarLabels.displayName = 'TopNBarLabels'
 
 export function TopNWidget({ config, servers }: TopNWidgetProps) {
   const { t } = useTranslation('dashboard')
@@ -101,7 +196,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
     return undefined
   }, [metric])
 
-  const formatCategory = useCallback((id: string) => nameById.get(id) ?? id, [nameById])
+  const getName = useCallback((id: string) => nameById.get(id) ?? id, [nameById])
   const formatValueTick = useCallback((value: number) => formatAxisValue(metric, value), [metric])
   const tooltipRows = useCallback(
     (point: Record<string, unknown>): TooltipRow[] => {
@@ -139,20 +234,20 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
                 aspectRatio=""
                 className="h-full min-h-0 w-full min-w-0"
                 data={chartData}
-                margin={{ left: CATEGORY_MARGIN_LEFT, right: 16, top: 4, bottom: 28 }}
+                margin={PLOT_MARGIN}
                 maxBarWidth={MAX_BAR_WIDTH}
                 orientation="horizontal"
                 valueDomain={valueDomain}
                 xDataKey="id"
               >
                 <Grid horizontal={false} vertical />
-                <BarYAxis formatLabel={formatCategory} />
                 <BarValueAxis formatValue={formatValueTick} />
                 <ChartTooltip
                   content={({ point }) => <TooltipContent rows={tooltipRows(point)} title={tooltipTitle(point)} />}
                   showDatePill={false}
                 />
                 <Bar dataKey="value" fill="var(--chart-1)" lineCap={BAR_CORNER_RADIUS} />
+                <TopNBarLabels getName={getName} />
               </BarChart>
             </div>
 
