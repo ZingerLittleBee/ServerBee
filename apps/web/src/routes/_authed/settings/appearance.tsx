@@ -5,6 +5,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useReducer, useRef } from 
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { PageBody } from '@/components/layout/page-body'
+import { SettingsSection } from '@/components/settings/settings-row'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Input } from '@/components/ui/input'
@@ -193,127 +194,131 @@ function BrandSettingsSection() {
   }
 
   return (
-    <div className="rounded-lg border bg-card p-6">
-      <h2 className="mb-1 font-semibold text-lg">{t('appearance.brand_settings')}</h2>
-      <p className="mb-4 text-muted-foreground text-sm">{t('appearance.brand_description')}</p>
+    <SettingsSection title={t('appearance.brand_settings')}>
+      <div className="space-y-4 p-4 sm:p-6">
+        <p className="text-muted-foreground text-sm">{t('appearance.brand_description')}</p>
 
-      <form className="max-w-lg space-y-4" onSubmit={handleSubmit}>
-        <div className="space-y-1.5">
-          <label className="font-medium text-sm" htmlFor="site-title">
-            {t('appearance.site_title')}
-          </label>
-          <Input
-            id="site-title"
-            onChange={(e) => dispatchForm({ type: 'siteTitleChanged', value: e.target.value })}
-            placeholder="ServerBee"
-            value={form.siteTitle}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="font-medium text-sm" htmlFor="footer-text">
-            {t('appearance.footer_text')}
-          </label>
-          <Input
-            id="footer-text"
-            onChange={(e) => dispatchForm({ type: 'footerTextChanged', value: e.target.value })}
-            placeholder={t('appearance.footer_placeholder')}
-            value={form.footerText}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="font-medium text-sm" htmlFor="logo-upload">
-            {t('appearance.logo')}
-          </label>
-          <div className="flex items-center gap-3">
-            {form.logoPreview && (
-              <img
-                alt={t('appearance.logo_preview')}
-                className="size-10 rounded-md border object-contain"
-                height={40}
-                src={form.logoPreview}
-                width={40}
-              />
-            )}
-            <Button onClick={() => logoInputRef.current?.click()} size="sm" type="button" variant="outline">
-              <Upload className="size-3.5" />
-              {t('appearance.upload_logo')}
-            </Button>
-            <input
-              accept=".png,.ico,image/png,image/x-icon"
-              className="hidden"
-              id="logo-upload"
-              onChange={(e) => handleFileChange(e, 'logo')}
-              ref={logoInputRef}
-              type="file"
+        <form className="max-w-lg space-y-4" onSubmit={handleSubmit}>
+          <div className="space-y-1.5">
+            <label className="font-medium text-sm" htmlFor="site-title">
+              {t('appearance.site_title')}
+            </label>
+            <Input
+              id="site-title"
+              onChange={(e) => dispatchForm({ type: 'siteTitleChanged', value: e.target.value })}
+              placeholder="ServerBee"
+              value={form.siteTitle}
             />
           </div>
-          <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
-        </div>
 
-        <div className="space-y-1.5">
-          <label className="font-medium text-sm" htmlFor="favicon-upload">
-            {t('appearance.favicon')}
-          </label>
-          <div className="flex items-center gap-3">
-            {form.faviconPreview && (
-              <img
-                alt={t('appearance.favicon_preview')}
-                className="size-8 rounded border object-contain"
-                height={32}
-                src={form.faviconPreview}
-                width={32}
-              />
-            )}
-            <Button onClick={() => faviconInputRef.current?.click()} size="sm" type="button" variant="outline">
-              <Upload className="size-3.5" />
-              {t('appearance.upload_favicon')}
-            </Button>
-            <input
-              accept=".png,.ico,image/png,image/x-icon"
-              className="hidden"
-              id="favicon-upload"
-              onChange={(e) => handleFileChange(e, 'favicon')}
-              ref={faviconInputRef}
-              type="file"
+          <div className="space-y-1.5">
+            <label className="font-medium text-sm" htmlFor="footer-text">
+              {t('appearance.footer_text')}
+            </label>
+            <Input
+              id="footer-text"
+              onChange={(e) => dispatchForm({ type: 'footerTextChanged', value: e.target.value })}
+              placeholder={t('appearance.footer_placeholder')}
+              value={form.footerText}
             />
           </div>
-          <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
-        </div>
 
-        {mutation.error && (
-          <p className="text-destructive text-sm">{mutation.error.message || t('appearance.save_failed')}</p>
-        )}
+          <div className="space-y-1.5">
+            <label className="font-medium text-sm" htmlFor="logo-upload">
+              {t('appearance.logo')}
+            </label>
+            <div className="flex items-center gap-3">
+              {form.logoPreview && (
+                <img
+                  alt={t('appearance.logo_preview')}
+                  className="size-10 rounded-md border object-contain"
+                  height={40}
+                  src={form.logoPreview}
+                  width={40}
+                />
+              )}
+              <Button onClick={() => logoInputRef.current?.click()} size="sm" type="button" variant="outline">
+                <Upload className="size-3.5" />
+                {t('appearance.upload_logo')}
+              </Button>
+              <input
+                accept=".png,.ico,image/png,image/x-icon"
+                className="hidden"
+                id="logo-upload"
+                onChange={(e) => handleFileChange(e, 'logo')}
+                ref={logoInputRef}
+                type="file"
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
+          </div>
 
-        <Button disabled={mutation.isPending} type="submit">
-          {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-          {mutation.isPending ? t('common:saving') : t('common:save')}
-        </Button>
-      </form>
-    </div>
+          <div className="space-y-1.5">
+            <label className="font-medium text-sm" htmlFor="favicon-upload">
+              {t('appearance.favicon')}
+            </label>
+            <div className="flex items-center gap-3">
+              {form.faviconPreview && (
+                <img
+                  alt={t('appearance.favicon_preview')}
+                  className="size-8 rounded border object-contain"
+                  height={32}
+                  src={form.faviconPreview}
+                  width={32}
+                />
+              )}
+              <Button onClick={() => faviconInputRef.current?.click()} size="sm" type="button" variant="outline">
+                <Upload className="size-3.5" />
+                {t('appearance.upload_favicon')}
+              </Button>
+              <input
+                accept=".png,.ico,image/png,image/x-icon"
+                className="hidden"
+                id="favicon-upload"
+                onChange={(e) => handleFileChange(e, 'favicon')}
+                ref={faviconInputRef}
+                type="file"
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">{t('appearance.image_hint')}</p>
+          </div>
+
+          {mutation.error && (
+            <p className="text-destructive text-sm">{mutation.error.message || t('appearance.save_failed')}</p>
+          )}
+
+          <Button disabled={mutation.isPending} type="submit">
+            {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+            {mutation.isPending ? t('common:saving') : t('common:save')}
+          </Button>
+        </form>
+      </div>
+    </SettingsSection>
   )
 }
 
 function WidgetModulesNotice() {
   const { t } = useTranslation('settings')
   return (
-    <div className="rounded-lg border bg-card p-6">
-      <h2 className="mb-1 font-semibold text-lg">{t('appearance.theme_moved_title')}</h2>
-      <p className="mb-4 text-muted-foreground text-sm">{t('appearance.theme_moved_description')}</p>
-      <Link className={buttonVariants()} to="/settings/widgets">
-        {t('appearance.theme_moved_cta')}
-      </Link>
-    </div>
+    <SettingsSection title={t('appearance.theme_moved_title')}>
+      <div className="space-y-4 p-4 sm:p-6">
+        <p className="text-muted-foreground text-sm">{t('appearance.theme_moved_description')}</p>
+        <Link className={buttonVariants()} to="/settings/widgets">
+          {t('appearance.theme_moved_cta')}
+        </Link>
+      </div>
+    </SettingsSection>
   )
 }
 
 export function AppearancePage() {
   return (
     <PageBody>
-      <div className="max-w-3xl space-y-6">
-        <WidgetModulesNotice />
-        <BrandSettingsSection />
+      <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
+        <div className="w-full min-w-0 max-w-3xl space-y-8">
+          <WidgetModulesNotice />
+          <BrandSettingsSection />
+        </div>
       </div>
     </PageBody>
   )
