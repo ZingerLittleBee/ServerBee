@@ -2,7 +2,7 @@ import type { Table } from '@tanstack/react-table'
 import { LayoutGrid, ListChecks, Plus, Search, Table2, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { DataTableToolbar } from '@/components/data-table/data-table-toolbar'
-import { SiteHeaderActions, SiteHeaderLeading } from '@/components/site-header'
+import { SiteHeaderActions } from '@/components/site-header'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -139,8 +139,8 @@ export function ServersPageToolbar({
   )
 
   return (
-    <>
-      <SiteHeaderLeading>
+    <SiteHeaderActions>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
         <div className="relative w-[min(100%,20rem)] min-w-0">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -154,22 +154,18 @@ export function ServersPageToolbar({
             value={search}
           />
         </div>
-      </SiteHeaderLeading>
-      <SiteHeaderActions>
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-          {viewMode === 'table' && (
-            <DataTableToolbar
-              className="w-auto min-w-0 p-0 sm:flex-none"
-              table={table}
-              trailingActions={selectModeButton}
-            />
-          )}
-          {viewToggle}
-          {cleanupButton}
-          {batchDeleteButton}
-          {addServerButton}
-        </div>
-      </SiteHeaderActions>
-    </>
+        {viewMode === 'table' && (
+          <DataTableToolbar
+            className="w-auto min-w-0 p-0 sm:flex-none"
+            table={table}
+            trailingActions={selectModeButton}
+          />
+        )}
+        {viewToggle}
+        {cleanupButton}
+        {batchDeleteButton}
+        {addServerButton}
+      </div>
+    </SiteHeaderActions>
   )
 }
