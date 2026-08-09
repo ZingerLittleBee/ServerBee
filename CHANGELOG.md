@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Authentication and event pagination are hardened** -- Invalid Server configuration and malformed OAuth provider identities now fail closed, while same-timestamp security and firewall events are paginated without gaps
 
+- **Vulnerable transitive dependencies are updated** -- The Rust dependency graph now uses fixed releases for QUIC parsing, serialization helpers, random number generation, and internationalized domain-name handling
+
 ### Fixed
 
 - **Daily traffic trend shows data again** -- A server's Traffic tab asked for a daily breakdown endpoint that was never implemented, so the chart always reported "no daily traffic data"
