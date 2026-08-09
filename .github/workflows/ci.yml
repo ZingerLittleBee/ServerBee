@@ -101,7 +101,7 @@ jobs:
 
       - name: Clippy
         if: needs.changes.outputs.rust == 'true'
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --benches --tests --examples --all-features --locked -- -D warnings
 
       - name: Warm Rust test cache
         if: needs.changes.outputs.rust == 'true'
