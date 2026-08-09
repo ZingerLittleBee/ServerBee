@@ -258,7 +258,12 @@ function ServersListPage() {
             style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(320px, 100%), 1fr))' }}
           >
             {filtered.map((server) => (
-              <div className="-m-1 p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
+              // flex + stretched grid cell: ServerCard's h-full fills the row so
+              // online/offline tiles share one height even when body sections differ.
+              <div
+                className="-m-1 flex p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]"
+                key={server.id}
+              >
                 <ServerCard
                   costEntry={costByServerId.get(server.id)}
                   networkBucketSeconds={networkBucketSeconds}

@@ -156,8 +156,9 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
         {visible.map((server) => (
           // content-visibility:auto adds paint containment. The negative margin
           // keeps the grid geometry unchanged while padding leaves room for the
-          // card shadow, preventing it from being clipped into dark corners.
-          <div className="-m-1 p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
+          // card shadow. flex stretches ServerCard to the row height so online /
+          // offline tiles match even when body sections differ.
+          <div className="-m-1 flex p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
             <ServerCard server={server} />
           </div>
         ))}

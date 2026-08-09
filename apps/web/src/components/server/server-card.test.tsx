@@ -254,4 +254,9 @@ describe('ServerCard', () => {
     const { container } = renderCard(makeServer())
     expect((container.firstElementChild as HTMLElement).className).toContain('min-w-0')
   })
+
+  it('stretches to fill the grid cell so online and offline heights match', () => {
+    const { container } = renderCard(makeServer({ online: false }))
+    expect((container.firstElementChild as HTMLElement).className).toContain('h-full')
+  })
 })
