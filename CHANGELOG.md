@@ -13,11 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Uptime timeline uses the same chart tooltip as everything else** -- Hovering a day now shows its status, percentage, downtime, and incident count in the standard chart tooltip, and the 90-day strip is readable as a table by screen readers
 
+- **Beta releases have an explicit installation channel** -- The management CLI can install or upgrade to a pinned prerelease, release builds verify version metadata and checksums, and the published documentation distinguishes official CPU-only binaries from self-built NVIDIA GPU Agents
+
+### Security
+
+- **Credential revocation now closes active WebSocket sessions** -- Expired browser sessions, revoked API keys, and replaced Agent tokens can no longer keep using an already-open control connection
+
+- **File uploads validate the complete transfer before replacing the destination** -- Truncated, oversized, reordered, or mismatched chunks are rejected without leaving a partial destination file
+
+- **Timed-out remote commands terminate their complete process tree** -- Child processes can no longer survive after the Agent reports that a command exceeded its deadline
+
+- **Authentication and event pagination are hardened** -- Invalid Server configuration and malformed OAuth provider identities now fail closed, while same-timestamp security and firewall events are paginated without gaps
+
 ### Fixed
 
 - **Daily traffic trend shows data again** -- A server's Traffic tab asked for a daily breakdown endpoint that was never implemented, so the chart always reported "no daily traffic data"
 
 - **Narrow-screen dashboard widgets keep their minimum height** -- On phones, a widget saved smaller than its type allows was squashed until parts of it (such as the metric card sparkline) disappeared
+
+- **Agent self-upgrades recover from unhealthy binaries** -- A candidate must report its exact version and complete a healthy startup trial; failed or interrupted trials restore the previous binary and report the rollback to the Server
+
+- **Management CLI upgrades preserve a working installation** -- Binary upgrades now keep a rollback copy, require a stable service window, detect systemd restart loops, and automatically restore the previous Server or Agent when validation fails
 
 ## [1.0.0-alpha.12] - 2026-08-03
 
