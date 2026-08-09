@@ -24,17 +24,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.paths.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Rust changes
+        id: paths
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            rust_changed=true
+          elif ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            rust_changed=true
+          elif git diff --quiet "$BASE_SHA...$HEAD_SHA" -- \
+            .cargo \
+            .github/workflows/ci.yml \
+            Cargo.lock \
+            Cargo.toml \
+            crates \
+            'rust-toolchain*'; then
+            rust_changed=false
+          else
+            rust_changed=true
+          fi
+
+          echo "rust=$rust_changed" >> "$GITHUB_OUTPUT"
+
   check:
     name: Check & Lint
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        if: needs.changes.outputs.rust == 'true'
         with:
           components: clippy
 
       - uses: Swatinem/rust-cache@v2
+        if: needs.changes.outputs.rust == 'true'
+        with:
+          shared-key: parallel-tests-v1
+          add-job-id-key: "false"
+          cache-workspace-crates: "true"
 
       - uses: oven-sh/setup-bun@v2
 
@@ -42,11 +86,52 @@ jobs:
         working-directory: apps/web
         run: bun install --frozen-lockfile && bun run build
 
+      - name: Upload frontend build
+        if: needs.changes.outputs.rust == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Cargo check
+        if: needs.changes.outputs.rust == 'true'
         run: cargo check --workspace
 
       - name: Clippy
+        if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --workspace -- -D warnings
+
+      - name: Warm Rust test cache
+        if: needs.changes.outputs.rust == 'true'
+        run: |
+          cargo test -p serverbee-common --no-run
+          cargo test -p serverbee-agent --no-run
+          cargo test -p serverbee-server --no-run
+          cargo test -p serverbee-server --examples --no-run
+
+  rust-tests-core:
+    name: Rust Tests (core)
+    needs: [changes, check]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: parallel-tests-v1
+          add-job-id-key: "false"
+          cache-workspace-crates: "true"
+          save-if: "false"
 
       - name: Test common
         run: cargo test -p serverbee-common
@@ -57,66 +142,87 @@ jobs:
       - name: Test server units
         run: cargo test -p serverbee-server --lib --bins --examples
 
-      - name: Test server integrations (agent)
-        run: >
-          cargo test -p serverbee-server
-          --test agent_docker_extra
-          --test agent_file_ops
-          --test agent_messages
-          --test agent_registration_integration
-          --test agent_ws_dispatch
-          --test api_key_admin_only
-          --test browser_ws
-          --test cost_integration
-          --test docker_integration
-
-      - name: Test server integrations (api)
-        run: >
-          cargo test -p serverbee-server
-          --test email_migration_integration
-          --test integration
-          --test ip_quality_integration
-          --test mobile_push_integration
-          --test notification_update_integration
-          --test public_status_anonymous
-          --test public_status_gating
-          --test public_status_ip_quality_redaction
-          --test public_status_redaction
-          --test public_status_redaction_authenticated
-          --test public_status_scope
-
-      - name: Test server integrations (router)
-        run: >
-          cargo test -p serverbee-server
-          --test router_admin_extra
-          --test router_alerting
-          --test router_auth_user
-          --test router_authtask_extra
-          --test router_content_admin
-          --test router_file_extra
-          --test router_geo_servers
-          --test router_misc_endpoints
-          --test router_mobile
-          --test router_monitoring
-          --test router_probes_extra
-          --test router_security_rate
-          --test router_server_crud
-          --test router_server_extra
-          --test router_server_extra2
-          --test router_smoke
-          --test router_static_and_misc
-
-      - name: Test server integrations (widgets and ws)
-        run: >
-          cargo test -p serverbee-server
-          --test router_widget_dashboard
-          --test widget_module_integration
-          --test ws_agent_dispatch2
-          --test ws_docker_browser
-          --test ws_terminal_relay
-
       - name: Test server docs
         run: cargo test -p serverbee-server --doc
+
+  rust-tests-server:
+    name: Rust Tests (server / ${{ matrix.group }})
+    needs: [changes, check]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: agent
+            tests: >-
+              --test agent_docker_extra
+              --test agent_file_ops
+              --test agent_messages
+              --test agent_registration_integration
+              --test agent_ws_dispatch
+              --test api_key_admin_only
+              --test browser_ws
+              --test cost_integration
+              --test docker_integration
+          - group: api
+            tests: >-
+              --test email_migration_integration
+              --test integration
+              --test ip_quality_integration
+              --test mobile_push_integration
+              --test notification_update_integration
+              --test public_status_anonymous
+              --test public_status_gating
+              --test public_status_ip_quality_redaction
+              --test public_status_redaction
+              --test public_status_redaction_authenticated
+              --test public_status_scope
+          - group: router
+            tests: >-
+              --test router_admin_extra
+              --test router_alerting
+              --test router_auth_user
+              --test router_authtask_extra
+              --test router_content_admin
+              --test router_file_extra
+              --test router_geo_servers
+              --test router_misc_endpoints
+              --test router_mobile
+              --test router_monitoring
+              --test router_probes_extra
+              --test router_security_rate
+              --test router_server_crud
+              --test router_server_extra
+              --test router_server_extra2
+              --test router_smoke
+              --test router_static_and_misc
+          - group: widgets-and-ws
+            tests: >-
+              --test router_widget_dashboard
+              --test widget_module_integration
+              --test ws_agent_dispatch2
+              --test ws_docker_browser
+              --test ws_terminal_relay
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: parallel-tests-v1
+          add-job-id-key: "false"
+          cache-workspace-crates: "true"
+          save-if: "false"
+
+      - name: Test server integrations
+        run: cargo test -p serverbee-server ${{ matrix.tests }}
 
   frontend:
     name: Frontend Check
