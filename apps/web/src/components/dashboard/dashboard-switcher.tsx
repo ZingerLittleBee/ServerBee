@@ -1,4 +1,4 @@
-import { LayoutDashboard, PencilIcon, PlusIcon, Star, TrashIcon } from 'lucide-react'
+import { PencilIcon, PlusIcon, Star, TrashIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -99,7 +99,6 @@ export function DashboardSwitcher({ dashboards, currentId, onSelect, isAdmin }: 
 
   return (
     <div className="flex items-center gap-2">
-      <LayoutDashboard className="size-5 text-muted-foreground" />
       <Select
         onValueChange={(v) => {
           if (v !== null) {
