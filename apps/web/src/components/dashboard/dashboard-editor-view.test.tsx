@@ -27,7 +27,22 @@ vi.mock('./dashboard-switcher', () => ({
         switch-dashboard
       </button>
     </div>
-  )
+  ),
+  DashboardAdminMenu: ({
+    canEdit,
+    onEdit
+  }: {
+    canEdit: boolean
+    currentId: string
+    dashboards: unknown[]
+    onEdit: () => void
+    onSelect: (id: string) => void
+  }) =>
+    canEdit ? (
+      <button onClick={onEdit} type="button">
+        edit
+      </button>
+    ) : null
 }))
 
 vi.mock('./dashboard-grid', () => ({
