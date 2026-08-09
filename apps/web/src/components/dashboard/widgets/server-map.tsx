@@ -8,14 +8,13 @@ import { ChoroplethChart } from '@/components/charts/choropleth/choropleth-chart
 import { type ChoroplethFeature, useChoropleth } from '@/components/charts/choropleth/choropleth-context'
 import { ChoroplethFeature as ChoroplethFeatureComponent } from '@/components/charts/choropleth/choropleth-feature'
 import { ChoroplethTooltip } from '@/components/charts/choropleth/choropleth-tooltip'
-import { TooltipContent } from '@/components/charts/tooltip/tooltip-content'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { alpha3ToAlpha2, buildCountryServerGroups, countryServerFill } from '@/lib/server-geo'
 import { useWorldDataStandalone } from '@/lib/use-world-data'
-import { countryCodeToName } from '@/lib/utils'
+import { cn, countryCodeToName } from '@/lib/utils'
 import { filterByIds } from '@/lib/widget-helpers'
 import type { ServerMapConfig } from '@/lib/widget-types'
 
@@ -142,17 +141,34 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
                 const alpha3 = feature.id == null ? '' : String(feature.id)
                 const group = getFeatureGroup(feature)
                 const name = getLocalizedName(alpha3, (feature.properties?.name as string | undefined) ?? alpha3)
+                const markerColor = countryServerFill(group?.count, maxCount)
                 return (
-                  <TooltipContent rows={[]} title={name}>
-                    {group ? (
-                      <div className="space-y-0.5">
-                        <div className="text-chart-tooltip-muted text-xs">
+                  <div className={cn('max-w-64 px-3 py-2.5', group && 'min-w-48')}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 font-medium text-chart-tooltip-foreground text-sm leading-5">{name}</div>
+                      {group && (
+                        <div className="shrink-0 whitespace-nowrap text-chart-tooltip-muted text-xs tabular-nums leading-5">
                           {t('widgets.serverMap.serverCount', { count: group.count })}
                         </div>
-                        <div className="max-w-48 text-chart-tooltip-muted text-xs">{group.serverNames.join(', ')}</div>
-                      </div>
-                    ) : null}
-                  </TooltipContent>
+                      )}
+                    </div>
+                    {group && (
+                      <ul className="mt-2 grid gap-1">
+                        {group.serverNames.map((serverName, index) => (
+                          <li className="flex min-w-0 items-start gap-2" key={`${index.toString()}-${serverName}`}>
+                            <span
+                              aria-hidden="true"
+                              className="mt-[5px] size-1.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: markerColor }}
+                            />
+                            <span className="min-w-0 break-words text-chart-tooltip-muted text-xs leading-4">
+                              {serverName}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )
               }}
             />
