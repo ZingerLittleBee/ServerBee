@@ -582,7 +582,7 @@ function EditOverlay({
       {onToggleStatic && (
         <Button
           aria-label={toggleStaticLabel}
-          className="size-8"
+          className="size-7"
           onClick={(e) => {
             e.stopPropagation()
             onToggleStatic()
@@ -596,7 +596,7 @@ function EditOverlay({
       )}
       <Button
         aria-label={t('configure_widget')}
-        className="size-8"
+        className="size-7"
         onClick={(e) => {
           e.stopPropagation()
           onEdit()
@@ -609,7 +609,7 @@ function EditOverlay({
       </Button>
       <Button
         aria-label={t('delete_widget')}
-        className="size-8"
+        className="size-7"
         onClick={(e) => {
           e.stopPropagation()
           onDelete()
