@@ -52,8 +52,15 @@ final class UpgradeJobsStoreTests: XCTestCase {
         store.setJobs([runningJob(stage: .installing)])
         // Result omits stage → keep the existing stage.
         store.applyResult(
-            serverId: "s1", jobId: "job-1", targetVersion: "1.9.0",
-            status: .failed, stage: nil, error: "boom", backupPath: nil
+            serverId: "s1",
+            update: UpgradeResultUpdate(
+                jobId: "job-1",
+                targetVersion: "1.9.0",
+                status: .failed,
+                stage: nil,
+                error: "boom",
+                backupPath: nil
+            )
         )
         let job = store.job(forServer: "s1")
         XCTAssertEqual(job?.status, .failed)
@@ -66,8 +73,15 @@ final class UpgradeJobsStoreTests: XCTestCase {
         let store = UpgradeJobsStore()
         store.setJobs([runningJob()])
         store.applyResult(
-            serverId: "s1", jobId: "job-1", targetVersion: "1.9.0",
-            status: .succeeded, stage: .restarting, error: nil, backupPath: nil
+            serverId: "s1",
+            update: UpgradeResultUpdate(
+                jobId: "job-1",
+                targetVersion: "1.9.0",
+                status: .succeeded,
+                stage: .restarting,
+                error: nil,
+                backupPath: nil
+            )
         )
         XCTAssertNotNil(store.job(forServer: "s1"))
         // Auto-clear fires after 5s; wait a touch longer.
@@ -79,8 +93,15 @@ final class UpgradeJobsStoreTests: XCTestCase {
         let store = UpgradeJobsStore()
         store.setJobs([runningJob()])
         store.applyResult(
-            serverId: "s1", jobId: "job-1", targetVersion: "1.9.0",
-            status: .timeout, stage: .installing, error: nil, backupPath: "/tmp/b"
+            serverId: "s1",
+            update: UpgradeResultUpdate(
+                jobId: "job-1",
+                targetVersion: "1.9.0",
+                status: .timeout,
+                stage: .installing,
+                error: nil,
+                backupPath: "/tmp/b"
+            )
         )
         try await Task.sleep(for: .seconds(6))
         // Timeout is intentionally excluded from auto-clear.
@@ -92,8 +113,15 @@ final class UpgradeJobsStoreTests: XCTestCase {
         store.setJobs([runningJob(job: "old")])
         // Finish the old job (schedules a 5s clear keyed to "old")…
         store.applyResult(
-            serverId: "s1", jobId: "old", targetVersion: "1.9.0",
-            status: .succeeded, stage: .restarting, error: nil, backupPath: nil
+            serverId: "s1",
+            update: UpgradeResultUpdate(
+                jobId: "old",
+                targetVersion: "1.9.0",
+                status: .succeeded,
+                stage: .restarting,
+                error: nil,
+                backupPath: nil
+            )
         )
         // …then a newer running job replaces it before the timer fires.
         store.setJobs([runningJob(job: "new")])

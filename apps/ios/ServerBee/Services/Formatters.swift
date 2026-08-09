@@ -30,7 +30,7 @@ enum Formatters {
 
     /// Parses the server's `"yyyy-MM-dd"` calendar-day strings (traffic/uptime).
     /// Fixed to UTC so the day boundary matches the server's accounting.
-    nonisolated(unsafe) private static let dayParser: DateFormatter = {
+    private static let dayParser: DateFormatter = {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
         f.locale = Locale(identifier: "en_US_POSIX")

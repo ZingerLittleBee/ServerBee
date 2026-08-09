@@ -1,5 +1,14 @@
 import SwiftUI
 
+struct UpgradeResultUpdate {
+    let jobId: String
+    let targetVersion: String
+    let status: UpgradeStatus
+    let stage: UpgradeStage?
+    let error: String?
+    let backupPath: String?
+}
+
 /// Holds live agent upgrade jobs pushed over the WebSocket, keyed by server id.
 /// Mirrors the web zustand `upgrade-jobs-store`: a full sync replaces the whole
 /// map, progress frames merge onto an existing job (never create one), and a
@@ -46,30 +55,22 @@ final class UpgradeJobsStore {
     /// Upsert a result frame. `stage` falls back to the existing stage then
     /// `.downloading` (parity with the web), `startedAt` is preserved, and a
     /// finished status schedules auto-clear.
-    func applyResult(
-        serverId: String,
-        jobId: String,
-        targetVersion: String,
-        status: UpgradeStatus,
-        stage: UpgradeStage?,
-        error: String?,
-        backupPath: String?
-    ) {
+    func applyResult(serverId: String, update: UpgradeResultUpdate) {
         let existing = jobs[serverId]
         let now = WireDate.string(from: Date())
         jobs[serverId] = UpgradeJob(
             serverId: serverId,
-            jobId: jobId,
-            targetVersion: targetVersion,
-            stage: stage ?? existing?.stage ?? .downloading,
-            status: status,
-            error: error,
-            backupPath: backupPath,
+            jobId: update.jobId,
+            targetVersion: update.targetVersion,
+            stage: update.stage ?? existing?.stage ?? .downloading,
+            status: update.status,
+            error: update.error,
+            backupPath: update.backupPath,
             startedAt: existing?.startedAt ?? now,
             finishedAt: now
         )
-        if status.isFinished {
-            scheduleAutoClear(serverId: serverId, jobId: jobId)
+        if update.status.isFinished {
+            scheduleAutoClear(serverId: serverId, jobId: update.jobId)
         }
     }
 

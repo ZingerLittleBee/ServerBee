@@ -155,12 +155,14 @@ struct ContentView: View {
         case let .upgradeResult(serverId, jobId, targetVersion, status, stage, error, backupPath):
             store.applyResult(
                 serverId: serverId,
-                jobId: jobId,
-                targetVersion: targetVersion,
-                status: status,
-                stage: stage,
-                error: error,
-                backupPath: backupPath
+                update: UpgradeResultUpdate(
+                    jobId: jobId,
+                    targetVersion: targetVersion,
+                    status: status,
+                    stage: stage,
+                    error: error,
+                    backupPath: backupPath
+                )
             )
         default:
             break
