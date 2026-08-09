@@ -106,7 +106,7 @@ export function TabsTrigger({
         aria-selected={active}
         className={cn(
           'relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-1.5 py-0.5 font-medium text-sm',
-          'text-foreground/60 transition-colors hover:text-foreground',
+          'text-foreground/60 transition-none hover:text-foreground',
           'focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
           'disabled:pointer-events-none disabled:opacity-50',
           'dark:text-muted-foreground dark:hover:text-foreground',
@@ -142,7 +142,7 @@ export function TabsTrigger({
         aria-selected={active}
         className={cn(
           'relative z-10 inline-flex h-full w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-1.5 py-0.5 font-medium text-sm',
-          'bg-transparent text-foreground/60 transition-colors hover:text-foreground',
+          'bg-transparent text-foreground/60 transition-none hover:text-foreground',
           'focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
           'disabled:pointer-events-none disabled:opacity-50',
           'dark:text-muted-foreground dark:hover:text-foreground',
