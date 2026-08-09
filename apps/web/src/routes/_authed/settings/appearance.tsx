@@ -5,7 +5,6 @@ import { type ChangeEvent, type FormEvent, useEffect, useReducer, useRef } from 
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { PageBody } from '@/components/layout/page-body'
-import { SettingsSection } from '@/components/settings/settings-row'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Input } from '@/components/ui/input'
@@ -194,8 +193,9 @@ function BrandSettingsSection() {
   }
 
   return (
-    <SettingsSection title={t('appearance.brand_settings')}>
-      <div className="space-y-4 p-4 sm:p-6">
+    <section>
+      <h2 className="mb-2 px-1 font-medium text-muted-foreground text-sm">{t('appearance.brand_settings')}</h2>
+      <div className="space-y-4 px-1">
         <p className="text-muted-foreground text-sm">{t('appearance.brand_description')}</p>
 
         <form className="max-w-lg space-y-4" onSubmit={handleSubmit}>
@@ -293,21 +293,22 @@ function BrandSettingsSection() {
           </Button>
         </form>
       </div>
-    </SettingsSection>
+    </section>
   )
 }
 
 function WidgetModulesNotice() {
   const { t } = useTranslation('settings')
   return (
-    <SettingsSection title={t('appearance.theme_moved_title')}>
-      <div className="space-y-4 p-4 sm:p-6">
+    <section>
+      <h2 className="mb-2 px-1 font-medium text-muted-foreground text-sm">{t('appearance.theme_moved_title')}</h2>
+      <div className="space-y-4 px-1">
         <p className="text-muted-foreground text-sm">{t('appearance.theme_moved_description')}</p>
         <Link className={buttonVariants()} to="/settings/widgets">
           {t('appearance.theme_moved_cta')}
         </Link>
       </div>
-    </SettingsSection>
+    </section>
   )
 }
 
