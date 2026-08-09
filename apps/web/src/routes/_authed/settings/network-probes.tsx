@@ -175,7 +175,11 @@ export function NetworkProbeSettingsPage() {
       <div className="flex min-h-0 w-full min-w-0 max-w-[calc(100vw-1.5rem)] flex-1 flex-col overflow-hidden sm:max-w-full">
         <Tabs
           className="flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col"
-          onValueChange={(value) => navigate({ search: { tab: value } })}
+          onValueChange={(value) => {
+            if (isNetworkProbeTab(value)) {
+              navigate({ search: { tab: value } })
+            }
+          }}
           value={activeTab}
         >
           <div className="flex w-full max-w-full flex-col items-stretch gap-3 sm:max-w-4xl sm:flex-row sm:items-center sm:justify-between">
