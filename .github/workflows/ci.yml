@@ -258,7 +258,7 @@ jobs:
       - name: POSIX syntax check (dash -n)
         run: dash -n deploy/install.sh deploy/test-install-upgrade.sh
 
-      - name: Test binary upgrade rollback
+      - name: Test upgrade rollback
         run: dash deploy/test-install-upgrade.sh
 
       - name: Portability lint (shellcheck --shell=dash)

@@ -65,6 +65,8 @@ RELEASE_CHANNEL="${SERVERBEE_CHANNEL:-stable}"
 CLI_REFRESHED=""
 UPGRADE_HEALTH_ATTEMPTS=30
 UPGRADE_STABILITY_CHECKS=10
+DOCKER_UPGRADE_HEALTH_ATTEMPTS=90
+DOCKER_UPGRADE_STABILITY_CHECKS=10
 
 # ─── Agent capability toggles ────────────────────────────────────────────────
 # Keys MUST match the CapabilityKey strings in crates/common/src/constants.rs.
@@ -2779,21 +2781,108 @@ upgrade_binary() {
     info "serverbee-${component} remained healthy for ${UPGRADE_STABILITY_CHECKS} seconds."
 }
 
+docker_container_state() {
+    docker inspect \
+        --format '{{.State.Status}}{{if .State.Health}} {{.State.Health.Status}}{{end}}' \
+        "serverbee-$1" 2>/dev/null || echo unavailable
+}
+
+docker_restart_count() {
+    docker inspect --format '{{.RestartCount}}' "serverbee-$1" 2>/dev/null || true
+}
+
+wait_for_docker_stability() {
+    local component attempt stable baseline_restarts current_restarts state
+    component="$1"
+    attempt=0
+    stable=0
+    baseline_restarts=$(docker_restart_count "$component")
+
+    while [ "$attempt" -lt "$DOCKER_UPGRADE_HEALTH_ATTEMPTS" ]; do
+        state=$(docker_container_state "$component")
+        current_restarts=$(docker_restart_count "$component")
+        if [ -n "$baseline_restarts" ] && [ "$current_restarts" != "$baseline_restarts" ]; then
+            return 1
+        fi
+        case "$state" in
+            running|"running healthy")
+                stable=$((stable + 1))
+                [ "$stable" -ge "$DOCKER_UPGRADE_STABILITY_CHECKS" ] && return 0
+                ;;
+            *) stable=0 ;;
+        esac
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    return 1
+}
+
+rollback_docker_upgrade() {
+    local component compose_file backup
+    component="$1"; compose_file="$2"; backup="$3"
+
+    warn "Docker upgrade failed; restoring the previous serverbee-${component} image..."
+    if ! mv -f "$backup" "$compose_file"; then
+        warn "Automatic rollback could not restore ${backup}; manual recovery is required."
+        return 1
+    fi
+    if ! docker compose -f "$compose_file" up -d; then
+        warn "The previous Compose file was restored, but its container could not be started."
+        return 1
+    fi
+    if ! wait_for_docker_stability "$component"; then
+        warn "The previous Compose file was restored, but its container did not remain healthy."
+        return 1
+    fi
+    info "Rollback completed; serverbee-${component} is running the previous Docker image."
+}
+
 upgrade_docker() {
-    local component version compose_file image_tag image_base
+    local component version compose_file image_tag image_base backup logs
     component="$1"; version="$2"
     compose_file="${DOCKER_DIR}/docker-compose.${component}.yml"
     image_tag=$(docker_image_tag "$version")
+    backup="${compose_file}.rollback"
 
     if [ ! -f "$compose_file" ]; then
         error "Compose file not found: $compose_file"
     fi
+    if [ -e "$backup" ] || [ -L "$backup" ]; then
+        error "Stale rollback backup found: ${backup}. Restore or remove it before upgrading."
+    fi
 
     image_base="ghcr.io/zingerlittlebee/serverbee-${component}"
-    sed_inplace "s|${image_base}:[^ ]*|${image_base}:${image_tag}|" "$compose_file"
+    grep -Fq "${image_base}:" "$compose_file" \
+        || error "Compose file does not reference the managed image: ${image_base}"
+    cp -p "$compose_file" "$backup" || error "Could not create rollback backup: ${backup}"
+    if ! sed_inplace "s|${image_base}:[^ ]*|${image_base}:${image_tag}|" "$compose_file"; then
+        rm -f "$backup"
+        error "Could not update the Docker image tag"
+    fi
 
-    docker compose -f "$compose_file" pull
-    docker compose -f "$compose_file" up -d
+    if ! docker compose -f "$compose_file" pull; then
+        if mv -f "$backup" "$compose_file"; then
+            error "Could not pull serverbee-${component} ${version}; the previous Compose file was restored"
+        fi
+        error "Could not pull serverbee-${component} ${version} and the previous Compose file could not be restored"
+    fi
+    if ! docker compose -f "$compose_file" up -d; then
+        if rollback_docker_upgrade "$component" "$compose_file" "$backup"; then
+            error "serverbee-${component} ${version} failed to start; the previous Docker image was restored"
+        fi
+        error "serverbee-${component} ${version} failed to start and automatic Docker rollback was incomplete"
+    fi
+    if ! wait_for_docker_stability "$component"; then
+        logs=$(docker compose -f "$compose_file" logs --tail 20 2>/dev/null || true)
+        [ -z "$logs" ] || warn "Recent serverbee-${component} Docker logs:\n${logs}"
+        if rollback_docker_upgrade "$component" "$compose_file" "$backup"; then
+            error "serverbee-${component} ${version} did not remain healthy; the previous Docker image was restored"
+        fi
+        error "serverbee-${component} ${version} did not remain healthy and automatic Docker rollback was incomplete"
+    fi
+
+    rm -f "$backup"
+    info "serverbee-${component} Docker container remained healthy for ${DOCKER_UPGRADE_STABILITY_CHECKS} seconds."
 }
 
 cmd_upgrade() {

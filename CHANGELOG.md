@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Agent self-upgrades recover from unhealthy binaries** -- A candidate must report its exact version and complete a healthy startup trial; failed or interrupted trials restore the previous binary and report the rollback to the Server
 
-- **Management CLI upgrades preserve a working installation** -- Binary upgrades now keep a rollback copy, require a stable service window, detect systemd restart loops, and automatically restore the previous Server or Agent when validation fails
+- **Management CLI upgrades preserve a working installation** -- Binary and Docker upgrades now keep a rollback copy, require a stable service window, detect restart loops, and automatically restore the previous Server or Agent when validation fails
 
 ## [1.0.0-alpha.12] - 2026-08-03
 

@@ -8,6 +8,8 @@ export SERVERBEE_NO_MAIN
 . "${SCRIPT_DIR}/install.sh"
 UPGRADE_HEALTH_ATTEMPTS=3
 UPGRADE_STABILITY_CHECKS=2
+DOCKER_UPGRADE_HEALTH_ATTEMPTS=3
+DOCKER_UPGRADE_STABILITY_CHECKS=2
 
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
@@ -173,10 +175,153 @@ test_stale_backup_blocks_upgrade() {
     [ ! -s "$ACTION_LOG" ] || fail "stale backup check stopped the running service"
 }
 
+setup_docker_case() {
+    local name
+    name="$1"
+    CASE_DIR="${TEST_ROOT}/${name}"
+    DOCKER_DIR="$CASE_DIR"
+    ACTION_LOG="${CASE_DIR}/actions.log"
+    TEST_DOCKER_PULL_FAIL=false
+    TEST_DOCKER_UP_FAIL=false
+    TEST_DOCKER_STATE_MODE=healthy
+    TEST_DOCKER_RESTART_MODE=stable
+    mkdir -p "$DOCKER_DIR"
+    : > "$ACTION_LOG"
+    printf '%s\n' \
+        'services:' \
+        '  serverbee-agent:' \
+        '    image: ghcr.io/zingerlittlebee/serverbee-agent:1.0.0-alpha.12' \
+        '    container_name: serverbee-agent' > "${DOCKER_DIR}/docker-compose.agent.yml"
+}
+
+compose_image_tag() {
+    sed -n 's|.*image: ghcr.io/zingerlittlebee/serverbee-agent:||p' "${DOCKER_DIR}/docker-compose.agent.yml"
+}
+
+docker() {
+    local compose_file action tag
+    [ "$1" = compose ] || fail "unexpected docker command: $*"
+    shift
+    [ "$1" = -f ] || fail "docker compose command omitted -f"
+    compose_file="$2"
+    shift 2
+    action="$1"
+    tag=$(sed -n 's|.*image: ghcr.io/zingerlittlebee/serverbee-agent:||p' "$compose_file")
+    case "$action" in
+        pull)
+            printf 'pull %s\n' "$tag" >> "$ACTION_LOG"
+            [ "$TEST_DOCKER_PULL_FAIL" != true ] || return 1
+            ;;
+        up)
+            printf 'up %s\n' "$tag" >> "$ACTION_LOG"
+            [ "$TEST_DOCKER_UP_FAIL" != true ] || [ "$tag" != "1.0.0-beta.1" ] || return 1
+            ;;
+        logs) echo "test Docker log" ;;
+        *) fail "unexpected docker compose action: $action" ;;
+    esac
+}
+
+docker_container_state() {
+    if [ "$TEST_DOCKER_STATE_MODE" = candidate-unhealthy ] && [ "$(compose_image_tag)" = "1.0.0-beta.1" ]; then
+        echo restarting
+    else
+        echo running
+    fi
+}
+
+docker_restart_count() {
+    local count
+    if [ "$TEST_DOCKER_RESTART_MODE" = candidate-increments ] && [ "$(compose_image_tag)" = "1.0.0-beta.1" ]; then
+        count=$(cat "${CASE_DIR}/docker-restart-count" 2>/dev/null || echo 0)
+        echo $((count + 1)) > "${CASE_DIR}/docker-restart-count"
+        echo "$count"
+    else
+        echo 0
+    fi
+}
+
+test_successful_docker_upgrade() {
+    setup_docker_case docker-success
+    upgrade_docker agent v1.0.0-beta.1 >/dev/null
+
+    assert_eq "$(compose_image_tag)" "1.0.0-beta.1"
+    [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.rollback" ] || fail "successful Docker upgrade left a backup"
+    assert_eq "$(cat "$ACTION_LOG")" "pull 1.0.0-beta.1
+up 1.0.0-beta.1"
+}
+
+test_docker_pull_failure_restores_compose() {
+    setup_docker_case docker-pull-failure
+    TEST_DOCKER_PULL_FAIL=true
+
+    if (upgrade_docker agent v1.0.0-beta.1) >/dev/null 2>&1; then
+        fail "failed Docker pull unexpectedly succeeded"
+    fi
+    assert_eq "$(compose_image_tag)" "1.0.0-alpha.12"
+    [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.rollback" ] || fail "pull failure left a backup"
+    assert_eq "$(cat "$ACTION_LOG")" "pull 1.0.0-beta.1"
+}
+
+test_docker_start_failure_rolls_back() {
+    setup_docker_case docker-start-failure
+    TEST_DOCKER_UP_FAIL=true
+
+    if (upgrade_docker agent v1.0.0-beta.1) >/dev/null 2>&1; then
+        fail "failed Docker start unexpectedly succeeded"
+    fi
+    assert_eq "$(compose_image_tag)" "1.0.0-alpha.12"
+    [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.rollback" ] || fail "Docker rollback left a backup"
+    assert_eq "$(cat "$ACTION_LOG")" "pull 1.0.0-beta.1
+up 1.0.0-beta.1
+up 1.0.0-alpha.12"
+}
+
+test_unhealthy_docker_upgrade_rolls_back() {
+    setup_docker_case docker-unhealthy
+    TEST_DOCKER_STATE_MODE='candidate-unhealthy'
+
+    if (upgrade_docker agent v1.0.0-beta.1) >/dev/null 2>&1; then
+        fail "unhealthy Docker candidate unexpectedly succeeded"
+    fi
+    assert_eq "$(compose_image_tag)" "1.0.0-alpha.12"
+    [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.rollback" ] || fail "Docker rollback left a backup"
+    assert_eq "$(cat "$ACTION_LOG")" "pull 1.0.0-beta.1
+up 1.0.0-beta.1
+up 1.0.0-alpha.12"
+}
+
+test_restarting_docker_upgrade_rolls_back() {
+    setup_docker_case docker-restarting
+    TEST_DOCKER_RESTART_MODE='candidate-increments'
+
+    if (upgrade_docker agent v1.0.0-beta.1) >/dev/null 2>&1; then
+        fail "restarting Docker candidate unexpectedly succeeded"
+    fi
+    assert_eq "$(compose_image_tag)" "1.0.0-alpha.12"
+    [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.rollback" ] || fail "Docker rollback left a backup"
+}
+
+test_stale_docker_backup_blocks_upgrade() {
+    setup_docker_case docker-stale-backup
+    : > "${DOCKER_DIR}/docker-compose.agent.yml.rollback"
+
+    if (upgrade_docker agent v1.0.0-beta.1) >/dev/null 2>&1; then
+        fail "Docker upgrade unexpectedly overwrote a stale backup"
+    fi
+    assert_eq "$(compose_image_tag)" "1.0.0-alpha.12"
+    [ ! -s "$ACTION_LOG" ] || fail "stale Docker backup changed the deployment"
+}
+
 test_successful_upgrade
 test_probe_mismatch_preserves_current_binary
 test_start_failure_rolls_back
 test_health_failure_rolls_back
 test_restart_during_stability_window_rolls_back
 test_stale_backup_blocks_upgrade
+test_successful_docker_upgrade
+test_docker_pull_failure_restores_compose
+test_docker_start_failure_rolls_back
+test_unhealthy_docker_upgrade_rolls_back
+test_restarting_docker_upgrade_rolls_back
+test_stale_docker_backup_blocks_upgrade
 printf 'PASS: install upgrade transaction tests\n'
