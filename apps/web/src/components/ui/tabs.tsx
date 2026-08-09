@@ -1,15 +1,11 @@
-// Tabs keep the previous shadcn/Base UI look; only the active indicator uses
-// beUI-style spring layoutId motion (https://beui.dev/components/motion/tabs).
+// Tabs keep the previous shadcn look with an instant active indicator (no glide).
 
-import { MotionConfig, motion, useReducedMotion } from 'motion/react'
-import { createContext, type ReactNode, useCallback, useContext, useId, useMemo, useState } from 'react'
-import { SPRING_INDICATOR } from '@/lib/ease'
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 type TabsListVariant = 'default' | 'line'
 
 interface TabsContextValue {
-  layoutId: string
   setValue: (value: string) => void
   value: string
 }
@@ -39,8 +35,6 @@ export function Tabs({
   value?: string
 }) {
   const [internal, setInternal] = useState(defaultValue ?? '')
-  const layoutId = useId()
-  const reduce = useReducedMotion()
   const controlled = value !== undefined
   const current = controlled ? value : internal
   const setValue = useCallback(
@@ -52,19 +46,14 @@ export function Tabs({
     },
     [controlled, onValueChange]
   )
-  const contextValue = useMemo(() => ({ layoutId, setValue, value: current }), [current, layoutId, setValue])
+  const contextValue = useMemo(() => ({ setValue, value: current }), [current, setValue])
 
   return (
-    <MotionConfig transition={reduce ? { duration: 0 } : SPRING_INDICATOR}>
-      <TabsContext.Provider value={contextValue}>
-        {/* layoutRoot: indicator layoutId measures in page coordinates; inside
-            scrolled containers that would replay scroll as movement. Scope
-            projection to the Tabs wrapper so the pill only travels in-list. */}
-        <motion.div className={cn('flex flex-col gap-2', className)} data-slot="tabs" layoutRoot>
-          {children}
-        </motion.div>
-      </TabsContext.Provider>
-    </MotionConfig>
+    <TabsContext.Provider value={contextValue}>
+      <div className={cn('flex flex-col gap-2', className)} data-slot="tabs">
+        {children}
+      </div>
+    </TabsContext.Provider>
   )
 }
 
@@ -107,7 +96,7 @@ export function TabsTrigger({
   indicatorClassName?: string
   value: string
 }) {
-  const { layoutId, setValue, value: current } = useTabs()
+  const { setValue, value: current } = useTabs()
   const listVariant = useContext(TabsListVariantContext)
   const active = current === value
 
@@ -132,10 +121,7 @@ export function TabsTrigger({
       >
         {children}
         {active ? (
-          <motion.span
-            className={cn('absolute inset-x-0 bottom-[-5px] h-0.5 bg-foreground', indicatorClassName)}
-            layoutId={layoutId}
-          />
+          <span className={cn('absolute inset-x-0 bottom-[-5px] h-0.5 bg-foreground', indicatorClassName)} />
         ) : null}
       </button>
     )
@@ -144,14 +130,12 @@ export function TabsTrigger({
   return (
     <div className="relative h-[calc(100%-1px)] flex-1">
       {active ? (
-        <motion.span
+        <span
           className={cn(
             'absolute inset-0 rounded-md bg-background shadow-sm',
             'dark:border dark:border-input dark:bg-input/30',
             indicatorClassName
           )}
-          layoutId={layoutId}
-          style={{ borderRadius: 6 }}
         />
       ) : null}
       <button
