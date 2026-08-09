@@ -22,9 +22,27 @@ vi.mock('@/components/charts/area', () => ({
 }))
 
 vi.mock('@/components/charts/grid', () => ({ Grid: () => null }))
-vi.mock('@/components/charts/tooltip/chart-tooltip', () => ({ ChartTooltip: () => null }))
+vi.mock('@/components/charts/tooltip/chart-tooltip', () => ({
+  ChartTooltip: ({
+    formatDatePill,
+    showDatePill
+  }: {
+    formatDatePill?: (date: Date) => string
+    showDatePill?: boolean
+  }) => (
+    <div
+      data-date-pill-label={formatDatePill?.(new Date('2026-08-03T10:15:00.000Z'))}
+      data-show-date-pill={showDatePill === false ? 'false' : 'true'}
+      data-testid="chart-tooltip"
+    />
+  )
+}))
 vi.mock('@/components/charts/tooltip/tooltip-content', () => ({ TooltipContent: () => null }))
-vi.mock('@/components/charts/x-axis', () => ({ XAxis: () => null }))
+vi.mock('@/components/charts/x-axis', () => ({
+  XAxis: ({ fadeOnHover, tickMode }: { fadeOnHover?: boolean; tickMode?: string }) => (
+    <div data-fade-on-hover={fadeOnHover === false ? 'false' : 'true'} data-testid="x-axis" data-tick-mode={tickMode} />
+  )
+}))
 vi.mock('@/components/charts/y-axis', () => ({ YAxis: () => null }))
 
 const { buildLatencyChartData, LatencyChartContent } = await import('./latency-chart-content')
@@ -97,5 +115,16 @@ describe('LatencyChartContent', () => {
     expect(screen.getByRole('table', { name: 'latency_title' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Target A' })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Target B' })).not.toBeInTheDocument()
+  })
+
+  it('highlights the hovered x value like detail MetricsChart (date pill + fade)', () => {
+    render(<LatencyChartContent embedded records={[record({ avg_latency: 21 })]} targets={targets} />)
+
+    // Default fadeOnHover + domain ticks match MetricAreaPlot so nearby labels
+    // yield to ChartTooltip's bottom date pill under the crosshair.
+    expect(screen.getByTestId('x-axis')).toHaveAttribute('data-tick-mode', 'domain')
+    expect(screen.getByTestId('x-axis')).toHaveAttribute('data-fade-on-hover', 'true')
+    expect(screen.getByTestId('chart-tooltip')).toHaveAttribute('data-show-date-pill', 'true')
+    expect(screen.getByTestId('chart-tooltip').getAttribute('data-date-pill-label')).toBeTruthy()
   })
 })
