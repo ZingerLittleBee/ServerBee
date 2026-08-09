@@ -46,9 +46,9 @@ export function buildBreadcrumbs(
   translate: (key: string) => string,
   serverDetailName?: string
 ): BreadcrumbEntry[] {
-  // Dashboard owns the title bar (leading switcher + trailing edit controls);
-  // keep the crumb list empty so the header does not also render "Dashboard".
-  if (pathname === '/') {
+  // Routes that own the title bar via SiteHeaderActions (no duplicate page title).
+  const normalizedPath = pathname.replace(TRAILING_SLASH_RE, '') || '/'
+  if (normalizedPath === '/' || normalizedPath === '/security') {
     return []
   }
 

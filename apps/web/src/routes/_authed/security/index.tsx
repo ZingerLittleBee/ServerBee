@@ -8,6 +8,7 @@ import { SecurityEventTable } from '@/components/security/event-table'
 import { SecurityKpiCards } from '@/components/security/kpi-cards'
 import { type SecurityRangeKey, SecurityRangeToggle } from '@/components/security/range-toggle'
 import { SecurityTimelineChart } from '@/components/security/timeline-chart'
+import { SiteHeaderActions } from '@/components/site-header'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuth } from '@/hooks/use-auth'
@@ -128,12 +129,11 @@ function SecurityIndexPage() {
 
   return (
     <PageBody>
+      <h1 className="sr-only">{t('page_title', { defaultValue: 'Security Events' })}</h1>
+      <SiteHeaderActions>
+        <SecurityRangeToggle onValueChange={(value) => dispatch({ type: 'setRange', value })} value={state.range} />
+      </SiteHeaderActions>
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="font-semibold text-2xl">{t('page_title', { defaultValue: 'Security Events' })}</h1>
-          <SecurityRangeToggle onValueChange={(value) => dispatch({ type: 'setRange', value })} value={state.range} />
-        </div>
-
         <SecurityKpiCards serverId={filters.server_id} since={since} />
 
         <div className="flex flex-wrap gap-2 rounded-md border bg-card p-3">

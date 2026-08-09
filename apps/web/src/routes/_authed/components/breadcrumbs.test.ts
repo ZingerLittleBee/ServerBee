@@ -35,6 +35,11 @@ describe('buildBreadcrumbs', () => {
   it('leaves the dashboard route without a header title crumb', () => {
     expect(buildBreadcrumbs('/', translate)).toEqual([])
   })
+
+  it('leaves the security index without a header title crumb', () => {
+    expect(buildBreadcrumbs('/security', translate)).toEqual([])
+    expect(buildBreadcrumbs('/security/', translate)).toEqual([])
+  })
 })
 
 describe('getServerDetailId', () => {
