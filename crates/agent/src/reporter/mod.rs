@@ -218,6 +218,32 @@ impl Reporter {
         send_msg(&mut write, &info_msg).await?;
         tracing::info!("Sent SystemInfo");
 
+        match crate::upgrade::commit_startup_trial() {
+            Ok(true) => tracing::info!("Agent upgrade entered startup stability window"),
+            Ok(false) => {}
+            Err(error) => {
+                tracing::error!("Failed to commit Agent upgrade startup health check: {error}");
+            }
+        }
+
+        match crate::upgrade::read_recovery_report() {
+            Ok(Some(recovery)) => {
+                let message = AgentMessage::UpgradeResult {
+                    msg_id: uuid::Uuid::new_v4().to_string(),
+                    job_id: recovery.job_id,
+                    target_version: recovery.target_version,
+                    stage: UpgradeStage::Restarting,
+                    error: recovery.error,
+                    backup_path: None,
+                };
+                send_msg(&mut write, &message).await?;
+                crate::upgrade::acknowledge_recovery_report()?;
+                tracing::warn!("Reported automatic Agent upgrade rollback to the Server");
+            }
+            Ok(None) => {}
+            Err(error) => tracing::error!("Failed to read Agent upgrade recovery report: {error}"),
+        }
+
         // Seed the checker with the interface-derived public IP so the very first
         // run has a non-empty egress_ip even on stable VPS deployments where the
         // external IP never "changes" (i.e. IpChanged is never emitted because
@@ -2405,54 +2431,184 @@ async fn perform_upgrade(
     }
     tracing::info!("Checksum verified against pinned sha256sums.txt");
 
-    // 8. 落盘 + 替换 + 重启(沿用原逻辑)
+    // 8. Stage and execute the verified candidate before replacing the
+    // installed binary. The hidden probe returns the candidate's embedded
+    // version without loading configuration or opening network connections.
     let current_exe = std::env::current_exe()?;
     let tmp_path = current_exe.with_extension("new");
-    let backup_path = current_exe.with_extension("bak");
 
-    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Installing).await;
-
-    // 文件交换:任一 I/O 失败都要走 fail!(Installing),否则 Server 永远收不到失败、job 卡死。
-    let swap = || -> anyhow::Result<()> {
-        {
-            let mut file = std::fs::File::create(&tmp_path)?;
-            file.write_all(&bytes)?;
-            file.sync_all()?;
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::PreFlight).await;
+    let stage_candidate = || -> anyhow::Result<()> {
+        match std::fs::remove_file(&tmp_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
         }
-        if backup_path.exists() {
-            std::fs::remove_file(&backup_path)?;
-        }
-        std::fs::rename(&current_exe, &backup_path)?;
-        std::fs::rename(&tmp_path, &current_exe)?;
         Ok(())
     };
-    if let Err(e) = swap() {
-        fail!(UpgradeStage::Installing, format!("install: {e}"));
+    if let Err(error) = stage_candidate() {
+        fail!(UpgradeStage::PreFlight, format!("stage candidate: {error}"));
+    }
+    if let Err(error) = crate::upgrade::verify_candidate_version(&tmp_path, version).await {
+        let _ = std::fs::remove_file(&tmp_path);
+        fail!(
+            UpgradeStage::PreFlight,
+            format!("candidate preflight: {error}")
+        );
     }
 
-    tracing::info!("Agent binary replaced. Restarting...");
+    emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Installing).await;
+    let backup_path =
+        match crate::upgrade::install_candidate(&current_exe, &tmp_path, version, job_id.clone()) {
+            Ok(path) => path,
+            Err(error) => {
+                let _ = std::fs::remove_file(&tmp_path);
+                fail!(UpgradeStage::Installing, format!("install: {error}"));
+            }
+        };
+
+    tracing::info!(
+        "Agent binary replaced transactionally; backup stored at {}",
+        backup_path.display()
+    );
     emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Restarting).await;
+
+    // Installed services already have a restart supervisor. Exiting lets it
+    // start exactly one candidate process instead of racing a manually spawned
+    // child against systemd/OpenRC.
+    if crate::upgrade::is_supervised() {
+        std::process::exit(0);
+    }
+
     let args: Vec<String> = std::env::args().collect();
-    let mut cmd = std::process::Command::new(&current_exe);
+    let mut cmd = tokio::process::Command::new(&current_exe);
+    cmd.env(crate::upgrade::PARENT_WATCHDOG_ENV, "1")
+        .kill_on_drop(true);
     if args.len() > 1 {
         cmd.args(&args[1..]);
     }
-    if let Err(e) = cmd.spawn() {
-        emit_upgrade_failure(
-            &tx,
-            job_id,
-            version.to_string(),
-            UpgradeStage::Restarting,
-            e.to_string(),
-            Some(backup_path.display().to_string()),
-        )
-        .await;
-        return Err(e.into());
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(spawn_error) => {
+            return rollback_and_restart_candidate(
+                &current_exe,
+                &backup_path,
+                &tx,
+                job_id,
+                version,
+                format!("candidate launch failed: {spawn_error}"),
+            )
+            .await;
+        }
+    };
+
+    let started = tokio::time::Instant::now();
+    loop {
+        match crate::upgrade::trial_is_active(&current_exe) {
+            Ok(false) => std::process::exit(0),
+            Ok(true) => {}
+            Err(error) => {
+                tracing::warn!("Failed to inspect child Agent upgrade health state: {error}");
+            }
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return rollback_and_restart_candidate(
+                    &current_exe,
+                    &backup_path,
+                    &tx,
+                    job_id,
+                    version,
+                    format!("candidate exited before startup health confirmation with {status}"),
+                )
+                .await;
+            }
+            Ok(None) => {}
+            Err(wait_error) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return rollback_and_restart_candidate(
+                    &current_exe,
+                    &backup_path,
+                    &tx,
+                    job_id,
+                    version,
+                    format!("failed to monitor candidate process: {wait_error}"),
+                )
+                .await;
+            }
+        }
+
+        if started.elapsed() >= crate::upgrade::startup_health_timeout() {
+            let kill_error = child.kill().await.err();
+            let _ = child.wait().await;
+            let reason = kill_error.map_or_else(
+                || "candidate missed the 90s startup health window".to_string(),
+                |error| {
+                    format!(
+                        "candidate missed the 90s startup health window and could not be killed: {error}"
+                    )
+                },
+            );
+            return rollback_and_restart_candidate(
+                &current_exe,
+                &backup_path,
+                &tx,
+                job_id,
+                version,
+                reason,
+            )
+            .await;
+        }
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    std::process::exit(0);
+}
+
+async fn rollback_and_restart_candidate(
+    current_exe: &std::path::Path,
+    backup_path: &std::path::Path,
+    tx: &mpsc::Sender<AgentMessage>,
+    job_id: Option<String>,
+    version: &str,
+    reason: String,
+) -> anyhow::Result<()> {
+    let recovery_error = format!("{reason}; previous Agent binary restored");
+    match crate::upgrade::rollback_failed_candidate(
+        current_exe,
+        version,
+        job_id.clone(),
+        recovery_error.clone(),
+    ) {
+        Ok(()) => {
+            tracing::warn!("{recovery_error}");
+            crate::upgrade::restart_restored_binary(current_exe)?;
+            Ok(())
+        }
+        Err(rollback_error) => {
+            let error = format!("{reason}; rollback also failed: {rollback_error}");
+            emit_upgrade_failure(
+                tx,
+                job_id,
+                version.to_string(),
+                UpgradeStage::Restarting,
+                error.clone(),
+                Some(backup_path.display().to_string()),
+            )
+            .await;
+            anyhow::bail!(error);
+        }
+    }
 }

@@ -328,24 +328,29 @@ The agent needs to run as root to access all system metrics (temperature sensors
 
 The server can push upgrade commands to connected agents. When an upgrade is triggered:
 
-1. The server sends an `Upgrade` message with a download URL and version
-2. The agent downloads the new binary
-3. Verifies the SHA-256 checksum (if provided via the `x-checksum-sha256` header)
-4. Backs up the current binary (`.bak` extension)
-5. Replaces itself with the new binary
-6. Restarts automatically
+1. The server sends an `Upgrade` message with the target version and job ID
+2. The agent derives the binary and checksum URLs from its pinned `[upgrade] release_repo_url`
+3. The agent verifies the downloaded binary against `sha256sums.txt`
+4. A preflight probe executes the candidate and requires it to report the requested embedded version
+5. The agent persists an upgrade transaction, copies the current binary to `.bak`, and atomically installs the candidate
+6. systemd/OpenRC restarts the service; for a manually launched Agent, the old process launches and supervises the candidate until it becomes healthy
+7. The candidate has 90 seconds to reconnect and send `SystemInfo`, then must remain alive through a five-second stability window. If it exits or misses either check, it restores `.bak`, restarts the previous version, and reports the failed upgrade after reconnecting
 
 Trigger an upgrade from the server detail page in the dashboard, or via the API:
 
 ```bash
 curl -X POST https://your-server/api/servers/{id}/upgrade \
-  -H "Cookie: session=..." \
+  -H "Cookie: session_token=..." \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://github.com/.../releases/download/v1.2.0/serverbee-agent", "version": "1.2.0"}'
+  -d '{"version": "1.2.0"}'
 ```
 
 <Callout type="warn">
 Auto-update requires the agent to have the `upgrade` capability (`CAP_UPGRADE`), which is enabled by default. Capabilities are agent-owned — to turn it off, add `upgrade` to the agent's `[capabilities]` deny list (or pass `--deny-cap upgrade`) on the agent host. See [Capabilities](/en/docs/capabilities).
+</Callout>
+
+<Callout type="info">
+Automatic rollback is enforced by the Agent version that initiates the upgrade. An upgrade started by an older alpha Agent still uses that older Agent's updater; install a rollback-capable version once before relying on this protection for later remote upgrades.
 </Callout>
 
 ## Connection Behavior

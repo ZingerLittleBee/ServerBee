@@ -379,7 +379,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             error,
             backup_path,
         } => {
-            state.upgrade_tracker.mark_failed(
+            state.upgrade_tracker.mark_agent_reported_failed(
                 UpgradeLookup::new(server_id, job_id, target_version),
                 stage,
                 error,

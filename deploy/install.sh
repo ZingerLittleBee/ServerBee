@@ -1476,6 +1476,7 @@ StartLimitBurst=5
 Type=simple
 ExecStart=$1
 WorkingDirectory=${CONFIG_DIR}
+Environment=SERVERBEE_SUPERVISED=1
 Restart=always
 RestartSec=5
 # Exit code 78 = permanent enrollment-code failure; don't restart, the operator
@@ -1527,6 +1528,7 @@ create_openrc_service_agent() {
 #!/sbin/openrc-run
 name="serverbee-agent"
 description="ServerBee Agent"
+export SERVERBEE_SUPERVISED=1
 OPENRC
     cat >> "$(svc_openrc_path agent)" <<OPENRC
 command="${INSTALL_DIR}/serverbee-agent"

@@ -328,24 +328,29 @@ Agent 需以 root 运行才能访问全部系统指标（温度传感器、进�
 
 Server 可以向在线 Agent 推送升级命令。触发升级时：
 
-1. Server 发送 `Upgrade` 消息，包含下载 URL 和版本号
-2. Agent 下载新版本二进制文件
-3. 验证 SHA-256 校验和（通过 `x-checksum-sha256` 响应头）
-4. 备份当前二进制文件（`.bak` 后缀）
-5. 替换为新二进制
-6. 自动重启进程
+1. Server 发送 `Upgrade` 消息，包含目标版本和任务 ID
+2. Agent 根据本地 `[upgrade] release_repo_url` 固定源推导二进制及 checksum URL
+3. Agent 使用 `sha256sums.txt` 校验下载的二进制
+4. 预检探针会执行候选二进制，并要求其报告的内置版本与目标版本一致
+5. Agent 持久化升级事务，将当前二进制复制为 `.bak`，再原子替换候选版本
+6. systemd/OpenRC 负责重启服务；若 Agent 由手动启动，旧进程会启动并监控候选进程，直到其通过健康检查
+7. 候选版本必须在 90 秒内重新连接并发送 `SystemInfo`，随后继续通过五秒稳定窗口。若进程退出或未通过任一检查，Agent 会恢复 `.bak`、重启旧版本，并在重新连接后上报升级失败
 
 管理员可以在 Dashboard 的服务器详情页触发升级，也可以通过 API：
 
 ```bash
 curl -X POST https://your-server/api/servers/{id}/upgrade \
-  -H "Cookie: session=..." \
+  -H "Cookie: session_token=..." \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://github.com/.../releases/download/v1.2.0/serverbee-agent", "version": "1.2.0"}'
+  -d '{"version": "1.2.0"}'
 ```
 
 <Callout type="warn">
 自动更新需要 Agent 具有 `upgrade` 能力（`CAP_UPGRADE`），默认启用。能力由 Agent 拥有 —— 如需关闭，在 Agent 主机的 `[capabilities]` deny 列表中加入 `upgrade`（或传 `--deny-cap upgrade`）。见 [功能开关](/zh/docs/capabilities)。
+</Callout>
+
+<Callout type="info">
+自动回滚由“发起升级的 Agent 版本”执行。从旧 Alpha Agent 发起的第一次升级仍会使用旧版升级器；至少安装一次带有回滚机制的版本后，后续远程升级才能获得此保护。
 </Callout>
 
 ## 断线重连

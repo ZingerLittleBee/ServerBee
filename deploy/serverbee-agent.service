@@ -8,6 +8,7 @@ StartLimitBurst=5
 Type=simple
 ExecStart=/usr/local/bin/serverbee-agent
 WorkingDirectory=/etc/serverbee
+Environment=SERVERBEE_SUPERVISED=1
 Restart=always
 RestartSec=5
 # Exit code 78 = permanent enrollment-code failure; don't restart, the operator

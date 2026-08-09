@@ -6,6 +6,15 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use std::sync::Arc;
 
+mod transaction;
+
+pub use transaction::{
+    PARENT_WATCHDOG_ENV, StartupDisposition, acknowledge_recovery_report, commit_startup_trial,
+    has_parent_watchdog, install_candidate, is_supervised, is_upgrade_probe, prepare_startup,
+    read_recovery_report, restart_restored_binary, rollback_failed_candidate, start_trial_watchdog,
+    startup_health_timeout, trial_is_active, verify_candidate_version,
+};
+
 /// 返回当前构建对应的 release asset 文件名(与 release.yml 命名一致)。
 pub fn current_asset_name() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

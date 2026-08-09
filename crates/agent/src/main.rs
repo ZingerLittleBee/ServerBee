@@ -54,6 +54,31 @@ fn flag_value(argv: &[String], flag: &str) -> Option<String> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let argv: Vec<String> = std::env::args().collect();
+    if crate::upgrade::is_upgrade_probe(&argv) {
+        println!("{}", serverbee_common::constants::VERSION);
+        return Ok(());
+    }
+
+    let is_capability_command = argv
+        .get(1)
+        .is_some_and(|subcommand| matches!(subcommand.as_str(), "grant" | "revoke" | "grants"));
+    if !is_capability_command {
+        match crate::upgrade::prepare_startup()? {
+            crate::upgrade::StartupDisposition::Trial => {
+                if !crate::upgrade::has_parent_watchdog() {
+                    crate::upgrade::start_trial_watchdog();
+                }
+            }
+            crate::upgrade::StartupDisposition::RestartAfterRollback(restored_exe) => {
+                crate::upgrade::restart_restored_binary(&restored_exe)?;
+                return Ok(());
+            }
+            crate::upgrade::StartupDisposition::Normal
+            | crate::upgrade::StartupDisposition::Recovered => {}
+        }
+    }
+
     let mut config = AgentConfig::load().unwrap_or_else(|e| {
         eprintln!("Failed to load config: {e}");
         eprintln!("Please create agent.toml or /etc/serverbee/agent.toml");
@@ -62,7 +87,6 @@ async fn main() -> anyhow::Result<()> {
 
     // Host-local capability grant subcommands. One-shot: write the grants file
     // and exit; the running daemon picks the change up within a few seconds.
-    let argv: Vec<String> = std::env::args().collect();
     if let Some(sub) = argv.get(1).map(String::as_str)
         && matches!(sub, "grant" | "revoke" | "grants")
     {

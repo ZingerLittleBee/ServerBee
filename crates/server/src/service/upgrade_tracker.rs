@@ -165,6 +165,23 @@ impl UpgradeJobTracker {
         )
     }
 
+    pub fn mark_agent_reported_failed(
+        &self,
+        lookup: UpgradeLookup,
+        stage: UpgradeStage,
+        error: String,
+        backup_path: Option<String>,
+    ) -> Option<UpgradeJob> {
+        self.finish_job_inner(
+            lookup,
+            UpgradeStatus::Failed,
+            Some(stage),
+            Some(error),
+            backup_path,
+            true,
+        )
+    }
+
     pub fn mark_failed_by_capability_denied(
         &self,
         lookup: UpgradeLookup,
@@ -239,8 +256,22 @@ impl UpgradeJobTracker {
         error: Option<String>,
         backup_path: Option<String>,
     ) -> Option<UpgradeJob> {
+        self.finish_job_inner(lookup, status, stage, error, backup_path, false)
+    }
+
+    fn finish_job_inner(
+        &self,
+        lookup: UpgradeLookup,
+        status: UpgradeStatus,
+        stage: Option<UpgradeStage>,
+        error: Option<String>,
+        backup_path: Option<String>,
+        may_override_success: bool,
+    ) -> Option<UpgradeJob> {
         let mut job = self.jobs.get_mut(&lookup.server_id)?;
-        if job.status != UpgradeStatus::Running || !lookup.matches(&job) {
+        let can_finish = job.status == UpgradeStatus::Running
+            || (may_override_success && job.status == UpgradeStatus::Succeeded);
+        if !can_finish || !lookup.matches(&job) {
             return None;
         }
 
@@ -449,6 +480,36 @@ mod tests {
         assert_eq!(current.status, UpgradeStatus::Timeout);
         assert_eq!(current.backup_path.as_deref(), None);
         assert!(current.finished_at.is_some());
+    }
+
+    #[test]
+    fn agent_reported_rollback_overrides_optimistic_success() {
+        let (tracker, mut rx) = make_tracker();
+        let job = tracker
+            .start_job("server-1", "1.2.3")
+            .expect("job should start");
+        rx.try_recv().expect("start broadcast");
+        tracker.mark_succeeded(UpgradeLookup::from_job(&job), None);
+        rx.try_recv().expect("success broadcast");
+
+        tracker.mark_agent_reported_failed(
+            UpgradeLookup::from_job(&job),
+            UpgradeStage::Restarting,
+            "candidate rolled back".into(),
+            None,
+        );
+
+        assert_result(
+            rx.try_recv().expect("rollback failure broadcast"),
+            "server-1",
+            &job.job_id,
+            "1.2.3",
+            UpgradeStatus::Failed,
+            Some(UpgradeStage::Restarting),
+        );
+        let current = tracker.get("server-1").expect("job should remain");
+        assert_eq!(current.status, UpgradeStatus::Failed);
+        assert_eq!(current.error.as_deref(), Some("candidate rolled back"));
     }
 
     #[test]
