@@ -4,6 +4,7 @@ import { LayoutGrid, List } from 'lucide-react'
 import { useId, useMemo, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MarkdownContent } from '@/components/dashboard/markdown-content'
+import { DEFAULT_TOP_N_BAR_COLOR, normalizeTopNBarColor } from '@/components/dashboard/widgets/top-n'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -587,6 +588,8 @@ function TopNForm({
 }) {
   const TOP_N_METRICS = useTopNMetrics(t)
   const SORT_OPTIONS = useSortOptions(t)
+  // Color picker needs a valid 6-digit hex; fall back to the widget default for the swatch.
+  const colorValue = normalizeTopNBarColor(config.color) ?? DEFAULT_TOP_N_BAR_COLOR
   return (
     <>
       <MetricSelect
@@ -623,6 +626,35 @@ function TopNForm({
         t={t}
         value={config.count}
       />
+      <div className="space-y-1.5">
+        <Label htmlFor="top-n-bar-color">{t('widgets.common.labels.color')}</Label>
+        <div className="flex items-center gap-2">
+          <input
+            aria-label={t('widgets.common.labels.color')}
+            className="h-8 w-10 cursor-pointer rounded-md border border-input bg-transparent p-0.5"
+            id="top-n-bar-color"
+            onChange={(event) => onChange({ ...config, color: event.target.value.toUpperCase() })}
+            type="color"
+            value={colorValue.toLowerCase()}
+          />
+          <Input
+            className="font-mono uppercase"
+            onChange={(event) => {
+              const next = event.target.value.trim()
+              if (next.length === 0) {
+                // Empty clears the override so the widget uses its built-in default.
+                const { color: _removed, ...rest } = config
+                onChange(rest)
+                return
+              }
+              onChange({ ...config, color: next })
+            }}
+            placeholder={DEFAULT_TOP_N_BAR_COLOR}
+            spellCheck={false}
+            value={config.color ?? DEFAULT_TOP_N_BAR_COLOR}
+          />
+        </div>
+      </div>
     </>
   )
 }

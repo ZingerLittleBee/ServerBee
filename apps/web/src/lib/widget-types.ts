@@ -270,6 +270,8 @@ export interface MultiLineConfig {
 }
 
 export interface TopNConfig {
+  /** Bar fill color as `#RRGGBB`. Defaults to `#8EC5FF` when omitted. */
+  color?: string
   count?: number
   metric: string
   sort?: 'asc' | 'desc'

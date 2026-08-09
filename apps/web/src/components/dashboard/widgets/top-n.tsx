@@ -39,16 +39,57 @@ const LABEL_INSET_PX = 8
 /** Bars narrower than this put the name to the right of the fill (outside). */
 const MIN_INNER_LABEL_WIDTH_PX = 56
 
-/** Single theme chart accent — same token as primary plot series. */
-const BAR_FILL = 'var(--chart-1)'
+/** Default bar fill when the widget config omits `color`. */
+export const DEFAULT_TOP_N_BAR_COLOR = '#8EC5FF'
 
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
+const HEX6_RE = /^#[0-9A-Fa-f]{6}$/
+const HEX3_RE = /^#[0-9A-Fa-f]{3}$/
 
-function labelClassForBar(inside: boolean): string {
+/** Normalize user-entered hex (`#RGB`, `#RRGGBB`, optional leading `#`) to `#RRGGBB`. */
+export function normalizeTopNBarColor(value: string | undefined | null): string | null {
+  if (value == null) {
+    return null
+  }
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    return null
+  }
+  const withHash = trimmed.startsWith('#') ? trimmed : `#${trimmed}`
+  if (HEX6_RE.test(withHash)) {
+    return withHash.toUpperCase()
+  }
+  if (HEX3_RE.test(withHash)) {
+    const r = withHash[1]
+    const g = withHash[2]
+    const b = withHash[3]
+    return `#${r}${r}${g}${g}${b}${b}`.toUpperCase()
+  }
+  return null
+}
+
+export function resolveTopNBarColor(value: string | undefined | null): string {
+  return normalizeTopNBarColor(value) ?? DEFAULT_TOP_N_BAR_COLOR
+}
+
+/** Relative luminance of `#RRGGBB` (sRGB). Used to pick label ink on the bar. */
+function hexRelativeLuminance(hex: string): number {
+  const raw = hex.replace('#', '')
+  const channels = [0, 2, 4].map((offset) => {
+    const channel = Number.parseInt(raw.slice(offset, offset + 2), 16) / 255
+    return channel <= 0.039_28 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+function labelClassForBar(fillHex: string, inside: boolean): string {
   if (!inside) {
     return 'text-foreground'
   }
-  // chart-1 is mid-chroma blue (L ≈ 0.67–0.71) in both themes — white reads.
+  // better-colors: light fill (L-ish via WCAG luminance) → dark text.
+  if (hexRelativeLuminance(fillHex) > 0.45) {
+    return 'text-zinc-950'
+  }
   return 'text-white [text-shadow:0_1px_1px_rgba(0,0,0,0.45)]'
 }
 
@@ -77,6 +118,7 @@ function chartHeightForCount(count: number): number {
 }
 
 interface TopNBarLabelsProps {
+  fillColor: string
   getName: (id: string) => string
 }
 
@@ -85,7 +127,7 @@ interface TopNBarLabelsProps {
  * post-overlay child of `BarChart` so it can read band geometry from context
  * without reserving a separate category axis.
  */
-function TopNBarLabels({ getName }: TopNBarLabelsProps) {
+function TopNBarLabels({ fillColor, getName }: TopNBarLabelsProps) {
   const { containerRef } = useChartStable()
   const [mounted, setMounted] = useState(false)
   const { barScale, bandWidth, barXAccessor, data, margin, yScale, hoveredBarIndex } = useChart()
@@ -146,7 +188,7 @@ function TopNBarLabels({ getName }: TopNBarLabelsProps) {
             <span
               className={cn(
                 'truncate font-medium text-xs transition-opacity duration-150',
-                labelClassForBar(item.inside),
+                labelClassForBar(fillColor, item.inside),
                 isHovered ? 'opacity-100' : 'opacity-90'
               )}
             >
@@ -167,6 +209,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
   const { t } = useTranslation('dashboard')
   const { metric, sort = 'desc' } = config
   const count = config.count ?? 5
+  const barColor = resolveTopNBarColor(config.color)
   const metricName = metricLabel(metric, t)
   const title = t('widgets.topN.title', { metric: metricName })
 
@@ -212,9 +255,9 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         return []
       }
-      return [{ color: BAR_FILL, label: metricName, value: formatValue(metric, value) }]
+      return [{ color: barColor, label: metricName, value: formatValue(metric, value) }]
     },
-    [metric, metricName]
+    [barColor, metric, metricName]
   )
   const tooltipTitle = useCallback(
     (point: Record<string, unknown>) => {
@@ -254,8 +297,8 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
                   content={({ point }) => <TooltipContent rows={tooltipRows(point)} title={tooltipTitle(point)} />}
                   showDatePill={false}
                 />
-                <Bar dataKey="value" fill={BAR_FILL} lineCap={BAR_CORNER_RADIUS} />
-                <TopNBarLabels getName={getName} />
+                <Bar dataKey="value" fill={barColor} lineCap={BAR_CORNER_RADIUS} />
+                <TopNBarLabels fillColor={barColor} getName={getName} />
               </BarChart>
             </div>
 

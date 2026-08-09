@@ -216,7 +216,8 @@
         "labelOptional": "标签（可选）",
         "layout": "布局",
         "layoutGrid": "网格",
-        "layoutList": "列表"
+        "layoutList": "列表",
+        "color": "条形颜色"
       },
       "placeholders": {
         "selectServer": "选择服务器",

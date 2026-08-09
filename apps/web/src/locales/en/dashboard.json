@@ -216,7 +216,8 @@
         "labelOptional": "Label (optional)",
         "layout": "Layout",
         "layoutGrid": "Grid",
-        "layoutList": "List"
+        "layoutList": "List",
+        "color": "Bar color"
       },
       "placeholders": {
         "selectServer": "Select server",

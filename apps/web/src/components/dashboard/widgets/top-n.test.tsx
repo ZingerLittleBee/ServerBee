@@ -166,8 +166,8 @@ describe('TopNWidget', () => {
     expect(screen.queryByTestId('bar-y-axis')).not.toBeInTheDocument()
 
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-key', 'value')
-    // Single theme chart accent for every bar.
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', 'var(--chart-1)')
+    // Default configurable bar color.
+    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', '#8EC5FF')
     expect(screen.getByTestId('bar-series')).toHaveAttribute('data-line-cap', '5')
     expect(screen.getByTestId('bar-value-axis')).toBeInTheDocument()
 
@@ -177,6 +177,17 @@ describe('TopNWidget', () => {
     expect(rows[1]).toHaveTextContent('90.0%')
     expect(rows[2]).toHaveTextContent('Mid')
     expect(rows[3]).toHaveTextContent('Low')
+  })
+
+  it('uses the configured bar color when provided', () => {
+    render(
+      <TopNWidget
+        config={{ metric: 'cpu', count: 2, color: '#ff6600' }}
+        servers={[makeServer('a', { cpu: 80 }), makeServer('b', { cpu: 40 })]}
+      />
+    )
+
+    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', '#FF6600')
   })
 
   it('shows an empty state when no online servers are available', () => {
