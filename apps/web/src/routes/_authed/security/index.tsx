@@ -6,8 +6,8 @@ import { PageBody } from '@/components/layout/page-body'
 import { SecurityEventDetailDrawer } from '@/components/security/event-detail-drawer'
 import { SecurityEventTable } from '@/components/security/event-table'
 import { SecurityKpiCards } from '@/components/security/kpi-cards'
+import { type SecurityRangeKey, SecurityRangeToggle } from '@/components/security/range-toggle'
 import { SecurityTimelineChart } from '@/components/security/timeline-chart'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAuth } from '@/hooks/use-auth'
@@ -19,7 +19,7 @@ export const Route = createFileRoute('/_authed/security/')({
   component: SecurityIndexPage
 })
 
-type RangeKey = '24h' | '7d' | '30d'
+type RangeKey = SecurityRangeKey
 
 const RANGE_HOURS: Record<RangeKey, number> = {
   '24h': 24,
@@ -131,18 +131,7 @@ function SecurityIndexPage() {
       <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="font-semibold text-2xl">{t('page_title', { defaultValue: 'Security Events' })}</h1>
-          <div className="flex gap-1 rounded-md border bg-card p-1">
-            {(['24h', '7d', '30d'] as const).map((key) => (
-              <Button
-                key={key}
-                onClick={() => dispatch({ type: 'setRange', value: key })}
-                size="sm"
-                variant={state.range === key ? 'default' : 'ghost'}
-              >
-                {t(`range.${key}`, { defaultValue: key })}
-              </Button>
-            ))}
-          </div>
+          <SecurityRangeToggle onValueChange={(value) => dispatch({ type: 'setRange', value })} value={state.range} />
         </div>
 
         <SecurityKpiCards serverId={filters.server_id} since={since} />

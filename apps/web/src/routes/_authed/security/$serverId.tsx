@@ -5,6 +5,7 @@ import { PageBody } from '@/components/layout/page-body'
 import { SecurityEventDetailDrawer } from '@/components/security/event-detail-drawer'
 import { SecurityEventTable } from '@/components/security/event-table'
 import { SecurityKpiCards } from '@/components/security/kpi-cards'
+import { type SecurityRangeKey, SecurityRangeToggle } from '@/components/security/range-toggle'
 import { SecurityTimelineChart } from '@/components/security/timeline-chart'
 import { Button } from '@/components/ui/button'
 import { useSecurityEvents } from '@/hooks/use-security-events'
@@ -15,7 +16,7 @@ export const Route = createFileRoute('/_authed/security/$serverId')({
   component: SecurityServerPage
 })
 
-type RangeKey = '24h' | '7d' | '30d'
+type RangeKey = SecurityRangeKey
 
 const RANGE_HOURS: Record<RangeKey, number> = {
   '24h': 24,
@@ -67,13 +68,7 @@ function SecurityServerPage() {
               {t('per_server.subtitle', { defaultValue: 'Security events' })}
             </p>
           </div>
-          <div className="flex shrink-0 gap-1 rounded-md border bg-card p-1">
-            {(['24h', '7d', '30d'] as const).map((key) => (
-              <Button key={key} onClick={() => setRange(key)} size="sm" variant={range === key ? 'default' : 'ghost'}>
-                {t(`range.${key}`, { defaultValue: key })}
-              </Button>
-            ))}
-          </div>
+          <SecurityRangeToggle className="shrink-0" onValueChange={setRange} value={range} />
         </div>
 
         <SecurityKpiCards serverId={serverId} since={since} />

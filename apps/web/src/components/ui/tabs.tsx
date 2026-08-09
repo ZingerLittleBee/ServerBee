@@ -1,8 +1,9 @@
 // Tabs keep the previous shadcn/Base UI look; only the active indicator uses
 // beUI-style spring layoutId motion (https://beui.dev/components/motion/tabs).
 
-import { MotionConfig, motion, type Transition, useReducedMotion } from 'motion/react'
+import { MotionConfig, motion, useReducedMotion } from 'motion/react'
 import { createContext, type ReactNode, useCallback, useContext, useId, useMemo, useState } from 'react'
+import { SPRING_INDICATOR } from '@/lib/ease'
 import { cn } from '@/lib/utils'
 
 type TabsListVariant = 'default' | 'line'
@@ -22,15 +23,6 @@ function useTabs() {
     throw new Error('Tabs.* must be used inside <Tabs>')
   }
   return ctx
-}
-
-// Weighty spring for the active-tab indicator: a touch of overshoot so it
-// settles with life instead of snapping.
-const indicatorTransition: Transition = {
-  type: 'spring',
-  stiffness: 170,
-  damping: 24,
-  mass: 1.2
 }
 
 export function Tabs({
@@ -63,7 +55,7 @@ export function Tabs({
   const contextValue = useMemo(() => ({ layoutId, setValue, value: current }), [current, layoutId, setValue])
 
   return (
-    <MotionConfig transition={reduce ? { duration: 0 } : indicatorTransition}>
+    <MotionConfig transition={reduce ? { duration: 0 } : SPRING_INDICATOR}>
       <TabsContext.Provider value={contextValue}>
         {/* layoutRoot: indicator layoutId measures in page coordinates; inside
             scrolled containers that would replay scroll as movement. Scope

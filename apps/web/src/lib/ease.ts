@@ -41,6 +41,14 @@ export const SPRING_LAYOUT = {
   mass: 0.6
 } as const
 
+/** Active-tab / segment indicator (beUI layoutId spring with a touch of overshoot). */
+export const SPRING_INDICATOR = {
+  type: 'spring',
+  stiffness: 170,
+  damping: 24,
+  mass: 1.2
+} as const
+
 /** Cursor-follow physics for decorative mouse tracking (magnetic, tilt, dock). */
 export const SPRING_MOUSE = {
   stiffness: 200,
