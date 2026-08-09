@@ -1,11 +1,25 @@
-// Tabs keep the previous shadcn look with an instant active indicator (no glide).
+// Tabs keep the previous shadcn/Base UI look; only the active indicator uses
+// beUI-style spring layoutId motion (https://beui.dev/components/motion/tabs).
 
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
+import { MotionConfig, motion, useReducedMotion } from 'motion/react'
+import {
+  type CSSProperties,
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useId,
+  useMemo,
+  useState
+} from 'react'
+import { SPRING_INDICATOR } from '@/lib/ease'
 import { cn } from '@/lib/utils'
 
 type TabsListVariant = 'default' | 'line'
 
 interface TabsContextValue {
+  animated: boolean
+  layoutId: string
   setValue: (value: string) => void
   value: string
 }
@@ -22,12 +36,15 @@ function useTabs() {
 }
 
 export function Tabs({
+  animated = true,
   children,
   className,
   defaultValue,
   onValueChange,
   value
 }: {
+  /** When false, the active indicator snaps with no layoutId spring. Default true. */
+  animated?: boolean
   children: ReactNode
   className?: string
   defaultValue?: string
@@ -35,6 +52,8 @@ export function Tabs({
   value?: string
 }) {
   const [internal, setInternal] = useState(defaultValue ?? '')
+  const layoutId = useId()
+  const reduce = useReducedMotion()
   const controlled = value !== undefined
   const current = controlled ? value : internal
   const setValue = useCallback(
@@ -46,14 +65,27 @@ export function Tabs({
     },
     [controlled, onValueChange]
   )
-  const contextValue = useMemo(() => ({ setValue, value: current }), [current, setValue])
+  const motionEnabled = animated && !reduce
+  const contextValue = useMemo(
+    () => ({ animated: motionEnabled, layoutId, setValue, value: current }),
+    [current, layoutId, motionEnabled, setValue]
+  )
 
   return (
-    <TabsContext.Provider value={contextValue}>
-      <div className={cn('flex flex-col gap-2', className)} data-slot="tabs">
-        {children}
-      </div>
-    </TabsContext.Provider>
+    <MotionConfig transition={motionEnabled ? SPRING_INDICATOR : { duration: 0 }}>
+      <TabsContext.Provider value={contextValue}>
+        {/* layoutRoot: indicator layoutId measures in page coordinates; inside
+            scrolled containers that would replay scroll as movement. Scope
+            projection to the Tabs wrapper so the pill only travels in-list. */}
+        <motion.div
+          className={cn('flex flex-col gap-2', className)}
+          data-slot="tabs"
+          layoutRoot={motionEnabled || undefined}
+        >
+          {children}
+        </motion.div>
+      </TabsContext.Provider>
+    </MotionConfig>
   )
 }
 
@@ -85,6 +117,23 @@ export function TabsList({
   )
 }
 
+function TabsIndicator({
+  animated,
+  className,
+  layoutId,
+  style
+}: {
+  animated: boolean
+  className: string
+  layoutId: string
+  style?: CSSProperties
+}) {
+  if (animated) {
+    return <motion.span className={className} layoutId={layoutId} style={style} />
+  }
+  return <span className={className} style={style} />
+}
+
 export function TabsTrigger({
   children,
   className,
@@ -96,7 +145,7 @@ export function TabsTrigger({
   indicatorClassName?: string
   value: string
 }) {
-  const { setValue, value: current } = useTabs()
+  const { animated, layoutId, setValue, value: current } = useTabs()
   const listVariant = useContext(TabsListVariantContext)
   const active = current === value
 
@@ -106,7 +155,7 @@ export function TabsTrigger({
         aria-selected={active}
         className={cn(
           'relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-1.5 py-0.5 font-medium text-sm',
-          'text-foreground/60 transition-none hover:text-foreground',
+          'text-foreground/60 transition-colors hover:text-foreground',
           'focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
           'disabled:pointer-events-none disabled:opacity-50',
           'dark:text-muted-foreground dark:hover:text-foreground',
@@ -121,7 +170,11 @@ export function TabsTrigger({
       >
         {children}
         {active ? (
-          <span className={cn('absolute inset-x-0 bottom-[-5px] h-0.5 bg-foreground', indicatorClassName)} />
+          <TabsIndicator
+            animated={animated}
+            className={cn('absolute inset-x-0 bottom-[-5px] h-0.5 bg-foreground', indicatorClassName)}
+            layoutId={layoutId}
+          />
         ) : null}
       </button>
     )
@@ -130,19 +183,22 @@ export function TabsTrigger({
   return (
     <div className="relative h-[calc(100%-1px)] flex-1">
       {active ? (
-        <span
+        <TabsIndicator
+          animated={animated}
           className={cn(
             'absolute inset-0 rounded-md bg-background shadow-sm',
             'dark:border dark:border-input dark:bg-input/30',
             indicatorClassName
           )}
+          layoutId={layoutId}
+          style={{ borderRadius: 6 }}
         />
       ) : null}
       <button
         aria-selected={active}
         className={cn(
           'relative z-10 inline-flex h-full w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-1.5 py-0.5 font-medium text-sm',
-          'bg-transparent text-foreground/60 transition-none hover:text-foreground',
+          'bg-transparent text-foreground/60 transition-colors hover:text-foreground',
           'focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
           'disabled:pointer-events-none disabled:opacity-50',
           'dark:text-muted-foreground dark:hover:text-foreground',
