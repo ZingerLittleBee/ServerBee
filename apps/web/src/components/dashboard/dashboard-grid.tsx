@@ -573,12 +573,7 @@ function EditOverlay({
   return (
     // Always visible in edit mode (not hover-only). Elevated chip so actions
     // stay scannable over busy chart widgets without competing as primary CTAs.
-    <div
-      className={cn(
-        'absolute top-2 right-2 z-20 flex items-center gap-0.5 rounded-lg border border-border',
-        'bg-background p-1 shadow-md ring-1 ring-foreground/10'
-      )}
-    >
+    <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 rounded-lg bg-background p-1 shadow-md ring-1 ring-foreground/10">
       {onToggleStatic && (
         <Button
           aria-label={toggleStaticLabel}
