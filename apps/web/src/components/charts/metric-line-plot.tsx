@@ -49,6 +49,9 @@ export function MetricLinePlot({
 }: MetricLinePlotProps) {
   const accessibleRows = useMemo(() => sampleChartRows(data), [data])
   const formatXAxisValue = useCallback((date: Date) => formatTime(date.toISOString()), [formatTime])
+  // Date pill under the crosshair uses the richer tooltip label (same as
+  // MetricAreaPlot / latency charts) so hover highlights the active x value.
+  const formatDatePillValue = useCallback((date: Date) => formatTooltipLabel(date.toISOString()), [formatTooltipLabel])
   const tooltipRows = useCallback(
     (point: Record<string, unknown>): TooltipRow[] =>
       series.flatMap((item) => {
@@ -77,15 +80,14 @@ export function MetricLinePlot({
           yDomainTweenDuration={400}
         >
           <Grid vertical={false} />
-          {/* Date pill is off — keep axis labels visible under the crosshair. */}
-          <XAxis fadeOnHover={false} formatValue={formatXAxisValue} numTicks={5} tickMode="domain" />
+          {/* fadeOnHover defaults on so nearby ticks yield to the date pill. */}
+          <XAxis formatValue={formatXAxisValue} numTicks={5} tickMode="domain" />
           <YAxis formatValue={formatYAxisValue} />
           <ChartTooltip
             content={({ point }) => (
               <TooltipContent rows={tooltipRows(point)} title={formatTooltipLabel(String(point.timestamp))} />
             )}
-            formatDatePill={formatXAxisValue}
-            showDatePill={false}
+            formatDatePill={formatDatePillValue}
           />
           {series.map((item) => (
             <Line

@@ -84,6 +84,24 @@ export function StackedBarPlot({
     [categoryKey, formatTooltipLabel]
   )
 
+  // Categorical bars aren't real timestamps, so the date pill needs explicit
+  // labels. Prefer the tooltip formatter (full day key); fall back to the axis
+  // tick formatter (often a shorter MM-DD).
+  const datePillLabels = useMemo(
+    () =>
+      data.map((point) => {
+        const category = String(point[categoryKey] ?? '')
+        if (formatTooltipLabel) {
+          return formatTooltipLabel(category)
+        }
+        if (formatCategory) {
+          return formatCategory(category)
+        }
+        return category
+      }),
+    [categoryKey, data, formatCategory, formatTooltipLabel]
+  )
+
   return (
     <figure aria-label={ariaLabel} className={cn('flex min-w-0 flex-col', className)}>
       <div aria-hidden="true" className="min-h-0 w-full min-w-0 flex-1" data-testid="bklit-stacked-bar-chart">
@@ -106,13 +124,16 @@ export function StackedBarPlot({
             </>
           ) : (
             <>
+              {/* BarXAxis already fades ticks near the crosshair so the pill can show. */}
               <BarXAxis formatLabel={formatCategory} />
               <YAxis formatValue={axisValueFormatter} />
             </>
           )}
           <ChartTooltip
             content={({ point }) => <TooltipContent rows={tooltipRows(point)} title={tooltipTitle(point)} />}
-            showDatePill={false}
+            datePillLabels={isHorizontal ? undefined : datePillLabels}
+            // Horizontal bars put the category on Y — no bottom date pill.
+            showDatePill={!isHorizontal}
           />
           {series.map((item) => (
             <Bar

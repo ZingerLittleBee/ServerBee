@@ -33,6 +33,12 @@ export interface ChartTooltipProps {
    */
   damping?: number
   /**
+   * Explicit per-point date-pill labels (one entry per data row). Takes
+   * precedence over `formatDatePill` — use for categorical bar charts whose
+   * x accessor is not a real timestamp (e.g. traffic day keys).
+   */
+  datePillLabels?: readonly string[]
+  /**
    * Override tooltip dot fill. When omitted and `rows` is set, dot colors match row colors.
    * When a function, receives the hovered point and line config.
    */
@@ -97,6 +103,7 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
   rows: rowsRenderer,
   dotColor: dotColorProp,
   formatDatePill,
+  datePillLabels,
   children,
   className = '',
   container,
@@ -130,10 +137,15 @@ const ChartTooltipInner = memo(function ChartTooltipInner({
   const { tooltipSpring } = useChartConfig()
 
   const isHorizontal = orientation === 'horizontal'
-  const resolvedDateLabels = useMemo(
-    () => (formatDatePill ? data.map((point) => formatDatePill(xAccessor(point))) : dateLabels),
-    [data, dateLabels, formatDatePill, xAccessor]
-  )
+  const resolvedDateLabels = useMemo(() => {
+    if (datePillLabels && datePillLabels.length > 0) {
+      return [...datePillLabels]
+    }
+    if (formatDatePill) {
+      return data.map((point) => formatDatePill(xAccessor(point)))
+    }
+    return dateLabels
+  }, [data, dateLabels, datePillLabels, formatDatePill, xAccessor])
   const discreteInteraction = resolvedDateLabels.length > 60
 
   const resolvedDotSize = useMemo(() => {
