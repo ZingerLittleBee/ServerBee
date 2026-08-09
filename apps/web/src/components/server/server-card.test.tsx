@@ -235,6 +235,32 @@ describe('ServerCard', () => {
     expect(container.innerHTML).not.toContain('bg-background/')
   })
 
+  it('disables latency/loss tooltips on offline cards', () => {
+    const { container } = renderCard(makeServer({ online: false }), {
+      networkSummary: makeSummary({
+        targets: [
+          {
+            availability: 0.99,
+            avg_latency: 40,
+            max_latency: 45,
+            min_latency: 35,
+            packet_loss: 0.01,
+            provider: 'ct',
+            target_id: 'target-1',
+            target_name: 'Shanghai Telecom'
+          }
+        ]
+      })
+    })
+
+    // NetworkMetricValue tooltips use a button trigger; offline must not mount one.
+    const networkSection = screen.getByLabelText('card_network_quality')
+    expect(networkSection.querySelector('button')).toBeNull()
+    // Square-grid markers stay as plain divs (no tooltip trigger wrappers).
+    expect(container.querySelectorAll('[data-testid="square"]').length).toBeGreaterThan(0)
+    expect(networkSection.querySelectorAll('[data-slot="tooltip-trigger"]')).toHaveLength(0)
+  })
+
   it('gives the truncated name a title so the full value stays reachable', () => {
     renderCard(makeServer({ name: 'a-very-long-server-name-that-will-be-clipped' }))
     const heading = screen.getByRole('heading', { level: 3 })

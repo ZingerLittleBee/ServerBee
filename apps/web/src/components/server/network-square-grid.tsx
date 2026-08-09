@@ -20,6 +20,8 @@ const MARKER_GAP = 3
 interface NetworkSquareGridProps {
   kind: 'latency' | 'loss'
   points: readonly ServerCardMetricPoint[]
+  /** When false (e.g. offline cards), render markers without per-point tooltips. */
+  tooltips?: boolean
 }
 
 function averageLossRatio(point: ServerCardMetricPoint): number | null {
@@ -71,7 +73,23 @@ function PointTooltip({ point, t }: { point: ServerCardMetricPoint; t: (key: str
   )
 }
 
-export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
+function Marker({ point, kind }: { kind: 'latency' | 'loss'; point: ServerCardMetricPoint }) {
+  const severity = getPointSeverity(point, kind)
+  return (
+    <div
+      className="flex-none rounded-[1px]"
+      data-severity={severity}
+      data-testid="square"
+      style={{
+        backgroundColor: getSeverityMarkerColor(severity),
+        height: `${MARKER_HEIGHT}px`,
+        width: `${MARKER_WIDTH}px`
+      }}
+    />
+  )
+}
+
+export function NetworkSquareGrid({ points, kind, tooltips = true }: NetworkSquareGridProps) {
   const { t } = useTranslation(['servers'])
   const visible = points.toReversed()
   // With identical marker geometry, color is the only visual severity channel, so the
@@ -102,8 +120,8 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
 
   // Every card renders ~30 markers per grid, so per-marker tab stops would drown the page's
   // Tab order. Instead the grid is a single labelled image: assistive tech gets the summary,
-  // pointer users still get the per-marker tooltip. `role="img"` makes the markers
-  // presentational, so they need no individual labels.
+  // pointer users still get the per-marker tooltip (when enabled). `role="img"` makes the
+  // markers presentational, so they need no individual labels.
   return (
     <div
       aria-label={summary}
@@ -112,23 +130,12 @@ export function NetworkSquareGrid({ points, kind }: NetworkSquareGridProps) {
       style={{ gap: `${MARKER_GAP}px` }}
     >
       {visible.map((point) => {
-        const severity = getPointSeverity(point, kind)
+        if (!tooltips) {
+          return <Marker key={point.timestamp} kind={kind} point={point} />
+        }
         return (
           <Tooltip key={point.timestamp}>
-            <TooltipTrigger
-              render={
-                <div
-                  className="flex-none rounded-[1px]"
-                  data-severity={severity}
-                  data-testid="square"
-                  style={{
-                    backgroundColor: getSeverityMarkerColor(severity),
-                    height: `${MARKER_HEIGHT}px`,
-                    width: `${MARKER_WIDTH}px`
-                  }}
-                />
-              }
-            />
+            <TooltipTrigger render={<Marker kind={kind} point={point} />} />
             <TooltipContent className="grid min-w-48 gap-1.5" sideOffset={4}>
               <PointTooltip point={point} t={t} />
             </TooltipContent>

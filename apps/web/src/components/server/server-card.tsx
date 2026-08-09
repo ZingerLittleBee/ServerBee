@@ -229,11 +229,13 @@ const ServerCardInner = ({
           </div>
 
           {/* Always reserve this slot (even with empty/padded probe history) so
-              online and offline cards keep the same body structure and height. */}
+              online and offline cards keep the same body structure and height.
+              Offline tiles keep the visuals but drop tooltips — stale probe
+              breakdowns are not actionable while the agent is down. */}
           <section aria-label={t('card_network_quality')} className="grid grid-cols-2 gap-x-3 gap-y-1">
             <div className="flex items-baseline justify-between">
               <span className="text-[10px] text-muted-foreground">{t('card_latency')}</span>
-              <NetworkMetricValue targets={currentTargets}>
+              <NetworkMetricValue targets={currentTargets} tooltips={!isOffline}>
                 <span
                   className={`cursor-default font-semibold text-xs tabular-nums ${latencyColorClass(currentAvgLatency, {
                     failed: isLatencyFailure(currentAvgLossRatio)
@@ -246,7 +248,7 @@ const ServerCardInner = ({
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-[10px] text-muted-foreground">{t('card_packet_loss')}</span>
-              <NetworkMetricValue targets={currentTargets}>
+              <NetworkMetricValue targets={currentTargets} tooltips={!isOffline}>
                 <span
                   className={`cursor-default font-semibold text-xs tabular-nums ${getLossTextClass(currentAvgLossRatio)}`}
                 >
@@ -254,8 +256,8 @@ const ServerCardInner = ({
                 </span>
               </NetworkMetricValue>
             </div>
-            <NetworkSquareGrid kind="latency" points={latencyPoints} />
-            <NetworkSquareGrid kind="loss" points={lossPoints} />
+            <NetworkSquareGrid kind="latency" points={latencyPoints} tooltips={!isOffline} />
+            <NetworkSquareGrid kind="loss" points={lossPoints} tooltips={!isOffline} />
           </section>
 
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
