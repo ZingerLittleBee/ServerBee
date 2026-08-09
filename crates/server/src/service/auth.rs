@@ -23,6 +23,13 @@ pub struct LoginParams<'a> {
     pub session_ttl: i64,
 }
 
+pub struct WebSessionParams<'a> {
+    pub user_id: &'a str,
+    pub ip: &'a str,
+    pub user_agent: &'a str,
+    pub session_ttl: i64,
+}
+
 pub struct AuthService;
 
 impl AuthService {
@@ -135,13 +142,31 @@ impl AuthService {
             }
         }
 
+        let session = Self::create_web_session(
+            db,
+            WebSessionParams {
+                user_id: &user.id,
+                ip: params.ip,
+                user_agent: params.user_agent,
+                session_ttl: params.session_ttl,
+            },
+        )
+        .await?;
+        Ok((session, user))
+    }
+
+    /// Create a browser session and return its plaintext token to the caller.
+    /// Only the token hash is persisted.
+    pub async fn create_web_session(
+        db: &DatabaseConnection,
+        params: WebSessionParams<'_>,
+    ) -> Result<session::Model, AppError> {
         let token = Self::generate_session_token();
         let now = Utc::now();
         let expires_at = now + chrono::Duration::seconds(params.session_ttl);
-
         let new_session = session::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
-            user_id: Set(user.id.clone()),
+            user_id: Set(params.user_id.to_string()),
             // Store only the hash at rest; the plaintext lives in the cookie.
             token: Set(Self::hash_session_token(&token)),
             ip: Set(params.ip.to_string()),
@@ -156,7 +181,7 @@ impl AuthService {
         // Hand the caller the plaintext token (for the Set-Cookie header). The
         // row keeps the hash; this in-memory copy is never re-persisted.
         session_model.token = token;
-        Ok((session_model, user))
+        Ok(session_model)
     }
 
     /// Validate a session token. If valid and not expired, returns the
@@ -551,8 +576,7 @@ impl AuthService {
 
         // Revoke the user's other web sessions. Keep the caller's current one
         // when its token is known (web cookie / bearer flow), else revoke all.
-        let mut revoke =
-            session::Entity::delete_many().filter(session::Column::UserId.eq(user_id));
+        let mut revoke = session::Entity::delete_many().filter(session::Column::UserId.eq(user_id));
         if let Some(ref token_hash) = keep_token_hash {
             revoke = revoke.filter(session::Column::Token.ne(token_hash));
         }
@@ -615,8 +639,8 @@ impl AuthService {
             .filter(session::Column::MobileSessionId.in_subquery(target_subquery()))
             .exec(conn)
             .await?;
-        let mut del =
-            mobile_session::Entity::delete_many().filter(mobile_session::Column::UserId.eq(user_id));
+        let mut del = mobile_session::Entity::delete_many()
+            .filter(mobile_session::Column::UserId.eq(user_id));
         if let Some(keep) = keep_mobile_session_id {
             del = del.filter(mobile_session::Column::Id.ne(keep));
         }
@@ -666,9 +690,7 @@ impl AuthService {
                 .one(db)
                 .await?;
             if existing.is_some() {
-                return Err(AppError::Conflict(format!(
-                    "User '{uname}' already exists"
-                )));
+                return Err(AppError::Conflict(format!("User '{uname}' already exists")));
             }
         }
 
@@ -1103,7 +1125,11 @@ mod tests {
         AuthService::complete_onboarding(&db, &admin.id, "brand-new-pass-9", None)
             .await
             .expect("onboarding should succeed");
-        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        let after = user::Entity::find_by_id(&admin.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(!after.must_change_password, "flag must be cleared");
         assert_eq!(after.username, "admin", "username unchanged when None");
         assert!(AuthService::verify_password("brand-new-pass-9", &after.password_hash).unwrap());
@@ -1116,7 +1142,11 @@ mod tests {
         AuthService::complete_onboarding(&db, &admin.id, "np-12345", Some("  newname  "))
             .await
             .expect("should succeed and trim username");
-        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        let after = user::Entity::find_by_id(&admin.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(after.username, "newname", "username trimmed + applied");
         assert!(!after.must_change_password);
     }
@@ -1128,7 +1158,11 @@ mod tests {
         AuthService::complete_onboarding(&db, &admin.id, "np-12345", Some("   "))
             .await
             .expect("blank username treated as not provided");
-        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        let after = user::Entity::find_by_id(&admin.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(after.username, "admin");
     }
 
@@ -1157,7 +1191,11 @@ mod tests {
             matches!(r, Err(AppError::Validation(_))),
             "short/weak password must be rejected with a validation error, got {r:?}"
         );
-        let after = user::Entity::find_by_id(&admin.id).one(&db).await.unwrap().unwrap();
+        let after = user::Entity::find_by_id(&admin.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(
             after.must_change_password,
             "onboarding must not complete with a weak password"
@@ -1175,7 +1213,11 @@ mod tests {
             matches!(r, Err(AppError::Validation(_))),
             "weak new password must be rejected, got {r:?}"
         );
-        let after = user::Entity::find_by_id(&user.id).one(&db).await.unwrap().unwrap();
+        let after = user::Entity::find_by_id(&user.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(
             AuthService::verify_password("old_pass1", &after.password_hash).unwrap(),
             "password must remain unchanged when new one is rejected"
@@ -1185,7 +1227,9 @@ mod tests {
     #[tokio::test]
     async fn test_complete_onboarding_rejects_when_flag_not_set() {
         let (db, _tmp) = setup_test_db().await;
-        let u = AuthService::create_user(&db, "admin", "p", "admin").await.unwrap();
+        let u = AuthService::create_user(&db, "admin", "p", "admin")
+            .await
+            .unwrap();
         let r = AuthService::complete_onboarding(&db, &u.id, "new-pass-1", None).await;
         assert!(r.is_err(), "onboarding when flag is false must be rejected");
     }
@@ -1193,7 +1237,9 @@ mod tests {
     #[tokio::test]
     async fn test_complete_onboarding_rejects_duplicate_username() {
         let (db, _tmp) = setup_test_db().await;
-        AuthService::create_user(&db, "taken", "p", "member").await.unwrap();
+        AuthService::create_user(&db, "taken", "p", "member")
+            .await
+            .unwrap();
         let admin = seed_must_change_admin(&db).await;
         let r = AuthService::complete_onboarding(&db, &admin.id, "new-pass-1", Some("taken")).await;
         assert!(r.is_err(), "duplicate username must be rejected");
@@ -1255,7 +1301,10 @@ mod tests {
         let result = AuthService::validate_agent_token(&db, "anything-here")
             .await
             .unwrap();
-        assert!(result.is_none(), "pending server must not validate any token");
+        assert!(
+            result.is_none(),
+            "pending server must not validate any token"
+        );
     }
 
     #[tokio::test]
@@ -1506,7 +1555,10 @@ mod tests {
         let validated = AuthService::validate_session(&db, &token, 3600)
             .await
             .expect("validate_session should not error");
-        assert!(validated.is_none(), "an expired session must validate to None");
+        assert!(
+            validated.is_none(),
+            "an expired session must validate to None"
+        );
 
         // The expired row must have been cleaned up.
         let remaining = session::Entity::find()
@@ -1598,7 +1650,10 @@ mod tests {
         let keys = AuthService::list_api_keys(&db, &user.id)
             .await
             .expect("list should not error");
-        assert!(keys.is_empty(), "a user with no keys must return an empty list");
+        assert!(
+            keys.is_empty(),
+            "a user with no keys must return an empty list"
+        );
     }
 
     #[tokio::test]
@@ -1680,8 +1735,14 @@ mod tests {
             "deleting another user's key must return NotFound, got {r:?}"
         );
         // The key must still exist for its real owner.
-        let keys = AuthService::list_api_keys(&db, &owner.id).await.expect("list");
-        assert_eq!(keys.len(), 1, "the owner's key must remain after a foreign delete attempt");
+        let keys = AuthService::list_api_keys(&db, &owner.id)
+            .await
+            .expect("list");
+        assert_eq!(
+            keys.len(),
+            1,
+            "the owner's key must remain after a foreign delete attempt"
+        );
     }
 
     #[tokio::test]
@@ -1728,7 +1789,10 @@ mod tests {
         let r = AuthService::validate_api_key(&db, "wrongprefix_abcdefghijklmnop")
             .await
             .expect("validate should not error");
-        assert!(r.is_none(), "a key without the serverbee_ prefix must return None");
+        assert!(
+            r.is_none(),
+            "a key without the serverbee_ prefix must return None"
+        );
     }
 
     // ── validate_agent_token success + boundary ───────────────────────────────
@@ -1897,10 +1961,7 @@ mod tests {
     // ── revoke_user_mobile_sessions ───────────────────────────────────────────
 
     /// Seed a mobile session plus a session row + device token that reference it.
-    async fn seed_mobile_chain(
-        db: &DatabaseConnection,
-        user_id: &str,
-    ) -> (String, String) {
+    async fn seed_mobile_chain(db: &DatabaseConnection, user_id: &str) -> (String, String) {
         let now = Utc::now();
         let ms_id = Uuid::new_v4().to_string();
         mobile_session::ActiveModel {
@@ -2033,15 +2094,9 @@ mod tests {
         // A second mobile session that must be revoked by the password change.
         let (gone_ms, _gone_token) = seed_mobile_chain(&db, &user.id).await;
 
-        AuthService::change_password(
-            &db,
-            &user.id,
-            "old_pass1",
-            "new_pass123",
-            Some(&keep_token),
-        )
-        .await
-        .expect("change_password should succeed");
+        AuthService::change_password(&db, &user.id, "old_pass1", "new_pass123", Some(&keep_token))
+            .await
+            .expect("change_password should succeed");
 
         // The caller's mobile session is preserved and its created_at bumped.
         let kept = mobile_session::Entity::find_by_id(&keep_ms)

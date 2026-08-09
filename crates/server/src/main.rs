@@ -17,7 +17,8 @@ use serverbee_server::task;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = AppConfig::load().unwrap_or_default();
+    let config = AppConfig::load()
+        .map_err(|error| anyhow::anyhow!("failed to load configuration: {error}"))?;
 
     tracing_subscriber::fmt()
         .with_env_filter(

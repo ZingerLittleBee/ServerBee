@@ -8,6 +8,7 @@ use std::sync::Arc;
 use axum::extract::{Extension, Path, Query, State};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
@@ -101,7 +102,7 @@ impl From<block_list::Model> for BlockListItem {
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ListQuery {
-    /// RFC3339 timestamp from a previous `next_cursor` response.
+    /// Opaque cursor from a previous `next_cursor` response.
     pub cursor: Option<String>,
     pub origin: Option<String>,
     pub target_q: Option<String>,
@@ -123,6 +124,26 @@ pub struct StatsResp {
     pub v6: i64,
 }
 
+fn encode_cursor(created_at: DateTime<Utc>, id: &str) -> String {
+    let raw = format!("{}|{id}", created_at.to_rfc3339());
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+}
+
+fn decode_cursor(cursor: &str) -> Result<(DateTime<Utc>, String), AppError> {
+    let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(cursor.as_bytes())
+        .map_err(|_| AppError::BadRequest("invalid cursor".into()))?;
+    let decoded =
+        String::from_utf8(raw).map_err(|_| AppError::BadRequest("invalid cursor".into()))?;
+    let (timestamp, id) = decoded
+        .split_once('|')
+        .ok_or_else(|| AppError::BadRequest("invalid cursor".into()))?;
+    let created_at = DateTime::parse_from_rfc3339(timestamp)
+        .map_err(|_| AppError::BadRequest("invalid cursor timestamp".into()))?
+        .with_timezone(&Utc);
+    Ok((created_at, id.to_string()))
+}
+
 #[utoipa::path(
     get,
     path = "/api/firewall/blocks",
@@ -138,9 +159,7 @@ async fn list_blocks(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<ApiResponse<ListResp>>, AppError> {
     let limit = q.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT);
-    // TODO(stability): tie-break cursor on (created_at, id) so two rows sharing
-    // a `created_at` millisecond do not skip / duplicate across pages.
-    let mut find = block_list::Entity::find().order_by_desc(block_list::Column::CreatedAt);
+    let mut find = block_list::Entity::find();
     if let Some(o) = q.origin.as_deref() {
         find = find.filter(block_list::Column::Origin.eq(o));
     }
@@ -148,18 +167,33 @@ async fn list_blocks(
         find = find.filter(block_list::Column::Target.contains(tq));
     }
     if let Some(cursor) = q.cursor.as_deref() {
-        let parsed = DateTime::parse_from_rfc3339(cursor)
-            .map_err(|_| AppError::BadRequest("invalid cursor".into()))?
-            .with_timezone(&Utc);
-        find = find.filter(block_list::Column::CreatedAt.lt(parsed));
+        let (created_at, id) = decode_cursor(cursor)?;
+        find = find.filter(
+            Condition::any()
+                .add(block_list::Column::CreatedAt.lt(created_at))
+                .add(
+                    Condition::all()
+                        .add(block_list::Column::CreatedAt.eq(created_at))
+                        .add(block_list::Column::Id.lt(id)),
+                ),
+        );
     }
-    let rows = find.limit(limit + 1).all(&state.db).await?;
-    let mut items: Vec<BlockListItem> = rows.into_iter().map(BlockListItem::from).collect();
+    let rows = find
+        .order_by_desc(block_list::Column::CreatedAt)
+        .order_by_desc(block_list::Column::Id)
+        .limit(limit + 1)
+        .all(&state.db)
+        .await?;
+    let mut items: Vec<block_list::Model> = rows.into_iter().collect();
     let next_cursor = if items.len() as u64 > limit {
-        items.pop().map(|last| last.created_at)
+        items.truncate(limit as usize);
+        items
+            .last()
+            .map(|last| encode_cursor(last.created_at, &last.id))
     } else {
         None
     };
+    let items = items.into_iter().map(BlockListItem::from).collect();
     ok(ListResp { items, next_cursor })
 }
 
@@ -302,7 +336,9 @@ async fn delete_block(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("block {id} not found")))?;
 
-    block_list::Entity::delete_by_id(&id).exec(&state.db).await?;
+    block_list::Entity::delete_by_id(&id)
+        .exec(&state.db)
+        .await?;
 
     AuditService::log(
         &state.db,
@@ -356,4 +392,26 @@ async fn stats(
         v4: total - v6,
         v6,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cursor_round_trips_timestamp_and_id() {
+        let now = Utc::now();
+        let encoded = encode_cursor(now, "block-42");
+        let (decoded_at, decoded_id) = decode_cursor(&encoded).unwrap();
+        assert_eq!(decoded_at.timestamp_micros(), now.timestamp_micros());
+        assert_eq!(decoded_id, "block-42");
+    }
+
+    #[test]
+    fn cursor_rejects_invalid_input() {
+        assert!(matches!(
+            decode_cursor("not-a-cursor"),
+            Err(AppError::BadRequest(_))
+        ));
+    }
 }

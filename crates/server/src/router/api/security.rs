@@ -102,8 +102,8 @@ fn decode_cursor(c: &str) -> Result<(DateTime<Utc>, String), AppError> {
     let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(c.as_bytes())
         .map_err(|_| AppError::BadRequest("invalid cursor".to_string()))?;
-    let s = String::from_utf8(raw)
-        .map_err(|_| AppError::BadRequest("invalid cursor".to_string()))?;
+    let s =
+        String::from_utf8(raw).map_err(|_| AppError::BadRequest("invalid cursor".to_string()))?;
     let (ts, id) = s
         .split_once('|')
         .ok_or_else(|| AppError::BadRequest("invalid cursor".to_string()))?;
@@ -174,8 +174,10 @@ async fn list_events(
 
     let mut items: Vec<security_event::Model> = rows.into_iter().collect();
     let next_cursor = if items.len() as u64 > limit {
-        let extra = items.pop().expect("len > limit > 0");
-        Some(encode_cursor(extra.created_at, &extra.id))
+        items.truncate(limit as usize);
+        items
+            .last()
+            .map(|last| encode_cursor(last.created_at, &last.id))
     } else {
         None
     };
@@ -427,7 +429,7 @@ mod tests {
         }
 
         // Manual call (without the full app router) to verify pagination plumbing.
-        // Limit=2 → 2 items + a next_cursor pointing at the 3rd row.
+        // Limit=2 → 2 items + a next_cursor pointing at the last returned row.
         let rows = security_event::Entity::find()
             .order_by_desc(security_event::Column::CreatedAt)
             .order_by_desc(security_event::Column::Id)
@@ -436,7 +438,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(rows.len(), 3);
-        let cursor = encode_cursor(rows[2].created_at, &rows[2].id);
+        let cursor = encode_cursor(rows[1].created_at, &rows[1].id);
 
         let (cur_ts, cur_id) = decode_cursor(&cursor).unwrap();
         let next = security_event::Entity::find()
@@ -454,12 +456,9 @@ mod tests {
             .all(&db)
             .await
             .unwrap();
-        // The first 3 rows (e0..e2 by recency) preceded the cursor row; remaining
-        // pages should contain the rest excluding the cursor row itself.
-        assert!(
-            next.iter().all(|r| r.id != cur_id),
-            "cursor row excluded from next page"
-        );
+        assert_eq!(next.len(), 3);
+        assert_eq!(next[0].id, rows[2].id);
+        assert!(next.iter().all(|r| r.id != cur_id));
     }
 
     #[tokio::test]

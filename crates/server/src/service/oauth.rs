@@ -117,18 +117,13 @@ impl OAuthService {
                     .send()
                     .await
                     .map_err(|e| AppError::Internal(format!("GitHub API error: {e}")))?
+                    .error_for_status()
+                    .map_err(|e| AppError::Internal(format!("GitHub API error: {e}")))?
                     .json()
                     .await
                     .map_err(|e| AppError::Internal(format!("GitHub API parse error: {e}")))?;
 
-                Ok(OAuthUserInfo {
-                    provider_user_id: resp["id"].as_i64().unwrap_or(0).to_string(),
-                    email: resp["email"].as_str().map(|s| s.to_string()),
-                    display_name: resp["login"]
-                        .as_str()
-                        .or(resp["name"].as_str())
-                        .map(|s| s.to_string()),
-                })
+                parse_github_user_info(&resp)
             }
             PROVIDER_GOOGLE => {
                 let resp: serde_json::Value = client
@@ -137,15 +132,13 @@ impl OAuthService {
                     .send()
                     .await
                     .map_err(|e| AppError::Internal(format!("Google API error: {e}")))?
+                    .error_for_status()
+                    .map_err(|e| AppError::Internal(format!("Google API error: {e}")))?
                     .json()
                     .await
                     .map_err(|e| AppError::Internal(format!("Google API parse error: {e}")))?;
 
-                Ok(OAuthUserInfo {
-                    provider_user_id: resp["sub"].as_str().unwrap_or_default().to_string(),
-                    email: resp["email"].as_str().map(|s| s.to_string()),
-                    display_name: resp["name"].as_str().map(|s| s.to_string()),
-                })
+                parse_google_user_info(&resp)
             }
             PROVIDER_OIDC => {
                 // Generic: use Bearer token on a userinfo endpoint
@@ -280,6 +273,37 @@ impl OAuthService {
     }
 }
 
+fn parse_github_user_info(resp: &serde_json::Value) -> Result<OAuthUserInfo, AppError> {
+    let provider_user_id = resp["id"]
+        .as_i64()
+        .filter(|id| *id > 0)
+        .ok_or_else(|| AppError::Internal("GitHub userinfo missing valid id".to_string()))?
+        .to_string();
+
+    Ok(OAuthUserInfo {
+        provider_user_id,
+        email: resp["email"].as_str().map(str::to_string),
+        display_name: resp["login"]
+            .as_str()
+            .or(resp["name"].as_str())
+            .map(str::to_string),
+    })
+}
+
+fn parse_google_user_info(resp: &serde_json::Value) -> Result<OAuthUserInfo, AppError> {
+    let provider_user_id = resp["sub"]
+        .as_str()
+        .filter(|id| !id.trim().is_empty())
+        .ok_or_else(|| AppError::Internal("Google userinfo missing valid sub".to_string()))?
+        .to_string();
+
+    Ok(OAuthUserInfo {
+        provider_user_id,
+        email: resp["email"].as_str().map(str::to_string),
+        display_name: resp["name"].as_str().map(str::to_string),
+    })
+}
+
 fn build_basic_client(
     config: &OAuthProviderConfig,
     auth_url: &str,
@@ -389,6 +413,24 @@ mod tests {
             email: email.map(|s| s.to_string()),
             display_name: name.map(|s| s.to_string()),
         }
+    }
+
+    #[test]
+    fn github_userinfo_requires_positive_id() {
+        assert!(parse_github_user_info(&serde_json::json!({ "login": "alice" })).is_err());
+        assert!(parse_github_user_info(&serde_json::json!({ "id": 0, "login": "alice" })).is_err());
+        let info = parse_github_user_info(&serde_json::json!({ "id": 42, "login": "alice" }))
+            .expect("valid GitHub userinfo");
+        assert_eq!(info.provider_user_id, "42");
+    }
+
+    #[test]
+    fn google_userinfo_requires_non_empty_sub() {
+        assert!(parse_google_user_info(&serde_json::json!({ "name": "Alice" })).is_err());
+        assert!(parse_google_user_info(&serde_json::json!({ "sub": " " })).is_err());
+        let info = parse_google_user_info(&serde_json::json!({ "sub": "user-42" }))
+            .expect("valid Google userinfo");
+        assert_eq!(info.provider_user_id, "user-42");
     }
 
     // build_client(github): produces a client whose authorize URL and redirect URL

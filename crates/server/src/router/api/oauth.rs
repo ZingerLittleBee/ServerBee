@@ -1,24 +1,22 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::{ConnectInfo, Path, Query, State};
-use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
+use axum::http::header::SET_COOKIE;
 use axum::response::Redirect;
 use axum::routing::get;
-use axum::Router;
 
 use crate::router::utils::extract_client_ip;
 use chrono::Utc;
 use oauth2::{
     AuthorizationCode, CsrfToken, PkceCodeChallenge, PkceCodeVerifier, Scope, TokenResponse,
 };
-use sea_orm::EntityTrait;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::service::auth::AuthService;
+use crate::service::auth::{AuthService, WebSessionParams};
 use crate::service::oauth::OAuthService;
 use crate::state::{AppState, OAuthFlowState};
 use dashmap::DashMap;
@@ -276,27 +274,17 @@ pub async fn oauth_callback(
         .unwrap_or("unknown")
         .to_string();
 
-    // Create a session
-    let token = AuthService::generate_session_token();
-    let now = Utc::now();
-    let expires_at = now + chrono::Duration::seconds(state.config.auth.session_ttl);
-
-    let new_session = crate::entity::session::ActiveModel {
-        id: sea_orm::Set(Uuid::new_v4().to_string()),
-        user_id: sea_orm::Set(user.id.clone()),
-        token: sea_orm::Set(token.clone()),
-        ip: sea_orm::Set(ip),
-        user_agent: sea_orm::Set(user_agent),
-        expires_at: sea_orm::Set(expires_at),
-        created_at: sea_orm::Set(now),
-        source: sea_orm::Set("web".to_string()),
-        mobile_session_id: sea_orm::Set(None),
-    };
-
-    crate::entity::session::Entity::insert(new_session)
-        .exec(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to create session: {e}")))?;
+    let session = AuthService::create_web_session(
+        &state.db,
+        WebSessionParams {
+            user_id: &user.id,
+            ip: &ip,
+            user_agent: &user_agent,
+            session_ttl: state.config.auth.session_ttl,
+        },
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("Failed to create session: {e}")))?;
 
     // Set session cookie and redirect to frontend
     // Use SameSite=Lax because redirect comes from external provider
@@ -307,7 +295,7 @@ pub async fn oauth_callback(
     };
     let cookie = format!(
         "session_token={}; HttpOnly; SameSite=Lax; Path=/; Max-Age={}{}",
-        token, state.config.auth.session_ttl, secure_flag
+        session.token, state.config.auth.session_ttl, secure_flag
     );
 
     // Clear the pre-auth nonce cookie now that the flow is complete.
