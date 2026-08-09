@@ -1,6 +1,7 @@
 import { PencilIcon, PlusIcon, SaveIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { SiteHeaderActions } from '@/components/site-header'
 import { Button } from '@/components/ui/button'
 import type { WidgetInput } from '@/hooks/use-dashboard'
 import { useDashboardEditor } from '@/hooks/use-dashboard-editor'
@@ -178,14 +179,14 @@ function DashboardEditorViewContent({
 
   return (
     <div className="w-full min-w-0 max-w-[calc(100vw-1.5rem)] sm:max-w-full">
-      <div className="mb-6 flex w-full min-w-0 max-w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <DashboardSwitcher
-          currentId={activeDashboardId}
-          dashboards={dashboards}
-          isAdmin={isAdmin}
-          onSelect={handleDashboardSelect}
-        />
-        <div className="flex flex-wrap items-center gap-2">
+      <SiteHeaderActions>
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <DashboardSwitcher
+            currentId={activeDashboardId}
+            dashboards={dashboards}
+            isAdmin={isAdmin}
+            onSelect={handleDashboardSelect}
+          />
           {isAdmin && !editor.isEditing && isDashboardReady && (
             <Button onClick={handleEdit} size="sm" variant="outline">
               <PencilIcon className="mr-1 size-4" />
@@ -209,7 +210,7 @@ function DashboardEditorViewContent({
             </>
           )}
         </div>
-      </div>
+      </SiteHeaderActions>
 
       {isDashboardReady && displayWidgets.length === 0 && !editor.isEditing && (
         <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">

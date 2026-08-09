@@ -45,6 +45,39 @@ function isAdminRoute(pathname: string): boolean {
   return !MEMBER_SETTINGS_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))
 }
 
+function SiteHeaderTitle({ breadcrumbs }: { breadcrumbs: BreadcrumbEntry[] }) {
+  if (breadcrumbs.length === 0) {
+    return null
+  }
+
+  if (breadcrumbs.length === 1) {
+    return <h1 className="truncate font-medium text-base">{breadcrumbs[0]?.label}</h1>
+  }
+
+  return (
+    <Breadcrumb className="min-w-0">
+      <BreadcrumbList className="min-w-0 flex-nowrap">
+        {breadcrumbs.map((crumb, index) => {
+          const isLast = index === breadcrumbs.length - 1
+          const hiddenOnMobile = index === 0 && breadcrumbs.length > 1
+          return (
+            <Fragment key={crumb.label}>
+              <BreadcrumbItem className={hiddenOnMobile ? 'hidden md:block' : 'min-w-0'}>
+                {isLast || !crumb.to ? (
+                  <BreadcrumbPage className="truncate font-medium text-base">{crumb.label}</BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink render={<Link to={crumb.to} />}>{crumb.label}</BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+              {!isLast && <BreadcrumbSeparator className={hiddenOnMobile ? 'hidden md:block' : ''} />}
+            </Fragment>
+          )
+        })}
+      </BreadcrumbList>
+    </Breadcrumb>
+  )
+}
+
 export const Route = createFileRoute('/_authed')({
   component: AuthedLayout
 })
@@ -154,30 +187,7 @@ function AuthedLayout() {
           <AppSidebar />
           <SidebarInset className="min-h-0 overflow-hidden">
             <SiteHeader>
-              {breadcrumbs.length === 1 ? (
-                <h1 className="truncate font-medium text-base">{breadcrumbs[0]?.label}</h1>
-              ) : (
-                <Breadcrumb className="min-w-0">
-                  <BreadcrumbList className="min-w-0 flex-nowrap">
-                    {breadcrumbs.map((crumb, index) => {
-                      const isLast = index === breadcrumbs.length - 1
-                      const hiddenOnMobile = index === 0 && breadcrumbs.length > 1
-                      return (
-                        <Fragment key={crumb.label}>
-                          <BreadcrumbItem className={hiddenOnMobile ? 'hidden md:block' : 'min-w-0'}>
-                            {isLast || !crumb.to ? (
-                              <BreadcrumbPage className="truncate font-medium text-base">{crumb.label}</BreadcrumbPage>
-                            ) : (
-                              <BreadcrumbLink render={<Link to={crumb.to} />}>{crumb.label}</BreadcrumbLink>
-                            )}
-                          </BreadcrumbItem>
-                          {!isLast && <BreadcrumbSeparator className={hiddenOnMobile ? 'hidden md:block' : ''} />}
-                        </Fragment>
-                      )
-                    })}
-                  </BreadcrumbList>
-                </Breadcrumb>
-              )}
+              <SiteHeaderTitle breadcrumbs={breadcrumbs} />
             </SiteHeader>
             {showOffline && (
               <output className="flex shrink-0 items-center justify-center gap-2 bg-amber-500/15 px-3 py-1.5 text-amber-700 text-xs dark:text-amber-400">

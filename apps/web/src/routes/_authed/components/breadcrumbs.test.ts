@@ -31,6 +31,10 @@ describe('buildBreadcrumbs', () => {
       { label: 'Users' }
     ])
   })
+
+  it('leaves the dashboard route without a header title crumb', () => {
+    expect(buildBreadcrumbs('/', translate)).toEqual([])
+  })
 })
 
 describe('getServerDetailId', () => {
