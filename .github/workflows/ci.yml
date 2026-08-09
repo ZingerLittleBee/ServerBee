@@ -38,12 +38,16 @@ jobs:
         id: paths
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
-          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
             rust_changed=true
-          elif git diff --quiet "$BASE_SHA" "$HEAD_SHA" -- \
+          elif ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+            || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            rust_changed=true
+          elif git diff --quiet "$BASE_SHA...$HEAD_SHA" -- \
             .cargo \
             .github/workflows/ci.yml \
             Cargo.lock \
@@ -72,14 +76,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: needs.changes.outputs.rust == 'true'
         with:
-          shared-key: check
+          shared-key: parallel-tests-v1
           add-job-id-key: "false"
+          cache-workspace-crates: "true"
 
       - uses: oven-sh/setup-bun@v2
 
       - name: Build frontend
         working-directory: apps/web
         run: bun install --frozen-lockfile && bun run build
+
+      - name: Upload frontend build
+        if: needs.changes.outputs.rust == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Cargo check
         if: needs.changes.outputs.rust == 'true'
@@ -89,6 +103,14 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --workspace -- -D warnings
 
+      - name: Warm Rust test cache
+        if: needs.changes.outputs.rust == 'true'
+        run: |
+          cargo test -p serverbee-common --no-run
+          cargo test -p serverbee-agent --no-run
+          cargo test -p serverbee-server --no-run
+          cargo test -p serverbee-server --examples --no-run
+
   rust-tests-core:
     name: Rust Tests (core)
     needs: [changes, check]
@@ -97,12 +119,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: check
+          shared-key: parallel-tests-v1
           add-job-id-key: "false"
+          cache-workspace-crates: "true"
           save-if: "false"
 
       - name: Test common
@@ -179,12 +207,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: check
+          shared-key: parallel-tests-v1
           add-job-id-key: "false"
+          cache-workspace-crates: "true"
           save-if: "false"
 
       - name: Test server integrations
