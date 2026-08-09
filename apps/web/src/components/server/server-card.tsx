@@ -20,7 +20,6 @@ import { NetworkSquareGrid } from './network-square-grid'
 import { PendingActionMenu } from './pending-action-menu'
 import { PendingEnrollmentSummary } from './pending-enrollment-summary'
 import { RingMetric } from './ring-metric'
-import { ServerCardActionMenu } from './server-card-action-menu'
 import { buildServerCardNetworkState } from './server-card-network-data'
 import { StatusBadge } from './status-badge'
 import { deriveServerStatus } from './status-dot-utils'
@@ -147,14 +146,12 @@ const ServerCardInner = ({
         <div className="flex items-center gap-1.5">
           <UpgradeJobBadge job={upgradeJob} />
           <StatusBadge status={status} />
-          {isPending ? (
+          {isPending && (
             <PendingActionMenu
               outstandingOffer={server.agent_authority?.outstanding_offer ?? null}
               serverId={server.id}
               serverName={server.name}
             />
-          ) : (
-            <ServerCardActionMenu server={server} />
           )}
         </div>
       </div>
