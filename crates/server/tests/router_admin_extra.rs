@@ -9,18 +9,18 @@
 //! router_auth_user.rs / router_security_rate.rs / router_widget_dashboard.rs /
 //! widget_module_integration.rs / agent_messages.rs):
 //!
-//! - task.rs:    run_task scheduled HAPPY PATH via a live mock agent (the actual
-//!               exec dispatch + TaskResult round-trip that persists a result row),
-//!               create-task numeric validation arms (timeout=0, retry_interval<1),
-//!               update-task numeric validation + not-found arms, list ?type= filter.
+//! - task.rs: run_task scheduled HAPPY PATH via a live mock agent (the actual
+//!   exec dispatch + TaskResult round-trip that persists a result row),
+//!   create-task numeric validation arms (timeout=0, retry_interval<1),
+//!   update-task numeric validation + not-found arms, list ?type= filter.
 //! - security.rs delete-event 200 happy path, get-event 200 happy path, and
-//!               stats/list over REAL seeded rows (group_by=source_ip, since/until
-//!               time filters) — the existing file only hits the empty/no-match arms.
-//! - auth.rs:    logout with no cookie (no-op 200), 2FA disable SUCCESS path,
-//!               change_password empty-new-password validation arm.
+//!   stats/list over REAL seeded rows (group_by=source_ip, since/until
+//!   time filters) — the existing file only hits the empty/no-match arms.
+//! - auth.rs: logout with no cookie (no-op 200), 2FA disable SUCCESS path,
+//!   change_password empty-new-password validation arm.
 //! - widget_module.rs: ?url= scheme rejection + malformed-url rejection branches
-//!               in enforce_url_safety (the SSRF private/loopback arms are already
-//!               covered in widget_module_integration.rs).
+//!   in enforce_url_safety (the SSRF private/loopback arms are already
+//!   covered in widget_module_integration.rs).
 //!
 //! NOTE: where an endpoint needs a live agent we cannot satisfy deterministically
 //! (no real exec process), we stand up a mock-agent responder that echoes a
@@ -68,18 +68,12 @@ async fn bring_up_agent(
 /// agent). Returns once the inbound stream is quiet for `quiet_ms`.
 async fn drain_first_connect_pushes(reader: &mut AgentReader, quiet_ms: u64) {
     use futures_util::StreamExt;
-    loop {
-        match tokio::time::timeout(
+    while let Ok(Some(Ok(_))) = tokio::time::timeout(
             std::time::Duration::from_millis(quiet_ms),
             reader.next(),
         )
         .await
-        {
-            Ok(Some(Ok(_))) => {}
-            // Quiet window elapsed, stream ended, or a read error: stop draining.
-            _ => break,
-        }
-    }
+    {}
 }
 
 /// Send a single agent frame as a JSON text message.
@@ -137,26 +131,23 @@ async fn run_scheduled_task_dispatches_to_agent_and_persists_result() {
     let agent_task = tokio::spawn(async move {
         loop {
             let msg = recv_agent_text(&mut reader).await;
-            match msg["type"].as_str() {
-                Some("exec") => {
-                    let correlation = msg["task_id"].as_str().expect("exec task_id missing");
-                    send_agent_frame(
-                        &mut sink,
-                        json!({
-                            "type": "task_result",
-                            "msg_id": "exec-reply-1",
-                            "task_id": correlation,
-                            "output": "from-agent\n",
-                            "exit_code": 0
-                        }),
-                    )
-                    .await;
-                    return;
-                }
-                // First-connect noise from a default agent (and anything else
-                // unrelated to the scheduled run): ignore.
-                _ => {}
+            if let Some("exec") = msg["type"].as_str() {
+                let correlation = msg["task_id"].as_str().expect("exec task_id missing");
+                send_agent_frame(
+                    &mut sink,
+                    json!({
+                        "type": "task_result",
+                        "msg_id": "exec-reply-1",
+                        "task_id": correlation,
+                        "output": "from-agent\n",
+                        "exit_code": 0
+                    }),
+                )
+                .await;
+                return;
             }
+            // First-connect noise from a default agent (and anything else
+            // unrelated to the scheduled run): ignore.
         }
     });
 

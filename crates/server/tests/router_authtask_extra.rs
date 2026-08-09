@@ -8,24 +8,24 @@
 //! Scope (gaps NOT already covered by router_auth_user.rs /
 //! router_content_admin.rs / router_admin_extra.rs / widget_module_integration.rs):
 //!
-//! - auth.rs:    list_api_keys per-user scoping (member sees only own keys),
-//!               delete_api_key list-after-delete (key gone), change_password
-//!               keep-current-revoke-others session behaviour, onboarding "not
-//!               required" 403 arm, list_oauth_accounts empty happy path,
-//!               unlink_oauth_account 404 arm, 2FA disable IDEMPOTENCY (disable
-//!               twice), me-as-member, and unauthenticated arms on api-keys
-//!               list / 2FA setup|status|disable / oauth list.
-//! - task.rs:    update_task enable/disable toggle (pause then resume, the
-//!               next_run_at-recompute branch), delete_task results CASCADE over a
-//!               real seeded result row, get_task_results ordering over real rows,
-//!               and the ?type=oneshot list filter arm (the existing extra file
-//!               only covers ?type=scheduled).
+//! - auth.rs: list_api_keys per-user scoping (member sees only own keys),
+//!   delete_api_key list-after-delete (key gone), change_password
+//!   keep-current-revoke-others session behaviour, onboarding "not
+//!   required" 403 arm, list_oauth_accounts empty happy path,
+//!   unlink_oauth_account 404 arm, 2FA disable IDEMPOTENCY (disable
+//!   twice), me-as-member, and unauthenticated arms on api-keys
+//!   list / 2FA setup|status|disable / oauth list.
+//! - task.rs: update_task enable/disable toggle (pause then resume, the
+//!   next_run_at-recompute branch), delete_task results CASCADE over a
+//!   real seeded result row, get_task_results ordering over real rows,
+//!   and the ?type=oneshot list filter arm (the existing extra file
+//!   only covers ?type=scheduled).
 //! - widget_module.rs: uninstall_module 404 not-found, install with neither
-//!               url nor multipart file (400), install multipart missing 'file'
-//!               part (400), list_modules member happy path (read route is
-//!               member-accessible), serve_asset 404 for unknown module, the
-//!               read-route unauthenticated 401 arm, and enforce_url_safety's DNS
-//!               lookup-failure arm.
+//!   url nor multipart file (400), install multipart missing 'file'
+//!   part (400), list_modules member happy path (read route is
+//!   member-accessible), serve_asset 404 for unknown module, the
+//!   read-route unauthenticated 401 arm, and enforce_url_safety's DNS
+//!   lookup-failure arm.
 //!
 //! NOTE: endpoints needing a live agent (run_task dispatch, task_result persist)
 //! stand up a mock-agent responder that echoes a TaskResult; the agent never runs
@@ -73,14 +73,9 @@ async fn bring_up_agent(
 /// stream is quiet for `quiet_ms`.
 async fn drain_first_connect_pushes(reader: &mut AgentReader, quiet_ms: u64) {
     use futures_util::StreamExt;
-    loop {
-        match tokio::time::timeout(std::time::Duration::from_millis(quiet_ms), reader.next()).await
-        {
-            Ok(Some(Ok(_))) => {}
-            // Quiet window elapsed, stream ended, or a read error: stop draining.
-            _ => break,
-        }
-    }
+    while let Ok(Some(Ok(_))) =
+        tokio::time::timeout(std::time::Duration::from_millis(quiet_ms), reader.next()).await
+    {}
 }
 
 /// Send a single agent frame as a JSON text message.

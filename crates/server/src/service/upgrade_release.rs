@@ -745,8 +745,7 @@ mod tests {
         let body = "this is not json at all";
         assert!(serde_json::from_str::<GitHubLatestRelease>(body).is_err());
         let parse_err = serde_json::from_str::<LatestAgentVersionResponse>(body)
-            .err()
-            .expect("non-json body must fail to parse");
+            .expect_err("non-json body must fail to parse");
         // fetch_latest wraps this error into a structured failure response.
         let response = LatestAgentVersionResponse {
             version: None,

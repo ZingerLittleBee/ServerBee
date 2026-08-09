@@ -789,7 +789,7 @@ mod tests {
     fn test_normalize_lookup_target_host_only_dot() {
         // A bare "." host (root label) parses but trims to an empty normalized
         // host, hitting the second missing-host check after trimming.
-        let err = normalize_lookup_target(".").err().expect("expected error");
+        let err = normalize_lookup_target(".").expect_err("expected error");
         assert_eq!(err, "WHOIS target must include a host name.");
     }
 

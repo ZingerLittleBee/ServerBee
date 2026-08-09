@@ -1540,8 +1540,7 @@ mod tests {
         // An unparseable timezone string must surface an error (not panic)
         let err = TrafficService::aggregate_daily(&db, "Not/AZone")
             .await
-            .err()
-            .expect("invalid timezone should error");
+            .expect_err("invalid timezone should error");
         let msg = format!("{err}");
         assert!(msg.contains("Invalid timezone"), "got: {msg}");
     }

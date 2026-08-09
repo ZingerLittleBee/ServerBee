@@ -1987,7 +1987,7 @@ mod tests {
     #[test]
     fn test_validate_cover_type_rejects_invalid() {
         // An unknown cover_type yields a Validation error mentioning the value.
-        let err = validate_cover_type("bogus").err().expect("should reject");
+        let err = validate_cover_type("bogus").expect_err("should reject");
         assert!(matches!(err, AppError::Validation(_)));
         assert!(format!("{err}").contains("bogus"));
     }
@@ -2138,8 +2138,7 @@ mod tests {
         };
         let err = AlertService::create(&db, input)
             .await
-            .err()
-            .expect("should reject");
+            .expect_err("should reject");
         assert!(matches!(err, AppError::Validation(_)));
     }
 
@@ -2169,8 +2168,7 @@ mod tests {
         };
         let err = AlertService::create(&db, input)
             .await
-            .err()
-            .expect("should reject");
+            .expect_err("should reject");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
 
@@ -2180,8 +2178,7 @@ mod tests {
         // get() of a missing id maps to NotFound.
         let err = AlertService::get(&db, "missing")
             .await
-            .err()
-            .expect("should be not found");
+            .expect_err("should be not found");
         assert!(matches!(err, AppError::NotFound(_)));
     }
 
@@ -2301,8 +2298,7 @@ mod tests {
         };
         let err = AlertService::update(&db, "rule-1", input)
             .await
-            .err()
-            .expect("should reject");
+            .expect_err("should reject");
         assert!(matches!(err, AppError::Validation(_)));
     }
 
@@ -2322,8 +2318,7 @@ mod tests {
         };
         let err = AlertService::update(&db, "missing", input)
             .await
-            .err()
-            .expect("should be not found");
+            .expect_err("should be not found");
         assert!(matches!(err, AppError::NotFound(_)));
     }
 
@@ -2354,8 +2349,7 @@ mod tests {
         // Deleting a missing rule yields NotFound (rows_affected == 0).
         let err = AlertService::delete(&db, "missing")
             .await
-            .err()
-            .expect("should be not found");
+            .expect_err("should be not found");
         assert!(matches!(err, AppError::NotFound(_)));
     }
 

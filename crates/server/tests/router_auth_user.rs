@@ -7,7 +7,7 @@
 
 mod common;
 
-use common::{create_server, http_client, login_admin, login_as_new_user, start_test_server};
+use common::{http_client, login_admin, login_as_new_user, start_test_server};
 use serde_json::{Value, json};
 
 // ── POST /api/auth/login ──
@@ -757,11 +757,3 @@ async fn delete_user_member_is_forbidden() {
         .unwrap();
     assert_eq!(resp.status(), 403);
 }
-
-// NOTE: `create_server` is part of the required harness import set, but the
-// auth/user endpoints under test do not need a seeded server (none of them are
-// scoped to a server id). The reference below keeps the unused-import lint quiet
-// without modifying the shared harness.
-const _: fn(&reqwest::Client, &str, &str) = |c, b, n| {
-    let _ = create_server(c, b, n);
-};

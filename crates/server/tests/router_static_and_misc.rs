@@ -226,7 +226,7 @@ fn extract_first_assets_path(html: &str) -> Option<String> {
     // Walk forward until a character that cannot be part of a URL path.
     let tail = &html[start..];
     let end = tail
-        .find(|c: char| c == '"' || c == '\'' || c == ' ' || c == '>' || c == ')')
+        .find(['"', '\'', ' ', '>', ')'])
         .unwrap_or(tail.len());
     Some(tail[..end].to_string())
 }

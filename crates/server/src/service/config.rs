@@ -173,8 +173,7 @@ mod tests {
         // Deserializing into u64 must fail with an Internal error (deserialize branch)
         let err = ConfigService::get_typed::<u64>(&db, "bad_json")
             .await
-            .err()
-            .expect("get_typed on malformed JSON should return an error");
+            .expect_err("get_typed on malformed JSON should return an error");
 
         match err {
             AppError::Internal(msg) => {

@@ -518,8 +518,7 @@ mod tests {
     fn build_client_github_not_configured() {
         let cfg = config_with(false, false, None, "https://srv.test");
         let err = OAuthService::build_client(PROVIDER_GITHUB, &cfg)
-            .err()
-            .expect("should error when github unconfigured");
+            .expect_err("should error when github unconfigured");
         match err {
             AppError::BadRequest(msg) => assert!(msg.contains("GitHub OAuth not configured")),
             other => panic!("expected BadRequest, got {other:?}"),
@@ -531,8 +530,7 @@ mod tests {
     fn build_client_google_not_configured() {
         let cfg = config_with(false, false, None, "https://srv.test");
         let err = OAuthService::build_client(PROVIDER_GOOGLE, &cfg)
-            .err()
-            .expect("should error when google unconfigured");
+            .expect_err("should error when google unconfigured");
         match err {
             AppError::BadRequest(msg) => assert!(msg.contains("Google OAuth not configured")),
             other => panic!("expected BadRequest, got {other:?}"),
@@ -544,8 +542,7 @@ mod tests {
     fn build_client_oidc_not_configured() {
         let cfg = config_with(false, false, None, "https://srv.test");
         let err = OAuthService::build_client(PROVIDER_OIDC, &cfg)
-            .err()
-            .expect("should error when oidc unconfigured");
+            .expect_err("should error when oidc unconfigured");
         match err {
             AppError::BadRequest(msg) => assert!(msg.contains("OIDC OAuth not configured")),
             other => panic!("expected BadRequest, got {other:?}"),
@@ -557,8 +554,7 @@ mod tests {
     fn build_client_unknown_provider() {
         let cfg = config_with(true, true, Some("https://idp.test"), "https://srv.test");
         let err = OAuthService::build_client("facebook", &cfg)
-            .err()
-            .expect("should error on unknown provider");
+            .expect_err("should error on unknown provider");
         match err {
             AppError::BadRequest(msg) => {
                 assert!(msg.contains("Unknown OAuth provider: facebook"))
@@ -572,8 +568,7 @@ mod tests {
     fn build_client_oidc_invalid_issuer_url() {
         let cfg = config_with(false, false, Some("not a url"), "https://srv.test");
         let err = OAuthService::build_client(PROVIDER_OIDC, &cfg)
-            .err()
-            .expect("should error on invalid issuer URL");
+            .expect_err("should error on invalid issuer URL");
         match err {
             AppError::Internal(msg) => assert!(msg.contains("Invalid auth URL")),
             other => panic!("expected Internal, got {other:?}"),
@@ -726,8 +721,7 @@ mod tests {
         let info = user_info("99", None, None);
         let err = OAuthService::find_or_create_user(&db, PROVIDER_GITHUB, &info, true)
             .await
-            .err()
-            .expect("orphan account should error");
+            .expect_err("orphan account should error");
         match err {
             AppError::Internal(msg) => assert!(msg.contains("OAuth-linked user not found")),
             other => panic!("expected Internal, got {other:?}"),
@@ -741,8 +735,7 @@ mod tests {
         let info = user_info("123", Some("new@x.com"), Some("New"));
         let err = OAuthService::find_or_create_user(&db, PROVIDER_GITHUB, &info, false)
             .await
-            .err()
-            .expect("registration disabled should error");
+            .expect_err("registration disabled should error");
         match err {
             AppError::BadRequest(msg) => assert!(msg.contains("OAuth registration is disabled")),
             other => panic!("expected BadRequest, got {other:?}"),
@@ -873,8 +866,7 @@ mod tests {
 
         let err = OAuthService::link_account(&db, &other.id, PROVIDER_GITHUB, &info)
             .await
-            .err()
-            .expect("linking another user's identity should conflict");
+            .expect_err("linking another user's identity should conflict");
         match err {
             AppError::Conflict(msg) => {
                 assert!(msg.contains("already linked to another user"))
@@ -961,8 +953,7 @@ mod tests {
         // Intruder cannot delete owner's account: no row matches id + intruder.id.
         let err = OAuthService::unlink_account(&db, &acc.id, &intruder.id)
             .await
-            .err()
-            .expect("wrong owner should not unlink");
+            .expect_err("wrong owner should not unlink");
         match err {
             AppError::NotFound(msg) => assert!(msg.contains("OAuth account not found")),
             other => panic!("expected NotFound, got {other:?}"),
@@ -980,8 +971,7 @@ mod tests {
             .unwrap();
         let err = OAuthService::unlink_account(&db, "nope", &u.id)
             .await
-            .err()
-            .expect("unknown id should error");
+            .expect_err("unknown id should error");
         match err {
             AppError::NotFound(msg) => assert!(msg.contains("OAuth account not found")),
             other => panic!("expected NotFound, got {other:?}"),

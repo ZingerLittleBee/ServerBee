@@ -303,8 +303,7 @@ mod tests {
         input.status = "bogus".to_string();
         let err = IncidentService::create(&db, input)
             .await
-            .err()
-            .expect("expected validation error");
+            .expect_err("expected validation error");
         match err {
             AppError::Validation(msg) => assert!(msg.contains("status must be one of"), "got: {msg}"),
             other => panic!("expected Validation error, got {other:?}"),
@@ -320,8 +319,7 @@ mod tests {
         input.severity = "catastrophic".to_string();
         let err = IncidentService::create(&db, input)
             .await
-            .err()
-            .expect("expected validation error");
+            .expect_err("expected validation error");
         match err {
             AppError::Validation(msg) => {
                 assert!(msg.contains("severity must be one of"), "got: {msg}")
@@ -346,8 +344,7 @@ mod tests {
         // get on a missing id returns NotFound carrying the id.
         let err = IncidentService::get(&db, "missing-id")
             .await
-            .err()
-            .expect("expected not found");
+            .expect_err("expected not found");
         match err {
             AppError::NotFound(msg) => assert!(msg.contains("missing-id"), "got: {msg}"),
             other => panic!("expected NotFound error, got {other:?}"),
@@ -547,8 +544,7 @@ mod tests {
         };
         let err = IncidentService::update(&db, &created.id, bad_status)
             .await
-            .err()
-            .expect("expected validation error");
+            .expect_err("expected validation error");
         assert!(matches!(err, AppError::Validation(_)));
 
         // Invalid severity is rejected.
@@ -561,8 +557,7 @@ mod tests {
         };
         let err = IncidentService::update(&db, &created.id, bad_sev)
             .await
-            .err()
-            .expect("expected validation error");
+            .expect_err("expected validation error");
         match err {
             AppError::Validation(msg) => {
                 assert!(msg.contains("severity must be one of"), "got: {msg}")
@@ -585,8 +580,7 @@ mod tests {
         };
         let err = IncidentService::update(&db, "ghost", input)
             .await
-            .err()
-            .expect("expected not found");
+            .expect_err("expected not found");
         assert!(matches!(err, AppError::NotFound(_)));
     }
 
@@ -627,8 +621,7 @@ mod tests {
         // Deleting a non-existent incident returns NotFound (rows_affected == 0).
         let err = IncidentService::delete(&db, "nope")
             .await
-            .err()
-            .expect("expected not found");
+            .expect_err("expected not found");
         match err {
             AppError::NotFound(msg) => assert!(msg.contains("nope"), "got: {msg}"),
             other => panic!("expected NotFound error, got {other:?}"),
@@ -710,8 +703,7 @@ mod tests {
             },
         )
         .await
-        .err()
-        .expect("expected validation error");
+        .expect_err("expected validation error");
         match err {
             AppError::Validation(msg) => assert!(msg.contains("status must be one of"), "got: {msg}"),
             other => panic!("expected Validation error, got {other:?}"),
@@ -738,8 +730,7 @@ mod tests {
             },
         )
         .await
-        .err()
-        .expect("expected not found");
+        .expect_err("expected not found");
         assert!(matches!(err, AppError::NotFound(_)));
     }
 

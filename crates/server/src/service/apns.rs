@@ -195,8 +195,7 @@ mod tests {
 
         let err = ApnsService::send_push(&db, &config, "Title", "Body", Some("srv"), Some("rule"))
             .await
-            .err()
-            .expect("garbage private key must fail client creation");
+            .expect_err("garbage private key must fail client creation");
 
         match err {
             AppError::Internal(msg) => {
@@ -218,8 +217,7 @@ mod tests {
 
         let err = ApnsService::send_push(&db, &config, "T", "B", None, None)
             .await
-            .err()
-            .expect("garbage private key must fail client creation in sandbox mode");
+            .expect_err("garbage private key must fail client creation in sandbox mode");
 
         assert!(
             matches!(err, AppError::Internal(_)),

@@ -38,8 +38,7 @@ mod tests {
         let err = make_user("dup-id", "bob")
             .insert(&db)
             .await
-            .err()
-            .expect("duplicate primary key should fail");
+            .expect_err("duplicate primary key should fail");
         assert!(is_unique_violation(&err), "expected unique violation, got: {err}");
     }
 
@@ -52,8 +51,7 @@ mod tests {
         let err = make_user("id-2", "carol")
             .insert(&db)
             .await
-            .err()
-            .expect("duplicate username should fail");
+            .expect_err("duplicate username should fail");
         assert!(is_unique_violation(&err), "expected unique violation, got: {err}");
     }
 
@@ -67,8 +65,7 @@ mod tests {
                 "SELECT * FROM this_table_does_not_exist".to_string(),
             ))
             .await
-            .err()
-            .expect("querying a missing table should fail");
+            .expect_err("querying a missing table should fail");
         assert!(
             !is_unique_violation(&err),
             "missing-table error must not be a unique violation, got: {err}"

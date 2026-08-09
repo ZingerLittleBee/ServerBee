@@ -83,12 +83,9 @@ async fn send_agent_frame(sink: &mut AgentSink, frame: Value) {
 /// Drain frames the server pushes right after the SystemInfo handshake; returns
 /// once the inbound stream is quiet for `quiet_ms`.
 async fn drain_first_connect_pushes(reader: &mut AgentReader, quiet_ms: u64) {
-    loop {
-        match tokio::time::timeout(Duration::from_millis(quiet_ms), reader.next()).await {
-            Ok(Some(Ok(_))) => continue,
-            _ => break,
-        }
-    }
+    while let Ok(Some(Ok(_))) =
+        tokio::time::timeout(Duration::from_millis(quiet_ms), reader.next()).await
+    {}
 }
 
 /// Bring up a mock agent advertising the `docker` feature plus the given

@@ -618,8 +618,7 @@ export default {{ id: "{id}" }};
 
         let err = WidgetModuleService::list(&db)
             .await
-            .err()
-            .expect("list should fail on corrupt manifest");
+            .expect_err("list should fail on corrupt manifest");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(_)));
         assert!(err.to_string().contains("stored manifest invalid"));
     }
@@ -643,8 +642,7 @@ export default {{ id: "{id}" }};
         let (db, _tmp) = setup_test_db().await;
         let err = WidgetModuleService::get(&db, "absent")
             .await
-            .err()
-            .expect("get should fail for missing id");
+            .expect_err("get should fail for missing id");
         assert!(matches!(err, WidgetModuleError::NotFound(ref m) if m == "absent"));
     }
 
@@ -857,8 +855,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("non-utf8 should fail");
+        .expect_err("non-utf8 should fail");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("not utf-8")));
     }
 
@@ -873,8 +870,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("missing manifest should fail");
+        .expect_err("missing manifest should fail");
         assert!(matches!(err, WidgetModuleError::ManifestExtraction(_)));
     }
 
@@ -933,8 +929,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("cross-source-type install should conflict");
+        .expect_err("cross-source-type install should conflict");
         assert!(matches!(err, WidgetModuleError::IdConflict(ref m) if m.contains("Builtin")));
     }
 
@@ -993,8 +988,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("non-zip should fail");
+        .expect_err("non-zip should fail");
         assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("invalid zip")));
     }
 
@@ -1010,8 +1004,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("missing collection.json should fail");
+        .expect_err("missing collection.json should fail");
         assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("missing collection.json")));
     }
 
@@ -1027,8 +1020,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("invalid collection.json should fail");
+        .expect_err("invalid collection.json should fail");
         assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("collection.json invalid")));
     }
 
@@ -1045,8 +1037,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("empty widgets must fail");
+        .expect_err("empty widgets must fail");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("must not be empty")));
     }
 
@@ -1066,8 +1057,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("dotdot entry must fail");
+        .expect_err("dotdot entry must fail");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("invalid entry path")));
     }
 
@@ -1085,8 +1075,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("empty entry must fail");
+        .expect_err("empty entry must fail");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("invalid entry path")));
     }
 
@@ -1106,8 +1095,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("non-js entry must fail");
+        .expect_err("non-js entry must fail");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("must be .js or .mjs")));
     }
 
@@ -1125,8 +1113,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("entry missing from zip must fail");
+        .expect_err("entry missing from zip must fail");
         assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("entry not found in zip")));
     }
 
@@ -1147,8 +1134,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("entry without manifest must fail");
+        .expect_err("entry without manifest must fail");
         assert!(matches!(err, WidgetModuleError::ManifestExtraction(_)));
     }
 
@@ -1164,8 +1150,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("duplicate ids must fail");
+        .expect_err("duplicate ids must fail");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("duplicate widget id")));
     }
 
@@ -1192,8 +1177,7 @@ export default {{ id: "{id}" }};
             None,
         )
         .await
-        .err()
-        .expect("cross-source collision must fail");
+        .expect_err("cross-source collision must fail");
         assert!(matches!(err, WidgetModuleError::IdConflict(ref m) if m.contains("Builtin")));
         // No rows added beyond the pre-seeded Builtin one.
         assert_eq!(WidgetModuleEntity::find().all(&db).await.unwrap().len(), 1);
@@ -1221,8 +1205,7 @@ export default {{ id: "{id}" }};
         let (db, _tmp) = setup_test_db().await;
         let err = WidgetModuleService::uninstall(&db, "ghost")
             .await
-            .err()
-            .expect("uninstall missing should fail");
+            .expect_err("uninstall missing should fail");
         assert!(matches!(err, WidgetModuleError::NotFound(_)));
     }
 
@@ -1234,8 +1217,7 @@ export default {{ id: "{id}" }};
 
         let err = WidgetModuleService::uninstall(&db, "bi.id")
             .await
-            .err()
-            .expect("builtin uninstall should fail");
+            .expect_err("builtin uninstall should fail");
         assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("builtin")));
         // The row is still present.
         assert!(WidgetModuleEntity::find_by_id("bi.id".to_string())

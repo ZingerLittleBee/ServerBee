@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn validate_accepts_exactly_max_len() {
         let tag = "a".repeat(MAX_TAG_LEN);
-        let got = validate_tags(&[tag.clone()]).unwrap();
+        let got = validate_tags(std::slice::from_ref(&tag)).unwrap();
         assert_eq!(got, vec![tag]);
     }
 
@@ -148,7 +148,7 @@ mod tests {
     // MAX_TAG_LEN chars is still rejected because non-ASCII fails the charset check.
     #[test]
     fn validate_rejects_non_ascii_alphanumeric() {
-        let err = validate_tags(&["café".into()]).err().expect("non-ascii must fail");
+        let err = validate_tags(&["café".into()]).expect_err("non-ascii must fail");
         assert!(matches!(err, AppError::Validation(_)));
     }
 
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn validate_too_many_error_message() {
         let tags: Vec<String> = (0..(MAX_TAGS + 1)).map(|i| format!("t{i}")).collect();
-        let err = validate_tags(&tags).err().expect("too many must fail");
+        let err = validate_tags(&tags).expect_err("too many must fail");
         match err {
             AppError::Validation(msg) => assert!(msg.contains(&MAX_TAGS.to_string())),
             other => panic!("expected Validation, got {other:?}"),
@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn validate_too_long_error_message() {
         let long = "x".repeat(MAX_TAG_LEN + 1);
-        let err = validate_tags(&[long.clone()]).err().expect("too long must fail");
+        let err = validate_tags(std::slice::from_ref(&long)).expect_err("too long must fail");
         match err {
             AppError::Validation(msg) => {
                 assert!(msg.contains(&long));
@@ -180,7 +180,7 @@ mod tests {
     // The invalid-char error message names the offending tag.
     #[test]
     fn validate_invalid_char_error_message() {
-        let err = validate_tags(&["bad space".into()]).err().expect("invalid must fail");
+        let err = validate_tags(&["bad space".into()]).expect_err("invalid must fail");
         match err {
             AppError::Validation(msg) => assert!(msg.contains("bad space")),
             other => panic!("expected Validation, got {other:?}"),
@@ -329,8 +329,7 @@ mod tests {
         set_tags(&db, "s1", vec!["existing".into()]).await.unwrap();
         let err = set_tags(&db, "s1", vec!["bad space".into()])
             .await
-            .err()
-            .expect("invalid tag must fail");
+            .expect_err("invalid tag must fail");
         assert!(matches!(err, AppError::Validation(_)));
         // Validation happens before the transaction, so the prior tag survives.
         assert_eq!(list_tags(&db, "s1").await.unwrap(), vec!["existing"]);

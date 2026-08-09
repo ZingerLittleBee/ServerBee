@@ -353,11 +353,10 @@ async fn test_docker_networks_happy_path() {
                     return;
                 }
                 other => {
-                    if !is_first_connect_noise(other) {
-                        if let Some(t) = other {
+                    if !is_first_connect_noise(other)
+                        && let Some(t) = other {
                             panic!("unexpected agent command: {t}");
                         }
-                    }
                 }
             }
         }
@@ -452,11 +451,10 @@ async fn test_docker_volumes_happy_path() {
                     return;
                 }
                 other => {
-                    if !is_first_connect_noise(other) {
-                        if let Some(t) = other {
+                    if !is_first_connect_noise(other)
+                        && let Some(t) = other {
                             panic!("unexpected agent command: {t}");
                         }
-                    }
                 }
             }
         }
@@ -504,11 +502,10 @@ async fn test_docker_volumes_unavailable_is_403() {
                     return;
                 }
                 other => {
-                    if !is_first_connect_noise(other) {
-                        if let Some(t) = other {
+                    if !is_first_connect_noise(other)
+                        && let Some(t) = other {
                             panic!("unexpected agent command: {t}");
                         }
-                    }
                 }
             }
         }
@@ -566,11 +563,10 @@ async fn test_docker_container_action_happy_path() {
                     return;
                 }
                 other => {
-                    if !is_first_connect_noise(other) {
-                        if let Some(t) = other {
+                    if !is_first_connect_noise(other)
+                        && let Some(t) = other {
                             panic!("unexpected agent command: {t}");
                         }
-                    }
                 }
             }
         }
@@ -627,11 +623,10 @@ async fn test_docker_container_action_stop_variant_serializes_with_timeout() {
                     return;
                 }
                 other => {
-                    if !is_first_connect_noise(other) {
-                        if let Some(t) = other {
+                    if !is_first_connect_noise(other)
+                        && let Some(t) = other {
                             panic!("unexpected agent command: {t}");
                         }
-                    }
                 }
             }
         }

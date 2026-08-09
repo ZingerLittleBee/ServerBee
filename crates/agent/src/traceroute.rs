@@ -548,7 +548,6 @@ mod tests {
 
     #[test]
     fn test_constants_are_sane() {
-        assert!(DEFAULT_MAX_ROUNDS >= 1, "must run at least one round");
         assert_eq!(UDP_DEFAULT_DEST_PORT, 33_434, "UDP traceroute base port");
         assert_eq!(TCP_DEFAULT_DEST_PORT, 80, "TCP traceroute default port");
         assert_eq!(ROUND_INTERVAL, Duration::from_millis(1000));

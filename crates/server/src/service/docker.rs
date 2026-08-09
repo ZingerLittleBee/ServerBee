@@ -266,7 +266,7 @@ mod tests {
             .await
             .unwrap();
         // Recent event: inside the retention window, should survive.
-        DockerService::save_event(&db, "srv-1", &make_event(now - 1 * 86_400, "stop"))
+        DockerService::save_event(&db, "srv-1", &make_event(now - 86_400, "stop"))
             .await
             .unwrap();
 

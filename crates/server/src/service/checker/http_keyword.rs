@@ -6,6 +6,10 @@ use serverbee_common::ssrf;
 
 use super::CheckResult;
 
+fn keyword_label(keyword: Option<&str>) -> &str {
+    keyword.unwrap_or("")
+}
+
 /// Check an HTTP endpoint for status code and keyword presence.
 ///
 /// Config options:
@@ -236,12 +240,12 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
             if keyword_exists {
                 reasons.push(format!(
                     "Keyword '{}' not found in response",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             } else {
                 reasons.push(format!(
                     "Keyword '{}' found in response but should be absent",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             }
         }
@@ -580,12 +584,12 @@ mod tests {
             if keyword_exists {
                 reasons.push(format!(
                     "Keyword '{}' not found in response",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             } else {
                 reasons.push(format!(
                     "Keyword '{}' found in response but should be absent",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             }
         }
@@ -604,12 +608,12 @@ mod tests {
             if keyword_exists {
                 reasons.push(format!(
                     "Keyword '{}' not found in response",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             } else {
                 reasons.push(format!(
                     "Keyword '{}' found in response but should be absent",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             }
         }
@@ -857,12 +861,12 @@ mod tests {
             if keyword_exists {
                 reasons.push(format!(
                     "Keyword '{}' not found in response",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             } else {
                 reasons.push(format!(
                     "Keyword '{}' found in response but should be absent",
-                    keyword.unwrap_or("")
+                    keyword_label(keyword)
                 ));
             }
         }
@@ -1066,15 +1070,15 @@ mod tests {
     #[test]
     fn test_error_message_keyword_none_uses_empty_label() {
         // When keyword is None but the keyword branch is somehow hit, the message
-        // falls back to an empty-quoted label via `keyword.unwrap_or("")`.
+        // falls back to an empty-quoted label via `keyword_label`.
         let keyword: Option<&str> = None;
         let keyword_exists = true;
         let msg = if keyword_exists {
-            format!("Keyword '{}' not found in response", keyword.unwrap_or(""))
+            format!("Keyword '{}' not found in response", keyword_label(keyword))
         } else {
             format!(
                 "Keyword '{}' found in response but should be absent",
-                keyword.unwrap_or("")
+                keyword_label(keyword)
             )
         };
         assert_eq!(msg, "Keyword '' not found in response");
