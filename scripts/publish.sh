@@ -25,22 +25,19 @@ DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
 [[ "$CURRENT_BRANCH" == "$DEFAULT_BRANCH" ]] \
     || die "publish must run on ${DEFAULT_BRANCH}, current branch is ${CURRENT_BRANCH:-detached}"
 
-LATEST_CHANGELOG_VERSION=$(awk '
+mapfile -t CHANGELOG_VERSIONS < <(awk '
     /^## \[[0-9]+\.[0-9]+\.[0-9]+([^]]*)?\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$/ {
         line=$0
         sub(/^## \[/, "", line)
         sub(/\].*$/, "", line)
         print line
-        exit
     }
 ' CHANGELOG.md)
+LATEST_CHANGELOG_VERSION=${CHANGELOG_VERSIONS[0]:-}
 [[ -n "$LATEST_CHANGELOG_VERSION" ]] || die "no released version found in CHANGELOG.md"
 
 LATEST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
 [[ -n "$LATEST_TAG" ]] || die "no local release tag found"
-[[ "${LATEST_TAG#v}" == "$LATEST_CHANGELOG_VERSION" ]] \
-    || die "latest tag ${LATEST_TAG} disagrees with CHANGELOG ${LATEST_CHANGELOG_VERSION}"
-
 if [[ -z "$VERSION" ]]; then
     [[ "$LATEST_CHANGELOG_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] \
         || die "VERSION is required when the latest release is a prerelease"
@@ -50,29 +47,57 @@ fi
     || die "invalid semantic version: ${VERSION}"
 TAG="v${VERSION}"
 
+CARGO_VERSION=$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)
+WEB_VERSION=$(bun -e "console.log(require('./apps/web/package.json').version)")
+PREPARED_RELEASE=
+if [[ "$LATEST_CHANGELOG_VERSION" == "$VERSION" ]]; then
+    PREPARED_RELEASE=1
+    PREVIOUS_CHANGELOG_VERSION=${CHANGELOG_VERSIONS[1]:-}
+    [[ -n "$PREVIOUS_CHANGELOG_VERSION" ]] \
+        || die "prepared release ${TAG} has no previous CHANGELOG release"
+    [[ "${LATEST_TAG#v}" == "$PREVIOUS_CHANGELOG_VERSION" ]] \
+        || die "latest tag ${LATEST_TAG} disagrees with previous CHANGELOG release ${PREVIOUS_CHANGELOG_VERSION}"
+    [[ "$CARGO_VERSION" == "$VERSION" ]] \
+        || die "Cargo.toml version ${CARGO_VERSION} disagrees with prepared release ${VERSION}"
+    [[ "$WEB_VERSION" == "$VERSION" ]] \
+        || die "web version ${WEB_VERSION} disagrees with prepared release ${VERSION}"
+else
+    [[ "${LATEST_TAG#v}" == "$LATEST_CHANGELOG_VERSION" ]] \
+        || die "latest tag ${LATEST_TAG} disagrees with CHANGELOG ${LATEST_CHANGELOG_VERSION}"
+fi
+
 git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null \
     && die "local tag already exists: ${TAG}"
 if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
     die "remote tag already exists: ${TAG}"
 fi
 
-RELEASE_NOTES=$(awk '
-    /^## \[Unreleased\]$/ { in_unreleased=1; next }
-    in_unreleased && /^## / { exit }
-    in_unreleased { print }
-' CHANGELOG.md)
-[[ -n "${RELEASE_NOTES//[[:space:]]/}" ]] || die "CHANGELOG [Unreleased] is empty"
-
-CARGO_VERSION=$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)
-WEB_VERSION=$(bun -e "console.log(require('./apps/web/package.json').version)")
+if [[ -n "$PREPARED_RELEASE" ]]; then
+    RELEASE_NOTES=$(awk -v version="$VERSION" '
+        $0 ~ "^## \\[" version "\\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" { in_release=1; next }
+        in_release && /^## / { exit }
+        in_release { print }
+    ' CHANGELOG.md)
+else
+    RELEASE_NOTES=$(awk '
+        /^## \[Unreleased\]$/ { in_unreleased=1; next }
+        in_unreleased && /^## / { exit }
+        in_unreleased { print }
+    ' CHANGELOG.md)
+fi
+[[ -n "${RELEASE_NOTES//[[:space:]]/}" ]] || die "CHANGELOG release notes are empty"
 
 printf 'Publish %s  (from %s)\n\n' "$TAG" "$LATEST_TAG"
-printf '  CHANGELOG.md          [Unreleased] -> [%s] - %s, new empty [Unreleased]\n' "$VERSION" "$TODAY"
-printf '  Cargo.toml            %s -> %s  ([workspace.package])\n' "$CARGO_VERSION" "$VERSION"
-printf '  apps/web/package.json %s -> %s  (release metadata)\n' "$WEB_VERSION" "$VERSION"
-printf '  Cargo.lock            regenerate via cargo update --workspace\n'
-printf '  bun.lock              regenerate via bun install\n\n'
-printf '  commit                chore: release %s\n' "$TAG"
+if [[ -n "$PREPARED_RELEASE" ]]; then
+    printf '  prepared commit       %s\n\n' "$(git rev-parse HEAD)"
+else
+    printf '  CHANGELOG.md          [Unreleased] -> [%s] - %s, new empty [Unreleased]\n' "$VERSION" "$TODAY"
+    printf '  Cargo.toml            %s -> %s  ([workspace.package])\n' "$CARGO_VERSION" "$VERSION"
+    printf '  apps/web/package.json %s -> %s  (release metadata)\n' "$WEB_VERSION" "$VERSION"
+    printf '  Cargo.lock            regenerate via cargo update --workspace\n'
+    printf '  bun.lock              regenerate via bun install\n\n'
+    printf '  commit                chore: release %s\n' "$TAG"
+fi
 if [[ -n "$PREPARE_ONLY" ]]; then
     printf '  external writes       none (PREPARE_ONLY=1)\n'
 else
@@ -80,7 +105,7 @@ else
     printf '  tag                   %s (annotated) -> origin\n' "$TAG"
     printf '  release               GitHub Actions (.github/workflows/release.yml)\n'
 fi
-printf '\nRelease notes (from CHANGELOG [Unreleased]):\n%s\n' "$RELEASE_NOTES"
+printf '\nRelease notes (from CHANGELOG):\n%s\n' "$RELEASE_NOTES"
 
 [[ -z "$DRY_RUN" ]] || exit 0
 
@@ -88,6 +113,20 @@ if [[ -z "$YES" ]]; then
     printf '\nProceed? [y/N] '
     read -r answer
     [[ "$answer" == y || "$answer" == Y || "$answer" == yes || "$answer" == YES ]] || exit 1
+fi
+
+if [[ -n "$PREPARED_RELEASE" ]]; then
+    if [[ -n "$PREPARE_ONLY" ]]; then
+        printf '%s is already prepared locally at %s. No branch, tag, or release was pushed.\n' \
+            "$TAG" "$(git rev-parse HEAD)"
+        exit 0
+    fi
+
+    git push origin "$DEFAULT_BRANCH"
+    git tag -a "$TAG" -m "Release ${TAG}"
+    git push origin "$TAG"
+    printf 'Pushed %s. GitHub Actions will build and publish the release.\n' "$TAG"
+    exit 0
 fi
 
 VERSION="$VERSION" TODAY="$TODAY" perl -0pi -e '
