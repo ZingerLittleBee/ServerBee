@@ -4,8 +4,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use serverbee_common::constants::{UPGRADE_PROBE_ARG, is_upgrade_probe};
 
-pub const UPGRADE_PROBE_ARG: &str = "--serverbee-upgrade-probe";
 pub const PARENT_WATCHDOG_ENV: &str = "SERVERBEE_UPGRADE_PARENT_WATCHDOG";
 const STARTUP_HEALTH_TIMEOUT: Duration = Duration::from_secs(90);
 const STARTUP_STABILITY_WINDOW: Duration = Duration::from_secs(5);
@@ -44,15 +44,6 @@ pub enum StartupDisposition {
     Trial,
     Recovered,
     RestartAfterRollback(PathBuf),
-}
-
-pub fn is_upgrade_probe<I, S>(args: I) -> bool
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    args.into_iter()
-        .any(|argument| argument.as_ref() == UPGRADE_PROBE_ARG)
 }
 
 pub async fn verify_candidate_version(candidate: &Path, expected: &str) -> anyhow::Result<()> {

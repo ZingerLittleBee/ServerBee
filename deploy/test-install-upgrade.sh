@@ -123,6 +123,17 @@ test_probe_mismatch_preserves_current_binary() {
     [ ! -s "$ACTION_LOG" ] || fail "probe failure stopped the running service"
 }
 
+test_server_candidate_probe_requires_exact_version() {
+    setup_case server-probe
+
+    probe_upgrade_candidate server "$TEST_CANDIDATE" v1.0.0-beta.1 \
+        || fail "matching Server candidate version was rejected"
+    write_probe_binary "$TEST_CANDIDATE" "1.0.0-beta.2"
+    if probe_upgrade_candidate server "$TEST_CANDIDATE" v1.0.0-beta.1; then
+        fail "mismatched Server candidate version was accepted"
+    fi
+}
+
 test_start_failure_rolls_back() {
     setup_case start-failure
     TEST_FAIL_CANDIDATE_START=true
@@ -314,6 +325,7 @@ test_stale_docker_backup_blocks_upgrade() {
 
 test_successful_upgrade
 test_probe_mismatch_preserves_current_binary
+test_server_candidate_probe_requires_exact_version
 test_start_failure_rolls_back
 test_health_failure_rolls_back
 test_restart_during_stability_window_rolls_back

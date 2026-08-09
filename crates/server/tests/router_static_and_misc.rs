@@ -19,6 +19,23 @@ mod common;
 use common::{http_client, login_admin, login_as_new_user, start_test_server};
 use serde_json::{Value, json};
 
+#[test]
+fn server_upgrade_probe_reports_current_version_without_startup() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_serverbee-server"))
+        .arg(serverbee_common::constants::UPGRADE_PROBE_ARG)
+        .output()
+        .expect("run Server upgrade probe");
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout)
+            .expect("probe output should be UTF-8")
+            .trim(),
+        serverbee_common::constants::VERSION
+    );
+    assert!(output.stderr.is_empty(), "probe must not initialize logging or configuration");
+}
+
 // ===========================================================================
 // static_files::spa_handler — embedded SPA bundle
 // ===========================================================================

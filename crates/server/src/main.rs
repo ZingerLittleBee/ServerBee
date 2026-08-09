@@ -17,6 +17,11 @@ use serverbee_server::task;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if serverbee_common::constants::is_upgrade_probe(std::env::args()) {
+        println!("{}", serverbee_common::constants::VERSION);
+        return Ok(());
+    }
+
     let config = AppConfig::load()
         .map_err(|error| anyhow::anyhow!("failed to load configuration: {error}"))?;
 

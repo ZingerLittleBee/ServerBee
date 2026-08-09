@@ -1,4 +1,5 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const UPGRADE_PROBE_ARG: &str = "--serverbee-upgrade-probe";
 pub const DEFAULT_SERVER_PORT: u16 = 9527;
 pub const DEFAULT_REPORT_INTERVAL: u32 = 3;
 pub const PROTOCOL_VERSION: u32 = 6;
@@ -18,6 +19,15 @@ pub const MAX_CONCURRENT_COMMANDS: usize = 5;
 pub const MAX_TERMINAL_SESSIONS: usize = 3;
 pub const TERMINAL_IDLE_TIMEOUT_SECS: u64 = 600;
 pub const DEFAULT_COMMAND_TIMEOUT_SECS: u32 = 300;
+
+pub fn is_upgrade_probe<I, S>(args: I) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter()
+        .any(|argument| argument.as_ref() == UPGRADE_PROBE_ARG)
+}
 
 pub const RECORDS_RETENTION_DAYS: u32 = 7;
 pub const RECORDS_HOURLY_RETENTION_DAYS: u32 = 90;

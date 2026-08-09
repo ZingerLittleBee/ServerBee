@@ -2664,10 +2664,8 @@ probe_upgrade_candidate() {
     local component candidate expected reported
     component="$1"; candidate="$2"; expected="${3#v}"
 
-    # Agent releases expose a side-effect-free version probe before loading
-    # configuration or opening network connections. Server candidates are
-    # validated by the signed checksum manifest and service stability check.
-    [ "$component" = agent ] || return 0
+    # Both binaries expose a side-effect-free version probe before loading
+    # configuration or opening network connections.
     reported=$("$candidate" --serverbee-upgrade-probe 2>/dev/null) || return 1
     [ "${reported#v}" = "$expected" ]
 }
