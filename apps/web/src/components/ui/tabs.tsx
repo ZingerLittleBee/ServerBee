@@ -1,20 +1,20 @@
-// beui.dev/components/motion/tabs — pill / segment / underline with spring layoutId indicator.
+// Tabs keep the previous shadcn/Base UI look; only the active indicator uses
+// beUI-style spring layoutId motion (https://beui.dev/components/motion/tabs).
 
 import { MotionConfig, motion, type Transition, useReducedMotion } from 'motion/react'
 import { createContext, type ReactNode, useCallback, useContext, useId, useMemo, useState } from 'react'
-import { EASE_OUT } from '@/lib/ease'
 import { cn } from '@/lib/utils'
 
-type Variant = 'pill' | 'underline' | 'segment'
+type TabsListVariant = 'default' | 'line'
 
 interface TabsContextValue {
   layoutId: string
   setValue: (value: string) => void
   value: string
-  variant: Variant
 }
 
 const TabsContext = createContext<TabsContextValue | null>(null)
+const TabsListVariantContext = createContext<TabsListVariant>('default')
 
 function useTabs() {
   const ctx = useContext(TabsContext)
@@ -38,15 +38,13 @@ export function Tabs({
   className,
   defaultValue,
   onValueChange,
-  value,
-  variant = 'pill'
+  value
 }: {
   children: ReactNode
   className?: string
   defaultValue?: string
   onValueChange?: (value: string) => void
   value?: string
-  variant?: Variant
 }) {
   const [internal, setInternal] = useState(defaultValue ?? '')
   const layoutId = useId()
@@ -62,19 +60,15 @@ export function Tabs({
     },
     [controlled, onValueChange]
   )
-  const contextValue = useMemo(
-    () => ({ layoutId, setValue, value: current, variant }),
-    [current, layoutId, setValue, variant]
-  )
+  const contextValue = useMemo(() => ({ layoutId, setValue, value: current }), [current, layoutId, setValue])
 
   return (
     <MotionConfig transition={reduce ? { duration: 0 } : indicatorTransition}>
       <TabsContext.Provider value={contextValue}>
-        {/* layoutRoot: the indicator's layoutId measures in page coordinates, so
-            inside fixed/scrolled containers it would replay scroll offsets as
-            movement. The pill only ever travels within the list, so scoping
-            projection to the Tabs wrapper is always correct. */}
-        <motion.div className={cn('flex flex-col', className)} layoutRoot>
+        {/* layoutRoot: indicator layoutId measures in page coordinates; inside
+            scrolled containers that would replay scroll as movement. Scope
+            projection to the Tabs wrapper so the pill only travels in-list. */}
+        <motion.div className={cn('flex flex-col gap-2', className)} data-slot="tabs" layoutRoot>
           {children}
         </motion.div>
       </TabsContext.Provider>
@@ -82,19 +76,31 @@ export function Tabs({
   )
 }
 
-const listClasses: Record<Variant, string> = {
-  // bg-muted (not bg-card) so the track stays visible when tabs sit on a card surface.
-  pill: 'inline-flex items-center gap-1 rounded-full bg-muted p-1',
-  underline: 'inline-flex items-center gap-1 border-border border-b',
-  segment: 'inline-flex items-center gap-0 rounded-lg bg-muted p-0.5'
-}
-
-export function TabsList({ children, className }: { children: ReactNode; className?: string }) {
-  const { variant } = useTabs()
+export function TabsList({
+  children,
+  className,
+  variant = 'default'
+}: {
+  children: ReactNode
+  className?: string
+  variant?: TabsListVariant
+}) {
   return (
-    <div className={cn(listClasses[variant], className)} role="tablist">
-      {children}
-    </div>
+    <TabsListVariantContext.Provider value={variant}>
+      <div
+        className={cn(
+          'inline-flex h-8 w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground',
+          variant === 'default' && 'bg-muted',
+          variant === 'line' && 'gap-1 rounded-none bg-transparent',
+          className
+        )}
+        data-slot="tabs-list"
+        data-variant={variant}
+        role="tablist"
+      >
+        {children}
+      </div>
+    </TabsListVariantContext.Provider>
   )
 }
 
@@ -109,19 +115,25 @@ export function TabsTrigger({
   indicatorClassName?: string
   value: string
 }) {
-  const { layoutId, setValue, value: current, variant } = useTabs()
+  const { layoutId, setValue, value: current } = useTabs()
+  const listVariant = useContext(TabsListVariantContext)
   const active = current === value
 
-  if (variant === 'underline') {
+  if (listVariant === 'line') {
     return (
       <button
         aria-selected={active}
         className={cn(
-          'relative isolate -mb-px inline-flex min-h-11 items-center px-3 pt-1 pb-2.5 font-medium text-sm transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-          active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+          'relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-1.5 py-0.5 font-medium text-sm',
+          'text-foreground/60 transition-colors hover:text-foreground',
+          'focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+          'disabled:pointer-events-none disabled:opacity-50',
+          'dark:text-muted-foreground dark:hover:text-foreground',
+          "[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+          active && 'text-foreground dark:text-foreground',
           className
         )}
+        data-slot="tabs-trigger"
         onClick={() => setValue(value)}
         role="tab"
         type="button"
@@ -129,7 +141,7 @@ export function TabsTrigger({
         {children}
         {active ? (
           <motion.span
-            className={cn('absolute right-0 -bottom-px left-0 h-px bg-primary', indicatorClassName)}
+            className={cn('absolute inset-x-0 bottom-[-5px] h-0.5 bg-foreground', indicatorClassName)}
             layoutId={layoutId}
           />
         ) : null}
@@ -137,26 +149,32 @@ export function TabsTrigger({
     )
   }
 
-  const radius = variant === 'pill' ? 'rounded-full' : 'rounded-md'
-
   return (
-    <div className="relative">
+    <div className="relative h-[calc(100%-1px)] flex-1">
       {active ? (
         <motion.span
-          className={cn('absolute inset-0 bg-primary', radius, indicatorClassName)}
+          className={cn(
+            'absolute inset-0 rounded-md bg-background shadow-sm',
+            'dark:border dark:border-input dark:bg-input/30',
+            indicatorClassName
+          )}
           layoutId={layoutId}
-          style={{ borderRadius: variant === 'pill' ? 9999 : 8 }}
+          style={{ borderRadius: 6 }}
         />
       ) : null}
       <button
         aria-selected={active}
         className={cn(
-          'relative z-10 inline-flex items-center justify-center whitespace-nowrap bg-transparent px-3.5 py-1.5 font-medium text-sm outline-none',
-          'transition-colors focus-visible:ring-2 focus-visible:ring-ring/50',
-          active ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
-          radius,
+          'relative z-10 inline-flex h-full w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-1.5 py-0.5 font-medium text-sm',
+          'bg-transparent text-foreground/60 transition-colors hover:text-foreground',
+          'focus-visible:border-ring focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+          'disabled:pointer-events-none disabled:opacity-50',
+          'dark:text-muted-foreground dark:hover:text-foreground',
+          "[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+          active && 'text-foreground dark:text-foreground',
           className
         )}
+        data-slot="tabs-trigger"
         onClick={() => setValue(value)}
         role="tab"
         type="button"
@@ -177,28 +195,12 @@ export function TabsContent({
   value: string
 }) {
   const { value: current } = useTabs()
-  const reduce = useReducedMotion()
   const active = current === value
 
-  // Inactive panels stay mounted but hidden so their state (forms, charts) is
-  // preserved and content remains available to assistive tech / crawlers.
-  if (!active) {
-    return (
-      <div className={className} hidden>
-        {children}
-      </div>
-    )
-  }
-
+  // Keep inactive panels mounted (hidden) so chart/form state survives tab switches.
   return (
-    <motion.div
-      animate={{ opacity: 1, y: 0 }}
-      className={cn('mt-4', className)}
-      initial={{ opacity: 0, y: reduce ? 0 : 4 }}
-      key={value}
-      transition={{ duration: 0.18, ease: EASE_OUT }}
-    >
+    <div className={cn('flex-1 text-sm outline-none', className)} data-slot="tabs-content" hidden={!active}>
       {children}
-    </motion.div>
+    </div>
   )
 }

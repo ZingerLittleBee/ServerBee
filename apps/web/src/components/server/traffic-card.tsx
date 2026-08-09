@@ -86,11 +86,11 @@ export function TrafficCard({ serverId }: { serverId: string }) {
         <CardContent>
           {showTabs ? (
             <>
-              <TabsContent className="mt-0" value="hourly">
+              <TabsContent value="hourly">
                 <HourlyTrafficChart data={hourly} t={t} />
               </TabsContent>
 
-              <TabsContent className="mt-0" value="daily">
+              <TabsContent value="daily">
                 <DailyTrafficChart data={daily} t={t} />
               </TabsContent>
             </>

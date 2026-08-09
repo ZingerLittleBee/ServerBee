@@ -43,16 +43,16 @@ function BackLinkStub() {
   )
 }
 
-/** Static replica of the detail TabsList — beUI pill style, spans not buttons. */
+/** Static replica of the detail TabsList — triggers are spans, not buttons. */
 function TabListStub({ tabs }: { tabs: string[] }) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-full bg-muted p-1 text-muted-foreground">
+    <div className="inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-muted p-1 text-muted-foreground">
       {tabs.map((tab, index) => (
         <span
           className={
             index === 0
-              ? 'inline-flex items-center justify-center rounded-full bg-primary px-3.5 py-1.5 font-medium text-primary-foreground text-sm'
-              : 'inline-flex items-center justify-center rounded-full px-3.5 py-1.5 font-medium text-sm'
+              ? 'inline-flex items-center justify-center gap-1.5 rounded-md bg-background px-3 py-1 font-medium text-foreground text-sm shadow-sm'
+              : 'inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1 font-medium text-sm'
           }
           key={tab}
         >

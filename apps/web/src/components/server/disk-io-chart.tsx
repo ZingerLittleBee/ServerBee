@@ -68,7 +68,7 @@ export function DiskIoChart({ formatTime, mergedData, perDiskData }: DiskIoChart
         </CardHeader>
 
         <CardContent className="min-w-0">
-          <TabsContent className="mt-0" value="merged">
+          <TabsContent value="merged">
             <DiskIoLineChart
               ariaLabel={t('chart_disk_io')}
               data={mergedData}
@@ -78,7 +78,7 @@ export function DiskIoChart({ formatTime, mergedData, perDiskData }: DiskIoChart
             />
           </TabsContent>
 
-          <TabsContent className="mt-0" value="per-disk">
+          <TabsContent value="per-disk">
             <div className="space-y-4">
               {perDiskData.map((series) => (
                 <div className="min-w-0" key={series.name}>
