@@ -101,7 +101,7 @@ function MobileDevicesPage() {
   return (
     <PageBody>
       <div className="max-w-2xl space-y-6">
-        <div className="rounded-lg border bg-card p-6">
+        <section>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h2 className="font-semibold text-lg">{t('mobile.devices')}</h2>
@@ -185,7 +185,7 @@ function MobileDevicesPage() {
               ))}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </PageBody>
   )
