@@ -350,7 +350,7 @@ async fn test_agent_register_connect_report() {
     let ws_url = format!(
         "{}/api/agent/ws?token={}",
         base_url.replace("http://", "ws://"),
-        &token
+        token
     );
     let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
@@ -2266,7 +2266,7 @@ async fn test_cleanup_orphans_skips_online_uninitialized_server() {
     let ws_url = format!(
         "{}/api/agent/ws?token={}",
         base_url.replace("http://", "ws://"),
-        &online_token
+        online_token
     );
     let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
