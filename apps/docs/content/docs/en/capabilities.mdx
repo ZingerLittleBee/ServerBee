@@ -58,7 +58,7 @@ Unknown capability keys are a hard error at startup, so a typo fails fast rather
 
 ### Config file
 
-Edit `/etc/serverbee/agent.toml` (or `agent.toml` in the working directory) on the agent host:
+For installer-managed deployments, edit `/opt/serverbee/etc/agent.toml` on the agent host. Manual deployments may use `/etc/serverbee/agent.toml` or `agent.toml` in the working directory:
 
 ```toml
 [capabilities]
@@ -71,7 +71,7 @@ deny = ["ip_quality"]
 Restart the agent for changes to take effect:
 
 ```bash
-systemctl restart serverbee-agent
+sudo serverbee restart agent
 ```
 
 ### Environment variables
@@ -96,7 +96,10 @@ serverbee-agent --allow-cap terminal --allow-cap file --deny-cap ip_quality
 The install script accepts `--caps` to seed the agent's capability config during enrollment:
 
 ```bash
-curl -fsSL https://your-server/install.sh | sh -s -- --caps terminal,file
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent \
+  --server-url https://monitor.example.com \
+  --enrollment-code YOUR_ONE_TIME_CODE \
+  --caps terminal,file
 ```
 
 Running the installer interactively also prompts for capabilities, with the defaults pre-checked.
@@ -111,7 +114,7 @@ Temporary grants are a **host-local** mechanism, fully consistent with the agent
 
 ### CLI
 
-Run these subcommands on the **agent host** (typically with `sudo`, since they write under `state_dir` and the daemon usually runs as the agent user/root). They share the daemon's config (`agent.toml` / `/etc/serverbee/agent.toml`), so the grants file location and the maximum duration come from the same `[capabilities]` block.
+Run these subcommands on the **agent host** (typically with `sudo`, since they write under `state_dir` and the daemon usually runs as the agent user/root). They share the daemon's config (`/opt/serverbee/etc/agent.toml` for installer-managed deployments), so the grants file location and the maximum duration come from the same `[capabilities]` block.
 
 ```bash
 # Temporarily enable an off-by-default capability for a bounded duration.

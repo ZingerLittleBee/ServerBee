@@ -139,9 +139,11 @@ Admin role is required for write operations and system management.
 | Alerts and notifications | CRUD `/api/alert-rules/*`, `/api/notifications/*`, `/api/notification-groups/*` |
 | Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}`, `GET /api/tasks/{id}/results`, `POST /api/tasks/{id}/run` |
 | Users | CRUD `/api/users/*` |
-| Audit and settings | `GET /api/audit-logs`, `/api/settings/*`, backup/restore endpoints |
+| Audit and settings | `GET /api/audit-logs`, `/api/settings/*`, `POST /api/settings/backup`, `POST /api/settings/restore` |
 | GeoIP | `POST /api/geoip/download` |
 | Mobile push | `POST /api/mobile/pair`, `POST /api/mobile/push/register`, `POST /api/mobile/push/unregister` |
+
+The backup endpoint returns a raw SQLite download. Restore accepts a raw SQLite body with `Content-Type: application/octet-stream` and requires a Server restart. Both are Admin-only, high-risk operations; see [Backup and Restore](/en/docs/deployment#backup-and-restore) for verified commands and safeguards.
 
 ## Agent Authority and Enrollment
 

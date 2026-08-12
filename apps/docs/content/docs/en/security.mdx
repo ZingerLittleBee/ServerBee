@@ -109,7 +109,7 @@ ServerBee enforces IP-level rate limiting on the login endpoint:
 
 Agent registration endpoints are also rate limited:
 
-- Maximum **3 registration attempts** per 15-minute window by default (configurable via `rate_limit.register_max`)
+- Maximum **10 registration attempts** per 15-minute window by default (configurable via `rate_limit.register_max`). The Railway template deliberately overrides this to **3** as a stricter hosted default
 
 ### Session Security
 

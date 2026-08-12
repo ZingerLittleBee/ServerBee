@@ -118,7 +118,7 @@ icon: Boxes
 
 ## 通信协议
 
-所有通信都使用 WebSocket。所有消息均为 JSON 文本帧；终端 I/O 数据放在消息的 `data` 字段中，以 base64 编码。当前协议版本为 `4`，连接时通过 `Welcome` 消息下发给 Agent。
+所有通信都使用 WebSocket。所有消息均为 JSON 文本帧；终端 I/O 数据放在消息的 `data` 字段中，以 base64 编码。当前协议版本为 `6`，连接时通过 `Welcome` 消息下发给 Agent。
 
 Agent 连接到 `ws://<server>/api/agent/ws`，并使用 `Authorization: Bearer <agent_token>` 认证。Server 暂时兼容旧版 Agent 使用的 `?token=` 形式，以便其重新连接并完成升级。
 

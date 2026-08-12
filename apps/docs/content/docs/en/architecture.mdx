@@ -118,7 +118,7 @@ The built frontend is embedded into the server binary at compile time, so there 
 
 ## Communication Protocol
 
-All communication uses WebSocket. Every message is a JSON text frame; terminal I/O data is carried inside the message's `data` field, base64-encoded. The current protocol version is `4`, sent to the agent in the `Welcome` message on connect.
+All communication uses WebSocket. Every message is a JSON text frame; terminal I/O data is carried inside the message's `data` field, base64-encoded. The current protocol version is `6`, sent to the agent in the `Welcome` message on connect.
 
 The agent connects to `ws://<server>/api/agent/ws` and authenticates with `Authorization: Bearer <agent_token>`. The Server temporarily accepts the legacy `?token=` form so older Agents can reconnect and upgrade.
 

@@ -72,15 +72,14 @@ The server pushes incremental adds/removes over WebSocket. On agent reconnect or
 
 ## Removing the cleanup
 
-To stop using the feature and clean up nftables state:
+Capabilities are Agent-owned, so there is no Server-side switch. To stop using the feature:
 
-1. Disable `CAP_FIREWALL_BLOCK` for the agent in Capabilities settings.
-2. The server pushes `BlocklistReset` to the agent, which flushes both sets and drops the `inet serverbee` table.
-
-Manual cleanup (from the host shell):
+1. On the Agent host, add `firewall_block` to `[capabilities].deny` in `/opt/serverbee/etc/agent.toml` (preserve any existing deny entries).
+2. Run `sudo serverbee restart agent`. The capability transition resets the synchronized blocklist and removes ServerBee's table.
+3. Verify with `sudo nft list table inet serverbee`. If the Agent could not complete the reset (for example it was offline or lacked nftables privileges), remove only ServerBee's table manually:
 
 ```bash
-nft delete table inet serverbee
+sudo nft delete table inet serverbee
 ```
 
 ## Audit log

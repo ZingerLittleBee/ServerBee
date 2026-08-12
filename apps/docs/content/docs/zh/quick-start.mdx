@@ -8,24 +8,43 @@ icon: Zap
 
 - **交互式向导**：不带参数运行就进入向导，按提示选语言、组件和安装方式
 - **架构自适应**：自动识别 amd64/arm64，下载匹配的 Release 二进制
-- **systemd 集成**：自动创建并拉起服务，配好开机自启
+- **服务管理集成**：自动创建并拉起 systemd 或 OpenRC 服务，配好开机自启
 - **二进制 / Docker 双模式**：用 `--method` 切换；Server 推荐 Docker，Agent 推荐二进制
 - **HTTPS 自动配置**：装 Server 时传 `--domain`，脚本会自动装好 Caddy 并签发证书
 - **统一管理 CLI**：装完会生成 `serverbee` 命令，升级、重启、改配置、卸载全用它
 
 下面分别从 **Server（服务端）** 和 **Client（被监控节点 / Agent）** 两个视角介绍部署流程。
 
+<Callout type="warn">
+本站跟随仓库 `main` 分支，已发布版本可能落后于页面。默认 `auto` 通道会在稳定版存在时选择最新稳定版，否则回退到最新预发布版；升级会复用安装时保存的策略。只有在明确固定发布轨道时才使用 `--channel stable` 或 `--channel beta`。需要可重复部署时，用 `--version vX.Y.Z` 固定版本，并先核对该 Release 的 changelog 再使用新文档功能。
+</Callout>
+
+## 先选择部署方式
+
+| 方式 | 适合场景 | 持久化与运维方式 |
+|------|----------|------------------|
+| 二进制（非交互默认值） | 小型 VPS、最短上手路径 | 文件位于 `/opt/serverbee`；systemd 或 OpenRC 管服务；`serverbee upgrade` 升级 |
+| Docker（已有 Docker 运维体系时推荐） | 需要容器隔离、镜像式升级 | named volume 存数据；Compose 管容器；配置和 volume 都要备份 |
+| Railway | 希望托管公网 HTTPS | 必须挂载 `/data` volume；从 Railway 日志取首次凭据 |
+
+下方命令显式使用 `--method binary`，确保文件、日志和服务命令一致。需要 Docker 生命周期时改为 `--method docker`。
+
 ## 前置条件
 
 - Linux 主机（amd64 / arm64），需以 root 运行（脚本会校验，非 root 直接报错）。普通用户用 `sudo`；已经是 root（如直接以 root 登录或在容器内）可省略命令里的 `sudo`
-- 二进制方式需要 systemd；Docker 方式需要 Docker 20.10+ 与 Compose V2
-- 防火墙放行 Server 的 `9527` 端口，供 Agent 与浏览器访问
+- 二进制方式需要 systemd 或 OpenRC；Docker 方式需要 Docker 20.10+ 与 Compose V2
+- **IP 直连 / HTTP**：放行入站 TCP `9527`
+- **域名 / HTTPS**：让 `A`/`AAAA` 记录指向本机，放行入站 TCP `80`、`443`，并确认这两个端口没有被非 Caddy 服务占用。不要把 `9527` 暴露到公网，Caddy 会连接其回环地址
 
 ---
 
 ## Server 视角
 
 Server 是中心节点：接收 Agent 上报的指标、落库存储，并提供 Web 管理面板。
+
+<Callout type="warn">
+已发布的 `v1.0.0-beta.1` 面板在远程明文 HTTP 源上存在「添加 Server」崩溃问题，因为该构建直接调用了 `crypto.randomUUID()`。在包含 fallback 的新版本发布前，请使用下方域名/HTTPS 方式（或自行构建当前 `main`），不要使用 `http://<服务器IP>:9527`。`/healthz` 或登录成功并不能证明受影响的 Servers 页面可用。
+</Callout>
 
 ### 第一步：安装 Server
 
@@ -36,10 +55,10 @@ Server 有两种快速安装方式，按你是否有域名选一种即可。
 最快上手，没有域名时用这种。装完通过 `http://<服务器IP>:9527` 访问：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server --method binary -y
 ```
 
-脚本会写入 `auth.secure_cookie = false`，让浏览器在普通 HTTP 下也能正常登录。
+脚本会写入 `auth.secure_cookie = false`，让浏览器在普通 HTTP 下也能登录。该方式不会加密浏览器、Agent、终端、文件或命令流量，只应用于可信网络或初次评估；生产环境优先使用 HTTPS。
 
 #### 方式二：用域名安装（自动 HTTPS）
 
@@ -47,6 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server \
+  --method binary \
   --domain monitor.example.com \
   --email admin@example.com \
   -y
@@ -58,14 +78,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 也可以不带参数运行进入交互式向导，按提示选语言、二进制还是 Docker、是否配域名：`curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh`。
 </Callout>
 
-无论哪种方式，脚本都会自动完成：
-
-1. 检测系统架构（amd64 / arm64）
-2. 从 GitHub Releases 下载对应二进制
-3. 把二进制装到 `/opt/serverbee/bin/`，并将管理 CLI 软链到 `/usr/local/bin/serverbee`
-4. 创建 `/opt/serverbee/etc/` 配置目录并生成默认配置（数据目录 `/opt/serverbee/data/`）
-5. 创建 systemd service unit
-6. 启动服务并设置开机自启
+对于上方二进制方式，脚本会检测架构、下载并校验 Release、创建 `/opt/serverbee/{bin,etc,data}`、注册 systemd 或 OpenRC 服务，并把管理 CLI 安装到 `/usr/local/bin/serverbee`。Docker 方式则在 `/opt/serverbee` 生成 Compose 与配置文件，并把数据持久化到 named volume。
 
 <Callout type="info">
 有 Docker 的环境推荐用 Docker 方式跑 Server，升级和隔离都更省心。加上 `--method docker` 即可：`... | sudo sh -s -- server --method docker -y`。
@@ -79,7 +92,11 @@ Server 首次启动会自动创建管理员账号并随机生成密码，这串�
 sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
 ```
 
-Docker 方式则用 `sudo serverbee status`，或 `docker logs serverbee-server` 查看。
+Docker 方式请显式读取最后一段完整凭据：
+
+```bash
+docker logs serverbee-server 2>&1 | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
+```
 
 <Callout type="warn">
 这串密码只显示一次，记得在日志轮转前复制下来。首次登录会强制改密码，请在公网暴露前完成。
@@ -107,6 +124,10 @@ sudo serverbee config                      # 查看当前配置
 sudo serverbee config set <key> <value>    # 修改配置
 sudo serverbee uninstall server --purge    # 卸载服务端并清除数据
 ```
+
+<Callout type="warn">
+`uninstall --purge` 会永久删除 Server 数据库、配置和受管 Docker 卷。请先创建并验证备份；希望保留数据以便恢复或重装时，不要使用 `--purge`。
+</Callout>
 
 ---
 
@@ -167,7 +188,7 @@ ServerBee 既能直接用服务器 IP 访问，也能走域名 + 反向代理。
 | 访问方式 | 浏览器地址 | Server Cookie 配置 | Agent `server_url` | 额外配置 |
 |----------|------------|--------------------|--------------------|----------|
 | IP 直连，普通 HTTP | `http://your-server-ip:9527` | `auth.secure_cookie = false` 或 `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://your-server-ip:9527` | 防火墙放行 `9527` 端口 |
-| 域名 + HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` 或 `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | DNS 指向服务器 IP，脚本会自动配好 Caddy（也可自行配 Nginx、Traefik） |
+| 域名 + HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` 或 `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | DNS 指向服务器 IP；放行 80/443；保持 9527 非公网；脚本会自动配好 Caddy（也可自行配 Nginx、Traefik） |
 
 ---
 
@@ -178,7 +199,7 @@ ServerBee 既能直接用服务器 IP 访问，也能走域名 + 反向代理。
 ```yaml title="docker-compose.yml"
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
     container_name: serverbee-server
     ports:
       - "9527:9527"
@@ -208,4 +229,5 @@ docker compose logs serverbee-server
   <Card title="Agent 安装配置" href="/zh/docs/agent" />
   <Card title="配置告警" href="/zh/docs/alerts" />
   <Card title="Web 终端" href="/zh/docs/terminal" />
+  <Card title="故障排查" href="/zh/docs/troubleshooting" />
 </Cards>

@@ -69,15 +69,14 @@ Server 通过 WebSocket 增量下发增删操作。Agent 重连或 capability �
 
 ## 清理与下线
 
-停止使用该功能并清理 nftables 状态的步骤：
+能力由 Agent 拥有，Server 端没有开关。停止使用该功能时：
 
-1. 在 Capabilities 设置中关闭 Agent 的 `CAP_FIREWALL_BLOCK`。
-2. Server 会向 Agent 推送 `BlocklistReset`，Agent 清空两个 set 并删除 `inet serverbee` 表。
-
-主机侧手工清理：
+1. 在 Agent 主机的 `/opt/serverbee/etc/agent.toml` 中，把 `firewall_block` 加入 `[capabilities].deny`（保留原有 deny 项）。
+2. 执行 `sudo serverbee restart agent`。能力转换会重置已同步的黑名单并删除 ServerBee 表。
+3. 用 `sudo nft list table inet serverbee` 验证。若 Agent 无法完成重置（例如此前离线或缺少 nftables 权限），再只删除 ServerBee 自己的表：
 
 ```bash
-nft delete table inet serverbee
+sudo nft delete table inet serverbee
 ```
 
 ## 审计日志

@@ -6,6 +6,18 @@ icon: Smartphone
 
 ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, push notifications for alerts, and server management on the go.
 
+## Availability
+
+This repository does not currently publish an installable iOS artifact or an App Store/TestFlight acquisition link. The guide below applies to a build you receive from your ServerBee operator or build from source. To build it yourself, install Xcode and XcodeGen, then run:
+
+```bash
+cd apps/ios
+xcodegen generate
+open ServerBee.xcodeproj
+```
+
+Select your Apple development team in Xcode and run on an iPhone. Push notifications additionally require the matching Apple Developer APNs setup described below; a local build alone does not provide production APNs delivery.
+
 ## Features
 
 - **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
@@ -16,7 +28,7 @@ ServerBee provides a native iOS companion app that brings server monitoring to y
 
 ## Requirements
 
-- iOS 16.0 or later
+- iOS 17.0 or later
 - A ServerBee server instance (v0.8.0+) with mobile auth enabled
 - For push notifications: APNs authentication key configured on the server
 

@@ -1,0 +1,78 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/docs.yml'
+      - '.github/workflows/release.yml'
+      - 'apps/docs/**'
+      - 'apps/ios/project.yml'
+      - 'apps/ios/ServerBee/ViewModels/AgentLifecycleViewModel.swift'
+      - 'apps/web/src/components/server/*enrollment-dialog.tsx'
+      - 'apps/web/src/components/server/add-server-dialog.tsx'
+      - 'Cargo.toml'
+      - 'crates/common/src/constants.rs'
+      - 'deploy/install.sh'
+      - 'deploy/railway/Dockerfile'
+      - 'deploy/railway/README.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/docs.yml'
+      - '.github/workflows/release.yml'
+      - 'apps/docs/**'
+      - 'apps/ios/project.yml'
+      - 'apps/ios/ServerBee/ViewModels/AgentLifecycleViewModel.swift'
+      - 'apps/web/src/components/server/*enrollment-dialog.tsx'
+      - 'apps/web/src/components/server/add-server-dialog.tsx'
+      - 'Cargo.toml'
+      - 'crates/common/src/constants.rs'
+      - 'deploy/install.sh'
+      - 'deploy/railway/Dockerfile'
+      - 'deploy/railway/README.md'
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Build and route contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        working-directory: apps/docs
+        run: bun run types:check
+
+      - name: Check documentation contracts
+        working-directory: apps/docs
+        run: bun run check:contracts
+
+      - name: Validate published Compose examples
+        shell: bash
+        run: |
+          for locale in en zh; do
+            awk '/^## Docker Compose/{section=1} section && /^```yaml/{block=1; next} block && /^```/{exit} block{print}' \
+              "apps/docs/content/docs/${locale}/deployment.mdx" \
+              | docker compose -f - config --quiet
+          done
+
+      - name: Build production documentation
+        working-directory: apps/docs
+        run: bun run build
+
+      - name: Smoke-test localized routes
+        working-directory: apps/docs
+        shell: bash
+        run: |
+          bun run dev --host 127.0.0.1 > /tmp/serverbee-docs.log 2>&1 &
+          docs_pid=$!
+          trap 'kill "$docs_pid" 2>/dev/null || true' EXIT
+          bun run check:routes

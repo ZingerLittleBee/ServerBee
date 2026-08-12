@@ -59,7 +59,7 @@ Download the agent binary for your platform from the [releases page](https://git
 | Windows amd64 | `serverbee-agent-windows-amd64.exe` |
 
 ```bash
-wget https://github.com/ZingerLittleBee/ServerBee/releases/latest/download/serverbee-agent-linux-amd64
+wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.1/serverbee-agent-linux-amd64
 chmod +x serverbee-agent-linux-amd64
 sudo mv serverbee-agent-linux-amd64 /usr/local/bin/serverbee-agent
 ```
@@ -80,10 +80,22 @@ The binary is located at `target/release/serverbee-agent`.
 ### Docker (Not Recommended)
 
 <Callout type="info">
-ServerBee Agent is portable software — it's a single binary file that creates no folders or residual files on your system. Uninstall by simply deleting the binary and config file. We recommend binary installation for the best experience.
+The Agent executable is a single binary, but a managed installation also persists its configuration/run token under `/opt/serverbee/etc`, service metadata, capability grants under the configured `state_dir` (default `/var/lib/serverbee`), and security state. Use `serverbee uninstall agent`; add `--purge` only when you intend to delete retained credentials and state.
 </Callout>
 
-If you still prefer Docker, the agent needs privileged access to collect host system metrics:
+If you still prefer Docker, create a persistent config first. Replace both placeholders with the URL and one-time offer shown by **Add Server**:
+
+```bash
+sudo install -d -m 0700 /opt/serverbee-agent
+sudo tee /opt/serverbee-agent/agent.toml >/dev/null <<'EOF'
+server_url = "https://monitor.example.com"
+enrollment_code = "YOUR_ONE_TIME_CODE"
+token = ""
+EOF
+sudo chmod 0600 /opt/serverbee-agent/agent.toml
+```
+
+Then run the privileged container required for host metrics:
 
 ```bash
 docker run -d \
@@ -94,13 +106,13 @@ docker run -d \
   -v /proc:/host/proc:ro \
   -v /sys:/host/sys:ro \
   -v /etc/os-release:/host/etc/os-release:ro \
-  -v /etc/serverbee:/etc/serverbee \
+  -v /opt/serverbee-agent:/etc/serverbee \
   --restart unless-stopped \
-  ghcr.io/zingerlittlebee/serverbee-agent:latest
+  ghcr.io/zingerlittlebee/serverbee-agent:1.0.0-beta.1
 ```
 
 <Callout type="warn">
-The `/etc/serverbee` volume mount is mandatory. Before claiming an Enrollment offer, the Agent generates and atomically stores its run token in `agent.toml`. Without persistent storage, a recreated container loses the credential that the Server accepted.
+The persistent `/etc/serverbee` mount is mandatory. Before claiming an Enrollment offer, the Agent generates and atomically stores its run token in `agent.toml`. Without it, a recreated container loses the credential that the Server accepted.
 </Callout>
 
 **Limitations of Docker deployment:**
@@ -155,13 +167,7 @@ serverbee config set server_url http://your-server-ip:9527 -y
 
 The `-y` flag restarts the agent so it retries registration immediately. Without `-y` the value is written but the service is not restarted; run `serverbee restart agent` afterwards.
 
-If you are unsure of the agent's state, simply re-run the agent installer — it rewrites `agent.toml`:
-
-```bash
-serverbee install agent --method <binary|docker> \
-  --server-url http://your-server-ip:9527 \
-  --enrollment-code <new-code> -y
-```
+Verify the correction with `sudo serverbee status` and `sudo journalctl -u serverbee-agent -n 80 --no-pager`. Do not rerun `serverbee install agent`: the installer intentionally rejects an already managed component.
 
 Once the Agent has claimed the Server, the enrollment code is no longer used. Use **Agent re-enrollment** for replacement or reinstall scenarios: Graceful mode preserves current authority until the new claim, while Emergency mode revokes authority and fences the current connection immediately.
 
@@ -177,7 +183,7 @@ The agent reads configuration from TOML files in the following order:
 When deployed via the install script, the config lives at `/opt/serverbee/etc/agent.toml` (`/etc/serverbee` is the legacy layout; the script migrates it automatically).
 </Callout>
 
-Here is a complete `agent.toml` with all available options:
+Here is a minimal `agent.toml` for first connection. The [Configuration Reference](/en/docs/configuration) is the canonical list for `file`, `capabilities`, `security`, `ip_change`, `upgrade`, and other groups:
 
 ```toml
 # Required: URL of your ServerBee server
@@ -223,18 +229,18 @@ export SERVERBEE_COLLECTOR__ENABLE_GPU=true
 
 ## Local Capability Locks
 
-Agent-local capability policy can be tightened from the command line without changing the server-side configuration:
+Capability policy is owned entirely by the Agent host and can be changed with local configuration or CLI flags:
 
 ```bash
 serverbee-agent --allow-cap terminal --allow-cap exec
 serverbee-agent --deny-cap ping_http
 ```
 
-- Low-risk capabilities (`upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`) are enabled by default
+- The default set is `upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`, `security_events`, `firewall_block`, and `ip_quality`
 - High-risk capabilities (`terminal`, `exec`, `file`, `docker`) are disabled by default
 - `--deny-cap` always wins over `--allow-cap`
 
-This policy is local to the agent process. The server can only further restrict capabilities, it cannot override an agent-local deny.
+The Server only mirrors the reported set and rejects requests outside it. It has no capability toggle and cannot enable or further configure the Agent's set. See [Capabilities](/en/docs/capabilities).
 
 ## GPU Monitoring
 

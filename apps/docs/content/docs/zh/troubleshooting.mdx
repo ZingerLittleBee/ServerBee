@@ -1,0 +1,90 @@
+---
+title: 故障排查
+description: 排查常见安装、登录、TLS、Agent 接入和升级故障。
+icon: ShieldAlert
+---
+
+先按下方症状定位。命令应在故障主机执行；提交 Issue 时不要粘贴 token、注册码、API key 或首次密码。
+
+## 第一轮检查
+
+```bash
+sudo serverbee status
+sudo ss -ltnp | grep -E ':(80|443|9527)[[:space:]]'
+```
+
+再按部署方式查看日志：
+
+| 部署方式 | 命令 |
+|----------|------|
+| systemd Server | `sudo journalctl -u serverbee-server -n 100 --no-pager` |
+| systemd Agent | `sudo journalctl -u serverbee-agent -n 100 --no-pager` |
+| OpenRC | `sudo tail -n 100 /var/log/serverbee-{server,agent}.log` |
+| Docker Server | `docker logs --tail 100 serverbee-server` |
+| Docker Agent | `docker logs --tail 100 serverbee-agent` |
+
+## 找不到首次密码
+
+随机密码只在创建首个用户时打印一次。读取最后一段完整凭据：
+
+```bash
+sudo journalctl -u serverbee-server --no-pager \
+  | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
+
+docker logs serverbee-server 2>&1 \
+  | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
+```
+
+数据库已有用户时，重启不会再次生成密码。请使用该部署支持的账号恢复/管理员流程，不要通过删除数据库强制触发首次启动。
+
+## 登录循环或 Cookie 没有保存
+
+保持公网地址与 Cookie 模式一致：
+
+- 普通 `http://IP:9527` 需要 `auth.secure_cookie = false`。
+- HTTPS 需要 `auth.secure_cookie = true`，代理必须转发 `Host`、`X-Forwarded-Proto` 和 WebSocket upgrade。
+
+修改 `/opt/serverbee/etc/server.toml` 后执行 `sudo serverbee restart server`。只清除 ServerBee 站点 Cookie 再重试。不要在 HTTPS 生产部署中关闭 Secure Cookie。
+
+## 端口、DNS 或证书配置失败
+
+- IP 直连需要入站 TCP `9527`。
+- 托管域名方式需要入站 TCP `80`、`443`，并保证没有非 Caddy 服务占用它们；保持 `9527` 非公网。
+- 用 `getent ahosts monitor.example.com` 确认域名解析到本机。
+- 用 `sudo caddy validate --config /etc/caddy/Caddyfile` 和 `sudo journalctl -u caddy -n 100 --no-pager` 检查 Caddy。
+
+先修复 DNS、防火墙或端口冲突，再重跑 `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y`。
+
+## Agent 一直离线或接入失败
+
+1. 确认 Agent 的 `server_url` 与浏览器可达的 HTTP/HTTPS origin 完全一致。
+2. 在 Agent 日志中查找 `expired`、`consumed`、`replaced`、限流、TLS 或连接错误。
+3. Enrollment Offer 绑定到具体 Server、单次使用，默认 10 分钟过期。需要时在既有 Server 上替换精确的 outstanding offer。
+4. claim 前在 Agent 本机修正：
+
+```bash
+sudo serverbee config set server_url https://monitor.example.com -y
+sudo serverbee config set enrollment_code NEW_ONE_TIME_CODE -y
+```
+
+不要对已纳管 Agent 重跑 `install agent`。claim 成功后，应从 Server 详情页发起平滑或紧急重新接入，而不是修改已消费的 code。
+
+## 选择的发布通道不符合预期
+
+```bash
+sudo serverbee status
+sudo serverbee upgrade --channel stable -y
+sudo serverbee upgrade --channel beta -y
+```
+
+默认 `auto` 策略优先选择无后缀稳定版，只有不存在稳定版时才回退到预发布版。安装器会按组件保存 `auto`、`stable` 或 `beta`，升级时复用；上方任一显式命令成功升级后会替换已保存策略。选择器依据 SemVer 后缀，而不是可能错误的 GitHub prerelease 标记。需要确定性恢复时传 `--version vX.Y.Z`，并核对该 Release 的资产和校验和。升级后确认服务/容器健康、重启次数稳定、`/healthz` 成功，且 UI/About 版本符合目标。
+
+## 获取帮助
+
+请提供部署方式、OS/init、预期与实际版本、脱敏配置键、完整命令、退出码和相关日志，并说明 `/healthz` 是否成功，以及故障属于 Server、Agent、浏览器还是反向代理。绝不要包含凭据或 token。
+
+<Cards>
+  <Card title="快速安装" href="/zh/docs/quick-start" />
+  <Card title="部署指南" href="/zh/docs/deployment" />
+  <Card title="配置参考" href="/zh/docs/configuration" />
+</Cards>

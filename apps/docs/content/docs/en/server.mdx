@@ -10,14 +10,15 @@ The ServerBee server is the central component that hosts the web dashboard, mana
 
 ### Install script (recommended)
 
-The easiest path is the one-line install script. It detects the architecture, downloads the binary, generates the config, registers and starts the systemd service, and symlinks the `serverbee` management CLI. The server supports two quick installs:
+The easiest path is the one-line install script. In binary mode it detects the architecture, downloads the binary, generates the config, registers and starts a systemd or OpenRC service, and symlinks the `serverbee` management CLI. The server supports two quick installs:
 
 ```bash
 # Option A: install with an IP (plain HTTP), reachable at http://<server-ip>:9527
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server --method binary -y
 
 # Option B: install with a domain (automatic Caddy + HTTPS), reachable at https://your-domain
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server \
+  --method binary \
   --domain monitor.example.com --email admin@example.com -y
 ```
 
@@ -36,10 +37,11 @@ chmod +x serverbee-server
 
 ```bash
 docker run -d \
-  --name serverbee \
+  --name serverbee-server \
   -p 9527:9527 \
   -v serverbee-data:/data \
-  ghcr.io/zingerlittlebee/serverbee-server:latest
+  -e MALLOC_ARENA_MAX=2 \
+  ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
 ```
 
 ### Build from Source
@@ -97,7 +99,7 @@ service_monitor_days = 30      # Service monitor records retention (days)
 
 [rate_limit]
 login_max = 5                  # Max login attempts per window
-register_max = 3               # Max agent registration attempts per window
+register_max = 10              # Max agent registration attempts per window (Railway overrides to 3)
 
 [scheduler]
 timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)

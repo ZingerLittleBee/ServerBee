@@ -8,24 +8,43 @@ The recommended way to deploy ServerBee is the `deploy/install.sh` one-line scri
 
 - **Interactive wizard** — run it with no arguments to pick the language, component, and install method through prompts
 - **Architecture aware** — detects amd64/arm64 and pulls the matching Release binary
-- **systemd integration** — creates and starts the service, enables it on boot
+- **Service integration** — creates and starts a systemd or OpenRC service, and enables it on boot
 - **Binary or Docker** — switch with `--method`; Docker is recommended for the server, binary for agents
 - **Automatic HTTPS** — pass `--domain` when installing the server and the script sets up Caddy and issues a certificate
 - **Unified management CLI** — installs a `serverbee` command for upgrades, restarts, config changes, and uninstalls
 
 The guide below walks through deployment from two angles: the **Server** and the **Client (monitored node / Agent)**.
 
+<Callout type="warn">
+This site tracks the repository's `main` branch. A published release can lag behind these pages. The default `auto` channel installs the newest stable release when one exists and otherwise falls back to the newest prerelease; upgrades reuse the policy saved at installation. Use `--channel stable` or `--channel beta` only to opt into one track explicitly. For a repeatable deployment, pin `--version vX.Y.Z` and compare that release's changelog before using a newly documented feature.
+</Callout>
+
+## Choose a deployment method
+
+| Method | Best for | Persistence and operations |
+|--------|----------|----------------------------|
+| Binary (the non-interactive default) | Small VPSes and the shortest path | Files live under `/opt/serverbee`; systemd or OpenRC manages the service; `serverbee upgrade` updates it |
+| Docker (recommended when you already operate Docker) | Container isolation and image-based upgrades | Named volume stores data; Compose manages the container; back up both the volume and config |
+| Railway | Managed public HTTPS | Attach a `/data` volume and use Railway logs for first-run credentials |
+
+The commands below choose `--method binary` explicitly so their files, logs, and service commands are predictable. Add `--method docker` when you want the Docker lifecycle.
+
 ## Prerequisites
 
 - A Linux host (amd64 / arm64); the script must run as root (it checks and errors out otherwise). Use `sudo` as a regular user; if you are already root (e.g. logged in as root or inside a container) you can drop the `sudo` from the commands
-- The binary method needs systemd; the Docker method needs Docker 20.10+ and Compose V2
-- The server's port `9527` open in your firewall so agents and browsers can reach it
+- The binary method needs systemd or OpenRC; the Docker method needs Docker 20.10+ and Compose V2
+- **Direct IP / HTTP:** allow inbound TCP `9527`
+- **Domain / HTTPS:** point an `A`/`AAAA` record at the host, allow inbound TCP `80` and `443`, and make sure no non-Caddy service already listens on those ports. Do not expose `9527` publicly; Caddy connects to its loopback binding
 
 ---
 
 ## Server
 
 The server is the central node: it receives metrics from agents, stores them, and serves the web dashboard.
+
+<Callout type="warn">
+The published `v1.0.0-beta.1` dashboard has a known Add Server crash on remote plain-HTTP origins because that build calls `crypto.randomUUID()` directly. Until a newer release containing the fallback is published, use the domain/HTTPS path below (or build the current `main` source) rather than `http://<server-ip>:9527`. A successful `/healthz` or login does not prove the affected Servers page works.
+</Callout>
 
 ### Step 1: Install the server
 
@@ -36,10 +55,10 @@ There are two quick ways to install the server — pick one based on whether you
 Fastest to get going; use this when you don't have a domain. You'll reach it at `http://<server-ip>:9527`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server --method binary -y
 ```
 
-The script writes `auth.secure_cookie = false` so browser login works over plain HTTP.
+The script writes `auth.secure_cookie = false` so browser login works over plain HTTP. This path does not encrypt browser, Agent, terminal, file, or command traffic; use it only on a trusted network or for initial evaluation, and prefer HTTPS for production.
 
 #### Option B: Install with a domain (automatic HTTPS)
 
@@ -47,6 +66,7 @@ If you already have a domain whose DNS `A` record points to this server, add `--
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server \
+  --method binary \
   --domain monitor.example.com \
   --email admin@example.com \
   -y
@@ -60,12 +80,7 @@ You can also run it with no arguments for an interactive wizard that prompts for
 
 Either way, the script automatically:
 
-1. Detects the system architecture (amd64 / arm64)
-2. Downloads the matching binary from GitHub Releases
-3. Installs the binary to `/opt/serverbee/bin/` and symlinks the management CLI to `/usr/local/bin/serverbee`
-4. Creates the `/opt/serverbee/etc/` config directory and generates a default config (data dir `/opt/serverbee/data/`)
-5. Creates a systemd service unit
-6. Starts the service and enables it on boot
+For the binary method shown above, the script detects the architecture, downloads and verifies the matching release, creates `/opt/serverbee/{bin,etc,data}`, registers a systemd or OpenRC service, and installs the management CLI at `/usr/local/bin/serverbee`. Docker mode instead generates Compose and configuration files under `/opt/serverbee` and persists data in a named volume.
 
 <Callout type="info">
 If Docker is available, running the server in Docker is recommended — upgrades and isolation are easier. Just add `--method docker`: `... | sudo sh -s -- server --method docker -y`.
@@ -79,7 +94,11 @@ On its first start the server creates an admin account with a random password an
 sudo journalctl -u serverbee-server --no-pager | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
 ```
 
-For the Docker method, use `sudo serverbee status` or `docker logs serverbee-server`.
+For the Docker method, retrieve the complete last credential block explicitly:
+
+```bash
+docker logs serverbee-server 2>&1 | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tail -n 9
+```
 
 <Callout type="warn">
 The password is shown only once — copy it before logs rotate. First login forces a password change, so do that before exposing the server to the internet.
@@ -107,6 +126,10 @@ sudo serverbee config                      # View current config
 sudo serverbee config set <key> <value>    # Change config
 sudo serverbee uninstall server --purge    # Uninstall and wipe data
 ```
+
+<Callout type="warn">
+`uninstall --purge` permanently deletes the Server database, configuration, and managed Docker volume. Create and verify a backup first; omit `--purge` when you want to preserve data for recovery or reinstallation.
+</Callout>
 
 ---
 
@@ -167,7 +190,7 @@ ServerBee works with a direct server IP or behind a domain and reverse proxy. Wh
 | Access Mode | Browser URL | Server Cookie Setting | Agent `server_url` | Extra Setup |
 |-------------|-------------|-----------------------|--------------------|-------------|
 | Direct IP, plain HTTP | `http://your-server-ip:9527` | `auth.secure_cookie = false` or `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://your-server-ip:9527` | Open port `9527` in your firewall |
-| Domain with HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` or `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | Point DNS at the server IP; the script sets up Caddy for you (or configure Nginx/Traefik yourself) |
+| Domain with HTTPS | `https://monitor.example.com` | `auth.secure_cookie = true` or `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://monitor.example.com` | Point DNS at the server IP; allow inbound 80/443; keep 9527 private; the script sets up Caddy (or configure Nginx/Traefik yourself) |
 
 ---
 
@@ -178,7 +201,7 @@ If you'd rather manage the server with your own Compose file, create a `docker-c
 ```yaml title="docker-compose.yml"
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
     container_name: serverbee-server
     ports:
       - "9527:9527"
@@ -208,4 +231,5 @@ The example disables the `Secure` cookie flag because this setup uses plain HTTP
   <Card title="Agent Configuration" href="/en/docs/agent" />
   <Card title="Set Up Alerts" href="/en/docs/alerts" />
   <Card title="Web Terminal" href="/en/docs/terminal" />
+  <Card title="Troubleshooting" href="/en/docs/troubleshooting" />
 </Cards>

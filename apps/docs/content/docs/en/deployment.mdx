@@ -36,20 +36,20 @@ After deploying:
 Railway automatically assigns a port and provides HTTPS. No need to configure `SERVERBEE_SERVER__LISTEN` or TLS certificates.
 </Callout>
 
-### Deploying a Pre-release Version
+### Selecting a Railway Version
 
-The template pulls `ghcr.io/zingerlittlebee/serverbee-server:latest` by default, which only follows stable releases. Pre-release tags (e.g. `1.0.0-alpha.1`) are published to GHCR but do **not** move `:latest`.
+The source template pins the repository's current package version, currently `1.0.0-beta.1`. This avoids silently deploying the older image behind `:latest` while ServerBee has no stable `1.x` release.
 
 To pin a specific version (stable or pre-release), add the following variable under **Variables** on the Railway service:
 
 ```bash
-SERVERBEE_IMAGE_TAG=1.0.0-alpha.1
+SERVERBEE_IMAGE_TAG=1.0.0-beta.1
 ```
 
-Save and trigger a redeploy. Remove the variable (or set it back to `latest`) to return to the stable channel.
+Save and trigger a redeploy. Check the [release page](https://github.com/ZingerLittleBee/ServerBee/releases) before changing this pin. Future prereleases also publish a moving `beta` tag, while `latest` moves only for suffix-free stable releases; an exact version remains the safest repeatable choice.
 
 <Callout type="info">
-The Dockerfile exposes this switch via `ARG SERVERBEE_IMAGE_TAG=latest`. Railway injects service variables as both build args and runtime environment variables; since this variable is not part of the `SERVERBEE_*` configuration schema, it has no runtime side effects.
+The Dockerfile exposes this switch via `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.1`. Railway injects service variables as both build args and runtime environment variables; since this variable is not part of the `SERVERBEE_*` configuration schema, it has no runtime side effects.
 </Callout>
 
 ## Bootstrap Installer
@@ -71,7 +71,7 @@ After installation, manage your deployment with the `serverbee` CLI (automatical
 ```bash
 sudo serverbee status
 sudo serverbee upgrade -y
-sudo serverbee upgrade --channel beta -y
+sudo serverbee upgrade --channel beta -y   # Explicitly stay on prereleases
 sudo serverbee restart
 sudo serverbee config
 sudo serverbee env
@@ -82,27 +82,38 @@ sudo serverbee uninstall agent -y
 `install server` / `install agent` are bootstrap commands. If the binary already exists in `/usr/local/bin`, the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
 </Callout>
 
-Stable releases are selected by default. For beta testing, pass `--channel beta` to install or upgrade the newest published prerelease, or use `--version vX.Y.Z-beta.N` to pin an exact release. The CLI refuses to replace an installed version with an older SemVer.
+The default `auto` channel selects the newest suffix-free stable release when one exists, otherwise it falls back to the newest prerelease. The installer saves that policy per component and reuses it for upgrades. Pass `--channel stable` or `--channel beta` to opt into one track explicitly, or `--version vX.Y.Z-beta.N` to pin an exact release. The CLI refuses to replace an installed version with an older SemVer.
 
 ## Docker Compose (Recommended)
 
-Docker Compose is the simplest way to deploy ServerBee in production. Create a `docker-compose.yml`:
+Docker Compose is the simplest way to deploy ServerBee in production. First create the configuration file (a missing bind source must not become a directory):
+
+```bash
+mkdir -p config
+cat > config/server.toml <<'EOF'
+[server]
+data_dir = "/data"
+EOF
+```
+
+Then create `docker-compose.yml` beside the `config` directory:
 
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
     container_name: serverbee-server
     restart: unless-stopped
     ports:
       - "127.0.0.1:9527:9527"
     volumes:
       - serverbee-data:/data
-      - ./server.toml:/app/server.toml:ro
+      - ./config/server.toml:/etc/serverbee/server.toml:ro
     environment:
       - SERVERBEE_AUTH__SECURE_COOKIE=true
+      - MALLOC_ARENA_MAX=2
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -186,6 +197,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/serverbee-server
+Environment=MALLOC_ARENA_MAX=2
 Restart=always
 RestartSec=5
 User=serverbee
@@ -355,7 +367,7 @@ Traefik integrates with Docker via labels — no separate config file needed. Tr
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
     volumes:
       - serverbee-data:/data
     labels:
@@ -432,7 +444,22 @@ ServerBee stores all data in a single SQLite database file and the configuration
 
 ### Backup Strategy
 
-The install-script default data directory is `/opt/serverbee/data` (database at `/opt/serverbee/data/serverbee.db`). For a custom hand-written systemd deployment, substitute the `data_dir` you configured.
+The install-script default data directory is `/opt/serverbee/data` (database at `/opt/serverbee/data/serverbee.db`). For a custom hand-written systemd deployment, substitute the `data_dir` you configured. The commands below require the `sqlite3` CLI and an existing protected destination: install `sqlite3`, then run `sudo install -d -m 0700 /backups` before scheduling them.
+
+**Option 0: Built-in admin backup API**
+
+The admin-only endpoint uses SQLite `VACUUM INTO` and downloads a consistent database. Store an admin-scoped API key in the environment, not in shell history:
+
+```bash
+SERVERBEE_BACKUP_FILE="/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).db"
+curl --fail --request POST \
+  --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
+  --output "$SERVERBEE_BACKUP_FILE" \
+  https://monitor.example.com/api/settings/backup
+sqlite3 "$SERVERBEE_BACKUP_FILE" 'PRAGMA integrity_check;'
+```
+
+Copy verified backups off the ServerBee host. A backup on the same disk is not disaster recovery.
 
 **Option 1: SQLite backup command (recommended for running server)**
 
@@ -489,6 +516,20 @@ cp /backups/serverbee-20260314.db /opt/serverbee/data/serverbee.db
 sudo systemctl start serverbee-server
 ```
 
+The admin-only restore API accepts a raw SQLite file, keeps the previous database as `.pre-restore`, and requires a server restart. Verify the backup first and take a current backup before replacing anything:
+
+```bash
+sqlite3 /backups/serverbee-20260314.db 'PRAGMA integrity_check;'
+curl --fail --request POST \
+  --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
+  --header 'Content-Type: application/octet-stream' \
+  --data-binary @/backups/serverbee-20260314.db \
+  https://monitor.example.com/api/settings/restore
+sudo serverbee restart server
+```
+
+For Docker, restore into a new volume using the [disaster-recovery runbook](#restore-a-docker-backup-into-a-new-volume) rather than overwriting the failed volume.
+
 ### Automated Backups
 
 Set up a cron job for daily backups:
@@ -512,7 +553,7 @@ Use this to verify the server is running and responsive. Configure it in your mo
 
 ### Docker Health Check
 
-The Docker Compose example above includes a health check configuration. Docker will automatically restart the container if the health check fails 3 consecutive times.
+The Docker Compose example above includes a health check. Three consecutive failures mark the container `unhealthy`; Docker does **not** restart a merely unhealthy container. The restart policy only reacts when the process exits, so monitor the health state externally and investigate or restart it deliberately.
 
 ### External Monitoring
 
@@ -534,9 +575,11 @@ ServerBee is designed for lightweight VPS instances:
 | Server RAM | 128 MB | 256 MB |
 | Server Disk | 100 MB + data | 1 GB+ (depends on retention) |
 | Agent CPU | Negligible | < 1% of 1 core |
-| Agent RAM | 10 MB (cold) | 30–40 MB (steady, 8h+) |
+| Agent RAM | ~27 MB measured cgroup steady state | 30–40 MB headroom |
 
 Database size depends on the number of monitored servers and your retention settings. As a rough guide, expect about 1 MB of raw records per server per day. With 50 servers and the default 7-day retention, the database is roughly 350 MB.
+
+For glibc-based Server deployments, set `MALLOC_ARENA_MAX=2` in the service environment to match the measured 140–170 MB production range. See [Resource Usage](/en/docs/resource-usage) for scope and measurement details.
 
 ## Security Checklist
 
@@ -568,7 +611,7 @@ docker compose ps
 **Binary:**
 
 ```bash
-wget https://github.com/ZingerLittleBee/ServerBee/releases/latest/download/serverbee-server-linux-amd64
+wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.1/serverbee-server-linux-amd64
 sudo systemctl stop serverbee-server
 sudo mv serverbee-server-linux-amd64 /usr/local/bin/serverbee-server
 sudo chmod +x /usr/local/bin/serverbee-server
@@ -576,6 +619,18 @@ sudo systemctl start serverbee-server
 ```
 
 If you deployed with the install script, `sudo serverbee upgrade -y` handles the binary download, replacement, and restart for you.
+
+## Uninstalling and Purging
+
+`sudo serverbee uninstall <server|agent>` stops and removes the managed service/container and executable, but intentionally preserves configuration and data for a reinstall. Add `--purge -y` only after taking a verified backup; it also removes installer-managed config, Server data or Docker volumes/images, and removes the management CLI when no components remain.
+
+Review these leftovers separately:
+
+- Agent runtime state defaults to `/var/lib/serverbee/capability_grants.json` and `/var/lib/serverbee/security`. A custom `state_dir` or `security.data_dir` may point elsewhere; remove it only after confirming no remaining Agent uses it.
+- Domain setup may have installed Caddy and added a domain block to `/etc/caddy/Caddyfile`. The uninstaller does not delete packages or shared proxy configuration. Back up the file, remove only the ServerBee domain block, run `sudo caddy validate --config /etc/caddy/Caddyfile`, then `sudo systemctl reload caddy`. Remove Caddy itself only if no other site uses it.
+- A non-purge Docker uninstall preserves its Compose file, config, and named volume. Inspect the exact volume with `docker inspect serverbee-server` before deleting anything.
+
+After cleanup, verify that no `serverbee-*` service/container is running and that ports `9527` (and, if removing the proxy, `80`/`443`) have the expected owners.
 
 ## Database Migration Failures and Recovery
 

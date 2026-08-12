@@ -58,7 +58,7 @@ Agent 按如下方式计算自身的能力位图：
 
 ### 配置文件
 
-在 Agent 主机上编辑 `/etc/serverbee/agent.toml`（或工作目录下的 `agent.toml`）：
+安装脚本管理的部署请在 Agent 主机上编辑 `/opt/serverbee/etc/agent.toml`。手工部署也可能使用 `/etc/serverbee/agent.toml` 或工作目录下的 `agent.toml`：
 
 ```toml
 [capabilities]
@@ -71,7 +71,7 @@ deny = ["ip_quality"]
 重启 Agent 使更改生效：
 
 ```bash
-systemctl restart serverbee-agent
+sudo serverbee restart agent
 ```
 
 ### 环境变量
@@ -96,7 +96,10 @@ serverbee-agent --allow-cap terminal --allow-cap file --deny-cap ip_quality
 安装脚本支持 `--caps`，在注册时为 Agent 的能力配置预置初值：
 
 ```bash
-curl -fsSL https://your-server/install.sh | sh -s -- --caps terminal,file
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent \
+  --server-url https://monitor.example.com \
+  --enrollment-code YOUR_ONE_TIME_CODE \
+  --caps terminal,file
 ```
 
 交互式运行安装脚本时也会提示选择能力，默认项已预先勾选。
@@ -111,7 +114,7 @@ curl -fsSL https://your-server/install.sh | sh -s -- --caps terminal,file
 
 ### CLI
 
-在 **Agent 主机**上运行这些子命令（通常需要 `sudo`，因为它们写入 `state_dir`，而守护进程一般以 agent 用户/root 运行）。它们共用守护进程的配置（`agent.toml` / `/etc/serverbee/agent.toml`），因此 grants 文件位置和最大时长都来自同一个 `[capabilities]` 段。
+在 **Agent 主机**上运行这些子命令（通常需要 `sudo`，因为它们写入 `state_dir`，而守护进程一般以 agent 用户/root 运行）。它们共用守护进程的配置（安装脚本部署为 `/opt/serverbee/etc/agent.toml`），因此 grants 文件位置和最大时长都来自同一个 `[capabilities]` 段。
 
 ```bash
 # 临时开启某个默认关闭的能力，限定一个时间窗。

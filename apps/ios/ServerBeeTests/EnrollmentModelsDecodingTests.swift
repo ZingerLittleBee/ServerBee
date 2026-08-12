@@ -155,6 +155,7 @@ final class EnrollmentModelsDecodingTests: XCTestCase {
         let cmd = AgentLifecycleViewModel.installCommand(code: "SBENROLL-XYZ", serverUrl: "https://demo.serverbee.app")
         XCTAssertTrue(cmd.contains("--enrollment-code 'SBENROLL-XYZ'"))
         XCTAssertTrue(cmd.contains("--server-url 'https://demo.serverbee.app'"))
+        XCTAssertFalse(cmd.contains("--channel"))
         XCTAssertTrue(cmd.contains("install.sh"))
     }
 

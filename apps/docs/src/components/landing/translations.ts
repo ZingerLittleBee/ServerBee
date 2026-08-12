@@ -6,7 +6,7 @@ export type LandingLang = 'en' | 'zh'
 const translations = {
   en: {
     hero: {
-      eyebrow: 'Open source · MIT · Built with Rust',
+      eyebrow: 'Open source · AGPL-3.0-or-later · Built with Rust',
       headline1: 'Self-hosted VPS monitoring,',
       headline2: 'in a single binary.',
       sub: 'ServerBee is a lightweight probe that streams CPU, memory, disk, network, and Docker metrics to a Rust dashboard in real time — no agents to babysit, no external database, no bloat.',
@@ -30,7 +30,7 @@ const translations = {
       },
       three: {
         title: 'One agent, full control',
-        body: 'Terminal sessions, file manager, Docker operations, and remote command execution all run through the same encrypted channel — gated by per-server capabilities.'
+        body: 'Terminal sessions, file manager, Docker operations, and remote command execution share one control channel. Deploy with HTTPS/WSS to encrypt it in transit; agent-owned capabilities gate each operation.'
       }
     },
     bento: {
@@ -64,14 +64,14 @@ const translations = {
       },
       upgrade: {
         title: 'Automatic upgrades',
-        body: 'Server and agents update themselves. One CLI command, zero downtime restarts.'
+        body: 'Server and agents update through one CLI command, with health checks and rollback on failed upgrades.'
       }
     },
     how: {
       title: 'Three commands to a live dashboard',
       step1: {
         title: 'Install the server',
-        body: 'Run the install script on one host. Systemd takes over from there.'
+        body: 'Run the install script on one host. systemd, OpenRC, or Docker takes over from there.'
       },
       step2: {
         title: 'Bootstrap an agent',
@@ -81,14 +81,14 @@ const translations = {
     },
     finalCta: {
       title: 'Ship a monitor in five minutes.',
-      sub: 'Open source, MIT licensed, and small enough to forget about.',
+      sub: 'Open source under AGPL-3.0-or-later, and small enough to forget about.',
       readDocs: 'Read the docs',
       star: 'Star on GitHub'
     }
   },
   zh: {
     hero: {
-      eyebrow: '开源 · MIT · Rust 构建',
+      eyebrow: '开源 · AGPL-3.0-or-later · Rust 构建',
       headline1: '自托管的 VPS 监控，',
       headline2: '只需一个二进制。',
       sub: 'ServerBee 是一个轻量探针：实时把 CPU、内存、磁盘、网络、Docker 指标推送到 Rust 仪表盘，没有外部依赖、没有冗余服务、不用伺候它。',
@@ -112,7 +112,7 @@ const translations = {
       },
       three: {
         title: '一个 Agent 全栈掌控',
-        body: '终端会话、文件管理、Docker 操作、远程命令执行都走同一条加密通道，并由每台服务器的能力位精细授权。'
+        body: '终端会话、文件管理、Docker 操作和远程命令执行共用一条控制通道。通过 HTTPS/WSS 部署时传输才会加密，每项操作由 Agent 自主管理的能力位授权。'
       }
     },
     bento: {
@@ -146,18 +146,18 @@ const translations = {
       },
       upgrade: {
         title: '自动升级',
-        body: 'Server 和 Agent 自动更新。一条 CLI 命令，重启零停顿。'
+        body: 'Server 和 Agent 可通过一条 CLI 命令升级，并在失败时执行健康检查与回滚。'
       }
     },
     how: {
       title: '三步上线一个实时仪表盘',
-      step1: { title: '安装 Server', body: '在一台主机上跑安装脚本，剩下交给 systemd。' },
+      step1: { title: '安装 Server', body: '在一台主机上跑安装脚本，之后交给 systemd、OpenRC 或 Docker。' },
       step2: { title: '部署 Agent', body: '把 Agent 二进制丢到每台要监控的 VPS 上，配对一次即可。' },
       step3: { title: '打开仪表盘', body: '登录，等指标自动流入，然后开始拼装你的仪表盘。' }
     },
     finalCta: {
       title: '五分钟跑起一个监控。',
-      sub: '开源、MIT 协议，小到你会忘了它在跑。',
+      sub: '采用 AGPL-3.0-or-later 开源，小到你会忘了它在跑。',
       readDocs: '阅读文档',
       star: '在 GitHub 上 Star'
     }

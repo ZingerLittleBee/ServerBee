@@ -6,6 +6,18 @@ icon: Smartphone
 
 ServerBee 提供原生 iOS 配套应用，把服务器监控带到你的手机：实时指标、告警推送通知，以及随时随地管理服务器。
 
+## 获取方式
+
+本仓库目前没有发布可直接安装的 iOS 构建，也没有提供 App Store/TestFlight 获取链接。下方流程适用于你从 ServerBee 运维方取得的构建，或自行从源码构建的应用。自行构建时先安装 Xcode 与 XcodeGen，然后执行：
+
+```bash
+cd apps/ios
+xcodegen generate
+open ServerBee.xcodeproj
+```
+
+在 Xcode 中选择自己的 Apple Development Team，再运行到 iPhone。推送通知还需要下文所述、与签名一致的 Apple Developer APNs 配置；仅完成本地构建并不等于具备生产 APNs 推送。
+
 ## 功能特性
 
 - **二维码配对** -- 扫描 Web 应用中的二维码即可即时认证，无需手动输入 Token
@@ -16,7 +28,7 @@ ServerBee 提供原生 iOS 配套应用，把服务器监控带到你的手机�
 
 ## 系统要求
 
-- iOS 16.0 或更高版本
+- iOS 17.0 或更高版本
 - 启用移动认证的 ServerBee 服务器实例（v0.8.0+）
 - 推送通知需要：在服务器上配置 APNs 认证密钥
 

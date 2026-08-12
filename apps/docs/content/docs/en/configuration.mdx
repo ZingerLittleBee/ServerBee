@@ -394,6 +394,13 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 | `api_key` | string | -- | Optional. Configure for higher per-account rate limits. |
 | `endpoint` | string | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
+### `[network_probe]` -- Anomaly Thresholds
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `high_latency_ms` | f64 | `500` | Records above this average latency are classified as `high_latency` |
+| `very_high_latency_ms` | f64 | `800` | Records above this average latency are classified as `very_high_latency` |
+
 ---
 
 ## Agent Configuration (agent.toml)
@@ -450,6 +457,18 @@ state_dir = "/var/lib/serverbee"
 | `enabled` | bool | `true` | Enable periodic IP change detection. Agent enumerates NIC addresses and reports changes |
 | `external_ip_urls` | string[] | `["https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com", "https://checkip.amazonaws.com"]` | Ordered list of services that return the agent's public IP. Tried in sequence at startup and on every check; first success wins. Required for agents behind NAT or in containers. Set to `[]` to disable external lookups (air-gapped deployments) |
 | `interval_secs` | u64 | `300` | IP check interval in seconds (default 5 minutes) |
+
+### `[security]` -- Security Event Detection
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `true` | Enable local security-event detection |
+| `data_dir` | string | `"/var/lib/serverbee/security"` | Writable directory for detector state |
+| `ssh.window_seconds` | u32 | `60` | Sliding window for failed SSH-login detection |
+| `ssh.failed_threshold` | u32 | `10` | Failed SSH attempts in the window before reporting an event |
+| `port_scan.enabled` | bool | `false` | Enable local port-scan detection |
+| `port_scan.window_seconds` | u32 | `30` | Sliding port-scan detection window |
+| `port_scan.distinct_port_threshold` | u32 | `20` | Distinct destination ports in the window before reporting an event |
 
 ### `[log]` -- Logging
 

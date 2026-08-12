@@ -139,9 +139,11 @@ curl https://your-server/api/auth/me \
 | 告警和通知 | CRUD `/api/alert-rules/*`、`/api/notifications/*`、`/api/notification-groups/*` |
 | 任务 | `GET/POST /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`GET /api/tasks/{id}/results`、`POST /api/tasks/{id}/run` |
 | 用户 | CRUD `/api/users/*` |
-| 审计和设置 | `GET /api/audit-logs`、`/api/settings/*`、备份/恢复端点 |
+| 审计和设置 | `GET /api/audit-logs`、`/api/settings/*`、`POST /api/settings/backup`、`POST /api/settings/restore` |
 | GeoIP | `POST /api/geoip/download` |
 | 移动端推送 | `POST /api/mobile/pair`、`POST /api/mobile/push/register`、`POST /api/mobile/push/unregister` |
+
+备份端点返回原始 SQLite 下载；恢复端点接受 `Content-Type: application/octet-stream` 的原始 SQLite body，并要求重启 Server。两者都是仅限 Admin 的高风险操作，已验证命令与保护措施见[备份与恢复](/zh/docs/deployment#备份与恢复)。
 
 ## Agent Authority 与接入
 

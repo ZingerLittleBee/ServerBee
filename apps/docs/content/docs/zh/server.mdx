@@ -10,14 +10,15 @@ Server 是 ServerBee 的核心组件，负责接收 Agent 上报的数据、存�
 
 ### 安装脚本（推荐）
 
-最省事的方式是一键安装脚本，它会自动检测架构、下载二进制、生成配置、注册并启动 systemd 服务，并软链 `serverbee` 管理 CLI。Server 支持两种快速安装：
+最省事的方式是一键安装脚本。二进制模式会自动检测架构、下载二进制、生成配置、注册并启动 systemd 或 OpenRC 服务，并软链 `serverbee` 管理 CLI。Server 支持两种快速安装：
 
 ```bash
 # 方式一：用 IP 安装（明文 HTTP），访问 http://<服务器IP>:9527
-curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server -y
+curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server --method binary -y
 
 # 方式二：用域名安装（自动 Caddy + HTTPS），访问 https://你的域名
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- server \
+  --method binary \
   --domain monitor.example.com --email admin@example.com -y
 ```
 
@@ -36,10 +37,11 @@ chmod +x serverbee-server
 
 ```bash
 docker run -d \
-  --name serverbee \
+  --name serverbee-server \
   -p 9527:9527 \
   -v serverbee-data:/data \
-  ghcr.io/zingerlittlebee/serverbee-server:latest
+  -e MALLOC_ARENA_MAX=2 \
+  ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
 ```
 
 ### 源码编译
@@ -97,7 +99,7 @@ service_monitor_days = 30      # 服务监控记录保留天数
 
 [rate_limit]
 login_max = 5                  # 每个时间窗口内最大登录尝试次数
-register_max = 3               # 每个时间窗口内最大 Agent 注册尝试次数
+register_max = 10              # 每个窗口内最大 Agent 注册尝试次数（Railway 覆盖为 3）
 
 [scheduler]
 timezone = "UTC"               # 每日流量聚合所用时区（如 Asia/Shanghai）

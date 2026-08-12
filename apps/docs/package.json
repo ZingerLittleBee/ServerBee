@@ -9,6 +9,8 @@
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
     "types:check": "fumadocs-mdx && tsc --noEmit",
+    "check:contracts": "bun scripts/check-contracts.ts",
+    "check:routes": "bun scripts/check-routes.ts",
     "postinstall": "fumadocs-mdx",
     "lint": "biome check",
     "format": "biome format --write"

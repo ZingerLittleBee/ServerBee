@@ -36,20 +36,20 @@ SERVERBEE_OAUTH__ALLOW_REGISTRATION="false"    # 首次 OAuth 登录自动创建
 Railway 会自动分配端口并提供 HTTPS，无需配置 `SERVERBEE_SERVER__LISTEN` 或 TLS 证书。
 </Callout>
 
-### 部署预发版本
+### 选择 Railway 版本
 
-模板默认拉取 `ghcr.io/zingerlittlebee/serverbee-server:latest`，该 tag 只跟随稳定版。预发版（例如 `1.0.0-alpha.1`）会推送到 GHCR，但**不会**更新 `:latest`。
+源码模板会固定为仓库当前包版本，目前是 `1.0.0-beta.1`。ServerBee 尚无稳定 `1.x` 版本时，这可避免静默部署 `:latest` 所指向的旧镜像。
 
 要锁定到指定版本（稳定版或预发版），在 Railway 服务的 **Variables** 里新增一条变量：
 
 ```bash
-SERVERBEE_IMAGE_TAG=1.0.0-alpha.1
+SERVERBEE_IMAGE_TAG=1.0.0-beta.1
 ```
 
-保存后触发 Redeploy 即可。回到稳定通道时删除该变量（或改回 `latest`）。
+保存后触发 Redeploy。修改版本前先查看 [Release 页面](https://github.com/ZingerLittleBee/ServerBee/releases)。后续预发布版也会更新浮动 `beta` tag，`latest` 只由无后缀稳定版更新；需要可重复部署时仍应固定精确版本。
 
 <Callout type="info">
-Dockerfile 通过 `ARG SERVERBEE_IMAGE_TAG=latest` 暴露这个开关。Railway 会自动把 Service Variables 同时作为构建参数和运行时环境变量注入；该变量不在 `SERVERBEE_*` 配置体系中，因此对运行时无副作用。
+Dockerfile 通过 `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.1` 暴露这个开关。Railway 会自动把 Service Variables 同时作为构建参数和运行时环境变量注入；该变量不在 `SERVERBEE_*` 配置体系中，因此对运行时无副作用。
 </Callout>
 
 ## 引导安装
@@ -71,7 +71,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 ```bash
 sudo serverbee status
 sudo serverbee upgrade -y
-sudo serverbee upgrade --channel beta -y
+sudo serverbee upgrade --channel beta -y   # 显式保持预发布轨道
 sudo serverbee restart
 sudo serverbee config
 sudo serverbee env
@@ -82,27 +82,38 @@ sudo serverbee uninstall agent -y
 `install server` / `install agent` 是引导命令。如果 `/usr/local/bin` 中已经存在对应二进制，安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 二进制时，请改用 `upgrade`（或手动替换二进制）。
 </Callout>
 
-默认选择稳定版本。参与 beta 测试时，可在安装或升级命令中传入 `--channel beta` 选择最新已发布的预发布版本，也可用 `--version vX.Y.Z-beta.N` 固定精确版本。CLI 会拒绝用较旧的 SemVer 覆盖当前安装。
+默认 `auto` 通道会在无后缀稳定版存在时选择最新稳定版，否则回退到最新预发布版。安装器会按组件保存该策略，并在升级时复用。传 `--channel stable` 或 `--channel beta` 可显式固定轨道，也可用 `--version vX.Y.Z-beta.N` 固定精确版本。CLI 会拒绝用较旧的 SemVer 覆盖当前安装。
 
 ## Docker Compose（推荐）
 
-Docker Compose 是在生产环境部署 ServerBee 最简单的方式。创建一个 `docker-compose.yml`：
+Docker Compose 是在生产环境部署 ServerBee 最简单的方式。先创建配置文件（不能让不存在的 bind source 被 Docker 自动建成目录）：
+
+```bash
+mkdir -p config
+cat > config/server.toml <<'EOF'
+[server]
+data_dir = "/data"
+EOF
+```
+
+然后在 `config` 同级创建 `docker-compose.yml`：
 
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
     container_name: serverbee-server
     restart: unless-stopped
     ports:
       - "127.0.0.1:9527:9527"
     volumes:
       - serverbee-data:/data
-      - ./server.toml:/app/server.toml:ro
+      - ./config/server.toml:/etc/serverbee/server.toml:ro
     environment:
       - SERVERBEE_AUTH__SECURE_COOKIE=true
+      - MALLOC_ARENA_MAX=2
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9527/healthz"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -186,6 +197,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/serverbee-server
+Environment=MALLOC_ARENA_MAX=2
 Restart=always
 RestartSec=5
 User=serverbee
@@ -355,7 +367,7 @@ Traefik 通过 Docker labels 集成，无需单独的配置文件。Traefik 会�
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:latest
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
     volumes:
       - serverbee-data:/data
     labels:
@@ -432,7 +444,22 @@ ServerBee 把所有数据都存储在单个 SQLite 数据库文件和配置文�
 
 ### 备份策略
 
-安装脚本默认的数据目录是 `/opt/serverbee/data`（数据库为 `/opt/serverbee/data/serverbee.db`）。若你是手写 systemd unit 的自定义部署，请替换为你配置的 `data_dir`。
+安装脚本默认的数据目录是 `/opt/serverbee/data`（数据库为 `/opt/serverbee/data/serverbee.db`）。若你是手写 systemd unit 的自定义部署，请替换为你配置的 `data_dir`。下方命令要求系统已安装 `sqlite3` CLI，并提前创建受保护的目标目录：先安装 `sqlite3`，再执行 `sudo install -d -m 0700 /backups`。
+
+**方式零：内置管理员备份 API**
+
+管理员专用端点使用 SQLite `VACUUM INTO` 下载一致数据库。把管理员 API key 放在环境变量里，不要写进 shell 历史：
+
+```bash
+SERVERBEE_BACKUP_FILE="/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).db"
+curl --fail --request POST \
+  --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
+  --output "$SERVERBEE_BACKUP_FILE" \
+  https://monitor.example.com/api/settings/backup
+sqlite3 "$SERVERBEE_BACKUP_FILE" 'PRAGMA integrity_check;'
+```
+
+把已验证备份复制到 ServerBee 主机之外。同一块磁盘上的备份不构成灾难恢复。
 
 **方式一：SQLite 备份命令（推荐，适用于运行中的服务端）**
 
@@ -449,6 +476,20 @@ sudo systemctl stop serverbee-server
 cp /opt/serverbee/data/serverbee.db /backups/serverbee-$(date +%Y%m%d).db
 sudo systemctl start serverbee-server
 ```
+
+管理员专用恢复 API 接受原始 SQLite 文件，会把原数据库保留为 `.pre-restore`，并要求重启 Server。替换前先验证备份，并先为当前状态再做一份备份：
+
+```bash
+sqlite3 /backups/serverbee-20260314.db 'PRAGMA integrity_check;'
+curl --fail --request POST \
+  --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
+  --header 'Content-Type: application/octet-stream' \
+  --data-binary @/backups/serverbee-20260314.db \
+  https://monitor.example.com/api/settings/restore
+sudo serverbee restart server
+```
+
+Docker 部署请按[恢复到新 volume 的灾难恢复流程](#从-docker-备份恢复到新-volume)操作，不要覆盖故障 volume。
 
 **方式三：Docker volume 备份**
 
@@ -512,7 +553,7 @@ GET /healthz
 
 ### Docker 健康检查
 
-上面的 Docker Compose 示例已包含健康检查配置。当健康检查连续 3 次失败时，Docker 会自动重启容器。
+上面的 Docker Compose 示例已包含健康检查。连续 3 次失败只会把容器标记为 `unhealthy`，Docker **不会**仅因 unhealthy 自动重启；restart policy 只在进程退出时生效。请从外部监控健康状态，再有意识地排查或重启。
 
 ### 外部监控
 
@@ -534,9 +575,11 @@ ServerBee 面向轻量级 VPS 实例设计：
 | 服务端内存 | 128 MB | 256 MB |
 | 服务端磁盘 | 100 MB + 数据 | 1 GB+（取决于保留策略） |
 | Agent CPU | 可忽略 | < 单核的 1% |
-| Agent 内存 | 10 MB | 20 MB |
+| Agent 内存 | 实测稳态 cgroup 约 27 MB | 30–40 MB 余量 |
 
 数据库大小取决于被监控服务器的数量和你的保留设置。粗略估计，每台服务器每天约产生 1 MB 原始记录。以 50 台服务器、默认 7 天保留为例，数据库约为 350 MB。
+
+glibc 环境下部署 Server 时，在服务环境中设置 `MALLOC_ARENA_MAX=2`，才能与实测 140–170 MB 的生产范围保持一致。具体测量范围见[资源开销](/zh/docs/resource-usage)。
 
 ## 安全检查清单
 
@@ -568,7 +611,7 @@ docker compose ps
 **二进制：**
 
 ```bash
-wget https://github.com/ZingerLittleBee/ServerBee/releases/latest/download/serverbee-server-linux-amd64
+wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.1/serverbee-server-linux-amd64
 sudo systemctl stop serverbee-server
 sudo mv serverbee-server-linux-amd64 /usr/local/bin/serverbee-server
 sudo chmod +x /usr/local/bin/serverbee-server
@@ -576,6 +619,18 @@ sudo systemctl start serverbee-server
 ```
 
 如果你使用安装脚本部署，`sudo serverbee upgrade -y` 会自动完成二进制下载、替换和重启。
+
+## 卸载与清除
+
+`sudo serverbee uninstall <server|agent>` 会停止并删除受管理的服务/容器与可执行文件，但有意保留配置和数据，便于重装。只有完成并验证备份后才使用 `--purge -y`；它还会删除安装器管理的配置、Server 数据或 Docker volume/image，并在没有剩余组件时删除管理 CLI。
+
+以下残留需要单独确认：
+
+- Agent 运行状态默认位于 `/var/lib/serverbee/capability_grants.json` 和 `/var/lib/serverbee/security`。自定义 `state_dir` 或 `security.data_dir` 可能指向别处；确认没有其他 Agent 使用后再删除。
+- 域名配置可能安装 Caddy，并在 `/etc/caddy/Caddyfile` 加入域名块。卸载器不会删除软件包或共享代理配置。先备份文件，只删除 ServerBee 域名块，执行 `sudo caddy validate --config /etc/caddy/Caddyfile`，再运行 `sudo systemctl reload caddy`。仅当没有其他站点使用 Caddy 时才卸载它。
+- 非 purge 的 Docker 卸载会保留 Compose 文件、配置与 named volume。删除前先通过 `docker inspect serverbee-server` 核对准确 volume。
+
+清理后确认没有 `serverbee-*` 服务/容器仍在运行，并确认 `9527`（若同时删除代理，还包括 `80`/`443`）的监听者符合预期。
 
 ## 数据库迁移失败与恢复
 

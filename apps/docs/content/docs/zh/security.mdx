@@ -109,7 +109,7 @@ ServerBee 对登录端点实施 IP 级别的速率限制：
 
 Agent 注册端点同样受限：
 
-- 默认每 15 分钟窗口内最多 **3 次** 注册尝试（可通过 `rate_limit.register_max` 配置）
+- 默认每 15 分钟窗口内最多 **10 次** 注册尝试（可通过 `rate_limit.register_max` 配置）。Railway 模板会有意覆盖为更严格的 **3 次**
 
 ### Session 安全
 
