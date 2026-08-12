@@ -1,9 +1,10 @@
-ARG SERVERBEE_IMAGE_TAG=latest
+ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.1
 FROM ghcr.io/zingerlittlebee/serverbee-server:${SERVERBEE_IMAGE_TAG}
 
 # ── Server ──────────────────────────────────────────────────────
 # Data directory — mount a Railway volume at /data to persist across deploys
 ENV SERVERBEE_SERVER__DATA_DIR=/data
+ENV MALLOC_ARENA_MAX=2
 # Trust Railway's internal reverse proxy for correct IP detection
 ENV SERVERBEE_SERVER__TRUSTED_PROXIES='["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"]'
 

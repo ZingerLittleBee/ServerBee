@@ -260,7 +260,7 @@ jobs:
           dash -n deploy/install.sh deploy/test-install-upgrade.sh
           dash -n scripts/extract-changelog.sh scripts/test-extract-changelog.sh
 
-      - name: Test upgrade rollback
+      - name: Test installer transactions and release channels
         run: dash deploy/test-install-upgrade.sh
 
       - name: Test changelog extraction

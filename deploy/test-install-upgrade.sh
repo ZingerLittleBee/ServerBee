@@ -369,6 +369,135 @@ test_stale_docker_backup_blocks_upgrade() {
     [ ! -s "$ACTION_LOG" ] || fail "stale Docker backup changed the deployment"
 }
 
+test_docker_server_compose_mounts_generated_config() (
+    setup_case docker-server-compose
+    DEFAULT_DOCKER_DIR="$CASE_DIR"
+    DOCKER_DIR="$CASE_DIR"
+    CONFIG_DIR="${CASE_DIR}/etc"
+    REQUESTED_VERSION="v1.0.0-beta.1"
+    RESOLVED_VERSION=""
+    mkdir -p "$CONFIG_DIR"
+
+    docker_is_snap() { return 1; }
+    check_docker() { :; }
+    check_unmanaged_container() { :; }
+    docker() { :; }
+    install_cli() { :; }
+    meta_write() { :; }
+    print_server_result() { :; }
+
+    install_docker_server >/dev/null
+
+    compose_file="${DOCKER_DIR}/docker-compose.server.yml"
+    grep -Fq "${CONFIG_DIR}/server.toml:/etc/serverbee/server.toml:ro" "$compose_file" \
+        || fail "generated Docker server config is not mounted"
+    grep -Fq 'http://127.0.0.1:9527/healthz' "$compose_file" \
+        || fail "generated Docker server health check is not IPv4-explicit"
+    grep -Fq 'MALLOC_ARENA_MAX=2' "$compose_file" \
+        || fail "generated Docker server omits allocator tuning"
+)
+
+curl() {
+    case "$*" in
+        *'/releases?per_page=100'*)
+            if [ "$TEST_RELEASE_MODE" = prerelease-only ]; then
+                cat <<'JSON'
+[
+  {
+    "tag_name": "v1.0.0-beta.1",
+    "draft": false,
+    "prerelease": false
+  }
+]
+JSON
+            else
+                cat <<'JSON'
+[
+  {
+    "tag_name": "v1.0.0-beta.1",
+    "draft": false,
+    "prerelease": false
+  },
+  {
+    "tag_name": "v0.9.0",
+    "draft": false,
+    "prerelease": false
+  }
+]
+JSON
+            fi
+            ;;
+        *) fail "unexpected curl request: $*" ;;
+    esac
+}
+
+test_stable_channel_ignores_misclassified_prerelease() {
+    TEST_RELEASE_MODE=stable
+    RELEASE_CHANNEL=stable
+    RESOLVED_VERSION=""
+    REQUESTED_VERSION=""
+    assert_eq "$(get_latest_version)" "v0.9.0"
+}
+
+test_stable_channel_fails_without_stable_release() {
+    TEST_RELEASE_MODE=prerelease-only
+    RELEASE_CHANNEL=stable
+    RESOLVED_VERSION=""
+    REQUESTED_VERSION=""
+    if (get_latest_version) >/dev/null 2>&1; then
+        fail "stable channel accepted a prerelease"
+    fi
+}
+
+test_beta_channel_finds_semver_prerelease_when_metadata_is_wrong() {
+    TEST_RELEASE_MODE=stable
+    RELEASE_CHANNEL=beta
+    RESOLVED_VERSION=""
+    REQUESTED_VERSION=""
+    assert_eq "$(get_latest_version)" "v1.0.0-beta.1"
+}
+
+test_auto_channel_prefers_stable_release() {
+    TEST_RELEASE_MODE=stable
+    RELEASE_CHANNEL=auto
+    RESOLVED_VERSION=""
+    REQUESTED_VERSION=""
+    assert_eq "$(get_latest_version)" "v0.9.0"
+}
+
+test_auto_channel_falls_back_to_prerelease() {
+    TEST_RELEASE_MODE=prerelease-only
+    RELEASE_CHANNEL=auto
+    RESOLVED_VERSION=""
+    REQUESTED_VERSION=""
+    assert_eq "$(get_latest_version)" "v1.0.0-beta.1"
+}
+
+test_install_metadata_persists_upgrade_channel() {
+    setup_case metadata-channel
+    CONFIG_DIR="${CASE_DIR}/etc"
+    META_FILE="${CONFIG_DIR}/install.json"
+    RELEASE_CHANNEL=beta
+    RELEASE_CHANNEL_USER_SPECIFIED=false
+    meta_write agent binary v1.0.0-beta.1
+    assert_eq "$(meta_read agent channel)" "beta"
+    RELEASE_CHANNEL=auto
+    prepare_upgrade_release agent
+    assert_eq "$RELEASE_CHANNEL" "beta"
+}
+
+test_current_upgrade_persists_explicit_channel() (
+    setup_case current-channel
+    CONFIG_DIR="${CASE_DIR}/etc"
+    META_FILE="${CONFIG_DIR}/install.json"
+    RELEASE_CHANNEL=auto
+    meta_write agent binary v1.0.0-beta.1
+    RELEASE_CHANNEL=beta
+    refresh_cli_from_release() { :; }
+    upgrade_component agent v1.0.0-beta.1 >/dev/null
+    assert_eq "$(meta_read agent channel)" "beta"
+)
+
 test_successful_upgrade
 test_probe_mismatch_preserves_current_binary
 test_server_candidate_probe_requires_exact_version
@@ -384,4 +513,12 @@ test_docker_start_failure_rolls_back
 test_unhealthy_docker_upgrade_rolls_back
 test_restarting_docker_upgrade_rolls_back
 test_stale_docker_backup_blocks_upgrade
+test_docker_server_compose_mounts_generated_config
+test_stable_channel_ignores_misclassified_prerelease
+test_stable_channel_fails_without_stable_release
+test_beta_channel_finds_semver_prerelease_when_metadata_is_wrong
+test_auto_channel_prefers_stable_release
+test_auto_channel_falls_back_to_prerelease
+test_install_metadata_persists_upgrade_channel
+test_current_upgrade_persists_explicit_channel
 printf 'PASS: install upgrade transaction tests\n'

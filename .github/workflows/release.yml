@@ -255,8 +255,10 @@ jobs:
           {
             echo "list<<EOF"
             echo "$IMAGE:$VERSION"
-            # Only move the :latest tag for stable releases (no SemVer pre-release suffix)
-            if [[ "$VERSION" != *-* ]]; then
+            # Keep separate moving tags so prereleases never replace stable :latest.
+            if [[ "$VERSION" == *-* ]]; then
+              echo "$IMAGE:beta"
+            else
               echo "$IMAGE:latest"
             fi
             echo "EOF"
@@ -305,3 +307,26 @@ jobs:
           files: artifacts/*
           prerelease: ${{ contains(needs.preflight.outputs.version, '-') }}
           make_latest: ${{ !contains(needs.preflight.outputs.version, '-') }}
+
+      - name: Verify public release channel metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        shell: bash
+        run: |
+          tag="v${VERSION}"
+          verified=false
+          for attempt in {1..10}; do
+            actual_prerelease="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" --jq '.prerelease')"
+            latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+            if [[ "$VERSION" == *-* && "$actual_prerelease" == true && "$latest_tag" != "$tag" ]]; then
+              verified=true
+              break
+            fi
+            if [[ "$VERSION" != *-* && "$actual_prerelease" == false && "$latest_tag" == "$tag" ]]; then
+              verified=true
+              break
+            fi
+            sleep 3
+          done
+          [[ "$verified" == true ]]

@@ -37,7 +37,7 @@ CLI_PATH="/usr/local/bin/serverbee"
 LEGACY_BIN_DIR="/usr/local/bin"
 LEGACY_CONFIG_DIR="/etc/serverbee"
 LEGACY_DATA_DIR="/var/lib/serverbee"
-DOCS_URL="https://server-bee-docs.vercel.app"
+DOCS_URL="https://docs.serverbee.app"
 CADDY_CONFIG_DIR="/etc/caddy"
 CADDYFILE="${CADDY_CONFIG_DIR}/Caddyfile"
 
@@ -61,7 +61,9 @@ UNMANAGED_COMPONENTS=""
 INIT=""
 RESOLVED_VERSION=""
 REQUESTED_VERSION=""
-RELEASE_CHANNEL="${SERVERBEE_CHANNEL:-stable}"
+RELEASE_CHANNEL="${SERVERBEE_CHANNEL:-auto}"
+RELEASE_CHANNEL_USER_SPECIFIED=false
+[ -z "${SERVERBEE_CHANNEL:-}" ] || RELEASE_CHANNEL_USER_SPECIFIED=true
 CLI_REFRESHED=""
 UPGRADE_HEALTH_ATTEMPTS=30
 UPGRADE_STABILITY_CHECKS=10
@@ -165,8 +167,29 @@ sha256_of() {
     fi
 }
 
+has_prompt_input() {
+    [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }
+}
+
 should_prompt() {
-    [ "$YES" != true ] && [ -t 0 ]
+    [ "$YES" != true ] && has_prompt_input
+}
+
+# A piped installer consumes stdin as script input. Read interactive answers
+# from the controlling terminal so `curl ... | sudo sh` can still run the
+# no-argument wizard. Fully parameterized installs never call this helper.
+prompt_read() {
+    local variable_name
+    variable_name="$1"
+    if [ -t 0 ]; then
+        # shellcheck disable=SC2229  # The variable name is intentionally dynamic.
+        read -r "$variable_name"
+    elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
+        # shellcheck disable=SC2229  # The variable name is intentionally dynamic.
+        read -r "$variable_name" < /dev/tty
+    else
+        error "Interactive input requires a terminal. Download the installer and run it directly, or pass all required options with -y."
+    fi
 }
 
 normalize_lang() {
@@ -233,7 +256,7 @@ select_language() {
     echo "  [1] English"
     echo "  [2] 简体中文"
     echo ""
-    printf '%s' "Select language [1/2]: "; read -r choice
+    printf '%s' "Select language [1/2]: "; prompt_read choice
     case "$choice" in
         1|en|EN|English|english) LANG_CODE="en" ;;
         2|zh|ZH|cn|CN|中文) LANG_CODE="zh" ;;
@@ -293,7 +316,7 @@ tr_text() {
         deps_install_confirm) [ "$_z" ] && echo "  现在安装它们？[y/N]: " || echo "  Install them now? [y/N]: " ;;
         docker_continue_confirm) [ "$_z" ] && echo "  仍然继续使用 Docker？[y/N]: " || echo "  Continue with Docker? [y/N]: " ;;
         docker_agent_note)  [ "$_z" ] && echo "  ServerBee Agent 是便携软件:" || echo "  ServerBee Agent is portable software:" ;;
-        docker_agent_note1) [ "$_z" ] && echo "  - 单一二进制，无残留文件" || echo "  - Single binary, no residual files" ;;
+        docker_agent_note1) [ "$_z" ] && echo "  - 单一二进制，配置与运行状态路径明确" || echo "  - Single binary with explicit config and state paths" ;;
         docker_agent_note2) [ "$_z" ] && echo "  - Docker 需 --privileged 才能采集完整指标" || echo "  - Docker requires --privileged for full metrics" ;;
         docker_agent_note3) [ "$_z" ] && echo "  - Web 终端访问的是容器而非宿主机" || echo "  - Web terminal accesses container, not host" ;;
         upgrade_confirm) [ "$_z" ] && echo "确认升级？[y/N]: " || echo "Proceed with upgrade? [y/N]: " ;;
@@ -364,7 +387,7 @@ tr_text() {
         st_port)        [ "$_z" ] && echo "  端口:" || echo "  Port:" ;;
         st_unknown)     [ "$_z" ] && echo "未知" || echo "unknown" ;;
         caps_title)     [ "$_z" ] && echo "Agent 能力开关" || echo "Agent capability toggles" ;;
-        caps_intro)     [ "$_z" ] && echo "选择该 Agent 将向 Server 请求的能力。默认开启项已勾选。" || echo "Pick which capabilities this agent will request from the server. Defaults are already checked." ;;
+        caps_intro)     [ "$_z" ] && echo "选择该 Agent 将在本机启用并上报的能力。默认开启项已勾选。" || echo "Pick which capabilities this agent will enable locally and report. Defaults are already checked." ;;
         caps_legend)    [ "$_z" ] && echo "风险：[low] 可放心保留 · [medium] 需访问外网 · [high] 可远程控制本机" || echo "Risk: [low] safe to leave on · [medium] outbound network · [high] gives remote control over this host" ;;
         caps_hint)      [ "$_z" ] && echo "输入序号切换（如 '8 10'），'a'=全开，'n'=全关，'d' 或 Enter=完成" || echo "Toggle by number(s) (e.g. '8 10'), 'a'=all, 'n'=none, 'd' or Enter=done" ;;
         caps_prompt)    echo "> " ;;
@@ -422,11 +445,11 @@ check_deps() {
     done
     [ -z "$missing" ] && return
 
-    if [ "$YES" = true ] || ! [ -t 0 ]; then
+    if [ "$YES" = true ] || ! has_prompt_input; then
         install_deps $missing
     else
         warn "Missing required tools: $missing"
-        printf '%s' "$(tr_text deps_install_confirm)"; read -r confirm
+        printf '%s' "$(tr_text deps_install_confirm)"; prompt_read confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) install_deps $missing ;;
             *) error "Cannot continue without: $missing" ;;
@@ -624,7 +647,7 @@ parse_args() {
             --email)         EMAIL="$2"; shift 2 ;;
             --lang)          LANG_CODE="$2"; normalize_lang; shift 2 ;;
             --version)       REQUESTED_VERSION="$2"; shift 2 ;;
-            --channel)       RELEASE_CHANNEL="$2"; shift 2 ;;
+            --channel)       RELEASE_CHANNEL="$2"; RELEASE_CHANNEL_USER_SPECIFIED=true; shift 2 ;;
             --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
             --caps)          set_caps_from_cli "$2"; shift 2 ;;
             --purge)         PURGE=true; shift ;;
@@ -677,31 +700,36 @@ get_latest_version() {
         esac
     else
         case "$RELEASE_CHANNEL" in
-            stable)
-                tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-                    | grep '"tag_name"' \
-                    | head -1 \
-                    | sed 's/.*"tag_name": *"//;s/".*//')
-                ;;
-            beta)
+            auto|stable|beta)
                 tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" \
-                    | awk '
-                        /^  \{/ { in_release=1; tag=""; prerelease=0; draft=0 }
+                    | awk -v channel="$RELEASE_CHANNEL" '
+                        BEGIN { fallback="" }
+                        /^  \{/ { in_release=1; tag=""; draft=0 }
                         in_release && /"tag_name":/ {
                             line=$0
                             sub(/^.*"tag_name": *"/, "", line)
                             sub(/".*$/, "", line)
                             tag=line
                         }
-                        in_release && /"prerelease": true/ { prerelease=1 }
                         in_release && /"draft": true/ { draft=1 }
                         in_release && /^  }[,]?$/ {
-                            if (tag != "" && prerelease && !draft) { print tag; exit }
+                            version=tag
+                            sub(/^v/, "", version)
+                            is_prerelease=(version ~ /-/)
+                            if (tag != "" && !draft) {
+                                if (channel == "stable" && !is_prerelease) { print tag; exit }
+                                if (channel == "beta" && is_prerelease) { print tag; exit }
+                                if (channel == "auto") {
+                                    if (!is_prerelease) { selected=1; print tag; exit }
+                                    if (fallback == "") fallback=tag
+                                }
+                            }
                             in_release=0
                         }
+                        END { if (channel == "auto" && !selected && fallback != "") print fallback }
                     ')
                 ;;
-            *) error "Invalid release channel: ${RELEASE_CHANNEL} (expected stable or beta)" ;;
+            *) error "Invalid release channel: ${RELEASE_CHANNEL} (expected auto, stable, or beta)" ;;
         esac
     fi
     [ -z "$tag" ] && error "Failed to get latest version from GitHub"
@@ -940,9 +968,9 @@ check_domain_points_here() {
             error "DNS validation failed for ${domain}. Fix DNS and re-run, or pass --skip-dns-check if you have configured TLS another way."
         fi
         if [ "${LANG_CODE:-en}" = "zh" ]; then
-            printf '%s' "按 Enter 重新校验 DNS..."; read -r _
+            printf '%s' "按 Enter 重新校验 DNS..."; prompt_read _
         else
-            printf '%s' "Press Enter to re-check DNS..."; read -r _
+            printf '%s' "Press Enter to re-check DNS..."; prompt_read _
         fi
     done
 }
@@ -975,6 +1003,7 @@ meta_write() {
     "${component}": {
         "method": "${method}",
         "version": "${version}",
+        "channel": "${RELEASE_CHANNEL}",
         "installed_at": "${timestamp}"
     }
 JSONBLOCK
@@ -1293,7 +1322,7 @@ prompt_agent_capabilities() {
     local cap i mark input tok bad final
     [ "$YES" = true ] && return 0
     [ "$AGENT_CAPS_USER_SPECIFIED" = true ] && return 0
-    [ -t 0 ] || return 0
+    has_prompt_input || return 0
 
     ensure_caps_initialized
     CHECKED=$(printf '%s' "$AGENT_CAPS_SELECTED" | tr ',' ' ')
@@ -1313,7 +1342,7 @@ prompt_agent_capabilities() {
         done
         echo ""
         tr_text caps_hint
-        printf '%s' "$(tr_text caps_prompt)"; read -r input
+        printf '%s' "$(tr_text caps_prompt)"; prompt_read input
         input="$(echo "$input" | xargs || true)"
 
         case "$input" in
@@ -1510,6 +1539,7 @@ Type=simple
 ExecStart=${INSTALL_DIR}/serverbee-server
 WorkingDirectory=${CONFIG_DIR}
 Environment=SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}
+Environment=MALLOC_ARENA_MAX=2
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -1597,7 +1627,7 @@ respawn_delay=5
 # respawn *burst*: more than 5 respawns within 300s and supervise-daemon
 # gives up. NOTE this is weaker than systemd's RestartPreventExitStatus=78
 # (which never auto-restarts on 78 again): the counter resets after a
-# successful run, and a reboot or manual `rc-service restart` starts fresh,
+# successful run, and a reboot or manual rc-service restart starts fresh,
 # so a stale enrollment code can still burn up to 5 registration attempts
 # per restart. Acceptable — it kills the infinite loop, which is the goal.
 respawn_max=5
@@ -1811,9 +1841,11 @@ services:
       - "9527:9527"
     volumes:
       - serverbee-data:/data
+      - ${conf_dir}/server.toml:/etc/serverbee/server.toml:ro
     environment:
       - SERVERBEE_ADMIN__USERNAME=admin
       - SERVERBEE_AUTH__SECURE_COOKIE=false
+      - MALLOC_ARENA_MAX=2
     restart: unless-stopped
     # Alpine BusyBox wget prefers ::1 for localhost, while the server listens on IPv4.
     healthcheck:
@@ -2210,14 +2242,14 @@ cmd_domain() {
     [ "$COMPONENT" = "setup" ] || error "Usage: serverbee domain setup --domain monitor.example.com --email admin@example.com"
 
     if [ -z "$DOMAIN" ]; then
-        if [ "$YES" = true ] || ! [ -t 0 ]; then
+        if [ "$YES" = true ] || ! has_prompt_input; then
             error "--domain is required"
         fi
-        printf '%s' "$(tr_text domain_prompt)"; read -r DOMAIN
+        printf '%s' "$(tr_text domain_prompt)"; prompt_read DOMAIN
     fi
 
-    if [ -z "$EMAIL" ] && [ "$YES" != true ] && [ -t 0 ]; then
-        printf '%s' "$(tr_text email_prompt)"; read -r EMAIL
+    if [ -z "$EMAIL" ] && [ "$YES" != true ] && has_prompt_input; then
+        printf '%s' "$(tr_text email_prompt)"; prompt_read EMAIL
     fi
 
     run_domain_setup_with_plan
@@ -2304,7 +2336,7 @@ confirm_domain_setup_plan() {
         return
     fi
 
-    printf '%s' "$(tr_text start_domain)"; read -r confirm
+    printf '%s' "$(tr_text start_domain)"; prompt_read confirm
     case "$confirm" in
         [yY]|[yY][eE][sS]) ;;
         *) error "Domain setup cancelled." ;;
@@ -2377,7 +2409,7 @@ confirm_install_plan() {
         return
     fi
 
-    printf '%s' "$(tr_text start_install)"; read -r confirm
+    printf '%s' "$(tr_text start_install)"; prompt_read confirm
     case "$confirm" in
         [yY]|[yY][eE][sS]) ;;
         *) error "Installation cancelled." ;;
@@ -2391,7 +2423,7 @@ prompt_install_method() {
         tr_text server_docker_recommended
         tr_text binary_option
         echo ""
-        printf '%s' "$(tr_text select_method)"; read -r choice
+        printf '%s' "$(tr_text select_method)"; prompt_read choice
         case "$choice" in
             1|docker) METHOD="docker" ;;
             2|binary) METHOD="binary" ;;
@@ -2401,7 +2433,7 @@ prompt_install_method() {
         tr_text agent_binary_recommended
         tr_text docker_option
         echo ""
-        printf '%s' "$(tr_text select_method)"; read -r choice
+        printf '%s' "$(tr_text select_method)"; prompt_read choice
         case "$choice" in
             1|binary) METHOD="binary" ;;
             2|docker) METHOD="docker" ;;
@@ -2419,7 +2451,7 @@ cmd_install() {
         tr_text agent_option
         tr_text server_option
         echo ""
-        printf '%s' "$(tr_text select_component)"; read -r choice
+        printf '%s' "$(tr_text select_component)"; prompt_read choice
         case "$choice" in
             1|agent)  COMPONENT="agent" ;;
             2|server) COMPONENT="server" ;;
@@ -2438,7 +2470,7 @@ cmd_install() {
     fi
 
     if [ -z "$METHOD" ]; then
-        if [ -t 0 ]; then
+        if has_prompt_input; then
             prompt_install_method
         else
             METHOD="binary"
@@ -2463,7 +2495,7 @@ cmd_install() {
         tr_text docker_agent_note2
         tr_text docker_agent_note3
         echo ""
-        printf '%s' "$(tr_text docker_continue_confirm)"; read -r confirm
+        printf '%s' "$(tr_text docker_continue_confirm)"; prompt_read confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) METHOD="binary"; info "Switched to binary installation." ;;
@@ -2471,29 +2503,29 @@ cmd_install() {
     fi
 
     if [ "$COMPONENT" = "server" ]; then
-        if [ -z "$DOMAIN" ] && [ "$YES" != true ] && [ -t 0 ]; then
+        if [ -z "$DOMAIN" ] && [ "$YES" != true ] && has_prompt_input; then
             echo ""
-            printf '%s' "$(tr_text configure_domain)"; read -r confirm_domain
+            printf '%s' "$(tr_text configure_domain)"; prompt_read confirm_domain
             case "$confirm_domain" in
                 [yY]*)
-                    printf '%s' "$(tr_text domain_prompt)"; read -r DOMAIN
-                    printf '%s' "$(tr_text email_prompt)"; read -r EMAIL
+                    printf '%s' "$(tr_text domain_prompt)"; prompt_read DOMAIN
+                    printf '%s' "$(tr_text email_prompt)"; prompt_read EMAIL
                     ;;
             esac
         fi
     elif [ "$COMPONENT" = "agent" ]; then
         if [ -z "$SERVER_URL" ] && [ "$YES" != true ]; then
             default_server_url="http://$(get_local_ip):9527"
-            printf '%s' "$(trp server_url_prompt "$default_server_url")"; read -r SERVER_URL
+            printf '%s' "$(trp server_url_prompt "$default_server_url")"; prompt_read SERVER_URL
             SERVER_URL="${SERVER_URL:-$default_server_url}"
         fi
         while [ -z "$SERVER_URL" ]; do
             if [ "$YES" = true ]; then error "--server-url is required for agent installation"; fi
-            printf '%s' "$(trp server_url_prompt "http://$(get_local_ip):9527")"; read -r SERVER_URL
+            printf '%s' "$(trp server_url_prompt "http://$(get_local_ip):9527")"; prompt_read SERVER_URL
         done
         while [ -z "$ENROLLMENT_CODE" ]; do
             if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in the server UI Settings)"; fi
-            printf '%s' "$(tr_text enrollment_prompt)"; read -r ENROLLMENT_CODE
+            printf '%s' "$(tr_text enrollment_prompt)"; prompt_read ENROLLMENT_CODE
         done
         prompt_agent_capabilities
     fi
@@ -2571,7 +2603,7 @@ cmd_uninstall() {
         tr_text opt_agent
         tr_text opt_server
         echo ""
-        printf '%s' "$(tr_text select_component)"; read -r choice
+        printf '%s' "$(tr_text select_component)"; prompt_read choice
         case "$choice" in
             1|agent)  COMPONENT="agent" ;;
             2|server) COMPONENT="server" ;;
@@ -2595,7 +2627,7 @@ cmd_uninstall() {
         if [ "$PURGE" = true ]; then
             purge_note="$(tr_text uninstall_purge_note)"
         fi
-        printf '%s' "$(trp uninstall_confirm "$COMPONENT" "$method" "$purge_note")"; read -r confirm
+        printf '%s' "$(trp uninstall_confirm "$COMPONENT" "$method" "$purge_note")"; prompt_read confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) info "Cancelled."; exit 0 ;;
@@ -2669,6 +2701,7 @@ upgrade_component() {
 
     if [ -n "$current_version" ] && [ "$current_version" = "$latest_version" ]; then
         refresh_cli_from_release "$latest_version"
+        meta_write "$component" "$method" "$current_version"
         info "serverbee-${component} is already up to date (${current_version})"
         return
     fi
@@ -2684,7 +2717,7 @@ upgrade_component() {
     fi
 
     if [ "$YES" != true ]; then
-        printf '%s' "$(tr_text upgrade_confirm)"; read -r confirm
+        printf '%s' "$(tr_text upgrade_confirm)"; prompt_read confirm
         case "$confirm" in
             [yY]|[yY][eE][sS]) ;;
             *) info "Skipped."; return ;;
@@ -2926,11 +2959,19 @@ upgrade_docker() {
     info "serverbee-${component} Docker container remained healthy for ${DOCKER_UPGRADE_STABILITY_CHECKS} seconds."
 }
 
+prepare_upgrade_release() {
+    local component stored_channel
+    component="$1"
+    if [ "$RELEASE_CHANNEL_USER_SPECIFIED" != true ]; then
+        stored_channel=$(meta_read "$component" "channel")
+        RELEASE_CHANNEL="${stored_channel:-auto}"
+    fi
+    RESOLVED_VERSION=""
+}
+
 cmd_upgrade() {
     local latest_version entry comp
     detect_installed
-
-    latest_version=$(get_latest_version)
 
     if [ -n "$COMPONENT" ]; then
         case "$COMPONENT" in
@@ -2940,6 +2981,8 @@ cmd_upgrade() {
         if ! meta_has "$COMPONENT"; then
             error "serverbee-${COMPONENT} is not installed"
         fi
+        prepare_upgrade_release "$COMPONENT"
+        latest_version=$(get_latest_version)
         upgrade_component "$COMPONENT" "$latest_version"
     else
         if [ -z "$MANAGED_COMPONENTS" ]; then
@@ -2947,6 +2990,8 @@ cmd_upgrade() {
         fi
         for entry in $MANAGED_COMPONENTS; do
             comp="${entry%%:*}"
+            prepare_upgrade_release "$comp"
+            latest_version=$(get_latest_version)
             upgrade_component "$comp" "$latest_version"
         done
     fi
@@ -3284,10 +3329,10 @@ cmd_config() {
                 fi
             done
         else
-            if [ -t 0 ]; then
+            if has_prompt_input; then
                 echo ""
                 tr_text restart_apply_q
-                printf '%s' "$(tr_text restart_apply_confirm)"; read -r confirm
+                printf '%s' "$(tr_text restart_apply_confirm)"; prompt_read confirm
                 case "$confirm" in
                     [yY]*)
                         for entry in $MANAGED_COMPONENTS; do
@@ -3504,7 +3549,7 @@ interactive_menu() {
     tr_text domain_menu
     tr_text exit_menu
     echo ""
-    printf '%s' "$(tr_text select_menu)"; read -r choice
+    printf '%s' "$(tr_text select_menu)"; prompt_read choice
     case "$choice" in
         1) COMMAND="install" ;;
         2) COMMAND="uninstall" ;;
@@ -3534,7 +3579,7 @@ interactive_service_menu() {
     tr_text svc_stop
     tr_text svc_restart
     echo ""
-    printf '%s' "$(tr_text svc_select)"; read -r choice
+    printf '%s' "$(tr_text svc_select)"; prompt_read choice
     case "$choice" in
         1) COMMAND="start" ;;
         2) COMMAND="stop" ;;
