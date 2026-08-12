@@ -2659,6 +2659,247 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_e2e_dispatch_file_download_missing_path_returns_error() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let missing_path = root
+            .path()
+            .join("missing.bin")
+            .to_string_lossy()
+            .to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileDownloadStart {
+                    transfer_id: "down-missing".to_string(),
+                    path: missing_path,
+                },
+            )
+            .await;
+            let error = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileDownloadError { transfer_id, .. } if transfer_id == "down-missing")
+            })
+            .await;
+            assert!(matches!(
+                error,
+                AgentMessage::FileDownloadError { error, .. }
+                    if error.contains("Cannot resolve path")
+            ));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_upload_oversize_rejection_allows_retry() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("size-retry.bin");
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        config.file.max_file_size = 1;
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let destination_for_server = destination.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-size".to_string(),
+                    path: destination_for_server.clone(),
+                    size: 2,
+                },
+            )
+            .await;
+            let rejection = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadError { transfer_id, .. } if transfer_id == "up-size")
+            })
+            .await;
+            assert!(matches!(
+                rejection,
+                AgentMessage::FileUploadError { error, .. }
+                    if error.contains("exceeds max_file_size")
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-size".to_string(),
+                    path: destination_for_server,
+                    size: 1,
+                },
+            )
+            .await;
+            let retry = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 0 } if transfer_id == "up-size")
+            })
+            .await;
+            assert!(matches!(
+                retry,
+                AgentMessage::FileUploadAck { offset: 0, .. }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadChunk {
+                    transfer_id: "up-size".to_string(),
+                    offset: 0,
+                    data: "eA==".to_string(),
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 1 } if transfer_id == "up-size")
+            })
+            .await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadEnd {
+                    transfer_id: "up-size".to_string(),
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadComplete { transfer_id } if transfer_id == "up-size")
+            })
+            .await;
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert_eq!(std::fs::read(destination).unwrap(), b"x");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_upload_incomplete_finish_allows_retry() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("finish-retry.bin");
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let destination_for_server = destination.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-finish".to_string(),
+                    path: destination_for_server.clone(),
+                    size: 2,
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 0 } if transfer_id == "up-finish")
+            })
+            .await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadChunk {
+                    transfer_id: "up-finish".to_string(),
+                    offset: 0,
+                    data: "eA==".to_string(),
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 1 } if transfer_id == "up-finish")
+            })
+            .await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadEnd {
+                    transfer_id: "up-finish".to_string(),
+                },
+            )
+            .await;
+            let incomplete = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadError { transfer_id, .. } if transfer_id == "up-finish")
+            })
+            .await;
+            assert!(matches!(
+                incomplete,
+                AgentMessage::FileUploadError { error, .. }
+                    if error.contains("Upload incomplete")
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-finish".to_string(),
+                    path: destination_for_server,
+                    size: 1,
+                },
+            )
+            .await;
+            let retry = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 0 } if transfer_id == "up-finish")
+            })
+            .await;
+            assert!(matches!(
+                retry,
+                AgentMessage::FileUploadAck { offset: 0, .. }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadChunk {
+                    transfer_id: "up-finish".to_string(),
+                    offset: 0,
+                    data: "eQ==".to_string(),
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 1 } if transfer_id == "up-finish")
+            })
+            .await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadEnd {
+                    transfer_id: "up-finish".to_string(),
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadComplete { transfer_id } if transfer_id == "up-finish")
+            })
+            .await;
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert_eq!(std::fs::read(destination).unwrap(), b"y");
+    }
+
+    #[tokio::test]
     async fn test_e2e_dispatch_exec_denied_forwards_capability_denied() {
         // CAP_EXEC revoked: Exec is denied and the CapabilityDenied is pushed
         // onto the cmd_result channel, which the select! loop forwards over the

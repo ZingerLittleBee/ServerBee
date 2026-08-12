@@ -16,6 +16,7 @@
 //!   - Agent `terminal_output` (base64) -> browser `{"type":"output","data":..}`.
 //!   - Browser `{"type":"input"}` -> server `TerminalInput` to agent.
 //!   - Browser `{"type":"resize"}` -> server `TerminalResize` to agent.
+//!   - Malformed text, binary, and ping frames do not interrupt later input.
 //!   - Agent `terminal_error` -> browser `{"type":"error","error":..}`.
 //!   - Capability gate: an agent advertising CAP_DEFAULT (no CAP_TERMINAL bit)
 //!     makes the handshake fail with HTTP 403.
@@ -301,6 +302,83 @@ async fn terminal_ws_relays_session_started_output_and_input_resize() {
     assert_eq!(resize["session_id"], session_id, "TerminalResize must carry the session_id");
     assert_eq!(resize["cols"], 120, "TerminalResize cols must pass through");
     assert_eq!(resize["rows"], 40, "TerminalResize rows must pass through");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_ws_ignores_non_command_frames_and_keeps_relaying_input() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "term-frame-tolerance-key").await;
+
+    let (server_id, sink, reader) = bring_up_agent(
+        &client,
+        &base_url,
+        CAP_DEFAULT | CAP_TERMINAL,
+        "term-frame-tolerance-hs",
+    )
+    .await;
+
+    let _agent_sink = sink;
+    let agent_task = {
+        let mut reader = reader;
+        tokio::spawn(async move {
+            let mut input = None;
+            loop {
+                let message = recv_agent_text(&mut reader).await;
+                match message["type"].as_str() {
+                    Some("terminal_input") => input = Some(message),
+                    Some("terminal_close") => return input,
+                    other if is_first_connect_noise(other) => {}
+                    _ => {}
+                }
+            }
+        })
+    };
+
+    let request = terminal_ws_request_with_key(&base_url, &server_id, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal WebSocket connect should succeed");
+    let (mut browser_sink, mut browser_reader): (BrowserSink, BrowserReader) = browser_ws.split();
+    let session = recv_browser_until(&mut browser_reader, "session").await;
+    let session_id = session["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    browser_sink
+        .send(tungstenite::Message::Text("{".into()))
+        .await
+        .expect("send malformed text");
+    browser_sink
+        .send(tungstenite::Message::Binary(vec![0, 1, 2].into()))
+        .await
+        .expect("send binary frame");
+    browser_sink
+        .send(tungstenite::Message::Ping(Vec::new().into()))
+        .await
+        .expect("send ping frame");
+    browser_sink
+        .send(tungstenite::Message::Text(
+            json!({ "type": "input", "data": "d2hvYW1pCg==" })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send valid input after ignored frames");
+    browser_sink
+        .send(tungstenite::Message::Close(None))
+        .await
+        .expect("close browser ws");
+
+    let input = tokio::time::timeout(Duration::from_secs(5), agent_task)
+        .await
+        .expect("agent responder timed out")
+        .expect("agent responder panicked")
+        .expect("valid input should reach the agent after ignored frames");
+    assert_eq!(input["session_id"], session_id);
+    assert_eq!(input["data"], "d2hvYW1pCg==");
 }
 
 // ── Agent terminal_error → browser error frame ─────────────────────────────
