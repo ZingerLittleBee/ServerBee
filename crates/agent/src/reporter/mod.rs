@@ -49,14 +49,6 @@ impl Reporter {
         }
     }
 
-    /// Convenience wrapper around [`Self::run_with_external`] for tests
-    /// and historical callers that don't need a security stream.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub async fn run(&mut self) {
-        self.run_with_external(None).await
-    }
-
     /// Run with an optional external agent-message stream attached
     /// (currently sourced from [`crate::security::SecurityManager`]).
     pub async fn run_with_external(
