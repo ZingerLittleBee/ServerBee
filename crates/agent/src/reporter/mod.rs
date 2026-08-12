@@ -925,6 +925,88 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[tokio::test]
+    async fn test_spawn_external_ip_refresh_emits_ip_changed_on_delta() {
+        // External discovery fails fast (closed local port), so the merged
+        // result comes purely from the interface scan. It differs from the
+        // stale baseline, so an IpChanged must reach cmd_result_tx carrying
+        // the derived primaries plus the untouched interface list.
+        let interfaces = vec![
+            NetworkInterface {
+                name: "docker0".to_string(),
+                ipv4: vec!["172.17.0.1".to_string()],
+                ipv6: vec![],
+            },
+            NetworkInterface {
+                name: "eth0".to_string(),
+                ipv4: vec!["203.0.113.42".to_string()],
+                ipv6: vec!["2001:db8::1".to_string()],
+            },
+        ];
+        let (tx, mut rx) = mpsc::channel(4);
+        let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
+
+        spawn_external_ip_refresh(
+            vec!["http://127.0.0.1:1/".to_string()],
+            interfaces.clone(),
+            Some("198.51.100.7".to_string()),
+            None,
+            tx,
+            firewall_manager,
+        );
+
+        let msg = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("IpChanged should be emitted well before the timeout")
+            .expect("cmd_result channel should stay open");
+        match msg {
+            AgentMessage::IpChanged {
+                ipv4,
+                ipv6,
+                interfaces: reported,
+            } => {
+                assert_eq!(ipv4.as_deref(), Some("203.0.113.42"));
+                assert_eq!(ipv6.as_deref(), Some("2001:db8::1"));
+                assert_eq!(reported.len(), 2);
+                assert_eq!(reported[0].name, "docker0");
+                assert_eq!(reported[1].name, "eth0");
+            }
+            other => panic!("expected IpChanged, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_spawn_external_ip_refresh_stays_silent_when_unchanged() {
+        // Same inputs, but the baseline already matches what the interfaces
+        // derive: the refresh must return early without emitting anything.
+        let interfaces = vec![NetworkInterface {
+            name: "eth0".to_string(),
+            ipv4: vec!["203.0.113.42".to_string()],
+            ipv6: vec!["2001:db8::1".to_string()],
+        }];
+        let (tx, mut rx) = mpsc::channel(4);
+        let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
+
+        spawn_external_ip_refresh(
+            Vec::new(),
+            interfaces,
+            Some("203.0.113.42".to_string()),
+            Some("2001:db8::1".to_string()),
+            tx,
+            firewall_manager,
+        );
+
+        // The task returns early and drops its sender, so the receiver closes
+        // instead of yielding a message.
+        let received = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("the refresh task should finish and drop its sender");
+        assert!(
+            received.is_none(),
+            "an unchanged refresh must not emit IpChanged, got {received:?}"
+        );
+    }
+
     // ----------------------------------------------------------------------
     // Pure-helper coverage (no I/O, no managers).
     // ----------------------------------------------------------------------
