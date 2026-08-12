@@ -321,7 +321,35 @@ async fn run_scan_pipeline(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::security::ssh_parser::{AuthMethodHint, AuthOutcome};
     use serverbee_common::constants::CAP_DEFAULT;
+
+    fn login_attempt(username: &str, source_ip: &str) -> AuthAttempt {
+        AuthAttempt {
+            outcome: AuthOutcome::Success {
+                auth_method: AuthMethodHint::Publickey,
+            },
+            username: username.to_string(),
+            source_ip: source_ip.to_string(),
+            source_port: Some(22),
+        }
+    }
+
+    fn failed_attempt(username: &str, source_ip: &str, invalid_user: bool) -> AuthAttempt {
+        AuthAttempt {
+            outcome: AuthOutcome::Failure { invalid_user },
+            username: username.to_string(),
+            source_ip: source_ip.to_string(),
+            source_port: Some(22),
+        }
+    }
+
+    async fn recv_security_event(rx: &mut mpsc::Receiver<AgentMessage>) -> SecurityEventPayload {
+        match rx.recv().await {
+            Some(AgentMessage::SecurityEvent(payload)) => payload,
+            other => panic!("expected SecurityEvent, got {other:?}"),
+        }
+    }
 
     #[tokio::test]
     async fn start_returns_empty_when_capability_missing() {
@@ -341,6 +369,171 @@ mod tests {
         let (tx, _rx) = mpsc::channel(8);
         let mgr = SecurityManager::start(cfg, CAP_DEFAULT, tx).await.unwrap();
         assert_eq!(mgr.handle_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn ssh_pipeline_marks_only_the_first_login_from_an_identity_as_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_seen = Arc::new(Mutex::new(FirstSeenStore::open(
+            dir.path().join("first_seen.json"),
+            FIRST_SEEN_CAP,
+        )));
+        let (attempt_tx, attempt_rx) = mpsc::channel(4);
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+        let task = tokio::spawn(run_ssh_pipeline(
+            attempt_rx,
+            crate::config::SshDetectorConfig::default(),
+            first_seen,
+            event_tx,
+        ));
+
+        attempt_tx
+            .send(login_attempt("root", "203.0.113.10"))
+            .await
+            .unwrap();
+        let first = recv_security_event(&mut event_rx).await;
+        assert_eq!(first.event_type, SecurityEventType::SshLogin);
+        assert_eq!(first.severity, Severity::Medium);
+        assert!(first.first_seen);
+        assert_eq!(first.username.as_deref(), Some("root"));
+        assert_eq!(first.source_ip, "203.0.113.10");
+        assert_eq!(first.source_port, Some(22));
+        assert!(matches!(
+            first.evidence,
+            SecurityEvidence::SshLogin {
+                auth_method: SshAuthMethod::Publickey
+            }
+        ));
+
+        attempt_tx
+            .send(login_attempt("root", "203.0.113.10"))
+            .await
+            .unwrap();
+        let repeated = recv_security_event(&mut event_rx).await;
+        assert_eq!(repeated.severity, Severity::Info);
+        assert!(!repeated.first_seen);
+
+        drop(attempt_tx);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn ssh_pipeline_emits_brute_force_evidence_at_the_configured_threshold() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_seen = Arc::new(Mutex::new(FirstSeenStore::open(
+            dir.path().join("first_seen.json"),
+            FIRST_SEEN_CAP,
+        )));
+        let (attempt_tx, attempt_rx) = mpsc::channel(4);
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+        let task = tokio::spawn(run_ssh_pipeline(
+            attempt_rx,
+            crate::config::SshDetectorConfig {
+                window_seconds: 30,
+                failed_threshold: 2,
+            },
+            first_seen,
+            event_tx,
+        ));
+
+        attempt_tx
+            .send(failed_attempt("root", "198.51.100.20", false))
+            .await
+            .unwrap();
+        attempt_tx
+            .send(failed_attempt("admin", "198.51.100.20", true))
+            .await
+            .unwrap();
+
+        let payload = recv_security_event(&mut event_rx).await;
+        assert_eq!(payload.event_type, SecurityEventType::SshBruteForce);
+        assert_eq!(payload.severity, Severity::High);
+        assert_eq!(payload.source_ip, "198.51.100.20");
+        assert_eq!(payload.source_port, None);
+        assert!(!payload.first_seen);
+        assert!(payload.started_at <= payload.ended_at);
+        match payload.evidence {
+            SecurityEvidence::SshBruteForce {
+                failed_count,
+                distinct_users,
+                invalid_user_count,
+                window_seconds,
+                threshold,
+                ..
+            } => {
+                assert_eq!(failed_count, 2);
+                assert_eq!(distinct_users, 2);
+                assert_eq!(invalid_user_count, 1);
+                assert_eq!(window_seconds, 30);
+                assert_eq!(threshold, 2);
+            }
+            other => panic!("expected SshBruteForce evidence, got {other:?}"),
+        }
+
+        drop(attempt_tx);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn scan_pipeline_emits_port_scan_and_records_blocked_attempts() {
+        let (conntrack_tx, conntrack_rx) = mpsc::channel(4);
+        let (blocked_tx, blocked_rx) = mpsc::channel(1);
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+
+        blocked_tx.send("192.0.2.44".to_string()).await.unwrap();
+        let task = tokio::spawn(run_scan_pipeline(
+            conntrack_rx,
+            blocked_rx,
+            crate::config::PortScanConfig {
+                enabled: true,
+                window_seconds: 15,
+                distinct_port_threshold: 2,
+            },
+            event_tx,
+        ));
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while blocked_tx.capacity() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        for dst_port in [22, 443] {
+            conntrack_tx
+                .send(ConntrackEvent {
+                    source_ip: "192.0.2.44".to_string(),
+                    dst_port,
+                })
+                .await
+                .unwrap();
+        }
+
+        let payload = recv_security_event(&mut event_rx).await;
+        assert_eq!(payload.event_type, SecurityEventType::PortScan);
+        assert_eq!(payload.severity, Severity::High);
+        assert_eq!(payload.detector_source, DetectorSource::Conntrack);
+        assert_eq!(payload.source_ip, "192.0.2.44");
+        match payload.evidence {
+            SecurityEvidence::PortScan {
+                distinct_ports,
+                total_attempts,
+                blocked_count,
+                window_seconds,
+                threshold,
+                ..
+            } => {
+                assert_eq!(distinct_ports, 2);
+                assert_eq!(total_attempts, 2);
+                assert_eq!(blocked_count, 1);
+                assert_eq!(window_seconds, 15);
+                assert_eq!(threshold, 2);
+            }
+            other => panic!("expected PortScan evidence, got {other:?}"),
+        }
+
+        task.abort();
+        task.await.unwrap_err();
     }
 
     #[cfg(not(target_os = "linux"))]
