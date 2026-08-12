@@ -2176,6 +2176,489 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_e2e_dispatch_file_write_then_read_round_trips_content() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("round-trip.txt");
+        std::fs::write(&path, b"before").unwrap();
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let path_for_server = path.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileWrite {
+                    msg_id: "fw-1".to_string(),
+                    path: path_for_server.clone(),
+                    content: "aGVsbG8gZnJvbSB3cw==".to_string(),
+                },
+            )
+            .await;
+            let write_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileOpResult { msg_id, .. } if msg_id == "fw-1")
+            })
+            .await;
+            assert!(matches!(
+                write_reply,
+                AgentMessage::FileOpResult {
+                    success: true,
+                    error: None,
+                    ..
+                }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileRead {
+                    msg_id: "fr-1".to_string(),
+                    path: path_for_server,
+                    max_size: 1024,
+                },
+            )
+            .await;
+            let read_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileReadResult { msg_id, .. } if msg_id == "fr-1")
+            })
+            .await;
+            assert!(matches!(
+                read_reply,
+                AgentMessage::FileReadResult {
+                    content: Some(content),
+                    error: None,
+                    ..
+                } if content == "aGVsbG8gZnJvbSB3cw=="
+            ));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert_eq!(std::fs::read(path).unwrap(), b"hello from ws");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_read_rejects_path_outside_root() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_path = outside.path().join("secret.txt");
+        std::fs::write(&outside_path, b"secret").unwrap();
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let outside_path = outside_path.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileRead {
+                    msg_id: "fr-outside".to_string(),
+                    path: outside_path,
+                    max_size: 1024,
+                },
+            )
+            .await;
+            let reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileReadResult { msg_id, .. } if msg_id == "fr-outside")
+            })
+            .await;
+            assert!(matches!(
+                reply,
+                AgentMessage::FileReadResult {
+                    content: None,
+                    error: Some(error),
+                    ..
+                } if error.contains("outside allowed root paths")
+            ));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_upload_persists_complete_payload() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("uploaded.bin");
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let destination_for_server = destination.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-complete".to_string(),
+                    path: destination_for_server,
+                    size: 8,
+                },
+            )
+            .await;
+            let initial_ack = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 0 } if transfer_id == "up-complete")
+            })
+            .await;
+            assert!(matches!(
+                initial_ack,
+                AgentMessage::FileUploadAck { offset: 0, .. }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadChunk {
+                    transfer_id: "up-complete".to_string(),
+                    offset: 0,
+                    data: "dXBsb2FkZWQ=".to_string(),
+                },
+            )
+            .await;
+            let chunk_ack = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 8 } if transfer_id == "up-complete")
+            })
+            .await;
+            assert!(matches!(
+                chunk_ack,
+                AgentMessage::FileUploadAck { offset: 8, .. }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadEnd {
+                    transfer_id: "up-complete".to_string(),
+                },
+            )
+            .await;
+            let complete = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadComplete { transfer_id } if transfer_id == "up-complete")
+            })
+            .await;
+            assert!(matches!(complete, AgentMessage::FileUploadComplete { .. }));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert_eq!(std::fs::read(destination).unwrap(), b"uploaded");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_crud_lifecycle() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.txt");
+        let destination = root.path().join("destination.txt");
+        let directory = root.path().join("nested");
+        std::fs::write(&source, b"move me").unwrap();
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let root_path = root.path().to_string_lossy().to_string();
+        let source_path = source.to_string_lossy().to_string();
+        let destination_path = destination.to_string_lossy().to_string();
+        let directory_path = directory.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileMkdir {
+                    msg_id: "mkdir-1".to_string(),
+                    path: directory_path,
+                },
+            )
+            .await;
+            let mkdir_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileOpResult { msg_id, .. } if msg_id == "mkdir-1")
+            })
+            .await;
+            assert!(matches!(
+                mkdir_reply,
+                AgentMessage::FileOpResult {
+                    success: true,
+                    error: None,
+                    ..
+                }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileList {
+                    msg_id: "list-1".to_string(),
+                    path: root_path,
+                },
+            )
+            .await;
+            let list_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileListResult { msg_id, .. } if msg_id == "list-1")
+            })
+            .await;
+            match list_reply {
+                AgentMessage::FileListResult {
+                    entries,
+                    error: None,
+                    ..
+                } => {
+                    assert!(entries.iter().any(|entry| entry.name == "nested"));
+                    assert!(entries.iter().any(|entry| entry.name == "source.txt"));
+                }
+                other => panic!("expected successful FileListResult, got {other:?}"),
+            }
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileStat {
+                    msg_id: "stat-1".to_string(),
+                    path: source_path.clone(),
+                },
+            )
+            .await;
+            let stat_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileStatResult { msg_id, .. } if msg_id == "stat-1")
+            })
+            .await;
+            assert!(matches!(
+                stat_reply,
+                AgentMessage::FileStatResult {
+                    entry: Some(entry),
+                    error: None,
+                    ..
+                } if entry.name == "source.txt" && entry.size == 7
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileMove {
+                    msg_id: "move-1".to_string(),
+                    from: source_path,
+                    to: destination_path.clone(),
+                },
+            )
+            .await;
+            let move_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileOpResult { msg_id, .. } if msg_id == "move-1")
+            })
+            .await;
+            assert!(matches!(
+                move_reply,
+                AgentMessage::FileOpResult { success: true, .. }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileDelete {
+                    msg_id: "delete-1".to_string(),
+                    path: destination_path,
+                    recursive: false,
+                },
+            )
+            .await;
+            let delete_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileOpResult { msg_id, .. } if msg_id == "delete-1")
+            })
+            .await;
+            assert!(matches!(
+                delete_reply,
+                AgentMessage::FileOpResult { success: true, .. }
+            ));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert!(directory.is_dir());
+        assert!(!source.exists());
+        assert!(!destination.exists());
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_upload_bad_offset_aborts_and_allows_retry() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("retry.bin");
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let destination_for_server = destination.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-retry".to_string(),
+                    path: destination_for_server.clone(),
+                    size: 1,
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 0 } if transfer_id == "up-retry")
+            })
+            .await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadChunk {
+                    transfer_id: "up-retry".to_string(),
+                    offset: 1,
+                    data: "eA==".to_string(),
+                },
+            )
+            .await;
+            let error_reply = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadError { transfer_id, .. } if transfer_id == "up-retry")
+            })
+            .await;
+            assert!(matches!(
+                error_reply,
+                AgentMessage::FileUploadError { error, .. }
+                    if error.contains("Unexpected upload offset")
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadStart {
+                    transfer_id: "up-retry".to_string(),
+                    path: destination_for_server,
+                    size: 1,
+                },
+            )
+            .await;
+            let retry_ack = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 0 } if transfer_id == "up-retry")
+            })
+            .await;
+            assert!(matches!(
+                retry_ack,
+                AgentMessage::FileUploadAck { offset: 0, .. }
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadChunk {
+                    transfer_id: "up-retry".to_string(),
+                    offset: 0,
+                    data: "eA==".to_string(),
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadAck { transfer_id, offset: 1 } if transfer_id == "up-retry")
+            })
+            .await;
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileUploadEnd {
+                    transfer_id: "up-retry".to_string(),
+                },
+            )
+            .await;
+            let _ = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileUploadComplete { transfer_id } if transfer_id == "up-retry")
+            })
+            .await;
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert_eq!(std::fs::read(destination).unwrap(), b"x");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_dispatch_file_download_streams_complete_payload() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("download.bin");
+        std::fs::write(&path, b"download").unwrap();
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let path = path.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileDownloadStart {
+                    transfer_id: "down-1".to_string(),
+                    path,
+                },
+            )
+            .await;
+            let ready = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileDownloadReady { transfer_id, .. } if transfer_id == "down-1")
+            })
+            .await;
+            assert!(matches!(
+                ready,
+                AgentMessage::FileDownloadReady { size: 8, .. }
+            ));
+
+            let chunk = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileDownloadChunk { transfer_id, .. } if transfer_id == "down-1")
+            })
+            .await;
+            assert!(matches!(
+                chunk,
+                AgentMessage::FileDownloadChunk {
+                    offset: 0,
+                    data,
+                    ..
+                } if data == "ZG93bmxvYWQ="
+            ));
+
+            let end = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileDownloadEnd { transfer_id } if transfer_id == "down-1")
+            })
+            .await;
+            assert!(matches!(end, AgentMessage::FileDownloadEnd { .. }));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+    }
+
+    #[tokio::test]
     async fn test_e2e_dispatch_exec_denied_forwards_capability_denied() {
         // CAP_EXEC revoked: Exec is denied and the CapabilityDenied is pushed
         // onto the cmd_result channel, which the select! loop forwards over the
