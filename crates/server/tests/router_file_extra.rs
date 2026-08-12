@@ -16,6 +16,8 @@
 //!     the agent rejecting the upload start with FileUploadError,
 //!   * upload chunk-phase failures (bad ack offset, agent error) and an error
 //!     reported at FileUploadEnd, each asserted through `mark_failed`,
+//!   * a mid-transfer agent disconnect failing fast (pending slots are dropped
+//!     by disconnect cleanup instead of waiting out the ack timeout),
 //!   * the streaming max-upload-size guard (needs a smaller configured limit).
 //!
 //! Tests whose HTTP handler blocks on an agent reply while a spawned responder
@@ -1277,6 +1279,79 @@ async fn test_upload_end_reports_error_is_400() {
         transfer_status_for_path(&client, &base_url, "/tmp/finalize.txt").await,
         "failed",
         "completion error must mark the transfer failed"
+    );
+}
+
+// ===========================================================================
+// upload: the agent's WebSocket drops mid-transfer. Disconnect cleanup fails
+// the pending ack slot immediately, so the upload errors out fast instead of
+// hanging until the 30s ack timeout.
+// ===========================================================================
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_upload_agent_disconnect_fails_fast() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut sink, mut reader) =
+        connect_agent_with_caps(&base_url, &token, CAP_DEFAULT | CAP_FILE).await;
+
+    let agent_task = tokio::spawn(async move {
+        loop {
+            let msg = recv_agent_text(&mut reader).await;
+            match msg["type"].as_str() {
+                Some("file_upload_start") => {
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_ack(&mut sink, transfer_id, 0).await;
+                }
+                Some("file_upload_chunk") => {
+                    // Drop the whole connection instead of acking: returning
+                    // moves sink and reader out of scope, closing the socket
+                    // while the server is awaiting the chunk ack.
+                    return;
+                }
+                other if is_first_connect_noise(other) => {}
+                Some(other) => panic!("unexpected agent command: {other}"),
+                None => {}
+            }
+        }
+    });
+
+    let form = reqwest::multipart::Form::new()
+        .text("path", "/tmp/vanish.txt")
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"doomed payload".to_vec()).file_name("vanish.txt"),
+        );
+
+    let started = std::time::Instant::now();
+    let resp = client
+        .post(format!("{base_url}/api/files/{server_id}/upload"))
+        .multipart(form)
+        .send()
+        .await
+        .expect("upload request failed");
+    let elapsed = started.elapsed();
+
+    assert_eq!(resp.status(), 500, "mid-transfer disconnect should be 500");
+    let body: Value = resp.json().await.expect("error body");
+    let message = body["error"]["message"].as_str().expect("error message");
+    assert!(
+        message.contains("Agent disconnected during upload"),
+        "the error must name the disconnect, not a timeout: {message}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(10),
+        "disconnect must fail fast, took {elapsed:?}"
+    );
+
+    agent_task.await.expect("agent responder failed");
+    assert_eq!(
+        transfer_status_for_path(&client, &base_url, "/tmp/vanish.txt").await,
+        "failed",
+        "mid-transfer disconnect must mark the transfer failed"
     );
 }
 

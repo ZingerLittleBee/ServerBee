@@ -915,7 +915,7 @@ async fn upload_file(
     let init_ack_key = AgentManager::upload_ack_key(&transfer_id);
     let init_ack_rx = state
         .agent_manager
-        .register_pending_request(init_ack_key.clone());
+        .register_pending_request(&server_id, init_ack_key.clone());
 
     sender
         .send(ServerMessage::FileUploadStart {
@@ -943,12 +943,21 @@ async fn upload_file(
             let _ = tokio::fs::remove_file(&temp_upload).await;
             return Err(agent_error(error));
         }
-        Ok(Ok(_)) | Ok(Err(_)) => {
+        Ok(Ok(_)) => {
             state
                 .file_transfers
                 .mark_failed(&transfer_id, "Agent rejected upload".into());
             let _ = tokio::fs::remove_file(&temp_upload).await;
             return Err(AppError::Internal("Agent rejected upload".into()));
+        }
+        Ok(Err(_)) => {
+            state
+                .file_transfers
+                .mark_failed(&transfer_id, "Agent disconnected".into());
+            let _ = tokio::fs::remove_file(&temp_upload).await;
+            return Err(AppError::Internal(
+                "Agent disconnected during upload".into(),
+            ));
         }
         Err(_) => {
             state.agent_manager.cancel_pending_request(&init_ack_key);
@@ -994,7 +1003,7 @@ async fn upload_file(
         let ack_msg_id = AgentManager::upload_ack_key(&transfer_id);
         let ack_rx = state
             .agent_manager
-            .register_pending_request(ack_msg_id.clone());
+            .register_pending_request(&server_id, ack_msg_id.clone());
 
         sender
             .send(ServerMessage::FileUploadChunk {
@@ -1074,7 +1083,7 @@ async fn upload_file(
     let complete_msg_id = AgentManager::upload_complete_key(&transfer_id);
     let complete_rx = state
         .agent_manager
-        .register_pending_request(complete_msg_id.clone());
+        .register_pending_request(&server_id, complete_msg_id.clone());
 
     sender
         .send(ServerMessage::FileUploadEnd {
