@@ -3235,6 +3235,136 @@ mod tests {
         let pong = drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
         assert!(matches!(pong, AgentMessage::Pong));
     }
+
+    // ----------------------------------------------------------------------
+    // perform_upgrade / rollback_and_restart_candidate — the guard rails that
+    // reject a request before any network or filesystem work happens.
+    // ----------------------------------------------------------------------
+
+    /// Run `perform_upgrade` against a config that must be rejected locally,
+    /// and return the error text carried by the emitted `UpgradeResult`.
+    async fn upgrade_rejection_reason(version: &str, upgrade_cfg: UpgradeConfig) -> String {
+        let (tx, mut rx) = mpsc::channel::<AgentMessage>(4);
+        let result = perform_upgrade(version, &upgrade_cfg, Some("job-x".to_string()), tx).await;
+        assert!(result.is_err(), "upgrade should have been rejected");
+
+        match rx.recv().await.expect("progress message expected") {
+            AgentMessage::UpgradeProgress { stage, .. } => {
+                assert_eq!(stage, UpgradeStage::Downloading);
+            }
+            other => panic!("expected UpgradeProgress, got {other:?}"),
+        }
+        match rx.recv().await.expect("failure message expected") {
+            AgentMessage::UpgradeResult {
+                job_id,
+                target_version,
+                stage,
+                error,
+                ..
+            } => {
+                assert_eq!(job_id, Some("job-x".to_string()));
+                assert_eq!(target_version, version);
+                assert_eq!(stage, UpgradeStage::Downloading);
+                error
+            }
+            other => panic!("expected UpgradeResult, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_perform_upgrade_rejects_downgrade_and_bad_source() {
+        // Same version as the running agent: not strictly greater, so refused.
+        let error = upgrade_rejection_reason(
+            serverbee_common::constants::VERSION,
+            UpgradeConfig::default(),
+        )
+        .await;
+        assert!(
+            error.contains("anti-downgrade"),
+            "unexpected error: {error}"
+        );
+
+        // A malformed certificate pin is rejected before any client is built.
+        let error = upgrade_rejection_reason(
+            "999.0.0",
+            UpgradeConfig {
+                release_cert_spki_sha256: "not-a-valid-pin".to_string(),
+                ..UpgradeConfig::default()
+            },
+        )
+        .await;
+        assert!(
+            error.contains("invalid SPKI pin"),
+            "unexpected error: {error}"
+        );
+
+        // A plaintext release source never reaches the network.
+        let error = upgrade_rejection_reason(
+            "999.0.0",
+            UpgradeConfig {
+                release_repo_url: "http://example.invalid/releases".to_string(),
+                ..UpgradeConfig::default()
+            },
+        )
+        .await;
+        assert!(error.contains("derive url"), "unexpected error: {error}");
+        assert!(error.contains("https"), "unexpected error: {error}");
+    }
+
+    #[tokio::test]
+    async fn test_rollback_and_restart_candidate_reports_failure_when_rollback_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current_exe = tmp.path().join("agent");
+        std::fs::write(&current_exe, "candidate").unwrap();
+        // No backup file exists, so the rollback itself fails and the function
+        // reports instead of restarting the process.
+        let backup_path = tmp.path().join("agent.bak");
+
+        let (tx, mut rx) = mpsc::channel::<AgentMessage>(4);
+        let result = rollback_and_restart_candidate(
+            &current_exe,
+            &backup_path,
+            &tx,
+            Some("job-rollback".to_string()),
+            "2.0.0",
+            "candidate missed the 90s startup health window".to_string(),
+        )
+        .await;
+        let error = result.expect_err("rollback without a backup must fail");
+        assert!(
+            error.to_string().contains("rollback also failed"),
+            "unexpected error: {error}"
+        );
+
+        match rx.recv().await.expect("failure message expected") {
+            AgentMessage::UpgradeResult {
+                job_id,
+                target_version,
+                stage,
+                error,
+                backup_path: reported_backup,
+                ..
+            } => {
+                assert_eq!(job_id, Some("job-rollback".to_string()));
+                assert_eq!(target_version, "2.0.0");
+                assert_eq!(stage, UpgradeStage::Restarting);
+                assert!(
+                    error.contains("startup health window"),
+                    "the original reason should be preserved, got: {error}"
+                );
+                assert!(
+                    error.contains("upgrade backup is missing"),
+                    "the rollback failure should be surfaced, got: {error}"
+                );
+                assert_eq!(
+                    reported_backup,
+                    Some(backup_path.display().to_string()),
+                    "operators need the backup path to recover by hand"
+                );
+            }
+            other => panic!("expected UpgradeResult, got {other:?}"),
+        }
+    }
 }
 
 /// Fetch external IP address from a single remote service.
