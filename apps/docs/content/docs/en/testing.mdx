@@ -10,9 +10,9 @@ ServerBee treats reliability as a feature. The codebase ships with a large, fast
 
 | Area | Tests | What it covers |
 |------|-------|----------------|
-| `common` crate | 148 | Protocol messages, capability bitmask, SSRF guard, shared types |
-| `agent` crate | 865 | Collectors, reporter WebSocket loop, pinger, file manager, security detectors, firewall, IP quality |
-| `server` crate | 2,188 | REST handlers, WebSocket handlers, services, background tasks, migrations |
+| `common` crate | 149 | Protocol messages, capability bitmask, SSRF guard, shared types |
+| `agent` crate | 891 | Collectors, reporter WebSocket loop, pinger, file manager, security detectors, firewall, IP quality |
+| `server` crate | 2,223 | REST handlers, WebSocket handlers, services, background tasks, migrations |
 | Frontend (`apps/web`) | 600+ | Hooks, components, stores, and utilities (Vitest) |
 
 That is **3,800+ automated tests** in total, all green on every CI run.
@@ -50,10 +50,10 @@ Coverage is measured with [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-ll
 | Crate | Region | Line |
 |-------|--------|------|
 | `common` | 98% | 97% |
-| `agent` | 90% | 89% |
+| `agent` | 90% | 90% |
 | `server` | 92% | 93% |
 
-The remaining uncovered lines are I/O paths that only execute in a live environment — a Docker daemon, Linux kernel facilities (nftables / conntrack / journald), raw ICMP sockets, a PTY, or external services (OAuth, SMTP, APNs). These are exercised through the integration harness and the manual end-to-end checklists in `tests/` rather than unit tests.
+Overall Rust region coverage is above 91%. The largest remaining gaps are concentrated in process startup and I/O paths that need a live Docker daemon, Linux kernel facilities (nftables / conntrack / journald), raw ICMP sockets, a PTY, or external services (OAuth, SMTP, APNs). Those environment-dependent paths are exercised through the integration harness and the manual end-to-end checklists in `tests/` where practical.
 
 ## Running tests locally
 

@@ -10,9 +10,9 @@ ServerBee 把可靠性当作一项功能来对待。代码库自带一套规模�
 
 | 范围 | 测试数 | 覆盖内容 |
 |------|--------|----------|
-| `common` crate | 148 | 协议消息、能力位掩码、SSRF guard、共享类型 |
-| `agent` crate | 865 | 采集器、reporter WebSocket 循环、pinger、文件管理、安全检测器、防火墙、IP 质量 |
-| `server` crate | 2,188 | REST 处理器、WebSocket 处理器、服务层、后台任务、数据库迁移 |
+| `common` crate | 149 | 协议消息、能力位掩码、SSRF guard、共享类型 |
+| `agent` crate | 891 | 采集器、reporter WebSocket 循环、pinger、文件管理、安全检测器、防火墙、IP 质量 |
+| `server` crate | 2,223 | REST 处理器、WebSocket 处理器、服务层、后台任务、数据库迁移 |
 | 前端(`apps/web`) | 600+ | Hooks、组件、状态 store、工具函数(Vitest) |
 
 合计 **3800+ 自动化测试**,每次 CI 运行全部通过。
@@ -50,10 +50,10 @@ React 应用由 [Vitest](https://vitest.dev) 覆盖,分布在 89 个测试文件
 | Crate | Region | Line |
 |-------|--------|------|
 | `common` | 98% | 97% |
-| `agent` | 90% | 89% |
+| `agent` | 90% | 90% |
 | `server` | 92% | 93% |
 
-剩余未覆盖的代码是只能在真实环境中执行的 I/O 路径 —— Docker 守护进程、Linux 内核设施(nftables / conntrack / journald)、原始 ICMP 套接字、PTY,或外部服务(OAuth、SMTP、APNs)。这些路径通过集成测试桩以及 `tests/` 目录下的手动端到端检查清单来演练,而非单元测试。
+Rust 总体区域覆盖率超过 91%。当前较大的剩余缺口集中在进程启动和依赖真实环境的 I/O 路径，包括 Docker 守护进程、Linux 内核设施（nftables / conntrack / journald）、原始 ICMP 套接字、PTY，以及 OAuth、SMTP、APNs 等外部服务。在可行范围内，这些环境相关路径通过集成测试桩和 `tests/` 目录下的手动端到端检查清单演练。
 
 ## 本地运行测试
 
