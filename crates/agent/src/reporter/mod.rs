@@ -2499,6 +2499,143 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_e2e_dispatch_file_errors_are_typed_and_connection_survives() {
+        let (listener, addr) = bind_fake_server().await;
+        let root = tempfile::tempdir().unwrap();
+        let existing = root.path().join("existing.txt");
+        let missing = root.path().join("missing.txt");
+        let destination = root.path().join("destination.txt");
+        std::fs::write(&existing, b"unchanged").unwrap();
+
+        let state = tempfile::tempdir().unwrap();
+        let mut config = e2e_config(&addr, state.path());
+        config.file = enabled_file_cfg(root.path());
+        let mut reporter = Reporter::new(config, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let existing_path = existing.to_string_lossy().to_string();
+        let missing_path = missing.to_string_lossy().to_string();
+        let destination_path = destination.to_string_lossy().to_string();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileStat {
+                    msg_id: "stat-missing".to_string(),
+                    path: missing_path.clone(),
+                },
+            )
+            .await;
+            let stat_error = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileStatResult { msg_id, .. } if msg_id == "stat-missing")
+            })
+            .await;
+            assert!(matches!(
+                stat_error,
+                AgentMessage::FileStatResult {
+                    entry: None,
+                    error: Some(error),
+                    ..
+                } if error.contains("Cannot resolve path")
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileList {
+                    msg_id: "list-file".to_string(),
+                    path: existing_path.clone(),
+                },
+            )
+            .await;
+            let list_error = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileListResult { msg_id, .. } if msg_id == "list-file")
+            })
+            .await;
+            assert!(matches!(
+                list_error,
+                AgentMessage::FileListResult {
+                    entries,
+                    error: Some(error),
+                    ..
+                } if entries.is_empty() && !error.is_empty()
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileWrite {
+                    msg_id: "write-invalid".to_string(),
+                    path: existing_path.clone(),
+                    content: "not-base64!".to_string(),
+                },
+            )
+            .await;
+            let write_error = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileOpResult { msg_id, .. } if msg_id == "write-invalid")
+            })
+            .await;
+            assert!(matches!(
+                write_error,
+                AgentMessage::FileOpResult {
+                    success: false,
+                    error: Some(error),
+                    ..
+                } if error.contains("Invalid base64 content")
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileMove {
+                    msg_id: "move-missing".to_string(),
+                    from: missing_path,
+                    to: destination_path,
+                },
+            )
+            .await;
+            let move_error = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileOpResult { msg_id, .. } if msg_id == "move-missing")
+            })
+            .await;
+            assert!(matches!(
+                move_error,
+                AgentMessage::FileOpResult {
+                    success: false,
+                    error: Some(error),
+                    ..
+                } if error.contains("Cannot resolve path")
+            ));
+
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::FileStat {
+                    msg_id: "stat-after-errors".to_string(),
+                    path: existing_path,
+                },
+            )
+            .await;
+            let stat_success = read_agent_until(&mut ws, |message| {
+                matches!(message, AgentMessage::FileStatResult { msg_id, .. } if msg_id == "stat-after-errors")
+            })
+            .await;
+            assert!(matches!(
+                stat_success,
+                AgentMessage::FileStatResult {
+                    entry: Some(entry),
+                    error: None,
+                    ..
+                } if entry.name == "existing.txt"
+            ));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        drive_e2e(&mut reporter, server, Duration::from_secs(10)).await;
+        assert_eq!(std::fs::read(existing).unwrap(), b"unchanged");
+        assert!(!destination.exists());
+    }
+
+    #[tokio::test]
     async fn test_e2e_dispatch_file_upload_bad_offset_aborts_and_allows_retry() {
         let (listener, addr) = bind_fake_server().await;
         let root = tempfile::tempdir().unwrap();
