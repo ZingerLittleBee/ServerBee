@@ -61,4 +61,5 @@ agent.toml
 # Git worktrees
 .worktrees
 .superpowers/
-.testloop/
+.testloop/*
+!.testloop/reports/
