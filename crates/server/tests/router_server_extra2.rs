@@ -368,6 +368,152 @@ async fn cleanup_no_orphans_returns_zero() {
     );
 }
 
+// `cleanup_json_array_tables` prunes the deleted orphan's id out of every table
+// that stores a `server_ids_json` array, and each table has its OWN rule for the
+// now-empty case. This drives the three distinct outcomes in one pass:
+//   - ping_tasks: referenced ONLY the orphan -> row deleted.
+//   - alert_rules: referenced both -> row survives with just the kept id.
+//   - service_monitors: referenced ONLY the orphan -> row survives with
+//     server_ids_json set to NULL (monitor + its history are preserved).
+#[tokio::test]
+async fn cleanup_orphan_prunes_server_ids_from_related_tables() {
+    let (base_url, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base_url).await;
+
+    let orphan = create_server(&admin, &base_url, "New Server").await;
+    let keep = create_server(&admin, &base_url, "kept-named-host").await;
+
+    let ping_task: Value = admin
+        .post(format!("{}/api/ping-tasks", base_url))
+        .json(&json!({
+            "name": "orphan-only-probe",
+            "probe_type": "icmp",
+            "target": "8.8.8.8",
+            "interval": 60,
+            "server_ids": [orphan]
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let ping_task_id = ping_task["data"]["id"].as_str().expect("ping task id");
+
+    let alert_rule: Value = admin
+        .post(format!("{}/api/alert-rules", base_url))
+        .json(&json!({
+            "name": "cpu-on-both",
+            "rules": [{ "rule_type": "cpu", "min": 90.0 }],
+            "trigger_mode": "once",
+            "cover_type": "include",
+            "server_ids": [orphan, keep],
+            "enabled": true
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let alert_rule_id = alert_rule["data"]["id"].as_str().expect("alert rule id");
+
+    let monitor: Value = admin
+        .post(format!("{}/api/service-monitors", base_url))
+        .json(&json!({
+            "name": "orphan-only-monitor",
+            "monitor_type": "tcp",
+            // TEST-NET-1 (RFC 5737): passes the SSRF guard, never dialed here.
+            "target": "192.0.2.1:9",
+            "interval": 300,
+            "config_json": {},
+            "server_ids_json": [orphan],
+            "enabled": true
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let monitor_id = monitor["data"]["id"].as_str().expect("monitor id");
+
+    let resp = admin
+        .delete(format!("{}/api/servers/cleanup", base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["data"]["deleted_count"].as_u64(), Some(1));
+
+    // ping_tasks: the array emptied out, so the task itself is gone.
+    let tasks: Value = admin
+        .get(format!("{}/api/ping-tasks", base_url))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        !tasks["data"]
+            .as_array()
+            .expect("ping task list")
+            .iter()
+            .any(|t| t["id"] == ping_task_id),
+        "a ping task left with no servers is deleted"
+    );
+
+    // alert_rules: still has the kept server, so the rule survives pruned.
+    let rules: Value = admin
+        .get(format!("{}/api/alert-rules", base_url))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let rule = rules["data"]
+        .as_array()
+        .expect("alert rule list")
+        .iter()
+        .find(|r| r["id"] == alert_rule_id)
+        .expect("alert rule with a remaining server survives");
+    let rule_ids: Vec<String> = serde_json::from_str(
+        rule["server_ids_json"]
+            .as_str()
+            .expect("server_ids_json stays a JSON array string"),
+    )
+    .expect("parse pruned server ids");
+    assert_eq!(
+        rule_ids,
+        vec![keep.clone()],
+        "only the orphan id is removed from the alert rule"
+    );
+
+    // service_monitors: emptied out, but the row is kept with a NULL array.
+    let monitors: Value = admin
+        .get(format!("{}/api/service-monitors", base_url))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let monitor = monitors["data"]
+        .as_array()
+        .expect("monitor list")
+        .iter()
+        .find(|m| m["id"] == monitor_id)
+        .expect("service monitors survive orphan cleanup");
+    assert!(
+        monitor["server_ids_json"].is_null(),
+        "an emptied monitor is nulled, not deleted, so its history survives"
+    );
+}
+
 // DELETE /api/servers/cleanup is admin-only: a member gets 403.
 #[tokio::test]
 async fn cleanup_member_forbidden() {

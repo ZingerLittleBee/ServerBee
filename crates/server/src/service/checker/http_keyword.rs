@@ -10,19 +10,18 @@ fn keyword_label(keyword: Option<&str>) -> &str {
     keyword.unwrap_or("")
 }
 
-/// Check an HTTP endpoint for status code and keyword presence.
-///
-/// Config options:
-/// - `method`: "GET" or "POST" (default "GET")
-/// - `keyword`: string to search for in the response body
-/// - `keyword_exists`: whether the keyword should exist (default true)
-/// - `expected_status`: array of acceptable status codes (default [200])
-/// - `headers`: object of custom request headers
-/// - `body`: optional request body string (for POST)
-/// - `timeout`: request timeout in seconds (default 10)
-pub async fn check(target: &str, config: &Value) -> CheckResult {
-    let start = Instant::now();
+/// Request/verdict options parsed out of a monitor's JSON config.
+struct CheckConfig<'a> {
+    method: String,
+    keyword: Option<&'a str>,
+    keyword_exists: bool,
+    expected_status: Vec<u16>,
+    timeout_secs: u64,
+    body: Option<&'a str>,
+}
 
+/// Parse the monitor config, applying the documented defaults.
+fn parse_config(config: &Value) -> CheckConfig<'_> {
     let method = config
         .get("method")
         .and_then(|v| v.as_str())
@@ -47,7 +46,96 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
     let timeout_secs = config.get("timeout").and_then(|v| v.as_u64()).unwrap_or(10);
 
-    let body_str = config.get("body").and_then(|v| v.as_str());
+    let body = config.get("body").and_then(|v| v.as_str());
+
+    CheckConfig {
+        method,
+        keyword,
+        keyword_exists,
+        expected_status,
+        timeout_secs,
+        body,
+    }
+}
+
+/// Turn a completed response into a verdict: status code membership plus
+/// keyword presence/absence, with a combined error message on failure.
+fn evaluate(
+    status_code: u16,
+    response_body: &str,
+    config: &CheckConfig<'_>,
+    latency: f64,
+) -> CheckResult {
+    let expected_status = &config.expected_status;
+    let keyword = config.keyword;
+    let keyword_exists = config.keyword_exists;
+
+    // Check status code
+    let status_ok = expected_status.contains(&status_code);
+
+    // Check keyword
+    let keyword_found = keyword.map(|kw| response_body.contains(kw));
+    let keyword_ok = match (keyword, keyword_found) {
+        (Some(_), Some(found)) => found == keyword_exists,
+        (None, _) => true, // No keyword check configured
+        _ => true,
+    };
+
+    let success = status_ok && keyword_ok;
+
+    let detail = json!({
+        "status_code": status_code,
+        "keyword_found": keyword_found,
+        "response_time_ms": latency,
+    });
+
+    let error = if success {
+        None
+    } else {
+        let mut reasons = Vec::new();
+        if !status_ok {
+            reasons.push(format!(
+                "Status code {status_code} not in expected {expected_status:?}"
+            ));
+        }
+        if !keyword_ok {
+            if keyword_exists {
+                reasons.push(format!(
+                    "Keyword '{}' not found in response",
+                    keyword_label(keyword)
+                ));
+            } else {
+                reasons.push(format!(
+                    "Keyword '{}' found in response but should be absent",
+                    keyword_label(keyword)
+                ));
+            }
+        }
+        Some(reasons.join("; "))
+    };
+
+    CheckResult {
+        success,
+        latency: Some(latency),
+        detail,
+        error,
+    }
+}
+
+/// Check an HTTP endpoint for status code and keyword presence.
+///
+/// Config options:
+/// - `method`: "GET" or "POST" (default "GET")
+/// - `keyword`: string to search for in the response body
+/// - `keyword_exists`: whether the keyword should exist (default true)
+/// - `expected_status`: array of acceptable status codes (default [200])
+/// - `headers`: object of custom request headers
+/// - `body`: optional request body string (for POST)
+/// - `timeout`: request timeout in seconds (default 10)
+pub async fn check(target: &str, config: &Value) -> CheckResult {
+    let start = Instant::now();
+
+    let parsed = parse_config(config);
 
     // Build custom headers
     let custom_headers = match build_headers(config) {
@@ -100,7 +188,7 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
         };
 
         let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(timeout_secs))
+            .timeout(Duration::from_secs(parsed.timeout_secs))
             .danger_accept_invalid_certs(false)
             .redirect(reqwest::redirect::Policy::none())
             .resolve_to_addrs(&host, &validated_addrs)
@@ -115,11 +203,11 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
         // headers, so a POST body and any secrets in those headers are never
         // replayed to a redirected (possibly attacker-controlled) host.
         let request = if hop == 0 {
-            let base = match method.as_str() {
+            let base = match parsed.method.as_str() {
                 "GET" => client.get(url.clone()),
                 "POST" => {
                     let mut req = client.post(url.clone());
-                    if let Some(body) = body_str {
+                    if let Some(body) = parsed.body {
                         req = req.body(body.to_string());
                     }
                     req
@@ -210,56 +298,7 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
     let latency = start.elapsed().as_secs_f64() * 1000.0;
 
-    // Check status code
-    let status_ok = expected_status.contains(&status_code);
-
-    // Check keyword
-    let keyword_found = keyword.map(|kw| response_body.contains(kw));
-    let keyword_ok = match (keyword, keyword_found) {
-        (Some(_), Some(found)) => found == keyword_exists,
-        (None, _) => true, // No keyword check configured
-        _ => true,
-    };
-
-    let success = status_ok && keyword_ok;
-
-    let detail = json!({
-        "status_code": status_code,
-        "keyword_found": keyword_found,
-        "response_time_ms": latency,
-    });
-
-    let error = if !success {
-        let mut reasons = Vec::new();
-        if !status_ok {
-            reasons.push(format!(
-                "Status code {status_code} not in expected {expected_status:?}"
-            ));
-        }
-        if !keyword_ok {
-            if keyword_exists {
-                reasons.push(format!(
-                    "Keyword '{}' not found in response",
-                    keyword_label(keyword)
-                ));
-            } else {
-                reasons.push(format!(
-                    "Keyword '{}' found in response but should be absent",
-                    keyword_label(keyword)
-                ));
-            }
-        }
-        Some(reasons.join("; "))
-    } else {
-        None
-    };
-
-    CheckResult {
-        success,
-        latency: Some(latency),
-        detail,
-        error,
-    }
+    evaluate(status_code, &response_body, &parsed, latency)
 }
 
 /// Build a `HeaderMap` from the config's `headers` object.
@@ -285,6 +324,21 @@ fn build_headers(config: &Value) -> Result<HeaderMap, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Fixed latency used by the `evaluate` tests so the reported value is
+    /// deterministic.
+    const TEST_LATENCY: f64 = 12.5;
+
+    /// Run the real config parser and verdict logic over a config/response pair.
+    fn eval(config: Value, status_code: u16, response_body: &str) -> CheckResult {
+        let parsed = parse_config(&config);
+        evaluate(status_code, response_body, &parsed, TEST_LATENCY)
+    }
+
+    /// Read the `keyword_found` field out of an `evaluate` detail payload.
+    fn keyword_found(result: &CheckResult) -> Option<bool> {
+        result.detail.get("keyword_found").and_then(|v| v.as_bool())
+    }
 
     #[test]
     fn test_build_headers_empty() {
@@ -456,119 +510,68 @@ mod tests {
 
     #[test]
     fn test_expected_status_parsing_default() {
-        // When `expected_status` is absent, the default of [200] applies. This
-        // mirrors the parsing branch in `check`.
-        let config = json!({});
-        let expected_status: Vec<u16> = config
-            .get("expected_status")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_u64().map(|n| n as u16))
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![200]);
-        assert_eq!(expected_status, vec![200]);
+        // When `expected_status` is absent, the default of [200] applies.
+        assert_eq!(parse_config(&json!({})).expected_status, vec![200]);
     }
 
     #[test]
     fn test_expected_status_parsing_custom() {
         // Explicit codes are parsed; non-numeric array entries are skipped.
         let config = json!({ "expected_status": [200, 204, "skip-me", 301] });
-        let expected_status: Vec<u16> = config
-            .get("expected_status")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_u64().map(|n| n as u16))
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![200]);
-        assert_eq!(expected_status, vec![200, 204, 301]);
+        assert_eq!(parse_config(&config).expected_status, vec![200, 204, 301]);
     }
 
     #[test]
     fn test_keyword_classification_present_expected() {
-        // Replicates the keyword classification logic in `check`: keyword found
-        // and expected to exist => ok.
-        let body = "all systems operational";
-        let keyword = Some("operational");
-        let keyword_exists = true;
-        let keyword_found = keyword.map(|kw| body.contains(kw));
-        let keyword_ok = match (keyword, keyword_found) {
-            (Some(_), Some(found)) => found == keyword_exists,
-            (None, _) => true,
-            _ => true,
-        };
-        assert_eq!(keyword_found, Some(true));
-        assert!(keyword_ok);
+        // Keyword found and expected to exist => ok.
+        let result = eval(
+            json!({ "keyword": "operational" }),
+            200,
+            "all systems operational",
+        );
+        assert_eq!(keyword_found(&result), Some(true));
+        assert!(result.success);
+        assert!(result.error.is_none());
     }
 
     #[test]
     fn test_keyword_classification_absent_expected_present() {
         // Keyword expected but not found => not ok.
-        let body = "page not found";
-        let keyword = Some("operational");
-        let keyword_exists = true;
-        let keyword_found = keyword.map(|kw| body.contains(kw));
-        let keyword_ok = match (keyword, keyword_found) {
-            (Some(_), Some(found)) => found == keyword_exists,
-            (None, _) => true,
-            _ => true,
-        };
-        assert_eq!(keyword_found, Some(false));
-        assert!(!keyword_ok);
+        let result = eval(json!({ "keyword": "operational" }), 200, "page not found");
+        assert_eq!(keyword_found(&result), Some(false));
+        assert!(!result.success);
     }
 
     #[test]
     fn test_keyword_classification_present_but_should_be_absent() {
         // keyword_exists=false: presence of the keyword fails the check.
-        let body = "ERROR: database down";
-        let keyword = Some("ERROR");
-        let keyword_exists = false;
-        let keyword_found = keyword.map(|kw| body.contains(kw));
-        let keyword_ok = match (keyword, keyword_found) {
-            (Some(_), Some(found)) => found == keyword_exists,
-            (None, _) => true,
-            _ => true,
-        };
-        assert_eq!(keyword_found, Some(true));
-        assert!(!keyword_ok, "keyword present while expected absent must fail");
+        let result = eval(
+            json!({ "keyword": "ERROR", "keyword_exists": false }),
+            200,
+            "ERROR: database down",
+        );
+        assert_eq!(keyword_found(&result), Some(true));
+        assert!(
+            !result.success,
+            "keyword present while expected absent must fail"
+        );
     }
 
     #[test]
     fn test_keyword_classification_no_keyword() {
-        // No keyword configured => keyword check always passes.
-        let body = "anything";
-        let keyword: Option<&str> = None;
-        let keyword_exists = true;
-        let keyword_found = keyword.map(|kw| body.contains(kw));
-        let keyword_ok = match (keyword, keyword_found) {
-            (Some(_), Some(found)) => found == keyword_exists,
-            (None, _) => true,
-            _ => true,
-        };
-        assert_eq!(keyword_found, None);
-        assert!(keyword_ok);
+        // No keyword configured => keyword check always passes and the detail
+        // reports a null `keyword_found`.
+        let result = eval(json!({}), 200, "anything");
+        assert_eq!(result.detail.get("keyword_found"), Some(&Value::Null));
+        assert!(result.success);
     }
 
     #[test]
     fn test_error_message_status_only_failure() {
-        // Replicates the error-message assembly: status mismatch only.
-        let status_code: u16 = 500;
-        let expected_status: Vec<u16> = vec![200];
-        let status_ok = expected_status.contains(&status_code);
-        let keyword_ok = true;
-        let success = status_ok && keyword_ok;
-        assert!(!success);
-
-        let mut reasons = Vec::new();
-        if !status_ok {
-            reasons.push(format!(
-                "Status code {status_code} not in expected {expected_status:?}"
-            ));
-        }
-        let msg = reasons.join("; ");
+        // Status mismatch only: the message names the code and the expected list.
+        let result = eval(json!({}), 500, "body");
+        assert!(!result.success);
+        let msg = result.error.unwrap_or_default();
         assert!(msg.contains("Status code 500"));
         assert!(msg.contains("expected [200]"));
     }
@@ -576,87 +579,47 @@ mod tests {
     #[test]
     fn test_error_message_keyword_missing_failure() {
         // keyword_exists=true but keyword not found => "not found" message.
-        let keyword = Some("healthy");
-        let keyword_exists = true;
-        let keyword_ok = false;
-        let mut reasons = Vec::new();
-        if !keyword_ok {
-            if keyword_exists {
-                reasons.push(format!(
-                    "Keyword '{}' not found in response",
-                    keyword_label(keyword)
-                ));
-            } else {
-                reasons.push(format!(
-                    "Keyword '{}' found in response but should be absent",
-                    keyword_label(keyword)
-                ));
-            }
-        }
-        let msg = reasons.join("; ");
-        assert!(msg.contains("'healthy' not found"));
+        let result = eval(json!({ "keyword": "healthy" }), 200, "degraded");
+        assert!(!result.success);
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("'healthy' not found")
+        );
     }
 
     #[test]
     fn test_error_message_keyword_should_be_absent_failure() {
         // keyword_exists=false and keyword present => "should be absent" message.
-        let keyword = Some("maintenance");
-        let keyword_exists = false;
-        let keyword_ok = false;
-        let mut reasons = Vec::new();
-        if !keyword_ok {
-            if keyword_exists {
-                reasons.push(format!(
-                    "Keyword '{}' not found in response",
-                    keyword_label(keyword)
-                ));
-            } else {
-                reasons.push(format!(
-                    "Keyword '{}' found in response but should be absent",
-                    keyword_label(keyword)
-                ));
-            }
-        }
-        let msg = reasons.join("; ");
-        assert!(msg.contains("'maintenance' found in response but should be absent"));
+        let result = eval(
+            json!({ "keyword": "maintenance", "keyword_exists": false }),
+            200,
+            "scheduled maintenance in progress",
+        );
+        assert!(!result.success);
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("'maintenance' found in response but should be absent")
+        );
     }
 
     #[test]
     fn test_method_default_and_normalization() {
         // Method parsing: absent => "GET"; provided lowercase => uppercased.
-        let cfg_default = json!({});
-        let method = cfg_default
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("GET")
-            .to_uppercase();
-        assert_eq!(method, "GET");
-
-        let cfg_post = json!({ "method": "post" });
-        let method = cfg_post
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("GET")
-            .to_uppercase();
-        assert_eq!(method, "POST");
+        assert_eq!(parse_config(&json!({})).method, "GET");
+        assert_eq!(parse_config(&json!({ "method": "post" })).method, "POST");
     }
 
     #[test]
     fn test_keyword_exists_default_true() {
-        // `keyword_exists` defaults to true when absent or non-bool.
-        let cfg = json!({ "keyword": "ok" });
-        let keyword_exists = cfg
-            .get("keyword_exists")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        assert!(keyword_exists);
-
-        let cfg_explicit = json!({ "keyword": "ok", "keyword_exists": false });
-        let keyword_exists = cfg_explicit
-            .get("keyword_exists")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        assert!(!keyword_exists);
+        // `keyword_exists` defaults to true when absent.
+        assert!(parse_config(&json!({ "keyword": "ok" })).keyword_exists);
+        assert!(!parse_config(&json!({ "keyword": "ok", "keyword_exists": false })).keyword_exists);
+        // A non-bool value also falls back to the default.
+        assert!(parse_config(&json!({ "keyword_exists": "no" })).keyword_exists);
     }
 
     // ── check(): additional deterministic (offline) error paths ───────────────
@@ -786,119 +749,105 @@ mod tests {
     #[test]
     fn test_keyword_match_is_case_sensitive() {
         // `String::contains` is case-sensitive: a case mismatch is not a match.
-        let body = "Status: OPERATIONAL";
-        assert!(!body.contains("operational"));
-        assert!(body.contains("OPERATIONAL"));
+        let lower = eval(
+            json!({ "keyword": "operational" }),
+            200,
+            "Status: OPERATIONAL",
+        );
+        assert_eq!(keyword_found(&lower), Some(false));
+        assert!(!lower.success);
+
+        let exact = eval(
+            json!({ "keyword": "OPERATIONAL" }),
+            200,
+            "Status: OPERATIONAL",
+        );
+        assert_eq!(keyword_found(&exact), Some(true));
+        assert!(exact.success);
     }
 
     #[test]
     fn test_keyword_match_substring_within_word() {
         // Keyword matching is plain substring (no word-boundary requirement).
-        let body = "maintenancewindow active";
-        let keyword = "maintenance";
-        let keyword_found = Some(body.contains(keyword));
-        assert_eq!(keyword_found, Some(true));
+        let result = eval(
+            json!({ "keyword": "maintenance" }),
+            200,
+            "maintenancewindow active",
+        );
+        assert_eq!(keyword_found(&result), Some(true));
     }
 
     #[test]
     fn test_keyword_match_empty_keyword_always_found() {
         // An empty keyword is a substring of every string, so it always matches.
-        let body = "";
-        let keyword = "";
-        assert!(body.contains(keyword));
+        let result = eval(json!({ "keyword": "" }), 200, "");
+        assert_eq!(keyword_found(&result), Some(true));
+        assert!(result.success);
     }
 
     #[test]
     fn test_keyword_classification_absent_expected_absent_ok() {
         // keyword_exists=false and the keyword is genuinely absent => ok. This
         // covers the (false found == false expected) success case omitted above.
-        let body = "all good";
-        let keyword = Some("ERROR");
-        let keyword_exists = false;
-        let keyword_found = keyword.map(|kw| body.contains(kw));
-        let keyword_ok = match (keyword, keyword_found) {
-            (Some(_), Some(found)) => found == keyword_exists,
-            (None, _) => true,
-            _ => true,
-        };
-        assert_eq!(keyword_found, Some(false));
-        assert!(keyword_ok, "absent keyword expected absent must pass");
+        let result = eval(
+            json!({ "keyword": "ERROR", "keyword_exists": false }),
+            200,
+            "all good",
+        );
+        assert_eq!(keyword_found(&result), Some(false));
+        assert!(result.success, "absent keyword expected absent must pass");
     }
 
     // ── success composition: status + keyword combined ────────────────────────
 
     #[test]
     fn test_success_requires_both_status_and_keyword_ok() {
-        // `success = status_ok && keyword_ok`: both true => success; either false
-        // => failure. Mirrors the final composition in `check`.
-        for (status_ok, keyword_ok, expected) in [
-            (true, true, true),
-            (true, false, false),
-            (false, true, false),
-            (false, false, false),
+        // `success = status_ok && keyword_ok`: both true => success; either one
+        // failing => failure.
+        let config = json!({ "keyword": "ok" });
+        for (status_code, body, expected) in [
+            (200, "ok", true),
+            (200, "nope", false),
+            (500, "ok", false),
+            (500, "nope", false),
         ] {
-            assert_eq!(status_ok && keyword_ok, expected);
+            let result = eval(config.clone(), status_code, body);
+            assert_eq!(
+                result.success, expected,
+                "status {status_code} with body {body:?} should yield success={expected}"
+            );
+            assert_eq!(result.error.is_none(), expected);
         }
     }
 
     #[test]
     fn test_error_message_combines_status_and_keyword_failures() {
         // When both status and keyword fail, the reasons are joined with "; ".
-        let status_code: u16 = 503;
-        let expected_status: Vec<u16> = vec![200];
-        let keyword = Some("healthy");
-        let keyword_exists = true;
-        let status_ok = expected_status.contains(&status_code);
-        let keyword_ok = false;
-
-        let mut reasons = Vec::new();
-        if !status_ok {
-            reasons.push(format!(
-                "Status code {status_code} not in expected {expected_status:?}"
-            ));
-        }
-        if !keyword_ok {
-            if keyword_exists {
-                reasons.push(format!(
-                    "Keyword '{}' not found in response",
-                    keyword_label(keyword)
-                ));
-            } else {
-                reasons.push(format!(
-                    "Keyword '{}' found in response but should be absent",
-                    keyword_label(keyword)
-                ));
-            }
-        }
-        let msg = reasons.join("; ");
+        let result = eval(json!({ "keyword": "healthy" }), 503, "service unavailable");
+        assert!(!result.success);
+        let msg = result.error.unwrap_or_default();
         assert!(msg.contains("Status code 503"));
         assert!(msg.contains("'healthy' not found"));
-        assert!(msg.contains("; "), "two reasons must be joined with a separator");
+        assert!(
+            msg.contains("; "),
+            "two reasons must be joined with a separator"
+        );
     }
 
     #[test]
     fn test_status_classification_multiple_expected_codes() {
         // A status present in a multi-entry expected list classifies as ok.
-        let expected_status: Vec<u16> = vec![200, 204, 301];
-        assert!(expected_status.contains(&301));
-        assert!(!expected_status.contains(&500));
+        let config = json!({ "expected_status": [200, 204, 301] });
+        assert!(eval(config.clone(), 301, "").success);
+        assert!(!eval(config, 500, "").success);
     }
 
     #[test]
     fn test_timeout_default_and_custom_parsing() {
         // `timeout` defaults to 10s when absent and uses the configured value
-        // otherwise (the line-44 parsing branch in `check`).
-        let default = json!({})
-            .get("timeout")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(10);
-        assert_eq!(default, 10);
-
-        let custom = json!({ "timeout": 25 })
-            .get("timeout")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(10);
-        assert_eq!(custom, 25);
+        // otherwise.
+        assert_eq!(parse_config(&json!({})).timeout_secs, 10);
+        assert_eq!(parse_config(&json!({ "timeout": 25 })).timeout_secs, 25);
     }
 
     // ── expected_status parsing: boundary array shapes ────────────────────────
@@ -906,19 +855,16 @@ mod tests {
     #[test]
     fn test_expected_status_parsing_empty_array() {
         // An explicit empty `expected_status` array parses to an empty Vec (NOT
-        // the default [200]), so `.contains()` later rejects every status code.
+        // the default [200]), so the verdict rejects every status code.
         let config = json!({ "expected_status": [] });
-        let expected_status: Vec<u16> = config
-            .get("expected_status")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_u64().map(|n| n as u16))
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![200]);
-        assert!(expected_status.is_empty(), "empty array stays empty, not defaulted");
-        assert!(!expected_status.contains(&200), "no status is acceptable with an empty list");
+        assert!(
+            parse_config(&config).expected_status.is_empty(),
+            "empty array stays empty, not defaulted"
+        );
+        assert!(
+            !eval(config, 200, "").success,
+            "no status is acceptable with an empty list"
+        );
     }
 
     #[test]
@@ -926,34 +872,15 @@ mod tests {
         // Negative JSON numbers fail `as_u64()` and are filtered out, leaving
         // only the valid unsigned codes.
         let config = json!({ "expected_status": [-1, 200, -404, 302] });
-        let expected_status: Vec<u16> = config
-            .get("expected_status")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_u64().map(|n| n as u16))
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![200]);
-        assert_eq!(expected_status, vec![200, 302]);
+        assert_eq!(parse_config(&config).expected_status, vec![200, 302]);
     }
 
     #[test]
     fn test_expected_status_parsing_truncates_out_of_range() {
         // A value above u16::MAX passes `as_u64()` but `as u16` truncates it
-        // (70000 & 0xFFFF == 4464); this pins the lossy-cast contract.
+        // (70000 - 65536 == 4464); this pins the lossy-cast contract.
         let config = json!({ "expected_status": [70000] });
-        let expected_status: Vec<u16> = config
-            .get("expected_status")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_u64().map(|n| n as u16))
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![200]);
-        // 70000 wraps to 70000 - 65536 = 4464 under the production `as u16` cast.
-        assert_eq!(expected_status, vec![4464]);
+        assert_eq!(parse_config(&config).expected_status, vec![4464]);
     }
 
     #[test]
@@ -961,16 +888,7 @@ mod tests {
         // `expected_status` present but not an array: `.as_array()` is None so
         // the whole `.map` is skipped and the [200] default applies.
         let config = json!({ "expected_status": 200 });
-        let expected_status: Vec<u16> = config
-            .get("expected_status")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|item| item.as_u64().map(|n| n as u16))
-                    .collect()
-            })
-            .unwrap_or_else(|| vec![200]);
-        assert_eq!(expected_status, vec![200]);
+        assert_eq!(parse_config(&config).expected_status, vec![200]);
     }
 
     // ── build_headers: additional value-type branches ─────────────────────────
@@ -1016,11 +934,11 @@ mod tests {
     #[test]
     fn test_body_str_present_and_absent() {
         // `body` is read as an optional &str: present => Some, absent => None.
-        let with_body = json!({ "body": "payload" });
-        assert_eq!(with_body.get("body").and_then(|v| v.as_str()), Some("payload"));
-
-        let without_body = json!({ "method": "POST" });
-        assert_eq!(without_body.get("body").and_then(|v| v.as_str()), None);
+        assert_eq!(
+            parse_config(&json!({ "body": "payload" })).body,
+            Some("payload")
+        );
+        assert_eq!(parse_config(&json!({ "method": "POST" })).body, None);
     }
 
     #[test]
@@ -1028,76 +946,61 @@ mod tests {
         // An arbitrary method string is uppercased verbatim; the `other =>`
         // rejection arm in `check` would only be reached after the SSRF guard, so
         // here we just pin the normalization step that feeds it.
-        let cfg = json!({ "method": "patch" });
-        let method = cfg
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("GET")
-            .to_uppercase();
-        assert_eq!(method, "PATCH");
+        assert_eq!(parse_config(&json!({ "method": "patch" })).method, "PATCH");
     }
 
     #[test]
     fn test_method_non_string_falls_back_to_get() {
         // A non-string `method` value fails `.as_str()` and defaults to GET.
-        let cfg = json!({ "method": 123 });
-        let method = cfg
-            .get("method")
-            .and_then(|v| v.as_str())
-            .unwrap_or("GET")
-            .to_uppercase();
-        assert_eq!(method, "GET");
+        assert_eq!(parse_config(&json!({ "method": 123 })).method, "GET");
     }
 
-    // ── keyword classification: fall-through arm and keyword=None error label ──
+    // ── keyword=None never produces a keyword failure ─────────────────────────
 
     #[test]
-    fn test_keyword_classification_fallthrough_arm_is_ok() {
-        // The `_ => true` arm covers the logically-impossible (Some keyword, None
-        // found) shape; it must classify as ok so an inconsistent state never
-        // fails the check spuriously.
-        let keyword: Option<&str> = Some("x");
-        let keyword_found: Option<bool> = None;
-        let keyword_exists = true;
-        let keyword_ok = match (keyword, keyword_found) {
-            (Some(_), Some(found)) => found == keyword_exists,
-            (None, _) => true,
-            _ => true,
-        };
-        assert!(keyword_ok, "the catch-all arm defaults to ok");
+    fn test_keyword_label_falls_back_to_empty_string() {
+        // `keyword_label` is the error-message fallback for a missing keyword.
+        assert_eq!(keyword_label(None), "");
+        assert_eq!(keyword_label(Some("healthy")), "healthy");
     }
 
     #[test]
-    fn test_error_message_keyword_none_uses_empty_label() {
-        // When keyword is None but the keyword branch is somehow hit, the message
-        // falls back to an empty-quoted label via `keyword_label`.
-        let keyword: Option<&str> = None;
-        let keyword_exists = true;
-        let msg = if keyword_exists {
-            format!("Keyword '{}' not found in response", keyword_label(keyword))
-        } else {
-            format!(
-                "Keyword '{}' found in response but should be absent",
-                keyword_label(keyword)
-            )
-        };
-        assert_eq!(msg, "Keyword '' not found in response");
+    fn test_no_keyword_configured_never_reports_a_keyword_failure() {
+        // With no keyword the verdict depends on the status code alone, and the
+        // error message never mentions a keyword.
+        let result = eval(json!({ "keyword_exists": false }), 500, "anything");
+        assert!(!result.success);
+        let msg = result.error.unwrap_or_default();
+        assert!(msg.contains("Status code 500"));
+        assert!(
+            !msg.contains("Keyword"),
+            "an unconfigured keyword must not appear in the error, got: {msg}"
+        );
     }
 
     // ── success path: no error message when both checks pass ──────────────────
 
     #[test]
     fn test_no_error_when_success() {
-        // On success the `error` field is None (the else branch of the assembly).
-        let status_ok = true;
-        let keyword_ok = true;
-        let success = status_ok && keyword_ok;
-        let error: Option<String> = if success {
-            None
-        } else {
-            Some("unused".to_string())
-        };
-        assert!(error.is_none(), "a passing check carries no error message");
+        // On success the `error` field is None and the latency is echoed back.
+        let result = eval(json!({ "keyword": "ok" }), 200, "status: ok");
+        assert!(result.success);
+        assert!(
+            result.error.is_none(),
+            "a passing check carries no error message"
+        );
+        assert_eq!(result.latency, Some(TEST_LATENCY));
+        assert_eq!(
+            result
+                .detail
+                .get("response_time_ms")
+                .and_then(|v| v.as_f64()),
+            Some(TEST_LATENCY)
+        );
+        assert_eq!(
+            result.detail.get("status_code").and_then(|v| v.as_u64()),
+            Some(200)
+        );
     }
 
     // ── port defaulting reasoning for the SSRF pin ────────────────────────────

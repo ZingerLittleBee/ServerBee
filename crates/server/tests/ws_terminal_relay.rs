@@ -16,6 +16,7 @@
 //!   - Agent `terminal_output` (base64) -> browser `{"type":"output","data":..}`.
 //!   - Browser `{"type":"input"}` -> server `TerminalInput` to agent.
 //!   - Browser `{"type":"resize"}` -> server `TerminalResize` to agent.
+//!   - Malformed text, binary, and ping frames do not interrupt later input.
 //!   - Agent `terminal_error` -> browser `{"type":"error","error":..}`.
 //!   - Capability gate: an agent advertising CAP_DEFAULT (no CAP_TERMINAL bit)
 //!     makes the handshake fail with HTTP 403.
@@ -73,6 +74,15 @@ type BrowserSink = futures_util::stream::SplitSink<
 
 /// Create an admin API key (admin-only endpoint) and return the raw key.
 async fn create_api_key(client: &reqwest::Client, base_url: &str, name: &str) -> String {
+    create_api_key_with_id(client, base_url, name).await.1
+}
+
+/// Create an admin API key and return `(id, raw_key)`.
+async fn create_api_key_with_id(
+    client: &reqwest::Client,
+    base_url: &str,
+    name: &str,
+) -> (String, String) {
     let resp = client
         .post(format!("{base_url}/api/auth/api-keys"))
         .json(&json!({ "name": name }))
@@ -81,10 +91,15 @@ async fn create_api_key(client: &reqwest::Client, base_url: &str, name: &str) ->
         .expect("POST /api/auth/api-keys failed");
     assert_eq!(resp.status(), 200, "API key creation should succeed");
     let body: Value = resp.json().await.expect("parse api-key response");
-    body["data"]["key"]
+    let id = body["data"]["id"]
+        .as_str()
+        .expect("api key id missing from response")
+        .to_string();
+    let key = body["data"]["key"]
         .as_str()
         .expect("api key missing from response")
-        .to_string()
+        .to_string();
+    (id, key)
 }
 
 /// Build a `/api/ws/terminal/{server_id}` client request carrying an
@@ -104,6 +119,26 @@ fn terminal_ws_request_with_key(
     request.headers_mut().insert(
         "x-api-key",
         HeaderValue::from_str(api_key).expect("api key header should be valid"),
+    );
+    request
+}
+
+/// Build a terminal WebSocket request carrying a browser session cookie.
+fn terminal_ws_request_with_cookie(
+    base_url: &str,
+    server_id: &str,
+    cookie: &str,
+) -> tungstenite::handshake::client::Request {
+    let ws_url = format!(
+        "{}/api/ws/terminal/{server_id}",
+        base_url.replace("http://", "ws://")
+    );
+    let mut request = ws_url
+        .into_client_request()
+        .expect("terminal ws request should build");
+    request.headers_mut().insert(
+        "cookie",
+        HeaderValue::from_str(cookie).expect("cookie header should be valid"),
     );
     request
 }
@@ -136,6 +171,44 @@ async fn recv_browser_until(reader: &mut BrowserReader, expected: &str) -> Value
         if msg["type"] == expected {
             return msg;
         }
+    }
+}
+
+/// Wait for a terminal_closed audit row and return its parsed detail.
+async fn wait_for_terminal_closed_audit(
+    client: &reqwest::Client,
+    base_url: &str,
+    session_id: &str,
+) -> Value {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let response = client
+            .get(format!(
+                "{base_url}/api/audit-logs?action=terminal_closed&limit=200"
+            ))
+            .send()
+            .await
+            .expect("GET /api/audit-logs failed");
+        assert_eq!(response.status(), 200, "audit log listing should succeed");
+        let body: Value = response.json().await.expect("parse audit response");
+        let entries = body["data"]["entries"]
+            .as_array()
+            .expect("audit entries should be an array");
+        for entry in entries {
+            let Some(detail) = entry["detail"].as_str() else {
+                continue;
+            };
+            let parsed: Value = serde_json::from_str(detail).expect("terminal audit detail JSON");
+            if parsed["session_id"] == session_id {
+                return parsed;
+            }
+        }
+
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for terminal_closed audit"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
 
@@ -301,6 +374,260 @@ async fn terminal_ws_relays_session_started_output_and_input_resize() {
     assert_eq!(resize["session_id"], session_id, "TerminalResize must carry the session_id");
     assert_eq!(resize["cols"], 120, "TerminalResize cols must pass through");
     assert_eq!(resize["rows"], 40, "TerminalResize rows must pass through");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_ws_ignores_non_command_frames_and_keeps_relaying_input() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "term-frame-tolerance-key").await;
+
+    let (server_id, sink, reader) = bring_up_agent(
+        &client,
+        &base_url,
+        CAP_DEFAULT | CAP_TERMINAL,
+        "term-frame-tolerance-hs",
+    )
+    .await;
+
+    let _agent_sink = sink;
+    let agent_task = {
+        let mut reader = reader;
+        tokio::spawn(async move {
+            let mut input = None;
+            loop {
+                let message = recv_agent_text(&mut reader).await;
+                match message["type"].as_str() {
+                    Some("terminal_input") => input = Some(message),
+                    Some("terminal_close") => return input,
+                    other if is_first_connect_noise(other) => {}
+                    _ => {}
+                }
+            }
+        })
+    };
+
+    let request = terminal_ws_request_with_key(&base_url, &server_id, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal WebSocket connect should succeed");
+    let (mut browser_sink, mut browser_reader): (BrowserSink, BrowserReader) = browser_ws.split();
+    let session = recv_browser_until(&mut browser_reader, "session").await;
+    let session_id = session["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    browser_sink
+        .send(tungstenite::Message::Text("{".into()))
+        .await
+        .expect("send malformed text");
+    browser_sink
+        .send(tungstenite::Message::Binary(vec![0, 1, 2].into()))
+        .await
+        .expect("send binary frame");
+    browser_sink
+        .send(tungstenite::Message::Ping(Vec::new().into()))
+        .await
+        .expect("send ping frame");
+    browser_sink
+        .send(tungstenite::Message::Text(
+            json!({ "type": "input", "data": "d2hvYW1pCg==" })
+                .to_string()
+                .into(),
+        ))
+        .await
+        .expect("send valid input after ignored frames");
+    browser_sink
+        .send(tungstenite::Message::Close(None))
+        .await
+        .expect("close browser ws");
+
+    let input = tokio::time::timeout(Duration::from_secs(5), agent_task)
+        .await
+        .expect("agent responder timed out")
+        .expect("agent responder panicked")
+        .expect("valid input should reach the agent after ignored frames");
+    assert_eq!(input["session_id"], session_id);
+    assert_eq!(input["data"], "d2hvYW1pCg==");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_ws_closes_and_audits_when_api_key_is_deleted() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let (api_key_id, api_key) =
+        create_api_key_with_id(&client, &base_url, "term-revoked-key").await;
+
+    let (server_id, agent_sink, mut agent_reader) = bring_up_agent(
+        &client,
+        &base_url,
+        CAP_DEFAULT | CAP_TERMINAL,
+        "term-revoked-key-hs",
+    )
+    .await;
+
+    let request = terminal_ws_request_with_key(&base_url, &server_id, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal WebSocket connect should succeed");
+    let (_browser_sink, mut browser_reader): (BrowserSink, BrowserReader) = browser_ws.split();
+    let session = recv_browser_until(&mut browser_reader, "session").await;
+    let session_id = session["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    let terminal_open = recv_agent_text(&mut agent_reader).await;
+    assert_eq!(terminal_open["type"], "terminal_open");
+    assert_eq!(terminal_open["session_id"], session_id);
+
+    let delete = client
+        .delete(format!("{base_url}/api/auth/api-keys/{api_key_id}"))
+        .send()
+        .await
+        .expect("delete API key");
+    assert_eq!(delete.status(), 200, "API key deletion should succeed");
+
+    let error = recv_browser_until(&mut browser_reader, "error").await;
+    assert_eq!(error["error"], "Authorization revoked");
+
+    let terminal_close =
+        tokio::time::timeout(Duration::from_secs(5), recv_agent_text(&mut agent_reader))
+            .await
+            .expect("timed out waiting for TerminalClose");
+    assert_eq!(terminal_close["type"], "terminal_close");
+    assert_eq!(terminal_close["session_id"], session_id);
+
+    let audit = wait_for_terminal_closed_audit(&client, &base_url, &session_id).await;
+    assert_eq!(audit["close_reason"], "authorization_revoked");
+
+    drop(agent_sink);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_ws_closes_and_audits_when_browser_session_logs_out() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    let login = client
+        .post(format!("{base_url}/api/auth/login"))
+        .json(&json!({ "username": "admin", "password": "testpass" }))
+        .send()
+        .await
+        .expect("admin login failed");
+    assert_eq!(login.status(), 200, "admin login should succeed");
+    let cookie = login
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .expect("login should set a session cookie")
+        .to_str()
+        .expect("session cookie should be valid text")
+        .split(';')
+        .next()
+        .expect("session cookie pair")
+        .to_string();
+
+    let (server_id, agent_sink, mut agent_reader) = bring_up_agent(
+        &client,
+        &base_url,
+        CAP_DEFAULT | CAP_TERMINAL,
+        "term-logout-hs",
+    )
+    .await;
+
+    let request = terminal_ws_request_with_cookie(&base_url, &server_id, &cookie);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal WebSocket connect should succeed");
+    let (_browser_sink, mut browser_reader): (BrowserSink, BrowserReader) = browser_ws.split();
+    let session = recv_browser_until(&mut browser_reader, "session").await;
+    let session_id = session["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    let terminal_open = recv_agent_text(&mut agent_reader).await;
+    assert_eq!(terminal_open["type"], "terminal_open");
+    assert_eq!(terminal_open["session_id"], session_id);
+
+    let logout = client
+        .post(format!("{base_url}/api/auth/logout"))
+        .header(reqwest::header::COOKIE, &cookie)
+        .send()
+        .await
+        .expect("logout request failed");
+    assert_eq!(logout.status(), 200, "logout should succeed");
+
+    let error = recv_browser_until(&mut browser_reader, "error").await;
+    assert_eq!(error["error"], "Authorization revoked");
+
+    let terminal_close =
+        tokio::time::timeout(Duration::from_secs(5), recv_agent_text(&mut agent_reader))
+            .await
+            .expect("timed out waiting for TerminalClose");
+    assert_eq!(terminal_close["type"], "terminal_close");
+    assert_eq!(terminal_close["session_id"], session_id);
+
+    let relogin = client
+        .post(format!("{base_url}/api/auth/login"))
+        .json(&json!({ "username": "admin", "password": "testpass" }))
+        .send()
+        .await
+        .expect("admin re-login failed");
+    assert_eq!(relogin.status(), 200, "admin re-login should succeed");
+    let audit = wait_for_terminal_closed_audit(&client, &base_url, &session_id).await;
+    assert_eq!(audit["close_reason"], "authorization_revoked");
+
+    drop(agent_sink);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_ws_closes_and_audits_when_agent_disconnects() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "term-agent-disconnect-key").await;
+
+    let (server_id, mut agent_sink, mut agent_reader) = bring_up_agent(
+        &client,
+        &base_url,
+        CAP_DEFAULT | CAP_TERMINAL,
+        "term-agent-disconnect-hs",
+    )
+    .await;
+
+    let request = terminal_ws_request_with_key(&base_url, &server_id, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal WebSocket connect should succeed");
+    let (_browser_sink, mut browser_reader): (BrowserSink, BrowserReader) = browser_ws.split();
+    let session = recv_browser_until(&mut browser_reader, "session").await;
+    let session_id = session["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    let terminal_open = recv_agent_text(&mut agent_reader).await;
+    assert_eq!(terminal_open["type"], "terminal_open");
+    assert_eq!(terminal_open["session_id"], session_id);
+
+    agent_sink
+        .send(tungstenite::Message::Close(None))
+        .await
+        .expect("close agent WebSocket");
+
+    let browser_end = tokio::time::timeout(Duration::from_secs(5), browser_reader.next())
+        .await
+        .expect("terminal browser WebSocket should close after agent disconnect");
+    assert!(
+        matches!(browser_end, None | Some(Ok(tungstenite::Message::Close(_)))),
+        "expected terminal browser WebSocket to end, got {browser_end:?}"
+    );
+
+    let audit = wait_for_terminal_closed_audit(&client, &base_url, &session_id).await;
+    assert_eq!(audit["close_reason"], "agent_disconnect");
 }
 
 // ── Agent terminal_error → browser error frame ─────────────────────────────

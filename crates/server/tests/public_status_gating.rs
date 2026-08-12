@@ -313,3 +313,60 @@ async fn public_status_disabled_returns_403_everywhere_except_config() {
         );
     }
 }
+
+#[tokio::test]
+async fn public_status_empty_selection_includes_every_server() {
+    let (base_url, state, _tmp) = start_test_server().await;
+    let server_id = "srv-empty-scope-1";
+
+    insert_minimal_server(&state.db, server_id).await;
+    // The admin UI advertises "leave empty to include every server" — an
+    // empty selection must therefore expose the seeded server publicly.
+    set_all_on(&state.db, Vec::new()).await;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap();
+
+    let body: serde_json::Value = client
+        .get(format!("{base_url}/api/status"))
+        .send()
+        .await
+        .expect("list request")
+        .json()
+        .await
+        .expect("list body");
+    let servers = body["data"]["servers"]
+        .as_array()
+        .or_else(|| body["data"].as_array())
+        .expect("servers array");
+    assert!(
+        servers
+            .iter()
+            .any(|s| s["id"].as_str() == Some(server_id)),
+        "empty selection must include every server, got: {servers:?}"
+    );
+
+    // An explicit selection still restricts the page to the listed servers.
+    insert_minimal_server(&state.db, "srv-empty-scope-2").await;
+    set_all_on(&state.db, vec!["srv-empty-scope-2".to_string()]).await;
+    let body: serde_json::Value = client
+        .get(format!("{base_url}/api/status"))
+        .send()
+        .await
+        .expect("restricted request")
+        .json()
+        .await
+        .expect("restricted body");
+    let servers = body["data"]["servers"]
+        .as_array()
+        .or_else(|| body["data"].as_array())
+        .expect("servers array");
+    assert!(
+        servers
+            .iter()
+            .all(|s| s["id"].as_str() != Some(server_id)),
+        "explicit selection must exclude unselected servers"
+    );
+}

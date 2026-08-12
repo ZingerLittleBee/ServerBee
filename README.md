@@ -26,7 +26,7 @@ ServerBee watches all your servers from one place. A central **server** receives
 - 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
 - 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, status pages, and more.
 - 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, agent-owned capability gates.
-- ✅ **Battle-tested** — 3,800+ automated tests, including integration suites that drive the real router over HTTP + WebSocket via a mock-agent harness; green on every CI run.
+- ✅ **Battle-tested** — 3,800+ automated tests and over 91% measured Rust region coverage, including integration suites that drive the real router over HTTP + WebSocket via a mock-agent harness; green on every CI run.
 
 > [!NOTE]
 > ServerBee is in active development (`v1.0.0-alpha.12`). Expect rapid iteration.
@@ -136,7 +136,7 @@ make cargo-clippy     # Rust lint
 
 ### Testing & quality
 
-ServerBee ships with **3,800+ automated tests** — 3,200+ Rust (unit + 42 integration suites that drive the real Axum router over HTTP/WebSocket with a mock-agent harness) and 600+ frontend Vitest tests. Coverage is measured with `cargo-llvm-cov` (common ~98%, agent ~90%, server ~92% region). Every push runs zero-warning Clippy, the full Rust suite, and frontend type/lint checks in CI. See the [Testing & Quality](https://docs.serverbee.app/en/docs/testing) guide.
+ServerBee ships with **3,800+ automated tests** — 3,200+ Rust (unit + 42 integration suites that drive the real Axum router over HTTP/WebSocket with a mock-agent harness) and 600+ frontend Vitest tests. Coverage is measured with `cargo-llvm-cov` (over 91% region overall; common ~98%, agent ~90%, server ~92%). Every push runs zero-warning Clippy, the full Rust suite, and frontend type/lint checks in CI. See the [Testing & Quality](https://docs.serverbee.app/en/docs/testing) guide.
 
 ## API
 

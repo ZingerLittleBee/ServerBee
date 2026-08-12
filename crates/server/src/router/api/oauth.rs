@@ -323,8 +323,48 @@ pub async fn oauth_callback(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{AppConfig, OAuthConfig, OAuthProviderConfig};
     use crate::state::OAuthFlowState;
+    use crate::test_utils::setup_test_db;
+    use axum::extract::{Path, State};
+    use axum::http::header::{LOCATION, SET_COOKIE};
+    use axum::response::IntoResponse;
     use dashmap::DashMap;
+
+    async fn configured_state(secure_cookie: bool) -> (Arc<AppState>, tempfile::TempDir) {
+        let (db, tmp) = setup_test_db().await;
+        let mut config = AppConfig::default();
+        config.auth.secure_cookie = secure_cookie;
+        config.server.data_dir = tmp.path().to_string_lossy().to_string();
+        config.oauth = OAuthConfig {
+            github: Some(OAuthProviderConfig {
+                client_id: "github-client".to_string(),
+                client_secret: "github-secret".to_string(),
+            }),
+            google: Some(OAuthProviderConfig {
+                client_id: "google-client".to_string(),
+                client_secret: "google-secret".to_string(),
+            }),
+            base_url: "https://serverbee.example".to_string(),
+            allow_registration: false,
+            oidc: None,
+        };
+        let state = AppState::new(db, config)
+            .await
+            .expect("configured OAuth state");
+        (state, tmp)
+    }
+
+    fn redirect_url(redirect: Redirect) -> url::Url {
+        let response = redirect.into_response();
+        let location = response
+            .headers()
+            .get(LOCATION)
+            .expect("OAuth redirect location")
+            .to_str()
+            .expect("OAuth redirect location text");
+        url::Url::parse(location).expect("OAuth redirect URL")
+    }
 
     fn make_states(
         state: &str,
@@ -390,5 +430,105 @@ mod tests {
         // second use must fail: state was consumed (replay protection)
         let err = validate_and_consume_state(&states, "s1", "github", Some("nonce1")).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)));
+    }
+
+    #[tokio::test]
+    async fn authorize_github_sets_pkce_state_nonce_and_scopes() {
+        let (state, _tmp) = configured_state(false).await;
+        state.oauth_states.insert(
+            "expired-state".to_string(),
+            OAuthFlowState {
+                provider: "github".to_string(),
+                created_at: Utc::now() - chrono::Duration::minutes(11),
+                nonce: "expired-nonce".to_string(),
+                pkce_verifier: "expired-verifier".to_string(),
+            },
+        );
+
+        let (headers, redirect) =
+            oauth_authorize(State(Arc::clone(&state)), Path("github".to_string()))
+                .await
+                .expect("GitHub authorize should redirect");
+        let auth_url = redirect_url(redirect);
+        let query: std::collections::HashMap<_, _> = auth_url.query_pairs().into_owned().collect();
+
+        assert_eq!(auth_url.host_str(), Some("github.com"));
+        assert_eq!(
+            query.get("client_id").map(String::as_str),
+            Some("github-client")
+        );
+        assert_eq!(
+            query.get("code_challenge_method").map(String::as_str),
+            Some("S256")
+        );
+        assert!(
+            query
+                .get("code_challenge")
+                .is_some_and(|value| !value.is_empty())
+        );
+        let scopes: Vec<&str> = query
+            .get("scope")
+            .expect("GitHub scopes")
+            .split_whitespace()
+            .collect();
+        assert!(scopes.contains(&"read:user"));
+        assert!(scopes.contains(&"user:email"));
+
+        let state_key = query.get("state").expect("OAuth state");
+        let flow = state
+            .oauth_states
+            .get(state_key)
+            .expect("stored OAuth flow");
+        assert_eq!(flow.provider, "github");
+        assert!(!flow.pkce_verifier.is_empty());
+        let nonce = flow.nonce.clone();
+        drop(flow);
+        assert!(state.oauth_states.get("expired-state").is_none());
+
+        let cookie = headers
+            .get(SET_COOKIE)
+            .expect("OAuth nonce cookie")
+            .to_str()
+            .expect("OAuth nonce cookie text");
+        assert!(cookie.starts_with(&format!("oauth_nonce={nonce};")));
+        assert!(cookie.contains("HttpOnly; SameSite=Lax"));
+        assert!(cookie.contains("Max-Age=600"));
+        assert!(!cookie.contains("; Secure"));
+    }
+
+    #[tokio::test]
+    async fn authorize_google_lists_provider_and_sets_secure_cookie() {
+        let (state, _tmp) = configured_state(true).await;
+
+        let providers = list_providers(State(Arc::clone(&state))).await;
+        assert_eq!(
+            providers.0.data.providers,
+            vec!["github".to_string(), "google".to_string()]
+        );
+
+        let (headers, redirect) =
+            oauth_authorize(State(Arc::clone(&state)), Path("google".to_string()))
+                .await
+                .expect("Google authorize should redirect");
+        let auth_url = redirect_url(redirect);
+        let query: std::collections::HashMap<_, _> = auth_url.query_pairs().into_owned().collect();
+
+        assert_eq!(auth_url.host_str(), Some("accounts.google.com"));
+        let scopes: Vec<&str> = query
+            .get("scope")
+            .expect("Google scopes")
+            .split_whitespace()
+            .collect();
+        assert!(scopes.contains(&"openid"));
+        assert!(scopes.contains(&"email"));
+        assert!(scopes.contains(&"profile"));
+        assert!(
+            headers
+                .get(SET_COOKIE)
+                .expect("OAuth nonce cookie")
+                .to_str()
+                .expect("OAuth nonce cookie text")
+                .ends_with("; Secure")
+        );
     }
 }

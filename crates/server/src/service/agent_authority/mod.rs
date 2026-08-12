@@ -1112,6 +1112,29 @@ mod tests {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 9527)
     }
 
+    /// Rewind an offer's expiry into the past. The offer stays Outstanding
+    /// (`outcome IS NULL`) until some caller materializes the elapsed deadline.
+    async fn elapse_offer(db: &DatabaseConnection, offer_id: &OfferId) {
+        let mut row: enrollment_offer::ActiveModel =
+            enrollment_offer::Entity::find_by_id(offer_id.as_str())
+                .one(db)
+                .await
+                .expect("read offer")
+                .expect("offer")
+                .into();
+        row.expires_at = Set(Utc::now() - Duration::seconds(1));
+        row.update(db).await.expect("expire offer");
+    }
+
+    async fn offer_outcome(db: &DatabaseConnection, offer_id: &OfferId) -> Option<String> {
+        enrollment_offer::Entity::find_by_id(offer_id.as_str())
+            .one(db)
+            .await
+            .expect("read offer")
+            .expect("offer")
+            .outcome
+    }
+
     #[tokio::test]
     async fn issue_offer_for_unclaimed_exposes_one_outstanding_offer() {
         let fixture = authority_with_unclaimed_server().await;
@@ -1403,15 +1426,7 @@ mod tests {
     async fn elapsed_offer_is_materialized_as_expired_before_successor_is_issued() {
         let fixture = authority_with_unclaimed_server().await;
         let expired = fixture.issue().await;
-        let mut row: enrollment_offer::ActiveModel =
-            enrollment_offer::Entity::find_by_id(expired.id.as_str())
-                .one(&fixture.db)
-                .await
-                .expect("read offer")
-                .expect("offer")
-                .into();
-        row.expires_at = Set(Utc::now() - Duration::seconds(1));
-        row.update(&fixture.db).await.expect("expire offer");
+        elapse_offer(&fixture.db, &expired.id).await;
 
         let successor = fixture
             .authority
@@ -1440,6 +1455,180 @@ mod tests {
                 .map(|offer| offer.id),
             Some(successor.id)
         );
+    }
+
+    #[tokio::test]
+    async fn expired_code_cannot_claim_authority_and_is_materialized_as_expired() {
+        let fixture = authority_with_unclaimed_server().await;
+        let offer = fixture.issue().await;
+        elapse_offer(&fixture.db, &offer.id).await;
+
+        let result = fixture
+            .authority
+            .claim(ClaimAgent {
+                code: offer.code.clone(),
+                proposed_run_token: ProposedRunToken::parse(FIRST_TOKEN).expect("run token"),
+                source: agent_source(),
+                remote_addr: Some("127.0.0.1".to_string()),
+            })
+            .await;
+
+        assert!(matches!(result, Err(ClaimError::Rejected)));
+        assert_eq!(
+            offer_outcome(&fixture.db, &offer.id).await.as_deref(),
+            Some("expired")
+        );
+        // A rejected claim must not install the proposed credential.
+        let stored = server::Entity::find_by_id(fixture.server_id.as_str())
+            .one(&fixture.db)
+            .await
+            .expect("read server")
+            .expect("server");
+        assert!(stored.token_hash.is_none());
+        assert!(stored.token_prefix.is_none());
+        let state = fixture
+            .authority
+            .state(fixture.server_id.clone())
+            .await
+            .expect("state");
+        assert_eq!(state.authority, AuthorityStatus::Unclaimed);
+        assert!(state.outstanding_offer.is_none());
+    }
+
+    #[tokio::test]
+    async fn revoking_a_consumed_offer_reports_its_terminal_outcome() {
+        let fixture = authority_with_unclaimed_server().await;
+        let consumed = fixture.claim_initial(FIRST_TOKEN).await;
+
+        let result = fixture
+            .authority
+            .revoke_offer(RevokeOffer {
+                server_id: fixture.server_id.clone(),
+                offer_id: consumed.id.clone(),
+                actor: user_actor(),
+                source: api_source(),
+            })
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(RevokeOfferError::Terminal(OfferOutcome::Consumed))
+        ));
+        // The terminal outcome is immutable: revocation must not overwrite it.
+        assert_eq!(
+            offer_outcome(&fixture.db, &consumed.id).await.as_deref(),
+            Some("consumed")
+        );
+    }
+
+    #[tokio::test]
+    async fn elapsed_offers_reject_revocation_and_replacement_as_expired() {
+        let fixture = authority_with_unclaimed_server().await;
+        let revoked_target = fixture.issue().await;
+        elapse_offer(&fixture.db, &revoked_target.id).await;
+
+        let revoke = fixture
+            .authority
+            .revoke_offer(RevokeOffer {
+                server_id: fixture.server_id.clone(),
+                offer_id: revoked_target.id.clone(),
+                actor: user_actor(),
+                source: api_source(),
+            })
+            .await;
+
+        assert!(matches!(
+            revoke,
+            Err(RevokeOfferError::Terminal(OfferOutcome::Expired))
+        ));
+        assert_eq!(
+            offer_outcome(&fixture.db, &revoked_target.id)
+                .await
+                .as_deref(),
+            Some("expired")
+        );
+
+        // The elapsed offer is terminal now, so a successor can be issued and
+        // driven into the same deadline for the replacement path.
+        let replace_target = fixture.issue().await;
+        elapse_offer(&fixture.db, &replace_target.id).await;
+
+        let replace = fixture
+            .authority
+            .replace_offer(ReplaceOffer {
+                server_id: fixture.server_id.clone(),
+                offer_id: replace_target.id.clone(),
+                actor: user_actor(),
+                source: api_source(),
+                ttl: OfferTtl::default(),
+            })
+            .await;
+
+        assert!(matches!(
+            replace,
+            Err(ReplaceOfferError::NotOutstanding {
+                outcome: OfferOutcome::Expired,
+                current: None
+            })
+        ));
+        assert_eq!(
+            offer_outcome(&fixture.db, &replace_target.id)
+                .await
+                .as_deref(),
+            Some("expired")
+        );
+        assert!(
+            fixture
+                .authority
+                .state(fixture.server_id.clone())
+                .await
+                .expect("state")
+                .outstanding_offer
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn authority_revocation_marks_an_elapsed_open_offer_expired() {
+        let fixture = authority_with_unclaimed_server().await;
+        fixture.claim_initial(FIRST_TOKEN).await;
+        let offer = fixture
+            .authority
+            .begin_reenrollment(BeginReenrollment {
+                server_id: fixture.server_id.clone(),
+                mode: ReenrollmentMode::Graceful,
+                actor: user_actor(),
+                source: api_source(),
+                ttl: OfferTtl::default(),
+            })
+            .await
+            .expect("begin graceful re-enrollment");
+        elapse_offer(&fixture.db, &offer.id).await;
+
+        let receipt = fixture
+            .authority
+            .revoke_authority(RevokeAuthority {
+                server_id: fixture.server_id.clone(),
+                actor: user_actor(),
+                source: api_source(),
+            })
+            .await
+            .expect("revoke authority");
+
+        assert!(receipt.changed);
+        // The offer had already elapsed, so it records "expired" rather than
+        // being attributed to the revoking actor.
+        assert_eq!(
+            offer_outcome(&fixture.db, &offer.id).await.as_deref(),
+            Some("expired")
+        );
+        let state = fixture
+            .authority
+            .state(fixture.server_id.clone())
+            .await
+            .expect("state");
+        assert_eq!(state.authority, AuthorityStatus::Unclaimed);
+        assert!(state.outstanding_offer.is_none());
     }
 
     #[tokio::test]

@@ -175,3 +175,51 @@ pub fn read_router() -> Router<Arc<AppState>> {
 pub fn write_router() -> Router<Arc<AppState>> {
     Router::new().route("/geoip/download", routing::post(geoip_download))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::test_utils::setup_test_db;
+
+    /// An `AppState` whose data dir points at a fresh tempdir, so no GeoIP
+    /// database is installed and nothing touches the real `./data` directory.
+    async fn test_state() -> (Arc<AppState>, tempfile::TempDir) {
+        let (db, tmp) = setup_test_db().await;
+        let mut config = AppConfig::default();
+        config.server.data_dir = tmp.path().to_string_lossy().to_string();
+        let state = AppState::new(db, config).await.expect("build test state");
+        (state, tmp)
+    }
+
+    #[tokio::test]
+    async fn status_reports_not_installed_without_a_database() {
+        let (state, _tmp) = test_state().await;
+
+        let response = geoip_status(State(state))
+            .await
+            .expect("status should succeed");
+        let status = &response.0.data;
+        assert!(!status.installed);
+        assert!(status.source.is_none());
+        assert!(status.file_size.is_none());
+        assert!(status.updated_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn download_returns_already_in_progress_when_flag_set() {
+        let (state, _tmp) = test_state().await;
+        // Simulate a download already running: the guard must short-circuit
+        // before any network work instead of starting a second download.
+        state.geoip_downloading.store(true, Ordering::SeqCst);
+
+        let response = geoip_download(State(Arc::clone(&state)))
+            .await
+            .expect("download should return a body, not an error");
+        let body = &response.0.data;
+        assert!(!body.success);
+        assert_eq!(body.message, "Download already in progress");
+        // The guard must leave the flag set for the in-flight download.
+        assert!(state.geoip_downloading.load(Ordering::SeqCst));
+    }
+}

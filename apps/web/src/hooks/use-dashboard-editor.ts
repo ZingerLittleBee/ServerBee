@@ -4,6 +4,7 @@ import {
   mergeLayoutPatch,
   normalizeNewWidgetPlacement
 } from '@/components/dashboard/dashboard-layout'
+import { randomUUID } from '@/lib/uuid'
 import { parseConfig } from '@/lib/widget-helpers'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { WIDGET_TYPES, type WidgetTypeDefinition } from '@/lib/widget-types'
@@ -60,7 +61,7 @@ export function useDashboardEditor() {
   }
 
   function addWidget({ configJson, dashboardId, gridH, gridW, moduleId, title, widgetType }: AddWidgetInput): string {
-    const id = `temp-${crypto.randomUUID()}`
+    const id = `temp-${randomUUID()}`
     setDraftWidgets((current) => {
       const defaults = getWidgetTypeDefaults(widgetType)
       const newWidget: DashboardWidget = {

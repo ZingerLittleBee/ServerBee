@@ -349,7 +349,8 @@ pub fn to_public_config(model: &status_page::Model) -> PublicStatusConfig {
 }
 
 /// Resolve the in-scope server IDs by intersecting the admin-selected list
-/// with the live, non-hidden `servers` rows.
+/// with the live, non-hidden `servers` rows. An empty selection means "every
+/// server" — the admin UI advertises exactly that semantic for the selector.
 pub async fn resolve_scope(db: &DatabaseConnection) -> Result<PublicScope, AppError> {
     let config = load_config(db).await?;
     let selected: Vec<String> = if config.server_ids_json.trim().is_empty() {
@@ -367,10 +368,14 @@ pub async fn resolve_scope(db: &DatabaseConnection) -> Result<PublicScope, AppEr
         .map(|s| s.id)
         .collect();
 
-    let server_ids = selected
-        .into_iter()
-        .filter(|id| live_ids.contains(id))
-        .collect();
+    let server_ids = if selected.is_empty() {
+        live_ids.into_iter().collect()
+    } else {
+        selected
+            .into_iter()
+            .filter(|id| live_ids.contains(id))
+            .collect()
+    };
 
     Ok(PublicScope { config, server_ids })
 }
@@ -1205,7 +1210,7 @@ mod db_tests {
     // ---------------------------------------------------------------------
 
     #[tokio::test]
-    async fn list_servers_empty_scope_returns_empty() {
+    async fn list_servers_with_no_live_servers_returns_empty() {
         let (db, _tmp) = setup_test_db().await;
         set_config(&db, true, "[]", None).await;
         let mgr = make_manager();
@@ -1313,7 +1318,7 @@ mod db_tests {
     async fn get_server_detail_out_of_scope_is_not_found() {
         let (db, _tmp) = setup_test_db().await;
         seed_server(&db, "s1", "Server One", false, None).await;
-        set_config(&db, true, "[]", None).await; // s1 not selected
+        set_config(&db, true, r#"["s-other"]"#, None).await; // s1 not selected
         let mgr = make_manager();
         let err = get_server_detail(&db, &mgr, "s1").await;
         assert!(matches!(err, Err(AppError::NotFound(_))));
@@ -1387,7 +1392,7 @@ mod db_tests {
     async fn get_server_metrics_out_of_scope_is_not_found() {
         let (db, _tmp) = setup_test_db().await;
         seed_server(&db, "s1", "Server One", false, None).await;
-        set_config(&db, true, "[]", None).await;
+        set_config(&db, true, r#"["s-other"]"#, None).await;
         let range = PublicMetricsRangeQuery {
             from: Utc::now() - Duration::hours(1),
             to: Utc::now(),
@@ -1434,7 +1439,7 @@ mod db_tests {
     async fn get_server_uptime_daily_out_of_scope_is_not_found() {
         let (db, _tmp) = setup_test_db().await;
         seed_server(&db, "s1", "Server One", false, None).await;
-        set_config(&db, true, "[]", None).await;
+        set_config(&db, true, r#"["s-other"]"#, None).await;
         let err = get_server_uptime_daily(&db, "s1").await;
         assert!(matches!(err, Err(AppError::NotFound(_))));
     }
@@ -1519,7 +1524,7 @@ mod db_tests {
     }
 
     #[tokio::test]
-    async fn ip_quality_overview_empty_scope_has_no_entries() {
+    async fn ip_quality_overview_with_no_live_servers_has_no_entries() {
         let (db, _tmp) = setup_test_db().await;
         set_config(&db, true, "[]", None).await;
         let overview = ip_quality_overview(&db).await.unwrap();

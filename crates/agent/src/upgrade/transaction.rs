@@ -695,6 +695,205 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&backup).expect("backup"), "old");
     }
 
+    #[test]
+    fn rollback_without_state_file_still_restores_and_reports() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let current = temp.path().join("agent");
+        let candidate = temp.path().join("agent.new");
+        write(&current, "old");
+        write(&candidate, "new");
+        install_candidate_at(&current, &candidate, "2.0.0", Some("job-lost".to_string()))
+            .expect("install candidate");
+
+        // Simulate a state file lost between install and rollback: the rollback
+        // must still restore the backup and synthesize a recovery report.
+        std::fs::remove_file(state_path(&current)).expect("drop state file");
+        assert!(read_state(&current).expect("read state").is_none());
+
+        rollback_failed_candidate_at(
+            &current,
+            "2.0.0",
+            Some("job-lost".to_string()),
+            "candidate never reported healthy".to_string(),
+        )
+        .expect("rollback without state");
+
+        assert_eq!(std::fs::read_to_string(&current).expect("restored"), "old");
+        let report = read_recovery_report_at(&current, "1.0.0")
+            .expect("read report")
+            .expect("recovery report");
+        assert_eq!(report.job_id.as_deref(), Some("job-lost"));
+        assert_eq!(report.target_version, "2.0.0");
+        assert!(report.error.contains("candidate never reported healthy"));
+    }
+
+    #[test]
+    fn crash_leftover_temp_files_are_replaced_during_install() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let current = temp.path().join("agent");
+        let candidate = temp.path().join("agent.new");
+        write(&current, "old");
+        write(&candidate, "new");
+        // Leftovers from a crashed install must not block the next attempt.
+        let backup_temp = backup_path(&current).with_extension("bak.tmp");
+        write(&backup_temp, "stale backup temp");
+        write(&state_temp_path(&current), "stale state temp");
+
+        let backup =
+            install_candidate_at(&current, &candidate, "2.0.0", None).expect("install candidate");
+
+        assert!(!backup_temp.exists());
+        assert!(!state_temp_path(&current).exists());
+        assert_eq!(std::fs::read_to_string(&current).expect("current"), "new");
+        assert_eq!(std::fs::read_to_string(&backup).expect("backup"), "old");
+    }
+
+    #[test]
+    fn rollback_without_backup_reports_missing_backup() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let current = temp.path().join("agent");
+        write(&current, "old");
+
+        let error = rollback_failed_candidate_at(&current, "2.0.0", None, "boom".to_string())
+            .expect_err("rollback should fail without a backup");
+        assert!(
+            error.to_string().contains("upgrade backup is missing"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(std::fs::read_to_string(&current).expect("untouched"), "old");
+    }
+
+    #[test]
+    fn rollback_replaces_a_leftover_failed_binary() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let current = temp.path().join("agent");
+        let candidate = temp.path().join("agent.new");
+        write(&current, "old");
+        write(&candidate, "new");
+        install_candidate_at(&current, &candidate, "2.0.0", None).expect("install candidate");
+        write(&failed_path(&current), "leftover from an earlier rollback");
+
+        rollback_failed_candidate_at(&current, "2.0.0", None, "boom".to_string())
+            .expect("rollback over leftover");
+
+        assert_eq!(std::fs::read_to_string(&current).expect("restored"), "old");
+        assert_eq!(
+            std::fs::read_to_string(failed_path(&current)).expect("failed candidate"),
+            "new"
+        );
+    }
+
+    #[test]
+    fn install_rejects_missing_binaries() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let current = temp.path().join("agent");
+        let candidate = temp.path().join("agent.new");
+
+        let error = install_candidate_at(&current, &candidate, "2.0.0", None)
+            .expect_err("missing current binary");
+        assert!(
+            error.to_string().contains("current Agent binary"),
+            "unexpected error: {error}"
+        );
+
+        write(&current, "old");
+        let error = install_candidate_at(&current, &candidate, "2.0.0", None)
+            .expect_err("missing candidate binary");
+        assert!(
+            error.to_string().contains("candidate Agent binary"),
+            "unexpected error: {error}"
+        );
+        assert!(!state_path(&current).exists());
+    }
+
+    #[test]
+    fn state_machine_is_inert_without_a_state_file() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let current = temp.path().join("agent");
+        write(&current, "old");
+
+        assert_eq!(
+            prepare_startup_at(&current, "1.0.0").expect("prepare startup"),
+            StartupDisposition::Normal
+        );
+        assert!(!commit_startup_trial_at(&current, "1.0.0").expect("commit without state"));
+        finalize_startup_trial_at(&current, "1.0.0").expect("finalize without state");
+        assert!(!rollback_unhealthy_trial_at(&current, "1.0.0").expect("watchdog without state"));
+        assert!(
+            read_recovery_report_at(&current, "1.0.0")
+                .expect("read report")
+                .is_none()
+        );
+        assert!(!trial_is_active_at(&current).expect("no trial"));
+    }
+
+    #[test]
+    fn out_of_phase_transitions_are_rejected() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let current = temp.path().join("agent");
+        let candidate = temp.path().join("agent.new");
+        write(&current, "old");
+        write(&candidate, "new");
+        install_candidate_at(&current, &candidate, "2.0.0", None).expect("install candidate");
+
+        // Pending, not Booting: the commit is a no-op.
+        assert!(!commit_startup_trial_at(&current, "2.0.0").expect("commit while pending"));
+        prepare_startup_at(&current, "2.0.0").expect("prepare trial");
+        // Booting, but the running version does not match the target.
+        assert!(!commit_startup_trial_at(&current, "1.0.0").expect("commit with wrong version"));
+        // Booting, not Healthy: finalize leaves the state in place.
+        finalize_startup_trial_at(&current, "2.0.0").expect("finalize while booting");
+        assert!(state_path(&current).exists());
+        // Healthy, but a mismatched version must not drop the state either.
+        assert!(commit_startup_trial_at(&current, "2.0.0").expect("commit trial"));
+        finalize_startup_trial_at(&current, "1.0.0").expect("finalize with wrong version");
+        assert!(state_path(&current).exists());
+        // Healthy is not RolledBack, so no recovery report is available yet.
+        assert!(
+            read_recovery_report_at(&current, "1.0.0")
+                .expect("read report")
+                .is_none()
+        );
+
+        assert!(rollback_unhealthy_trial_at(&current, "2.0.0").expect("watchdog rollback"));
+        // Once rolled back, a start that still claims the candidate version is a
+        // hard error rather than a silent retry.
+        let error = prepare_startup_at(&current, "2.0.0").expect_err("rolled back startup");
+        assert!(
+            error.to_string().contains("rollback state still points at"),
+            "unexpected error: {error}"
+        );
+        // A rolled-back trial is no longer active and cannot be committed.
+        assert!(!trial_is_active_at(&current).expect("rolled back trial"));
+        assert!(!commit_startup_trial_at(&current, "2.0.0").expect("commit after rollback"));
+        assert!(!rollback_unhealthy_trial_at(&current, "2.0.0").expect("second watchdog pass"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn candidate_probe_reports_a_failing_exit_status() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let candidate = temp.path().join("candidate");
+        write(&candidate, "#!/bin/sh\necho 'probe blew up' >&2\nexit 1\n");
+        std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o755))
+            .expect("candidate permissions");
+
+        let error = verify_candidate_version(&candidate, "2.0.0")
+            .await
+            .expect_err("non-zero exit should fail");
+        let message = error.to_string();
+        assert!(
+            message.contains("candidate probe exited with"),
+            "unexpected error: {message}"
+        );
+        assert!(
+            message.contains("probe blew up"),
+            "stderr should be surfaced, got: {message}"
+        );
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn candidate_probe_checks_reported_version() {

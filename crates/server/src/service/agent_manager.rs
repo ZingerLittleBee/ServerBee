@@ -68,6 +68,11 @@ pub enum TerminalSessionEvent {
     Error(String),
 }
 
+struct TerminalSession {
+    server_id: String,
+    tx: TerminalOutputTx,
+}
+
 #[derive(Clone, Debug)]
 pub struct TracerouteRequestMeta {
     pub server_id: String,
@@ -105,16 +110,9 @@ pub struct AgentManager {
     latest_reports: DashMap<String, CachedReport>,
     browser_tx: broadcast::Sender<BrowserMessage>,
     /// Maps session_id -> terminal output channel (for routing agent output to browser WS)
-    terminal_sessions: DashMap<String, TerminalOutputTx>,
-    /// Maps msg_id -> (oneshot sender, creation time, TTL) for HTTP→WS relay
-    pending_requests: DashMap<
-        String,
-        (
-            oneshot::Sender<AgentMessage>,
-            std::time::Instant,
-            std::time::Duration,
-        ),
-    >,
+    terminal_sessions: DashMap<String, TerminalSession>,
+    /// Maps msg_id -> pending response slot for HTTP→WS relay
+    pending_requests: DashMap<String, PendingRequest>,
     // Docker caches
     docker_containers: DashMap<String, Vec<DockerContainer>>,
     docker_stats: DashMap<String, Vec<DockerContainerStats>>,
@@ -133,6 +131,16 @@ pub struct AgentManager {
     traceroute_results: DashMap<String, TracerouteCacheEntry>,
     server_lifecycle_locks: DashMap<String, Arc<Mutex<()>>>,
     next_connection_id: AtomicU64,
+}
+
+/// A response slot awaiting an agent reply. Tied to the server it was sent
+/// to so disconnect cleanup can fail the waiter immediately instead of
+/// letting it hang until the ack timeout.
+struct PendingRequest {
+    tx: oneshot::Sender<AgentMessage>,
+    server_id: String,
+    created_at: std::time::Instant,
+    ttl: std::time::Duration,
 }
 
 #[allow(dead_code)]
@@ -390,8 +398,14 @@ impl AgentManager {
     }
 
     /// Register a terminal session for routing output from agent to browser.
-    pub fn register_terminal_session(&self, session_id: String, tx: TerminalOutputTx) {
-        self.terminal_sessions.insert(session_id, tx);
+    pub fn register_terminal_session(
+        &self,
+        session_id: String,
+        server_id: String,
+        tx: TerminalOutputTx,
+    ) {
+        self.terminal_sessions
+            .insert(session_id, TerminalSession { server_id, tx });
     }
 
     /// Unregister a terminal session.
@@ -401,7 +415,9 @@ impl AgentManager {
 
     /// Get the terminal output sender for a session.
     pub fn get_terminal_session(&self, session_id: &str) -> Option<TerminalOutputTx> {
-        self.terminal_sessions.get(session_id).map(|v| v.clone())
+        self.terminal_sessions
+            .get(session_id)
+            .map(|session| session.tx.clone())
     }
 
     /// Find agents that have not reported for `threshold_secs` seconds.
@@ -436,6 +452,13 @@ impl AgentManager {
     fn finish_connection_removal(&self, server_id: &str) {
         self.agent_local_capabilities.remove(server_id);
         self.temporary_grants.remove(server_id);
+        // Fail in-flight request/response waiters (uploads, exec, listings)
+        // immediately: the reply can never arrive on a removed connection, so
+        // dropping the sender surfaces Disconnected instead of an ack timeout.
+        self.pending_requests
+            .retain(|_, pending| pending.server_id != server_id);
+        self.terminal_sessions
+            .retain(|_, session| session.server_id != server_id);
         self.remove_docker_log_sessions_for_server(server_id);
         self.clear_docker_caches(server_id);
 
@@ -488,14 +511,23 @@ impl AgentManager {
 
     /// Register a pending request for HTTP→WS relay with a custom TTL.
     /// Returns a oneshot receiver that will receive the agent's response.
+    /// The slot is dropped (failing the receiver) if `server_id` disconnects.
     pub fn register_pending_request_with_ttl(
         &self,
+        server_id: &str,
         msg_id: String,
         ttl: std::time::Duration,
     ) -> oneshot::Receiver<AgentMessage> {
         let (tx, rx) = oneshot::channel();
-        self.pending_requests
-            .insert(msg_id, (tx, std::time::Instant::now(), ttl));
+        self.pending_requests.insert(
+            msg_id,
+            PendingRequest {
+                tx,
+                server_id: server_id.to_string(),
+                created_at: std::time::Instant::now(),
+                ttl,
+            },
+        );
         rx
     }
 
@@ -506,8 +538,16 @@ impl AgentManager {
 
     /// Register a pending request for HTTP→WS relay with a default 60s TTL.
     /// Returns a oneshot receiver that will receive the agent's response.
-    pub fn register_pending_request(&self, msg_id: String) -> oneshot::Receiver<AgentMessage> {
-        self.register_pending_request_with_ttl(msg_id, std::time::Duration::from_secs(60))
+    pub fn register_pending_request(
+        &self,
+        server_id: &str,
+        msg_id: String,
+    ) -> oneshot::Receiver<AgentMessage> {
+        self.register_pending_request_with_ttl(
+            server_id,
+            msg_id,
+            std::time::Duration::from_secs(60),
+        )
     }
 
     /// Remove a pending response slot when the request owner stops waiting.
@@ -547,6 +587,7 @@ impl AgentManager {
         // TTL is a backstop above the await deadline; failure paths below
         // remove the slot eagerly so the sweep never has to.
         let rx = self.register_pending_request_with_ttl(
+            server_id,
             msg_id.clone(),
             timeout + std::time::Duration::from_secs(10),
         );
@@ -567,8 +608,8 @@ impl AgentManager {
     /// Dispatch a response from the agent to a pending HTTP request.
     /// Returns true if the response was delivered, false if no pending request was found.
     pub fn dispatch_pending_response(&self, msg_id: &str, message: AgentMessage) -> bool {
-        if let Some((_, (tx, _, _))) = self.pending_requests.remove(msg_id) {
-            let _ = tx.send(message);
+        if let Some((_, pending)) = self.pending_requests.remove(msg_id) {
+            let _ = pending.tx.send(message);
             true
         } else {
             false
@@ -771,7 +812,7 @@ impl AgentManager {
     pub fn cleanup_expired_requests(&self) {
         let now = std::time::Instant::now();
         self.pending_requests
-            .retain(|_, (_, created_at, ttl)| now.duration_since(*created_at) < *ttl);
+            .retain(|_, pending| now.duration_since(pending.created_at) < pending.ttl);
     }
 
     // --- Traceroute cache ---
@@ -1148,7 +1189,7 @@ mod tests {
     fn test_terminal_session_lifecycle() {
         let (mgr, _rx) = make_manager();
         let (tx, _) = mpsc::channel(1);
-        mgr.register_terminal_session("sess1".into(), tx);
+        mgr.register_terminal_session("sess1".into(), "server1".into(), tx);
         assert!(mgr.get_terminal_session("sess1").is_some());
         mgr.unregister_terminal_session("sess1");
         assert!(mgr.get_terminal_session("sess1").is_none());
@@ -1338,8 +1379,11 @@ mod tests {
     #[test]
     fn test_cleanup_expired_requests() {
         let (mgr, _rx) = make_manager();
-        let _rx1 = mgr
-            .register_pending_request_with_ttl("old".into(), std::time::Duration::from_millis(1));
+        let _rx1 = mgr.register_pending_request_with_ttl(
+            "s1",
+            "old".into(),
+            std::time::Duration::from_millis(1),
+        );
         std::thread::sleep(std::time::Duration::from_millis(10));
         mgr.cleanup_expired_requests();
         let dispatched = mgr.dispatch_pending_response(
@@ -1356,7 +1400,7 @@ mod tests {
     #[test]
     fn test_pending_request_lifecycle() {
         let (mgr, _rx) = make_manager();
-        let mut rx = mgr.register_pending_request("req1".into());
+        let mut rx = mgr.register_pending_request("s1", "req1".into());
         assert!(rx.try_recv().is_err());
 
         let dispatched = mgr.dispatch_pending_response(
@@ -1380,15 +1424,45 @@ mod tests {
         assert!(!dispatched2);
     }
 
+    #[tokio::test]
+    async fn test_disconnect_fails_pending_requests_for_that_server_only() {
+        let (mgr, _brx) = make_manager();
+        let (tx1, _rx1) = mpsc::channel(8);
+        let (tx2, _rx2) = mpsc::channel(8);
+        mgr.add_connection("s1".into(), "A".into(), tx1, test_addr());
+        mgr.add_connection("s2".into(), "B".into(), tx2, test_addr());
+        let mut pending_s1 = mgr.register_pending_request("s1", "req-s1".into());
+        let mut pending_s2 = mgr.register_pending_request("s2", "req-s2".into());
+
+        mgr.remove_connection("s1");
+
+        // The disconnected server's waiter fails immediately instead of
+        // hanging until its ack timeout; the other server's slot survives.
+        assert!(matches!(
+            pending_s1.try_recv(),
+            Err(oneshot::error::TryRecvError::Closed)
+        ));
+        assert!(!mgr.has_pending_request("req-s1"));
+        assert!(matches!(
+            pending_s2.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(mgr.has_pending_request("req-s2"));
+    }
+
     #[test]
     fn test_cleanup_expired_requests_per_entry_ttl() {
         let (mgr, _rx) = make_manager();
         let _rx1 = mgr.register_pending_request_with_ttl(
+            "s1",
             "short".into(),
             std::time::Duration::from_millis(10),
         );
-        let _rx2 = mgr
-            .register_pending_request_with_ttl("long".into(), std::time::Duration::from_secs(300));
+        let _rx2 = mgr.register_pending_request_with_ttl(
+            "s1",
+            "long".into(),
+            std::time::Duration::from_secs(300),
+        );
         std::thread::sleep(std::time::Duration::from_millis(50));
         mgr.cleanup_expired_requests();
         assert!(!mgr.has_pending_request("short"));

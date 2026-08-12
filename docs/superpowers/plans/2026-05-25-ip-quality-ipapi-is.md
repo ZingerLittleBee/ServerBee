@@ -1660,7 +1660,7 @@ cd ../..
 - [ ] **Step 3: SCP to test VPS**
 
 ```bash
-sshpass -p '2ucW09DzI@!LZ!e47yG' scp \
+sshpass -e scp \
     -o StrictHostKeyChecking=accept-new \
     target/x86_64-unknown-linux-gnu/release/serverbee-server \
     root@207.241.173.217:/tmp/serverbee-server-test
@@ -1673,7 +1673,7 @@ sshpass -p '2ucW09DzI@!LZ!e47yG' scp \
 SSH in and run each of the 6 checklist items from `tests/ip-quality/ipapi-is.md`:
 
 ```bash
-sshpass -p '2ucW09DzI@!LZ!e47yG' ssh -o StrictHostKeyChecking=accept-new \
+sshpass -e ssh -o StrictHostKeyChecking=accept-new \
     root@207.241.173.217
 ```
 

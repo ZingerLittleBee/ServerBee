@@ -665,4 +665,142 @@ mod tests {
             other => panic!("expected DockerUnavailable, got {other:?}"),
         }
     }
+
+    #[tokio::test]
+    async fn verify_connection_reports_an_unreachable_daemon() {
+        let (manager, _rx) = make_manager(CAP_DOCKER);
+        assert!(manager.verify_connection().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn poll_stats_skips_daemon_access_without_capability() {
+        let (mut manager, mut rx) = make_manager(0);
+        manager.poll_stats().await.unwrap();
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn poll_stats_notifies_when_the_daemon_is_unreachable() {
+        let (mut manager, mut rx) = make_manager(CAP_DOCKER);
+        assert!(manager.poll_stats().await.is_err());
+        assert!(matches!(
+            rx.recv().await,
+            Some(AgentMessage::DockerUnavailable { msg_id: None })
+        ));
+    }
+
+    #[tokio::test]
+    async fn daemon_read_requests_preserve_their_message_ids_on_failure() {
+        let cases = [
+            ServerMessage::DockerListContainers {
+                msg_id: "containers".to_string(),
+            },
+            ServerMessage::DockerGetInfo {
+                msg_id: "info".to_string(),
+            },
+            ServerMessage::DockerListNetworks {
+                msg_id: "networks".to_string(),
+            },
+            ServerMessage::DockerListVolumes {
+                msg_id: "volumes".to_string(),
+            },
+        ];
+
+        for (request, expected_id) in
+            cases
+                .into_iter()
+                .zip(["containers", "info", "networks", "volumes"])
+        {
+            let (mut manager, mut rx) = make_manager(CAP_DOCKER);
+            assert!(manager.handle_server_message(request).await.is_err());
+            assert!(matches!(
+                rx.recv().await,
+                Some(AgentMessage::DockerUnavailable { msg_id: Some(id) }) if id == expected_id
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn container_actions_report_daemon_errors_without_failing_dispatch() {
+        let actions = [
+            DockerAction::Start,
+            DockerAction::Stop { timeout: None },
+            DockerAction::Restart { timeout: Some(3) },
+            DockerAction::Remove { force: true },
+        ];
+
+        for (index, action) in actions.into_iter().enumerate() {
+            let (mut manager, mut rx) = make_manager(CAP_DOCKER);
+            let msg_id = format!("action-{index}");
+            manager
+                .handle_server_message(ServerMessage::DockerContainerAction {
+                    msg_id: msg_id.clone(),
+                    container_id: "missing-container".to_string(),
+                    action,
+                })
+                .await
+                .unwrap();
+            match rx.recv().await {
+                Some(AgentMessage::DockerActionResult {
+                    msg_id: actual_id,
+                    success,
+                    error,
+                }) => {
+                    assert_eq!(actual_id, msg_id);
+                    assert!(!success);
+                    assert!(error.is_some());
+                }
+                other => panic!("expected DockerActionResult, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_messages_replace_and_stop_existing_tasks() {
+        let (mut manager, _rx) = make_manager(CAP_DOCKER);
+
+        manager
+            .handle_server_message(ServerMessage::DockerLogsStart {
+                session_id: "logs-1".to_string(),
+                container_id: "container-1".to_string(),
+                tail: Some(25),
+                follow: true,
+            })
+            .await
+            .unwrap();
+        assert_eq!(manager.log_sessions.len(), 1);
+        manager
+            .handle_server_message(ServerMessage::DockerLogsStart {
+                session_id: "logs-1".to_string(),
+                container_id: "container-2".to_string(),
+                tail: None,
+                follow: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(manager.log_sessions.len(), 1);
+        manager
+            .handle_server_message(ServerMessage::DockerLogsStop {
+                session_id: "logs-1".to_string(),
+            })
+            .await
+            .unwrap();
+        assert!(manager.log_sessions.is_empty());
+
+        manager
+            .handle_server_message(ServerMessage::DockerEventsStart)
+            .await
+            .unwrap();
+        assert!(manager.event_stream_handle.is_some());
+        manager
+            .handle_server_message(ServerMessage::DockerEventsStart)
+            .await
+            .unwrap();
+        assert!(manager.event_stream_handle.is_some());
+        manager
+            .handle_server_message(ServerMessage::DockerEventsStop)
+            .await
+            .unwrap();
+        assert!(manager.event_stream_handle.is_none());
+    }
 }

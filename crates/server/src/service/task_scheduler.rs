@@ -2108,4 +2108,154 @@ mod tests {
             "last_run_at should be stamped"
         );
     }
+
+    // ---- execute_scheduled_task: cron path honours retries ------------
+
+    /// Remote address for a fabricated agent connection.
+    fn test_addr() -> std::net::SocketAddr {
+        std::net::SocketAddr::new(
+            std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
+            8080,
+        )
+    }
+
+    /// Fetch a task's result rows ordered by attempt.
+    async fn results_by_attempt(db: &DatabaseConnection, task_id: &str) -> Vec<task_result::Model> {
+        task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq(task_id))
+            .order_by_asc(task_result::Column::Attempt)
+            .all(db)
+            .await
+            .expect("load task results")
+    }
+
+    // The cron path (skip_retry == false) is the only caller that reads
+    // retry_count off the task model, so it is also the only one that runs the
+    // retry loop. An offline target is retried until the attempts are
+    // exhausted, and every attempt persists its own "Server offline" row.
+    #[tokio::test]
+    async fn test_execute_for_server_retries_offline_server_until_attempts_exhausted() {
+        let (state, _db, _dir) = build_test_state().await;
+        seed_server(&state.db, "srv-retry", (CAP_DEFAULT | CAP_EXEC) as i32).await;
+        seed_task(&state.db, "task-retry", &["srv-retry"]).await;
+        task::Entity::update_many()
+            .filter(task::Column::Id.eq("task-retry"))
+            .col_expr(task::Column::RetryCount, Expr::value(1))
+            .col_expr(task::Column::RetryInterval, Expr::value(1))
+            .exec(&state.db)
+            .await
+            .unwrap();
+
+        let started = execute_scheduled_task(&state, "task-retry", false, None)
+            .await
+            .unwrap();
+        assert!(started);
+
+        assert_eq!(
+            wait_for_results(&state.db, "task-retry", 2).await,
+            2,
+            "retry_count = 1 must produce two attempts"
+        );
+        let rows = results_by_attempt(&state.db, "task-retry").await;
+        assert_eq!(
+            rows.iter().map(|row| row.attempt).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        for row in &rows {
+            assert_eq!(row.exit_code, -3);
+            assert_eq!(row.output, "Server offline");
+        }
+    }
+
+    // ---- execute_for_server: dispatch/response failure arms -----------
+
+    // A connection is registered but its receiver is already gone, so the
+    // manager resolves a sender and the send itself fails: the executor must
+    // record "Dispatch failed" (exit -3) rather than the offline text.
+    #[tokio::test]
+    async fn test_execute_for_server_writes_dispatch_failed() {
+        let (state, _db, _dir) = build_test_state().await;
+        let (tx, rx) = tokio::sync::mpsc::channel::<ServerMessage>(1);
+        drop(rx);
+        state.agent_manager.add_connection(
+            "srv-dispatch".to_string(),
+            "srv-dispatch".to_string(),
+            tx,
+            test_addr(),
+        );
+
+        execute_for_server(
+            &state,
+            "task-send",
+            "run-send",
+            "srv-dispatch",
+            "echo hi",
+            1,
+            0,
+            1,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        let rows = results_by_attempt(&state.db, "task-send").await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].exit_code, -3);
+        assert_eq!(rows[0].output, "Dispatch failed");
+        assert_eq!(rows[0].attempt, 1);
+    }
+
+    // An agent that accepts the Exec frame and then vanishes without replying
+    // drops the pending response slot, which resolves the request as
+    // Disconnected. That lands in the catch-all arm and is reported as
+    // "No response within Ns" (exit -4).
+    #[tokio::test]
+    async fn test_execute_for_server_writes_no_response_when_slot_is_dropped() {
+        let (state, _db, _dir) = build_test_state().await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ServerMessage>(1);
+        state.agent_manager.add_connection(
+            "srv-quiet".to_string(),
+            "srv-quiet".to_string(),
+            tx,
+            test_addr(),
+        );
+
+        let agent_state = state.clone();
+        let fake_agent = tokio::spawn(async move {
+            let msg = rx.recv().await.expect("Exec frame should be dispatched");
+            let ServerMessage::Exec { task_id, .. } = msg else {
+                panic!("expected Exec, got {msg:?}");
+            };
+            agent_state.agent_manager.cancel_pending_request(&task_id);
+        });
+
+        let started = std::time::Instant::now();
+        execute_for_server(
+            &state,
+            "task-quiet",
+            "run-quiet",
+            "srv-quiet",
+            "echo hi",
+            1,
+            0,
+            1,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        let elapsed = started.elapsed();
+        fake_agent.await.unwrap();
+
+        // The dropped slot must resolve immediately; anything near the 11s
+        // request deadline would mean we exercised the timeout arm instead.
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "expected an immediate Disconnected, took {elapsed:?}"
+        );
+        let rows = results_by_attempt(&state.db, "task-quiet").await;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].exit_code, -4);
+        assert_eq!(rows[0].output, "No response within 1s");
+        assert_eq!(rows[0].attempt, 1);
+    }
 }

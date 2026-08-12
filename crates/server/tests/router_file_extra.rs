@@ -13,7 +13,12 @@
 //!   * `cancel_transfer` success (owned, in-progress download → agent cancel),
 //!   * `list_transfers` returning an active transfer,
 //!   * upload validation arms: missing `path` field, empty `file` field, and
-//!     the agent rejecting the upload start with FileUploadError.
+//!     the agent rejecting the upload start with FileUploadError,
+//!   * upload chunk-phase failures (bad ack offset, agent error) and an error
+//!     reported at FileUploadEnd, each asserted through `mark_failed`,
+//!   * a mid-transfer agent disconnect failing fast (pending slots are dropped
+//!     by disconnect cleanup instead of waiting out the ack timeout),
+//!   * the streaming max-upload-size guard (needs a smaller configured limit).
 //!
 //! Tests whose HTTP handler blocks on an agent reply while a spawned responder
 //! must make progress use the multi-thread runtime so the responder is never
@@ -45,6 +50,144 @@ async fn connect_agent_with_caps(
     assert_eq!(welcome["type"], "welcome", "first agent frame should be welcome");
     send_system_info(&mut sink, &mut reader, "file-extra-system-info", Some(caps)).await;
     (sink, reader)
+}
+
+/// Look up the status of the transfer whose remote path is `path` in the
+/// caller's transfer list. Upload failures keep the transfer around with
+/// `status: "failed"`, so this is how a test proves `mark_failed` actually ran
+/// instead of merely asserting the HTTP status the handler returned.
+async fn transfer_status_for_path(client: &reqwest::Client, base_url: &str, path: &str) -> String {
+    let resp = client
+        .get(format!("{base_url}/api/files/transfers"))
+        .send()
+        .await
+        .expect("list transfers failed");
+    assert_eq!(resp.status(), 200, "transfer listing should succeed");
+    let body: Value = resp.json().await.expect("parse transfers response");
+    let transfers = body["data"]["transfers"]
+        .as_array()
+        .expect("transfers array")
+        .clone();
+    let entry = transfers
+        .iter()
+        .find(|t| t["file_path"] == json!(path))
+        .unwrap_or_else(|| panic!("no transfer recorded for {path}, got {transfers:?}"));
+    entry["status"]
+        .as_str()
+        .expect("transfer status")
+        .to_string()
+}
+
+/// Send a `file_upload_ack` for `transfer_id` acknowledging `offset` bytes.
+async fn send_upload_ack(sink: &mut AgentSink, transfer_id: &str, offset: u64) {
+    sink.send(tungstenite::Message::Text(
+        json!({
+            "type": "file_upload_ack",
+            "transfer_id": transfer_id,
+            "offset": offset
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .expect("send file_upload_ack");
+}
+
+/// Send a `file_upload_error` for `transfer_id`.
+async fn send_upload_error(sink: &mut AgentSink, transfer_id: &str, error: &str) {
+    sink.send(tungstenite::Message::Text(
+        json!({
+            "type": "file_upload_error",
+            "transfer_id": transfer_id,
+            "error": error
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .expect("send file_upload_error");
+}
+
+/// Number of raw bytes carried by a `file_upload_chunk` frame, so a responder
+/// can ack the exact offset the server expects (`offset + len`).
+fn decoded_chunk_len(msg: &Value) -> u64 {
+    use base64::Engine;
+    let data = msg["data"].as_str().expect("chunk data");
+    base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .expect("decode chunk data")
+        .len() as u64
+}
+
+/// Like `common::start_test_server`, but with a caller-chosen
+/// `file.max_upload_size` so the streaming size guard can be reached without
+/// pushing 100 MB through the socket.
+async fn start_server_with_upload_limit(max_upload_size: u64) -> (String, tempfile::TempDir) {
+    use sea_orm::{ConnectOptions, ConnectionTrait, Database};
+    use sea_orm_migration::MigratorTrait;
+    use serverbee_server::config::{
+        AppConfig, AuthConfig, DatabaseConfig, FileConfig, ServerConfig,
+    };
+    use serverbee_server::migration::Migrator;
+    use serverbee_server::router::create_router;
+    use serverbee_server::service::auth::AuthService;
+    use serverbee_server::state::AppState;
+
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let data_dir = tmp.path().to_str().expect("temp dir path").to_string();
+
+    let config = AppConfig {
+        server: ServerConfig {
+            listen: "127.0.0.1:0".to_string(),
+            data_dir: data_dir.clone(),
+            trusted_proxies: Vec::new(),
+        },
+        database: DatabaseConfig {
+            path: "test.db".to_string(),
+            max_connections: 5,
+        },
+        auth: AuthConfig {
+            session_ttl: 86400,
+            secure_cookie: false,
+            max_servers: 0,
+        },
+        file: FileConfig { max_upload_size },
+        ..AppConfig::default()
+    };
+
+    let db_url = format!("sqlite://{data_dir}/test.db?mode=rwc");
+    let mut opt = ConnectOptions::new(&db_url);
+    opt.max_connections(5);
+    opt.sqlx_logging(false);
+    let db = Database::connect(opt).await.expect("connect test database");
+    db.execute_unprepared("PRAGMA journal_mode=WAL")
+        .await
+        .unwrap();
+    db.execute_unprepared("PRAGMA foreign_keys=ON")
+        .await
+        .unwrap();
+    Migrator::up(&db, None).await.expect("run migrations");
+    AuthService::create_user(&db, "admin", "testpass", "admin")
+        .await
+        .expect("seed admin");
+
+    let state = AppState::new(db, config).await.expect("create AppState");
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind listener");
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    (base_url, tmp)
 }
 
 /// Spawn a responder that waits for one forwarded request whose `type` equals
@@ -952,4 +1095,306 @@ async fn test_upload_agent_rejects_start_is_400() {
     assert_eq!(resp.status(), 400, "agent-rejected upload should be 400");
 
     agent_task.await.expect("agent responder failed");
+}
+
+// ===========================================================================
+// upload chunk phase: the agent acks the start, then answers the first chunk
+// with an ack for an offset the server never sent → 500 + transfer failed.
+// ===========================================================================
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_upload_chunk_ack_offset_mismatch_is_500() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut sink, mut reader) =
+        connect_agent_with_caps(&base_url, &token, CAP_DEFAULT | CAP_FILE).await;
+
+    let agent_task = tokio::spawn(async move {
+        loop {
+            let msg = recv_agent_text(&mut reader).await;
+            match msg["type"].as_str() {
+                Some("file_upload_start") => {
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_ack(&mut sink, transfer_id, 0).await;
+                }
+                Some("file_upload_chunk") => {
+                    // Ack an offset that does not match `offset + chunk len`,
+                    // which the server treats as a desynced agent.
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_ack(&mut sink, transfer_id, 999_999).await;
+                    return;
+                }
+                other if is_first_connect_noise(other) => {}
+                Some(other) => panic!("unexpected agent command: {other}"),
+                None => {}
+            }
+        }
+    });
+
+    let form = reqwest::multipart::Form::new()
+        .text("path", "/tmp/mismatch.txt")
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"chunk payload".to_vec()).file_name("mismatch.txt"),
+        );
+
+    let resp = client
+        .post(format!("{base_url}/api/files/{server_id}/upload"))
+        .multipart(form)
+        .send()
+        .await
+        .expect("upload request failed");
+    assert_eq!(resp.status(), 500, "bad ack offset should be 500");
+
+    agent_task.await.expect("agent responder failed");
+    assert_eq!(
+        transfer_status_for_path(&client, &base_url, "/tmp/mismatch.txt").await,
+        "failed",
+        "offset mismatch must mark the transfer failed"
+    );
+}
+
+// ===========================================================================
+// upload chunk phase: the agent reports FileUploadError while chunks are still
+// streaming. No upload-complete slot is registered yet, so the error resolves
+// the chunk ack instead → 400 + transfer failed.
+// ===========================================================================
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_upload_chunk_agent_error_is_400() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut sink, mut reader) =
+        connect_agent_with_caps(&base_url, &token, CAP_DEFAULT | CAP_FILE).await;
+
+    let agent_task = tokio::spawn(async move {
+        loop {
+            let msg = recv_agent_text(&mut reader).await;
+            match msg["type"].as_str() {
+                Some("file_upload_start") => {
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_ack(&mut sink, transfer_id, 0).await;
+                }
+                Some("file_upload_chunk") => {
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_error(&mut sink, transfer_id, "Disk quota exceeded").await;
+                    return;
+                }
+                other if is_first_connect_noise(other) => {}
+                Some(other) => panic!("unexpected agent command: {other}"),
+                None => {}
+            }
+        }
+    });
+
+    let form = reqwest::multipart::Form::new()
+        .text("path", "/tmp/quota.txt")
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"chunk payload".to_vec()).file_name("quota.txt"),
+        );
+
+    let resp = client
+        .post(format!("{base_url}/api/files/{server_id}/upload"))
+        .multipart(form)
+        .send()
+        .await
+        .expect("upload request failed");
+    assert_eq!(resp.status(), 400, "chunk-phase agent error should be 400");
+
+    agent_task.await.expect("agent responder failed");
+    assert_eq!(
+        transfer_status_for_path(&client, &base_url, "/tmp/quota.txt").await,
+        "failed",
+        "chunk-phase error must mark the transfer failed"
+    );
+}
+
+// ===========================================================================
+// upload completion: every chunk is acked normally, but the agent fails while
+// finalising and answers FileUploadEnd with FileUploadError → 400 + failed.
+// ===========================================================================
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_upload_end_reports_error_is_400() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut sink, mut reader) =
+        connect_agent_with_caps(&base_url, &token, CAP_DEFAULT | CAP_FILE).await;
+
+    let agent_task = tokio::spawn(async move {
+        loop {
+            let msg = recv_agent_text(&mut reader).await;
+            match msg["type"].as_str() {
+                Some("file_upload_start") => {
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_ack(&mut sink, transfer_id, 0).await;
+                }
+                Some("file_upload_chunk") => {
+                    // Ack exactly what the server expects so the transfer walks
+                    // all the way to the completion handshake.
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    let offset = msg["offset"].as_u64().expect("chunk offset");
+                    let written = decoded_chunk_len(&msg);
+                    send_upload_ack(&mut sink, transfer_id, offset + written).await;
+                }
+                Some("file_upload_end") => {
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_error(&mut sink, transfer_id, "fsync failed").await;
+                    return;
+                }
+                other if is_first_connect_noise(other) => {}
+                Some(other) => panic!("unexpected agent command: {other}"),
+                None => {}
+            }
+        }
+    });
+
+    let form = reqwest::multipart::Form::new()
+        .text("path", "/tmp/finalize.txt")
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"complete payload".to_vec()).file_name("finalize.txt"),
+        );
+
+    let resp = client
+        .post(format!("{base_url}/api/files/{server_id}/upload"))
+        .multipart(form)
+        .send()
+        .await
+        .expect("upload request failed");
+    assert_eq!(resp.status(), 400, "error at upload end should be 400");
+
+    agent_task.await.expect("agent responder failed");
+    assert_eq!(
+        transfer_status_for_path(&client, &base_url, "/tmp/finalize.txt").await,
+        "failed",
+        "completion error must mark the transfer failed"
+    );
+}
+
+// ===========================================================================
+// upload: the agent's WebSocket drops mid-transfer. Disconnect cleanup fails
+// the pending ack slot immediately, so the upload errors out fast instead of
+// hanging until the 30s ack timeout.
+// ===========================================================================
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_upload_agent_disconnect_fails_fast() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut sink, mut reader) =
+        connect_agent_with_caps(&base_url, &token, CAP_DEFAULT | CAP_FILE).await;
+
+    let agent_task = tokio::spawn(async move {
+        loop {
+            let msg = recv_agent_text(&mut reader).await;
+            match msg["type"].as_str() {
+                Some("file_upload_start") => {
+                    let transfer_id = msg["transfer_id"].as_str().expect("transfer_id");
+                    send_upload_ack(&mut sink, transfer_id, 0).await;
+                }
+                Some("file_upload_chunk") => {
+                    // Drop the whole connection instead of acking: returning
+                    // moves sink and reader out of scope, closing the socket
+                    // while the server is awaiting the chunk ack.
+                    return;
+                }
+                other if is_first_connect_noise(other) => {}
+                Some(other) => panic!("unexpected agent command: {other}"),
+                None => {}
+            }
+        }
+    });
+
+    let form = reqwest::multipart::Form::new()
+        .text("path", "/tmp/vanish.txt")
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(b"doomed payload".to_vec()).file_name("vanish.txt"),
+        );
+
+    let started = std::time::Instant::now();
+    let resp = client
+        .post(format!("{base_url}/api/files/{server_id}/upload"))
+        .multipart(form)
+        .send()
+        .await
+        .expect("upload request failed");
+    let elapsed = started.elapsed();
+
+    assert_eq!(resp.status(), 500, "mid-transfer disconnect should be 500");
+    let body: Value = resp.json().await.expect("error body");
+    let message = body["error"]["message"].as_str().expect("error message");
+    assert!(
+        message.contains("Agent disconnected during upload"),
+        "the error must name the disconnect, not a timeout: {message}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(10),
+        "disconnect must fail fast, took {elapsed:?}"
+    );
+
+    agent_task.await.expect("agent responder failed");
+    assert_eq!(
+        transfer_status_for_path(&client, &base_url, "/tmp/vanish.txt").await,
+        "failed",
+        "mid-transfer disconnect must mark the transfer failed"
+    );
+}
+
+// ===========================================================================
+// upload: the streaming size guard. `write_router` sets the Axum body limit to
+// `max_upload_size + 5 MB`, so a body just over a tiny configured limit still
+// reaches the handler and is rejected by its own per-chunk size accounting.
+// ===========================================================================
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_upload_exceeding_max_upload_size_is_400() {
+    const MAX_UPLOAD: u64 = 1024;
+
+    let (base_url, _tmp) = start_server_with_upload_limit(MAX_UPLOAD).await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (server_id, token) = register_agent(&client, &base_url).await;
+    let (mut sink, _reader) =
+        connect_agent_with_caps(&base_url, &token, CAP_DEFAULT | CAP_FILE).await;
+
+    // Twice the limit: the handler aborts mid-stream, before any agent traffic.
+    let form = reqwest::multipart::Form::new()
+        .text("path", "/tmp/too-big.bin")
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(vec![b'x'; (MAX_UPLOAD * 2) as usize])
+                .file_name("too-big.bin"),
+        );
+
+    let resp = client
+        .post(format!("{base_url}/api/files/{server_id}/upload"))
+        .multipart(form)
+        .send()
+        .await
+        .expect("upload request failed");
+    assert_eq!(resp.status(), 400, "oversized upload should be 400");
+    let body: Value = resp.json().await.expect("parse error response");
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains(&format!("File size exceeds limit of {MAX_UPLOAD} bytes")),
+        "error should name the configured limit, got {body}"
+    );
+
+    let _ = sink.close().await;
 }

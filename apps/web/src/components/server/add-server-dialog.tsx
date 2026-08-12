@@ -26,6 +26,7 @@ import type {
 } from '@/lib/api-schema'
 import { refreshServerCatalog } from '@/lib/server-catalog'
 import { cn } from '@/lib/utils'
+import { randomUUID } from '@/lib/uuid'
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
@@ -171,7 +172,7 @@ function initialAddServerFormState(): AddServerFormState {
     groupId: '',
     issued: null,
     name: '',
-    onboardingRequestId: crypto.randomUUID(),
+    onboardingRequestId: randomUUID(),
     price: '',
     publicRemark: '',
     remark: '',

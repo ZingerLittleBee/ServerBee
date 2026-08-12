@@ -610,6 +610,60 @@ async fn browser_docker_viewer_first_starts_second_noop_last_stops() {
     let _ = agent_sink.close().await;
 }
 
+/// Disconnecting the only browser viewer must perform the same stream cleanup
+/// as an explicit unsubscribe, otherwise the agent keeps unnecessary Docker
+/// polling tasks alive after the UI is gone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn browser_docker_last_viewer_disconnect_stops_streams() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "docker-disconnect-key").await;
+    let (server_id, mut agent_sink, mut agent_reader) =
+        bring_up_docker_agent(&client, &base_url, CAP_DEFAULT | CAP_DOCKER).await;
+
+    let (browser_ws, _) =
+        tokio_tungstenite::connect_async(browser_request_with_key(&base_url, &api_key))
+            .await
+            .expect("browser WS should connect");
+    let (mut browser_sink, mut browser_reader) = browser_ws.split();
+    assert_eq!(
+        recv_client_text(&mut browser_reader).await["type"],
+        "full_sync"
+    );
+
+    send_client_text(
+        &mut browser_sink,
+        json!({ "type": "docker_subscribe", "server_id": server_id }),
+    )
+    .await;
+    let started = agent_recv_until_types(
+        &mut agent_reader,
+        &["docker_start_stats", "docker_events_start"],
+        Duration::from_secs(3),
+    )
+    .await;
+    assert_eq!(started.len(), 2, "subscription should start both streams");
+
+    browser_sink
+        .send(tungstenite::Message::Close(None))
+        .await
+        .expect("close browser viewer");
+    let stopped = agent_recv_until_types(
+        &mut agent_reader,
+        &["docker_stop_stats", "docker_events_stop"],
+        Duration::from_secs(3),
+    )
+    .await;
+    assert_eq!(
+        stopped.len(),
+        2,
+        "disconnecting the last viewer should stop both docker streams"
+    );
+
+    let _ = agent_sink.close().await;
+}
+
 /// A docker_subscribe for a server whose agent lacks CAP_DOCKER is silently
 /// ignored: no start frame ever reaches the agent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -107,6 +107,36 @@ async fn oauth_callback_unknown_state_is_400() {
     );
 }
 
+// Callback that DOES carry an `oauth_nonce` pre-auth cookie but still has no
+// stored flow state → 400. This drives `extract_oauth_nonce` through its
+// success path (header present, parsed, prefix matched) and proves the stored
+// state lookup — not the cookie — is the first gate, so a forged nonce alone
+// buys nothing and no token exchange is attempted.
+#[tokio::test]
+async fn oauth_callback_with_nonce_cookie_but_no_stored_state_is_400() {
+    let (base_url, _tmp) = start_test_server().await;
+    let anon = http_client();
+
+    let resp = anon
+        .get(format!(
+            "{}/api/auth/oauth/github/callback?code=abc&state=never-issued",
+            base_url
+        ))
+        .header("Cookie", "other=1; oauth_nonce=forged-nonce-value")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        400,
+        "a nonce cookie without a matching stored state is still rejected"
+    );
+    assert!(
+        resp.headers().get("set-cookie").is_none(),
+        "a rejected callback must not mint a session cookie"
+    );
+}
+
 // Callback missing the required `state` query param → 400 (axum Query rejection).
 #[tokio::test]
 async fn oauth_callback_missing_state_param_is_400() {

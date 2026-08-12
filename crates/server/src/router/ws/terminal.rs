@@ -82,7 +82,7 @@ async fn handle_terminal_ws(
     // Register terminal session in agent manager
     state
         .agent_manager
-        .register_terminal_session(session_id.clone(), output_tx);
+        .register_terminal_session(session_id.clone(), server_id.clone(), output_tx);
 
     // Send TerminalOpen to agent to create the PTY
     let agent_tx = match state.agent_manager.get_sender(&server_id) {
@@ -269,6 +269,7 @@ async fn handle_terminal_ws(
         )
         .await;
     }
+    let _ = ws_sink.send(Message::Close(None)).await;
 
     tracing::info!("Terminal WS closed: session={session_id}");
 }

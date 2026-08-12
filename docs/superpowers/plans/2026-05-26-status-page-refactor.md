@@ -1452,7 +1452,7 @@ git commit -m "docs: log public status page refactor"
 
 # Phase 10 — Remote verification
 
-VPS credentials: `root@207.241.173.217:22` / password `2ucW09DzI@!LZ!e47yG`. The host is the project's reusable test VPS (Ubuntu 24.04). The CLAUDE.md / memory note `reference_test_vps.md` covers it.
+VPS credentials: `root@207.241.173.217:22`; the password is provided per-session (export it as `SSHPASS`, never write it into the repo). The host is the project's reusable test VPS (Ubuntu 24.04). The CLAUDE.md / memory note `reference_test_vps.md` covers it.
 
 ### Task 25: Build, ship, smoke test
 
@@ -1461,7 +1461,7 @@ VPS credentials: `root@207.241.173.217:22` / password `2ucW09DzI@!LZ!e47yG`. The
 The host architecture varies; check via SSH first:
 
 ```
-sshpass -p '2ucW09DzI@!LZ!e47yG' ssh -o StrictHostKeyChecking=no root@207.241.173.217 'uname -m'
+sshpass -e ssh -o StrictHostKeyChecking=no root@207.241.173.217 'uname -m'
 ```
 
 If `x86_64`, run on macOS host (assuming `aarch64-apple-darwin` dev machine):
@@ -1475,11 +1475,11 @@ Confirm a working toolchain exists; otherwise build inside a Linux container or 
 - [ ] **Step 2: scp and run**
 
 ```
-sshpass -p '...' scp -o StrictHostKeyChecking=no \
+sshpass -e scp -o StrictHostKeyChecking=no \
   target/x86_64-unknown-linux-musl/release/serverbee-server \
   root@207.241.173.217:/opt/serverbee/serverbee-server.new
 
-sshpass -p '...' ssh root@207.241.173.217 'systemctl stop serverbee || true; \
+sshpass -e ssh root@207.241.173.217 'systemctl stop serverbee || true; \
   mv /opt/serverbee/serverbee-server.new /opt/serverbee/serverbee-server; \
   chmod +x /opt/serverbee/serverbee-server; \
   systemctl start serverbee || /opt/serverbee/serverbee-server &'
