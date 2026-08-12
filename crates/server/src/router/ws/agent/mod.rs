@@ -235,23 +235,11 @@ async fn handle_agent_ws(
                     tracing::warn!("Invalid message from agent {sid_read}: {e}, text: {text}");
                 }
             },
-            Ok(Message::Binary(data)) => match serde_json::from_slice::<AgentMessage>(&data) {
-                Ok(agent_msg) => {
-                    if !handle_current_connection_frame(
-                        &state_read,
-                        &sid_read,
-                        connection_id,
-                        CurrentConnectionFrame::AgentMessage(Box::new(agent_msg)),
-                    )
-                    .await
-                    {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Invalid binary message from agent {sid_read}: {e}");
-                }
-            },
+            Ok(Message::Binary(_)) => {
+                // The protocol is text-only (JSON frames); binary frames are
+                // not part of it and are ignored rather than parsed.
+                tracing::warn!("Ignoring unexpected binary frame from agent {sid_read}");
+            }
             Ok(Message::Pong(_)) => {
                 if !handle_current_connection_frame(
                     &state_read,
