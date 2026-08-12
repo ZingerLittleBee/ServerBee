@@ -62,7 +62,7 @@ Source checks can establish repository correctness, not these live-state outcome
 - Completed first browser login and mandatory password change. The documented Servers page then crashed reproducibly over direct-IP HTTP with `crypto.randomUUID is not a function`; a session-only polyfill allowed the remaining journey to continue without changing the app or VPS.
 - Created a Server enrollment offer in the Web UI and installed the binary Agent on the same test VPS. The first GitHub asset download returned HTTP 503; an immediate retry succeeded with checksum verification. The Agent appeared Online with live metrics, reconnected after `serverbee restart agent`, and `serverbee upgrade agent -y` correctly reported the installed version as current.
 - Verified both Server and Agent stayed active with zero restarts, the Agent configuration was `0600 root:root`, and the co-located GitHub Actions Runner stayed active with zero restarts. The second offered VPS was not accessed after SSH reported a changed host key.
-- No existing product documentation or implementation was modified; this audit report is the only repository artifact.
+- During the audit phase, no existing product documentation or implementation was modified; this report was then the only repository artifact. The post-audit source remediation is recorded separately above.
 
 ## User-journey coverage
 
