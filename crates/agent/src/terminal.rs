@@ -849,4 +849,65 @@ mod tests {
         };
         assert!(matches!(exited, TerminalEvent::Exited { session_id } if session_id == "s4"));
     }
+
+    /// A reader that always fails, standing in for a PTY master whose slave
+    /// side went away (EIO on Linux).
+    struct FailingReader;
+
+    impl Read for FailingReader {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("pty gone"))
+        }
+    }
+
+    /// Run `body` on a helper thread and panic if it has not finished within
+    /// `secs`. `read_pty_output` blocks, so a regression that fails to break
+    /// out of the loop would otherwise hang the whole test run.
+    fn run_with_timeout<F>(secs: u64, body: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let handle = std::thread::spawn(body);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+        while !handle.is_finished() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "read_pty_output did not return within {secs}s"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        handle.join().expect("reader thread panicked");
+    }
+
+    /// A read error terminates the loop and still reports the session as
+    /// exited, so the server side is not left with a dangling session.
+    #[test]
+    fn read_pty_output_emits_exited_on_read_error() {
+        let (tx, mut rx) = mpsc::channel(8);
+        run_with_timeout(5, move || {
+            read_pty_output(Box::new(FailingReader), "err-session", &tx);
+        });
+
+        let ev = rx.blocking_recv().expect("exited event");
+        assert!(
+            matches!(ev, TerminalEvent::Exited { ref session_id } if session_id == "err-session"),
+            "expected an Exited event for the failed reader"
+        );
+        assert!(
+            rx.blocking_recv().is_none(),
+            "the reader should have dropped the sender and stopped"
+        );
+    }
+
+    /// Once the receiving end is gone there is nobody left to serve, so the
+    /// blocking reader must return instead of spinning on the PTY.
+    #[test]
+    fn read_pty_output_stops_when_channel_closed() {
+        let (tx, rx) = mpsc::channel::<TerminalEvent>(8);
+        drop(rx);
+        run_with_timeout(5, move || {
+            let reader = std::io::Cursor::new(b"hi".to_vec());
+            read_pty_output(Box::new(reader), "closed-session", &tx);
+        });
+    }
 }
