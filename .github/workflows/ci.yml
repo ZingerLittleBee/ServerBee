@@ -224,6 +224,51 @@ jobs:
       - name: Test server integrations
         run: cargo test -p serverbee-server ${{ matrix.tests }}
 
+  rust-coverage:
+    name: Rust Coverage
+    needs: [changes, check]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-coverage-v1
+          cache-workspace-crates: "true"
+
+      - name: Measure Rust coverage
+        run: >-
+          cargo llvm-cov
+          --workspace
+          --all-features
+          --locked
+          --lcov
+          --output-path lcov.info
+          --fail-under-regions 91.5
+
+      - name: Print coverage summary
+        if: always()
+        run: cargo llvm-cov report --summary-only
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage-lcov
+          path: lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
   frontend:
     name: Frontend Check
     runs-on: ubuntu-latest

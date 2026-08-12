@@ -75,6 +75,7 @@ Every push and pull request runs:
 
 - `cargo clippy --workspace -- -D warnings` — zero-warning lint
 - `cargo test --workspace` — the full Rust suite
+- `cargo llvm-cov --workspace --all-features --fail-under-regions 91.5` — measured Rust coverage floor and downloadable LCOV report
 - `bun run tsc -b` and `bun x ultracite check` — frontend type check and lint (Biome)
 - POSIX and ShellCheck linting of the `install.sh` install script
 

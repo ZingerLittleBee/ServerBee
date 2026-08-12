@@ -75,6 +75,7 @@ cargo llvm-cov -p serverbee-server --summary-only
 
 - `cargo clippy --workspace -- -D warnings` —— 零警告 lint
 - `cargo test --workspace` —— 完整的 Rust 测试套件
+- `cargo llvm-cov --workspace --all-features --fail-under-regions 91.5` —— Rust 区域覆盖率门槛与可下载的 LCOV 报告
 - `bun run tsc -b` 与 `bun x ultracite check` —— 前端类型检查与 lint(Biome)
 - 安装脚本 `install.sh` 的 POSIX 与 ShellCheck 检查
 

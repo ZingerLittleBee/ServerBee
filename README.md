@@ -136,7 +136,7 @@ make cargo-clippy     # Rust lint
 
 ### Testing & quality
 
-ServerBee ships with **3,800+ automated tests** — 3,200+ Rust (unit + 42 integration suites that drive the real Axum router over HTTP/WebSocket with a mock-agent harness) and 600+ frontend Vitest tests. Coverage is measured with `cargo-llvm-cov` (over 91% region overall; common ~98%, agent ~90%, server ~92%). Every push runs zero-warning Clippy, the full Rust suite, and frontend type/lint checks in CI. See the [Testing & Quality](https://docs.serverbee.app/en/docs/testing) guide.
+ServerBee ships with **3,800+ automated tests** — 3,200+ Rust (unit + 42 integration suites that drive the real Axum router over HTTP/WebSocket with a mock-agent harness) and 600+ frontend Vitest tests. Coverage is measured with `cargo-llvm-cov` (over 91% region overall; common ~98%, agent ~90%, server ~92%). Every Rust change must keep region coverage at or above 91.5% in CI, in addition to passing zero-warning Clippy and the full Rust suite. See the [Testing & Quality](https://docs.serverbee.app/en/docs/testing) guide.
 
 ## API
 
