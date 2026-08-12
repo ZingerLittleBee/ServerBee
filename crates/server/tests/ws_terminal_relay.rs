@@ -583,6 +583,53 @@ async fn terminal_ws_closes_and_audits_when_browser_session_logs_out() {
     drop(agent_sink);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_ws_closes_and_audits_when_agent_disconnects() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "term-agent-disconnect-key").await;
+
+    let (server_id, mut agent_sink, mut agent_reader) = bring_up_agent(
+        &client,
+        &base_url,
+        CAP_DEFAULT | CAP_TERMINAL,
+        "term-agent-disconnect-hs",
+    )
+    .await;
+
+    let request = terminal_ws_request_with_key(&base_url, &server_id, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal WebSocket connect should succeed");
+    let (_browser_sink, mut browser_reader): (BrowserSink, BrowserReader) = browser_ws.split();
+    let session = recv_browser_until(&mut browser_reader, "session").await;
+    let session_id = session["session_id"]
+        .as_str()
+        .expect("session_id")
+        .to_string();
+
+    let terminal_open = recv_agent_text(&mut agent_reader).await;
+    assert_eq!(terminal_open["type"], "terminal_open");
+    assert_eq!(terminal_open["session_id"], session_id);
+
+    agent_sink
+        .send(tungstenite::Message::Close(None))
+        .await
+        .expect("close agent WebSocket");
+
+    let browser_end = tokio::time::timeout(Duration::from_secs(5), browser_reader.next())
+        .await
+        .expect("terminal browser WebSocket should close after agent disconnect");
+    assert!(
+        matches!(browser_end, None | Some(Ok(tungstenite::Message::Close(_)))),
+        "expected terminal browser WebSocket to end, got {browser_end:?}"
+    );
+
+    let audit = wait_for_terminal_closed_audit(&client, &base_url, &session_id).await;
+    assert_eq!(audit["close_reason"], "agent_disconnect");
+}
+
 // ── Agent terminal_error → browser error frame ─────────────────────────────
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

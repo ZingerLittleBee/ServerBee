@@ -68,6 +68,11 @@ pub enum TerminalSessionEvent {
     Error(String),
 }
 
+struct TerminalSession {
+    server_id: String,
+    tx: TerminalOutputTx,
+}
+
 #[derive(Clone, Debug)]
 pub struct TracerouteRequestMeta {
     pub server_id: String,
@@ -105,7 +110,7 @@ pub struct AgentManager {
     latest_reports: DashMap<String, CachedReport>,
     browser_tx: broadcast::Sender<BrowserMessage>,
     /// Maps session_id -> terminal output channel (for routing agent output to browser WS)
-    terminal_sessions: DashMap<String, TerminalOutputTx>,
+    terminal_sessions: DashMap<String, TerminalSession>,
     /// Maps msg_id -> (oneshot sender, creation time, TTL) for HTTP→WS relay
     pending_requests: DashMap<
         String,
@@ -390,8 +395,14 @@ impl AgentManager {
     }
 
     /// Register a terminal session for routing output from agent to browser.
-    pub fn register_terminal_session(&self, session_id: String, tx: TerminalOutputTx) {
-        self.terminal_sessions.insert(session_id, tx);
+    pub fn register_terminal_session(
+        &self,
+        session_id: String,
+        server_id: String,
+        tx: TerminalOutputTx,
+    ) {
+        self.terminal_sessions
+            .insert(session_id, TerminalSession { server_id, tx });
     }
 
     /// Unregister a terminal session.
@@ -401,7 +412,9 @@ impl AgentManager {
 
     /// Get the terminal output sender for a session.
     pub fn get_terminal_session(&self, session_id: &str) -> Option<TerminalOutputTx> {
-        self.terminal_sessions.get(session_id).map(|v| v.clone())
+        self.terminal_sessions
+            .get(session_id)
+            .map(|session| session.tx.clone())
     }
 
     /// Find agents that have not reported for `threshold_secs` seconds.
@@ -436,6 +449,8 @@ impl AgentManager {
     fn finish_connection_removal(&self, server_id: &str) {
         self.agent_local_capabilities.remove(server_id);
         self.temporary_grants.remove(server_id);
+        self.terminal_sessions
+            .retain(|_, session| session.server_id != server_id);
         self.remove_docker_log_sessions_for_server(server_id);
         self.clear_docker_caches(server_id);
 
@@ -1148,7 +1163,7 @@ mod tests {
     fn test_terminal_session_lifecycle() {
         let (mgr, _rx) = make_manager();
         let (tx, _) = mpsc::channel(1);
-        mgr.register_terminal_session("sess1".into(), tx);
+        mgr.register_terminal_session("sess1".into(), "server1".into(), tx);
         assert!(mgr.get_terminal_session("sess1").is_some());
         mgr.unregister_terminal_session("sess1");
         assert!(mgr.get_terminal_session("sess1").is_none());
