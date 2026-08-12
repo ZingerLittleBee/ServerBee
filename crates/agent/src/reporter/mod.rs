@@ -1322,6 +1322,149 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_e2e_unexpected_first_message_uses_default_interval() {
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            let info = handshake_collect_system_info(&mut ws).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            info
+        });
+
+        let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
+        let info = tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+
+        assert!(matches!(info, AgentMessage::SystemInfo { .. }));
+        assert!(
+            connect
+                .expect("connect loop should finish before the timeout")
+                .is_ok(),
+            "an unexpected first application message should fall back and keep reporting"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_e2e_binary_first_message_uses_default_interval() {
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            ws.send(WsMessage::Binary(vec![1, 2, 3].into()))
+                .await
+                .expect("send binary preface");
+            let info = handshake_collect_system_info(&mut ws).await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            info
+        });
+
+        let connect = run_connect_once(&mut reporter, Duration::from_secs(10)).await;
+        let info = tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+
+        assert!(matches!(info, AgentMessage::SystemInfo { .. }));
+        assert!(
+            connect
+                .expect("connect loop should finish before the timeout")
+                .is_ok(),
+            "a non-text first frame should fall back and keep reporting"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_e2e_malformed_welcome_is_rejected() {
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_raw_text(&mut ws, "{not-json").await;
+        });
+
+        let connect = run_connect_once(&mut reporter, Duration::from_secs(10))
+            .await
+            .expect("malformed welcome should fail before the timeout");
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+
+        assert!(connect.is_err(), "malformed Welcome JSON must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_e2e_external_message_is_forwarded() {
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut reporter = Reporter::new(
+            e2e_config(&addr, tmp.path()),
+            CapabilityAuthority::fixed(ALL_CAPS),
+        );
+        let (external_tx, external_rx) = mpsc::channel(1);
+        external_tx
+            .send(AgentMessage::IpChanged {
+                ipv4: Some("203.0.113.9".to_string()),
+                ipv6: None,
+                interfaces: Vec::new(),
+            })
+            .await
+            .expect("queue external message");
+        let mut external = Some(external_rx);
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+            let _ = handshake_collect_system_info(&mut ws).await;
+            let forwarded = read_agent_until(&mut ws, |msg| {
+                matches!(
+                    msg,
+                    AgentMessage::IpChanged {
+                        ipv4: Some(ipv4),
+                        ..
+                    } if ipv4 == "203.0.113.9"
+                )
+            })
+            .await;
+            ws.send(WsMessage::Close(None)).await.ok();
+            forwarded
+        });
+
+        let connect = tokio::time::timeout(
+            Duration::from_secs(10),
+            reporter.connect_and_report(&mut external),
+        )
+        .await
+        .expect("connect loop should finish before the timeout");
+        let forwarded = tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server task timed out")
+            .expect("server task panicked");
+
+        assert!(matches!(forwarded, AgentMessage::IpChanged { .. }));
+        assert!(connect.is_ok(), "clean close should still return Ok");
+    }
+
+    #[tokio::test]
     async fn test_e2e_report_loop_emits_periodic_reports() {
         // Send loop: with a 1s report interval the agent must push at least one
         // Report frame on its own (driven by the collector + interval), which

@@ -177,6 +177,73 @@ async fn browser_ws_receives_server_online_when_agent_connects() {
     let _ = agent_sink.close().await;
 }
 
+#[tokio::test]
+async fn browser_ws_ignores_non_command_frames_and_keeps_forwarding() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "browser-ws-tolerance-key").await;
+    let (server_id, token) = register_agent(&client, &base_url).await;
+
+    let request = browser_ws_request_with_key(&base_url, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("browser WebSocket connection should succeed");
+    let (mut browser_sink, mut browser_reader) = browser_ws.split();
+    assert_eq!(
+        recv_browser_text(&mut browser_reader).await["type"],
+        "full_sync"
+    );
+
+    browser_sink
+        .send(tungstenite::Message::Text("{not-json".into()))
+        .await
+        .expect("send malformed browser frame");
+    browser_sink
+        .send(tungstenite::Message::Binary(vec![1, 2, 3].into()))
+        .await
+        .expect("send binary browser frame");
+    browser_sink
+        .send(tungstenite::Message::Ping(vec![4, 5, 6].into()))
+        .await
+        .expect("send browser ping");
+
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+    assert_eq!(recv_agent_text(&mut agent_reader).await["type"], "welcome");
+    send_system_info(
+        &mut agent_sink,
+        &mut agent_reader,
+        "tolerant-browser-msg",
+        None,
+    )
+    .await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut saw_online = false;
+    while tokio::time::Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let Ok(Some(Ok(frame))) = tokio::time::timeout(remaining, browser_reader.next()).await
+        else {
+            break;
+        };
+        let tungstenite::Message::Text(text) = frame else {
+            continue;
+        };
+        let parsed: Value = serde_json::from_str(&text).expect("parse browser frame");
+        if parsed["type"] == "server_online" && parsed["server_id"] == server_id {
+            saw_online = true;
+            break;
+        }
+    }
+
+    assert!(
+        saw_online,
+        "malformed, binary, and ping frames must not stop broadcast forwarding"
+    );
+    let _ = browser_sink.close().await;
+    let _ = agent_sink.close().await;
+}
+
 // ── Session-cookie auth path ──────────────────────────────────────────────
 
 #[tokio::test]
