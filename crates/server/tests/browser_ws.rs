@@ -5,6 +5,9 @@
 //! Coverage:
 //! - Happy path: an authenticated client (x-api-key header) connects and
 //!   receives the initial `full_sync` frame.
+//! - Report projection: a `full_sync` built while an agent has a cached report
+//!   carries that report's metrics (including summed disk I/O), not the
+//!   all-zero fallback.
 //! - State change: after a browser is connected, registering + connecting a
 //!   mock agent broadcasts a `server_online` frame that the browser observes.
 //! - Auth paths: session-cookie auth and member API-key auth both connect.
@@ -121,6 +124,99 @@ async fn browser_ws_sends_full_sync_on_connect_with_api_key() {
         full_sync["upgrades"].is_array(),
         "full_sync should carry an upgrades array"
     );
+}
+
+#[tokio::test]
+async fn browser_ws_full_sync_carries_latest_agent_report() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "fullsync-report-key").await;
+    let (server_id, token) = register_agent(&client, &base_url).await;
+
+    let (mut agent_sink, mut agent_reader) = connect_agent(&base_url, &token).await;
+    assert_eq!(recv_agent_text(&mut agent_reader).await["type"], "welcome");
+    send_system_info(&mut agent_sink, &mut agent_reader, "fullsync-report", None).await;
+
+    // `Report` is a newtype variant: the SystemReport fields sit alongside the
+    // "report" tag. Every metric is non-zero so a full_sync built from the
+    // all-zero fallback branch cannot pass this test.
+    let report = serde_json::json!({
+        "type": "report",
+        "cpu": 45.5,
+        "mem_used": 8_000_000_000_i64,
+        "swap_used": 500_000_000_i64,
+        "disk_used": 30_000_000_000_i64,
+        "net_in_speed": 1_000_000_i64,
+        "net_out_speed": 500_000_i64,
+        "net_in_transfer": 10_000_000_000_i64,
+        "net_out_transfer": 5_000_000_000_i64,
+        "load1": 1.5,
+        "load5": 1.2,
+        "load15": 0.8,
+        "tcp_conn": 42,
+        "udp_conn": 5,
+        "process_count": 120,
+        "uptime": 86_400_u64,
+        "disk_io": [
+            { "name": "sda", "read_bytes_per_sec": 1_000_u64, "write_bytes_per_sec": 2_000_u64 },
+            { "name": "sdb", "read_bytes_per_sec": 500_u64, "write_bytes_per_sec": 250_u64 }
+        ],
+        "temperature": 55.0,
+        "gpu": null
+    });
+    agent_sink
+        .send(tungstenite::Message::Text(report.to_string().into()))
+        .await
+        .expect("send report");
+
+    // The agent read loop handles frames in order, so an Ack for a handshake
+    // sent *after* the report proves the report already reached the cache.
+    send_system_info(
+        &mut agent_sink,
+        &mut agent_reader,
+        "post-report-handshake",
+        None,
+    )
+    .await;
+
+    let request = browser_ws_request_with_key(&base_url, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("browser WebSocket connection should succeed");
+    let (_sink, mut reader) = browser_ws.split();
+    let full_sync = recv_browser_text(&mut reader).await;
+    assert_eq!(full_sync["type"], "full_sync");
+
+    let entry = full_sync["servers"]
+        .as_array()
+        .expect("full_sync.servers should be an array")
+        .iter()
+        .find(|s| s["id"].as_str() == Some(server_id.as_str()))
+        .expect("full_sync should include the connected agent's server")
+        .clone();
+
+    assert_eq!(entry["online"], true, "the agent socket is still open");
+    assert_eq!(entry["cpu"], 45.5);
+    assert_eq!(entry["mem_used"], 8_000_000_000_i64);
+    assert_eq!(entry["swap_used"], 500_000_000_i64);
+    assert_eq!(entry["disk_used"], 30_000_000_000_i64);
+    assert_eq!(entry["net_in_speed"], 1_000_000_i64);
+    assert_eq!(entry["net_out_speed"], 500_000_i64);
+    assert_eq!(entry["net_in_transfer"], 10_000_000_000_i64);
+    assert_eq!(entry["net_out_transfer"], 5_000_000_000_i64);
+    assert_eq!(entry["load1"], 1.5);
+    assert_eq!(entry["load5"], 1.2);
+    assert_eq!(entry["load15"], 0.8);
+    assert_eq!(entry["tcp_conn"], 42);
+    assert_eq!(entry["udp_conn"], 5);
+    assert_eq!(entry["process_count"], 120);
+    assert_eq!(entry["uptime"], 86_400_u64);
+    // Disk I/O is summed across devices before it reaches the browser.
+    assert_eq!(entry["disk_read_bytes_per_sec"], 1_500_u64);
+    assert_eq!(entry["disk_write_bytes_per_sec"], 2_250_u64);
+
+    let _ = agent_sink.close().await;
 }
 
 // ── State change → server_online broadcast ────────────────────────────────
