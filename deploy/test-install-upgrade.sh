@@ -512,6 +512,7 @@ test_docker_agent_start_failure_restores_existing_files() (
         '    image: example.invalid/preserved:1' > "${DOCKER_DIR}/docker-compose.agent.yml"
     cp "${CONFIG_DIR}/agent.toml" "${CASE_DIR}/expected-agent.toml"
     cp "${DOCKER_DIR}/docker-compose.agent.yml" "${CASE_DIR}/expected-compose.yml"
+    up_calls=0
 
     docker_is_snap() { return 1; }
     check_docker() { :; }
@@ -520,7 +521,18 @@ test_docker_agent_start_failure_restores_existing_files() (
         shift
         [ "$1" = -f ] || fail "docker compose command omitted -f"
         shift 2
-        [ "$1" != up ]
+        action="$1"
+        printf '%s\n' "$action" >> "$ACTION_LOG"
+        if [ "$action" = up ]; then
+            up_calls=$((up_calls + 1))
+            if [ "$up_calls" -eq 1 ]; then
+                return 1
+            fi
+            cmp -s "${CASE_DIR}/expected-agent.toml" "${CONFIG_DIR}/agent.toml" \
+                || fail "rollback restarted Agent before restoring its config"
+            cmp -s "${CASE_DIR}/expected-compose.yml" "${DOCKER_DIR}/docker-compose.agent.yml" \
+                || fail "rollback restarted Agent before restoring its Compose file"
+        fi
     }
     install_cli() { :; }
     meta_write() { :; }
@@ -538,12 +550,67 @@ test_docker_agent_start_failure_restores_existing_files() (
         || fail "failed Docker Agent reinstall left a config rollback file"
     [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.install-rollback" ] \
         || fail "failed Docker Agent reinstall left a Compose rollback file"
+    assert_eq "$(cat "$ACTION_LOG")" "up
+up"
+)
+
+test_docker_agent_stale_rollback_symlinks_block_install() (
+    for backup_kind in config compose; do
+        setup_case "docker-agent-stale-${backup_kind}-symlink"
+        DEFAULT_DOCKER_DIR="$CASE_DIR"
+        DOCKER_DIR="$CASE_DIR"
+        CONFIG_DIR="${CASE_DIR}/etc"
+        REQUESTED_VERSION="v1.0.0-beta.1"
+        RESOLVED_VERSION=""
+        SERVER_URL="https://monitor.example.com"
+        ENROLLMENT_CODE="test-enrollment-code"
+        AGENT_CAPS_USER_SPECIFIED=true
+        AGENT_CAPS_SELECTED=""
+        mkdir -p "$CONFIG_DIR"
+        if [ "$backup_kind" = config ]; then
+            backup_path="${CONFIG_DIR}/agent.toml.install-rollback"
+        else
+            backup_path="${DOCKER_DIR}/docker-compose.agent.yml.install-rollback"
+        fi
+        ln -s "${CASE_DIR}/missing-${backup_kind}-backup" "$backup_path"
+
+        docker_is_snap() { return 1; }
+        check_docker() { :; }
+        check_unmanaged_container() { :; }
+        docker() { :; }
+        install_cli() { :; }
+        meta_write() { :; }
+        print_agent_result() { :; }
+
+        if (install_docker_agent) >/dev/null 2>&1; then
+            fail "Docker Agent install accepted a stale ${backup_kind} rollback symlink"
+        fi
+        [ -L "$backup_path" ] \
+            || fail "Docker Agent install modified a stale ${backup_kind} rollback symlink"
+    done
 )
 
 test_non_tty_input_does_not_prompt() (
-    prompt_tty_available() { return 1; }
-    if has_prompt_input </dev/null; then
-        fail "non-interactive input was mistaken for an available controlling terminal"
+    if command -v setsid >/dev/null 2>&1; then
+        setsid sh -c '
+            SERVERBEE_NO_MAIN=1
+            export SERVERBEE_NO_MAIN
+            . "$1"
+            if has_prompt_input </dev/null; then
+                exit 10
+            fi
+            if (prompt_read answer </dev/null) >/dev/null 2>&1; then
+                exit 11
+            fi
+        ' sh "${SCRIPT_DIR}/install.sh" \
+            || fail "detached process was mistaken for an available controlling terminal"
+    elif ! prompt_tty_available; then
+        if has_prompt_input </dev/null; then
+            fail "non-interactive input was mistaken for an available controlling terminal"
+        fi
+        if (prompt_read answer </dev/null) >/dev/null 2>&1; then
+            fail "prompt_read accepted input without an available controlling terminal"
+        fi
     fi
 )
 
@@ -700,6 +767,7 @@ test_docker_agent_custom_caps_keep_executable_and_secure_config
 test_docker_agent_start_failure_cleans_generated_files
 test_docker_agent_config_write_failure_cleans_partial_file
 test_docker_agent_start_failure_restores_existing_files
+test_docker_agent_stale_rollback_symlinks_block_install
 test_non_tty_input_does_not_prompt
 test_stable_channel_ignores_misclassified_prerelease
 test_stable_channel_fails_without_stable_release

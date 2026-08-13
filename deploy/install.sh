@@ -1882,23 +1882,37 @@ YAML
 }
 
 rollback_docker_agent_install() {
-    local compose_file compose_backup config_file config_backup config_created
+    local compose_file compose_backup config_file config_backup config_created compose_restored
     compose_file="$1"
     compose_backup="$2"
     config_file="$3"
     config_backup="$4"
     config_created="$5"
+    compose_restored=false
 
-    docker compose -f "$compose_file" down --remove-orphans >/dev/null 2>&1 || true
     if [ -f "$compose_backup" ]; then
-        mv -f "$compose_backup" "$compose_file"
+        if mv -f "$compose_backup" "$compose_file"; then
+            compose_restored=true
+        else
+            warn "Could not restore the previous Agent Compose file: ${compose_backup}"
+        fi
     else
+        docker compose -f "$compose_file" down --remove-orphans >/dev/null 2>&1 || true
         rm -f "$compose_file"
     fi
     if [ -f "$config_backup" ]; then
-        mv -f "$config_backup" "$config_file"
+        if ! mv -f "$config_backup" "$config_file"; then
+            warn "Could not restore the previous Agent config: ${config_backup}"
+        fi
     elif [ "$config_created" = true ]; then
         rm -f "$config_file"
+    fi
+    if [ "$compose_restored" = true ]; then
+        if docker compose -f "$compose_file" up -d; then
+            info "Previous Docker Agent installation restored"
+        else
+            warn "The previous Agent files were restored, but its container could not be started"
+        fi
     fi
 }
 
@@ -1918,10 +1932,12 @@ install_docker_agent() {
     config_backup="${config_file}.install-rollback"
     compose_file="${DOCKER_DIR}/docker-compose.agent.yml"
     compose_backup="${compose_file}.install-rollback"
-    [ ! -e "$config_backup" ] \
-        || error "Stale install rollback found: ${config_backup}. Restore or remove it before installing."
-    [ ! -e "$compose_backup" ] \
-        || error "Stale install rollback found: ${compose_backup}. Restore or remove it before installing."
+    if [ -e "$config_backup" ] || [ -L "$config_backup" ]; then
+        error "Stale install rollback found: ${config_backup}. Restore or remove it before installing."
+    fi
+    if [ -e "$compose_backup" ] || [ -L "$compose_backup" ]; then
+        error "Stale install rollback found: ${compose_backup}. Restore or remove it before installing."
+    fi
     if [ -f "$config_file" ]; then
         cp -p "$config_file" "$config_backup" \
             || error "Could not back up existing Agent config: ${config_file}"
@@ -2005,7 +2021,7 @@ YAML
     if ! docker compose -f "$compose_file" up -d; then
         rollback_docker_agent_install \
             "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
-        error "Failed to start the ServerBee Agent container; partial install resources were removed"
+        error "Failed to start the ServerBee Agent container; installation rollback was attempted"
     fi
     info "Agent container started"
 
@@ -2013,7 +2029,7 @@ YAML
     if ! meta_write "agent" "docker" "$version"; then
         rollback_docker_agent_install \
             "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
-        error "Failed to record the ServerBee Agent installation; partial install resources were removed"
+        error "Failed to record the ServerBee Agent installation; installation rollback was attempted"
     fi
     rm -f "$compose_backup" "$config_backup" \
         || warn "Could not remove one or more Agent install rollback files"
