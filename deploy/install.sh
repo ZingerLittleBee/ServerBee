@@ -167,8 +167,13 @@ sha256_of() {
     fi
 }
 
+prompt_tty_available() {
+    [ -r /dev/tty ] && [ -w /dev/tty ] || return 1
+    (: </dev/tty) 2>/dev/null && (: >/dev/tty) 2>/dev/null
+}
+
 has_prompt_input() {
-    [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }
+    [ -t 0 ] || prompt_tty_available
 }
 
 should_prompt() {
@@ -184,7 +189,7 @@ prompt_read() {
     if [ -t 0 ]; then
         # shellcheck disable=SC2229  # The variable name is intentionally dynamic.
         read -r "$variable_name"
-    elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    elif prompt_tty_available; then
         # shellcheck disable=SC2229  # The variable name is intentionally dynamic.
         read -r "$variable_name" < /dev/tty
     else
@@ -692,7 +697,7 @@ get_latest_version() {
         echo "$RESOLVED_VERSION"
         return
     fi
-    local tag
+    local tag releases_json
     if [ -n "$REQUESTED_VERSION" ]; then
         case "$REQUESTED_VERSION" in
             v*) tag="$REQUESTED_VERSION" ;;
@@ -701,9 +706,11 @@ get_latest_version() {
     else
         case "$RELEASE_CHANNEL" in
             auto|stable|beta)
-                tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100" \
+                releases_json=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=100") \
+                    || error "Failed to fetch release metadata from GitHub"
+                tag=$(printf '%s\n' "$releases_json" \
                     | awk -v channel="$RELEASE_CHANNEL" '
-                        BEGIN { fallback="" }
+                        BEGIN { fallback=""; selected="" }
                         /^  \{/ { in_release=1; tag=""; draft=0 }
                         in_release && /"tag_name":/ {
                             line=$0
@@ -717,16 +724,19 @@ get_latest_version() {
                             sub(/^v/, "", version)
                             is_prerelease=(version ~ /-/)
                             if (tag != "" && !draft) {
-                                if (channel == "stable" && !is_prerelease) { print tag; exit }
-                                if (channel == "beta" && is_prerelease) { print tag; exit }
+                                if (channel == "stable" && !is_prerelease && selected == "") selected=tag
+                                if (channel == "beta" && is_prerelease && selected == "") selected=tag
                                 if (channel == "auto") {
-                                    if (!is_prerelease) { selected=1; print tag; exit }
+                                    if (!is_prerelease && selected == "") selected=tag
                                     if (fallback == "") fallback=tag
                                 }
                             }
                             in_release=0
                         }
-                        END { if (channel == "auto" && !selected && fallback != "") print fallback }
+                        END {
+                            if (selected != "") print selected
+                            else if (channel == "auto" && fallback != "") print fallback
+                        }
                     ')
                 ;;
             *) error "Invalid release channel: ${RELEASE_CHANNEL} (expected auto, stable, or beta)" ;;
@@ -1286,6 +1296,7 @@ compute_cap_compose_command() {
     args=$(compute_cap_cli_args)
     [ -z "$args" ] && return 0
     printf '    command:\n'
+    printf '      - serverbee-agent\n'
     for token in $args; do
         printf '      - %s\n' "$token"
     done
@@ -1786,7 +1797,7 @@ install_binary_agent() {
     # Generate agent.toml, or refresh enrollment fields if it already exists so
     # the recover flow (paste a fresh --enrollment-code) re-registers cleanly.
     if [ ! -f "${CONFIG_DIR}/agent.toml" ]; then
-        cat > "${CONFIG_DIR}/agent.toml" << TOML
+        (umask 077; cat > "${CONFIG_DIR}/agent.toml") << TOML
 server_url = "${SERVER_URL}"
 enrollment_code = "${ENROLLMENT_CODE}"
 
@@ -1801,6 +1812,8 @@ TOML
         toml_set "${CONFIG_DIR}/agent.toml" "enrollment_code" "${ENROLLMENT_CODE}"
         toml_set "${CONFIG_DIR}/agent.toml" "token" ""
     fi
+    chmod 600 "${CONFIG_DIR}/agent.toml" \
+        || error "Could not secure ${CONFIG_DIR}/agent.toml"
 
     ensure_caps_initialized
     cap_args=$(compute_cap_cli_args)
@@ -1868,8 +1881,30 @@ YAML
     print_server_result
 }
 
+rollback_docker_agent_install() {
+    local compose_file compose_backup config_file config_backup config_created
+    compose_file="$1"
+    compose_backup="$2"
+    config_file="$3"
+    config_backup="$4"
+    config_created="$5"
+
+    docker compose -f "$compose_file" down --remove-orphans >/dev/null 2>&1 || true
+    if [ -f "$compose_backup" ]; then
+        mv -f "$compose_backup" "$compose_file"
+    else
+        rm -f "$compose_file"
+    fi
+    if [ -f "$config_backup" ]; then
+        mv -f "$config_backup" "$config_file"
+    elif [ "$config_created" = true ]; then
+        rm -f "$config_file"
+    fi
+}
+
 install_docker_agent() {
-    local version image_tag conf_dir cap_command_block
+    local version image_tag conf_dir cap_command_block config_created
+    local compose_file compose_backup config_file config_backup
     check_docker
     check_unmanaged_container "agent"
 
@@ -1877,10 +1912,34 @@ install_docker_agent() {
     image_tag=$(docker_image_tag "$version")
 
     conf_dir="$(docker_conf_dir)"
-    mkdir -p "$conf_dir"
+    mkdir -p "$conf_dir" "$DOCKER_DIR"
+    config_created=false
+    config_file="${conf_dir}/agent.toml"
+    config_backup="${config_file}.install-rollback"
+    compose_file="${DOCKER_DIR}/docker-compose.agent.yml"
+    compose_backup="${compose_file}.install-rollback"
+    [ ! -e "$config_backup" ] \
+        || error "Stale install rollback found: ${config_backup}. Restore or remove it before installing."
+    [ ! -e "$compose_backup" ] \
+        || error "Stale install rollback found: ${compose_backup}. Restore or remove it before installing."
+    if [ -f "$config_file" ]; then
+        cp -p "$config_file" "$config_backup" \
+            || error "Could not back up existing Agent config: ${config_file}"
+        if ! chmod 600 "$config_backup"; then
+            rm -f "$config_backup"
+            error "Could not secure Agent config backup: ${config_backup}"
+        fi
+    fi
+    if [ -f "$compose_file" ]; then
+        cp -p "$compose_file" "$compose_backup" || {
+            rm -f "$config_backup"
+            error "Could not back up existing Compose file: ${compose_file}"
+        }
+    fi
 
-    if [ ! -f "${conf_dir}/agent.toml" ]; then
-        cat > "${conf_dir}/agent.toml" << TOML
+    if [ ! -f "$config_file" ]; then
+        config_created=true
+        if ! (umask 077; cat > "$config_file") << TOML
 server_url = "${SERVER_URL}"
 enrollment_code = "${ENROLLMENT_CODE}"
 
@@ -1888,19 +1947,31 @@ enrollment_code = "${ENROLLMENT_CODE}"
 interval = 3
 enable_temperature = true
 TOML
-        info "Created ${conf_dir}/agent.toml"
+        then
+            rollback_docker_agent_install \
+                "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+            error "Could not create ${config_file}"
+        fi
+        info "Created ${config_file}"
     else
-        info "${conf_dir}/agent.toml exists — refreshing server_url, enrollment_code, clearing token"
-        toml_set "${conf_dir}/agent.toml" "server_url" "${SERVER_URL}"
-        toml_set "${conf_dir}/agent.toml" "enrollment_code" "${ENROLLMENT_CODE}"
-        toml_set "${conf_dir}/agent.toml" "token" ""
+        info "${config_file} exists — refreshing server_url, enrollment_code, clearing token"
+        if ! toml_set "$config_file" "server_url" "$SERVER_URL" \
+            || ! toml_set "$config_file" "enrollment_code" "$ENROLLMENT_CODE" \
+            || ! toml_set "$config_file" "token" ""; then
+            rollback_docker_agent_install \
+                "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+            error "Could not refresh ${config_file}"
+        fi
     fi
-
-    mkdir -p "$DOCKER_DIR"
+    if ! chmod 600 "$config_file"; then
+        rollback_docker_agent_install \
+            "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+        error "Could not secure ${config_file}"
+    fi
 
     ensure_caps_initialized
 
-    cat > "${DOCKER_DIR}/docker-compose.agent.yml" << YAML
+    if ! cat > "$compose_file" << YAML
 services:
   serverbee-agent:
     image: ghcr.io/zingerlittlebee/serverbee-agent:${image_tag}
@@ -1915,18 +1986,37 @@ services:
       - ${conf_dir}:/etc/serverbee
     restart: unless-stopped
 YAML
+    then
+        rollback_docker_agent_install \
+            "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+        error "Could not generate ${compose_file}"
+    fi
 
     cap_command_block=$(compute_cap_compose_command)
     if [ -n "$cap_command_block" ]; then
-        printf '%s\n' "$cap_command_block" >> "${DOCKER_DIR}/docker-compose.agent.yml"
+        if ! printf '%s\n' "$cap_command_block" >> "$compose_file"; then
+            rollback_docker_agent_install \
+                "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+            error "Could not add Agent capabilities to ${compose_file}"
+        fi
     fi
 
-    info "Generated ${DOCKER_DIR}/docker-compose.agent.yml"
-    docker compose -f "${DOCKER_DIR}/docker-compose.agent.yml" up -d
+    info "Generated ${compose_file}"
+    if ! docker compose -f "$compose_file" up -d; then
+        rollback_docker_agent_install \
+            "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+        error "Failed to start the ServerBee Agent container; partial install resources were removed"
+    fi
     info "Agent container started"
 
     install_cli "$version"
-    meta_write "agent" "docker" "$version"
+    if ! meta_write "agent" "docker" "$version"; then
+        rollback_docker_agent_install \
+            "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+        error "Failed to record the ServerBee Agent installation; partial install resources were removed"
+    fi
+    rm -f "$compose_backup" "$config_backup" \
+        || warn "Could not remove one or more Agent install rollback files"
     print_agent_result
 }
 

@@ -397,10 +397,182 @@ test_docker_server_compose_mounts_generated_config() (
         || fail "generated Docker server omits allocator tuning"
 )
 
+test_docker_agent_custom_caps_keep_executable_and_secure_config() (
+    setup_case docker-agent-custom-caps
+    DEFAULT_DOCKER_DIR="$CASE_DIR"
+    DOCKER_DIR="$CASE_DIR"
+    CONFIG_DIR="${CASE_DIR}/etc"
+    REQUESTED_VERSION="v1.0.0-beta.1"
+    RESOLVED_VERSION=""
+    SERVER_URL="https://monitor.example.com"
+    ENROLLMENT_CODE="test-enrollment-code"
+    AGENT_CAPS_USER_SPECIFIED=true
+    AGENT_CAPS_SELECTED=""
+
+    docker_is_snap() { return 1; }
+    check_docker() { :; }
+    check_unmanaged_container() { :; }
+    docker() { :; }
+    install_cli() { :; }
+    meta_write() { :; }
+    print_agent_result() { :; }
+
+    install_docker_agent >/dev/null
+
+    compose_file="${DOCKER_DIR}/docker-compose.agent.yml"
+    first_command=$(awk '/^    command:$/ { getline; print; exit }' "$compose_file")
+    assert_eq "$first_command" "      - serverbee-agent"
+
+    config_mode=$(LC_ALL=C ls -l "${CONFIG_DIR}/agent.toml" | cut -c 1-10)
+    assert_eq "$config_mode" "-rw-------"
+)
+
+test_docker_agent_start_failure_cleans_generated_files() (
+    setup_case docker-agent-install-failure
+    DEFAULT_DOCKER_DIR="$CASE_DIR"
+    DOCKER_DIR="$CASE_DIR"
+    CONFIG_DIR="${CASE_DIR}/etc"
+    REQUESTED_VERSION="v1.0.0-beta.1"
+    RESOLVED_VERSION=""
+    SERVER_URL="https://monitor.example.com"
+    ENROLLMENT_CODE="test-enrollment-code"
+    AGENT_CAPS_USER_SPECIFIED=true
+    AGENT_CAPS_SELECTED=""
+
+    docker_is_snap() { return 1; }
+    check_docker() { :; }
+    check_unmanaged_container() { :; }
+    docker() {
+        shift
+        [ "$1" = -f ] || fail "docker compose command omitted -f"
+        shift 2
+        action="$1"
+        printf '%s\n' "$action" >> "$ACTION_LOG"
+        [ "$action" != up ]
+    }
+    install_cli() { :; }
+    meta_write() { :; }
+    print_agent_result() { :; }
+
+    if (install_docker_agent) >/dev/null 2>&1; then
+        fail "failed Docker Agent start unexpectedly succeeded"
+    fi
+
+    [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml" ] \
+        || fail "failed Docker Agent install left its generated Compose file"
+    [ ! -e "${CONFIG_DIR}/agent.toml" ] \
+        || fail "failed Docker Agent install left its generated enrollment config"
+    grep -qx 'down' "$ACTION_LOG" \
+        || fail "failed Docker Agent install did not tear down its partial container"
+)
+
+test_docker_agent_config_write_failure_cleans_partial_file() (
+    setup_case docker-agent-config-write-failure
+    DEFAULT_DOCKER_DIR="$CASE_DIR"
+    DOCKER_DIR="$CASE_DIR"
+    CONFIG_DIR="${CASE_DIR}/etc"
+    REQUESTED_VERSION="v1.0.0-beta.1"
+    RESOLVED_VERSION=""
+    SERVER_URL="https://monitor.example.com"
+    ENROLLMENT_CODE="test-enrollment-code"
+
+    docker_is_snap() { return 1; }
+    check_docker() { :; }
+    check_unmanaged_container() { :; }
+    docker() { :; }
+    cat() { return 1; }
+
+    if (install_docker_agent) >/dev/null 2>&1; then
+        fail "failed Agent config write unexpectedly succeeded"
+    fi
+
+    [ ! -e "${CONFIG_DIR}/agent.toml" ] \
+        || fail "failed Agent config write left a partial enrollment config"
+)
+
+test_docker_agent_start_failure_restores_existing_files() (
+    setup_case docker-agent-existing-files
+    DEFAULT_DOCKER_DIR="$CASE_DIR"
+    DOCKER_DIR="$CASE_DIR"
+    CONFIG_DIR="${CASE_DIR}/etc"
+    REQUESTED_VERSION="v1.0.0-beta.1"
+    RESOLVED_VERSION=""
+    SERVER_URL="https://new.example.com"
+    ENROLLMENT_CODE="new-enrollment-code"
+    AGENT_CAPS_USER_SPECIFIED=true
+    AGENT_CAPS_SELECTED=""
+    mkdir -p "$CONFIG_DIR"
+    printf '%s\n' \
+        'server_url = "https://old.example.com"' \
+        'token = "old-run-token"' > "${CONFIG_DIR}/agent.toml"
+    chmod 600 "${CONFIG_DIR}/agent.toml"
+    printf '%s\n' \
+        'services:' \
+        '  preserved:' \
+        '    image: example.invalid/preserved:1' > "${DOCKER_DIR}/docker-compose.agent.yml"
+    cp "${CONFIG_DIR}/agent.toml" "${CASE_DIR}/expected-agent.toml"
+    cp "${DOCKER_DIR}/docker-compose.agent.yml" "${CASE_DIR}/expected-compose.yml"
+
+    docker_is_snap() { return 1; }
+    check_docker() { :; }
+    check_unmanaged_container() { :; }
+    docker() {
+        shift
+        [ "$1" = -f ] || fail "docker compose command omitted -f"
+        shift 2
+        [ "$1" != up ]
+    }
+    install_cli() { :; }
+    meta_write() { :; }
+    print_agent_result() { :; }
+
+    if (install_docker_agent) >/dev/null 2>&1; then
+        fail "failed Docker Agent reinstall unexpectedly succeeded"
+    fi
+
+    cmp -s "${CASE_DIR}/expected-agent.toml" "${CONFIG_DIR}/agent.toml" \
+        || fail "failed Docker Agent reinstall did not restore the existing config"
+    cmp -s "${CASE_DIR}/expected-compose.yml" "${DOCKER_DIR}/docker-compose.agent.yml" \
+        || fail "failed Docker Agent reinstall did not restore the existing Compose file"
+    [ ! -e "${CONFIG_DIR}/agent.toml.install-rollback" ] \
+        || fail "failed Docker Agent reinstall left a config rollback file"
+    [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.install-rollback" ] \
+        || fail "failed Docker Agent reinstall left a Compose rollback file"
+)
+
+test_non_tty_input_does_not_prompt() (
+    prompt_tty_available() { return 1; }
+    if has_prompt_input </dev/null; then
+        fail "non-interactive input was mistaken for an available controlling terminal"
+    fi
+)
+
 curl() {
     case "$*" in
         *'/releases?per_page=100'*)
-            if [ "$TEST_RELEASE_MODE" = prerelease-only ]; then
+            if [ "$TEST_RELEASE_MODE" = large ]; then
+                printf '%s\n' '[' \
+                    '  {' \
+                    '    "tag_name": "v1.0.0-beta.1",' \
+                    '    "draft": false' \
+                    '  },'
+                i=0
+                while [ "$i" -lt 3000 ]; do
+                    printf '%s\n' \
+                        '  {' \
+                        "    \"tag_name\": \"v0.0.0-draft.${i}\"," \
+                        '    "draft": true' \
+                        '  },'
+                    i=$((i + 1))
+                done
+                printf '%s\n' \
+                    '  {' \
+                    '    "tag_name": "v0.0.0-draft.final",' \
+                    '    "draft": true' \
+                    '  }' \
+                    ']'
+                : > "${TEST_ROOT}/release-fetch-complete"
+            elif [ "$TEST_RELEASE_MODE" = prerelease-only ]; then
                 cat <<'JSON'
 [
   {
@@ -473,6 +645,16 @@ test_auto_channel_falls_back_to_prerelease() {
     assert_eq "$(get_latest_version)" "v1.0.0-beta.1"
 }
 
+test_release_selection_consumes_the_full_response() {
+    TEST_RELEASE_MODE=large
+    RELEASE_CHANNEL=beta
+    RESOLVED_VERSION=""
+    REQUESTED_VERSION=""
+    assert_eq "$(get_latest_version)" "v1.0.0-beta.1"
+    [ -f "${TEST_ROOT}/release-fetch-complete" ] \
+        || fail "release selection stopped reading before curl completed"
+}
+
 test_install_metadata_persists_upgrade_channel() {
     setup_case metadata-channel
     CONFIG_DIR="${CASE_DIR}/etc"
@@ -514,11 +696,17 @@ test_unhealthy_docker_upgrade_rolls_back
 test_restarting_docker_upgrade_rolls_back
 test_stale_docker_backup_blocks_upgrade
 test_docker_server_compose_mounts_generated_config
+test_docker_agent_custom_caps_keep_executable_and_secure_config
+test_docker_agent_start_failure_cleans_generated_files
+test_docker_agent_config_write_failure_cleans_partial_file
+test_docker_agent_start_failure_restores_existing_files
+test_non_tty_input_does_not_prompt
 test_stable_channel_ignores_misclassified_prerelease
 test_stable_channel_fails_without_stable_release
 test_beta_channel_finds_semver_prerelease_when_metadata_is_wrong
 test_auto_channel_prefers_stable_release
 test_auto_channel_falls_back_to_prerelease
+test_release_selection_consumes_the_full_response
 test_install_metadata_persists_upgrade_channel
 test_current_upgrade_persists_explicit_channel
 printf 'PASS: install upgrade transaction tests\n'
