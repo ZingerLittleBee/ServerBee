@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 ### 2. 接入 Agent
 
-以管理员登录 → **设置** → 生成一个一次性 **enrollment code**(单次使用,约 10 分钟后过期)。然后在每个节点上:
+以管理员登录，进入 **服务器（Servers）→ 添加服务器（Add Server）**，复制生成的安装命令。其中的 Server 绑定注册凭据仅可使用一次，约 10 分钟后过期。然后在每个节点上运行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh -s -- agent --method binary \
@@ -85,7 +85,7 @@ password = ""   # 留空自动生成
 ```toml
 # /etc/serverbee/agent.toml
 server_url = "http://your-server:9527"
-enrollment_code = ""   # 来自设置页的一次性 code,仅用于首次注册
+enrollment_code = ""   # 来自 Servers → Add Server 的一次性 code，仅用于首次注册
 
 [collector]
 interval = 3           # 上报间隔(秒)
@@ -130,7 +130,7 @@ make test             # 前端测试
 make cargo-clippy     # Rust 代码检查
 ```
 
-> `make dev-full` 启动带 HMR 的 Vite(`http://localhost:5173`),并代理 `/api/*` 到 `:9527` 的 Rust 服务端。在 **设置** 页生成一次性 enrollment code 即可接入开发用 Agent。
+> `make dev-full` 启动带 HMR 的 Vite（`http://localhost:5173`），并代理 `/api/*` 到 `:9527` 的 Rust 服务端。在 **Servers → Add Server** 生成一次性 enrollment code，即可接入开发用 Agent。
 
 **技术栈:** Rust(Axum 0.8 · sea-orm · SQLite WAL)· React 19(Vite 7 · TanStack Router/Query · Bklit · shadcn/ui · Tailwind CSS v4)· Rust Agent(sysinfo · tokio-tungstenite)。
 

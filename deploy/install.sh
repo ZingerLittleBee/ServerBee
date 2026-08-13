@@ -21,6 +21,7 @@ esac
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 REPO="ZingerLittleBee/ServerBee"
+INSTALLER_VERSION="1.0.0-beta.1"
 # Everything ServerBee installs lives under a single base directory for
 # unified management. The PATH-visible management CLI is the only exception.
 BASE_DIR="/opt/serverbee"
@@ -32,6 +33,7 @@ DEFAULT_DOCKER_DIR="${BASE_DIR}"
 SNAP_DOCKER_DIR="/var/snap/docker/common/serverbee"
 META_FILE="${CONFIG_DIR}/.install-meta"
 LANG_CACHE_FILE="${CONFIG_DIR}/.install-lang"
+DOMAIN_CACHE_FILE="${CONFIG_DIR}/.install-domain"
 CLI_PATH="/usr/local/bin/serverbee"
 # Legacy FHS-split layout (pre-/opt). Kept only for one-time auto-migration.
 LEGACY_BIN_DIR="/usr/local/bin"
@@ -53,8 +55,10 @@ LANG_CODE="${SERVERBEE_LANG:-}"
 YES=false
 PURGE=false
 SKIP_DNS_CHECK=false
+NO_WAIT=false
 CONFIG_KEY=""
 CONFIG_VALUE=""
+POSITIONAL_COUNT=0
 MISSING_DEPS=""
 MANAGED_COMPONENTS=""
 UNMANAGED_COMPONENTS=""
@@ -69,6 +73,11 @@ UPGRADE_HEALTH_ATTEMPTS=30
 UPGRADE_STABILITY_CHECKS=10
 DOCKER_UPGRADE_HEALTH_ATTEMPTS=90
 DOCKER_UPGRADE_STABILITY_CHECKS=10
+INSTALL_SERVER_HEALTH_ATTEMPTS=30
+INSTALL_AGENT_ATTEMPTS=30
+AGENT_LOG_START_LINE=0
+AGENT_LOG_SINCE=0
+AGENT_INSTALL_PROOF=""
 
 # ─── Agent capability toggles ────────────────────────────────────────────────
 # Keys MUST match the CapabilityKey strings in crates/common/src/constants.rs.
@@ -153,6 +162,170 @@ sed_inplace() {
     _si_expr="$1"; _si_file="$2"
     _si_tmp=$(mktemp)
     sed "$_si_expr" "$_si_file" > "$_si_tmp" && mv "$_si_tmp" "$_si_file"
+}
+
+validate_single_line_value() {
+    # Configuration formats below cannot represent control characters safely.
+    # Keep validation separate from rendering so rejected values never modify
+    # the destination file.
+    case "$1" in
+        *'
+'*) return 1 ;;
+    esac
+    ! LC_ALL=C printf '%s' "$1" | grep '[[:cntrl:]]' >/dev/null 2>&1
+}
+
+atomic_replace_preserving_mode() {
+    # $1 = destination, $2 = generated replacement. Both temporary files live
+    # next to the destination so the final rename is atomic on one filesystem.
+    local destination generated staged
+    destination="$1"
+    generated="$2"
+    staged=$(mktemp "${destination}.tmp.XXXXXX") || return 1
+    if ! cp -p "$destination" "$staged" \
+        || ! cat "$generated" > "$staged" \
+        || ! mv -f "$staged" "$destination"; then
+        rm -f "$staged"
+        return 1
+    fi
+}
+
+render_double_quoted_value() {
+    # TOML basic strings and YAML double-quoted scalars share the escaping we
+    # need for printable installer values: backslash and double quote.
+    SB_INSTALL_EDIT_VALUE="$1"
+    export SB_INSTALL_EDIT_VALUE
+    awk 'BEGIN {
+        value = ENVIRON["SB_INSTALL_EDIT_VALUE"]
+        for (i = 1; i <= length(value); i++) {
+            c = substr(value, i, 1)
+            if (c == "\\" || c == "\"") out = out "\\"
+            out = out c
+        }
+        printf "%s", out
+    }'
+    unset SB_INSTALL_EDIT_VALUE
+}
+
+render_shell_double_quoted_value() {
+    SB_INSTALL_EDIT_VALUE="$1"
+    export SB_INSTALL_EDIT_VALUE
+    awk 'BEGIN {
+        value = ENVIRON["SB_INSTALL_EDIT_VALUE"]
+        for (i = 1; i <= length(value); i++) {
+            c = substr(value, i, 1)
+            if (c == "\\" || c == "\"" || c == "$" || c == "`") out = out "\\"
+            out = out c
+        }
+        printf "%s", out
+    }'
+    unset SB_INSTALL_EDIT_VALUE
+}
+
+atomic_set_assignment_line() {
+    # $1 = file, $2 = plain key, $3 = rendered line, $4 = openrc|systemd
+    local file key replacement kind generated
+    file="$1"; key="$2"; replacement="$3"; kind="$4"
+    generated=$(mktemp "${file}.generated.XXXXXX") || return 1
+    SB_INSTALL_EDIT_KEY="$key"
+    SB_INSTALL_EDIT_LINE="$replacement"
+    SB_INSTALL_EDIT_KIND="$kind"
+    export SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE SB_INSTALL_EDIT_KIND
+    awk '
+        BEGIN {
+            key=ENVIRON["SB_INSTALL_EDIT_KEY"]
+            replacement=ENVIRON["SB_INSTALL_EDIT_LINE"]
+            kind=ENVIRON["SB_INSTALL_EDIT_KIND"]
+            written=0
+        }
+        {
+            candidate=$0
+            if (kind == "systemd") {
+                sub(/^[[:space:]]*Environment=/, "", candidate)
+                sub(/^"/, "", candidate)
+            } else {
+                sub(/^[[:space:]]*/, "", candidate)
+            }
+            if (index(candidate, key "=") == 1) {
+                if (!written) print replacement
+                written=1
+                next
+            }
+            print
+        }
+        END { if (!written) print replacement }
+    ' "$file" > "$generated"
+    unset SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE SB_INSTALL_EDIT_KIND
+    if ! atomic_replace_preserving_mode "$file" "$generated"; then
+        rm -f "$generated"
+        return 1
+    fi
+    rm -f "$generated"
+}
+
+openrc_set_env() {
+    local file key value escaped
+    file="$1"; key="$2"; value="$3"
+    validate_single_line_value "$value" || return 1
+    escaped=$(render_shell_double_quoted_value "$value")
+    atomic_set_assignment_line "$file" "$key" "${key}=\"${escaped}\"" openrc
+}
+
+systemd_set_env() {
+    local file key value escaped
+    file="$1"; key="$2"; value="$3"
+    validate_single_line_value "$value" || return 1
+    SB_INSTALL_EDIT_VALUE="$value"
+    export SB_INSTALL_EDIT_VALUE
+    escaped=$(awk 'BEGIN {
+        value = ENVIRON["SB_INSTALL_EDIT_VALUE"]
+        for (i = 1; i <= length(value); i++) {
+            c = substr(value, i, 1)
+            if (c == "\\" || c == "\"") out = out "\\"
+            if (c == "%") out = out "%"
+            out = out c
+        }
+        printf "%s", out
+    }')
+    unset SB_INSTALL_EDIT_VALUE
+    atomic_set_assignment_line "$file" "$key" "Environment=\"${key}=${escaped}\"" systemd
+}
+
+redact_toml_file() {
+    awk '
+        /^[[:space:]]*\[/ {
+            section = $0
+            sub(/^[[:space:]]*\[/, "", section)
+            sub(/\][[:space:]]*$/, "", section)
+        }
+        /^[[:space:]]*[A-Za-z0-9_]+[[:space:]]*=/ {
+            key = $0
+            sub(/^[[:space:]]*/, "", key)
+            sub(/[[:space:]]*=.*/, "", key)
+            full = (section == "" ? key : section "." key)
+            upper = toupper(full)
+            if (upper ~ /(PASSWORD|TOKEN|SECRET|ENROLLMENT_CODE)/) {
+                prefix = $0
+                sub(/=.*/, "=", prefix)
+                print prefix " \"********\""
+                next
+            }
+        }
+        { print }
+    ' "$1"
+}
+
+redact_env_lines() {
+    awk '
+        {
+            upper = toupper($0)
+            if (match(upper, /SERVERBEE_[A-Z0-9_]*(PASSWORD|TOKEN|SECRET|ENROLLMENT_CODE)[A-Z0-9_]*=/)) {
+                suffix = ($0 ~ /"[[:space:]]*$/ ? "\"" : "")
+                $0 = substr($0, 1, RSTART + RLENGTH - 1) "********" suffix
+            }
+            print
+        }
+    '
 }
 
 sha256_of() {
@@ -362,6 +535,8 @@ tr_text() {
         email_label)    [ "$_z" ] && echo "邮箱: " || echo "Email: " ;;
         result_server_ok) [ "$_z" ] && echo "ServerBee Server 安装成功！" || echo "ServerBee Server installed successfully!" ;;
         result_agent_ok)  [ "$_z" ] && echo "ServerBee Agent 安装成功！" || echo "ServerBee Agent installed successfully!" ;;
+        result_server_unverified) [ "$_z" ] && echo "ServerBee Server 已安装，但未验证健康状态。" || echo "ServerBee Server installed, but health was not verified." ;;
+        result_agent_unverified) [ "$_z" ] && echo "ServerBee Agent 已安装，但未验证 Server 连接。" || echo "ServerBee Agent installed, but its Server connection was not verified." ;;
         lbl_dashboard)  [ "$_z" ] && echo "  控制台:" || echo "  Dashboard:" ;;
         lbl_username)   [ "$_z" ] && echo "  用户名:" || echo "  Username:" ;;
         lbl_password)   [ "$_z" ] && echo "  密码:" || echo "  Password:" ;;
@@ -386,6 +561,7 @@ tr_text() {
         st_no_logs)     [ "$_z" ] && echo "    （无日志）" || echo "    (no logs)" ;;
         st_server)      echo "  Server:" ;;
         st_dashboard)   [ "$_z" ] && echo "  控制台:" || echo "  Dashboard:" ;;
+        st_reverse_proxy) [ "$_z" ] && echo "位于反向代理之后（未记录配置的域名）" || echo "behind reverse proxy (configured domain unavailable)" ;;
         st_container)   [ "$_z" ] && echo "  容器:" || echo "  Container:" ;;
         st_stopped)     [ "$_z" ] && echo "已停止" || echo "stopped" ;;
         st_image)       [ "$_z" ] && echo "  镜像:" || echo "  Image:" ;;
@@ -635,40 +811,103 @@ migrate_legacy_layout() {
 # ─── Known subcommands ───────────────────────────────────────────────────────
 is_known_command() {
     case "$1" in
-        install|uninstall|upgrade|status|start|stop|restart|config|env|domain) return 0 ;;
+        install|uninstall|upgrade|status|start|stop|restart|config|env|domain|help|version) return 0 ;;
         *) return 1 ;;
     esac
 }
 
 # ─── Argument parsing ─────────────────────────────────────────────────────────
+option_requires_value() {
+    error "Option $1 requires a value. Run 'serverbee --help' for usage."
+}
+
 parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
-            --method)        METHOD="$2"; shift 2 ;;
-            --server-url)    SERVER_URL="$2"; shift 2 ;;
-            --enrollment-code) ENROLLMENT_CODE="$2"; shift 2 ;;
+            --method)        [ $# -ge 2 ] || option_requires_value "$1"; METHOD="$2"; shift 2 ;;
+            --server-url)    [ $# -ge 2 ] || option_requires_value "$1"; SERVER_URL="$2"; shift 2 ;;
+            --enrollment-code) [ $# -ge 2 ] || option_requires_value "$1"; ENROLLMENT_CODE="$2"; shift 2 ;;
             --password)      error "--password is no longer supported. ServerBee always generates a one-time first-run admin password; check the server logs after installation." ;;
-            --domain)        DOMAIN="$2"; shift 2 ;;
-            --email)         EMAIL="$2"; shift 2 ;;
-            --lang)          LANG_CODE="$2"; normalize_lang; shift 2 ;;
-            --version)       REQUESTED_VERSION="$2"; shift 2 ;;
-            --channel)       RELEASE_CHANNEL="$2"; RELEASE_CHANNEL_USER_SPECIFIED=true; shift 2 ;;
+            --domain)        [ $# -ge 2 ] || option_requires_value "$1"; DOMAIN="$2"; shift 2 ;;
+            --email)         [ $# -ge 2 ] || option_requires_value "$1"; EMAIL="$2"; shift 2 ;;
+            --lang)          [ $# -ge 2 ] || option_requires_value "$1"; LANG_CODE="$2"; normalize_lang; shift 2 ;;
+            --version)       [ $# -ge 2 ] || option_requires_value "$1"; REQUESTED_VERSION="$2"; shift 2 ;;
+            --channel)       [ $# -ge 2 ] || option_requires_value "$1"; RELEASE_CHANNEL="$2"; RELEASE_CHANNEL_USER_SPECIFIED=true; shift 2 ;;
             --skip-dns-check) SKIP_DNS_CHECK=true; shift ;;
-            --caps)          set_caps_from_cli "$2"; shift 2 ;;
+            --caps)          [ $# -ge 2 ] || option_requires_value "$1"; set_caps_from_cli "$2"; shift 2 ;;
+            --no-wait)       NO_WAIT=true; shift ;;
             --purge)         PURGE=true; shift ;;
             --yes|-y)        YES=true; shift ;;
             -*)              error "Unknown option: $1" ;;
             *)
-                if [ -z "$COMPONENT" ]; then
-                    COMPONENT="$1"
-                elif [ -z "$CONFIG_KEY" ]; then
-                    CONFIG_KEY="$1"
-                elif [ -z "$CONFIG_VALUE" ]; then
-                    CONFIG_VALUE="$1"
-                fi
+                POSITIONAL_COUNT=$((POSITIONAL_COUNT + 1))
+                case "$POSITIONAL_COUNT" in
+                    1) COMPONENT="$1" ;;
+                    2) CONFIG_KEY="$1" ;;
+                    3) CONFIG_VALUE="$1" ;;
+                    *) error "Unexpected argument: $1" ;;
+                esac
                 shift ;;
         esac
     done
+}
+
+validate_parsed_args() {
+    case "$COMMAND" in
+        install|uninstall|upgrade|status|start|stop|restart)
+            [ "$POSITIONAL_COUNT" -le 1 ] || error "Unexpected argument: ${CONFIG_KEY}"
+            ;;
+        domain)
+            [ "$POSITIONAL_COUNT" -le 1 ] || error "Unexpected argument: ${CONFIG_KEY}"
+            ;;
+        config|env)
+            if [ "$COMPONENT" = set ]; then
+                [ "$POSITIONAL_COUNT" -le 3 ] || error "Too many arguments for serverbee ${COMMAND} set"
+            else
+                [ "$POSITIONAL_COUNT" -le 1 ] || error "Unexpected argument: ${CONFIG_KEY}"
+            fi
+            ;;
+    esac
+}
+
+print_usage() {
+    local topic
+    topic="${1:-}"
+    case "$topic" in
+        install)
+            echo "Usage: serverbee install <server|agent> [--method binary|docker] [options]"
+            echo "       serverbee <server|agent> [options]"
+            echo "Options: --version <release> --channel <auto|stable|beta> --lang <en|zh> -y"
+            echo "Agent:  --server-url <url> --enrollment-code <code> [--caps <list>] [--no-wait]"
+            echo "Server: --domain <name> [--email <address>] [--skip-dns-check] [--no-wait]"
+            echo "Verification exits: 0=verified/skipped, 1=Server unhealthy, 75=Agent temporarily unverified, 78=Agent authentication rejected"
+            ;;
+        config)
+            echo "Usage: serverbee config [server|agent]"
+            echo "       serverbee config set <key> <value> [-y]"
+            ;;
+        env)
+            echo "Usage: serverbee env"
+            echo "       serverbee env set <KEY> <value>"
+            ;;
+        domain)
+            echo "Usage: serverbee domain setup --domain <name> [--email <address>] [--skip-dns-check]"
+            ;;
+        uninstall)
+            echo "Usage: serverbee uninstall <server|agent> [--purge] [-y]"
+            ;;
+        upgrade)
+            echo "Usage: serverbee upgrade [server|agent] [--version <release>] [--channel <auto|stable|beta>] [-y]"
+            ;;
+        start|stop|restart|status)
+            echo "Usage: serverbee ${topic} [server|agent]"
+            ;;
+        *)
+            echo "Usage: serverbee <command> [options]"
+            echo "Commands: install, uninstall, upgrade, status, start, stop, restart, config, env, domain, version"
+            echo "Run 'serverbee <command> --help' for command-specific usage."
+            ;;
+    esac
 }
 
 # ─── Platform detection ──────────────────────────────────────────────────────
@@ -1481,12 +1720,331 @@ server_health_url() {
     printf 'http://%s:%s/healthz\n' "$host" "$port"
 }
 
+configured_server_listen() {
+    local config_file
+    config_file="${CONFIG_DIR}/server.toml"
+    [ -f "$config_file" ] || return 1
+    awk '
+        /^[[:space:]]*\[server\][[:space:]]*$/ { in_server=1; next }
+        in_server && /^[[:space:]]*\[/ { exit }
+        in_server && /^[[:space:]]*listen[[:space:]]*=/ {
+            sub(/^[^=]*=[[:space:]]*/, "")
+            gsub(/^[[:space:]]*"|"[[:space:]]*$/, "")
+            print
+            exit
+        }
+    ' "$config_file"
+}
+
+server_dashboard_display() {
+    local method domain listen ip compose_file
+    method="$1"
+    domain=""
+    if [ -f "$DOMAIN_CACHE_FILE" ]; then
+        domain=$(head -n1 "$DOMAIN_CACHE_FILE" 2>/dev/null | tr -d '[:space:]')
+    fi
+    if [ -n "$domain" ]; then
+        printf 'https://%s\n' "$domain"
+        return 0
+    fi
+
+    if [ "$method" = binary ]; then
+        listen=$(configured_server_listen || true)
+        case "$listen" in
+            127.0.0.1:*|localhost:*|\[::1\]:*)
+                tr_text st_reverse_proxy
+                return 0
+                ;;
+        esac
+    elif [ "$method" = docker ]; then
+        compose_file="${DOCKER_DIR}/docker-compose.server.yml"
+        if [ -f "$compose_file" ] \
+            && grep -Eq '127\.0\.0\.1:9527:9527|\[::1\]:9527:9527' "$compose_file"; then
+            tr_text st_reverse_proxy
+            return 0
+        fi
+    fi
+
+    ip=$(get_local_ip)
+    printf 'http://%s:9527\n' "$ip"
+}
+
+write_domain_cache() {
+    local generated
+    mkdir -p "$CONFIG_DIR"
+    generated=$(mktemp "${DOMAIN_CACHE_FILE}.tmp.XXXXXX") || return 1
+    if ! printf '%s\n' "$DOMAIN" > "$generated" \
+        || ! chmod 600 "$generated" \
+        || ! mv -f "$generated" "$DOMAIN_CACHE_FILE"; then
+        rm -f "$generated"
+        return 1
+    fi
+}
+
 svc_health_check() {
     local component url
     component="$1"
     [ "$component" = server ] || return 0
     url=$(server_health_url) || return 1
     curl -fsS --max-time 2 "$url" >/dev/null 2>&1
+}
+
+server_install_health_check() {
+    if [ "$METHOD" = docker ]; then
+        [ "$(docker_container_state server)" = "running healthy" ]
+    else
+        [ "$(svc_is_active server)" = active ] && svc_health_check server
+    fi
+}
+
+wait_for_server_install() {
+    local attempt
+    if [ "$METHOD" = docker ]; then
+        wait_for_docker_stability server
+        return
+    fi
+    attempt=0
+    while [ "$attempt" -lt "$INSTALL_SERVER_HEALTH_ATTEMPTS" ]; do
+        server_install_health_check && return 0
+        attempt=$((attempt + 1))
+        [ "$attempt" -ge "$INSTALL_SERVER_HEALTH_ATTEMPTS" ] || sleep 1
+    done
+    return 1
+}
+
+agent_install_logs() {
+    local invocation_id
+    if [ "$METHOD" = docker ]; then
+        docker compose -f "${DOCKER_DIR}/docker-compose.agent.yml" \
+            logs --no-color --since "${AGENT_LOG_SINCE}" --tail 200 serverbee-agent 2>/dev/null || true
+    elif [ "$INIT" = systemd ]; then
+        invocation_id=$(systemctl show serverbee-agent --property=InvocationID --value 2>/dev/null || true)
+        if [ -n "$invocation_id" ]; then
+            journalctl "_SYSTEMD_INVOCATION_ID=${invocation_id}" --no-pager 2>/dev/null || true
+        else
+            journalctl -u serverbee-agent --since "@${AGENT_LOG_SINCE}" --no-pager 2>/dev/null || true
+        fi
+    elif [ "$INIT" = openrc ]; then
+        tail -n "+$((AGENT_LOG_START_LINE + 1))" "$(svc_log_path agent)" 2>/dev/null || true
+    else
+        svc_logs_tail agent 200 2>/dev/null || true
+    fi
+}
+
+agent_install_exit_status() {
+    if [ "$METHOD" = docker ]; then
+        docker inspect --format '{{.State.ExitCode}}' serverbee-agent 2>/dev/null || true
+    elif [ "$INIT" = systemd ]; then
+        systemctl show serverbee-agent --property=ExecMainStatus --value 2>/dev/null || true
+    fi
+}
+
+agent_install_pid() {
+    local process_dir executable
+    if [ "$METHOD" = docker ]; then
+        docker inspect --format '{{.State.Pid}}' serverbee-agent 2>/dev/null || true
+    elif [ "$INIT" = systemd ]; then
+        systemctl show serverbee-agent --property=MainPID --value 2>/dev/null || true
+    elif [ "$INIT" = openrc ]; then
+        # supervise-daemon's pidfile identifies the supervisor, not its Agent
+        # child. Resolve the exact executable from procfs instead.
+        for process_dir in /proc/[0-9]*; do
+            [ -r "${process_dir}/cmdline" ] || continue
+            executable=$(tr '\000' '\n' < "${process_dir}/cmdline" 2>/dev/null | head -n1)
+            if [ "$executable" = "${INSTALL_DIR}/serverbee-agent" ]; then
+                printf '%s\n' "${process_dir##*/}"
+                return 0
+            fi
+        done
+    fi
+}
+
+agent_server_endpoint() {
+    local url scheme authority host port
+    url="$SERVER_URL"
+    scheme="${url%%://*}"
+    [ "$scheme" != "$url" ] || return 1
+    authority="${url#*://}"
+    authority="${authority%%/*}"
+    authority="${authority%%\?*}"
+    case "$authority" in
+        \[*\]:*)
+            host="${authority%%]*}"
+            host="${host#[}"
+            port="${authority##*:}"
+            ;;
+        \[*\])
+            host="${authority#[}"
+            host="${host%]}"
+            port=""
+            ;;
+        *:*)
+            host="${authority%:*}"
+            port="${authority##*:}"
+            ;;
+        *)
+            host="$authority"
+            port=""
+            ;;
+    esac
+    if [ -z "$port" ]; then
+        case "$scheme" in
+            https|wss) port=443 ;;
+            http|ws) port=80 ;;
+            *) return 1 ;;
+        esac
+    fi
+    case "$port" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    [ -n "$host" ] || return 1
+    printf '%s %s\n' "$host" "$port"
+}
+
+agent_connection_established() {
+    # Compatibility proof for releases or logging configurations that suppress
+    # the INFO-level Welcome line. Match the Agent process itself to the
+    # resolved Server endpoint, not merely any connection on the host.
+    local pid endpoint host port addresses
+    command -v ss >/dev/null 2>&1 || return 1
+    pid=$(agent_install_pid)
+    case "$pid" in
+        ''|0|*[!0-9]*) return 1 ;;
+    esac
+    endpoint=$(agent_server_endpoint) || return 1
+    host="${endpoint% *}"
+    port="${endpoint##* }"
+    if printf '%s' "$host" | grep -Eq '^[0-9]+(\.[0-9]+){3}$|:'; then
+        addresses="$host"
+    elif command -v getent >/dev/null 2>&1; then
+        addresses=$(getent ahosts "$host" 2>/dev/null | awk '{ print $1 }' | sort -u)
+    else
+        return 1
+    fi
+    [ -n "$addresses" ] || return 1
+
+    ss -Htnp state established 2>/dev/null | awk -v pid="$pid" -v port="$port" -v addresses="$addresses" '
+        BEGIN {
+            count = split(addresses, address, "\n")
+            wanted = "pid=" pid ","
+        }
+        index($0, wanted) {
+            peer = $4
+            if (substr(peer, 1, 1) == "[") {
+                sub(/^\[/, "", peer)
+                sub(/\]:[0-9]+$/, "", peer)
+            } else {
+                sub(":[0-9]+$", "", peer)
+            }
+            if ($4 !~ (":" port "$") ) next
+            for (i = 1; i <= count; i++) {
+                if (peer == address[i]) {
+                    print $3 "|" $4
+                    found = 1
+                    exit
+                }
+            }
+        }
+        END { exit(found ? 0 : 1) }
+    '
+}
+
+wait_for_agent_install() {
+    local attempt logs exit_status connection_stable connection_id current_connection
+    attempt=0
+    connection_stable=0
+    connection_id=""
+    AGENT_INSTALL_PROOF=""
+    while [ "$attempt" -lt "$INSTALL_AGENT_ATTEMPTS" ]; do
+        logs=$(agent_install_logs)
+        if printf '%s\n' "$logs" | grep -Fq 'Welcome from server '; then
+            AGENT_INSTALL_PROOF=welcome
+            return 0
+        fi
+        if printf '%s\n' "$logs" | grep -Fq 'Permanent registration failure:'; then
+            return 78
+        fi
+        exit_status=$(agent_install_exit_status)
+        [ "$exit_status" != 78 ] || return 78
+        if current_connection=$(agent_connection_established); then
+            if [ "$current_connection" = "$connection_id" ]; then
+                connection_stable=$((connection_stable + 1))
+            else
+                connection_id="$current_connection"
+                connection_stable=1
+            fi
+            # Three observations span roughly two seconds and must identify the
+            # same TCP four-tuple, so separate short retries cannot look stable.
+            if [ "$connection_stable" -ge 3 ]; then
+                AGENT_INSTALL_PROOF=connection
+                return 0
+            fi
+        else
+            connection_stable=0
+            connection_id=""
+        fi
+        attempt=$((attempt + 1))
+        [ "$attempt" -ge "$INSTALL_AGENT_ATTEMPTS" ] || sleep 1
+    done
+    return 75
+}
+
+verify_server_install_or_exit() {
+    local logs
+    if [ "$METHOD" != docker ] && [ "$INIT" = none ]; then
+        NO_WAIT=true
+        warn "Server service was not started because no init manager was found; health verification was skipped."
+        return 0
+    fi
+    if [ "$NO_WAIT" = true ]; then
+        warn "Server was installed, but health verification was skipped (--no-wait)."
+        return 0
+    fi
+    if wait_for_server_install; then
+        info "Server health check passed."
+        return 0
+    fi
+    if [ "$METHOD" = docker ]; then
+        logs=$(docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" logs --tail 20 2>/dev/null || true)
+    else
+        logs=$(svc_logs_tail server 20 2>/dev/null || true)
+    fi
+    [ -z "$logs" ] || warn "Recent serverbee-server logs:\n${logs}"
+    error "Server was installed, but /healthz did not become ready. The installation was kept for troubleshooting."
+}
+
+verify_agent_install_or_exit() {
+    local result logs
+    if [ "$METHOD" != docker ] && [ "$INIT" = none ]; then
+        NO_WAIT=true
+        warn "Agent service was not started because no init manager was found; Server connection verification was skipped."
+        return 0
+    fi
+    if [ "$NO_WAIT" = true ]; then
+        warn "Agent was installed, but Server enrollment was not verified (--no-wait). It will keep retrying in the background."
+        return 0
+    fi
+    if wait_for_agent_install; then
+        if [ "$AGENT_INSTALL_PROOF" = welcome ]; then
+            info "Agent connected and received the Server welcome message."
+        else
+            info "Agent established a persistent connection to the Server endpoint."
+        fi
+        return 0
+    else
+        result=$?
+    fi
+    logs=$(agent_install_logs)
+    [ -z "$logs" ] || warn "Recent serverbee-agent logs:\n${logs}"
+    if [ "$result" -eq 78 ]; then
+        if [ "$METHOD" = docker ]; then
+            docker compose -f "${DOCKER_DIR}/docker-compose.agent.yml" stop serverbee-agent >/dev/null 2>&1 || true
+        fi
+        printf '%b\n' "${RED}[ERROR]${NC} Agent authentication was permanently rejected. The installation was kept. Generate a fresh code in Servers → Add Server, update enrollment_code, then restart the Agent." >&2
+        exit 78
+    fi
+    warn "Agent was installed but did not connect within ${INSTALL_AGENT_ATTEMPTS}s. It will keep retrying in the background. Check 'serverbee status' and the Agent logs."
+    exit 75
 }
 
 svc_restart_count() {
@@ -1525,18 +2083,15 @@ ROT
 }
 
 svc_write_env_file() {
-    # $1 = component   $2 = KEY=VALUE line (optional)
-    local f k
+    # $1 = component, $2 = key (optional), $3 = value (optional)
+    local f
     f=$(svc_env_path "$1")
     mkdir -p "$CONFIG_DIR"
-    [ -f "$f" ] || : > "$f"
-    [ -n "${2:-}" ] || return 0
-    k=${2%%=*}
-    if grep -q "^${k}=" "$f" 2>/dev/null; then
-        sed_inplace "s|^${k}=.*|$2|" "$f"
-    else
-        printf '%s\n' "$2" >> "$f"
+    if [ ! -f "$f" ]; then
+        (umask 077; : > "$f") || return 1
     fi
+    [ -n "${2:-}" ] || return 0
+    openrc_set_env "$f" "$2" "${3:-}"
 }
 
 create_systemd_unit_server() {
@@ -1674,7 +2229,7 @@ svc_install_server() {
             info "Server service started and enabled"
             ;;
         openrc)
-            svc_write_env_file server "SERVERBEE_SERVER__DATA_DIR=${DATA_DIR}"
+            svc_write_env_file server SERVERBEE_SERVER__DATA_DIR "$DATA_DIR"
             create_openrc_service_server
             rc-update add serverbee-server default >/dev/null 2>&1 || true
             rc-service serverbee-server restart
@@ -1697,7 +2252,7 @@ svc_install_agent() {
             info "Agent service started and enabled"
             ;;
         openrc)
-            svc_write_env_file agent ""
+            svc_write_env_file agent
             create_openrc_service_agent "$1"
             rc-update add serverbee-agent default >/dev/null 2>&1 || true
             rc-service serverbee-agent restart
@@ -1769,6 +2324,7 @@ TOML
 
     install_cli "$version"
     meta_write "server" "binary" "$version"
+    verify_server_install_or_exit
     print_server_result
 }
 
@@ -1817,10 +2373,15 @@ TOML
 
     ensure_caps_initialized
     cap_args=$(compute_cap_cli_args)
+    AGENT_LOG_SINCE=$(date +%s)
+    if [ "$INIT" = openrc ] && [ -f "$(svc_log_path agent)" ]; then
+        AGENT_LOG_START_LINE=$(wc -l < "$(svc_log_path agent)")
+    fi
     svc_install_agent "$cap_args"
 
     install_cli "$version"
     meta_write "agent" "binary" "$version"
+    verify_agent_install_or_exit
     print_agent_result
 }
 
@@ -1873,11 +2434,14 @@ volumes:
 YAML
 
     info "Generated ${DOCKER_DIR}/docker-compose.server.yml"
+    docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" config -q \
+        || error "Generated Server Compose file is invalid: ${DOCKER_DIR}/docker-compose.server.yml"
     docker compose -f "${DOCKER_DIR}/docker-compose.server.yml" up -d
     info "Server container started"
 
     install_cli "$version"
     meta_write "server" "docker" "$version"
+    verify_server_install_or_exit
     print_server_result
 }
 
@@ -2018,7 +2582,13 @@ YAML
     fi
 
     info "Generated ${compose_file}"
-    if ! docker compose -f "$compose_file" up -d; then
+    if ! docker compose -f "$compose_file" config -q; then
+        rollback_docker_agent_install \
+            "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
+        error "Generated Agent Compose file is invalid; installation rollback was attempted"
+    fi
+    AGENT_LOG_SINCE=$(date +%s)
+    if ! docker compose -f "$compose_file" up -d --force-recreate; then
         rollback_docker_agent_install \
             "$compose_file" "$compose_backup" "$config_file" "$config_backup" "$config_created"
         error "Failed to start the ServerBee Agent container; installation rollback was attempted"
@@ -2033,6 +2603,7 @@ YAML
     fi
     rm -f "$compose_backup" "$config_backup" \
         || warn "Could not remove one or more Agent install rollback files"
+    verify_agent_install_or_exit
     print_agent_result
 }
 
@@ -2079,7 +2650,11 @@ print_server_result() {
     ip=$(get_local_ip)
     pw="$(fetch_first_run_password)"
     echo ""
-    cecho "${GREEN}$(tr_text result_server_ok)${NC}"
+    if [ "$NO_WAIT" = true ]; then
+        cecho "${YELLOW}$(tr_text result_server_unverified)${NC}"
+    else
+        cecho "${GREEN}$(tr_text result_server_ok)${NC}"
+    fi
     echo ""
     echo "$(tr_text lbl_dashboard) http://${ip}:9527"
     echo "$(tr_text lbl_username) admin"
@@ -2100,7 +2675,11 @@ print_server_result() {
 
 print_agent_result() {
     echo ""
-    cecho "${GREEN}$(tr_text result_agent_ok)${NC}"
+    if [ "$NO_WAIT" = true ]; then
+        cecho "${YELLOW}$(tr_text result_agent_unverified)${NC}"
+    else
+        cecho "${GREEN}$(tr_text result_agent_ok)${NC}"
+    fi
     echo ""
     echo "$(tr_text lbl_server_url) ${SERVER_URL}"
     if [ "$METHOD" = "docker" ]; then
@@ -2273,11 +2852,10 @@ update_server_for_domain_docker() {
     [ -f "$compose_file" ] || error "Compose file not found: $compose_file"
 
     sed_inplace 's|- "9527:9527"|- "127.0.0.1:9527:9527"|' "$compose_file"
-    if grep -q "SERVERBEE_AUTH__SECURE_COOKIE=" "$compose_file"; then
-        sed_inplace 's|SERVERBEE_AUTH__SECURE_COOKIE=.*|SERVERBEE_AUTH__SECURE_COOKIE=true|' "$compose_file"
-    else
-        sed_inplace '/environment:/a\      - SERVERBEE_AUTH__SECURE_COOKIE=true' "$compose_file"
-    fi
+    compose_set_env "$compose_file" server SERVERBEE_AUTH__SECURE_COOKIE true \
+        || error "Could not update secure-cookie environment in ${compose_file}"
+    docker compose -f "$compose_file" config -q \
+        || error "Domain setup produced an invalid Compose file: ${compose_file}"
     docker compose -f "$compose_file" up -d
 }
 
@@ -2327,6 +2905,7 @@ setup_domain() {
     info "Verifying HTTPS endpoint..."
     wait_for_https_endpoint \
         || error "HTTPS verification failed for https://${DOMAIN}/healthz. Check Caddy logs and DNS propagation."
+    write_domain_cache || error "HTTPS is healthy, but the configured domain could not be saved to ${DOMAIN_CACHE_FILE}"
 
     echo ""
     cecho "${GREEN}ServerBee HTTPS domain configured successfully!${NC}"
@@ -2630,7 +3209,7 @@ cmd_install() {
             printf '%s' "$(trp server_url_prompt "http://$(get_local_ip):9527")"; prompt_read SERVER_URL
         done
         while [ -z "$ENROLLMENT_CODE" ]; do
-            if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in the server UI Settings)"; fi
+            if [ "$YES" = true ]; then error "--enrollment-code is required for agent installation (generate a one-time code in Servers → Add Server)"; fi
             printf '%s' "$(tr_text enrollment_prompt)"; prompt_read ENROLLMENT_CODE
         done
         prompt_agent_capabilities
@@ -2749,6 +3328,9 @@ cmd_uninstall() {
     esac
 
     meta_remove "$COMPONENT"
+    if [ "$COMPONENT" = server ]; then
+        rm -f "$DOMAIN_CACHE_FILE"
+    fi
     info "serverbee-${COMPONENT} has been uninstalled."
 
     if [ -f "$META_FILE" ]; then
@@ -2758,6 +3340,7 @@ cmd_uninstall() {
             rm -f "$CLI_PATH"
             rm -f "$META_FILE"
             rm -f "$LANG_CACHE_FILE"
+            rm -f "$DOMAIN_CACHE_FILE"
             if [ "$PURGE" = true ]; then
                 # Purge requested and nothing left to manage: remove the whole
                 # base directory, including any orphaned files left behind by a
@@ -3105,7 +3688,7 @@ cmd_upgrade() {
 
 # ─── Status command ───────────────────────────────────────────────────────────
 status_component() {
-    local component method version service status_line since srv ip container_status image_tag ports logs_out
+    local component method version service status_line since srv container_status image_tag ports logs_out dashboard
     component="$1"; method="$2"
     version=$(meta_read "$component" "version")
     service="serverbee-${component}"
@@ -3144,8 +3727,8 @@ status_component() {
         fi
 
         if [ "$component" = "server" ]; then
-            ip=$(get_local_ip)
-            echo "$(tr_text st_dashboard) http://${ip}:9527"
+            dashboard=$(server_dashboard_display "$method")
+            echo "$(tr_text st_dashboard) ${dashboard}"
         fi
 
     elif [ "$method" = "docker" ]; then
@@ -3164,8 +3747,8 @@ status_component() {
         if [ "$component" = "server" ]; then
             ports=$(docker port "${service}" 2>/dev/null | head -1 || echo "")
             [ -n "$ports" ] && echo "$(tr_text st_port) ${ports}"
-            ip=$(get_local_ip)
-            echo "$(tr_text st_dashboard) http://${ip}:9527"
+            dashboard=$(server_dashboard_display "$method")
+            echo "$(tr_text st_dashboard) ${dashboard}"
         fi
 
         tr_text st_recent_logs
@@ -3206,7 +3789,11 @@ cmd_status() {
         method="${entry##*:}"
         echo ""
         warn "Found serverbee-${comp} (${method}) but it is not managed by this script."
-        echo "    To bring it under management, run: serverbee install ${comp} [options]"
+        if [ "$method" = docker ]; then
+            echo "    Docker adoption is not supported. Remove the unmanaged container or migrate its config and data into a managed Compose installation first."
+        else
+            echo "    To bring it under management, run: serverbee install ${comp} [options]"
+        fi
     done
 
     echo ""
@@ -3279,9 +3866,11 @@ config_key_to_file() {
 }
 
 toml_set() {
-    local file dotted_key value section key quoted_value tmp
+    local file dotted_key value section key rendered_value replacement generated has_key
     file="$1"; dotted_key="$2"; value="$3"
     section=""; key=""
+
+    validate_single_line_value "$value" || return 1
 
     case "$dotted_key" in
         *.*)
@@ -3302,67 +3891,211 @@ toml_set() {
     case "$value" in
         ''|*[!0-9]*)
             case "$value" in
-                true|false) quoted_value="$value" ;;
-                *) quoted_value="\"$value\"" ;;
+                true|false) rendered_value="$value" ;;
+                *) rendered_value="\"$(render_double_quoted_value "$value")\"" ;;
             esac
             ;;
-        *) quoted_value="$value" ;;
+        *) rendered_value="$value" ;;
     esac
 
+    replacement="${key} = ${rendered_value}"
+    generated=$(mktemp "${file}.generated.XXXXXX") || return 1
+    SB_INSTALL_EDIT_SECTION="$section"
+    SB_INSTALL_EDIT_KEY="$key"
+    SB_INSTALL_EDIT_LINE="$replacement"
+    export SB_INSTALL_EDIT_SECTION SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE
+
     if [ -z "$section" ]; then
-        if grep -q "^${key} *=" "$file" 2>/dev/null; then
-            sed_inplace "s|^${key} *=.*|${key} = ${quoted_value}|" "$file"
+        has_key=$(awk '
+            /^[[:space:]]*\[/ { in_top=0 }
+            BEGIN { in_top=1; key=ENVIRON["SB_INSTALL_EDIT_KEY"] }
+            in_top {
+                line=$0
+                sub(/^[[:space:]]*/, "", line)
+                if (line ~ "^" key "[[:space:]]*=") { print "yes"; exit }
+            }
+        ' "$file")
+        if [ "$has_key" = yes ]; then
+            awk '
+                BEGIN { in_top=1; written=0; key=ENVIRON["SB_INSTALL_EDIT_KEY"]; replacement=ENVIRON["SB_INSTALL_EDIT_LINE"] }
+                /^[[:space:]]*\[/ { in_top=0 }
+                in_top {
+                    line=$0
+                    sub(/^[[:space:]]*/, "", line)
+                    if (line ~ "^" key "[[:space:]]*=") {
+                        if (!written) print replacement
+                        written=1
+                        next
+                    }
+                }
+                { print }
+            ' "$file" > "$generated"
         else
-            tmp=$(mktemp)
-            echo "${key} = ${quoted_value}" > "$tmp"
-            cat "$file" >> "$tmp"
-            mv "$tmp" "$file"
+            printf '%s\n' "$replacement" > "$generated"
+            cat "$file" >> "$generated"
         fi
     else
-        if grep -q "^\[${section}\]" "$file" 2>/dev/null; then
-            if sed -n "/^\[${section}\]/,/^\[/p" "$file" | grep -q "^${key} *="; then
-                tmp=$(mktemp)
-                awk -v sect="[${section}]" -v k="${key}" -v v="${key} = ${quoted_value}" '
-                    BEGIN { in_section=0 }
-                    /^\[/ { in_section=($0 == sect) }
-                    in_section && $0 ~ "^"k" *=" { print v; next }
-                    { print }
-                ' "$file" > "$tmp"
-                mv "$tmp" "$file"
-            else
-                tmp=$(mktemp)
-                # Append the key to the end of the section's content. Trailing
-                # blank lines (the separator before the next section) are buffered
-                # and re-emitted *after* the inserted key so the section break is
-                # preserved instead of leaving the key glued to the next header.
-                awk -v sect="[${section}]" -v line="${key} = ${quoted_value}" '
-                    BEGIN { in_section=0; added=0; blanks="" }
-                    {
-                        is_blank = ($0 ~ /^[ \t]*$/)
-                        is_header = ($0 ~ /^\[/)
-                        if (in_section && !added && is_header) {
-                            print line; added=1
-                            printf "%s", blanks; blanks=""
-                            in_section=($0 == sect)
-                            print; next
-                        }
-                        if (in_section && !added && is_blank) {
-                            blanks = blanks $0 "\n"; next
-                        }
-                        printf "%s", blanks; blanks=""
-                        if (is_header) in_section=($0 == sect)
-                        print
-                    }
-                    END { if (in_section && !added) { print line; printf "%s", blanks } }
-                ' "$file" > "$tmp"
-                mv "$tmp" "$file"
-            fi
-        else
-            echo "" >> "$file"
-            echo "[${section}]" >> "$file"
-            echo "${key} = ${quoted_value}" >> "$file"
-        fi
+        awk '
+            BEGIN {
+                target="[" ENVIRON["SB_INSTALL_EDIT_SECTION"] "]"
+                key=ENVIRON["SB_INSTALL_EDIT_KEY"]
+                replacement=ENVIRON["SB_INSTALL_EDIT_LINE"]
+                in_target=0; section_found=0; written=0
+            }
+            /^[[:space:]]*\[/ {
+                if (in_target && !written) { print replacement; written=1 }
+                in_target=($0 == target)
+                if (in_target) section_found=1
+                print
+                next
+            }
+            in_target {
+                line=$0
+                sub(/^[[:space:]]*/, "", line)
+                if (line ~ "^" key "[[:space:]]*=") {
+                    if (!written) print replacement
+                    written=1
+                    next
+                }
+            }
+            { print }
+            END {
+                if (in_target && !written) print replacement
+                if (!section_found) {
+                    print ""
+                    print target
+                    print replacement
+                }
+            }
+        ' "$file" > "$generated"
     fi
+
+    unset SB_INSTALL_EDIT_SECTION SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE
+    if ! atomic_replace_preserving_mode "$file" "$generated"; then
+        rm -f "$generated"
+        return 1
+    fi
+    rm -f "$generated"
+}
+
+compose_set_env() {
+    # Update one managed service using YAML double-quoted list syntax. Existing
+    # duplicates are collapsed and Agent files gain an environment block when
+    # they did not have one.
+    local file component env_key value service escaped replacement generated has_service has_environment
+    file="$1"; component="$2"; env_key="$3"; value="$4"
+    validate_single_line_value "$value" || return 1
+    service="serverbee-${component}"
+    escaped=$(render_double_quoted_value "$value")
+    # The quotes are YAML data passed intact through ENVIRON to awk.
+    # shellcheck disable=SC2089
+    replacement="      - \"${env_key}=${escaped}\""
+
+    SB_INSTALL_EDIT_SERVICE="$service"
+    SB_INSTALL_EDIT_KEY="$env_key"
+    SB_INSTALL_EDIT_LINE="$replacement"
+    # shellcheck disable=SC2090
+    export SB_INSTALL_EDIT_SERVICE SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE
+    has_service=$(awk '
+        $0 == "  " ENVIRON["SB_INSTALL_EDIT_SERVICE"] ":" { print "yes"; exit }
+    ' "$file")
+    [ "$has_service" = yes ] || {
+        unset SB_INSTALL_EDIT_SERVICE SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE
+        return 1
+    }
+    has_environment=$(awk '
+        BEGIN { service="  " ENVIRON["SB_INSTALL_EDIT_SERVICE"] ":"; in_service=0 }
+        $0 == service { in_service=1; next }
+        in_service && $0 ~ /^  [^ ]/ { exit }
+        in_service && $0 ~ /^    environment:[[:space:]]*$/ { print "yes"; exit }
+    ' "$file")
+    generated=$(mktemp "${file}.generated.XXXXXX") || {
+        unset SB_INSTALL_EDIT_SERVICE SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE
+        return 1
+    }
+
+    if [ "$has_environment" = yes ]; then
+        awk '
+            BEGIN {
+                service="  " ENVIRON["SB_INSTALL_EDIT_SERVICE"] ":"
+                key=ENVIRON["SB_INSTALL_EDIT_KEY"]
+                replacement=ENVIRON["SB_INSTALL_EDIT_LINE"]
+                in_service=0; in_environment=0; written=0
+            }
+            $0 == service { in_service=1; print; next }
+            in_service && $0 ~ /^  [^ ]/ {
+                if (in_environment && !written) print replacement
+                in_service=0; in_environment=0
+            }
+            in_service && $0 ~ /^    environment:[[:space:]]*$/ {
+                in_environment=1
+                print
+                next
+            }
+            in_environment && $0 ~ /^    [^ ]/ {
+                if (!written) print replacement
+                written=1; in_environment=0
+            }
+            in_environment {
+                candidate=$0
+                sub(/^[[:space:]]*-[[:space:]]*/, "", candidate)
+                sub(/^"/, "", candidate)
+                if (index(candidate, key "=") == 1) {
+                    if (!written) print replacement
+                    written=1
+                    next
+                }
+            }
+            { print }
+            END { if (in_environment && !written) print replacement }
+        ' "$file" > "$generated"
+    else
+        awk '
+            BEGIN { service="  " ENVIRON["SB_INSTALL_EDIT_SERVICE"] ":"; replacement=ENVIRON["SB_INSTALL_EDIT_LINE"] }
+            { print }
+            $0 == service {
+                print "    environment:"
+                print replacement
+            }
+        ' "$file" > "$generated"
+    fi
+    unset SB_INSTALL_EDIT_SERVICE SB_INSTALL_EDIT_KEY SB_INSTALL_EDIT_LINE
+
+    if ! atomic_replace_preserving_mode "$file" "$generated"; then
+        rm -f "$generated"
+        return 1
+    fi
+    rm -f "$generated"
+}
+
+docker_set_env_transaction() {
+    local component compose_file env_key value backup compose_started
+    component="$1"; compose_file="$2"; env_key="$3"; value="$4"
+    backup="${compose_file}.env-rollback"
+    compose_started=false
+    if [ -e "$backup" ] || [ -L "$backup" ]; then
+        warn "Stale env rollback found: ${backup}"
+        return 1
+    fi
+    cp -p "$compose_file" "$backup" || return 1
+    if ! compose_set_env "$compose_file" "$component" "$env_key" "$value"; then
+        mv -f "$backup" "$compose_file" 2>/dev/null || true
+        return 1
+    fi
+    if ! docker compose -f "$compose_file" config -q; then
+        mv -f "$backup" "$compose_file" 2>/dev/null || true
+        return 1
+    fi
+    if docker compose -f "$compose_file" up -d; then
+        compose_started=true
+    fi
+    if [ "$compose_started" != true ]; then
+        if mv -f "$backup" "$compose_file"; then
+            docker compose -f "$compose_file" up -d >/dev/null 2>&1 || true
+        fi
+        return 1
+    fi
+    rm -f "$backup"
 }
 
 cmd_service_single() {
@@ -3377,14 +4110,14 @@ cmd_service_single() {
 }
 
 cmd_config() {
-    local key value target files_to_update file before before_file targets comp entry method confirm
+    local key value target files_to_update file before_file after_file redacted_before redacted_after targets comp entry method confirm
     detect_installed
 
     if [ "$COMPONENT" = "set" ]; then
         key="$CONFIG_KEY"
         value="$CONFIG_VALUE"
         [ -z "$key" ] && error "Usage: serverbee config set <key> <value>"
-        [ -z "$value" ] && error "Usage: serverbee config set <key> <value>"
+        [ "$POSITIONAL_COUNT" -ge 3 ] || error "Usage: serverbee config set <key> <value>"
 
         if echo "$REJECTED_KEYS" | grep -qw "$key"; then
             case "$key" in
@@ -3415,15 +4148,23 @@ cmd_config() {
             if [ ! -f "$file" ]; then
                 error "Config file not found: $file"
             fi
-            before=$(cat "$file")
-            toml_set "$file" "$key" "$value"
-            info "Updated ${key} = ${value} in ${file}"
+            before_file=$(mktemp)
+            cp -p "$file" "$before_file"
+            if ! toml_set "$file" "$key" "$value"; then
+                rm -f "$before_file"
+                error "Could not safely update ${key} in ${file}. Values must be one printable line."
+            fi
+            info "Updated ${key} in ${file}"
 
             echo "  Changes:"
-            before_file=$(mktemp)
-            printf '%s\n' "$before" > "$before_file"
-            diff "$before_file" "$file" | sed 's/^/    /' || true
-            rm -f "$before_file"
+            after_file=$(mktemp)
+            redacted_before=$(mktemp)
+            redacted_after=$(mktemp)
+            cp -p "$file" "$after_file"
+            redact_toml_file "$before_file" > "$redacted_before"
+            redact_toml_file "$after_file" > "$redacted_after"
+            diff "$redacted_before" "$redacted_after" | sed 's/^/    /' || true
+            rm -f "$before_file" "$after_file" "$redacted_before" "$redacted_after"
         done
 
         if [ "$YES" = true ]; then
@@ -3478,7 +4219,7 @@ cmd_config() {
         cecho "${BOLD}$(capitalize "$comp") config (${file})${NC}"
         echo "─────────────────────────────────"
         if [ -f "$file" ]; then
-            cat "$file"
+            redact_toml_file "$file"
         else
             echo "(file not found)"
         fi
@@ -3510,7 +4251,9 @@ cmd_env() {
         raw_key="$CONFIG_KEY"
         value="$CONFIG_VALUE"
         [ -z "$raw_key" ] && error "Usage: serverbee env set <KEY> <value>"
-        [ -z "$value" ] && error "Usage: serverbee env set <KEY> <value>"
+        [ "$POSITIONAL_COUNT" -ge 3 ] || error "Usage: serverbee env set <KEY> <value>"
+        validate_single_line_value "$value" \
+            || error "Environment values must be one printable line."
 
         env_key="$raw_key"
         case "$env_key" in
@@ -3540,25 +4283,23 @@ cmd_env() {
                     override_dir="/etc/systemd/system/${service}.service.d"
                     override_file="${override_dir}/override.conf"
                     mkdir -p "$override_dir"
-                    if [ -f "$override_file" ] && grep -q "^Environment=${env_key}=" "$override_file" 2>/dev/null; then
-                        sed_inplace "s|^Environment=${env_key}=.*|Environment=${env_key}=${value}|" "$override_file"
-                    elif [ -f "$override_file" ]; then
-                        echo "Environment=${env_key}=${value}" >> "$override_file"
-                    else
-                        cat > "$override_file" << EOF
+                    if [ ! -f "$override_file" ]; then
+                        (umask 077; cat > "$override_file") << EOF
 [Service]
-Environment=${env_key}=${value}
 EOF
                     fi
+                    systemd_set_env "$override_file" "$env_key" "$value" \
+                        || error "Could not safely update ${override_file}"
                     systemctl daemon-reload
-                    info "Set ${env_key}=${value} in systemd override for ${service}"
+                    info "Set ${env_key} in systemd override for ${service}"
                     svc_action restart "$comp" 2>/dev/null || true
                 elif [ "$INIT" = openrc ]; then
-                    svc_write_env_file "$comp" "${env_key}=${value}"
-                    info "Set ${env_key}=${value} in $(svc_env_path "$comp")"
+                    svc_write_env_file "$comp" "$env_key" "$value" \
+                        || error "Could not safely update $(svc_env_path "$comp")"
+                    info "Set ${env_key} in $(svc_env_path "$comp")"
                     svc_action restart "$comp" 2>/dev/null || true
                 else
-                    warn "No init manager; cannot persist env for ${service}. Set ${env_key} manually."
+                    warn "No init manager; cannot persist ${env_key} for ${service}. Set it manually."
                 fi
 
             elif [ "$method" = "docker" ]; then
@@ -3566,13 +4307,9 @@ EOF
                 if [ ! -f "$compose_file" ]; then
                     error "Compose file not found: $compose_file"
                 fi
-                if grep -q "- ${env_key}=" "$compose_file" 2>/dev/null; then
-                    sed_inplace "s|- ${env_key}=.*|- ${env_key}=${value}|" "$compose_file"
-                else
-                    sed_inplace "/environment:/a\\      - ${env_key}=${value}" "$compose_file"
-                fi
-                info "Set ${env_key}=${value} in ${compose_file}"
-                docker compose -f "$compose_file" up -d
+                docker_set_env_transaction "$comp" "$compose_file" "$env_key" "$value" \
+                    || error "Could not safely update ${env_key}; the previous Compose file was restored when possible"
+                info "Set ${env_key} in ${compose_file}"
             fi
         done
         return
@@ -3589,7 +4326,7 @@ EOF
     echo "Source: shell"
     shell_vars=$(env | grep '^SERVERBEE_' || true)
     if [ -n "$shell_vars" ]; then
-        printf '%s\n' "$shell_vars" | sed 's/^/  /'
+        printf '%s\n' "$shell_vars" | redact_env_lines | sed 's/^/  /'
     else
         echo "  (none)"
     fi
@@ -3604,7 +4341,7 @@ EOF
             if [ "$INIT" = openrc ]; then
                 echo "Source: openrc env file (${service})"
                 if [ -f "$(svc_env_path "$comp")" ] && [ -s "$(svc_env_path "$comp")" ]; then
-                    sed 's/^/  /' "$(svc_env_path "$comp")"
+                    redact_env_lines < "$(svc_env_path "$comp")" | sed 's/^/  /'
                 else
                     echo "  (none)"
                 fi
@@ -3612,21 +4349,21 @@ EOF
                 echo "Source: systemd override (${service})"
                 override_file="/etc/systemd/system/${service}.service.d/override.conf"
                 if [ -f "$override_file" ]; then
-                    grep "^Environment=" "$override_file" 2>/dev/null | sed 's/^Environment=/  /' || echo "  (none)"
+                    grep "^Environment=" "$override_file" 2>/dev/null | redact_env_lines | sed 's/^Environment=/  /' || echo "  (none)"
                 else
                     echo "  (none)"
                 fi
                 unit_envs=$(systemctl show "$service" --property=Environment --value 2>/dev/null || echo "")
                 if [ -n "$unit_envs" ]; then
                     echo "Source: systemd unit (${service})"
-                    echo "$unit_envs" | tr ' ' '\n' | sed 's/^/  /'
+                    echo "$unit_envs" | tr ' ' '\n' | redact_env_lines | sed 's/^/  /'
                 fi
             fi
         elif [ "$method" = "docker" ]; then
             echo "Source: docker-compose (${service})"
             compose_file="${DOCKER_DIR}/docker-compose.${comp}.yml"
             if [ -f "$compose_file" ]; then
-                grep "^ *- SERVERBEE_" "$compose_file" 2>/dev/null | sed 's/^ *- /  /' || echo "  (none)"
+                grep -E '^ *- "?SERVERBEE_' "$compose_file" 2>/dev/null | redact_env_lines | sed 's/^ *- /  /' || echo "  (none)"
             else
                 echo "  (compose file not found)"
             fi
@@ -3716,6 +4453,32 @@ run_command() {
 # ─── Main ─────────────────────────────────────────────────────────────────────
 main() {
     local a prev
+    # Help and installer-version queries are side-effect free and must work for
+    # non-root users. `--version <release>` remains the install/upgrade pin.
+    case "${1:-}" in
+        --help|-h|help)
+            detect_lang
+            print_usage
+            return 0
+            ;;
+        version)
+            printf 'ServerBee installer %s\n' "$INSTALLER_VERSION"
+            return 0
+            ;;
+    esac
+    for a in "$@"; do
+        case "$a" in
+            --help|-h)
+                detect_lang
+                case "${1:-}" in
+                    server|agent) print_usage install ;;
+                    *) print_usage "${1:-}" ;;
+                esac
+                return 0
+                ;;
+        esac
+    done
+
     # Elevate first so the rest runs as root (re-execs under sudo/doas).
     require_root "$@"
     detect_init
@@ -3741,6 +4504,7 @@ main() {
     else
         COMMAND="$1"; shift
         parse_args "$@"
+        validate_parsed_args
         case "$COMMAND" in
             install|domain) select_language ;;
             *) detect_lang ;;

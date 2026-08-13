@@ -381,9 +381,10 @@ test_docker_server_compose_mounts_generated_config() (
     docker_is_snap() { return 1; }
     check_docker() { :; }
     check_unmanaged_container() { :; }
-    docker() { :; }
+    docker() { printf '%s\n' "$*" >> "$ACTION_LOG"; }
     install_cli() { :; }
     meta_write() { :; }
+    verify_server_install_or_exit() { :; }
     print_server_result() { :; }
 
     install_docker_server >/dev/null
@@ -412,9 +413,10 @@ test_docker_agent_custom_caps_keep_executable_and_secure_config() (
     docker_is_snap() { return 1; }
     check_docker() { :; }
     check_unmanaged_container() { :; }
-    docker() { :; }
+    docker() { printf '%s\n' "$*" >> "$ACTION_LOG"; }
     install_cli() { :; }
     meta_write() { :; }
+    verify_agent_install_or_exit() { :; }
     print_agent_result() { :; }
 
     install_docker_agent >/dev/null
@@ -425,6 +427,8 @@ test_docker_agent_custom_caps_keep_executable_and_secure_config() (
 
     config_mode=$(LC_ALL=C ls -l "${CONFIG_DIR}/agent.toml" | cut -c 1-10)
     assert_eq "$config_mode" "-rw-------"
+    grep -Fq 'up -d --force-recreate' "$ACTION_LOG" \
+        || fail "Docker Agent install did not force a fresh container for the new config"
 )
 
 test_docker_agent_start_failure_cleans_generated_files() (
@@ -452,6 +456,7 @@ test_docker_agent_start_failure_cleans_generated_files() (
     }
     install_cli() { :; }
     meta_write() { :; }
+    verify_agent_install_or_exit() { :; }
     print_agent_result() { :; }
 
     if (install_docker_agent) >/dev/null 2>&1; then
@@ -462,6 +467,9 @@ test_docker_agent_start_failure_cleans_generated_files() (
         || fail "failed Docker Agent install left its generated Compose file"
     [ ! -e "${CONFIG_DIR}/agent.toml" ] \
         || fail "failed Docker Agent install left its generated enrollment config"
+    assert_eq "$(cat "$ACTION_LOG")" "config
+up
+down"
     grep -qx 'down' "$ACTION_LOG" \
         || fail "failed Docker Agent install did not tear down its partial container"
 )
@@ -536,6 +544,7 @@ test_docker_agent_start_failure_restores_existing_files() (
     }
     install_cli() { :; }
     meta_write() { :; }
+    verify_agent_install_or_exit() { :; }
     print_agent_result() { :; }
 
     if (install_docker_agent) >/dev/null 2>&1; then
@@ -550,7 +559,8 @@ test_docker_agent_start_failure_restores_existing_files() (
         || fail "failed Docker Agent reinstall left a config rollback file"
     [ ! -e "${DOCKER_DIR}/docker-compose.agent.yml.install-rollback" ] \
         || fail "failed Docker Agent reinstall left a Compose rollback file"
-    assert_eq "$(cat "$ACTION_LOG")" "up
+    assert_eq "$(cat "$ACTION_LOG")" "config
+up
 up"
 )
 
@@ -580,6 +590,7 @@ test_docker_agent_stale_rollback_symlinks_block_install() (
         docker() { :; }
         install_cli() { :; }
         meta_write() { :; }
+        verify_agent_install_or_exit() { :; }
         print_agent_result() { :; }
 
         if (install_docker_agent) >/dev/null 2>&1; then
@@ -747,6 +758,390 @@ test_current_upgrade_persists_explicit_channel() (
     assert_eq "$(meta_read agent channel)" "beta"
 )
 
+test_toml_set_roundtrips_special_characters_and_preserves_mode() (
+    setup_case toml-special-characters
+    config_file="${CASE_DIR}/server.toml"
+    printf '%s\n' \
+        '[oauth.github]' \
+        'client_secret = "old"' > "$config_file"
+    chmod 600 "$config_file"
+
+    toml_set "$config_file" 'oauth.github.client_secret' 'a|b&c\q"d e'
+
+    grep -Fqx 'client_secret = "a|b&c\\q\"d e"' "$config_file" \
+        || fail "TOML special characters did not round-trip safely"
+    mode=$(LC_ALL=C ls -l "$config_file" | cut -c 1-10)
+    assert_eq "$mode" '-rw-------'
+)
+
+test_compose_env_set_adds_environment_and_is_idempotent() (
+    setup_case compose-env-add
+    compose_file="${CASE_DIR}/docker-compose.agent.yml"
+    printf '%s\n' \
+        'services:' \
+        '  serverbee-agent:' \
+        '    image: example.invalid/agent:1' \
+        '    restart: unless-stopped' > "$compose_file"
+
+    compose_set_env "$compose_file" agent SERVERBEE_LOG__LEVEL 'debug|a&b\c" d'
+    compose_set_env "$compose_file" agent SERVERBEE_LOG__LEVEL 'warn|x&y\z" q'
+
+    count=$(grep -c 'SERVERBEE_LOG__LEVEL=' "$compose_file")
+    assert_eq "$count" 1
+    grep -Fq 'SERVERBEE_LOG__LEVEL=warn|x&y\\z\" q' "$compose_file" \
+        || fail "Compose env value did not round-trip safely"
+    grep -Fq '    environment:' "$compose_file" \
+        || fail "Compose environment block was not created"
+)
+
+test_compose_env_set_collapses_existing_duplicates() (
+    setup_case compose-env-duplicates
+    compose_file="${CASE_DIR}/docker-compose.server.yml"
+    printf '%s\n' \
+        'services:' \
+        '  serverbee-server:' \
+        '    environment:' \
+        '      - SERVERBEE_AUTH__SECURE_COOKIE=false' \
+        '      - "SERVERBEE_AUTH__SECURE_COOKIE=false"' \
+        '      - MALLOC_ARENA_MAX=2' \
+        '    image: example.invalid/server:1' > "$compose_file"
+
+    compose_set_env "$compose_file" server SERVERBEE_AUTH__SECURE_COOKIE true
+
+    count=$(grep -c 'SERVERBEE_AUTH__SECURE_COOKIE=' "$compose_file")
+    assert_eq "$count" 1
+    grep -Fq 'SERVERBEE_AUTH__SECURE_COOKIE=true' "$compose_file" \
+        || fail "Compose env duplicate collapse kept the old value"
+)
+
+test_docker_env_transaction_validates_and_restores_on_failure() (
+    setup_case docker-env-transaction
+    compose_file="${CASE_DIR}/docker-compose.agent.yml"
+    printf '%s\n' \
+        'services:' \
+        '  serverbee-agent:' \
+        '    image: example.invalid/agent:1' > "$compose_file"
+    cp "$compose_file" "${CASE_DIR}/original.yml"
+    TEST_COMPOSE_CONFIG_FAIL=false
+
+    docker() {
+        shift
+        [ "$1" = -f ] || fail "docker compose command omitted -f"
+        shift 2
+        action="$1"
+        printf '%s\n' "$action" >> "$ACTION_LOG"
+        [ "$action" != config ] || [ "$TEST_COMPOSE_CONFIG_FAIL" != true ]
+    }
+
+    docker_set_env_transaction agent "$compose_file" SERVERBEE_LOG__LEVEL debug \
+        || fail "valid Docker env transaction failed"
+    assert_eq "$(cat "$ACTION_LOG")" "config
+up"
+    [ ! -e "${compose_file}.env-rollback" ] || fail "successful env update left a rollback file"
+
+    cp "${CASE_DIR}/original.yml" "$compose_file"
+    : > "$ACTION_LOG"
+    TEST_COMPOSE_CONFIG_FAIL=true
+    if docker_set_env_transaction agent "$compose_file" SERVERBEE_LOG__LEVEL broken; then
+        fail "invalid Compose transaction unexpectedly succeeded"
+    fi
+    cmp -s "${CASE_DIR}/original.yml" "$compose_file" \
+        || fail "failed Compose validation did not restore the original file"
+    assert_eq "$(cat "$ACTION_LOG")" config
+)
+
+test_openrc_env_roundtrips_shell_metacharacters() (
+    setup_case openrc-env-special
+    env_file="${CASE_DIR}/agent.env"
+    : > "$env_file"
+    chmod 600 "$env_file"
+    value='a|b&c\q"d e$HOME`literal`'
+
+    openrc_set_env "$env_file" SERVERBEE_TOKEN "$value"
+    actual=$(sh -c '. "$1"; printf "%s" "$SERVERBEE_TOKEN"' sh "$env_file")
+    assert_eq "$actual" "$value"
+    mode=$(LC_ALL=C ls -l "$env_file" | cut -c 1-10)
+    assert_eq "$mode" '-rw-------'
+)
+
+test_systemd_env_escapes_unit_syntax_and_is_idempotent() (
+    setup_case systemd-env-special
+    override_file="${CASE_DIR}/override.conf"
+    printf '%s\n' '[Service]' > "$override_file"
+    chmod 600 "$override_file"
+
+    systemd_set_env "$override_file" SERVERBEE_TOKEN 'a\b"c %n'
+    systemd_set_env "$override_file" SERVERBEE_TOKEN 'final\value" %%'
+
+    count=$(grep -c 'SERVERBEE_TOKEN=' "$override_file")
+    assert_eq "$count" 1
+    grep -Fqx 'Environment="SERVERBEE_TOKEN=final\\value\" %%%%"' "$override_file" \
+        || fail "systemd env value was not escaped for unit syntax"
+)
+
+test_installer_version_matches_workspace_version() (
+    workspace_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "${SCRIPT_DIR}/../Cargo.toml" | head -n1)
+    assert_eq "$INSTALLER_VERSION" "$workspace_version"
+)
+
+test_value_validation_rejects_controls_without_file_changes() (
+    setup_case invalid-config-value
+    config_file="${CASE_DIR}/agent.toml"
+    printf '%s\n' 'token = "old"' > "$config_file"
+    cp "$config_file" "${CASE_DIR}/expected.toml"
+    invalid_value=$(printf 'line1\nline2')
+
+    if toml_set "$config_file" token "$invalid_value" >/dev/null 2>&1; then
+        fail "TOML setter accepted a newline"
+    fi
+    cmp -s "${CASE_DIR}/expected.toml" "$config_file" \
+        || fail "rejected TOML value changed the file"
+)
+
+test_agent_install_acceptance_states() (
+    INSTALL_AGENT_ATTEMPTS=3
+    : > "${TEST_ROOT}/agent-log-reads"
+    agent_install_logs() {
+        reads=$(wc -l < "${TEST_ROOT}/agent-log-reads")
+        printf '.\n' >> "${TEST_ROOT}/agent-log-reads"
+        [ "$reads" -lt 1 ] || echo 'Welcome from server test-server, interval=3s'
+    }
+    wait_for_agent_install || fail "Agent Welcome log was not accepted"
+
+    agent_install_logs() { echo 'Permanent registration failure: HTTP 401 Unauthorized'; }
+    set +e
+    wait_for_agent_install
+    rc=$?
+    set -e
+    assert_eq "$rc" 78
+
+    agent_install_logs() { echo 'connection timed out'; }
+    set +e
+    wait_for_agent_install
+    rc=$?
+    set -e
+    assert_eq "$rc" 75
+)
+
+test_agent_install_accepts_stable_endpoint_connection_without_info_logs() (
+    INSTALL_AGENT_ATTEMPTS=3
+    agent_install_logs() { :; }
+    agent_install_exit_status() { :; }
+    agent_connection_established() { echo '192.0.2.4:41000|203.0.113.10:443'; }
+
+    wait_for_agent_install || fail "stable Agent endpoint connection was not accepted"
+    assert_eq "$AGENT_INSTALL_PROOF" connection
+)
+
+test_agent_connection_proof_matches_pid_address_and_port() (
+    METHOD=binary
+    INIT=systemd
+    SERVER_URL='https://monitor.example.com/path'
+    agent_install_pid() { echo 4242; }
+    getent() { printf '%s\n' '203.0.113.10 STREAM monitor.example.com'; }
+    ss() {
+        printf '%s\n' \
+            '0 0 192.0.2.4:41000 203.0.113.10:443 users:(("serverbee-agent",pid=4242,fd=9))' \
+            '0 0 192.0.2.4:41001 203.0.113.10:443 users:(("other",pid=9999,fd=9))'
+    }
+
+    connection=$(agent_connection_established) \
+        || fail "matching Agent PID/address/port connection was rejected"
+    assert_eq "$connection" '192.0.2.4:41000|203.0.113.10:443'
+
+    ss() {
+        printf '%s\n' '0 0 192.0.2.4:41000 203.0.113.11:443 users:(("serverbee-agent",pid=4242,fd=9))'
+    }
+    if agent_connection_established; then
+        fail "Agent connection proof accepted the wrong Server address"
+    fi
+)
+
+test_agent_install_rejects_changing_short_connections() (
+    INSTALL_AGENT_ATTEMPTS=3
+    : > "${TEST_ROOT}/short-connections"
+    agent_install_logs() { :; }
+    agent_install_exit_status() { :; }
+    agent_connection_established() {
+        count=$(wc -l < "${TEST_ROOT}/short-connections")
+        printf '.\n' >> "${TEST_ROOT}/short-connections"
+        printf '192.0.2.4:%s|203.0.113.10:443\n' "$((41000 + count))"
+    }
+
+    set +e
+    wait_for_agent_install
+    rc=$?
+    set -e
+    assert_eq "$rc" 75
+)
+
+test_docker_agent_logs_are_scoped_to_current_install() (
+    METHOD=docker
+    DOCKER_DIR="${TEST_ROOT}/docker-log-scope"
+    AGENT_LOG_SINCE=1234567890
+    mkdir -p "$DOCKER_DIR"
+    : > "${DOCKER_DIR}/docker-compose.agent.yml"
+    docker() {
+        case "$*" in
+            *'logs --no-color --since 1234567890 --tail 200 serverbee-agent'*)
+                echo 'current install log'
+                ;;
+            *)
+                echo 'Welcome from server stale-container'
+                ;;
+        esac
+    }
+
+    assert_eq "$(agent_install_logs)" 'current install log'
+)
+
+test_server_install_acceptance_polls_health() (
+    INSTALL_SERVER_HEALTH_ATTEMPTS=3
+    : > "${TEST_ROOT}/server-health-reads"
+    server_install_health_check() {
+        reads=$(wc -l < "${TEST_ROOT}/server-health-reads")
+        printf '.\n' >> "${TEST_ROOT}/server-health-reads"
+        [ "$reads" -ge 1 ]
+    }
+    wait_for_server_install || fail "healthy Server install was rejected"
+
+    server_install_health_check() { return 1; }
+    if wait_for_server_install; then
+        fail "unhealthy Server install was accepted"
+    fi
+)
+
+test_binary_install_without_init_is_unverified_not_failed() (
+    METHOD=binary
+    INIT=none
+    NO_WAIT=false
+    output_file="${TEST_ROOT}/no-init-output"
+    server_install_health_check() { fail 'no-init Server attempted a health check'; }
+    verify_server_install_or_exit > "$output_file" || fail "no-init Server install was rejected"
+    output=$(cat "$output_file")
+    assert_eq "$NO_WAIT" true
+    case "$output" in
+        *'health check passed'*) fail "no-init Server falsely claimed a successful health check" ;;
+    esac
+
+    NO_WAIT=false
+    agent_install_logs() { fail 'no-init Agent attempted to read logs'; }
+    verify_agent_install_or_exit > "$output_file" || fail "no-init Agent install was rejected"
+    output=$(cat "$output_file")
+    assert_eq "$NO_WAIT" true
+    case "$output" in
+        *'connected and received'*) fail "no-init Agent falsely claimed a successful connection" ;;
+    esac
+)
+
+test_sensitive_output_is_redacted() (
+    setup_case sensitive-redaction
+    config_file="${CASE_DIR}/agent.toml"
+    printf '%s\n' \
+        'server_url = "https://example.com"' \
+        'enrollment_code = "enroll-secret"' \
+        'token = "run-secret"' \
+        '[oauth.github]' \
+        'client_secret = "oauth-secret"' > "$config_file"
+
+    output=$(redact_toml_file "$config_file")
+    printf '%s\n' "$output" | grep -Fq 'server_url = "https://example.com"' \
+        || fail "redaction hid a non-sensitive TOML value"
+    for secret in enroll-secret run-secret oauth-secret; do
+        case "$output" in
+            *"$secret"*) fail "redaction leaked ${secret}" ;;
+        esac
+    done
+
+    output=$(printf '%s\n' \
+        'SERVERBEE_LOG__LEVEL=debug' \
+        'SERVERBEE_TOKEN=run-secret' \
+        'Environment="SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET=oauth-secret"' \
+        | redact_env_lines)
+    printf '%s\n' "$output" | grep -Fq 'SERVERBEE_LOG__LEVEL=debug' \
+        || fail "redaction hid a non-sensitive env value"
+    case "$output" in
+        *run-secret*|*oauth-secret*) fail "redaction leaked an env secret" ;;
+    esac
+)
+
+test_status_dashboard_uses_domain_cache_and_avoids_dead_loopback_url() (
+    setup_case status-domain
+    CONFIG_DIR="${CASE_DIR}/etc"
+    DOMAIN_CACHE_FILE="${CONFIG_DIR}/.install-domain"
+    mkdir -p "$CONFIG_DIR"
+    printf '%s\n' '[server]' 'listen = "127.0.0.1:9527"' > "${CONFIG_DIR}/server.toml"
+
+    output=$(server_dashboard_display binary)
+    case "$output" in
+        *'http://'*) fail "loopback Server status exposed a dead public HTTP URL" ;;
+        *'reverse proxy'*) : ;;
+        *) fail "loopback Server status omitted reverse-proxy guidance" ;;
+    esac
+
+    printf '%s\n' 'monitor.example.com' > "$DOMAIN_CACHE_FILE"
+    assert_eq "$(server_dashboard_display binary)" 'https://monitor.example.com'
+)
+
+test_server_uninstall_clears_domain_cache_without_purge() (
+    setup_case uninstall-domain-cache
+    BASE_DIR="$CASE_DIR"
+    INSTALL_DIR="${CASE_DIR}/bin"
+    CONFIG_DIR="${CASE_DIR}/etc"
+    DATA_DIR="${CASE_DIR}/data"
+    DOCKER_DIR="$CASE_DIR"
+    META_FILE="${CONFIG_DIR}/.install-meta"
+    LANG_CACHE_FILE="${CONFIG_DIR}/.install-lang"
+    DOMAIN_CACHE_FILE="${CONFIG_DIR}/.install-domain"
+    CLI_PATH="${CASE_DIR}/serverbee"
+    COMPONENT=server
+    YES=true
+    PURGE=false
+    INIT=none
+    RELEASE_CHANNEL=auto
+    mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR"
+    : > "${INSTALL_DIR}/serverbee-server"
+    printf '%s\n' monitor.example.com > "$DOMAIN_CACHE_FILE"
+    meta_write server binary v1.0.0-beta.1
+    svc_remove() { :; }
+
+    cmd_uninstall >/dev/null
+
+    [ ! -e "$DOMAIN_CACHE_FILE" ] \
+        || fail "non-purge Server uninstall retained stale domain metadata"
+)
+
+test_help_and_version_do_not_require_root() (
+    require_root() { fail 'help/version attempted privilege elevation'; }
+
+    output=$(main --help)
+    printf '%s\n' "$output" | grep -Fq 'Usage: serverbee' \
+        || fail "root-free help omitted usage"
+    output=$(main version)
+    printf '%s\n' "$output" | grep -Fq "$INSTALLER_VERSION" \
+        || fail "version command omitted installer version"
+)
+
+test_parser_reports_missing_values_and_extra_arguments() (
+    set +e
+    output=$(parse_args --method 2>&1)
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "missing option value was accepted"
+    printf '%s\n' "$output" | grep -Fq 'requires a value' \
+        || fail "missing option value did not produce a friendly error"
+
+    COMMAND=status
+    COMPONENT=""
+    CONFIG_KEY=""
+    CONFIG_VALUE=""
+    set +e
+    output=$(parse_args server extra 2>&1 && validate_parsed_args 2>&1)
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "extra positional argument was accepted"
+)
+
 test_successful_upgrade
 test_probe_mismatch_preserves_current_binary
 test_server_candidate_probe_requires_exact_version
@@ -777,4 +1172,24 @@ test_auto_channel_falls_back_to_prerelease
 test_release_selection_consumes_the_full_response
 test_install_metadata_persists_upgrade_channel
 test_current_upgrade_persists_explicit_channel
+test_toml_set_roundtrips_special_characters_and_preserves_mode
+test_compose_env_set_adds_environment_and_is_idempotent
+test_compose_env_set_collapses_existing_duplicates
+test_docker_env_transaction_validates_and_restores_on_failure
+test_openrc_env_roundtrips_shell_metacharacters
+test_systemd_env_escapes_unit_syntax_and_is_idempotent
+test_installer_version_matches_workspace_version
+test_value_validation_rejects_controls_without_file_changes
+test_agent_install_acceptance_states
+test_agent_install_accepts_stable_endpoint_connection_without_info_logs
+test_agent_connection_proof_matches_pid_address_and_port
+test_agent_install_rejects_changing_short_connections
+test_docker_agent_logs_are_scoped_to_current_install
+test_server_install_acceptance_polls_health
+test_binary_install_without_init_is_unverified_not_failed
+test_sensitive_output_is_redacted
+test_status_dashboard_uses_domain_cache_and_avoids_dead_loopback_url
+test_server_uninstall_clears_domain_cache_without_purge
+test_help_and_version_do_not_require_root
+test_parser_reports_missing_values_and_extra_arguments
 printf 'PASS: install upgrade transaction tests\n'

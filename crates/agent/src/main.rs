@@ -241,6 +241,8 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
             Err(register::RegisterError::PermanentAuth(msg)) => {
+                // Stable installer acceptance contract. Keep this prefix in sync
+                // with deploy/install.sh::wait_for_agent_install.
                 eprintln!(
                     "Permanent registration failure: {msg}\n\
                      The enrollment code is invalid, expired, or already used. \
