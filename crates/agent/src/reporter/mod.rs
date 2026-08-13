@@ -147,6 +147,8 @@ impl Reporter {
                         // intentionally ignored: capabilities are agent-owned
                         // and already loaded into `capabilities` above. The
                         // agent enforces purely on its local policy.
+                        // Stable installer acceptance contract. Keep this prefix in sync
+                        // with deploy/install.sh::wait_for_agent_install.
                         tracing::info!(
                             "Welcome from server {server_id}, interval={report_interval}s"
                         );

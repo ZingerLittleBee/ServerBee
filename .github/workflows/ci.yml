@@ -263,6 +263,9 @@ jobs:
       - name: Test installer transactions and release channels
         run: dash deploy/test-install-upgrade.sh
 
+      - name: Test installer with BusyBox ash and awk
+        run: docker run --rm -v "$PWD:/work:ro" -w /work busybox:1.37 sh deploy/test-install-upgrade.sh
+
       - name: Test changelog extraction
         run: dash scripts/test-extract-changelog.sh
 
