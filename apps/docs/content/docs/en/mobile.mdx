@@ -62,14 +62,13 @@ refresh_ttl = 2592000 # Refresh token lifetime in seconds (default: 30 days)
 
 ## Managing Paired Devices
 
-### View Connected Devices
+### View Paired Devices
 
 In the web app, go to **Settings** → **Mobile Devices** to see all paired iOS devices:
 
 - Device name (e.g., "iPhone 15 Pro")
 - Paired date and time
 - Last active timestamp
-- Current online/offline status
 
 ### Revoke Access
 
@@ -115,7 +114,7 @@ To enable push notifications, configure APNs credentials in the web app:
 - **Token Rotation**: Refresh tokens are rotated on every use (single-use). Old refresh tokens cannot be reused.
 - **Fixed Expiry**: Access tokens have fixed 15-minute expiry (no sliding renewal) to limit exposure if stolen
 - **Secure Storage**: Tokens are stored in iOS Keychain with appropriate accessibility levels
-- **Automatic Cleanup**: Expired sessions are cleaned up by the server's background task (12-hour interval)
+- **Session Expiry**: Expired access-token sessions are removed hourly. Paired-device refresh sessions are not deleted by that task: the device list hides them after expiry, refresh rotation replaces them, and logout or revoke deletes them.
 
 ## Troubleshooting
 
@@ -129,7 +128,7 @@ To enable push notifications, configure APNs credentials in the web app:
 
 - Verify APNs credentials are correct in the notification channel
 - Ensure the iOS app has granted notification permissions
-- Check that the device shows as "Online" in Mobile Devices list
+- Confirm that the device still appears in the Mobile Devices list and has not been revoked
 - Review server logs for APNs delivery errors
 
 ### Authentication Failures
