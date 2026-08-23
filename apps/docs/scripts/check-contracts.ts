@@ -6,6 +6,8 @@ const docsApp = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const repository = resolve(docsApp, '../..')
 const contentRoot = join(docsApp, 'content/docs')
 const locales = ['en', 'zh'] as const
+const markdownTableDivider = /^\|(?:\s*:?-+:?\s*\|)+$/
+const numericTableCell = /^[\d,+~\s]+$/
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -15,6 +17,34 @@ function invariant(condition: unknown, message: string): asserts condition {
 
 function text(path: string): Promise<string> {
   return readFile(path, 'utf8')
+}
+
+function normalizedProse(markdown: string): string {
+  return markdown.replace(/[`*]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+function firstMarkdownTable(markdown: string): string[][] {
+  const lines = markdown.split('\n')
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    if (!(lines[index].startsWith('|') && markdownTableDivider.test(lines[index + 1]))) {
+      continue
+    }
+
+    const rows: string[][] = []
+    for (let row = index; row < lines.length && lines[row].startsWith('|'); row += 1) {
+      if (row === index + 1) {
+        continue
+      }
+      rows.push(
+        lines[row]
+          .slice(1, -1)
+          .split('|')
+          .map((cell) => cell.trim())
+      )
+    }
+    return rows
+  }
+  return []
 }
 
 function headingSlugs(markdown: string): Set<string> {
@@ -185,5 +215,98 @@ for (const locale of locales) {
     `${locale}/deployment.mdx uses a fragile Docker health URL`
   )
 }
+
+const enTesting = await text(join(contentRoot, 'en/testing.mdx'))
+const zhTesting = await text(join(contentRoot, 'zh/testing.mdx'))
+for (const [locale, testing] of [
+  ['en', enTesting],
+  ['zh', zhTesting]
+] as const) {
+  const overview = firstMarkdownTable(testing)
+  invariant(overview.length > 1, `${locale}/testing.mdx does not have a test overview table`)
+  invariant(
+    overview.every((row) => row.length === 2),
+    `${locale}/testing.mdx test overview must not contain a per-area census column`
+  )
+  invariant(
+    !/^(?:tests?|test count|测试数|测试数量)$/i.test(overview[0][1] ?? ''),
+    `${locale}/testing.mdx test overview must describe coverage instead of snapshotting counts`
+  )
+  invariant(
+    overview.slice(1).every((row) => !numericTableCell.test(row[1] ?? '')),
+    `${locale}/testing.mdx test overview contains a per-area census`
+  )
+}
+
+const enTestingProse = normalizedProse(enTesting)
+for (const fact of [
+  /pull requests?.{0,100}rust(?:-relevant| related) changes?/i,
+  /(?:(?:skip|omit|do not run).{0,60}rust (?:jobs|gates|checks|tests)|rust (?:jobs|gates|checks|tests).{0,60}(?:skipped|omitted|not run))/i,
+  /push(?:es)?.{0,100}trigger.{0,100}(?:run|enable).{0,60}rust (?:jobs|gates|checks|tests)/i
+]) {
+  invariant(fact.test(enTestingProse), 'en/testing.mdx does not explain the path-aware Rust CI boundary')
+}
+
+const zhTestingProse = normalizedProse(zhTesting)
+for (const fact of [
+  /(?:Pull Request.{0,100}Rust.{0,30}(?:相关)?变更|Rust.{0,30}(?:相关)?变更.{0,100}Pull Request)/i,
+  /(?:跳过|不(?:会)?运行).{0,40}Rust (?:任务|质量门槛|检查|测试)/i,
+  /(?:push.{0,100}触发|触发.{0,100}push).{0,100}(?:运行|执行|启用).{0,40}Rust (?:任务|质量门槛|检查|测试)/i
+]) {
+  invariant(fact.test(zhTestingProse), 'zh/testing.mdx does not explain the path-aware Rust CI boundary')
+}
+
+const ciWorkflow = await text(join(repository, '.github/workflows/ci.yml'))
+invariant(
+  /EVENT_NAME[\s\S]{0,100}!= "pull_request"[\s\S]{0,100}rust_changed=true/.test(ciWorkflow),
+  'CI no longer enables Rust jobs for every triggering push; update the testing documentation'
+)
+invariant(
+  /git diff --quiet[\s\S]{0,400}rust_changed=false/.test(ciWorkflow),
+  'CI no longer skips Rust jobs for pull requests without Rust-relevant changes; update the testing documentation'
+)
+
+const enIndex = await text(join(contentRoot, 'en/index.mdx'))
+const zhIndex = await text(join(contentRoot, 'zh/index.mdx'))
+invariant(!enIndex.includes('every change passes'), 'en/index.mdx overstates CI coverage')
+invariant(!zhIndex.includes('每次改动都要通过'), 'zh/index.mdx overstates CI coverage')
+const enIndexProse = normalizedProse(enIndex)
+for (const fact of [
+  /rust-relevant pull requests?/i,
+  /every push.{0,100}trigger/i,
+  /(?:run|enable).{0,60}rust (?:(?:test )?jobs|gates|checks|tests)|rust (?:(?:test )?jobs|gates|checks|tests).{0,60}(?:run|enabled)/i
+]) {
+  invariant(
+    fact.test(enIndexProse),
+    'en/index.mdx does not distinguish path-gated pull requests from triggering pushes'
+  )
+}
+
+const zhIndexProse = normalizedProse(zhIndex)
+for (const fact of [
+  /Rust.{0,30}相关变更.{0,100}Pull Request/i,
+  /(?:触发.{0,100}push|push.{0,100}触发)/i,
+  /(?:运行|执行).{0,40}Rust (?:任务|质量门槛|检查|测试)/i
+]) {
+  invariant(
+    fact.test(zhIndexProse),
+    'zh/index.mdx does not distinguish path-gated pull requests from triggering pushes'
+  )
+}
+
+const zhAlerts = await text(join(contentRoot, 'zh/alerts.mdx'))
+const zhAlertsProse = normalizedProse(zhAlerts)
+invariant(
+  /Agent.{0,100}(?:上报|拥有|具备).{0,80}(?:firewall_block|CAP_FIREWALL_BLOCK)/i.test(zhAlertsProse),
+  'zh/alerts.mdx does not identify the agent-owned firewall capability'
+)
+invariant(
+  /(?:Server|服务端).{0,60}(?:不能|无法|不可).{0,40}(?:切换|修改|配置|授予)/i.test(zhAlertsProse),
+  'zh/alerts.mdx implies that the server can change agent capabilities'
+)
+invariant(
+  !/(?:服务器|Server).{0,30}(?:具备|拥有).{0,40}CAP_FIREWALL_BLOCK/i.test(zhAlertsProse),
+  'zh/alerts.mdx assigns CAP_FIREWALL_BLOCK ownership to the server'
+)
 
 console.log('PASS: documentation contracts')
