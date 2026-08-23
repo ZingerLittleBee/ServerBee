@@ -8,7 +8,7 @@ Agent 是部署在被监控服务器上的轻量级 Rust 二进制程序，运�
 
 ## Agent 的职责
 
-- 每 3 秒（可配置）采集一次系统指标并上报至 Server，全平台支持磁盘 I/O 吞吐量采集
+- 每 3 秒采集一次系统指标并上报至 Server，全平台支持磁盘 I/O 吞吐量采集
 - 通过 WebSocket 将指标上报至 Server
 - 执行 Server 下发的 Ping 探测任务（ICMP、TCP、HTTP）
 - 提供 PTY Shell 终端会话供 Web 终端远程操作
@@ -151,7 +151,7 @@ token = ""
    - 只接收 `server_id`；Server 在消费 Offer 的同一事务中保存 token 哈希
    - 后续所有会话都使用 token 通过 WebSocket 连接——注册码不再需要
 
-后续运行（已有 token）时，Agent 直接通过 WebSocket 连接，发送静态系统信息，并按配置的间隔周期上报指标。
+后续运行（已有 token）时，Agent 直接通过 WebSocket 连接，发送静态系统信息，并按 Server 指定的间隔上报指标。
 
 若 HTTP 结果不明确，Agent 会先用已落盘的 token 尝试 WebSocket。成功即可证明 claim 已提交；被拒绝时仍可用同一 code/token 重试。若注册码丢失，应在既有 Server 上按可见的精确 Offer ID 替换 Outstanding Offer，不会发生无条件覆盖。
 
@@ -196,8 +196,7 @@ token = ""
 enrollment_code = ""
 
 [collector]
-interval = 3                   # 指标采集间隔，单位秒（可被 Server 的 Welcome 消息覆盖）
-enable_gpu = false             # 启用 NVIDIA GPU 监控（需要 nvidia-smi）
+enable_gpu = false             # 启用 NVIDIA GPU 监控（需要启用 GPU 特性的构建和 NVIDIA NVML）
 enable_temperature = true      # 启用温度传感器监控
 
 [log]
@@ -210,7 +209,6 @@ file = ""                      # 日志文件路径（留空仅输出到 stdout�
 | `server_url` | string | 必填 | ServerBee Server 的地址 |
 | `enrollment_code` | string | `""` | 一次性注册码，仅首次注册时需要；注册成功后即被消费，拥有 token 后无需再填 |
 | `token` | string | Agent 生成 | Agent 在 claim 前原子写入的 run token；Server 仅保存哈希 |
-| `collector.interval` | int | `3` | 指标采集间隔，单位秒；可被 Server 的 Welcome 消息覆盖 |
 | `collector.enable_gpu` | bool | `false` | 是否启用 GPU 指标采集 |
 | `collector.enable_temperature` | bool | `true` | 是否启用温度采集 |
 | `log.level` | string | `"info"` | 日志级别 |
@@ -223,9 +221,12 @@ file = ""                      # 日志文件路径（留空仅输出到 stdout�
 ```bash
 export SERVERBEE_SERVER_URL="http://your-server-ip:9527"
 export SERVERBEE_TOKEN="your-agent-token"
-export SERVERBEE_COLLECTOR__INTERVAL=5
 export SERVERBEE_COLLECTOR__ENABLE_GPU=true
 ```
+
+<Callout type="info">
+Server 当前在 `Welcome` 消息中下发 3 秒的 `report_interval`，Agent 使用该值启动上报循环。`collector.interval` 和 `SERVERBEE_COLLECTOR__INTERVAL` 仍为向后兼容而保留，但不会改变实际的上报周期。
+</Callout>
 
 ## Agent 本地功能锁定
 
@@ -250,7 +251,7 @@ NVIDIA GPU 指标采集默认关闭，需同时满足以下三个条件：
    ```bash
    cargo build --release -p serverbee-agent --features gpu
    ```
-2. **运行时**：宿主机安装了 NVIDIA 驱动和 NVML 库
+2. **运行时**：宿主机安装了可提供 NVML 共享库的 NVIDIA 驱动
 3. **配置中**：设置 `enable_gpu = true`
    ```toml
    [collector]
@@ -272,6 +273,8 @@ NVIDIA GPU 指标采集默认关闭，需同时满足以下三个条件：
 <Callout type="info">
 目前仅支持 NVIDIA GPU（通过 `nvml-wrapper` 库）。AMD 和 Intel GPU 的支持计划在后续版本中加入。
 </Callout>
+
+Agent 通过 `nvml-wrapper` 直接调用 NVML，不会执行 `nvidia-smi`。
 
 ## 作为 systemd 服务运行
 

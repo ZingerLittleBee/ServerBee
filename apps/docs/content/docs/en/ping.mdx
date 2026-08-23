@@ -12,8 +12,8 @@ Three probe types are available. Each measures round-trip latency and reports a 
 
 | Type | What it does | Target format | Timeout | Privileges |
 |------|--------------|---------------|---------|------------|
-| **ICMP** | Standard ICMP echo request/reply | IP or hostname (e.g., `8.8.8.8`, `google.com`) | 5 s | `CAP_NET_RAW` on Linux |
-| **TCP** | TCP connection test (handshake) | `host:port` (e.g., `google.com:443`) | 5 s | None |
+| **ICMP** | Standard ICMP echo request/reply | IP or hostname (e.g., `8.8.8.8`, `google.com`) | 10 s | `CAP_NET_RAW` on Linux |
+| **TCP** | TCP connection test (handshake) | `host:port` (e.g., `google.com:443`) | 10 s | None |
 | **HTTP** | HTTP(S) GET request and response time | Full URL (e.g., `https://example.com/health`) | 10 s | None |
 
 ## Creating Ping Tasks
@@ -111,7 +111,11 @@ In the web dashboard, ping task create/delete/enable/disable actions show locali
 The `server_ids_json` field controls which agents execute the probe:
 
 - **Specific servers** -- Provide an array of server IDs: `["srv-1", "srv-2"]`
-- **All servers** -- Use an empty array `[]` or the special value `["*"]` to assign to all connected agents
+- **All servers** -- Use an empty array `[]`
+
+<Callout type="warn">
+`["*"]` is not a wildcard. It is treated as a literal server ID and normally assigns the task to no agents. Use `[]` when every server should run the probe, or provide IDs copied from the server list.
+</Callout>
 
 Running the same probe from multiple agents lets you:
 

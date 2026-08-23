@@ -8,7 +8,7 @@ The ServerBee agent is a lightweight Rust binary that runs on each server you wa
 
 ## What the Agent Does
 
-- Collects system metrics every 3 seconds (configurable), including disk I/O throughput on all platforms
+- Collects system metrics every 3 seconds, including disk I/O throughput on all platforms
 - Reports metrics to the server over WebSocket
 - Executes ping probes (ICMP, TCP, HTTP) assigned by the server
 - Provides a PTY shell for web terminal access
@@ -151,7 +151,7 @@ token = ""
    - Receive only `server_id`; the Server hashes the proposed token while consuming the offer
    - Connect via WebSocket using the token for all future sessions -- the enrollment code is no longer needed
 
-On subsequent runs (token present), the agent connects directly over WebSocket, sends its static system info, and reports metrics on the configured interval.
+On subsequent runs (token present), the agent connects directly over WebSocket, sends its static system info, and reports metrics on the interval assigned by the server.
 
 If the HTTP result is ambiguous, the Agent first tries WebSocket authentication with the already-staged token. Success proves the claim committed; rejection permits retrying the same code and token. If a code was lost, use the exact Outstanding offer shown on the existing Server to replace it. Replacement is compare-and-swap by offer ID; it never silently replaces an unknown newer offer.
 
@@ -196,8 +196,7 @@ token = ""
 enrollment_code = ""
 
 [collector]
-interval = 3                   # Metric collection interval in seconds (can be overridden by the server's Welcome message)
-enable_gpu = false             # Enable NVIDIA GPU monitoring (requires nvidia-smi)
+enable_gpu = false             # Enable NVIDIA GPU monitoring (requires a GPU-enabled build and NVIDIA NVML)
 enable_temperature = true      # Enable temperature sensor monitoring
 
 [log]
@@ -210,7 +209,6 @@ file = ""                      # Log file path (empty = stdout only)
 | `server_url` | string | required | URL of your ServerBee server |
 | `enrollment_code` | string | `""` | One-time enrollment code, needed only for first registration; consumed on success and unused once a token is present |
 | `token` | string | Agent-generated | Agent run token, atomically written before the claim request; the Server stores only its hash |
-| `collector.interval` | int | `3` | Metric collection interval in seconds; can be overridden by the server's Welcome message |
 | `collector.enable_gpu` | bool | `false` | Enable GPU metric collection |
 | `collector.enable_temperature` | bool | `true` | Enable temperature collection |
 | `log.level` | string | `"info"` | Log level |
@@ -223,9 +221,12 @@ Like the server, all options support `SERVERBEE_` prefixed environment variables
 ```bash
 export SERVERBEE_SERVER_URL="http://your-server-ip:9527"
 export SERVERBEE_TOKEN="your-agent-token"
-export SERVERBEE_COLLECTOR__INTERVAL=5
 export SERVERBEE_COLLECTOR__ENABLE_GPU=true
 ```
+
+<Callout type="info">
+The server currently sends a 3-second `report_interval` in its `Welcome` message, and the Agent uses that value for its reporting loop. `collector.interval` and `SERVERBEE_COLLECTOR__INTERVAL` are still accepted for backward compatibility but do not change the active cadence.
+</Callout>
 
 ## Local Capability Locks
 
@@ -250,7 +251,7 @@ NVIDIA GPU monitoring is disabled by default and requires all three of the follo
    ```bash
    cargo build --release -p serverbee-agent --features gpu
    ```
-2. **Runtime** -- NVIDIA drivers and the NVML library installed on the host
+2. **Runtime** -- an NVIDIA driver that provides the NVML shared library on the host
 3. **Config** -- set `enable_gpu = true`:
    ```toml
    [collector]
@@ -272,6 +273,8 @@ These metrics appear in the server dashboard and can be used in alert rules.
 <Callout type="info">
 Only NVIDIA GPUs are supported (via the `nvml-wrapper` library). AMD and Intel GPU support is planned for a future release.
 </Callout>
+
+The Agent calls NVML through `nvml-wrapper`; it does not run `nvidia-smi`.
 
 ## Running as a Systemd Service
 

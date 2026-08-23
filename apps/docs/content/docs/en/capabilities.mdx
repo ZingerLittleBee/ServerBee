@@ -41,7 +41,7 @@ File Manager requires additional agent-side configuration (`root_paths`, `deny_p
 | **HTTP Probe** | `ping_http` | `CAP_PING_HTTP` (32) | Allow HTTP probe tasks |
 | **Security Events** | `security_events` | `CAP_SECURITY_EVENTS` (256) | Allow agent to report SSH login / brute-force / port-scan events (see [Security Events](/en/docs/security-events)) |
 | **Firewall Blocklist** | `firewall_block` | `CAP_FIREWALL_BLOCK` (512) | Allow agent to apply the server-pushed nftables blocklist. Requires root or `CAP_NET_ADMIN` plus the `nft` CLI on the host. See [Firewall Blocklist](/en/docs/firewall) |
-| **IP Quality** | `ip_quality` | `CAP_IP_QUALITY` (1024) | Allow agent to query third-party IP quality APIs for outbound IP scoring |
+| **IP Quality** | `ip_quality` | `CAP_IP_QUALITY` (1024) | Allow the Agent to run service-unlock probes and report results; optional metadata and risk enrichment runs on the Server |
 
 An agent with no `[capabilities]` overrides defaults to `1852` (auto upgrade + the three ping probes + security events + firewall blocklist + IP quality), which keeps the high-risk terminal, exec, file, and Docker capabilities off.
 

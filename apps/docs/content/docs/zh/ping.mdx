@@ -12,8 +12,8 @@ ServerBee 支持三种探测类型。每种都会测量往返延迟并上报成�
 
 | 类型 | 探测内容 | 目标格式 | 超时 | 权限要求 |
 |------|----------|----------|------|----------|
-| **ICMP** | 标准 ICMP Echo 请求 / 应答 | IP 或域名（如 `1.1.1.1`、`google.com`） | 5 秒 | Linux 下需 `CAP_NET_RAW` |
-| **TCP** | TCP 连接测试（握手） | `host:port`（如 `google.com:443`） | 5 秒 | 无 |
+| **ICMP** | 标准 ICMP Echo 请求 / 应答 | IP 或域名（如 `1.1.1.1`、`google.com`） | 10 秒 | Linux 下需 `CAP_NET_RAW` |
+| **TCP** | TCP 连接测试（握手） | `host:port`（如 `google.com:443`） | 10 秒 | 无 |
 | **HTTP** | HTTP(S) GET 请求与响应时间 | 完整 URL（如 `https://example.com/health`） | 10 秒 | 无 |
 
 ## 创建 Ping 任务
@@ -111,7 +111,11 @@ Server 在以下时机会向 Agent 同步探测任务：
 `server_ids_json` 字段控制哪些 Agent 执行探测：
 
 - **指定节点**：填写服务器 ID 数组，如 `["srv-1", "srv-2"]`
-- **全部节点**：使用空数组 `[]` 或特殊值 `["*"]`，分配给所有在线 Agent
+- **全部节点**：使用空数组 `[]`
+
+<Callout type="warn">
+`["*"]` 不是通配符。Server 会把它当作字面量服务器 ID，因此通常不会把任务分配给任何 Agent。需要所有服务器执行时请使用 `[]`；指定服务器时，请使用服务器列表中的真实 ID。
+</Callout>
 
 从多个 Agent 执行同一探测可以：
 
