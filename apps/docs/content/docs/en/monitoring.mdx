@@ -41,7 +41,7 @@ The dashboard therefore updates in real time -- no page refresh or polling inter
 
 ## Metric Types
 
-The agent collects the following metrics at a configurable interval (default: every 3 seconds, set via `collector.interval`; the server can dynamically adjust it through the `Welcome` message):
+The agent collects and reports the following metrics every 3 seconds. The server sends this fixed `report_interval` in the `Welcome` message:
 
 ### System Resources
 

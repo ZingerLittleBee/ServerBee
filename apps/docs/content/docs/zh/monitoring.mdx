@@ -41,7 +41,7 @@ ServerBee 通过统一的 Web 面板实时监控所有已接入的服务器。�
 
 ## 指标类型
 
-Agent 按可配置的间隔采集以下指标（默认每 3 秒，通过 `collector.interval` 设置；Server 可经 `Welcome` 消息动态调整）：
+Agent 每 3 秒采集并上报以下指标。Server 在 `Welcome` 消息中下发这一固定的 `report_interval`：
 
 ### 系统资源
 
