@@ -138,14 +138,10 @@ const allDocumentation = (
 ).join('\n')
 
 const envReference = await text(join(repository, 'ENV.md'))
-const referencedEnvVars = new Set(
-  [...envReference.matchAll(/`(SERVERBEE_[A-Z0-9_]+)`/g)].map((match) => match[1])
-)
+const referencedEnvVars = new Set([...envReference.matchAll(/`(SERVERBEE_[A-Z0-9_]+)`/g)].map((match) => match[1]))
 for (const locale of locales) {
   const configuration = await text(join(contentRoot, locale, 'configuration.mdx'))
-  const documentedEnvVars = new Set(
-    [...configuration.matchAll(/`(SERVERBEE_[A-Z0-9_]+)`/g)].map((match) => match[1])
-  )
+  const documentedEnvVars = new Set([...configuration.matchAll(/`(SERVERBEE_[A-Z0-9_]+)`/g)].map((match) => match[1]))
   const missingEnvVars = [...referencedEnvVars].filter((variable) => !documentedEnvVars.has(variable))
   invariant(missingEnvVars.length === 0, `${locale}/configuration.mdx omits env vars: ${missingEnvVars.join(', ')}`)
 }
