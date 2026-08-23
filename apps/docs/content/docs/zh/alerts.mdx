@@ -197,7 +197,7 @@ Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供
 
 ## 阻断源 IP
 
-安全事件类规则（`ssh_brute_force_detected`、`port_scan_detected`）可以开启**阻断源 IP**。触发时，ServerBee 会指示受影响 Agent 的防火墙阻断攻击源 IP，把检测变为自动处置。这要求 Agent 上报 `firewall_block` 能力（`CAP_FIREWALL_BLOCK`）。该能力默认启用，但只能在 Agent 主机的 `[capabilities]` 配置中禁用，Server 端不能切换。详见 [安全事件检测](/zh/docs/security-events) 和 [防火墙管理](/zh/docs/firewall)。
+安全事件类规则（`ssh_brute_force_detected`、`port_scan_detected`）可以开启**阻断源 IP**。触发时，ServerBee 会指示受影响 Agent 的防火墙阻断攻击源 IP，把检测变为自动处置。这要求 Agent 上报 `firewall_block` 能力（`CAP_FIREWALL_BLOCK`）。该能力默认启用，可在 Agent 主机的 `[capabilities]` 配置中禁用，Server 端不能切换。详见 [安全事件检测](/zh/docs/security-events) 和 [防火墙管理](/zh/docs/firewall)。
 
 ## 通知渠道
 
