@@ -18,7 +18,7 @@ Server 按以下顺序合并配置，后者覆盖前者：
 
 Agent 依次使用内置默认值、`/etc/serverbee/agent.toml`、工作目录下的 `agent.toml`，最后应用 `SERVERBEE_` 环境变量。托管服务将 `/opt/serverbee/etc` 设为工作目录，因此其第三个来源是 `/opt/serverbee/etc/agent.toml`。
 
-这样无需修改 TOML 文件即可在运行时覆盖会生效的配置项。仅为兼容保留的字段（例如 Agent 的 `collector.interval`）会在下文明确标注。
+这样无需修改 TOML 文件即可在运行时覆盖实际生效的配置项。仅为兼容保留的字段（例如 Agent 的 `collector.interval`）会在下文明确标注。
 
 ## 环境变量映射规则
 
@@ -130,13 +130,13 @@ Agent 依次使用内置默认值、`/etc/serverbee/agent.toml`、工作目录�
 
 #### IP 质量检测（IP Quality）
 
-Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)（每个客户端 IP 每 UTC 日 100 次，返回精简响应）。免费账号/API Key 提供每日 1,000 次请求和完整响应。主 Provider 失败时，Server 回退到 [ip-api.com](https://ip-api.com)，后者提供代理/托管标记及派生的 IP 类型，但不提供数值风险分。功能详情及兜底服务的非商业用途/HTTP 警告见 [IP 质量检测](/zh/docs/ip-quality)。
+Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个客户端 IP 每天 100 次（按 UTC 日计）。ServerBee 使用精简响应中的代理、VPN、数据中心、Tor 和滥用标记，并据此派生 IP 类型，但不提供数值风险分。免费账号/API Key 每日可请求 1,000 次，并返回计算 0–100 风险分所需的完整响应。只有主请求失败时（包括 HTTP 429）才会回退到 [ip-api.com](https://ip-api.com)；成功响应即使没有评分也不会触发兜底。功能详情及兜底服务的非商业用途/HTTP 警告见 [IP 质量检测](/zh/docs/ip-quality)。
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`。 |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `"ip-api"` | 主 Provider 失败时的兜底。设为 `none` 关闭。 |
-| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | 可选。免费账号的 Key 提供每日 1,000 次请求和完整响应。 |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | 可选。免费账号的 Key 提供每日 1,000 次请求，以及计算 0–100 风险分所需的完整响应。 |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `""` | 自建镜像或测试时覆盖。留空则回退到内置默认 `https://api.ipapi.is`。 |
 
 <Callout type="info">
@@ -383,7 +383,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 ### `[ip_quality]` —— IP 质量风险评分
 
-Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)（每个客户端 IP 每 UTC 日 100 次，返回精简响应）。免费账号/API Key 提供每日 1,000 次请求和完整响应。主 Provider 失败时，Server 回退到 [ip-api.com](https://ip-api.com)。只有加载了可用的 GeoIP MMDB，才会提供本地基础元数据。功能详情及兜底服务的非商业用途/HTTP 警告见 [IP 质量检测](/zh/docs/ip-quality)。
+Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个客户端 IP 每天 100 次（按 UTC 日计）。ServerBee 使用精简响应中的代理、VPN、数据中心、Tor 和滥用标记，并据此派生 IP 类型，但不提供数值风险分。免费账号/API Key 每日可请求 1,000 次，并返回计算 0–100 风险分所需的完整响应。只有主请求失败时（包括 HTTP 429）才会回退到 [ip-api.com](https://ip-api.com)；成功响应即使没有评分也不会触发兜底。只有加载了可用的 GeoIP MMDB，才会提供本地基础元数据。功能详情及兜底服务的非商业用途/HTTP 警告见 [IP 质量检测](/zh/docs/ip-quality)。
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
@@ -394,7 +394,7 @@ Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)（每个�
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `api_key` | string | -- | 可选。免费账号的 Key 提供每日 1,000 次请求和完整响应。 |
+| `api_key` | string | -- | 可选。免费账号的 Key 提供每日 1,000 次请求，以及计算 0–100 风险分所需的完整响应。 |
 | `endpoint` | string | `""` | 自建镜像或测试时覆盖。留空则回退到内置默认 `https://api.ipapi.is`。 |
 
 ### `[network_probe]` —— 异常阈值
