@@ -7,7 +7,7 @@ icon: Database
 This page explains how ServerBee grows its SQLite database over time and gives a 30-day estimate for common 20-server deployments.
 
 <Callout type="info">
-These numbers are based on the current schema and retention defaults, measured from temporary SQLite databases generated against the repository code in April 2026. They describe the main database file after 30 days from a fresh deployment. In production, reserve another 10% to 20% for SQLite WAL headroom and transient growth.
+These numbers were measured in April 2026 from temporary SQLite databases generated with the repository schema and retention defaults at that time. Use this page as the dated sizing reference, not as a guarantee for later schemas or workloads. The results describe the main database file after 30 days from a fresh deployment. In production, reserve another 10% to 20% for SQLite WAL headroom and transient growth.
 </Callout>
 
 ## Assumptions

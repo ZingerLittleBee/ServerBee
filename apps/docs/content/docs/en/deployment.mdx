@@ -577,7 +577,7 @@ ServerBee is designed for lightweight VPS instances:
 | Agent CPU | Negligible | < 1% of 1 core |
 | Agent RAM | ~27 MB measured cgroup steady state | 30–40 MB headroom |
 
-Database size depends on the number of monitored servers and your retention settings. As a rough guide, expect about 1 MB of raw records per server per day. With 50 servers and the default 7-day retention, the database is roughly 350 MB.
+Database size depends on server count, enabled writers, sampling intervals, and retention settings. Use [Storage & Sizing](/en/docs/storage-sizing) for the measured 30-day baseline, feature multipliers, and WAL headroom instead of combining rough estimates from different retention windows.
 
 For glibc-based Server deployments, set `MALLOC_ARENA_MAX=2` in the service environment to match the measured 140–170 MB production range. See [Resource Usage](/en/docs/resource-usage) for scope and measurement details.
 
