@@ -192,7 +192,7 @@ Each server has a detail page showing:
 
 The server detail page defaults to **Real-time mode**. In this mode, charts display live data streamed from WebSocket updates:
 
-- **Data source**: Accumulated from `BrowserMessage::Update` events via the `['servers']` TanStack Query cache
+- **Data source**: Accumulated from `BrowserMessage::Update` events through the live server catalog
 - **Update interval**: ~3 seconds (matches the agent report interval)
 - **Buffer size**: Grows to 250 data points, then trims back to the newest 200 points
 - **Deduplication**: Uses the server-side `last_active` timestamp to filter duplicate events
@@ -237,7 +237,7 @@ ServerBee automatically cleans up expired data via a background task that runs o
 | Audit logs | 180 days | `retention.audit_logs_days` |
 
 <Callout type="info">
-Aggregation and cleanup run in separate hourly background tasks. Cleanup starts with a 60-second offset to reduce overlap with aggregation, but the tasks do not form one fixed-order transaction. Keep enough raw-data retention for aggregation to run reliably, and monitor task errors if long-term history matters.
+Aggregation and cleanup run as separate hourly background tasks with no fixed ordering. Cleanup starts with a 60-second offset, which only staggers their work. Each aggregation run rolls up only the previous completed hour, so a missed hour is not backfilled; monitor task errors if long-term hourly history matters.
 </Callout>
 
 Example of overriding the retention policy:
