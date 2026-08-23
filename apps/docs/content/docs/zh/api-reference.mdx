@@ -102,7 +102,7 @@ curl https://your-server/api/auth/me \
 
 ## 已认证用户端点
 
-这些端点需要用户凭据。Admin 和 Member 都可以使用下列读取及账户范围操作；API Key 的权限与所属用户相同。仅限 Admin 的管理端点单独列在下一节。
+这些端点需要用户凭据。Admin 和 Member 都可以使用下列读取操作，以及只作用于当前账号的操作；API Key 的权限与所属用户相同。仅限 Admin 的管理端点单独列在下一节。
 
 | 端点族 | 代表端点 |
 |--------|----------|
@@ -115,7 +115,7 @@ curl https://your-server/api/auth/me \
 | 可用性和流量 | `GET /api/servers/{id}/uptime-daily`、`GET /api/servers/{id}/traffic` |
 | GeoIP | `GET /api/geoip/status` |
 | Ping 任务 | `GET /api/ping-tasks`、`GET /api/ping-tasks/{id}/records` |
-| 网络探测 | `GET /api/network-probes/targets`、`GET /api/network-probes/setting`、`GET /api/network-probes/overview` |
+| 网络探测 | `GET /api/network-probes/targets`、`GET /api/network-probes/setting`、`GET /api/network-probes/overview`、`GET /api/servers/{id}/network-probes/targets`、`GET /api/servers/{id}/network-probes/records`、`GET /api/servers/{id}/network-probes/summary`、`GET /api/servers/{id}/network-probes/anomalies` |
 | Traceroute 结果 | `GET /api/servers/{id}/traceroute/{request_id}` |
 | Docker 读取 | `GET /api/servers/{id}/docker/containers`、`stats`、`info`、`events`、`networks`、`volumes` |
 | 服务监控 | `GET /api/service-monitors`、`GET /api/service-monitors/{id}`、`GET /api/service-monitors/{id}/records` |
@@ -126,7 +126,7 @@ curl https://your-server/api/auth/me \
 
 ## 管理员写入和管理端点
 
-下列管理和主机控制操作需要 Admin 权限。上一节列出的账户范围操作仍可由已认证的 Member 使用。
+下列管理和主机控制操作需要 Admin 权限。上一节中只作用于当前账号的操作仍可由已认证的 Member 使用。
 
 | 端点族 | 代表端点 |
 |--------|----------|
@@ -134,7 +134,7 @@ curl https://your-server/api/auth/me \
 | 服务器管理 | `POST /api/servers`（幂等 onboarding）、`PUT/DELETE /api/servers/{id}`、`POST /api/servers/{id}/upgrade` |
 | Agent Authority | `/api/servers/{id}/agent-authority/*` 下的重新接入、offer 发出/替换/吊销及 authority 吊销 |
 | 分组和标签 | `POST /api/server-groups`、`PUT/DELETE /api/server-groups/{id}`、`PUT /api/servers/{id}/tags` |
-| Ping 和网络探测 | `POST /api/ping-tasks`、`PUT/DELETE /api/ping-tasks/{id}`、`POST /api/network-probes/targets`、`PUT/DELETE /api/network-probes/targets/{id}`、`PUT /api/network-probes/setting` |
+| Ping 和网络探测 | `POST /api/ping-tasks`、`PUT/DELETE /api/ping-tasks/{id}`、`POST /api/network-probes/targets`、`PUT/DELETE /api/network-probes/targets/{id}`、`PUT /api/network-probes/setting`、`PUT /api/servers/{id}/network-probes/targets` |
 | Traceroute | `POST /api/servers/{id}/traceroute` |
 | 文件管理 | 所有 `/api/files/*` 端点，包括列目录、获取元数据、读取、下载、传输管理和文件修改 |
 | Docker 操作 | `POST /api/servers/{id}/docker/containers/{cid}/action` |
@@ -203,7 +203,7 @@ curl https://your-server/api/auth/me \
 | `/api/agent/ws` | Agent Bearer token（兼容旧 Agent 的 `?token=`） | Agent 指标、命令、Ping、文件、Docker、Traceroute |
 | `/api/ws/servers` | Session cookie、API Key 或 Bearer token | 浏览器/移动端实时服务器更新 |
 | `/api/ws/terminal/{server_id}` | 已认证 Admin + `CAP_TERMINAL` | Web 终端代理；JSON 文本消息，终端数据 base64 编码 |
-| `/api/ws/docker/logs/{server_id}` | 已认证 + `CAP_DOCKER` | 按容器流式传输 Docker 日志 |
+| `/api/ws/docker/logs/{server_id}` | 已认证 Admin + `CAP_DOCKER` | 按容器流式传输 Docker 日志 |
 
 ## 常见状态码
 

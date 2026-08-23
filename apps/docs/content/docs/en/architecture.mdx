@@ -160,7 +160,7 @@ The agent connects to `ws://<server>/api/agent/ws` and authenticates with `Autho
 
 ### Server to Browser (`BrowserMessage`)
 
-Browsers obtain data two ways: the REST API for initial load and historical queries, and a WebSocket at `ws://<server>/api/ws/servers` for real-time pushes. The WebSocket is one-way (Server -> Browser). Both share the TanStack Query cache key `['servers']` for seamless updates.
+Browsers obtain data two ways: the REST API for initial load and historical queries, and a WebSocket at `ws://<server>/api/ws/servers` for real-time pushes. The WebSocket is one-way (Server -> Browser). REST results and WebSocket messages are projected into the same live server catalog so views stay current.
 
 | Message Type | Purpose |
 |-------------|---------|

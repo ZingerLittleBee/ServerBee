@@ -102,7 +102,7 @@ curl https://your-server/api/auth/me \
 
 ## Authenticated User Endpoints
 
-These endpoints require a user credential. Admin and Member users can use the listed read and account-scoped operations. API keys receive the same access as their owning users. Admin-only management endpoints are listed separately below.
+These endpoints require a user credential. Admin and Member users can use the listed read operations, plus operations that apply only to the signed-in account. API keys receive the same access as their owning users. Admin-only management endpoints are listed separately below.
 
 | Family | Representative endpoints |
 |--------|--------------------------|
@@ -115,7 +115,7 @@ These endpoints require a user credential. Admin and Member users can use the li
 | Uptime and traffic | `GET /api/servers/{id}/uptime-daily`, `GET /api/servers/{id}/traffic` |
 | GeoIP | `GET /api/geoip/status` |
 | Ping tasks | `GET /api/ping-tasks`, `GET /api/ping-tasks/{id}/records` |
-| Network probes | `GET /api/network-probes/targets`, `GET /api/network-probes/setting`, `GET /api/network-probes/overview` |
+| Network probes | `GET /api/network-probes/targets`, `GET /api/network-probes/setting`, `GET /api/network-probes/overview`, `GET /api/servers/{id}/network-probes/targets`, `GET /api/servers/{id}/network-probes/records`, `GET /api/servers/{id}/network-probes/summary`, `GET /api/servers/{id}/network-probes/anomalies` |
 | Traceroute results | `GET /api/servers/{id}/traceroute/{request_id}` |
 | Docker, read-only | `GET /api/servers/{id}/docker/containers`, `stats`, `info`, `events`, `networks`, `volumes` |
 | Service monitors | `GET /api/service-monitors`, `GET /api/service-monitors/{id}`, `GET /api/service-monitors/{id}/records` |
@@ -126,7 +126,7 @@ These endpoints require a user credential. Admin and Member users can use the li
 
 ## Admin Write and Management Endpoints
 
-The following management and host-control operations require Admin. Account-scoped operations listed above remain available to authenticated Member users.
+The following management and host-control operations require Admin. Operations listed above that apply only to the signed-in account remain available to authenticated Member users.
 
 | Family | Representative endpoints |
 |--------|--------------------------|
@@ -134,7 +134,7 @@ The following management and host-control operations require Admin. Account-scop
 | Server management | `POST /api/servers` (idempotent onboarding), `PUT/DELETE /api/servers/{id}`, `POST /api/servers/{id}/upgrade` |
 | Agent Authority | re-enrollment, offer issue/replace/revoke, and authority revocation under `/api/servers/{id}/agent-authority/*` |
 | Groups and tags | `POST /api/server-groups`, `PUT/DELETE /api/server-groups/{id}`, `PUT /api/servers/{id}/tags` |
-| Ping and network probes | `POST /api/ping-tasks`, `PUT/DELETE /api/ping-tasks/{id}`, `POST /api/network-probes/targets`, `PUT/DELETE /api/network-probes/targets/{id}`, `PUT /api/network-probes/setting` |
+| Ping and network probes | `POST /api/ping-tasks`, `PUT/DELETE /api/ping-tasks/{id}`, `POST /api/network-probes/targets`, `PUT/DELETE /api/network-probes/targets/{id}`, `PUT /api/network-probes/setting`, `PUT /api/servers/{id}/network-probes/targets` |
 | Traceroute | `POST /api/servers/{id}/traceroute` |
 | Files | All `/api/files/*` endpoints, including list, stat, read, download, transfer management, and file changes |
 | Docker actions | `POST /api/servers/{id}/docker/containers/{cid}/action` |
@@ -203,7 +203,7 @@ Only one offer may be outstanding per Server. Its terminal outcome is exactly on
 | `/api/agent/ws` | Agent Bearer token (`?token=` accepted for legacy Agents) | Agent metrics, commands, pings, files, Docker, traceroute |
 | `/api/ws/servers` | Session cookie, API key, or Bearer token | Browser/mobile real-time server updates |
 | `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy; JSON text messages with terminal data base64-encoded |
-| `/api/ws/docker/logs/{server_id}` | Authenticated + `CAP_DOCKER` | Per-container Docker log streaming |
+| `/api/ws/docker/logs/{server_id}` | Authenticated Admin + `CAP_DOCKER` | Per-container Docker log streaming |
 
 ## Common Status Codes
 

@@ -160,7 +160,7 @@ Agent 连接到 `ws://<server>/api/agent/ws`，并使用 `Authorization: Bearer 
 
 ### Server -> Browser（`BrowserMessage`）
 
-浏览器通过两种方式获取数据：REST API 用于初始加载和历史查询，WebSocket（地址 `ws://<server>/api/ws/servers`）用于实时推送。该 WebSocket 为单向推送（Server -> 浏览器）。二者共享 TanStack Query 的 cache key `['servers']`，实现无缝更新。
+浏览器通过两种方式获取数据：REST API 用于初始加载和历史查询，WebSocket（地址 `ws://<server>/api/ws/servers`）用于实时推送。该 WebSocket 为单向推送（Server -> 浏览器）。REST 结果和 WebSocket 消息会写入同一份实时服务器目录，使各页面保持同步。
 
 | 消息类型 | 说明 |
 |----------|------|
