@@ -6,6 +6,8 @@ icon: FolderOpen
 
 File Manager provides controlled remote filesystem access through the ServerBee agent. It is meant for operational tasks such as checking logs, editing small configuration files, and transferring files without opening a full terminal.
 
+File Manager is available only to Admin users. This includes browsing, stat, reading, downloading, and transfer management as well as operations that modify files.
+
 <Callout type="warn">
 File Manager is a high-risk feature. Enable it only on trusted servers, and restrict `root_paths` to the minimum directories needed.
 </Callout>
@@ -57,10 +59,7 @@ The button is hidden when `CAP_FILE` is not in the server's effective capabiliti
 
 ## Permissions
 
-| Role | Allowed operations |
-|------|--------------------|
-| Admin | Browse, stat, read, write, upload, download, delete, move, create directories, cancel transfers |
-| Member | Browse, stat, read, download, list own transfers |
+Only Admin users can use File Manager. Every file API endpoint is behind the Admin authorization check because even read operations can expose sensitive files from a managed host.
 
 All high-risk file operations are recorded in the audit log, including attempts denied because the capability is disabled.
 
@@ -101,7 +100,7 @@ Uploads and downloads are chunked. A download creates a temporary transfer on th
 
 ## API
 
-Read endpoints are available to both Admin and Member users. Write endpoints require Admin.
+All File Manager endpoints require Admin, including list, stat, read, download, and transfer endpoints.
 
 | Method | Path | Description |
 |--------|------|-------------|

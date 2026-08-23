@@ -30,11 +30,14 @@ Successful REST responses are wrapped as:
 }
 ```
 
-Errors use:
+Application errors use an error code and message, with optional `details`:
 
 ```json
 {
-  "error": "Error message describing what went wrong"
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Bad request: description of what went wrong"
+  }
 }
 ```
 
@@ -55,14 +58,14 @@ curl https://your-server/api/servers -b cookies.txt
 
 ### API Key
 
-Use API keys for automation. Create them in Settings → API Keys.
+Use API keys for automation. Admin users can create them in Settings → API Keys.
 
 ```bash
 curl https://your-server/api/servers \
   -H "X-API-Key: serverbee_your-api-key-here"
 ```
 
-API keys use the `serverbee_` prefix and are shown only once when created.
+API keys use the `serverbee_` prefix and are shown only once when created. An API key authenticates as its owning user; it is a credential, not a separate role. Requests inherit the owner's current Admin or Member permissions. Only Admin users can create new API keys.
 
 ### Bearer Session Token
 
@@ -85,63 +88,67 @@ curl https://your-server/api/auth/me \
 | POST | `/api/mobile/auth/refresh` | Refresh a mobile session |
 | POST | `/api/mobile/auth/pair` | Redeem a mobile pairing code |
 | POST | `/api/agent/register` | Claim a bound enrollment offer with an Agent-proposed run token |
-| GET | `/api/status` | Default public status page data |
-| GET | `/api/status/{slug}` | Configurable public status page data |
+| GET | `/api/status/config` | Public status page configuration |
+| GET | `/api/status` | Servers included on the public status page |
+| GET | `/api/status/servers/{id}` | Public detail for an included server |
+| GET | `/api/status/servers/{id}/metrics` | Public metrics for an included server |
+| GET | `/api/status/servers/{id}/uptime-daily` | Public daily uptime for an included server |
+| GET | `/api/status/network`, `/api/status/network/{id}` | Public network overview and per-server detail |
+| GET | `/api/status/ip-quality` | Public IP quality overview |
+| GET | `/api/status/incidents`, `/api/status/maintenances` | Public incidents and maintenance windows |
 | GET | `/api/settings/brand` | Public brand settings |
 | GET | `/api/brand/logo` | Serve uploaded logo |
 | GET | `/api/brand/favicon` | Serve uploaded favicon |
 
 ## Authenticated Read Endpoints
 
-Read endpoints are available to Admin and Member users unless noted otherwise.
+These endpoints require a user credential. Admin and Member users can use the listed read operations, plus operations that apply only to the signed-in account. API keys receive the same access as their owning users. Admin-only management endpoints are listed separately below.
 
 | Family | Representative endpoints |
 |--------|--------------------------|
-| Current user and API keys | `GET /api/auth/me`, `PUT /api/auth/password`, `GET/POST /api/auth/api-keys`, `DELETE /api/auth/api-keys/{id}` |
+| Current user and credentials | `GET /api/auth/me`, `PUT /api/auth/password`, `GET /api/auth/api-keys`, `DELETE /api/auth/api-keys/{id}` |
 | 2FA and OAuth accounts | `/api/auth/2fa/*`, `GET/DELETE /api/auth/oauth/accounts/*` |
-| Mobile devices | `POST /api/mobile/auth/logout`, `GET /api/mobile/auth/devices`, `DELETE /api/mobile/auth/devices/{id}` |
+| Mobile sessions and devices | `POST /api/mobile/auth/logout`, `GET /api/mobile/auth/devices`, `DELETE /api/mobile/auth/devices/{id}`, `POST /api/mobile/pair`, `POST /api/mobile/push/register`, `POST /api/mobile/push/unregister` |
 | Servers | `GET /api/servers`, `GET /api/servers/{id}`, `GET /api/servers/{id}/records`, `GET /api/servers/{id}/gpu-records` |
 | Agent Authority | `GET /api/servers/{id}/agent-authority`, `GET /api/agent-authority/events?server_id={id}` |
-| Groups and tags | `GET /api/server-groups`, `GET /api/server-tags` |
+| Groups and tags | `GET /api/server-groups`, `GET /api/servers/{id}/tags` |
 | Uptime and traffic | `GET /api/servers/{id}/uptime-daily`, `GET /api/servers/{id}/traffic` |
 | GeoIP | `GET /api/geoip/status` |
 | Ping tasks | `GET /api/ping-tasks`, `GET /api/ping-tasks/{id}/records` |
-| Network probes | `/api/network-probes/*`, `/api/servers/{id}/network-probes/*` |
+| Network probes | `GET /api/network-probes/targets`, `GET /api/network-probes/setting`, `GET /api/network-probes/overview`, `GET /api/servers/{id}/network-probes/targets`, `GET /api/servers/{id}/network-probes/records`, `GET /api/servers/{id}/network-probes/summary`, `GET /api/servers/{id}/network-probes/anomalies` |
 | Traceroute results | `GET /api/servers/{id}/traceroute/{request_id}` |
-| Files, read-only | `POST /api/files/{server_id}/list`, `stat`, `read`, `GET /api/files/transfers`, `GET /api/files/download/{transfer_id}` |
 | Docker, read-only | `GET /api/servers/{id}/docker/containers`, `stats`, `info`, `events`, `networks`, `volumes` |
 | Service monitors | `GET /api/service-monitors`, `GET /api/service-monitors/{id}`, `GET /api/service-monitors/{id}/records` |
-| Status page config | `GET /api/status-pages` |
+| Status page config | `GET /api/status-page` |
 | Dashboards | `GET /api/dashboards`, `GET /api/dashboards/default`, `GET /api/dashboards/{id}` |
-| Themes | `GET /api/themes/*` |
 | Cost insights | `GET /api/cost/overview`, `GET /api/servers/{id}/cost-insights` |
-| Alert events | alert event read endpoints used by the dashboard |
+| Alert events | `GET /api/alert-events`, `GET /api/alert-events/{alert_key}` |
 
 ## Admin Write and Management Endpoints
 
-Admin role is required for write operations and system management.
+The following management and host-control operations require Admin. Operations listed above that apply only to the signed-in account remain available to authenticated Member users.
 
 | Family | Representative endpoints |
 |--------|--------------------------|
+| API key creation | `POST /api/auth/api-keys` |
 | Server management | `POST /api/servers` (idempotent onboarding), `PUT/DELETE /api/servers/{id}`, `POST /api/servers/{id}/upgrade` |
 | Agent Authority | re-enrollment, offer issue/replace/revoke, and authority revocation under `/api/servers/{id}/agent-authority/*` |
-| Groups and tags | CRUD `/api/server-groups/*`, CRUD `/api/server-tags/*` |
-| Ping and network probes | CRUD `/api/ping-tasks/*`, write endpoints under `/api/network-probes/*` |
+| Groups and tags | `POST /api/server-groups`, `PUT/DELETE /api/server-groups/{id}`, `PUT /api/servers/{id}/tags` |
+| Ping and network probes | `POST /api/ping-tasks`, `PUT/DELETE /api/ping-tasks/{id}`, `POST /api/network-probes/targets`, `PUT/DELETE /api/network-probes/targets/{id}`, `PUT /api/network-probes/setting`, `PUT /api/servers/{id}/network-probes/targets` |
 | Traceroute | `POST /api/servers/{id}/traceroute` |
-| Files | `POST /api/files/{server_id}/write`, `delete`, `mkdir`, `move`, `download`, `upload`, `DELETE /api/files/transfers/{transfer_id}` |
+| Files | All `/api/files/*` endpoints, including list, stat, read, download, transfer management, and file changes |
 | Docker actions | `POST /api/servers/{id}/docker/containers/{cid}/action` |
-| Service monitors | CRUD `/api/service-monitors/*`, `POST /api/service-monitors/{id}/check` |
+| Service monitors | `POST /api/service-monitors`, `PUT/DELETE /api/service-monitors/{id}`, `POST /api/service-monitors/{id}/check` |
 | Dashboards | `POST /api/dashboards`, `PUT/DELETE /api/dashboards/{id}` |
-| Themes and appearance | theme write endpoints, `PUT /api/settings/brand`, `POST /api/settings/brand/logo`, `POST /api/settings/brand/favicon` |
-| Status pages | CRUD `/api/status-pages/*` |
-| Incidents | CRUD `/api/incidents/*`, `POST /api/incidents/{id}/updates` |
-| Maintenance windows | CRUD `/api/maintenances/*` |
-| Alerts and notifications | CRUD `/api/alert-rules/*`, `/api/notifications/*`, `/api/notification-groups/*` |
+| Brand appearance | `PUT /api/settings/brand`, `POST /api/settings/brand/logo`, `POST /api/settings/brand/favicon` |
+| Status page | `PUT /api/status-page` |
+| Incidents | `GET/POST /api/incidents`, `PUT/DELETE /api/incidents/{id}`, `POST /api/incidents/{id}/updates` |
+| Maintenance windows | `GET/POST /api/maintenances`, `PUT/DELETE /api/maintenances/{id}` |
+| Alerts and notifications | Manage `/api/alert-rules`, `/api/notifications`, `/api/notification-groups`, and their `/{id}` routes |
 | Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}`, `GET /api/tasks/{id}/results`, `POST /api/tasks/{id}/run` |
-| Users | CRUD `/api/users/*` |
-| Audit and settings | `GET /api/audit-logs`, `/api/settings/*`, `POST /api/settings/backup`, `POST /api/settings/restore` |
+| Users | `GET/POST /api/users`, `GET/PUT/DELETE /api/users/{id}` |
+| Audit and settings | `GET/DELETE /api/audit-logs`, `GET/PUT /api/settings`, `POST /api/settings/backup`, `POST /api/settings/restore` |
 | GeoIP | `POST /api/geoip/download` |
-| Mobile push | `POST /api/mobile/pair`, `POST /api/mobile/push/register`, `POST /api/mobile/push/unregister` |
 
 The backup endpoint returns a raw SQLite download. Restore accepts a raw SQLite body with `Content-Type: application/octet-stream` and requires a Server restart. Both are Admin-only, high-risk operations; see [Backup and Restore](/en/docs/deployment#backup-and-restore) for verified commands and safeguards.
 
@@ -196,7 +203,7 @@ Only one offer may be outstanding per Server. Its terminal outcome is exactly on
 | `/api/agent/ws` | Agent Bearer token (`?token=` accepted for legacy Agents) | Agent metrics, commands, pings, files, Docker, traceroute |
 | `/api/ws/servers` | Session cookie, API key, or Bearer token | Browser/mobile real-time server updates |
 | `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy; JSON text messages with terminal data base64-encoded |
-| `/api/ws/docker/logs/{server_id}` | Authenticated + `CAP_DOCKER` | Per-container Docker log streaming |
+| `/api/ws/docker/logs/{server_id}` | Authenticated Admin + `CAP_DOCKER` | Per-container Docker log streaming |
 
 ## Common Status Codes
 
