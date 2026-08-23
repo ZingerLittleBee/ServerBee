@@ -51,7 +51,7 @@ Agent 通过 WebSocket 与 Server 保持长连接，实现实时数据推送。�
 
 ### 完善的测试与 CI 把关
 
-项目自带 3800+ 自动化测试 —— 其中包括通过 mock-agent 测试桩驱动真实 Axum 路由、经由 HTTP 与 WebSocket 的集成套件 —— 每次改动都要通过零警告的 Clippy lint、完整 Rust 测试套件,以及前端的类型与 lint 检查。详见[测试与质量](/zh/docs/testing)。
+项目包含 3,800 项以上的自动化测试，其中的集成测试通过 mock-agent 测试桩，经由 HTTP 和 WebSocket 驱动真实的 Axum 路由。每次触发主 CI 工作流时，都会执行前端和安装脚本检查；包含 Rust 相关变更的 Pull Request，以及已触发该工作流的 push，还会运行零警告 Clippy 和 Rust 测试任务。详见[测试与质量](/zh/docs/testing)。
 
 ## 技术栈
 

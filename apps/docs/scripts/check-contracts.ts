@@ -176,4 +176,32 @@ for (const locale of locales) {
   )
 }
 
+const enTesting = await text(join(contentRoot, 'en/testing.mdx'))
+const zhTesting = await text(join(contentRoot, 'zh/testing.mdx'))
+for (const [locale, testing] of [
+  ['en', enTesting],
+  ['zh', zhTesting]
+] as const) {
+  invariant(!/\b891\b|2,223|89 test files|89 个测试文件/.test(testing), `${locale}/testing.mdx has stale test counts`)
+}
+invariant(
+  enTesting.includes('Pull requests without Rust-relevant changes skip the Rust jobs.'),
+  'en/testing.mdx does not explain the path-aware Rust CI boundary'
+)
+invariant(
+  zhTesting.includes('没有 Rust 相关变更的 Pull Request 会跳过 Rust 任务。'),
+  'zh/testing.mdx does not explain the path-aware Rust CI boundary'
+)
+
+const enIndex = await text(join(contentRoot, 'en/index.mdx'))
+const zhIndex = await text(join(contentRoot, 'zh/index.mdx'))
+invariant(!enIndex.includes('every change passes'), 'en/index.mdx overstates CI coverage')
+invariant(!zhIndex.includes('每次改动都要通过'), 'zh/index.mdx overstates CI coverage')
+
+const zhAlerts = await text(join(contentRoot, 'zh/alerts.mdx'))
+invariant(
+  /Agent 上报 `firewall_block` 能力（`CAP_FIREWALL_BLOCK`）.*Agent 主机.*Server 端不能切换/.test(zhAlerts),
+  'zh/alerts.mdx does not identify the agent-owned firewall capability'
+)
+
 console.log('PASS: documentation contracts')
