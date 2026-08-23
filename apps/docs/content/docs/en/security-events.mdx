@@ -115,7 +115,7 @@ See [Firewall Blocklist](/en/docs/firewall) for the full feature, guardrails, an
 
 ## Retention
 
-Security events are kept for **30 days** by default. Tune with `retention.security_event_days` (env: `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`). The cleanup task purges expired rows daily.
+Security events are kept for **30 days** by default. Tune with `retention.security_event_days` (env: `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS`). The cleanup task checks for expired rows hourly.
 
 ## Data Flow
 

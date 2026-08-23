@@ -194,12 +194,12 @@ The server detail page defaults to **Real-time mode**. In this mode, charts disp
 
 - **Data source**: Accumulated from `BrowserMessage::Update` events via the `['servers']` TanStack Query cache
 - **Update interval**: ~3 seconds (matches the agent report interval)
-- **Buffer size**: 10-minute ring buffer (~200 data points), automatically trimmed
+- **Buffer size**: Grows to 250 data points, then trims back to the newest 200 points
 - **Deduplication**: Uses the server-side `last_active` timestamp to filter duplicate events
 - **Available charts**: CPU, Memory, Disk, Network In/Out, Load Average (1m)
 - **Time axis**: First tick shows `HH:mm:ss`, subsequent ticks show `mm:ss`
 
-Temperature, GPU, and Disk I/O charts are not available in real-time mode because the WebSocket `ServerStatus` message does not include these fields. Switch to a historical view to see temperature, GPU, and disk I/O data.
+Temperature, GPU, and Disk I/O charts are not currently available in real-time mode. WebSocket `BrowserMessage::Update` messages include aggregate disk read/write rates in `LiveMetrics`, but the detail-page real-time chart model does not yet map those fields. Switch to a historical view to see temperature, GPU, and per-disk I/O data.
 
 ### Disk I/O Charts
 
@@ -237,7 +237,7 @@ ServerBee automatically cleans up expired data via a background task that runs o
 | Audit logs | 180 days | `retention.audit_logs_days` |
 
 <Callout type="info">
-The hourly task runs in a fixed order: hourly aggregation first, then cleanup. This guarantees that minute-level data is rolled up into hourly summaries before it is deleted, so long-term trend data is never lost.
+Aggregation and cleanup run in separate hourly background tasks. Cleanup starts with a 60-second offset to reduce overlap with aggregation, but the tasks do not form one fixed-order transaction. Keep enough raw-data retention for aggregation to run reliably, and monitor task errors if long-term history matters.
 </Callout>
 
 Example of overriding the retention policy:
@@ -250,15 +250,7 @@ records_hourly_days = 365  # keep hourly data for 1 year
 
 ### Disk Space Estimate
 
-Estimated disk usage for 1000 agents:
-
-| Data Type | Estimate |
-|-----------|----------|
-| Minute-level records (7 days) | ~5 GB |
-| Hourly records (90 days) | ~3 GB |
-| Total (30 days) | ~8 GB |
-
-Actual usage depends on the number of servers and the configured retention periods.
+Database growth depends on server count, enabled writers, sampling intervals, and retention settings. Use [Storage & Sizing](/en/docs/storage-sizing) as the sizing reference; it documents measured April 2026 results, a single 30-day baseline, feature multipliers, and WAL headroom.
 
 ## Server Groups and Management
 
@@ -311,7 +303,7 @@ Agent                  Server                    Browser
   |                      |   delete old records    |
 ```
 
-The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Every hour, raw records are aggregated into hourly summaries, and expired data is cleaned up based on retention settings.
+The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Separate hourly tasks aggregate raw records into hourly summaries and clean up expired data based on retention settings.
 
 ## Network Quality Views
 
@@ -327,7 +319,7 @@ The time range bar offers these options:
 
 | Mode | Data Source | Description |
 |------|-------------|-------------|
-| **Real-time** | WebSocket ring buffer | Live streaming data (default) |
+| **Real-time** | WebSocket in-memory buffer | Live streaming data (default) |
 | **1h** | REST API (raw records) | Last 1 hour from database |
 | **6h** | REST API (raw records) | Last 6 hours |
 | **24h** | REST API (raw records) | Last 24 hours |
