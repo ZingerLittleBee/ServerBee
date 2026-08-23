@@ -30,11 +30,14 @@ REST 成功响应统一包装为：
 }
 ```
 
-错误响应格式：
+应用错误包含错误码和消息，还可能包含 `details`：
 
 ```json
 {
-  "error": "Error message describing what went wrong"
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Bad request: description of what went wrong"
+  }
 }
 ```
 
@@ -55,14 +58,14 @@ curl https://your-server/api/servers -b cookies.txt
 
 ### API Key
 
-自动化场景推荐使用 API Key。在 Settings → API Keys 创建。
+自动化场景推荐使用 API Key。Admin 可在 Settings → API Keys 创建。
 
 ```bash
 curl https://your-server/api/servers \
   -H "X-API-Key: serverbee_your-api-key-here"
 ```
 
-API Key 使用 `serverbee_` 前缀，创建时只显示一次。
+API Key 使用 `serverbee_` 前缀，创建时只显示一次。API Key 会以所属用户的身份完成认证，它是凭据，不是独立角色。请求继承所属用户当前的 Admin 或 Member 权限。只有 Admin 可以创建新的 API Key。
 
 ### Bearer Session Token
 
@@ -85,63 +88,67 @@ curl https://your-server/api/auth/me \
 | POST | `/api/mobile/auth/refresh` | 刷新移动端会话 |
 | POST | `/api/mobile/auth/pair` | 兑换移动端配对码 |
 | POST | `/api/agent/register` | 使用 Agent 提议的 run token claim 已绑定的 enrollment offer |
-| GET | `/api/status` | 默认公开状态页数据 |
-| GET | `/api/status/{slug}` | 可配置公开状态页数据 |
+| GET | `/api/status/config` | 公开状态页配置 |
+| GET | `/api/status` | 公开状态页包含的服务器 |
+| GET | `/api/status/servers/{id}` | 已公开服务器的详情 |
+| GET | `/api/status/servers/{id}/metrics` | 已公开服务器的指标 |
+| GET | `/api/status/servers/{id}/uptime-daily` | 已公开服务器的每日可用性 |
+| GET | `/api/status/network`、`/api/status/network/{id}` | 公开网络概览和单台服务器详情 |
+| GET | `/api/status/ip-quality` | 公开 IP 质量概览 |
+| GET | `/api/status/incidents`、`/api/status/maintenances` | 公开事件公告和维护窗口 |
 | GET | `/api/settings/brand` | 公开品牌设置 |
 | GET | `/api/brand/logo` | 返回上传的 Logo |
 | GET | `/api/brand/favicon` | 返回上传的 Favicon |
 
-## 已认证读取端点
+## 已认证用户端点
 
-除特别说明外，读取端点对 Admin 和 Member 均可用。
+这些端点需要用户凭据。Admin 和 Member 都可以使用下列读取及账户范围操作；API Key 的权限与所属用户相同。仅限 Admin 的管理端点单独列在下一节。
 
 | 端点族 | 代表端点 |
 |--------|----------|
-| 当前用户和 API Key | `GET /api/auth/me`、`PUT /api/auth/password`、`GET/POST /api/auth/api-keys`、`DELETE /api/auth/api-keys/{id}` |
+| 当前用户和凭据 | `GET /api/auth/me`、`PUT /api/auth/password`、`GET /api/auth/api-keys`、`DELETE /api/auth/api-keys/{id}` |
 | 2FA 和 OAuth 账号 | `/api/auth/2fa/*`、`GET/DELETE /api/auth/oauth/accounts/*` |
-| 移动端设备 | `POST /api/mobile/auth/logout`、`GET /api/mobile/auth/devices`、`DELETE /api/mobile/auth/devices/{id}` |
+| 移动端会话和设备 | `POST /api/mobile/auth/logout`、`GET /api/mobile/auth/devices`、`DELETE /api/mobile/auth/devices/{id}`、`POST /api/mobile/pair`、`POST /api/mobile/push/register`、`POST /api/mobile/push/unregister` |
 | 服务器 | `GET /api/servers`、`GET /api/servers/{id}`、`GET /api/servers/{id}/records`、`GET /api/servers/{id}/gpu-records` |
 | Agent Authority | `GET /api/servers/{id}/agent-authority`、`GET /api/agent-authority/events?server_id={id}` |
-| 分组和标签 | `GET /api/server-groups`、`GET /api/server-tags` |
+| 分组和标签 | `GET /api/server-groups`、`GET /api/servers/{id}/tags` |
 | 可用性和流量 | `GET /api/servers/{id}/uptime-daily`、`GET /api/servers/{id}/traffic` |
 | GeoIP | `GET /api/geoip/status` |
 | Ping 任务 | `GET /api/ping-tasks`、`GET /api/ping-tasks/{id}/records` |
-| 网络探测 | `/api/network-probes/*`、`/api/servers/{id}/network-probes/*` |
+| 网络探测 | `GET /api/network-probes/targets`、`GET /api/network-probes/setting`、`GET /api/network-probes/overview` |
 | Traceroute 结果 | `GET /api/servers/{id}/traceroute/{request_id}` |
-| 文件读取 | `POST /api/files/{server_id}/list`、`stat`、`read`、`GET /api/files/transfers`、`GET /api/files/download/{transfer_id}` |
 | Docker 读取 | `GET /api/servers/{id}/docker/containers`、`stats`、`info`、`events`、`networks`、`volumes` |
 | 服务监控 | `GET /api/service-monitors`、`GET /api/service-monitors/{id}`、`GET /api/service-monitors/{id}/records` |
-| 状态页配置 | `GET /api/status-pages` |
+| 状态页配置 | `GET /api/status-page` |
 | 仪表盘 | `GET /api/dashboards`、`GET /api/dashboards/default`、`GET /api/dashboards/{id}` |
-| 主题 | `GET /api/themes/*` |
 | 成本洞察 | `GET /api/cost/overview`、`GET /api/servers/{id}/cost-insights` |
-| 告警事件 | 仪表盘使用的告警事件读取端点 |
+| 告警事件 | `GET /api/alert-events`、`GET /api/alert-events/{alert_key}` |
 
 ## 管理员写入和管理端点
 
-写入操作和系统管理需要 Admin 角色。
+下列管理和主机控制操作需要 Admin 权限。上一节列出的账户范围操作仍可由已认证的 Member 使用。
 
 | 端点族 | 代表端点 |
 |--------|----------|
+| 创建 API Key | `POST /api/auth/api-keys` |
 | 服务器管理 | `POST /api/servers`（幂等 onboarding）、`PUT/DELETE /api/servers/{id}`、`POST /api/servers/{id}/upgrade` |
 | Agent Authority | `/api/servers/{id}/agent-authority/*` 下的重新接入、offer 发出/替换/吊销及 authority 吊销 |
-| 分组和标签 | CRUD `/api/server-groups/*`、CRUD `/api/server-tags/*` |
-| Ping 和网络探测 | CRUD `/api/ping-tasks/*`、`/api/network-probes/*` 下的写入端点 |
+| 分组和标签 | `POST /api/server-groups`、`PUT/DELETE /api/server-groups/{id}`、`PUT /api/servers/{id}/tags` |
+| Ping 和网络探测 | `POST /api/ping-tasks`、`PUT/DELETE /api/ping-tasks/{id}`、`POST /api/network-probes/targets`、`PUT/DELETE /api/network-probes/targets/{id}`、`PUT /api/network-probes/setting` |
 | Traceroute | `POST /api/servers/{id}/traceroute` |
-| 文件管理 | `POST /api/files/{server_id}/write`、`delete`、`mkdir`、`move`、`download`、`upload`、`DELETE /api/files/transfers/{transfer_id}` |
+| 文件管理 | 所有 `/api/files/*` 端点，包括列目录、获取元数据、读取、下载、传输管理和文件修改 |
 | Docker 操作 | `POST /api/servers/{id}/docker/containers/{cid}/action` |
-| 服务监控 | CRUD `/api/service-monitors/*`、`POST /api/service-monitors/{id}/check` |
+| 服务监控 | `POST /api/service-monitors`、`PUT/DELETE /api/service-monitors/{id}`、`POST /api/service-monitors/{id}/check` |
 | 仪表盘 | `POST /api/dashboards`、`PUT/DELETE /api/dashboards/{id}` |
-| 主题和外观 | 主题写入端点、`PUT /api/settings/brand`、`POST /api/settings/brand/logo`、`POST /api/settings/brand/favicon` |
-| 状态页 | CRUD `/api/status-pages/*` |
-| 事件公告 | CRUD `/api/incidents/*`、`POST /api/incidents/{id}/updates` |
-| 维护窗口 | CRUD `/api/maintenances/*` |
-| 告警和通知 | CRUD `/api/alert-rules/*`、`/api/notifications/*`、`/api/notification-groups/*` |
+| 品牌外观 | `PUT /api/settings/brand`、`POST /api/settings/brand/logo`、`POST /api/settings/brand/favicon` |
+| 状态页 | `PUT /api/status-page` |
+| 事件公告 | `GET/POST /api/incidents`、`PUT/DELETE /api/incidents/{id}`、`POST /api/incidents/{id}/updates` |
+| 维护窗口 | `GET/POST /api/maintenances`、`PUT/DELETE /api/maintenances/{id}` |
+| 告警和通知 | 管理 `/api/alert-rules`、`/api/notifications`、`/api/notification-groups` 及其 `/{id}` 路由 |
 | 任务 | `GET/POST /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`GET /api/tasks/{id}/results`、`POST /api/tasks/{id}/run` |
-| 用户 | CRUD `/api/users/*` |
-| 审计和设置 | `GET /api/audit-logs`、`/api/settings/*`、`POST /api/settings/backup`、`POST /api/settings/restore` |
+| 用户 | `GET/POST /api/users`、`GET/PUT/DELETE /api/users/{id}` |
+| 审计和设置 | `GET/DELETE /api/audit-logs`、`GET/PUT /api/settings`、`POST /api/settings/backup`、`POST /api/settings/restore` |
 | GeoIP | `POST /api/geoip/download` |
-| 移动端推送 | `POST /api/mobile/pair`、`POST /api/mobile/push/register`、`POST /api/mobile/push/unregister` |
 
 备份端点返回原始 SQLite 下载；恢复端点接受 `Content-Type: application/octet-stream` 的原始 SQLite body，并要求重启 Server。两者都是仅限 Admin 的高风险操作，已验证命令与保护措施见[备份与恢复](/zh/docs/deployment#备份与恢复)。
 

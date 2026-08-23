@@ -90,8 +90,8 @@ icon: Boxes
 |------|------|
 | Collector | 使用 `sysinfo` 库周期性采集 CPU、内存、磁盘、网络等系统指标 |
 | Reporter | 管理 WebSocket 连接、上报指标、处理 Server 下发的指令、断线重连 |
-| ProbeManager | 执行 Server 下发的 ICMP/TCP/HTTP 探测任务 |
-| Executor | 执行 Server 下发的远程 Shell 命令 |
+| PingManager | 执行 Server 下发的定时 ICMP/TCP/HTTP Ping 任务 |
+| NetworkProber | 执行定时网络质量探测并上报聚合结果 |
 | Terminal | 管理 PTY 终端会话，转发终端输入输出 |
 
 ### Common（共享 crate，`crates/common`）
@@ -118,7 +118,7 @@ icon: Boxes
 
 ## 通信协议
 
-所有通信都使用 WebSocket。所有消息均为 JSON 文本帧；终端 I/O 数据放在消息的 `data` 字段中，以 base64 编码。当前协议版本为 `6`，连接时通过 `Welcome` 消息下发给 Agent。
+Agent 的指标上报和控制流量使用 WebSocket。浏览器通过 REST 获取初始数据、历史记录并执行管理操作，同时通过 WebSocket 接收实时更新。WebSocket 应用消息均为 JSON 文本帧；终端 I/O 数据放在消息的 `data` 字段中，以 base64 编码。当前 Agent 协议版本为 `6`，连接时通过 `Welcome` 消息下发。
 
 Agent 连接到 `ws://<server>/api/agent/ws`，并使用 `Authorization: Bearer <agent_token>` 认证。Server 暂时兼容旧版 Agent 使用的 `?token=` 形式，以便其重新连接并完成升级。
 
@@ -180,7 +180,7 @@ Agent                              Server
   |--- WebSocket 连接 + token ------>|
   |                                  | 验证 token，查找 server
   |<-- Welcome { server_id,         |
-  |     protocol_version: 4,        |
+  |     protocol_version: 6,        |
   |     report_interval: 3 } -------|
   |                                  |
   |--- SystemInfo { cpu_name,       |  连接/重连后上报静态信息
@@ -296,15 +296,19 @@ Server 启动时通过 `tokio::spawn` 创建多个长期运行的后台任务：
 
 ## 安全模型
 
-### 三条认证路径
+### 认证路径
 
-ServerBee 支持三种认证机制，均在认证中间件中校验：
+面向用户的 REST 和 WebSocket 请求可通过 Session Cookie、API Key 或 Bearer Session Token 解析出用户，随后按该用户的当前角色进行授权。Agent WebSocket 连接使用独立的 Agent run token。
 
 ```
 请求进入
   +-- Cookie: session_token=xxx         --> Session 认证（浏览器）
   +-- Header: X-API-Key: serverbee_xxx  --> API Key 认证（自动化）
-  +-- Query: ?token=xxx                 --> Agent Token 认证（Agent WebSocket）
+  +-- Header: Authorization: Bearer xxx  --> Session 认证（移动端）
+
+Agent WebSocket 连接
+  +-- Header: Authorization: Bearer xxx  --> Agent run token 认证
+  +-- Query: ?token=xxx                  --> 仅用于兼容旧版 Agent
 ```
 
 #### Session 认证（浏览器）
@@ -316,10 +320,11 @@ ServerBee 支持三种认证机制，均在认证中间件中校验：
 
 #### API Key 认证（自动化）
 
-- 用户可创建具名 API 密钥用于程序化访问。
+- Admin 可创建具名 API 密钥用于程序化访问。
 - Key 格式：`serverbee_` + 32 字节随机 base64url。
 - 以 argon2 哈希存储，并保存 8 位明文前缀用于标识。
 - 校验时先用前缀缩小查询范围，再用 argon2 验证。
+- API Key 会以所属用户的身份认证，并继承该用户当前的 `admin` 或 `member` 角色。API Key 是凭据类型，不是第三种角色。
 
 #### Agent Token 认证（Agent）
 
@@ -332,22 +337,23 @@ ServerBee 支持三种认证机制，均在认证中间件中校验：
 
 ### 基于角色的访问控制（RBAC）
 
-存在两种角色：`admin`（完全访问）和 `member`（只读仪表盘访问）。
+用户只有两种角色：`admin`（完全访问）和 `member`（只读仪表盘访问）。Session Cookie、Bearer Session Token 和 API Key 都是这些用户的凭据，不会形成额外角色。
 
 面向浏览器的 WebSocket 会在连接期间重新检查持久化 Session 或 API Key 以及用户角色。登出、删除 API Key、密码重置导致的 Session 吊销、删除账号或变更角色后，现有连接会在两秒内关闭，不会继续保留握手时的权限。
 
-| 资源 | Admin | Member | API Key | Agent |
-|------|-------|--------|---------|-------|
-| 服务器列表/详情 | 允许 | 允许（受限） | 允许 | - |
-| 服务器增删改 | 允许 | 禁止 | 允许 | - |
-| 告警规则管理 | 允许 | 禁止 | 允许 | - |
-| 通知配置 | 允许 | 禁止 | 禁止 | - |
-| 用户管理 | 允许 | 禁止 | 禁止 | - |
-| 系统设置 | 允许 | 禁止 | 禁止 | - |
-| 实时 WebSocket | 允许 | 允许 | 允许 | - |
-| Web 终端 | 允许 | 禁止 | 禁止 | - |
-| 远程命令 | 允许 | 禁止 | 允许 | - |
-| 指标上报 | - | - | - | 允许 |
+| 资源 | Admin 用户 | Member 用户 | Agent |
+|------|------------|-------------|-------|
+| 服务器列表/详情 | 允许 | 允许（受限） | - |
+| 服务器增删改 | 允许 | 禁止 | - |
+| 告警规则管理 | 允许 | 禁止 | - |
+| 通知配置 | 允许 | 禁止 | - |
+| 用户管理 | 允许 | 禁止 | - |
+| 系统设置 | 允许 | 禁止 | - |
+| 实时服务器更新 | 允许 | 允许 | - |
+| 文件管理器 | 允许 | 禁止 | - |
+| Web 终端 | 允许 | 禁止 | - |
+| 远程命令 | 允许 | 禁止 | - |
+| 指标上报 | - | - | 允许 |
 
 ### OAuth
 
@@ -392,15 +398,24 @@ ServerBee/
         entity/                 # sea-orm Entity（每表一个模块）
         migration/              # 数据库迁移
         middleware/             # 认证、日志中间件
-    agent/                      # Agent 二进制（collector、reporter、terminal）
+    agent/                      # Agent 二进制（采集、上报、控制）
       src/
         main.rs
         config.rs
         collector/              # 各指标采集器
-        reporter.rs             # WebSocket 上报 + 重连
-        probe/                  # ICMP/TCP/HTTP 探测
-        executor.rs             # 远程命令执行
+        reporter/               # WebSocket 上报、重连、指令和文件操作
+        pinger.rs                # ICMP/TCP/HTTP Ping 任务
+        probe_utils.rs           # 共用探测校验和网络辅助逻辑
+        network_prober.rs        # 定时网络探测
+        traceroute.rs            # Traceroute 执行
         terminal.rs             # PTY 终端
+        file_manager.rs          # 受限远程文件操作
+        docker/                  # Docker 检查、操作和日志流
+        security/                # 主机安全事件检测
+        firewall/                # 防火墙拦截管理
+        ip_quality/              # IP 质量检测
+        upgrade.rs               # 自升级协调逻辑
+        upgrade/                 # 事务式自升级支持
   apps/
     web/                        # React SPA 前端（Vite、TanStack、shadcn/ui）
     docs/                       # 文档站点（TanStack Start + Fumadocs）

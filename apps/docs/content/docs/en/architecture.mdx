@@ -90,8 +90,8 @@ Its main modules are:
 |--------|----------------|
 | Collector | Periodically collects CPU, memory, disk, network, and other metrics via `sysinfo` |
 | Reporter | Manages the WebSocket connection, reports metrics, handles server commands, reconnects on disconnect |
-| ProbeManager | Runs ICMP/TCP/HTTP probe tasks dispatched by the server |
-| Executor | Executes remote shell commands dispatched by the server |
+| PingManager | Runs scheduled ICMP/TCP/HTTP ping tasks dispatched by the server |
+| NetworkProber | Runs scheduled network quality probes and reports aggregate results |
 | Terminal | Manages PTY terminal sessions and forwards terminal I/O |
 
 ### Common (`crates/common`)
@@ -118,7 +118,7 @@ The built frontend is embedded into the server binary at compile time, so there 
 
 ## Communication Protocol
 
-All communication uses WebSocket. Every message is a JSON text frame; terminal I/O data is carried inside the message's `data` field, base64-encoded. The current protocol version is `6`, sent to the agent in the `Welcome` message on connect.
+Agent reporting and control traffic uses WebSocket. Browsers use REST for initial data, history, and management operations, plus WebSocket for real-time updates. WebSocket application messages are JSON text frames; terminal I/O data is carried inside the message's `data` field, base64-encoded. The current Agent protocol version is `6`, sent in the `Welcome` message on connect.
 
 The agent connects to `ws://<server>/api/agent/ws` and authenticates with `Authorization: Bearer <agent_token>`. The Server temporarily accepts the legacy `?token=` form so older Agents can reconnect and upgrade.
 
@@ -180,7 +180,7 @@ Agent                              Server
   |--- WebSocket connect + token --->|
   |                                  | verify token, look up server
   |<-- Welcome { server_id,         |
-  |     protocol_version: 4,        |
+  |     protocol_version: 6,        |
   |     report_interval: 3 } -------|
   |                                  |
   |--- SystemInfo { cpu_name,       |  static info on connect/reconnect
@@ -296,15 +296,19 @@ The server spawns several long-running background tasks via `tokio::spawn`:
 
 ## Security Model
 
-### Authentication Layers
+### Authentication Paths
 
-ServerBee supports three authentication mechanisms, all checked in the auth middleware:
+User-facing REST and WebSocket requests resolve a user from a session cookie, API key, or Bearer session token. The authorization check then uses that user's current role. Agent WebSocket connections use a separate per-Agent run token.
 
 ```
 Request arrives
   +-- Cookie: session_token=xxx         --> Session auth (browser)
   +-- Header: X-API-Key: serverbee_xxx  --> API key auth (automation)
-  +-- Query: ?token=xxx                 --> Agent token auth (agent WebSocket)
+  +-- Header: Authorization: Bearer xxx  --> Session auth (mobile)
+
+Agent WebSocket connects
+  +-- Header: Authorization: Bearer xxx  --> Agent run-token auth
+  +-- Query: ?token=xxx                  --> Legacy Agent compatibility only
 ```
 
 #### Session-based (browser)
@@ -316,10 +320,11 @@ Request arrives
 
 #### API Key (automation)
 
-- Users can create named API keys for programmatic access.
+- Admin users can create named API keys for programmatic access.
 - Key format: `serverbee_` + 32 random bytes (base64url).
 - Keys are hashed with argon2; an 8-character plaintext prefix is stored for identification.
 - On verification, the prefix narrows the lookup, then argon2 verifies the key.
+- A key authenticates as its owning user and inherits that user's current `admin` or `member` role. An API key is a credential type, not a third role.
 
 #### Agent Token (agents)
 
@@ -332,22 +337,23 @@ Request arrives
 
 ### Role-Based Access
 
-Two roles exist: `admin` (full access) and `member` (read-only dashboard access).
+Two user roles exist: `admin` (full access) and `member` (read-only dashboard access). Session cookies, Bearer session tokens, and API keys are credentials for one of these users; they do not define additional roles.
 
 Browser-facing WebSockets re-check the persisted session or API key and the user's role while connected. Logout, API-key deletion, password-reset session revocation, account deletion, or a role change closes the existing socket within two seconds instead of preserving handshake-time privileges.
 
-| Resource | Admin | Member | API Key | Agent |
-|----------|-------|--------|---------|-------|
-| Server list/detail | Yes | Yes (limited) | Yes | - |
-| Server create/update/delete | Yes | No | Yes | - |
-| Alert rule management | Yes | No | Yes | - |
-| Notification config | Yes | No | No | - |
-| User management | Yes | No | No | - |
-| System settings | Yes | No | No | - |
-| Real-time WebSocket | Yes | Yes | Yes | - |
-| Web terminal | Yes | No | No | - |
-| Remote commands | Yes | No | Yes | - |
-| Metric reporting | - | - | - | Yes |
+| Resource | Admin user | Member user | Agent |
+|----------|------------|-------------|-------|
+| Server list/detail | Yes | Yes (limited) | - |
+| Server create/update/delete | Yes | No | - |
+| Alert rule management | Yes | No | - |
+| Notification config | Yes | No | - |
+| User management | Yes | No | - |
+| System settings | Yes | No | - |
+| Real-time server updates | Yes | Yes | - |
+| File Manager | Yes | No | - |
+| Web terminal | Yes | No | - |
+| Remote commands | Yes | No | - |
+| Metric reporting | - | - | Yes |
 
 ### OAuth
 
@@ -392,15 +398,24 @@ ServerBee/
         entity/                 # sea-orm entities (one module per table)
         migration/              # Database migrations
         middleware/             # Auth, logging middleware
-    agent/                      # Agent binary (collector, reporter, terminal)
+    agent/                      # Agent binary (collection, reporting, control)
       src/
         main.rs
         config.rs
         collector/              # Per-metric collectors
-        reporter.rs             # WebSocket reporting + reconnect
-        probe/                  # ICMP/TCP/HTTP probes
-        executor.rs             # Remote command execution
+        reporter/               # WebSocket reporting, reconnect, commands, and file operations
+        pinger.rs                # ICMP/TCP/HTTP ping tasks
+        probe_utils.rs           # Shared probe validation and networking helpers
+        network_prober.rs        # Scheduled network probes
+        traceroute.rs            # Traceroute execution
         terminal.rs             # PTY terminal
+        file_manager.rs          # Restricted remote file operations
+        docker/                  # Docker inspection, actions, and log streaming
+        security/                # Host security event detection
+        firewall/                # Firewall block management
+        ip_quality/              # IP quality checks
+        upgrade.rs               # Self-upgrade coordinator
+        upgrade/                 # Transactional self-upgrade support
   apps/
     web/                        # React frontend (Vite, TanStack, shadcn/ui)
     docs/                       # Documentation site (TanStack Start + Fumadocs)
