@@ -8,15 +8,17 @@ ServerBee loads configuration with [Figment](https://github.com/SergioBenitez/Fi
 
 ## Configuration Loading Priority
 
-Values are merged from the sources below. Later sources override earlier ones, so environment variables always win:
+Server values are merged in this order, with later sources overriding earlier ones:
 
 1. Built-in defaults
-2. `/etc/serverbee/server.toml` or `/etc/serverbee/agent.toml`
-3. `/opt/serverbee/etc/server.toml` or `/opt/serverbee/etc/agent.toml` (the path used by the install script)
-4. `server.toml` or `agent.toml` in the working directory
+2. `/etc/serverbee/server.toml`
+3. `/opt/serverbee/etc/server.toml` (the path used by the install script)
+4. `server.toml` in the working directory
 5. Environment variables prefixed with `SERVERBEE_`
 
-This lets you override any single value at runtime without editing the TOML file.
+The Agent uses built-in defaults, then `/etc/serverbee/agent.toml`, `agent.toml` in its working directory, and finally `SERVERBEE_` environment variables. The managed service uses `/opt/serverbee/etc` as its working directory, so its third source is `/opt/serverbee/etc/agent.toml`.
+
+This lets you override effective settings at runtime without editing the TOML file. Compatibility-only fields, such as the Agent's `collector.interval`, are called out below.
 
 ## Environment Variable Mapping
 
@@ -128,13 +130,13 @@ Tier-2 guardrail for the [Firewall Blocklist](/en/docs/firewall) feature. CIDRs 
 
 #### IP Quality
 
-Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no API key required, ~1000 requests/day per source IP). On primary failure the server falls back to [ip-api.com](https://ip-api.com), which provides geo + proxy/hosting flags but no risk score. See [IP Quality](/en/docs/ip-quality) for feature details.
+By default, the Server calls [ipapi.is](https://ipapi.is/developers.html) anonymously (100 requests per client IP per UTC day). ServerBee uses the minimal response's proxy, VPN, datacenter, Tor, and abuse flags and derives an IP type, but no numeric risk score. A free account/API key provides 1,000 requests per day and the full response required for the 0–100 score. The Server falls back to [ip-api.com](https://ip-api.com) only when the primary request fails, including HTTP 429, not when a successful response lacks a score. See [IP Quality](/en/docs/ip-quality) for details and the fallback's non-commercial/HTTP warning.
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `"ipapi_is"` | Primary risk provider. One of: `none`, `ipapi_is`, `ip-api`. |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `"ip-api"` | Fallback provider triggered on primary failure. Set to `none` to disable. |
-| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | Optional. Configure for higher per-account rate limits. |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | Optional. A free account key provides 1,000 requests per day and the full response required for the 0–100 score. |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
 <Callout type="info">
@@ -164,6 +166,7 @@ Average-latency cutoffs used to classify network-probe records returned by `/api
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `10` | Max agent registrations per IP within 15-minute window. Admins can clear an active window from Settings → Rate limits |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Base URL for agent upgrade release assets |
 | `SERVERBEE_UPGRADE__LATEST_VERSION_URL` | `""` | Optional custom URL for latest version API. If empty, uses GitHub API |
+| `SERVERBEE_UPGRADE__CHANNEL` | `stable` | Release channel used by the dashboard version check: `stable` or `beta` |
 | `SERVERBEE_FILE__MAX_UPLOAD_SIZE` | `104857600` | Maximum file upload size in bytes (default 100 MB) |
 
 ### Agent Environment Variables
@@ -181,8 +184,8 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `SERVERBEE_COLLECTOR__INTERVAL` | `3` | Metric report interval in seconds |
-| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | Enable NVIDIA GPU monitoring (requires the NVIDIA driver / NVML) |
+| `SERVERBEE_COLLECTOR__INTERVAL` | `3` | Compatibility-only field. The Agent currently ignores it and uses the Server's `Welcome.report_interval` value, which is fixed at 3 seconds |
+| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | Enable NVIDIA GPU monitoring (requires a build with the `gpu` feature and an NVIDIA driver that provides NVML) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | Enable CPU temperature monitoring |
 | `SERVERBEE_FILE__ENABLED` | `false` | Enable file management on this agent |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | Allowed root paths (comma-separated, e.g. `/home,/var/log`). Empty rejects all file operations |
@@ -380,7 +383,7 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 
 ### `[ip_quality]` -- IP Quality Risk Scoring
 
-Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no API key required, ~1000 requests/day per source IP). On primary failure the server falls back to [ip-api.com](https://ip-api.com). Baseline IP metadata (country, ASN, IP type) is always derived from the local GeoIP MMDB. See [IP Quality](/en/docs/ip-quality) for feature details.
+By default, the Server calls [ipapi.is](https://ipapi.is/developers.html) anonymously (100 requests per client IP per UTC day). ServerBee uses the minimal response's proxy, VPN, datacenter, Tor, and abuse flags and derives an IP type, but no numeric risk score. A free account/API key provides 1,000 requests per day and the full response required for the 0–100 score. The Server falls back to [ip-api.com](https://ip-api.com) only when the primary request fails, including HTTP 429, not when a successful response lacks a score. Local baseline metadata is available only when a usable GeoIP MMDB is loaded. See [IP Quality](/en/docs/ip-quality) for details and the fallback's non-commercial/HTTP warning.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -391,7 +394,7 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `api_key` | string | -- | Optional. Configure for higher per-account rate limits. |
+| `api_key` | string | -- | Optional. A free account key provides 1,000 requests per day and the full response required for the 0–100 score. |
 | `endpoint` | string | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
 ### `[network_probe]` -- Anomaly Thresholds
@@ -417,8 +420,8 @@ Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no A
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `interval` | u32 | `3` | Collection interval in seconds |
-| `enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires the NVIDIA driver / NVML) |
+| `interval` | u32 | `3` | Compatibility-only field. The Agent currently ignores it and uses the Server's `Welcome.report_interval`, fixed at 3 seconds |
+| `enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires a build with the `gpu` feature and an NVIDIA driver that provides NVML) |
 | `enable_temperature` | bool | `true` | Enable CPU temperature sensor monitoring |
 
 ### `[file]` -- File Management
@@ -563,8 +566,7 @@ server_url = "https://monitor.example.com"
 token = "<agent-generated persisted token>"
 
 [collector]
-interval = 3
-enable_gpu = true
+enable_gpu = true  # Requires a GPU-enabled build and an NVIDIA driver that provides NVML
 enable_temperature = true
 
 [file]

@@ -41,7 +41,7 @@ ServerBee 定义了 11 个功能位，分为两个风险等级，有效掩码为
 | **HTTP 探测** | `ping_http` | `CAP_PING_HTTP` (32) | 允许 HTTP 探测任务 |
 | **安全事件** | `security_events` | `CAP_SECURITY_EVENTS` (256) | 允许 Agent 上报 SSH 登录 / 暴力破解 / 端口扫描事件（见 [安全事件](/zh/docs/security-events)） |
 | **防火墙封禁** | `firewall_block` | `CAP_FIREWALL_BLOCK` (512) | 允许 Agent 应用 Server 下发的 nftables 封禁列表。需要 root 或 `CAP_NET_ADMIN` 及主机上的 `nft` 命令。见 [防火墙封禁](/zh/docs/firewall) |
-| **IP 质量** | `ip_quality` | `CAP_IP_QUALITY` (1024) | 允许 Agent 调用第三方 IP 质量 API 对出口 IP 评分 |
+| **IP 质量** | `ip_quality` | `CAP_IP_QUALITY` (1024) | 允许 Agent 运行服务解锁探测并上报结果；可选的元数据与风险评分由 Server 完成 |
 
 没有任何 `[capabilities]` 覆盖的 Agent 默认值为 `1852`（自动升级 + 三种 ping 探测 + 安全事件 + 防火墙封禁 + IP 质量），即高风险的终端、执行、文件和 Docker 能力保持关闭。
 

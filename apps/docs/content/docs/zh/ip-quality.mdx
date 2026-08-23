@@ -7,14 +7,14 @@ icon: Globe
 IP 质量检测让每台 Agent 评估自身 VPS 出口 IP，并将结果上报到 Server。它做两件事：
 
 1. **服务解锁检测** — Agent 从自身出口 IP 发送 HTTP 请求，判断流媒体、AI、社交等热门服务的解锁状态。
-2. **IP 元数据与风险评分** — Server 通过本地 GeoIP 数据库获取国家、ASN 和 IP 类型，并在配置了第三方提供商时计算欺诈风险分。
+2. **IP 元数据与风险信号** — Server 通过本地 GeoIP 数据库获取国家和地区，再使用已配置的第三方提供商补充其支持的网络类型标记，并在响应包含评分字段时计算欺诈风险分。
 
 检测结果展示在专属的 **IP 质量** 侧边栏路由（全局概览）、各服务器详情 Tab，以及——在每个状态页单独开启后——公共状态页。
 
 ## 前置条件
 
 - Agent 必须启用 **`CAP_IP_QUALITY`**（位值 `1024`）。**默认开启**（属于 `CAP_DEFAULT`）。
-- 建议配置 GeoIP MMDB 数据库以获得完整的 IP 元数据。未配置时只有基本地理位置信息。详见[配置](/zh/docs/configuration)页中的 `geoip.mmdb_path`。
+- 本地基础元数据需要加载可用的 GeoIP MMDB。未加载数据库时，这些字段不可用；第三方富化仍可提供其支持的风险与网络类型字段。详见[配置](/zh/docs/configuration)页中的 `geoip.mmdb_path`。
 
 ## 能力（由 Agent 拥有）
 
@@ -79,10 +79,10 @@ Agent 在以下情况运行检测：
 
 收到 Agent 上报的解锁结果后，Server 会：
 
-1. **通过本地 GeoIP MMDB 获取基础元数据** — 国家、地区、城市、ASN、AS 机构名、IP 类型（住宅 / 数据中心 / 托管 / 移动 / ISP / 未知）。无需外部请求，始终可用。
-2. **可选地查询第三方风险提供商**（如已配置），获取 0–100 的欺诈风险分、风险等级（`low` / `medium` / `high`）及代理/VPN/托管标记。结果按 IP 缓存 24 小时，相同 IP 的多次检测不会重复调用 API。
+1. **从已加载的本地 GeoIP MMDB 获取可用的基础元数据**，无需外部请求。可下载的 DB-IP Lite Country 数据库提供国家和地区。若 MMDB 缺失、无法读取或不包含该地址，本地基础字段将保持为空。
+2. **除非将 `risk_provider` 设为 `none`，否则查询已配置的第三方提供商。** 匿名 ipapi.is 会返回代理、VPN、数据中心、Tor 和滥用标记，ServerBee 也据此派生 IP 类型，但精简响应不含嵌套的评分字段。数值型 0–100 风险分及风险等级（`low` / `medium` / `high`）需要配置 ipapi.is API Key 并使用其完整响应。结果按 IP 缓存 24 小时，相同 IP 的多次检测不会重复调用 API。
 
-未配置风险提供商时，`risk_score` 和 `risk_level` 分别为 `null` / `unknown`，UI 仅显示 GeoIP 元数据。
+若没有提供商返回数值评分，`risk_score` 和 `risk_level` 分别为 `null` / `unknown`。只有加载了可用的 MMDB，才会显示本地元数据。
 
 ### 配置风险提供商
 
@@ -90,13 +90,13 @@ Agent 在以下情况运行检测：
 
 | 提供商 | 值 | 说明 |
 |--------|-----|------|
-| ipapi.is（默认）| `ipapi_is` | 每个源 IP 每天约 1000 次免费请求。可选付费 API Key 提升配额。|
-| ip-api.com（兜底）| `ip-api` | **免费版仅限非商业用途，接口为 HTTP（非 HTTPS）。** 无需 API Key。仅提供地理位置和代理标记，无风险评分。|
-| 禁用 | `none` | 仅 GeoIP 元数据，无风险评分。|
+| ipapi.is（默认）| `ipapi_is` | 匿名访问：每个客户端 IP 每天 100 次（按 UTC 日计），返回标记但不提供数值评分。免费账号/API Key：每日 1,000 次，返回计算 0–100 风险分所需的完整响应。|
+| ip-api.com（兜底）| `ip-api` | **免费版仅限非商业用途，接口为 HTTP（非 HTTPS）。** 无需 API Key。提供代理/托管标记及派生的 IP 类型，但不提供数值风险分。|
+| 禁用 | `none` | 仅在加载可用 MMDB 时提供本地 GeoIP 元数据；无风险评分。|
 
-**默认行为**（无需任何配置）：Server 使用 `ipapi_is` 作为主提供商，`ip-api` 作为主提供商失败时的自动兜底。无需 API Key 即可开箱即用。
+**默认行为**（无需任何配置）：Server 匿名调用 ipapi.is。匿名访问限制为每个客户端 IP 每天 100 次（按 UTC 日计），返回的标记可用于风险信号和派生 IP 类型，但不提供数值风险分。只有主请求失败时（包括配额耗尽后的 HTTP 429）才会触发 `ip-api` 兜底；成功响应即使没有评分也不会触发兜底。该兜底可提供代理/托管标记及派生的 IP 类型，但不提供数值风险分。详见 ipapi.is 官方的[开发者限额](https://ipapi.is/developers.html)和[定价页](https://ipapi.is/pricing.html)。
 
-若需使用 ipapi.is 的 API Key 以获取更高配额：
+创建免费 ipapi.is 账号并配置 API Key 后，可获得每日 1,000 次请求及计算 0–100 风险分所需的完整响应：
 
 ```toml
 [ip_quality]
@@ -156,7 +156,7 @@ risk_provider = "none"
 
 ## 数据保留
 
-状态变更历史事件（`unlock_event` 日志）默认保留 **90 天**。可通过 `retention.ip_quality_event_days`（环境变量 `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS`）调整。每日清理任务自动删除过期记录。
+状态变更历史事件（`unlock_event` 日志）默认保留 **90 天**。可通过 `retention.ip_quality_event_days`（环境变量 `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS`）调整。每小时清理任务自动删除过期记录。
 
 每台服务器最新的解锁结果和 IP 质量快照会持续保留（每次运行后覆盖更新，不会累积）。
 
@@ -164,7 +164,7 @@ risk_provider = "none"
 
 ```text
 Agent
-  │  (CAP_IP_QUALITY 有效 + --allow-cap ip_quality)
+  │  (CAP_IP_QUALITY 有效)
   ├─ 按 interval_hours / IP 变化 / 手动触发 运行解锁检测
   │   AgentMessage::UnlockResults  (WebSocket)
   ▼

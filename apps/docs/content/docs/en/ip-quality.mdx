@@ -7,14 +7,14 @@ icon: Globe
 IP Quality lets each agent assess its VPS egress IP and report the results back to the server. It does two things:
 
 1. **Service unlock detection** — the agent issues HTTP requests from its egress IP to determine the unlock status of popular streaming, AI, and social services.
-2. **IP metadata and risk scoring** — the server derives country, ASN, and IP type from its local GeoIP database and, when a third-party provider is configured, computes a fraud risk score.
+2. **IP metadata and risk signals** — the server derives country and region from its local GeoIP database, then uses the configured third-party provider for supported network-type flags and, when available, a fraud risk score.
 
 Results appear on a dedicated **IP Quality** sidebar route (global overview), a per-server detail tab, and — when enabled per status page — on the public status page.
 
 ## Requirements
 
 - **`CAP_IP_QUALITY`** (bit `1024`) must be enabled on the agent. It is **on by default** (part of `CAP_DEFAULT`).
-- A GeoIP MMDB database is recommended for complete IP metadata. Without it, only basic location data is available. See the [Configuration](/en/docs/configuration) page for `geoip.mmdb_path`.
+- A usable GeoIP MMDB is required for local baseline metadata. If no database is loaded, those fields remain unavailable; third-party enrichment can still provide supported risk and network-type fields. See [Configuration](/en/docs/configuration) for `geoip.mmdb_path`.
 
 ## Capability (agent-owned)
 
@@ -79,10 +79,10 @@ Check schedules are agent-side. The server only pushes the service catalog and f
 
 After receiving unlock results from an agent, the server:
 
-1. **Derives baseline metadata** from the local GeoIP MMDB — country, region, city, ASN, AS organization, and IP type (residential / datacenter / hosting / mobile / ISP / unknown). This always works, with no external call required.
-2. **Optionally queries a third-party risk provider** (if configured) to obtain a 0–100 fraud risk score, risk level (`low` / `medium` / `high`), and proxy/VPN/hosting flags. Results are cached by IP for 24 hours, so repeated checks of the same IP do not generate repeated API calls.
+1. **Derives available baseline metadata** from a loaded local GeoIP MMDB, without an external request. The downloadable DB-IP Lite Country database provides country and region. If the MMDB is missing, unreadable, or does not cover the address, local baseline fields remain empty.
+2. **Runs the configured third-party provider unless `risk_provider` is `none`.** Anonymous ipapi.is supplies proxy, VPN, datacenter, Tor, and abuse flags, which ServerBee also uses to derive IP type, but its minimal response does not contain the nested score fields. A numeric 0–100 score and risk level (`low` / `medium` / `high`) require an ipapi.is API key and its full response. Results are cached by IP for 24 hours, so repeated checks of the same IP do not generate repeated API calls.
 
-If no risk provider is configured, `risk_score` and `risk_level` are `null` / `unknown`, and the UI shows only the GeoIP-derived metadata.
+If no provider returns a numeric score, `risk_score` and `risk_level` are `null` / `unknown`. Local metadata appears only when a usable MMDB is loaded.
 
 ### Configuring a Risk Provider
 
@@ -90,13 +90,13 @@ Set `ip_quality.risk_provider` in `server.toml` (or `SERVERBEE_IP_QUALITY__RISK_
 
 | Provider | Value | Notes |
 |----------|-------|-------|
-| ipapi.is (default) | `ipapi_is` | ~1000 requests/day per source IP at no charge. Optional paid API key for higher limits. |
-| ip-api.com (fallback) | `ip-api` | **Free tier, non-commercial use only. HTTP-only endpoint.** No API key. Geo + proxy flags only — no risk score. |
-| Disabled | `none` | GeoIP metadata only, no risk score. |
+| ipapi.is (default) | `ipapi_is` | Anonymous: 100 requests per client IP per UTC day with flags but no numeric score. Free account/API key: 1,000 requests per day with the full response required for the 0–100 score. |
+| ip-api.com (fallback) | `ip-api` | **Free tier, non-commercial use only. HTTP-only endpoint.** No API key. Proxy/hosting flags and a derived IP type, but no numeric risk score. |
+| Disabled | `none` | Local GeoIP metadata only when a usable MMDB is loaded; no risk score. |
 
-**Default behavior** (no configuration needed): the server uses `ipapi_is` as the primary provider and `ip-api` as the automatic fallback when the primary fails. No API key is required to get started.
+**Default behavior** (no configuration needed): the Server calls ipapi.is anonymously. Anonymous access is limited to 100 requests per client IP per UTC day and returns flags that ServerBee uses for risk signals and a derived IP type, but no numeric risk score. Only a failed primary request, including an HTTP 429 after quota exhaustion, triggers the `ip-api` fallback; a successful response without a score does not. The fallback can supply proxy/hosting flags and a derived IP type, but not a numeric risk score. See the official [ipapi.is developer limits](https://ipapi.is/developers.html) and [pricing](https://ipapi.is/pricing.html).
 
-To use an optional ipapi.is API key for higher rate limits:
+Create a free ipapi.is account and configure its API key for 1,000 requests per day and the full response required for the 0–100 score:
 
 ```toml
 [ip_quality]
@@ -156,7 +156,7 @@ For unauthenticated visitors, the egress IP is masked as `*.*.*.*`. Authenticate
 
 ## Retention
 
-Status-change history events (the `unlock_event` log) are retained for **90 days** by default. Tune with `retention.ip_quality_event_days` (env: `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS`). The daily cleanup task purges expired rows automatically.
+Status-change history events (the `unlock_event` log) are retained for **90 days** by default. Tune with `retention.ip_quality_event_days` (env: `SERVERBEE_RETENTION__IP_QUALITY_EVENT_DAYS`). The hourly cleanup task purges expired rows automatically.
 
 The latest unlock result and IP quality snapshot per server are kept indefinitely (they are replaced on each run, not accumulated).
 
@@ -164,7 +164,7 @@ The latest unlock result and IP quality snapshot per server are kept indefinitel
 
 ```text
 Agent
-  │  (CAP_IP_QUALITY effective + --allow-cap ip_quality)
+  │  (CAP_IP_QUALITY effective)
   ├─ runs unlock checks every interval_hours / on IP change / on RunNow
   │   AgentMessage::UnlockResults  (WebSocket)
   ▼

@@ -8,15 +8,17 @@ ServerBee 使用 [Figment](https://github.com/SergioBenitez/Figment) 加载配�
 
 ## 配置加载优先级
 
-配置值从以下来源合并，后者覆盖前者，因此环境变量始终具有最高优先级：
+Server 按以下顺序合并配置，后者覆盖前者：
 
 1. 内置默认值
-2. `/etc/serverbee/server.toml` 或 `/etc/serverbee/agent.toml`
-3. `/opt/serverbee/etc/server.toml` 或 `/opt/serverbee/etc/agent.toml`（安装脚本使用的路径）
-4. 工作目录下的 `server.toml` 或 `agent.toml`
+2. `/etc/serverbee/server.toml`
+3. `/opt/serverbee/etc/server.toml`（安装脚本使用的路径）
+4. 工作目录下的 `server.toml`
 5. 以 `SERVERBEE_` 为前缀的环境变量
 
-这样无需修改 TOML 文件即可在运行时覆盖任意单个配置项。
+Agent 依次使用内置默认值、`/etc/serverbee/agent.toml`、工作目录下的 `agent.toml`，最后应用 `SERVERBEE_` 环境变量。托管服务将 `/opt/serverbee/etc` 设为工作目录，因此其第三个来源是 `/opt/serverbee/etc/agent.toml`。
+
+这样无需修改 TOML 文件即可在运行时覆盖实际生效的配置项。仅为兼容保留的字段（例如 Agent 的 `collector.interval`）会在下文明确标注。
 
 ## 环境变量映射规则
 
@@ -128,13 +130,13 @@ ServerBee 使用 [Figment](https://github.com/SergioBenitez/Figment) 加载配�
 
 #### IP 质量检测（IP Quality）
 
-默认开箱即用，通过 [ipapi.is](https://ipapi.is)（无需 API Key，按源 IP 限约 1000 次 / 天）获取风险评分。主 Provider 失败时自动回退到 [ip-api.com](https://ip-api.com)（提供地理 + 代理 / 托管标志，无风险评分）。功能详情见 [IP 质量检测](/zh/docs/ip-quality)。
+Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个客户端 IP 每天 100 次（按 UTC 日计）。ServerBee 使用精简响应中的代理、VPN、数据中心、Tor 和滥用标记，并据此派生 IP 类型，但不提供数值风险分。免费账号/API Key 每日可请求 1,000 次，并返回计算 0–100 风险分所需的完整响应。只有主请求失败时（包括 HTTP 429）才会回退到 [ip-api.com](https://ip-api.com)；成功响应即使没有评分也不会触发兜底。功能详情及兜底服务的非商业用途/HTTP 警告见 [IP 质量检测](/zh/docs/ip-quality)。
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`。 |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `"ip-api"` | 主 Provider 失败时的兜底。设为 `none` 关闭。 |
-| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | 可选。配置后享受更高的账户级速率限制。 |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | 可选。免费账号的 Key 提供每日 1,000 次请求，以及计算 0–100 风险分所需的完整响应。 |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `""` | 自建镜像或测试时覆盖。留空则回退到内置默认 `https://api.ipapi.is`。 |
 
 <Callout type="info">
@@ -164,6 +166,7 @@ ServerBee 使用 [Figment](https://github.com/SergioBenitez/Figment) 加载配�
 | `SERVERBEE_RATE_LIMIT__REGISTER_MAX` | `10` | 15 分钟窗口内每 IP 最大 Agent 注册次数。管理员可在「设置 → 速率限制」中清除活跃窗口 |
 | `SERVERBEE_UPGRADE__RELEASE_BASE_URL` | `https://github.com/ZingerLittleBee/ServerBee/releases` | Agent 升级 Release 资产的基础 URL |
 | `SERVERBEE_UPGRADE__LATEST_VERSION_URL` | `""` | 可选的自定义最新版本 API URL，留空则使用 GitHub API |
+| `SERVERBEE_UPGRADE__CHANNEL` | `stable` | 控制台版本检测使用的发布渠道：`stable` 或 `beta` |
 | `SERVERBEE_FILE__MAX_UPLOAD_SIZE` | `104857600` | 文件上传最大大小（字节），默认 100 MB |
 
 ### Agent 环境变量
@@ -181,8 +184,8 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `SERVERBEE_COLLECTOR__INTERVAL` | `3` | 指标上报间隔（秒） |
-| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | 启用 NVIDIA GPU 监控（需要 NVIDIA 驱动 / NVML） |
+| `SERVERBEE_COLLECTOR__INTERVAL` | `3` | 仅为兼容保留。Agent 当前忽略此值，使用 Server 下发且固定为 3 秒的 `Welcome.report_interval` |
+| `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | 启用 NVIDIA GPU 监控（需要启用 `gpu` 特性的构建，以及提供 NVML 的 NVIDIA 驱动） |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | 启用 CPU 温度监控 |
 | `SERVERBEE_FILE__ENABLED` | `false` | 在该 Agent 上启用文件管理 |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许的根路径（逗号分隔，如 `/home,/var/log`）。留空则拒绝所有文件操作 |
@@ -380,7 +383,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 ### `[ip_quality]` —— IP 质量风险评分
 
-默认开箱即用，通过 [ipapi.is](https://ipapi.is)（无需 API Key，按源 IP 限约 1000 次 / 天）获取风险评分。主 Provider 失败时自动回退到 [ip-api.com](https://ip-api.com)。基础 IP 元数据（国家、ASN、IP 类型）始终来自本地 GeoIP MMDB。功能详情见 [IP 质量检测](/zh/docs/ip-quality)。
+Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个客户端 IP 每天 100 次（按 UTC 日计）。ServerBee 使用精简响应中的代理、VPN、数据中心、Tor 和滥用标记，并据此派生 IP 类型，但不提供数值风险分。免费账号/API Key 每日可请求 1,000 次，并返回计算 0–100 风险分所需的完整响应。只有主请求失败时（包括 HTTP 429）才会回退到 [ip-api.com](https://ip-api.com)；成功响应即使没有评分也不会触发兜底。只有加载了可用的 GeoIP MMDB，才会提供本地基础元数据。功能详情及兜底服务的非商业用途/HTTP 警告见 [IP 质量检测](/zh/docs/ip-quality)。
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
@@ -391,7 +394,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `api_key` | string | -- | 可选。配置后享受更高的账户级速率限制。 |
+| `api_key` | string | -- | 可选。免费账号的 Key 提供每日 1,000 次请求，以及计算 0–100 风险分所需的完整响应。 |
 | `endpoint` | string | `""` | 自建镜像或测试时覆盖。留空则回退到内置默认 `https://api.ipapi.is`。 |
 
 ### `[network_probe]` —— 异常阈值
@@ -417,8 +420,8 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `interval` | u32 | `3` | 采集间隔（秒） |
-| `enable_gpu` | bool | `false` | 启用 NVIDIA GPU 监控（需要 NVIDIA 驱动 / NVML） |
+| `interval` | u32 | `3` | 仅为兼容保留。Agent 当前忽略此值，使用 Server 下发且固定为 3 秒的 `Welcome.report_interval` |
+| `enable_gpu` | bool | `false` | 启用 NVIDIA GPU 监控（需要启用 `gpu` 特性的构建，以及提供 NVML 的 NVIDIA 驱动） |
 | `enable_temperature` | bool | `true` | 启用 CPU 温度传感器监控 |
 
 ### `[file]` —— 文件管理
@@ -563,8 +566,7 @@ server_url = "https://monitor.example.com"
 token = "<Agent 生成并持久化的 Token>"
 
 [collector]
-interval = 3
-enable_gpu = true
+enable_gpu = true  # 需要启用 GPU 特性的构建，以及提供 NVML 的 NVIDIA 驱动
 enable_temperature = true
 
 [file]
