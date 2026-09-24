@@ -130,15 +130,15 @@ There is no admin username/password variable. On first start the server auto-cre
 
 ## Selecting an Image Version
 
-The source template pins the repository's current package version, currently `1.0.0-beta.1`. This avoids silently deploying the older image behind `:latest` before ServerBee has a stable `1.x` release.
+The source template pins the repository's current package version, currently `1.0.0-beta.2`. This avoids silently deploying the older image behind `:latest` before ServerBee has a stable `1.x` release.
 
 To pin a specific version (stable or pre-release), add a **Build Variable** in the Railway service (Settings → Variables → New Variable → toggle *Build*):
 
 ```env
-SERVERBEE_IMAGE_TAG=1.0.0-beta.1
+SERVERBEE_IMAGE_TAG=1.0.0-beta.2
 ```
 
-Then trigger a redeploy. Check the release page before changing the pin. Future prereleases update the moving `beta` tag, while `latest` moves only for suffix-free stable releases. The Dockerfile exposes the current pin through `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.1`, so it only affects the build stage and never leaks into the running container's environment.
+Then trigger a redeploy. Check the release page before changing the pin. Future prereleases update the moving `beta` tag, while `latest` moves only for suffix-free stable releases. The Dockerfile exposes the current pin through `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.2`, so it only affects the build stage and never leaks into the running container's environment.
 
 ## Connecting Agents
 

@@ -3867,7 +3867,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-agent"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3909,7 +3909,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-common"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3922,7 +3922,7 @@ dependencies = [
 
 [[package]]
 name = "serverbee-server"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 dependencies = [
  "a2",
  "anyhow",

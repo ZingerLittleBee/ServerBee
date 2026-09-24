@@ -47,6 +47,10 @@ Server 内存开销主要受连接的 Agent 数量、面板/API 查询负载和�
 未设置 `MALLOC_ARENA_MAX=2`（或未改用 jemalloc）时，glibc 默认的多 arena 分配器会把已释放内存攒在进程内不归还 OS，长期运行 RSS 会持续爬升（观测到 2–3 天涨至 ~800 MB–1 GB）。这并非代码层内存泄漏，但部署 Server 时建议设置该环境变量。
 </Callout>
 
+<Callout type="warn">
+`MALLOC_ARENA_MAX` 只对 glibc 生效。官方 Linux release 二进制和 Docker 镜像是静态 musl 构建，该变量对其无效。`v1.0.0-beta.1` 的 release 二进制链接了一个不会复用跨线程释放内存的分配器，即使空载，Server 内存也会以每天约 20 MB 的速度增长。请升级到 `v1.0.0-beta.2` 或更新版本。
+</Callout>
+
 ### 自托管空载参考
 
 同一 VPS 上近乎空载（无活跃 Agent 连接）的 Server 实例：

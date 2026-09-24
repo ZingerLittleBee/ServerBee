@@ -38,18 +38,18 @@ Railway 会自动分配端口并提供 HTTPS，无需配置 `SERVERBEE_SERVER__L
 
 ### 选择 Railway 版本
 
-源码模板会固定为仓库当前包版本，目前是 `1.0.0-beta.1`。ServerBee 尚无稳定 `1.x` 版本时，这可避免静默部署 `:latest` 所指向的旧镜像。
+源码模板会固定为仓库当前包版本，目前是 `1.0.0-beta.2`。ServerBee 尚无稳定 `1.x` 版本时，这可避免静默部署 `:latest` 所指向的旧镜像。
 
 要锁定到指定版本（稳定版或预发版），在 Railway 服务的 **Variables** 里新增一条变量：
 
 ```bash
-SERVERBEE_IMAGE_TAG=1.0.0-beta.1
+SERVERBEE_IMAGE_TAG=1.0.0-beta.2
 ```
 
 保存后触发 Redeploy。修改版本前先查看 [Release 页面](https://github.com/ZingerLittleBee/ServerBee/releases)。后续预发布版也会更新浮动 `beta` tag，`latest` 只由无后缀稳定版更新；需要可重复部署时仍应固定精确版本。
 
 <Callout type="info">
-Dockerfile 通过 `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.1` 暴露这个开关。Railway 会自动把 Service Variables 同时作为构建参数和运行时环境变量注入；该变量不在 `SERVERBEE_*` 配置体系中，因此对运行时无副作用。
+Dockerfile 通过 `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.2` 暴露这个开关。Railway 会自动把 Service Variables 同时作为构建参数和运行时环境变量注入；该变量不在 `SERVERBEE_*` 配置体系中，因此对运行时无副作用。
 </Callout>
 
 ## 引导安装
@@ -101,7 +101,7 @@ EOF
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.2
     container_name: serverbee-server
     restart: unless-stopped
     ports:
@@ -367,7 +367,7 @@ Traefik 通过 Docker labels 集成，无需单独的配置文件。Traefik 会�
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.2
     volumes:
       - serverbee-data:/data
     labels:
@@ -611,7 +611,7 @@ docker compose ps
 **二进制：**
 
 ```bash
-wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.1/serverbee-server-linux-amd64
+wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.2/serverbee-server-linux-amd64
 sudo systemctl stop serverbee-server
 sudo mv serverbee-server-linux-amd64 /usr/local/bin/serverbee-server
 sudo chmod +x /usr/local/bin/serverbee-server
