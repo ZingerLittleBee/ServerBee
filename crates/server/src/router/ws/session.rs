@@ -29,8 +29,8 @@ pub(super) struct WsGate {
 ///
 /// Runs the shared credential policy, then requires the admin role, an online
 /// agent, and `capability` — auditing role/capability denials under
-/// `denied_action`. Returns the ready-to-serve response on any failure so the
-/// route handler can simply `match`.
+/// `denied_action`. Returns the ready-to-serve response (boxed, since it is
+/// large) on any failure so the route handler can simply `match`.
 pub(super) async fn admin_capability_gate(
     state: &Arc<AppState>,
     headers: &HeaderMap,
@@ -38,11 +38,13 @@ pub(super) async fn admin_capability_gate(
     server_id: &str,
     capability: u32,
     denied_action: &str,
-) -> Result<WsGate, Response> {
+) -> Result<WsGate, Box<Response>> {
     let ip = extract_client_ip(addr, headers, &state.config.server.trusted_proxies).to_string();
 
     let Some(conn) = resolve_ws_connection(headers, state).await else {
-        return Err(axum::http::StatusCode::UNAUTHORIZED.into_response());
+        return Err(Box::new(
+            axum::http::StatusCode::UNAUTHORIZED.into_response(),
+        ));
     };
     let user_id = conn.user.user_id.clone();
 
@@ -53,17 +55,19 @@ pub(super) async fn admin_capability_gate(
         })
         .to_string();
         let _ = AuditService::log(&state.db, &user_id, denied_action, Some(&detail), &ip).await;
-        return Err(axum::http::StatusCode::FORBIDDEN.into_response());
+        return Err(Box::new(axum::http::StatusCode::FORBIDDEN.into_response()));
     }
 
     if !state.agent_manager.is_online(server_id) {
-        return Err((axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response());
+        return Err(Box::new(
+            (axum::http::StatusCode::BAD_REQUEST, "Agent is offline").into_response(),
+        ));
     }
 
     if let Err(error) =
         require_capability_audited(state, server_id, capability, &user_id, &ip, denied_action).await
     {
-        return Err(error.into_response());
+        return Err(Box::new(error.into_response()));
     }
 
     Ok(WsGate { auth: conn, ip })

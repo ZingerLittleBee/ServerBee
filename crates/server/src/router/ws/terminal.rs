@@ -46,7 +46,7 @@ async fn terminal_ws_handler(
             .on_upgrade(move |socket| {
                 handle_terminal_ws(socket, state, server_id, gate.auth, gate.ip)
             }),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 

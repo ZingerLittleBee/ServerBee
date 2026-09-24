@@ -46,7 +46,7 @@ async fn docker_logs_ws_handler(
             .on_upgrade(move |socket| {
                 handle_docker_logs_ws(socket, state, server_id, gate.auth, gate.ip)
             }),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 

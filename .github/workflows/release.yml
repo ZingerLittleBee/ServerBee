@@ -118,8 +118,13 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # Pin zig: 0.16 replaced musl's mallocng with Zig's SmpAllocator in its
+      # bundled libc. That allocator keeps memory freed on a thread other than
+      # the allocating one (sqlx-sqlite workers allocate, tokio workers free),
+      # so the server's RSS grew linearly (~20 MB/day on an idle instance).
+      # Before bumping, run tests/manual/server-memory-soak.md against a build.
       - name: Install cargo-zigbuild
-        run: pip install cargo-zigbuild
+        run: pip install cargo-zigbuild ziglang==0.15.2
 
       - name: Build frontend
         working-directory: apps/web
