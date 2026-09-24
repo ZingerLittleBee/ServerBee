@@ -47,6 +47,10 @@ A production instance with a small number of connected Agents, after setting `MA
 Without `MALLOC_ARENA_MAX=2` (or switching to jemalloc), glibc's default multi-arena allocator hoards freed memory inside the process instead of returning it to the OS, and long-running RSS climbs continuously (observed climbing to ~800 MB–1 GB over 2–3 days). This is not a code-level memory leak, but setting this environment variable is recommended when deploying the Server.
 </Callout>
 
+<Callout type="warn">
+`MALLOC_ARENA_MAX` only affects glibc. The official Linux release binaries and Docker images are static musl builds, where it has no effect. `v1.0.0-beta.1` release binaries were linked against an allocator that never reused memory freed on another thread, so the Server grew about 20 MB per day even while idle. Upgrade to `v1.0.0-beta.2` or later.
+</Callout>
+
 ### Self-hosted idle reference
 
 A near-idle Server instance (no active Agent connections) on the same VPS:

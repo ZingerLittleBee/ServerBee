@@ -42,10 +42,6 @@ The commands below choose `--method binary` explicitly so their files, logs, and
 
 The server is the central node: it receives metrics from agents, stores them, and serves the web dashboard.
 
-<Callout type="warn">
-The published `v1.0.0-beta.1` dashboard has a known Add Server crash on remote plain-HTTP origins because that build calls `crypto.randomUUID()` directly. Until a newer release containing the fallback is published, use the domain/HTTPS path below (or build the current `main` source) rather than `http://<server-ip>:9527`. A successful `/healthz` or login does not prove the affected Servers page works.
-</Callout>
-
 ### Step 1: Install the server
 
 There are two quick ways to install the server — pick one based on whether you have a domain.
@@ -201,7 +197,7 @@ If you'd rather manage the server with your own Compose file, create a `docker-c
 ```yaml title="docker-compose.yml"
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.2
     container_name: serverbee-server
     ports:
       - "9527:9527"

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] - 2026-09-25
+
+### Changed
+
+- **Prerelease images publish a moving `beta` tag** -- Docker images for prereleases now also move `:beta`, while `:latest` only follows stable releases, and the Railway template pins the image of the current release instead of `:latest`
+
+### Fixed
+
+- **Server memory no longer grows without bound** -- Linux release binaries were linked against an allocator that never reused memory freed on another thread, so an idle Server climbed about 20 MB per day (755 MB after a month on the demo instance). Release builds use musl's allocator again and stay flat under sustained database load
+
+- **Domain expiry monitors read registrar dates with UTC offsets** -- WHOIS monitors failed every check with "Could not parse expiry date" when the registrar reported dates such as `2028-09-13T07:00:00+0000` (for example MarkMonitor, the registrar of google.com)
+
+- **Add Server works on plain-HTTP dashboards** -- The dialog no longer crashes when the dashboard is opened over HTTP on a remote address, where browsers do not provide `crypto.randomUUID()`
+
+- **An empty status page selection shows every server** -- Leaving the server selection empty now includes all visible servers, as the settings page describes
+
+- **Agent disconnects end pending operations immediately** -- File transfers, directory listings, and commands waiting on a disconnected Agent now fail right away instead of hanging until their timeout, and terminals open to that Agent are closed
+
+- **The installer is safer to run, rerun, and upgrade** -- Piped `curl | sudo sh` installs can still use the interactive wizard, configuration writes are atomic, failed Docker Agent installs and reinstalls restore the previous files and container, and `--channel auto|stable|beta` selects the release track explicitly
+
 ## [1.0.0-beta.1] - 2026-08-10
 
 ### Changed

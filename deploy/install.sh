@@ -21,7 +21,7 @@ esac
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 REPO="ZingerLittleBee/ServerBee"
-INSTALLER_VERSION="1.0.0-beta.1"
+INSTALLER_VERSION="1.0.0-beta.2"
 # Everything ServerBee installs lives under a single base directory for
 # unified management. The PATH-visible management CLI is the only exception.
 BASE_DIR="/opt/serverbee"

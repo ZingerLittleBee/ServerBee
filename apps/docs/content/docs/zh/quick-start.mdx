@@ -42,10 +42,6 @@ icon: Zap
 
 Server 是中心节点：接收 Agent 上报的指标、落库存储，并提供 Web 管理面板。
 
-<Callout type="warn">
-已发布的 `v1.0.0-beta.1` 面板在远程明文 HTTP 源上存在「添加 Server」崩溃问题，因为该构建直接调用了 `crypto.randomUUID()`。在包含 fallback 的新版本发布前，请使用下方域名/HTTPS 方式（或自行构建当前 `main`），不要使用 `http://<服务器IP>:9527`。`/healthz` 或登录成功并不能证明受影响的 Servers 页面可用。
-</Callout>
-
 ### 第一步：安装 Server
 
 Server 有两种快速安装方式，按你是否有域名选一种即可。
@@ -199,7 +195,7 @@ ServerBee 既能直接用服务器 IP 访问，也能走域名 + 反向代理。
 ```yaml title="docker-compose.yml"
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.2
     container_name: serverbee-server
     ports:
       - "9527:9527"

@@ -59,7 +59,7 @@ Download the agent binary for your platform from the [releases page](https://git
 | Windows amd64 | `serverbee-agent-windows-amd64.exe` |
 
 ```bash
-wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.1/serverbee-agent-linux-amd64
+wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.2/serverbee-agent-linux-amd64
 chmod +x serverbee-agent-linux-amd64
 sudo mv serverbee-agent-linux-amd64 /usr/local/bin/serverbee-agent
 ```
@@ -108,7 +108,7 @@ docker run -d \
   -v /etc/os-release:/host/etc/os-release:ro \
   -v /opt/serverbee-agent:/etc/serverbee \
   --restart unless-stopped \
-  ghcr.io/zingerlittlebee/serverbee-agent:1.0.0-beta.1
+  ghcr.io/zingerlittlebee/serverbee-agent:1.0.0-beta.2
 ```
 
 <Callout type="warn">

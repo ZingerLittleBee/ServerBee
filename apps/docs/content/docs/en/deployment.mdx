@@ -38,18 +38,18 @@ Railway automatically assigns a port and provides HTTPS. No need to configure `S
 
 ### Selecting a Railway Version
 
-The source template pins the repository's current package version, currently `1.0.0-beta.1`. This avoids silently deploying the older image behind `:latest` while ServerBee has no stable `1.x` release.
+The source template pins the repository's current package version, currently `1.0.0-beta.2`. This avoids silently deploying the older image behind `:latest` while ServerBee has no stable `1.x` release.
 
 To pin a specific version (stable or pre-release), add the following variable under **Variables** on the Railway service:
 
 ```bash
-SERVERBEE_IMAGE_TAG=1.0.0-beta.1
+SERVERBEE_IMAGE_TAG=1.0.0-beta.2
 ```
 
 Save and trigger a redeploy. Check the [release page](https://github.com/ZingerLittleBee/ServerBee/releases) before changing this pin. Future prereleases also publish a moving `beta` tag, while `latest` moves only for suffix-free stable releases; an exact version remains the safest repeatable choice.
 
 <Callout type="info">
-The Dockerfile exposes this switch via `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.1`. Railway injects service variables as both build args and runtime environment variables; since this variable is not part of the `SERVERBEE_*` configuration schema, it has no runtime side effects.
+The Dockerfile exposes this switch via `ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.2`. Railway injects service variables as both build args and runtime environment variables; since this variable is not part of the `SERVERBEE_*` configuration schema, it has no runtime side effects.
 </Callout>
 
 ## Bootstrap Installer
@@ -101,7 +101,7 @@ Then create `docker-compose.yml` beside the `config` directory:
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.2
     container_name: serverbee-server
     restart: unless-stopped
     ports:
@@ -367,7 +367,7 @@ Traefik integrates with Docker via labels — no separate config file needed. Tr
 ```yaml
 services:
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.1
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.2
     volumes:
       - serverbee-data:/data
     labels:
@@ -611,7 +611,7 @@ docker compose ps
 **Binary:**
 
 ```bash
-wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.1/serverbee-server-linux-amd64
+wget https://github.com/ZingerLittleBee/ServerBee/releases/download/v1.0.0-beta.2/serverbee-server-linux-amd64
 sudo systemctl stop serverbee-server
 sudo mv serverbee-server-linux-amd64 /usr/local/bin/serverbee-server
 sudo chmod +x /usr/local/bin/serverbee-server
