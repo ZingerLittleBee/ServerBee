@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use chrono::{NaiveDate, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use reqwest::Url;
 use serde_json::{Value, json};
 
@@ -257,6 +257,15 @@ fn parse_date_string(s: &str) -> Option<NaiveDateTime> {
     // Strip trailing timezone info like " UTC" for more flexible parsing
     let cleaned = s.trim_end_matches(" UTC").trim_end_matches(" GMT").trim();
 
+    // Registrar WHOIS often carries a numeric offset (e.g. MarkMonitor's
+    // `2028-09-13T07:00:00+0000`); normalize those to UTC.
+    let offset_formats = ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S%.f%z"];
+    for fmt in &offset_formats {
+        if let Ok(dt) = DateTime::parse_from_str(cleaned, fmt) {
+            return Some(dt.naive_utc());
+        }
+    }
+
     for fmt in &datetime_formats {
         if let Ok(dt) = NaiveDateTime::parse_from_str(cleaned, fmt) {
             return Some(dt);
@@ -310,6 +319,47 @@ mod tests {
         assert!(result.is_some());
         let dt = result.unwrap();
         assert_eq!(dt.date(), NaiveDate::from_ymd_opt(2025, 8, 15).unwrap());
+    }
+
+    #[test]
+    fn test_parse_expiry_date_registrar_offset() {
+        // Registrar WHOIS (the referral whois-rust follows) for google.com via
+        // MarkMonitor uses a numeric UTC offset instead of `Z`.
+        let text = "Domain Name: google.com\n\
+                    Registry Domain ID: 2138514_DOMAIN_COM-VRSN\n\
+                    Registrar WHOIS Server: whois.markmonitor.com\n\
+                    Updated Date: 2024-08-02T02:17:33+0000\n\
+                    Creation Date: 1997-09-15T07:00:00+0000\n\
+                    Registrar Registration Expiration Date: 2028-09-13T07:00:00+0000\n\
+                    Registrar: MarkMonitor, Inc.\n";
+        let dt = parse_expiry_date(text).expect("expiry date should parse");
+        assert_eq!(
+            dt,
+            NaiveDate::from_ymd_opt(2028, 9, 13)
+                .unwrap()
+                .and_hms_opt(7, 0, 0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_parse_date_string_offsets_normalize_to_utc() {
+        let expected = NaiveDate::from_ymd_opt(2028, 9, 13)
+            .unwrap()
+            .and_hms_opt(7, 0, 0)
+            .unwrap();
+        assert_eq!(
+            parse_date_string("2028-09-13T07:00:00+0000"),
+            Some(expected)
+        );
+        assert_eq!(
+            parse_date_string("2028-09-13T15:00:00+08:00"),
+            Some(expected)
+        );
+        assert_eq!(
+            parse_date_string("2028-09-13T07:00:00.000+00:00"),
+            Some(expected)
+        );
     }
 
     #[test]
