@@ -66,6 +66,13 @@ struct LoginView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Color(.systemGroupedBackground))
+            .onAppear {
+                // Signing out keeps the server URL so the user can log straight
+                // back in to the same server.
+                if viewModel.serverUrlInput.isEmpty, let saved = authManager.serverUrl {
+                    viewModel.serverUrlInput = saved
+                }
+            }
             .onChange(of: viewModel.step) { _, newStep in
                 if newStep == .totp {
                     // Defer one runloop so the totp field exists before we
