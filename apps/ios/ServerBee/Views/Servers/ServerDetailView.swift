@@ -345,6 +345,10 @@ struct DetailSectionPicker: View {
         }
         .padding(2)
         .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        // Scoped to the picker: animating the selection change itself would
+        // also crossfade the section content, and on iOS 26 the large title
+        // fades out with the outgoing scroll view until the new one mounts.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: selection)
         .accessibilityElement(children: .contain)
     }
 
@@ -400,11 +404,7 @@ struct DetailSectionPicker: View {
 
     private func select(_ item: DetailSection) {
         guard item != selection else { return }
-        if reduceMotion {
-            selection = item
-        } else {
-            withAnimation(.snappy(duration: 0.25)) { selection = item }
-        }
+        selection = item
     }
 }
 
