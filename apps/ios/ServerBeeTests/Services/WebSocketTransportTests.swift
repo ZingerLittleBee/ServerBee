@@ -15,6 +15,16 @@ final class WebSocketTransportTests: XCTestCase {
         }
     }
 
+    /// URLSession may report a pending ping twice (pong, then the cancel
+    /// error); the second call must not resume the continuation again.
+    func test_pongHandler_ignoresRepeatedCalls() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let handler = URLSessionWebSocketTransport.pongHandler(resuming: continuation)
+            handler(nil)
+            handler(URLError(.cancelled))
+        }
+    }
+
     func test_fakeTransport_cancelStopsReceive() async {
         let fake = FakeWebSocketTransport()
         fake.resume()

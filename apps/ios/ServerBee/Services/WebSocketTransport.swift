@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Abstraction over `URLSessionWebSocketTask` so tests can inject a fake.
 protocol WebSocketTransport: Sendable {
@@ -35,12 +36,27 @@ final class URLSessionWebSocketTransport: WebSocketTransport, @unchecked Sendabl
 
     func sendPing() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            task.sendPing { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
+            task.sendPing(pongReceiveHandler: Self.pongHandler(resuming: continuation))
+        }
+    }
+
+    /// URLSession can call a pong handler more than once, e.g. with an error
+    /// when the task is cancelled while the ping is pending. Resuming a
+    /// continuation twice traps, so only the first call counts.
+    static func pongHandler(
+        resuming continuation: CheckedContinuation<Void, Error>
+    ) -> @Sendable (Error?) -> Void {
+        let resumed = OSAllocatedUnfairLock(initialState: false)
+        return { error in
+            let isFirst = resumed.withLock { done -> Bool in
+                defer { done = true }
+                return !done
+            }
+            guard isFirst else { return }
+            if let error {
+                continuation.resume(throwing: error)
+            } else {
+                continuation.resume()
             }
         }
     }
