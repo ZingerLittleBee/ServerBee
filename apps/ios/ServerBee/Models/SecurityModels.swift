@@ -234,7 +234,16 @@ enum SecuritySeverity {
         }
     }
 
-    static func label(_ severity: String) -> String { severity.capitalized }
+    static func label(_ severity: String) -> String {
+        switch severity {
+        case "critical": String(localized: "Critical")
+        case "high": String(localized: "High")
+        case "medium": String(localized: "Medium")
+        case "low": String(localized: "Low")
+        case "info": String(localized: "Info")
+        default: severity.capitalized
+        }
+    }
 }
 
 enum SecurityEventKind {
