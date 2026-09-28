@@ -36,6 +36,40 @@
         }
       }
     },
+    "Check Now": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check Now"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即检查"
+          }
+        }
+      }
+    },
+    "Checks run on the agent, so the server must be online.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checks run on the agent, so the server must be online."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查由 Agent 执行，需要服务器在线。"
+          }
+        }
+      }
+    },
     "Datacenter": {
       "extractionState": "manual",
       "localizations": {

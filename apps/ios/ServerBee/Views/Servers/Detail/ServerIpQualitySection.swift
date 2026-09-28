@@ -6,6 +6,8 @@ import SwiftUI
 struct ServerIpQualitySection: View {
     let serverId: String
     let isAdmin: Bool
+    /// Checks run on the agent, so they need the server online.
+    var isOnline = true
 
     @Environment(\.apiClient) private var apiClient
     @State private var viewModel = ServerIpQualityViewModel()
@@ -42,6 +44,12 @@ struct ServerIpQualitySection: View {
                 }
                 if isAdmin {
                     recheckButton
+                    if !isOnline {
+                        Text(String(localized: "Checks run on the agent, so the server must be online."))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
             }
         }
@@ -60,11 +68,16 @@ struct ServerIpQualitySection: View {
                     Image(systemName: "arrow.clockwise")
                         .accessibilityHidden(true)
                 }
-                Text(viewModel.isChecking ? String(localized: "Checking…") : String(localized: "Recheck Now"))
+                Text(checkButtonTitle)
             }
         }
         .buttonStyle(TintedFillButtonStyle())
-        .disabled(viewModel.isChecking)
+        .disabled(viewModel.isChecking || !isOnline)
+    }
+
+    private var checkButtonTitle: String {
+        if viewModel.isChecking { return String(localized: "Checking…") }
+        return viewModel.data?.ipQuality == nil ? String(localized: "Check Now") : String(localized: "Recheck Now")
     }
 
     private func checkErrorBanner(_ message: String) -> some View {

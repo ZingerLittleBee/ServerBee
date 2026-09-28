@@ -182,7 +182,7 @@ struct ServerDetailView: View {
         case .security:
             ServerSecuritySection(serverId: serverId)
         case .ipQuality:
-            ServerIpQualitySection(serverId: serverId, isAdmin: isAdmin)
+            ServerIpQualitySection(serverId: serverId, isAdmin: isAdmin, isOnline: isOnline)
         case .docker:
             ServerDockerSection(serverId: serverId, isAdmin: isAdmin)
         }
