@@ -378,13 +378,22 @@ struct UptimeCard: View {
                 Text(String(format: "%.2f%%", ratio * 100))
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(ratio >= 0.99 ? Color.serverOnline : .warningAmber)
+                    .foregroundStyle(Self.ratioColor(days.overallStatus))
             }
         }
     }
 }
 
 private extension UptimeCard {
+    static func ratioColor(_ status: UptimeStatus) -> Color {
+        switch status {
+        case .operational: .serverOnline
+        case .degraded: .warningAmber
+        case .down: .serverOffline
+        case .noData: .secondary
+        }
+    }
+
     var footnote: some View {
         HStack(spacing: 4) {
             Text(String(localized: "over \(windowDays) days"))
