@@ -666,6 +666,40 @@
         }
       }
     },
+    "No audit entries": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No audit entries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无审计日志"
+          }
+        }
+      }
+    },
+    "No entries for this action.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No entries for this action."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该操作暂无记录。"
+          }
+        }
+      }
+    },
     "No groups": {
       "extractionState": "manual",
       "localizations": {
@@ -985,6 +1019,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示在服务器的设备列表中。新名称会在你下次在此设备上登录时生效。留空则使用默认名称。"
+          }
+        }
+      }
+    },
+    "Sign-ins and admin changes are recorded here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-ins and admin changes are recorded here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录和管理操作会记录在这里。"
           }
         }
       }

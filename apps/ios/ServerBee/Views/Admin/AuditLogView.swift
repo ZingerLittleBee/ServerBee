@@ -49,7 +49,21 @@ struct AuditLogView: View {
                 }
             }
         }
-        .overlay { if viewModel.isLoading, viewModel.entries.isEmpty { ProgressView() } }
+        .overlay {
+            if viewModel.isLoading, viewModel.entries.isEmpty {
+                ProgressView()
+            } else if viewModel.entries.isEmpty, viewModel.loadError == nil {
+                ContentUnavailableView(
+                    String(localized: "No audit entries"),
+                    systemImage: "list.bullet.rectangle",
+                    description: Text(
+                        viewModel.actionFilter == nil
+                            ? String(localized: "Sign-ins and admin changes are recorded here.")
+                            : String(localized: "No entries for this action.")
+                    )
+                )
+            }
+        }
         .navigationTitle(String(localized: "Audit Log"))
         .navigationBarTitleDisplayMode(.inline)
         .task { if viewModel.entries.isEmpty { await viewModel.reload(apiClient: apiClient) } }
