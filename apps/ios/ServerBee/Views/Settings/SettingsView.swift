@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(PushNotificationManager.self) private var pushManager
     @State private var viewModel = SettingsViewModel()
     @AppStorage("theme") private var theme: String = AppTheme.system.rawValue
+    @AppStorage(DeviceNameProvider.storageKey) private var customDeviceName = ""
 
     /// Live WebSocket client owned by `ContentView`. Passed in so logout can
     /// close it before clearing auth and triggering the server logout.
@@ -146,9 +147,15 @@ private extension SettingsView {
                 IconRowLabel(title: String(localized: "Devices"), systemImage: "iphone", color: .indigo)
             }
             // The name this installation registers under, as listed in Devices.
-            HStack(spacing: 12) {
-                IconTile(systemImage: "tag.fill", color: .gray)
-                DeviceNameRow()
+            NavigationLink {
+                DeviceNameView()
+            } label: {
+                IconRowLabel(
+                    title: String(localized: "Device Name"),
+                    systemImage: "tag.fill",
+                    color: .gray,
+                    value: customDeviceName.isEmpty ? DeviceNameProvider.defaultName() : customDeviceName
+                )
             }
         }
     }

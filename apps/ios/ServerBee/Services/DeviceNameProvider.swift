@@ -9,7 +9,8 @@ import UIKit
 /// installation a stable, distinguishable name composed of model + iOS version
 /// + a random 4-character suffix that is generated exactly once.
 enum DeviceNameProvider {
-    private static let storageKey = "deviceName"
+    /// UserDefaults key of the custom name; views observe it with `@AppStorage`.
+    static let storageKey = "deviceName"
     private static let suffixKey = "deviceNameSuffix"
 
     /// Returns the user-customised name if set, otherwise the auto-generated

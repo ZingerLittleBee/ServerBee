@@ -274,6 +274,23 @@
         }
       }
     },
+    "Shown in Devices on the server. A new name applies the next time you sign in on this device. Leave it empty to use the default name.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shown in Devices on the server. A new name applies the next time you sign in on this device. Leave it empty to use the default name."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示在服务器的设备列表中。新名称会在你下次在此设备上登录时生效。留空则使用默认名称。"
+          }
+        }
+      }
+    },
     "—": {
       "extractionState": "manual",
       "localizations": {
