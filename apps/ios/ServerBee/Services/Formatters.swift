@@ -112,11 +112,19 @@ enum Formatters {
 
     /// Locale-aware relative time, e.g. "5 minutes ago" / "5 分钟前".
     /// Returns the original ISO string if parsing fails.
-    static func formatRelativeTime(_ isoString: String) -> String {
+    ///
+    /// Most timestamps describe something that already happened; for those a
+    /// time at or slightly ahead of the device clock (server clock skew) reads
+    /// "just now" rather than "in 0 sec.". Pass `allowsFuture` for times that
+    /// can legitimately lie ahead (next run, expiry, maintenance windows).
+    static func formatRelativeTime(_ isoString: String, allowsFuture: Bool = false, now: Date = Date()) -> String {
         guard let date = ISO8601DateFormatter.shared.date(from: isoString) else {
             return isoString
         }
-        return relativeFormatter.localizedString(for: date, relativeTo: Date())
+        if !allowsFuture, now.timeIntervalSince(date) < 5 {
+            return String(localized: "just now")
+        }
+        return relativeFormatter.localizedString(for: date, relativeTo: now)
     }
 
     /// Parse a server `"yyyy-MM-dd"` day string into a UTC `Date`.

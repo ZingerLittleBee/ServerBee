@@ -186,8 +186,8 @@ struct IncidentsView: View {
                     Text(desc).font(.caption).foregroundStyle(.secondary)
                 }
                 Text(String(format: String(localized: "%@ → %@"),
-                            Formatters.formatRelativeTime(maintenance.startAt),
-                            Formatters.formatRelativeTime(maintenance.endAt)))
+                            Formatters.formatRelativeTime(maintenance.startAt, allowsFuture: true),
+                            Formatters.formatRelativeTime(maintenance.endAt, allowsFuture: true)))
                     .font(.caption2).foregroundStyle(.secondary)
                 if isAdmin {
                     Divider()
