@@ -359,6 +359,57 @@
         }
       }
     },
+    "Could not reach the server. Please check your connection.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not reach the server. Please check your connection."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接服务器，请检查网络连接。"
+          }
+        }
+      }
+    },
+    "Couldn't encode the value for the Keychain.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't encode the value for the Keychain."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法为钥匙串编码该值。"
+          }
+        }
+      }
+    },
+    "Couldn't save to the Keychain (status %d).": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't save to the Keychain (status %d)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存到钥匙串（状态 %d）。"
+          }
+        }
+      }
+    },
     "Datacenter": {
       "extractionState": "manual",
       "localizations": {
@@ -393,6 +444,23 @@
         }
       }
     },
+    "Failed to decode response: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to decode response: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法解析响应：%@"
+          }
+        }
+      }
+    },
     "Groups organize servers in the servers list.": {
       "extractionState": "manual",
       "localizations": {
@@ -406,6 +474,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "分组用于在服务器列表中整理服务器。"
+          }
+        }
+      }
+    },
+    "Invalid username or password": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid username or password"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用户名或密码错误"
           }
         }
       }
@@ -440,6 +525,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "刚刚"
+          }
+        }
+      }
+    },
+    "Network error: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network error: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络错误：%@"
           }
         }
       }
@@ -563,6 +665,23 @@
         }
       }
     },
+    "No server URL configured": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No server URL configured"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未配置服务器地址"
+          }
+        }
+      }
+    },
     "No servers in this filter match “%@”.": {
       "extractionState": "manual",
       "localizations": {
@@ -682,6 +801,23 @@
         }
       }
     },
+    "Server returned HTTP %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server returned HTTP %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器返回 HTTP %lld"
+          }
+        }
+      }
+    },
     "Service Monitors": {
       "extractionState": "manual",
       "localizations": {
@@ -695,6 +831,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务监控"
+          }
+        }
+      }
+    },
+    "Session expired. Please log in again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session expired. Please log in again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话已过期，请重新登录。"
           }
         }
       }
@@ -763,6 +916,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "截至 %@"
+          }
+        }
+      }
+    },
+    "Two-factor authentication is required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Two-factor authentication is required"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要双因素认证"
           }
         }
       }
