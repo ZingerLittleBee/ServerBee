@@ -187,13 +187,15 @@ struct IpQualitySnapshotCard: View {
         return parts.joined(separator: " · ")
     }
 
-    /// IP type (neutral) followed by the active risk flags (amber).
+    /// IP type (neutral) followed by the active risk flags (amber); a flag
+    /// that repeats the type label is dropped.
     private var badges: [IpBadge] {
         var items: [IpBadge] = []
-        if !snapshot.ipType.isEmpty {
-            items.append(IpBadge(text: snapshot.ipType.capitalized, isFlag: false))
+        let typeLabel = snapshot.ipTypeLabel
+        if let typeLabel {
+            items.append(IpBadge(text: typeLabel, isFlag: false))
         }
-        items += snapshot.flags.map { IpBadge(text: $0, isFlag: true) }
+        items += snapshot.flags.filter { $0 != typeLabel }.map { IpBadge(text: $0, isFlag: true) }
         return items
     }
 

@@ -53,6 +53,19 @@ struct IpQualitySnapshot: Decodable, Sendable {
         return f
     }
 
+    /// Localized IP type; `nil` when the provider could not classify it.
+    var ipTypeLabel: String? {
+        switch ipType.lowercased() {
+        case "", "unknown": nil
+        case "datacenter": String(localized: "Datacenter")
+        case "residential": String(localized: "Residential")
+        case "isp": String(localized: "ISP")
+        case "business": String(localized: "Business")
+        case "mobile": String(localized: "Mobile")
+        default: ipType.capitalized
+        }
+    }
+
     var location: String? {
         let parts = [city, region, country].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
