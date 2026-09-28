@@ -2,6 +2,23 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
+    "%@ total": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ total"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共 %@"
+          }
+        }
+      }
+    },
     "Business": {
       "extractionState": "manual",
       "localizations": {

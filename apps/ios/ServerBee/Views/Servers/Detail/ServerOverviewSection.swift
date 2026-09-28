@@ -27,7 +27,8 @@ struct ServerOverviewSection: View {
                 }
                 if let live, hasAnyMetric {
                     metricsGrid(live)
-                    let runtime = runtimeRows(live)
+                    // Live counters; an offline server's stale values would read as current.
+                    let runtime = isOnline ? runtimeRows(live) : []
                     if !runtime.isEmpty {
                         OverviewInfoGroup(title: String(localized: "Runtime")) {
                             OverviewInfoCard(rows: runtime)
@@ -69,6 +70,9 @@ struct ServerOverviewSection: View {
     // MARK: - Derived
 
     private var isOnline: Bool { live?.isOnline ?? false }
+
+    /// A live reading, or `nil` while offline so tiles show "—", not stale values.
+    private func current<T>(_ value: T?) -> T? { isOnline ? value : nil }
     private var isPending: Bool {
         if let config { return !config.isEnrolled }
         if let live { return !live.hasAgentAuthority }
@@ -139,16 +143,18 @@ struct ServerOverviewSection: View {
 
 private extension ServerOverviewSection {
     func cpuTile(_ s: ServerStatus) -> some View {
-        MetricCardView(
+        let usage = current(s.cpuUsage)
+        return MetricCardView(
             String(localized: "CPU"),
-            accessibilityValue: [Formatters.formatPercentage(s.cpuUsage), s.cpuName].compactMap { $0 }.joined(separator: ", ")
+            accessibilityValue: [usage.map { Formatters.formatPercentage($0) }, s.cpuName]
+                .compactMap { $0 }.joined(separator: ", ")
         ) {
             MetricTileReadout(
-                value: s.cpuUsage.map { String(format: "%.1f", $0) } ?? "—",
-                unit: s.cpuUsage == nil ? nil : "%",
-                color: Self.usageTint(s.cpuUsage, base: .cpuColor)
+                value: usage.map { String(format: "%.1f", $0) } ?? "—",
+                unit: usage == nil ? nil : "%",
+                color: usage == nil ? .secondary : Self.usageTint(usage, base: .cpuColor)
             )
-            if let cpu = s.cpuUsage {
+            if let cpu = usage {
                 UsageBar(value: cpu / 100, height: 6, tint: Self.usageTint(cpu, base: .cpuColor))
             }
             if let name = s.cpuName {
@@ -158,62 +164,71 @@ private extension ServerOverviewSection {
     }
 
     func memoryTile(_ s: ServerStatus) -> some View {
-        let parts = Self.sharedUnitParts(used: s.memoryUsed, total: s.memoryTotal)
+        let used = current(s.memoryUsed)
+        let percent = current(s.memoryPercent)
+        let parts = Self.sharedUnitParts(used: used, total: s.memoryTotal)
         return MetricCardView(
             String(localized: "Memory"),
             accessibilityValue: [
-                Formatters.formatPercentage(s.memoryPercent),
-                Formatters.formatBytesRatio(used: s.memoryUsed, total: s.memoryTotal)
+                percent.map { Formatters.formatPercentage($0) },
+                Formatters.formatBytesRatio(used: used, total: s.memoryTotal)
             ].compactMap { $0 }.joined(separator: ", ")
         ) {
             MetricTileReadout(
                 value: parts?.used ?? "—",
                 unit: parts.map { "/ \($0.total)" },
-                color: Self.usageTint(s.memoryPercent, base: .memoryColor)
+                color: parts == nil ? .secondary : Self.usageTint(percent, base: .memoryColor)
             )
-            if let percent = s.memoryPercent {
+            if let percent {
                 UsageBar(value: percent / 100, height: 6, tint: Self.usageTint(percent, base: .memoryColor))
                 Self.tileCaption(Formatters.formatPercentage(percent))
+            } else if let total = s.memoryTotal, total > 0 {
+                Self.tileCaption(String(localized: "\(Formatters.formatBytes(total)) total"))
             }
         }
     }
 
     func diskTile(_ s: ServerStatus) -> some View {
-        let parts = Self.sharedUnitParts(used: s.diskUsed, total: s.diskTotal)
+        let used = current(s.diskUsed)
+        let percent = current(s.diskPercent)
+        let parts = Self.sharedUnitParts(used: used, total: s.diskTotal)
         return MetricCardView(
             String(localized: "Disk"),
             accessibilityValue: [
-                Formatters.formatPercentage(s.diskPercent),
-                Formatters.formatBytesRatio(used: s.diskUsed, total: s.diskTotal)
+                percent.map { Formatters.formatPercentage($0) },
+                Formatters.formatBytesRatio(used: used, total: s.diskTotal)
             ].compactMap { $0 }.joined(separator: ", ")
         ) {
             MetricTileReadout(
-                value: s.diskPercent.map { String(format: "%.1f", $0) } ?? "—",
-                unit: s.diskPercent == nil ? nil : "%",
-                color: Self.usageTint(s.diskPercent, base: .diskColor)
+                value: percent.map { String(format: "%.1f", $0) } ?? "—",
+                unit: percent == nil ? nil : "%",
+                color: percent == nil ? .secondary : Self.usageTint(percent, base: .diskColor)
             )
-            if let percent = s.diskPercent {
+            if let percent {
                 UsageBar(value: percent / 100, height: 6, tint: Self.usageTint(percent, base: .diskColor))
             }
             if let parts {
                 Self.tileCaption("\(parts.used) / \(parts.total)")
+            } else if let total = s.diskTotal, total > 0 {
+                Self.tileCaption(String(localized: "\(Formatters.formatBytes(total)) total"))
             }
         }
     }
 
     func networkTile(_ s: ServerStatus) -> some View {
-        let down = Formatters.formatSpeed(s.networkIn)
-        let up = Formatters.formatSpeed(s.networkOut)
+        let down = current(s.networkIn).map { Formatters.formatSpeed($0) } ?? "—"
+        let up = current(s.networkOut).map { Formatters.formatSpeed($0) } ?? "—"
         return MetricCardView(String(localized: "Network"), accessibilityValue: "↓ \(down), ↑ \(up)") {
             MetricTileReadout(
                 value: down,
-                color: .networkColor,
+                color: isOnline ? .networkColor : .secondary,
                 font: .title3.weight(.bold),
                 unitFont: .subheadline.weight(.bold),
                 systemImage: "arrow.down"
             )
             MetricTileReadout(
                 value: up,
+                color: isOnline ? .primary : .secondary,
                 font: .title3.weight(.bold),
                 unitFont: .subheadline.weight(.bold),
                 systemImage: "arrow.up"
