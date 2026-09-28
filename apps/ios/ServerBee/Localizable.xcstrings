@@ -1137,7 +1137,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将移除 “%@”。此操作不可撤销。若仍在运行,请使用强制移除。"
+            "value": "将移除 “%@”。此操作不可撤销。若仍在运行，请使用强制移除。"
           }
         }
       }
@@ -5122,7 +5122,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请在 Web 控制台创建自定义服务(含匹配规则)。"
+            "value": "请在 Web 控制台创建自定义服务（含匹配规则）。"
           }
         }
       }
@@ -6671,7 +6671,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每核心成本较高"
+            "value": "每 CPU 核心成本较高"
           }
         }
       }
@@ -7708,7 +7708,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent 重新检测出口 IP 质量的频率,单位为小时(1–168)。"
+            "value": "Agent 重新检测出口 IP 质量的频率，单位为小时（1–168）。"
           }
         }
       }
@@ -8236,7 +8236,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "IP 或 CIDR（如 1.2.3.4 或 1.2.3.0/24）"
+            "value": "如 1.2.3.4 或 1.2.3.0/24"
           }
         }
       }
@@ -9442,7 +9442,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "严重"
+            "value": "重大"
           }
         }
       }
@@ -10276,7 +10276,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无告警事件"
+            "value": "告警触发后会显示在这里。"
           }
         }
       }
@@ -11228,7 +11228,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭"
+            "value": "未开启"
           }
         }
       }
@@ -11330,7 +11330,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开启"
+            "value": "已开启"
           }
         }
       }
@@ -12197,7 +12197,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "预设目标随服务器内置,无法在此编辑。"
+            "value": "预设目标随服务器内置，无法在此编辑。"
           }
         }
       }
@@ -12316,7 +12316,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "运营商用于在网络页面对目标分组(如 ct、cu、cm、international)。"
+            "value": "运营商用于在网络页面对目标分组（如 ct、cu、cm、international）。"
           }
         }
       }
@@ -13998,7 +13998,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已调度"
+            "value": "定时执行"
           }
         }
       }
@@ -14951,7 +14951,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "注销此设备?"
+            "value": "注销此设备？"
           }
         }
       }
@@ -14968,7 +14968,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "修改密码后,其他设备需要重新登录。"
+            "value": "修改密码后，其他设备需要重新登录。"
           }
         }
       }
@@ -15223,7 +15223,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "停止容器?"
+            "value": "停止容器？"
           }
         }
       }
@@ -15291,7 +15291,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "交换分区"
+            "value": "Swap"
           }
         }
       }
@@ -15359,7 +15359,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标签(逗号分隔)"
+            "value": "标签（逗号分隔）"
           }
         }
       }
@@ -15767,7 +15767,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完整密钥仅显示这一次,请妥善保存。"
+            "value": "完整密钥仅显示这一次，请妥善保存。"
           }
         }
       }
@@ -15886,7 +15886,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "该服务器尚未连接 Agent。请生成一次性代码,并在主机上运行安装命令。"
+            "value": "该服务器尚未连接 Agent。请生成一次性代码，并在主机上运行安装命令。"
           }
         }
       }
@@ -15981,7 +15981,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "超时秒数(可选)"
+            "value": "超时秒数（可选）"
           }
         }
       }
@@ -16032,7 +16032,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "尝试次数过多,请稍后再试。"
+            "value": "尝试次数过多，请稍后再试。"
           }
         }
       }
@@ -16423,7 +16423,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "触发 Agent 下载并安装最新版本,然后重新连接。升级期间 Agent 会重启。"
+            "value": "触发 Agent 下载并安装最新版本，然后重新连接。升级期间 Agent 会重启。"
           }
         }
       }
@@ -16457,7 +16457,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭两步验证"
+            "value": "关闭 2FA"
           }
         }
       }
@@ -16474,7 +16474,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "两步验证"
+            "value": "双因素认证"
           }
         }
       }
@@ -16491,7 +16491,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "两步验证"
+            "value": "双因素认证"
           }
         }
       }
@@ -16507,7 +16507,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "两步验证"
+            "value": "双因素认证"
           }
         }
       }
@@ -16626,7 +16626,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最多 8 个标签,每个 ≤16 字符(字母、数字、_ - .)。"
+            "value": "最多 8 个标签，每个 ≤16 字符（字母、数字、_ - .）。"
           }
         }
       }
@@ -16660,7 +16660,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "有可用更新:v%@"
+            "value": "有可用更新：v%@"
           }
         }
       }
@@ -16881,7 +16881,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在线率达到或高于警告值为健康;低于严重值则显示为宕机。"
+            "value": "在线率达到或高于警告值为健康；低于严重值则显示为宕机。"
           }
         }
       }
@@ -16967,7 +16967,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每项资源价值(每月)"
+            "value": "每项资源价值（每月）"
           }
         }
       }
@@ -17222,7 +17222,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "权重:%d"
+            "value": "权重：%d"
           }
         }
       }
@@ -17239,7 +17239,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭后,公开状态页将无法访问。"
+            "value": "关闭后，公开状态页将无法访问。"
           }
         }
       }
@@ -17273,7 +17273,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "为什么被封禁?"
+            "value": "为什么被封禁？"
           }
         }
       }
