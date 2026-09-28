@@ -61,7 +61,8 @@ COMMAND_TARGETS := \
 	docker-build \
 	docker-up \
 	docker-down \
-	docker-logs
+	docker-logs \
+	ios-install
 
 .PHONY: menu recent help publish $(COMMAND_TARGETS)
 

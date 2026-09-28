@@ -21,7 +21,12 @@ xcodebuild -project ServerBee.xcodeproj -scheme ServerBee \
   -destination 'platform=iOS Simulator,id=<SIM_UDID>' \
   -skipPackagePluginValidation build      # build (SwiftLint runs as a build phase)
 xcodebuild ... test                       # run the unit test bundle (ServerBeeTests)
+make ios-install                          # (repo root) Debug build → install + launch on the connected iPhone
 ```
+
+`make ios-install` (`scripts/ios-install.sh`) signs automatically with
+`IOS_DEVELOPMENT_TEAM` from the root `.env` and picks the first paired physical
+iPhone (override with `IOS_DEVICE=<udid>`).
 
 - **SwiftLint runs as a build-tool plugin**, so `BUILD SUCCEEDED` means lint is
   clean (warnings don't fail the build; treat them as must-fix anyway).
