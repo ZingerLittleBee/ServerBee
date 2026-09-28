@@ -110,7 +110,7 @@ extension WebSocketClientTests {
         XCTAssertEqual(final, 2, "expected exactly one transport per connect()")
     }
 
-    func test_reconnectIfNeeded_whenDisconnected_buildsNewTransport() async throws {
+    func test_reconnect_whenDisconnected_buildsNewTransport() async throws {
         let built = OSAllocatedUnfairLock(initialState: 0)
         let factory: WebSocketTransportFactory = { _, _ in
             built.withLock { $0 += 1 }
@@ -121,7 +121,7 @@ extension WebSocketClientTests {
         // Simulate a silent drop: forcibly mark disconnected.
         await client.forceDisconnectedForTesting()
 
-        await client.reconnectIfNeeded()
+        await client.reconnect(accessToken: nil)
         try await Task.sleep(nanoseconds: 100_000_000)
 
         let final = built.withLock { $0 }
@@ -129,22 +129,48 @@ extension WebSocketClientTests {
         XCTAssertEqual(final, 2)
     }
 
-    func test_reconnectIfNeeded_whenConnected_isNoop() async throws {
+    /// A socket that lived through a suspension can look connected while it
+    /// is dead, so an explicit resync rebuilds it anyway, with the latest token.
+    func test_reconnect_whenConnected_rebuildsWithLatestToken() async throws {
+        let first = FakeWebSocketTransport()
+        let tokens = OSAllocatedUnfairLock(initialState: [String]())
+        let factory: WebSocketTransportFactory = { _, token in
+            let isFirst = tokens.withLock { list -> Bool in
+                list.append(token)
+                return list.count == 1
+            }
+            return isFirst ? first : FakeWebSocketTransport()
+        }
+        let client = WebSocketClient(transportFactory: factory, pingInterval: 60)
+        await client.connect(serverUrl: "https://example.test", accessToken: "old")
+        await first.enqueueText(#"{"type":"server_online","server_id":"x"}"#)
+        while await client.connectionState != .connected {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        await client.reconnect(accessToken: "new")
+
+        let built = tokens.withLock { $0 }
+        await client.close()
+        XCTAssertEqual(built, ["old", "new"])
+        XCTAssertTrue(first.isCancelled, "the old socket must be torn down")
+    }
+
+    func test_reconnect_beforeConnectOrAfterClose_isNoop() async throws {
         let built = OSAllocatedUnfairLock(initialState: 0)
         let factory: WebSocketTransportFactory = { _, _ in
             built.withLock { $0 += 1 }
             return FakeWebSocketTransport()
         }
         let client = WebSocketClient(transportFactory: factory, pingInterval: 60)
-        await client.connect(serverUrl: "https://example.test", accessToken: "t")
-        // Mark connected by waiting a tick for the receive loop to spin up.
-        try await Task.sleep(nanoseconds: 50_000_000)
-        await client.reconnectIfNeeded()
-        try await Task.sleep(nanoseconds: 100_000_000)
 
-        let final = built.withLock { $0 }
+        await client.reconnect(accessToken: "t")
+        XCTAssertEqual(built.withLock { $0 }, 0, "nothing to resync before connect")
+
+        await client.connect(serverUrl: "https://example.test", accessToken: "t")
         await client.close()
-        XCTAssertEqual(final, 1, "should not rebuild while in .connecting/.connected")
+        await client.reconnect(accessToken: "t")
+        XCTAssertEqual(built.withLock { $0 }, 1, "a closed client stays closed")
     }
 
     func test_secondConnect_replacesTransportWithoutManualClose() async throws {
@@ -193,5 +219,30 @@ extension WebSocketClientTests {
         await client.setReconnectDelayHook(nil)
         await client.close()
         XCTAssertGreaterThanOrEqual(fake.pingCount, 1)
+    }
+
+    /// A half-open socket neither answers nor fails the ping; the overdue
+    /// pong must tear it down so the client reconnects.
+    func test_unansweredPing_timesOutAndReconnects() async throws {
+        let fake = FakeWebSocketTransport()
+        fake.pingHangs = true
+        let client = WebSocketClient(
+            transportFactory: { _, _ in fake },
+            pingInterval: 0.05,
+            pongTimeout: 0.1
+        )
+
+        let observed = expectation(description: "reconnect attempted")
+        await client.setReconnectDelayHook { _ in
+            observed.fulfill()
+        }
+
+        await client.connect(serverUrl: "https://example.test", accessToken: "tok")
+        await fake.enqueueText(#"{"type":"server_online","server_id":"x"}"#)
+
+        await fulfillment(of: [observed], timeout: 5.0)
+        await client.setReconnectDelayHook(nil)
+        await client.close()
+        XCTAssertTrue(fake.isCancelled)
     }
 }

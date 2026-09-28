@@ -145,9 +145,20 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { old, new in
             if old == .background && new == .active {
-                Task { await wsClient.reconnectIfNeeded() }
+                Task { await resyncLive() }
             }
         }
+        .onChange(of: networkMonitor.isConnected) { _, isConnected in
+            if isConnected {
+                Task { await resyncLive() }
+            }
+        }
+    }
+
+    /// Rebuild the live socket for a fresh `full_sync` (online state and
+    /// metrics only arrive over the WebSocket, never from REST).
+    private func resyncLive() async {
+        await wsClient.reconnect(accessToken: authManager.getAccessToken())
     }
 
     /// Route the three upgrade-related frames into the live job store. Full sync

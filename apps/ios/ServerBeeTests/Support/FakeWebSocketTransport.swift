@@ -4,7 +4,8 @@ import os
 
 /// Test double for `WebSocketTransport`. Messages must be enqueued before
 /// `receive()` is awaited. `cancel` causes any subsequent or pending
-/// `receive` to throw `CancellationError`.
+/// `receive` to throw `CancellationError`. With `pingHangs`, `sendPing`
+/// never gets a pong (a half-open socket) and only fails on `cancel`.
 final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
     private struct State {
         var pending: [URLSessionWebSocketTask.Message] = []
@@ -13,6 +14,8 @@ final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
         var resumed = false
         var pingCount = 0
         var pingError: Error?
+        var pingHangs = false
+        var pingWaiters: [CheckedContinuation<Void, Error>] = []
         var sentMessages: [URLSessionWebSocketTask.Message] = []
     }
 
@@ -27,19 +30,28 @@ final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
         get { state.withLock { $0.pingError } }
         set { state.withLock { $0.pingError = newValue } }
     }
+    var pingHangs: Bool {
+        get { state.withLock { $0.pingHangs } }
+        set { state.withLock { $0.pingHangs = newValue } }
+    }
+    var isCancelled: Bool { state.withLock { $0.isCancelled } }
 
     func resume() {
         state.withLock { $0.resumed = true }
     }
 
     func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        let waiters = state.withLock { s -> [CheckedContinuation<URLSessionWebSocketTask.Message, Error>] in
+        let (waiters, pingWaiters) = state.withLock { s in
             s.isCancelled = true
-            let w = s.continuations
+            let w = (s.continuations, s.pingWaiters)
             s.continuations = []
+            s.pingWaiters = []
             return w
         }
         for c in waiters {
+            c.resume(throwing: CancellationError())
+        }
+        for c in pingWaiters {
             c.resume(throwing: CancellationError())
         }
     }
@@ -79,11 +91,19 @@ final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
     }
 
     func sendPing() async throws {
-        let error: Error? = state.withLock { s in
+        let (error, hangs): (Error?, Bool) = state.withLock { s in
             s.pingCount += 1
-            return s.pingError
+            return (s.pingError, s.pingHangs)
         }
         if let error { throw error }
+        guard hangs else { return }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let cancelled = state.withLock { s in
+                if !s.isCancelled { s.pingWaiters.append(continuation) }
+                return s.isCancelled
+            }
+            if cancelled { continuation.resume(throwing: CancellationError()) }
+        }
     }
 
     // MARK: - Test helpers
