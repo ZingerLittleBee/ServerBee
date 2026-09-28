@@ -1,11 +1,6 @@
 import Charts
 import SwiftUI
 
-private extension Color {
-    /// Upload series colour: neutral so download (the metric colour) leads.
-    static let trafficUpload = Color(.systemGray)
-}
-
 // MARK: - Traffic Cycle Card
 
 /// Current billing-cycle usage: headline total, limit bar, per-direction

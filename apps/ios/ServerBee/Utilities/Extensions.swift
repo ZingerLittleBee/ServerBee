@@ -15,6 +15,8 @@ extension Color {
     static let memoryColor = Color("MemoryColor")
     static let diskColor = Color("DiskColor")
     static let networkColor = Color("NetworkColor")
+    /// Upload colour: neutral so download (the metric colour) leads.
+    static let trafficUpload = Color(.systemGray)
     /// Text-legible variants of the metric colours: darker in light mode so
     /// small values keep 4.5:1 on white cards; same as the base colour in dark.
     static let cpuTextColor = Color("CPUTextColor")
