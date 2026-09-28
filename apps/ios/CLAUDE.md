@@ -40,8 +40,8 @@ ServerBee/
   Services/            — APIClient (actor), AuthManager, WebSocketClient, WebSocketRouter, live stores
   Views/               — SwiftUI views, grouped by feature: Account, Admin, Alerts, Auth, Components,
                          Firewall, Insights, Network, Servers, Settings
-  Utilities/           — Formatters, Keychain, ISO8601 parsing, color extensions, InstallationID
-  Support/             — UITestSupport (DEBUG-only launch hooks)
+  Utilities/           — Formatters, Keychain, ISO8601 parsing, color extensions, InstallationID,
+                         UITestSupport (DEBUG-only launch hooks)
 ServerBeeTests/        — XCTest unit tests (decoding, view-model logic, routing)
 ```
 
@@ -154,7 +154,7 @@ Defense-in-depth: the server enforces the same caps/role; the client gate is UX.
   `line_length` warn 200 / err 300.
 - `force_unwrapping` is an opt-in warning — avoid `!`.
 
-## DEBUG visual-verification hooks (`Support/UITestSupport.swift`)
+## DEBUG visual-verification hooks (`Utilities/UITestSupport.swift`)
 
 `#if DEBUG` only (compiled out of Release). Driven by launch environment so no
 credentials are compiled in. Pass via `simctl launch` using the
@@ -167,8 +167,9 @@ credentials are compiled in. Pass via `simctl launch` using the
   `SB_UITEST_SECTION` (`DetailSection.rawValue`),
   `SB_UITEST_PRESENT` (per-view auto-present token, e.g. `edit-server`,
   `upgrade-progress[:stage]`, `insights-maintenance-create`, `advanced-tools`),
-  `SB_UITEST_ADMIN` (push a Settings admin sub-screen on launch:
-  `network-probes` / `ip-quality` / `status-page`).
+  `SB_UITEST_ADMIN` (push a Settings admin screen on launch: `administration` /
+  `users` / `network-probes` / `ip-quality` / `status-page`; admin screens live
+  under Settings → Administration, so the hook always pushes that hub first).
 - Add a hook when a screen needs a navbar/plain-`Button` tap the headless
   cliclick harness can't reliably trigger, or a backend state the shared demo
   can't produce. See the verification-rig memory for the simulator commands.
