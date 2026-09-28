@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State private var viewModel = SettingsViewModel()
     @AppStorage("theme") private var theme: String = AppTheme.system.rawValue
     @AppStorage(DeviceNameProvider.storageKey) private var customDeviceName = ""
+    /// Re-read on appear so the row reflects a choice made in LanguageView.
+    @State private var appLanguage = AppLanguageStore().selected
 
     /// Live WebSocket client owned by `ContentView`. Passed in so logout can
     /// close it before clearing auth and triggering the server logout.
@@ -98,6 +100,7 @@ private extension SettingsView {
         }
         .listStyle(.insetGrouped)
         .navigationTitle(String(localized: "Settings"))
+        .onAppear { appLanguage = AppLanguageStore().selected }
     }
 
     var accountSection: some View {
@@ -185,6 +188,16 @@ private extension SettingsView {
                     systemImage: "circle.lefthalf.filled",
                     color: .purple,
                     value: selectedTheme.localizedName
+                )
+            }
+            NavigationLink {
+                LanguageView()
+            } label: {
+                IconRowLabel(
+                    title: String(localized: "Language"),
+                    systemImage: "globe",
+                    color: .blue,
+                    value: appLanguage.displayName
                 )
             }
             IconRowLabel(

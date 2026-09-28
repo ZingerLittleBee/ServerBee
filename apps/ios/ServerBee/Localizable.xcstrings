@@ -615,6 +615,23 @@
         }
       }
     },
+    "Language": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        }
+      }
+    },
     "Network error: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -1070,6 +1087,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "曾为此服务器上报的 Agent 已不再注册。生成一次性代码并在主机上运行安装命令，即可重新注册。"
+          }
+        }
+      }
+    },
+    "The new language applies the next time ServerBee opens.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The new language applies the next time ServerBee opens."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新语言将在下次打开 ServerBee 时生效。"
           }
         }
       }
