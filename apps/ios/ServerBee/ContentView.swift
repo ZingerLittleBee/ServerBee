@@ -138,6 +138,10 @@ struct ContentView: View {
             if let tab = UITestSupport.initialTab { selectedTab = tab }
             if let link = UITestSupport.deepLink { handleDeepLink(link) }
             #endif
+
+            // Prime the Alerts tab badge on cold start; afterwards alert_event
+            // frames keep it current without visiting the tab.
+            await alertsViewModel.fetchEvents(apiClient: apiClient)
         }
         .onChange(of: scenePhase) { old, new in
             if old == .background && new == .active {
