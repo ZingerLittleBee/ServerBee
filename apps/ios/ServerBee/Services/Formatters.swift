@@ -8,17 +8,8 @@ enum Formatters {
     // This mirrors the existing `ISO8601DateFormatter.shared` pattern in
     // `Utilities/Extensions.swift`.
 
-    /// Shared formatter for human-readable byte counts (binary 1024 base).
-    /// `ByteCountFormatter` is locale-aware: e.g. zh-Hans prefixes "字节"
-    /// for under-1KB values.
-    nonisolated(unsafe) private static let byteFormatter: ByteCountFormatter = {
-        let f = ByteCountFormatter()
-        f.countStyle = .binary
-        f.allowedUnits = [.useBytes, .useKB, .useMB, .useGB, .useTB]
-        // Render 0 as "0 bytes" rather than the locale word "Zero bytes".
-        f.allowsNonnumericFormatting = false
-        return f
-    }()
+    /// Binary (1024) byte units shared by every byte and rate readout.
+    static let byteUnits = ["B", "KB", "MB", "GB", "TB", "PB"]
 
     /// Cached HH:mm formatter for chart X-axis labels. Recreating
     /// `DateFormatter` on each Chart render hurts scroll performance.
@@ -54,15 +45,36 @@ enum Formatters {
         return f
     }()
 
+    /// "512 B", "1.5 MB", "20 GB": binary units, at most one decimal, no locale words.
     static func formatBytes(_ bytes: Int64) -> String {
-        byteFormatter.string(fromByteCount: bytes)
+        let value = Double(max(bytes, 0))
+        let index = byteUnitIndex(for: value)
+        return "\(byteNumber(value, unitIndex: index)) \(byteUnits[index])"
     }
 
     static func formatSpeed(_ bytesPerSec: Int64?) -> String {
-        guard let bytesPerSec else {
-            return "-"
+        guard let bytesPerSec else { return "—" }
+        return "\(formatBytes(bytesPerSec))/s"
+    }
+
+    /// Index into `byteUnits` for a byte count. Rolls over at 1000 rather than
+    /// 1024 so a readout never needs four digits ("1 MB", not "1010 KB").
+    static func byteUnitIndex(for bytes: Double) -> Int {
+        var index = 0
+        var scaled = bytes
+        while scaled >= 1000, index < byteUnits.count - 1 {
+            scaled /= 1024
+            index += 1
         }
-        return "\(byteFormatter.string(fromByteCount: bytesPerSec))/s"
+        return index
+    }
+
+    /// `bytes` expressed in `byteUnits[unitIndex]`: whole bytes, and one decimal
+    /// below 100 of a larger unit, trailing zero dropped ("4.8", "12", "256").
+    static func byteNumber(_ bytes: Double, unitIndex: Int) -> String {
+        let scaled = bytes / pow(1024, Double(unitIndex))
+        let digits = unitIndex == 0 || scaled >= 100 ? 0 : 1
+        return scaled.formatted(.number.precision(.fractionLength(0 ... digits)).grouping(.never))
     }
 
     static func formatUptime(_ seconds: Int64) -> String {
@@ -76,9 +88,7 @@ enum Formatters {
     }
 
     static func formatPercentage(_ value: Double?) -> String {
-        guard let value else {
-            return "-"
-        }
+        guard let value else { return "—" }
         return String(format: "%.1f%%", value)
     }
 

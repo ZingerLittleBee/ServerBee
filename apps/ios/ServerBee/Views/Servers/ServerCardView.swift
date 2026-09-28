@@ -178,40 +178,28 @@ private extension ServerCardView {
 
 // MARK: - Rate formatting
 
-/// Formats live byte rates for the servers list with binary (1024) units.
+/// Formats live byte rates for the servers list with the shared byte units.
 /// A down/up pair shares the larger value's unit so it reads as one figure.
 enum ServerListRateFormat {
-    private static let units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"]
-
     /// Splits a rate into a display number and unit, e.g. `("38", "MB/s")`.
     static func split(_ bytesPerSec: Int64) -> (value: String, unit: String) {
         let value = Double(max(bytesPerSec, 0))
-        let index = unitIndex(for: value)
-        return (number(value, unitIndex: index), units[index])
+        let index = Formatters.byteUnitIndex(for: value)
+        return (Formatters.byteNumber(value, unitIndex: index), unit(index))
     }
 
     /// Down/up pair in one shared unit, e.g. `"↓4.8 ↑1.2 MB/s"`.
     static func pair(down: Int64, up: Int64) -> String {
         let downValue = Double(max(down, 0))
         let upValue = Double(max(up, 0))
-        let index = unitIndex(for: max(downValue, upValue))
-        return "↓\(number(downValue, unitIndex: index)) ↑\(number(upValue, unitIndex: index)) \(units[index])"
+        let index = Formatters.byteUnitIndex(for: max(downValue, upValue))
+        let downText = Formatters.byteNumber(downValue, unitIndex: index)
+        let upText = Formatters.byteNumber(upValue, unitIndex: index)
+        return "↓\(downText) ↑\(upText) \(unit(index))"
     }
 
-    private static func unitIndex(for value: Double) -> Int {
-        var index = 0
-        var scaled = value
-        while scaled >= 1024, index < units.count - 1 {
-            scaled /= 1024
-            index += 1
-        }
-        return index
-    }
-
-    private static func number(_ value: Double, unitIndex: Int) -> String {
-        let scaled = value / pow(1024, Double(unitIndex))
-        let digits = unitIndex == 0 || scaled >= 100 ? 0 : 1
-        return scaled.formatted(.number.precision(.fractionLength(0...digits)).grouping(.never))
+    private static func unit(_ index: Int) -> String {
+        "\(Formatters.byteUnits[index])/s"
     }
 }
 
