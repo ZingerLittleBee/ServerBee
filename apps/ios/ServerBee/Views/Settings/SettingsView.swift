@@ -97,23 +97,6 @@ private extension SettingsView {
         }
         .listStyle(.insetGrouped)
         .navigationTitle(String(localized: "Settings"))
-        .confirmationDialog(
-            String(localized: "Are you sure you want to log out?"),
-            isPresented: $viewModel.showLogoutConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(String(localized: "Log Out"), role: .destructive) {
-                Task {
-                    await viewModel.logout(
-                        authManager: authManager,
-                        apiClient: apiClient,
-                        pushManager: pushManager,
-                        closeWebSocket: { await wsClient.close() }
-                    )
-                }
-            }
-            Button(String(localized: "Cancel"), role: .cancel) {}
-        }
     }
 
     var accountSection: some View {
@@ -222,6 +205,24 @@ private extension SettingsView {
                 }
             }
             .disabled(viewModel.isLoggingOut)
+            // Anchored on the button so the confirmation popover points at it.
+            .confirmationDialog(
+                String(localized: "Are you sure you want to log out?"),
+                isPresented: $viewModel.showLogoutConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: "Log Out"), role: .destructive) {
+                    Task {
+                        await viewModel.logout(
+                            authManager: authManager,
+                            apiClient: apiClient,
+                            pushManager: pushManager,
+                            closeWebSocket: { await wsClient.close() }
+                        )
+                    }
+                }
+                Button(String(localized: "Cancel"), role: .cancel) {}
+            }
         }
     }
 
