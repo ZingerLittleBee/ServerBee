@@ -291,6 +291,23 @@
         }
       }
     },
+    "The agent that reported for this server is no longer enrolled. Generate a one-time code and run the install command on the host to enroll it again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The agent that reported for this server is no longer enrolled. Generate a one-time code and run the install command on the host to enroll it again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "曾为此服务器上报的 Agent 已不再注册。生成一次性代码并在主机上运行安装命令，即可重新注册。"
+          }
+        }
+      }
+    },
     "—": {
       "extractionState": "manual",
       "localizations": {
