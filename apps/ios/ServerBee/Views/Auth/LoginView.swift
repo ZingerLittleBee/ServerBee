@@ -2,101 +2,70 @@ import SwiftUI
 import UIKit
 
 struct LoginView: View {
+    private enum Field: Hashable {
+        case server
+        case username
+        case password
+        case totp
+    }
+
     @State private var viewModel = AuthViewModel()
     @State private var showQRScanner = false
     @State private var pairErrorMessage = ""
     @State private var isPairing = false
-    @FocusState private var totpFocused: Bool
+    @FocusState private var focusedField: Field?
     @Environment(AuthManager.self) private var authManager
+    @ScaledMetric(relativeTo: .largeTitle) private var logoSize: CGFloat = 88
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(spacing: 24) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "server.rack")
-                            .font(.system(size: 60))
-                            .foregroundStyle(Color.accentColor)
-                            .accessibilityHidden(true)
-                        Text("ServerBee")
-                            .font(.largeTitle.bold())
+                VStack(spacing: 16) {
+                    // 28 + the stack's 16pt spacing gives the design's 44pt
+                    // gap between the header and the field card.
+                    header
+                        .padding(.top, 56)
+                        .padding(.bottom, 28)
+
+                    if viewModel.step == .credentials {
+                        credentialsCard
+                        InsecureURLBanner(serverUrl: viewModel.serverUrlInput)
+                    } else {
+                        totpSection
+                            .id("totp")
                     }
-                    .padding(.top, 60)
-                    .padding(.bottom, 20)
 
-                    VStack(spacing: 16) {
-                        if viewModel.step == .credentials {
-                            credentialsFields
-                            InsecureURLBanner(serverUrl: viewModel.serverUrlInput)
-                        } else {
-                            totpFields
-                                .id("totp")
-                        }
+                    errorMessages
 
-                        if !viewModel.errorMessage.isEmpty {
-                            Text(viewModel.errorMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(.red)
-                                .multilineTextAlignment(.center)
-                        }
-
-                        if !pairErrorMessage.isEmpty {
-                            Text(pairErrorMessage)
-                                .font(.subheadline)
-                                .foregroundStyle(.red)
-                                .multilineTextAlignment(.center)
-                        }
-
-                        Button {
-                            Task {
-                                await viewModel.login(authManager: authManager)
-                            }
-                        } label: {
-                            Group {
-                                if viewModel.isLoading {
-                                    ProgressView()
-                                        .tint(.white)
-                                } else {
-                                    Text("Login")
-                                        .fontWeight(.semibold)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                        }
-                        .background(Color.accentColor)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .disabled(viewModel.isLoading || isPairing)
-
-                        Button {
-                            showQRScanner = true
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "qrcode.viewfinder")
-                                    .accessibilityHidden(true)
-                                Text("Scan QR Code")
-                                    .fontWeight(.semibold)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                        }
-                        .background(Color(.systemGray5))
-                        .foregroundStyle(Color.accentColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .disabled(isPairing)
-
-                        if viewModel.step == .totp {
-                            Button(String(localized: "Back")) {
-                                viewModel.goBackToCredentials()
-                            }
-                            .foregroundStyle(.secondary)
-                        }
+                    VStack(spacing: 12) {
+                        loginButton
+                        scanButton
                     }
-                    .padding(.horizontal, 24)
+
+                    Text("Scan the pairing code from the web dashboard to sign in without typing a password.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+
+                    if viewModel.step == .totp {
+                        Button {
+                            viewModel.goBackToCredentials()
+                        } label: {
+                            Text("Back")
+                                .frame(minWidth: 88, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .foregroundStyle(.secondary)
+                    }
                 }
+                .frame(maxWidth: 520)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
+            .background(Color(.systemGroupedBackground))
             .onChange(of: viewModel.step) { _, newStep in
                 if newStep == .totp {
                     // Defer one runloop so the totp field exists before we
@@ -104,7 +73,7 @@ struct LoginView: View {
                     // keyboard otherwise covers the field.
                     DispatchQueue.main.async {
                         withAnimation { proxy.scrollTo("totp", anchor: .center) }
-                        totpFocused = true
+                        focusedField = .totp
                     }
                 }
             }
@@ -131,60 +100,269 @@ struct LoginView: View {
         }
     }
 
-    // MARK: - Subviews
-
-    private var credentialsFields: some View {
-        Group {
-            LabeledField(label: String(localized: "Server URL")) {
-                TextField("https://your-server.com", text: $viewModel.serverUrlInput)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-
-            LabeledField(label: String(localized: "Username")) {
-                TextField(String(localized: "Username"), text: $viewModel.username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-
-            LabeledField(label: String(localized: "Password")) {
-                SecureField(String(localized: "Password"), text: $viewModel.password)
-            }
-        }
-    }
-
-    private var totpFields: some View {
-        VStack(spacing: 12) {
-            Text("Two-Factor Authentication")
-                .font(.headline)
-            Text("Enter the 6-digit code from your authenticator app")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            TextField("000000", text: $viewModel.totpCode)
-                .textFieldStyle(.roundedBorder)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .font(.title2.monospaced())
-                .focused($totpFocused)
+    /// Shared by the Log In button and the keyboard submit key, so both paths
+    /// respect the same in-flight guards.
+    private func submitLogin() {
+        guard !viewModel.isLoading, !isPairing else { return }
+        Task {
+            await viewModel.login(authManager: authManager)
         }
     }
 }
 
-// MARK: - Labeled Field
+// MARK: - Subviews
 
-private struct LabeledField<Content: View>: View {
+private extension LoginView {
+    var header: some View {
+        VStack(spacing: 14) {
+            Image("Logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: min(logoSize, 132), height: min(logoSize, 132))
+                .overlay(Circle().strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.10), radius: 15, y: 10)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 4) {
+                Text("ServerBee")
+                    .font(.largeTitle.bold())
+                    .accessibilityAddTraits(.isHeader)
+                Text("Sign in to your server")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    var credentialsCard: some View {
+        VStack(spacing: 0) {
+            LoginFieldRow(label: String(localized: "Server")) {
+                focusedField = .server
+            } field: {
+                TextField(
+                    String(localized: "Server URL"),
+                    text: $viewModel.serverUrlInput,
+                    prompt: Text(verbatim: "https://your-server.com")
+                )
+                .keyboardType(.URL)
+                .textContentType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.next)
+                .focused($focusedField, equals: .server)
+                .onSubmit { focusedField = .username }
+            }
+
+            LoginFieldDivider()
+
+            LoginFieldRow(label: String(localized: "Username")) {
+                focusedField = .username
+            } field: {
+                TextField(String(localized: "Username"), text: $viewModel.username, prompt: Text("Required"))
+                    .textContentType(.username)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.next)
+                    .focused($focusedField, equals: .username)
+                    .onSubmit { focusedField = .password }
+            }
+
+            LoginFieldDivider()
+
+            LoginFieldRow(label: String(localized: "Password")) {
+                focusedField = .password
+            } field: {
+                SecureField(String(localized: "Password"), text: $viewModel.password, prompt: Text("Required"))
+                    .textContentType(.password)
+                    .submitLabel(.go)
+                    .focused($focusedField, equals: .password)
+                    .onSubmit(submitLogin)
+            }
+        }
+        .cardSurface(padding: 0)
+    }
+
+    var totpSection: some View {
+        VStack(spacing: 12) {
+            VStack(spacing: 4) {
+                Text("Two-Factor Authentication")
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+                Text("Enter the 6-digit code from your authenticator app")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+
+            LoginFieldRow(label: String(localized: "Code")) {
+                focusedField = .totp
+            } field: {
+                TextField(String(localized: "Code"), text: $viewModel.totpCode, prompt: Text("000000"))
+                    .keyboardType(.numberPad)
+                    .textContentType(.oneTimeCode)
+                    .font(.body.monospaced())
+                    .focused($focusedField, equals: .totp)
+                    .onSubmit(submitLogin)
+            }
+            .cardSurface(padding: 0)
+        }
+    }
+
+    @ViewBuilder
+    var errorMessages: some View {
+        if !viewModel.errorMessage.isEmpty {
+            errorText(viewModel.errorMessage)
+        }
+
+        if !pairErrorMessage.isEmpty {
+            errorText(pairErrorMessage)
+        }
+    }
+
+    func errorText(_ message: String) -> some View {
+        Text(message)
+            .font(.subheadline)
+            .foregroundStyle(Color.serverOffline)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+    }
+
+    var loginButton: some View {
+        Button(action: submitLogin) {
+            if viewModel.isLoading {
+                ProgressView()
+                    .tint(.white)
+            } else {
+                Text("Log In")
+            }
+        }
+        .buttonStyle(LoginButtonStyle(prominent: true, isBusy: viewModel.isLoading))
+        .disabled(viewModel.isLoading || isPairing)
+        .accessibilityLabel(Text("Log In"))
+    }
+
+    var scanButton: some View {
+        Button {
+            showQRScanner = true
+        } label: {
+            HStack(spacing: 8) {
+                if isPairing {
+                    ProgressView()
+                        .tint(Color.accentColor)
+                } else {
+                    Image(systemName: "qrcode.viewfinder")
+                        .accessibilityHidden(true)
+                }
+                Text("Scan QR Code")
+            }
+        }
+        .buttonStyle(LoginButtonStyle(prominent: false, isBusy: isPairing))
+        .disabled(isPairing)
+    }
+}
+
+// MARK: - Field Row
+
+/// One row of the grouped credentials card: a fixed-width leading label and a
+/// trailing field. At accessibility text sizes the label stacks above the
+/// field so neither is truncated. Like a native form row, a tap anywhere in
+/// the row (label or padding) focuses the field.
+private struct LoginFieldRow<FieldContent: View>: View {
     let label: String
-    @ViewBuilder let content: Content
+    let onRowTap: () -> Void
+    @ViewBuilder let field: FieldContent
+
+    @ScaledMetric(relativeTo: .body) private var labelWidth: CGFloat = 92
+    @ScaledMetric(relativeTo: .body) private var minRowHeight: CGFloat = 46
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 12))
+
+        layout {
             Text(label)
-                .font(.subheadline.weight(.medium))
-            content
-                .textFieldStyle(.roundedBorder)
+                .frame(width: stacked ? nil : labelWidth, alignment: .leading)
+                // Let label taps fall through to the row's tap target below.
+                .allowsHitTesting(false)
+                // The field below speaks this label instead.
+                .accessibilityHidden(true)
+            field
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // A field with a prompt outside a Form exposes no label of its
+                // own, so VoiceOver would only read the placeholder.
+                .accessibilityLabel(Text(label))
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(minHeight: minRowHeight)
+        .background {
+            // Sits behind the field, so taps on the field itself still reach
+            // the text input; only the label and padding land here.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onRowTap)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Hairline separator inset 16pt from the leading edge, as in a grouped list.
+private struct LoginFieldDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.leading, 16)
+    }
+}
+
+// MARK: - Button Style
+
+/// Full-width 50pt (Dynamic Type scaled) button: accent fill with white text
+/// when prominent, accent text on a light accent tint otherwise. A busy button
+/// keeps full opacity so its spinner stays legible; any other disabled button
+/// is dimmed.
+private struct LoginButtonStyle: ButtonStyle {
+    let prominent: Bool
+    let isBusy: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        LoginButtonBody(configuration: configuration, prominent: prominent, isBusy: isBusy)
+    }
+}
+
+private struct LoginButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let prominent: Bool
+    let isBusy: Bool
+
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 50
+    @Environment(\.isEnabled) private var isEnabled
+
+    private var opacity: Double {
+        if configuration.isPressed { return 0.7 }
+        return isEnabled || isBusy ? 1 : 0.6
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+    }
+
+    var body: some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(prominent ? Color.white : Color.accentColor)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: height)
+            .background(prominent ? Color.accentColor : Color.accentColor.opacity(0.15), in: shape)
+            .contentShape(shape)
+            .opacity(opacity)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
