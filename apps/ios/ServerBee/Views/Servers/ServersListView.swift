@@ -189,16 +189,11 @@ private extension ServersListView {
                             serverRow(server)
                         }
                     } header: {
-                        Group {
-                            if let group = section.group {
-                                Text(verbatim: group)
-                            } else if showsUngroupedHeader {
-                                Text(String(localized: "No group"))
-                            }
+                        if let group = section.group {
+                            Text(verbatim: group)
+                        } else if showsUngroupedHeader {
+                            Text(String(localized: "No group"))
                         }
-                        // Match `GroupHeader`; iOS 26 otherwise title-cases list headers.
-                        .font(.footnote)
-                        .textCase(.uppercase)
                     }
                 }
             }

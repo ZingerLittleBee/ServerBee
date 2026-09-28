@@ -19,8 +19,9 @@ extension View {
     }
 }
 
-/// Uppercase footnote header placed above a card or group on ScrollView-based
-/// screens, matching the inset-grouped `List` section header.
+/// Header placed above a card or group on ScrollView-based screens, matching
+/// the inset-grouped `List` section header of the running OS: sentence-case
+/// headline on iOS 26, uppercase footnote before it.
 struct GroupHeader: View {
     let title: String
 
@@ -29,13 +30,19 @@ struct GroupHeader: View {
     }
 
     var body: some View {
-        Text(title)
-            .font(.footnote)
-            .textCase(.uppercase)
+        styledTitle
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder private var styledTitle: some View {
+        if #available(iOS 26, *) {
+            Text(title).font(.headline)
+        } else {
+            Text(title).font(.footnote).textCase(.uppercase)
+        }
     }
 }
 
