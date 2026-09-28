@@ -242,19 +242,21 @@ private extension ServerOverviewSection {
     static func sharedUnitParts(used: Int64?, total: Int64?) -> (used: String, total: String)? {
         guard let used, let total, total > 0 else { return nil }
         let unit: ByteCountFormatter.Units
+        let divisor: Int64
         switch total {
-        case (1 << 40)...: unit = .useTB
-        case (1 << 30)...: unit = .useGB
-        case (1 << 20)...: unit = .useMB
-        default: unit = .useKB
+        case (1 << 40)...: (unit, divisor) = (.useTB, 1 << 40)
+        case (1 << 30)...: (unit, divisor) = (.useGB, 1 << 30)
+        case (1 << 20)...: (unit, divisor) = (.useMB, 1 << 20)
+        default: (unit, divisor) = (.useKB, 1 << 10)
         }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .binary
         formatter.allowedUnits = unit
         formatter.allowsNonnumericFormatting = false
-        let totalText = formatter.string(fromByteCount: total)
-        formatter.includesUnit = false
-        return (formatter.string(fromByteCount: used), totalText)
+        // One decimal keeps the big readout calm ("26.2 / 32 GB", not "26.24").
+        let value = Double(used) / Double(divisor)
+        let usedText = String(format: value >= 100 ? "%.0f" : "%.1f", value)
+        return (usedText, formatter.string(fromByteCount: total))
     }
 }
 
