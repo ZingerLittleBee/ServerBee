@@ -512,6 +512,23 @@
         }
       }
     },
+    "through %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "through %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截至 %@"
+          }
+        }
+      }
+    },
     "—": {
       "extractionState": "manual",
       "localizations": {

@@ -229,10 +229,12 @@ struct TrafficDailyChart: View {
                 legend
             }
         } accessory: {
-            Text(daily.count == 1 ? String(localized: "last 1 day") : String(localized: "last \(daily.count) days"))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+            if let caption = TrafficDayFormat.rangeCaption(days: daily.map(\.date)) {
+                Text(caption)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
     }
 }
@@ -264,7 +266,7 @@ private extension TrafficDailyChart {
                 AxisGridLine()
                 AxisValueLabel {
                     if let bytes = value.as(Double.self) {
-                        Text(verbatim: bytes > 0 ? Formatters.formatBytes(Int64(bytes)) : "0")
+                        Text(verbatim: scale.label(for: bytes))
                     }
                 }
             }
