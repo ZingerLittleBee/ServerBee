@@ -7,23 +7,45 @@ struct CostInsightsCard: View {
     let cost: ServerCostInsights
     let config: ServerConfig?
 
+    @ScaledMetric(relativeTo: .body) private var burnBarHeight: CGFloat = 6
+
     var body: some View {
-        SectionCard(String(localized: "Cost"), systemImage: "dollarsign.circle") {
+        SectionCard(String(localized: "Cost")) {
             if cost.configured {
                 configuredBody
             } else {
                 unconfiguredBody
             }
+        } accessory: {
+            if cost.configured, let cycle = cost.billingCycle {
+                Text(localizedCycle(cycle))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
+}
 
-    // MARK: Configured
+/// One label/value pair in the configured cost grid.
+private struct CostStat: Hashable {
+    let label: String
+    let value: String
+}
 
-    private var configuredBody: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            Divider()
-            burnRows
+// MARK: Configured
+
+private extension CostInsightsCard {
+    var configuredBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(Formatters.formatCurrency(cost.price, code: cost.currencyCode))
+                .font(.title.bold())
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            if let elapsed = cost.cycleCostElapsed {
+                burnSection(elapsed)
+            }
+            statsGrid
             if let resource = cost.resourceValue {
                 Divider()
                 resourceRows(resource)
@@ -36,49 +58,73 @@ struct CostInsightsCard: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(Formatters.formatCurrency(cost.price, code: cost.currencyCode))
-                .font(.title3.bold())
-            if let cycle = cost.billingCycle {
-                Text(localizedCycle(cycle))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+    func burnSection(_ elapsed: Double) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    burnLabel
+                    Spacer(minLength: 8)
+                    burnAmount(elapsed)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    burnLabel
+                    burnAmount(elapsed)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            if let percent = cost.cycleBurnPercent {
+                UsageBar(value: percent / 100, height: burnBarHeight, tint: .accentColor)
+                    .accessibilityLabel(Text(String(localized: "Burned this cycle")))
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var burnRows: some View {
-        VStack(spacing: 8) {
-            DetailRow(
+    var burnLabel: some View {
+        Text(String(localized: "Burned this cycle"))
+            .font(.subheadline)
+    }
+
+    func burnAmount(_ elapsed: Double) -> some View {
+        Text(burnedValue(elapsed))
+            .font(.subheadline.weight(.semibold))
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+
+    var stats: [CostStat] {
+        var stats = [
+            CostStat(
                 label: String(localized: "Per day"),
                 value: Formatters.formatCurrency(cost.costPerDay, code: cost.currencyCode)
-            )
-            DetailRow(
+            ),
+            CostStat(
                 label: String(localized: "Per hour"),
                 value: Formatters.formatCurrencyRate(cost.costPerHour, code: cost.currencyCode)
-            )
-            if let elapsed = cost.cycleCostElapsed {
-                DetailRow(
-                    label: String(localized: "Burned this cycle"),
-                    value: burnedValue(elapsed)
-                )
-            }
-            DetailRow(
+            ),
+            CostStat(
                 label: String(localized: "Remaining budget"),
                 value: Formatters.formatCurrency(cost.cycleCostRemaining, code: cost.currencyCode)
             )
-            if let days = cost.daysRemaining {
-                DetailRow(
-                    label: String(localized: "Days remaining"),
-                    value: String(localized: "\(days) days")
-                )
+        ]
+        if let days = cost.daysRemaining {
+            stats.append(CostStat(label: String(localized: "Days remaining"), value: String(localized: "\(days) days")))
+        }
+        return stats
+    }
+
+    var statsGrid: some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 12, alignment: .topLeading),
+            GridItem(.flexible(), spacing: 12, alignment: .topLeading)
+        ]
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            ForEach(stats, id: \.label) { stat in
+                TrafficStatCell(label: stat.label, value: stat.value, valueFont: .headline)
             }
         }
     }
 
-    private func burnedValue(_ elapsed: Double) -> String {
+    func burnedValue(_ elapsed: Double) -> String {
         let amount = Formatters.formatCurrency(elapsed, code: cost.currencyCode)
         if let percent = cost.cycleBurnPercent {
             return "\(amount) (\(String(format: "%.0f%%", percent)))"
@@ -86,12 +132,13 @@ struct CostInsightsCard: View {
         return amount
     }
 
-    private func resourceRows(_ resource: ResourceValue) -> some View {
+    func resourceRows(_ resource: ResourceValue) -> some View {
         VStack(spacing: 8) {
             Text(String(localized: "Value per resource (monthly)"))
-                .font(.caption)
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
             if let cpu = resource.costPerCpuCore {
                 DetailRow(
                     label: String(localized: "Per CPU core"),
@@ -119,15 +166,17 @@ struct CostInsightsCard: View {
         }
     }
 
-    private func advisoriesView(_ advisories: [CostAdvisory]) -> some View {
+    func advisoriesView(_ advisories: [CostAdvisory]) -> some View {
         FlowChips(items: advisories) { advisory in
-            Chip(text: advisory.label, color: .warningAmber)
+            Chip(text: advisory.label, systemImage: "exclamationmark.triangle.fill", color: .warningAmber)
         }
     }
+}
 
-    // MARK: Unconfigured
+// MARK: Unconfigured
 
-    private var unconfiguredBody: some View {
+private extension CostInsightsCard {
+    var unconfiguredBody: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let price = config?.price ?? cost.price {
                 DetailRow(
@@ -138,25 +187,21 @@ struct CostInsightsCard: View {
             if let cycle = config?.billingCycle ?? cost.billingCycle {
                 DetailRow(label: String(localized: "Billing cycle"), value: localizedCycle(cycle))
             }
-            if let reason = cost.invalidReason {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.secondary)
-                    Text(reason.label)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text(String(localized: "Set a price and billing cycle to see cost insights."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            Label {
+                Text(cost.invalidReason?.label ?? String(localized: "Set a price and billing cycle to see cost insights."))
+            } icon: {
+                Image(systemName: "info.circle")
             }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
         }
     }
+}
 
-    // MARK: Helpers
+// MARK: Helpers
 
-    private func localizedCycle(_ cycle: String) -> String {
+private extension CostInsightsCard {
+    func localizedCycle(_ cycle: String) -> String {
         switch cycle {
         case "monthly": String(localized: "Monthly")
         case "quarterly": String(localized: "Quarterly")
