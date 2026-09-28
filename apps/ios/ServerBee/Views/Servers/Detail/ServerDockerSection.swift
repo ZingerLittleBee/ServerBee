@@ -74,21 +74,13 @@ struct ServerDockerSection: View {
     private var content: some View {
         ScrollView {
             VStack(spacing: 16) {
-                if let info = viewModel.info {
-                    DockerInfoCard(info: info)
-                }
+                DockerInfoCard(info: viewModel.info) { resource = $0 }
                 filterBar
                 if filteredContainers.isEmpty {
                     emptyContainers
                 } else {
-                    ForEach(filteredContainers) { container in
-                        Button { selected = container } label: {
-                            DockerContainerRow(container: container, stats: viewModel.stats(for: container))
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    containerList
                 }
-                resourcesCard
             }
             .padding()
         }
@@ -102,13 +94,39 @@ struct ServerDockerSection: View {
         }
     }
 
+    // MARK: - Filter
+
     private var filterBar: some View {
-        Picker(String(localized: "Filter"), selection: $filter) {
-            ForEach(ContainerFilter.allCases) { f in
-                Text("\(f.label) (\(count(for: f)))").tag(f)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ContainerFilter.allCases) { option in
+                    filterPill(option)
+                }
             }
         }
-        .pickerStyle(.segmented)
+        .scrollClipDisabled()
+        .animation(.snappy, value: filter)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "Filter"))
+    }
+
+    private func filterPill(_ option: ContainerFilter) -> some View {
+        let isSelected = filter == option
+        return Button {
+            filter = option
+        } label: {
+            Text(verbatim: "\(option.label) (\(count(for: option)))")
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.accentColor : Color(.tertiarySystemFill), in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func count(for filter: ContainerFilter) -> Int {
@@ -119,6 +137,26 @@ struct ServerDockerSection: View {
         }
     }
 
+    // MARK: - Containers
+
+    private var containerList: some View {
+        let containers = filteredContainers
+        return VStack(spacing: 0) {
+            ForEach(Array(containers.enumerated()), id: \.element.id) { index, container in
+                Button { selected = container } label: {
+                    DockerContainerRow(
+                        container: container,
+                        stats: viewModel.stats(for: container),
+                        showsSeparator: index < containers.count - 1
+                    )
+                }
+                .buttonStyle(GroupedRowButtonStyle())
+            }
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
     private var emptyContainers: some View {
         ContentUnavailableView {
             Label(String(localized: "No containers"), systemImage: "shippingbox")
@@ -126,32 +164,6 @@ struct ServerDockerSection: View {
             Text(String(localized: "This host has no containers in this filter."))
         }
         .frame(minHeight: 220)
-    }
-
-    private var resourcesCard: some View {
-        SectionCard(String(localized: "Resources"), systemImage: "square.stack.3d.up") {
-            VStack(spacing: 0) {
-                resourceRow(.events, title: String(localized: "Events"), systemImage: "list.bullet.rectangle")
-                Divider()
-                resourceRow(.networks, title: String(localized: "Networks"), systemImage: "network")
-                Divider()
-                resourceRow(.volumes, title: String(localized: "Volumes"), systemImage: "externaldrive")
-            }
-        }
-    }
-
-    private func resourceRow(_ res: DockerResource, title: String, systemImage: String) -> some View {
-        Button { resource = res } label: {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage).frame(width: 22).foregroundStyle(Color.brandAccent)
-                Text(title).foregroundStyle(.primary)
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-            }
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     private func unavailableView(_ message: String) -> some View {
@@ -168,105 +180,271 @@ struct ServerDockerSection: View {
     }
 }
 
-// MARK: - Info card
+// MARK: - Resources card
 
+/// "Resources" card: engine version, container / image counts, host platform,
+/// and entry points into the on-demand events / networks / volumes sheets.
+/// Info is best-effort, so the entry points stay reachable when it is missing.
 struct DockerInfoCard: View {
-    let info: DockerSystemInfo
+    let info: DockerSystemInfo?
+    let onOpen: (ServerDockerSection.DockerResource) -> Void
 
-    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        SectionCard(String(localized: "Docker"), systemImage: "shippingbox.fill") {
-            VStack(spacing: 12) {
-                LazyVGrid(columns: columns, spacing: 12) {
-                    stat(String(localized: "Running"), "\(info.containersRunning)", color: .serverOnline)
-                    stat(String(localized: "Stopped"), "\(info.containersStopped)", color: .serverOffline)
-                    stat(String(localized: "Paused"), "\(info.containersPaused)", color: .warningAmber)
-                    stat(String(localized: "Images"), "\(info.images)")
-                }
-                Divider()
-                DetailRow(label: String(localized: "Version"), value: info.dockerVersion)
-                DetailRow(label: String(localized: "API"), value: info.apiVersion)
-                DetailRow(label: String(localized: "Platform"), value: "\(info.os) · \(info.arch)")
-                DetailRow(label: String(localized: "Memory"), value: Formatters.formatBytes(info.memoryTotal))
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            if let info {
+                statsGrid(info)
+                Text(verbatim: footnote(for: info))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            resourceButtons
+        }
+        .cardSurface()
+    }
+
+    private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                title
+                Spacer(minLength: 8)
+                versionText.lineLimit(1)
+            }
+            // Stacked fallback lets the version wrap instead of truncating.
+            VStack(alignment: .leading, spacing: 2) {
+                title
+                versionText
             }
         }
     }
 
-    private func stat(_ label: String, _ value: String, color: Color = .primary) -> some View {
-        VStack(spacing: 2) {
-            Text(value).font(.title3.bold()).foregroundStyle(color)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+    private var title: some View {
+        Text(String(localized: "Resources"))
+            .font(.subheadline.weight(.semibold))
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder
+    private var versionText: some View {
+        if let info {
+            Text(verbatim: "Docker \(info.dockerVersion) · API \(info.apiVersion)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func statsGrid(_ info: DockerSystemInfo) -> some View {
+        let columns = Array(
+            repeating: GridItem(.flexible(), spacing: 8, alignment: .leading),
+            count: dynamicTypeSize.isAccessibilitySize ? 2 : 4
+        )
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            stat(String(localized: "Running"), info.containersRunning,
+                 color: info.containersRunning > 0 ? .serverOnline : .secondary)
+            stat(String(localized: "Stopped"), info.containersStopped, color: .secondary)
+            stat(String(localized: "Paused"), info.containersPaused,
+                 color: info.containersPaused > 0 ? .warningAmber : .secondary)
+            stat(String(localized: "Images"), info.images, color: .primary)
+        }
+    }
+
+    private func stat(_ label: String, _ value: Int64, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            StatValue(value: "\(value)", color: color)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(verbatim: "\(value)"))
+    }
+
+    /// "linux/x86_64 · 8 GB memory".
+    private func footnote(for info: DockerSystemInfo) -> String {
+        let platform = [info.os, info.arch].filter { !$0.isEmpty }.joined(separator: "/")
+        let memory = String(localized: "\(dockerBytes(info.memoryTotal)) memory")
+        return [platform, memory].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private var resourceButtons: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { resourceButtonSet }
+            VStack(spacing: 8) { resourceButtonSet }
+        }
+    }
+
+    @ViewBuilder
+    private var resourceButtonSet: some View {
+        resourceButton(.events, title: String(localized: "Events"), systemImage: "list.bullet.rectangle")
+        resourceButton(.networks, title: String(localized: "Networks"), systemImage: "network")
+        resourceButton(.volumes, title: String(localized: "Volumes"), systemImage: "externaldrive")
+    }
+
+    private func resourceButton(
+        _ res: ServerDockerSection.DockerResource,
+        title: String,
+        systemImage: String
+    ) -> some View {
+        Button { onOpen(res) } label: {
+            Label(title, systemImage: systemImage)
+                .font(.footnote.weight(.semibold))
+                .lineLimit(1)
+                // With the bordered insets this yields a 44pt tap target.
+                .frame(maxWidth: .infinity, minHeight: 30)
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.roundedRectangle(radius: 10))
     }
 }
 
 // MARK: - Container row
 
+/// One container in the grouped list: icon tile, name + state badge, image,
+/// and live CPU / memory / network for running containers (status otherwise).
 struct DockerContainerRow: View {
     let container: DockerContainer
     let stats: DockerContainerStats?
+    var showsSeparator = false
+
+    @ScaledMetric(relativeTo: .body) private var tileSize: CGFloat = 30
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// At accessibility sizes the decorative tile is dropped, the badge moves
+    /// under the name and text may wrap, so long names stay readable.
+    private var isLarge: Bool { dynamicTypeSize.isAccessibilitySize }
+
+    private var titleLayout: AnyLayout {
+        isLarge
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 3))
+            : AnyLayout(HStackLayout(spacing: 6))
+    }
 
     var body: some View {
-        SectionCard {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
+        HStack(spacing: 12) {
+            if !isLarge {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: tileSize * 0.58))
+                    .foregroundStyle(.secondary)
+                    .frame(width: tileSize, height: tileSize)
+                    .background(
+                        Color(.tertiarySystemFill),
+                        in: RoundedRectangle(cornerRadius: tileSize * 0.27, style: .continuous)
+                    )
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                titleLayout {
                     Text(container.displayName)
-                        .font(.subheadline.bold())
-                        .lineLimit(1)
-                    Spacer()
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.primary)
                     DockerStatePill(state: container.state)
+                        .fixedSize()
                 }
                 Text(container.image)
-                    .font(.caption.monospaced())
+                    .font(.footnote.monospaced())
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if let stats, container.isRunning {
-                    HStack(spacing: 14) {
-                        Label(Formatters.formatPercentage(stats.cpuPercent), systemImage: "cpu")
-                            .foregroundStyle(Formatters.cpuColor(for: stats.cpuPercent))
-                        Label(Formatters.formatBytes(stats.memoryUsage), systemImage: "memorychip")
-                            .foregroundStyle(Formatters.usageColor(for: stats.memoryPercent))
-                        Label("↓\(Formatters.formatBytes(stats.networkRx))", systemImage: "arrow.down")
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.caption)
-                    .lineLimit(1)
-                } else {
-                    Text(container.status)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                detailLine
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
+            .lineLimit(isLarge ? 3 : 1)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay(alignment: .bottom) {
+            if showsSeparator {
+                Divider().padding(.leading, isLarge ? 16 : 16 + tileSize + 12)
+            }
+        }
+    }
+
+    private var detailLine: Text {
+        if let stats, container.isRunning {
+            return Text(Self.statsSummary(stats))
+        }
+        return Text(verbatim: container.status)
+    }
+
+    /// "CPU 2.4% · 50.0 MB · ↓ 1.0 MB"; CPU / memory switch to the warning or
+    /// error colour when usage is elevated.
+    private static func statsSummary(_ stats: DockerContainerStats) -> AttributedString {
+        var cpu = AttributedString("\(String(localized: "CPU")) \(Formatters.formatPercentage(stats.cpuPercent))")
+        cpu.foregroundColor = loadColor(for: stats.cpuPercent)
+        var memory = AttributedString(dockerBytes(stats.memoryUsage))
+        memory.foregroundColor = loadColor(for: stats.memoryPercent)
+        let separator = AttributedString(" · ")
+        let received = AttributedString("↓\u{00A0}\(dockerBytes(stats.networkRx))")
+        return cpu + separator + memory + separator + received
+    }
+
+    /// `nil` keeps the row's secondary colour for normal load.
+    private static func loadColor(for percent: Double) -> Color? {
+        switch percent {
+        case ..<50: nil
+        case ..<80: .warningAmber
+        default: .serverOffline
         }
     }
 }
 
-/// Coloured pill for a container's state.
+/// Byte count with a non-breaking space ("8\u{00A0}GB") so the number and unit
+/// never wrap onto separate lines.
+private func dockerBytes(_ bytes: Int64) -> String {
+    Formatters.formatBytes(bytes).replacingOccurrences(of: " ", with: "\u{00A0}")
+}
+
+/// Row highlight for buttons laid out as grouped-list rows.
+private struct GroupedRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color(.systemGray4) : Color.clear)
+    }
+}
+
+/// Tinted badge for a container's state.
 struct DockerStatePill: View {
     let state: String
 
-    private var color: Color {
+    /// Running is healthy, transitional states warn, `dead` is an error, and
+    /// everything else (exited, created, …) is neutral.
+    static func color(for state: String) -> Color {
         switch state.lowercased() {
         case "running": .serverOnline
-        case "paused": .warningAmber
-        case "restarting", "created": .brandAccent
-        default: .serverOffline
+        case "paused", "restarting", "removing": .warningAmber
+        case "dead": .serverOffline
+        default: .secondary
+        }
+    }
+
+    /// Localized label for Docker's known states; unknown states show as-is.
+    static func label(for state: String) -> String {
+        switch state.lowercased() {
+        case "running": String(localized: "Running")
+        case "paused": String(localized: "Paused")
+        case "restarting": String(localized: "Restarting")
+        case "created": String(localized: "Created")
+        case "exited": String(localized: "Exited")
+        case "removing": String(localized: "Removing")
+        case "dead": String(localized: "Dead")
+        default: state.capitalized
         }
     }
 
     var body: some View {
-        Text(state.capitalized)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.14))
-            .clipShape(Capsule())
+        StatusBadge(text: Self.label(for: state), color: Self.color(for: state))
     }
 }
