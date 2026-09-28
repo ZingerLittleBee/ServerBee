@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(\.apiClient) private var apiClient
     @Environment(PushNotificationManager.self) private var pushManager
     @State private var viewModel = SettingsViewModel()
+    @AppStorage("theme") private var theme: String = AppTheme.system.rawValue
 
     /// Live WebSocket client owned by `ContentView`. Passed in so logout can
     /// close it before clearing auth and triggering the server logout.
@@ -14,17 +15,22 @@ struct SettingsView: View {
 
     #if DEBUG
     @State private var debugPath = NavigationPath()
+    @State private var didApplyDebugRoute = false
 
     /// DEBUG-only value-routed admin destinations, used by the launch hook to
     /// push a sub-screen without the cliclick harness scrolling the list.
-    enum AdminRoute: Hashable { case networkProbes, ipQuality, statusPage, users }
+    enum AdminRoute: Hashable { case administration, networkProbes, ipQuality, statusPage, users }
     #endif
 
     var body: some View {
         navigationStack
     }
+}
 
-    private var navigationStack: some View {
+// MARK: - Navigation
+
+private extension SettingsView {
+    var navigationStack: some View {
         #if DEBUG
         NavigationStack(path: $debugPath) { settingsList }
         #else
@@ -32,192 +38,175 @@ struct SettingsView: View {
         #endif
     }
 
-    private var settingsList: some View {
+    var settingsList: some View {
         list
         #if DEBUG
             .navigationDestination(for: AdminRoute.self) { route in
                 switch route {
+                case .administration: AdministrationView(isAdmin: isAdmin)
                 case .networkProbes: NetworkProbeConfigView(isAdmin: isAdmin)
                 case .ipQuality: IpQualityConfigView(isAdmin: isAdmin)
                 case .statusPage: StatusPageConfigView(isAdmin: isAdmin)
                 case .users: UsersView()
                 }
             }
-            .task {
-                switch UITestSupport.adminRoute {
-                case "network-probes": debugPath.append(AdminRoute.networkProbes)
-                case "ip-quality": debugPath.append(AdminRoute.ipQuality)
-                case "status-page": debugPath.append(AdminRoute.statusPage)
-                case "users": debugPath.append(AdminRoute.users)
-                default: break
-                }
-            }
+            .task { applyDebugAdminRoute() }
         #endif
     }
 
-    private var list: some View {
-        List {
-                if let url = authManager.serverUrl, !url.isEmpty {
-                    Section {
-                        InsecureURLBanner(serverUrl: url)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                    }
-                }
-                accountSection
-                securitySection
-                accessSection
-                if isAdmin { adminSection }
-                preferencesSection
-                aboutSection
-                logoutSection
-            }
-            .navigationTitle(String(localized: "Settings"))
-            .confirmationDialog(
-                String(localized: "Are you sure you want to log out?"),
-                isPresented: $viewModel.showLogoutConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button(String(localized: "Log Out"), role: .destructive) {
-                    Task {
-                        await viewModel.logout(
-                            authManager: authManager,
-                            apiClient: apiClient,
-                            pushManager: pushManager,
-                            closeWebSocket: { await wsClient.close() }
-                        )
-                    }
-                }
-                Button(String(localized: "Cancel"), role: .cancel) {}
-            }
+    #if DEBUG
+    /// Pushes `SB_UITEST_ADMIN` once per launch. Admin sub-screens live under
+    /// Administration, so the hook pushes that hub first to keep the back stack
+    /// identical to a manual tap-through.
+    func applyDebugAdminRoute() {
+        guard !didApplyDebugRoute else { return }
+        didApplyDebugRoute = true
+        let route: AdminRoute? = switch UITestSupport.adminRoute {
+        case "network-probes": .networkProbes
+        case "ip-quality": .ipQuality
+        case "status-page": .statusPage
+        case "users": .users
+        case "administration": .administration
+        default: nil
         }
+        guard let route else { return }
+        debugPath.append(AdminRoute.administration)
+        if route != .administration { debugPath.append(route) }
+    }
+    #endif
+}
 
-    private var accountSection: some View {
-        Section(String(localized: "Account")) {
-            LabeledContent(String(localized: "Username")) {
-                Text(authManager.user?.username ?? "-")
+// MARK: - List
+
+private extension SettingsView {
+    var list: some View {
+        List {
+            accountSection
+            if let url = authManager.serverUrl, !url.isEmpty {
+                Section {
+                    InsecureURLBanner(serverUrl: url)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
             }
-            LabeledContent(String(localized: "Role")) {
-                Text(authManager.user?.role.capitalized ?? "-")
+            securitySection
+            accessSection
+            if isAdmin { adminSection }
+            appSection
+            logoutSection
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(String(localized: "Settings"))
+        .confirmationDialog(
+            String(localized: "Are you sure you want to log out?"),
+            isPresented: $viewModel.showLogoutConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Log Out"), role: .destructive) {
+                Task {
+                    await viewModel.logout(
+                        authManager: authManager,
+                        apiClient: apiClient,
+                        pushManager: pushManager,
+                        closeWebSocket: { await wsClient.close() }
+                    )
+                }
             }
-            LabeledContent(String(localized: "Server")) {
-                Text(authManager.serverUrl ?? "-")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            DeviceNameRow()
+            Button(String(localized: "Cancel"), role: .cancel) {}
         }
     }
 
-    private var securitySection: some View {
+    var accountSection: some View {
+        Section {
+            AccountHeaderRow(
+                username: authManager.user?.username,
+                roleName: roleName,
+                serverUrl: authManager.serverUrl
+            )
+        }
+    }
+
+    var securitySection: some View {
         Section(String(localized: "Security")) {
             NavigationLink {
                 PasswordChangeView()
             } label: {
-                Label(String(localized: "Change Password"), systemImage: "key")
+                IconRowLabel(title: String(localized: "Change Password"), systemImage: "key.fill", color: .gray)
             }
             NavigationLink {
                 TwoFactorView()
             } label: {
-                Label(String(localized: "Two-Factor Auth"), systemImage: "lock.shield")
+                IconRowLabel(title: String(localized: "Two-Factor Auth"), systemImage: "lock.fill", color: .green)
             }
             NavigationLink {
                 FirewallBlocklistView()
             } label: {
-                Label(String(localized: "Firewall Blocklist"), systemImage: "hand.raised")
+                IconRowLabel(title: String(localized: "Firewall Blocklist"), systemImage: "hand.raised.fill", color: .red)
             }
         }
     }
 
-    private var accessSection: some View {
+    var accessSection: some View {
         Section(String(localized: "Access")) {
             NavigationLink {
                 ApiKeysView()
             } label: {
-                Label(String(localized: "API Keys"), systemImage: "key.horizontal")
+                IconRowLabel(
+                    title: String(localized: "API Keys"),
+                    systemImage: "chevron.left.forwardslash.chevron.right",
+                    color: .blue
+                )
             }
             NavigationLink {
                 DevicesView()
             } label: {
-                Label(String(localized: "Devices"), systemImage: "iphone")
+                IconRowLabel(title: String(localized: "Devices"), systemImage: "iphone", color: .indigo)
+            }
+            // The name this installation registers under, as listed in Devices.
+            HStack(spacing: 12) {
+                IconTile(systemImage: "tag.fill", color: .gray)
+                DeviceNameRow()
             }
         }
     }
 
-    private var adminSection: some View {
+    var adminSection: some View {
         Section(String(localized: "Admin")) {
             NavigationLink {
-                ServerGroupsView()
+                AdministrationView(isAdmin: isAdmin)
             } label: {
-                Label(String(localized: "Server Groups"), systemImage: "folder")
-            }
-            NavigationLink {
-                PingTasksView(isAdmin: isAdmin)
-            } label: {
-                Label(String(localized: "Ping Tasks"), systemImage: "dot.radiowaves.left.and.right")
-            }
-            NavigationLink {
-                TasksView(isAdmin: isAdmin)
-            } label: {
-                Label(String(localized: "Scheduled Commands"), systemImage: "terminal")
-            }
-            NavigationLink {
-                NetworkProbeConfigView(isAdmin: isAdmin)
-            } label: {
-                Label(String(localized: "Network Probes"), systemImage: "dot.radiowaves.up.forward")
-            }
-            NavigationLink {
-                IpQualityConfigView(isAdmin: isAdmin)
-            } label: {
-                Label(String(localized: "IP Quality"), systemImage: "shield.lefthalf.filled")
-            }
-            NavigationLink {
-                StatusPageConfigView(isAdmin: isAdmin)
-            } label: {
-                Label(String(localized: "Status Page"), systemImage: "globe.americas")
-            }
-            NavigationLink {
-                UsersView()
-            } label: {
-                Label(String(localized: "Users"), systemImage: "person.2")
-            }
-            NavigationLink {
-                AuditLogView()
-            } label: {
-                Label(String(localized: "Audit Log"), systemImage: "list.bullet.rectangle")
-            }
-            NavigationLink {
-                RateLimitView()
-            } label: {
-                Label(String(localized: "Rate Limits"), systemImage: "speedometer")
-            }
-            NavigationLink {
-                DatabasesView(isAdmin: isAdmin)
-            } label: {
-                Label(String(localized: "GeoIP & ASN"), systemImage: "globe")
+                IconRowLabel(
+                    title: String(localized: "Administration"),
+                    systemImage: "wrench.and.screwdriver.fill",
+                    color: .orange,
+                    subtitle: String(localized: "Groups, ping, probes, users, audit…")
+                )
             }
         }
     }
 
-    private var preferencesSection: some View {
-        Section(String(localized: "Preferences")) {
+    var appSection: some View {
+        Section(String(localized: "App")) {
             NavigationLink {
                 AppearanceView()
             } label: {
-                Label(String(localized: "Appearance"), systemImage: "paintbrush")
+                IconRowLabel(
+                    title: String(localized: "Appearance"),
+                    systemImage: "circle.lefthalf.filled",
+                    color: .purple,
+                    value: selectedTheme.localizedName
+                )
             }
+            IconRowLabel(
+                title: String(localized: "Version"),
+                systemImage: "info.circle",
+                color: .gray,
+                value: appVersion
+            )
         }
     }
 
-    private var aboutSection: some View {
-        Section(String(localized: "About")) {
-            LabeledContent(String(localized: "Version")) {
-                Text(appVersion)
-            }
-        }
-    }
-
-    private var logoutSection: some View {
+    var logoutSection: some View {
         Section {
             Button(role: .destructive) {
                 viewModel.showLogoutConfirmation = true
@@ -236,7 +225,117 @@ struct SettingsView: View {
         }
     }
 
-    private var appVersion: String {
+    var selectedTheme: AppTheme {
+        AppTheme(rawValue: theme) ?? .system
+    }
+
+    /// Localized display name for the signed-in user's role.
+    var roleName: String? {
+        guard let role = authManager.user?.role else { return nil }
+        switch role.lowercased() {
+        case "admin": return String(localized: "Admin")
+        case "member": return String(localized: "Member")
+        default: return role.capitalized
+        }
+    }
+
+    var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    }
+}
+
+// MARK: - Account header
+
+/// First Settings row: initials avatar, username and "<Role> · <server>".
+private struct AccountHeaderRow: View {
+    let username: String?
+    let roleName: String?
+    let serverUrl: String?
+
+    @ScaledMetric(relativeTo: .title3) private var avatarSize: CGFloat = 52
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Accessibility text sizes stack the avatar above the text and let it
+    /// wrap; a single truncated line there collapses to a few characters.
+    private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
+
+    var body: some View {
+        let layout = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 14))
+        layout {
+            avatar
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: username ?? "-")
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(isAccessibilitySize ? 3 : 1)
+                if !subtitle.isEmpty {
+                    Text(verbatim: subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(isAccessibilitySize ? nil : 1)
+                        .truncationMode(.middle)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: username ?? "-"))
+        .accessibilityValue(Text(verbatim: [roleName, serverUrl].compactMap { $0 }.joined(separator: ", ")))
+    }
+
+    private var avatar: some View {
+        Circle()
+            .fill(Color.accentColor)
+            .frame(width: avatarSize, height: avatarSize)
+            .overlay {
+                if let initials = username.map(Self.initials(for:)), !initials.isEmpty {
+                    Text(verbatim: initials)
+                        .font(.system(size: avatarSize * 0.38, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .padding(4)
+                } else {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: avatarSize * 0.45, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var subtitle: String {
+        [roleName, serverUrl.map(Self.displayHost(for:))]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    /// Up to two uppercase initials: the first letter of the first two words
+    /// ("jane.doe" → "JD"), otherwise the first two characters ("admin" → "AD").
+    static func initials(for username: String) -> String {
+        let words = username.split { !$0.isLetter && !$0.isNumber }
+        if words.count >= 2, let first = words[0].first, let second = words[1].first {
+            return String([first, second]).uppercased()
+        }
+        return String(username.filter { $0.isLetter || $0.isNumber }.prefix(2)).uppercased()
+    }
+
+    /// Server URL without its scheme or trailing slash, keeping a non-default
+    /// port and sub-path so reverse-proxied installs stay distinguishable.
+    static func displayHost(for serverUrl: String) -> String {
+        let trimmed = serverUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: trimmed),
+              let host = components.host, !host.isEmpty
+        else {
+            return trimmed
+        }
+        var result = host.contains(":") ? "[\(host)]" : host
+        if let port = components.port { result += ":\(port)" }
+        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if !path.isEmpty { result += "/\(path)" }
+        return result
     }
 }
