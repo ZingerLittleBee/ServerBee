@@ -35,14 +35,18 @@ struct OverviewInfoCard: View {
                     Divider().padding(.leading, 16)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    // Priorities keep the short label whole and let the value take the
+                    // rest of the row before the spacer, instead of an even split.
                     Text(row.label)
                         .foregroundStyle(.primary)
+                        .layoutPriority(2)
                     Spacer(minLength: 12)
                     Text(row.value)
                         .foregroundStyle(row.valueColor ?? .secondary)
                         .monospacedDigit()
                         .multilineTextAlignment(.trailing)
                         .textSelection(.enabled)
+                        .layoutPriority(1)
                 }
                 .font(.subheadline)
                 .padding(.horizontal, 16)
