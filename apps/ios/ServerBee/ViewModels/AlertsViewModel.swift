@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// Client-side filter applied by the alerts list's segmented control.
+enum AlertEventFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case firing
+    case resolved
+
+    var id: String { rawValue }
+}
+
 @MainActor
 @Observable
 final class AlertsViewModel {
@@ -20,6 +29,21 @@ final class AlertsViewModel {
     /// In-flight debounced refetch task. Cancelled if a new event arrives
     /// inside the debounce window so only the trailing fetch survives.
     private var refetchTask: Task<Void, Never>?
+
+    /// Number of currently-firing events. Drives the Alerts tab badge and the
+    /// "Firing" segment count.
+    var firingCount: Int {
+        events.filter { $0.status == .firing }.count
+    }
+
+    /// Events visible under `filter`, preserving the server's ordering.
+    func events(matching filter: AlertEventFilter) -> [MobileAlertEvent] {
+        switch filter {
+        case .all: events
+        case .firing: events.filter { $0.status == .firing }
+        case .resolved: events.filter { $0.status == .resolved }
+        }
+    }
 
     func fetchEvents(limit: Int = 50, apiClient: APIClient) async {
         fetchEventsCallCount &+= 1

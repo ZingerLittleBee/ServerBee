@@ -68,6 +68,7 @@ struct ContentView: View {
                 .tabItem {
                     Label("Alerts", systemImage: "bell.badge")
                 }
+                .badge(alertsViewModel.firingCount)
                 .tag(ContentView.alertsTabTag)
 
                 NavigationStack {
