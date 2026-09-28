@@ -68,7 +68,10 @@ struct NetworkSummaryCard: View {
     private var healthBadge: some View {
         switch summary.anomalyCount {
         case 0:
-            StatusBadge(text: String(localized: "Healthy"), color: .serverOnline)
+            // "Healthy" only means something while probes are actually running.
+            if summary.online, targetCount > 0 {
+                StatusBadge(text: String(localized: "Healthy"), color: .serverOnline)
+            }
         case 1:
             StatusBadge(text: String(localized: "1 anomaly · 24h"), color: .warningAmber)
         default:
