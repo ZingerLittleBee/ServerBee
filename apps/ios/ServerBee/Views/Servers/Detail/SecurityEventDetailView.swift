@@ -37,17 +37,14 @@ struct SecurityEventDetailView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    headerCard
-                    detailsCard
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    sourceGroup
                     if let evidence = event.evidence, !evidence.detailRows.isEmpty {
-                        evidenceCard(evidence)
-                    }
-                    if isAdmin, let ip = blockableIp {
-                        blockActionCard(ip: ip)
+                        evidenceGroup(evidence)
                     }
                     if isAdmin {
-                        deleteActionCard
+                        adminActions
                     }
                 }
                 .padding(16)
@@ -87,112 +84,232 @@ struct SecurityEventDetailView: View {
             }
         }
     }
+}
 
-    private var deleteActionCard: some View {
-        SectionCard {
-            VStack(alignment: .leading, spacing: 10) {
-                if let error = actions.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(Color.serverOffline)
-                }
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    HStack {
-                        if actions.isWorking {
-                            ProgressView().controlSize(.small)
-                        }
-                        Label(String(localized: "Delete event"), systemImage: "trash")
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .disabled(actions.isWorking)
-            }
-        }
+// MARK: - Sections
+
+private extension SecurityEventDetailView {
+    /// "tokyo-edge-01 · Sep 28, 2026 at 14:02:11" — whichever parts are known.
+    var subtitle: String? {
+        let date = event.date?.formatted(.dateTime.year().month().day().hour().minute().second())
+        let parts = [serverName, date].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    private func blockActionCard(ip: String) -> some View {
-        SectionCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Button {
-                    showBlockSheet = true
-                } label: {
-                    Label(String(localized: "Block \(ip) in firewall"), systemImage: "hand.raised.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.serverOffline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                Text(String(localized: "Adds a firewall blocklist rule. You'll choose the scope before it applies."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var headerCard: some View {
-        SectionCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    Image(systemName: SecurityEventKind.icon(event.eventType))
-                        .font(.title2)
-                        .foregroundStyle(SecurityEventKind.color(event.eventType))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(SecurityEventKind.label(event.eventType))
-                            .font(.headline)
-                        if let serverName {
-                            Label(serverName, systemImage: "server.rack")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if let date = event.date {
-                            Text(date, format: .dateTime.year().month().day().hour().minute().second())
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
+    var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                SecurityKindIcon(eventType: event.eventType, baseSize: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(SecurityEventKind.label(event.eventType))
+                        .font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
                     SeverityBadge(severity: event.severity)
                 }
-                if event.firstSeen {
-                    Label(String(localized: "First time this source was seen"), systemImage: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                }
+            }
+            if let subtitle {
+                Text(verbatim: subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            if event.firstSeen {
+                Label(String(localized: "First time this source was seen"), systemImage: "sparkles")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Color.accentColor)
             }
         }
+        .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var detailsCard: some View {
-        SectionCard(String(localized: "Source"), systemImage: "network") {
-            VStack(spacing: 8) {
-                DetailRow(label: String(localized: "Source IP"), value: event.sourceIp, monospaced: true)
-                if let port = event.sourcePort {
-                    DetailRow(label: String(localized: "Port"), value: "\(port)", monospaced: true)
-                }
-                if let user = event.username {
-                    DetailRow(label: String(localized: "Username"), value: user, monospaced: true)
-                }
-                DetailRow(label: String(localized: "Detector"), value: DetectorLabel.label(event.detectorSource))
+    var sourceItems: [EventInfoItem] {
+        var items = [EventInfoItem(label: String(localized: "Source IP"), value: event.sourceIp, monospaced: true)]
+        if let port = event.sourcePort {
+            items.append(EventInfoItem(label: String(localized: "Port"), value: "\(port)", monospaced: true))
+        }
+        if let user = event.username {
+            items.append(EventInfoItem(label: String(localized: "Username"), value: user, monospaced: true))
+        }
+        items.append(EventInfoItem(label: String(localized: "Detector"), value: DetectorLabel.label(event.detectorSource)))
+        return items
+    }
+
+    var sourceGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GroupHeader(String(localized: "Source"))
+            VStack(spacing: 0) {
+                EventInfoRows(items: sourceItems)
                 if let url = virusTotalURL {
-                    Divider()
+                    Divider().padding(.leading, 16)
                     Link(destination: url) {
                         Label(String(localized: "Look up IP on VirusTotal"), systemImage: "arrow.up.forward.square")
                             .font(.subheadline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                 }
+            }
+            .cardSurface(padding: 0)
+        }
+    }
+
+    func evidenceGroup(_ evidence: SecurityEvidence) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GroupHeader(String(localized: "Evidence"))
+            EventInfoRows(items: evidence.detailRows.map { EventInfoItem(label: $0.0, value: $0.1) })
+                .cardSurface(padding: 0)
+        }
+    }
+}
+
+// MARK: - Admin actions
+
+private extension SecurityEventDetailView {
+    var adminActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GroupHeader(String(localized: "Actions"))
+            VStack(alignment: .leading, spacing: 16) {
+                if let ip = blockableIp {
+                    blockAction(ip: ip)
+                }
+                deleteAction
             }
         }
     }
 
-    private func evidenceCard(_ evidence: SecurityEvidence) -> some View {
-        SectionCard(String(localized: "Evidence"), systemImage: "doc.text.magnifyingglass") {
-            VStack(spacing: 8) {
-                ForEach(evidence.detailRows, id: \.0) { row in
-                    DetailRow(label: row.0, value: row.1)
+    func blockAction(ip: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showBlockSheet = true
+            } label: {
+                Label(String(localized: "Block \(ip) in firewall"), systemImage: "hand.raised.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.serverOffline)
+                    .actionRowLayout()
+            }
+            .buttonStyle(.borderless)
+            .cardSurface(padding: 0)
+            footer(String(localized: "Adds a firewall blocklist rule. You'll choose the scope before it applies."))
+        }
+    }
+
+    var deleteAction: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(role: .destructive) {
+                showDeleteConfirm = true
+            } label: {
+                HStack(spacing: 8) {
+                    Label(String(localized: "Delete event"), systemImage: "trash")
+                        .font(.subheadline.weight(.semibold))
+                    if actions.isWorking {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                .actionRowLayout()
+            }
+            .buttonStyle(.borderless)
+            .disabled(actions.isWorking)
+            .cardSurface(padding: 0)
+            if let error = actions.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Color.serverOffline)
+                    .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    func footer(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    /// Full-width, leading-aligned tappable row inside a grouped card.
+    func actionRowLayout() -> some View {
+        self
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+    }
+}
+
+// MARK: - Info rows
+
+/// A label → value pair shown as one row of a grouped card.
+private struct EventInfoItem: Identifiable {
+    let label: String
+    let value: String
+    var monospaced = false
+
+    var id: String { label }
+}
+
+/// Rows of a grouped card separated by hairlines inset from the leading edge.
+private struct EventInfoRows: View {
+    let items: [EventInfoItem]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Divider().padding(.leading, 16)
+                }
+                EventInfoRow(item: item)
+            }
+        }
+    }
+}
+
+/// Inset-grouped style row: primary label on the leading edge, secondary
+/// selectable value trailing. At accessibility text sizes the value stacks
+/// under the label so IPs and lists don't break mid-token.
+private struct EventInfoRow: View {
+    let item: EventInfoItem
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    label
+                    value.multilineTextAlignment(.leading)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    label
+                    Spacer(minLength: 12)
+                    value.multilineTextAlignment(.trailing)
                 }
             }
         }
+        .font(.subheadline)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(item.label))
+        .accessibilityValue(Text(item.value))
+    }
+
+    private var label: some View {
+        Text(item.label)
+            .foregroundStyle(.primary)
+    }
+
+    private var value: some View {
+        Text(item.value)
+            .font(item.monospaced ? .subheadline.monospaced() : .subheadline)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
     }
 }
