@@ -239,12 +239,7 @@ private extension SettingsView {
 
     /// Localized display name for the signed-in user's role.
     var roleName: String? {
-        guard let role = authManager.user?.role else { return nil }
-        switch role.lowercased() {
-        case "admin": return String(localized: "Admin")
-        case "member": return String(localized: "Member")
-        default: return role.capitalized
-        }
+        authManager.user.map { UserRoleLabel.name(for: $0.role) }
     }
 
     var appVersion: String {

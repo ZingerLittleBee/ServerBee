@@ -64,7 +64,7 @@ private struct BucketRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Chip(text: bucket.scope.capitalized, color: bucket.blocked ? .serverOffline : .secondary)
+                Chip(text: bucket.scopeLabel, color: bucket.blocked ? .serverOffline : .secondary)
                 Text(bucket.ip).font(.subheadline.monospaced())
                 Spacer()
                 if bucket.blocked {

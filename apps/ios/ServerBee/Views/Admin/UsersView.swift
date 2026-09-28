@@ -53,7 +53,7 @@ struct UsersView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(user.username).font(.body).foregroundStyle(.primary)
                 HStack(spacing: 6) {
-                    Chip(text: user.role.capitalized, color: user.isAdmin ? .brandAccent : .secondary)
+                    Chip(text: UserRoleLabel.name(for: user.role), color: user.isAdmin ? .brandAccent : .secondary)
                     if user.has2fa { Chip(text: String(localized: "2FA"), systemImage: "lock.shield", color: .serverOnline) }
                 }
             }

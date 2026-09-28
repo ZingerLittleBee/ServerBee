@@ -138,7 +138,7 @@ struct IncidentsView: View {
                 HStack {
                     Text(incident.title).font(.subheadline.bold())
                     Spacer()
-                    Chip(text: incident.severity.capitalized, color: incident.severityColor)
+                    Chip(text: incident.severityLabel, color: incident.severityColor)
                 }
                 HStack(spacing: 8) {
                     Chip(text: incident.statusLabel, color: incident.isResolved ? .serverOnline : .warningAmber)

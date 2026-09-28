@@ -3,6 +3,17 @@ import Foundation
 // MARK: - Users (admin-only)
 
 /// One account (`GET /api/users`). Admin-only family.
+/// Localized display name for a user role ("admin" | "member").
+enum UserRoleLabel {
+    static func name(for role: String) -> String {
+        switch role.lowercased() {
+        case "admin": String(localized: "Admin")
+        case "member": String(localized: "Member")
+        default: role.capitalized
+        }
+    }
+}
+
 struct AdminUser: Decodable, Identifiable, Sendable {
     let id: String
     let username: String
@@ -93,6 +104,15 @@ struct RateLimitBucket: Decodable, Identifiable, Sendable {
 
     /// Stable identity for a bucket (scope + ip is unique per window).
     var id: String { "\(scope)|\(ip)" }
+
+    var scopeLabel: String {
+        switch scope {
+        case "login": String(localized: "Login")
+        case "register": String(localized: "Register")
+        case "public": String(localized: "Public")
+        default: scope.capitalized
+        }
+    }
 }
 
 /// `GET /api/admin/rate-limit`.

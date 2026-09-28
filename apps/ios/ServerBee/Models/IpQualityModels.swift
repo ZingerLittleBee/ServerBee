@@ -128,10 +128,16 @@ struct UnlockService: Decodable, Identifiable, Sendable {
     /// be deleted.
     var builtin: Bool { isBuiltin ?? false }
 
-    /// Category label, capitalized; "Other" when unset.
+    /// Localized category label; "Other" when unset.
     var categoryLabel: String {
-        guard let category, !category.isEmpty else { return String(localized: "Other") }
-        return category.capitalized
+        switch category?.lowercased() ?? "" {
+        case "", "other": String(localized: "Other")
+        case "ai": String(localized: "AI")
+        case "streaming": String(localized: "ip_category_streaming", defaultValue: "Streaming")
+        case "social": String(localized: "Social")
+        case "gaming": String(localized: "Gaming")
+        default: category?.capitalized ?? ""
+        }
     }
 }
 

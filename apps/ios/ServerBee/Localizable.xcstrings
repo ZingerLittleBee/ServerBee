@@ -257,6 +257,23 @@
         }
       }
     },
+    "AI": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI"
+          }
+        }
+      }
+    },
     "All of your servers are online.": {
       "extractionState": "manual",
       "localizations": {
@@ -427,6 +444,40 @@
         }
       }
     },
+    "Download only": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download only"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅下载"
+          }
+        }
+      }
+    },
+    "Downloaded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已下载"
+          }
+        }
+      }
+    },
     "Expanded": {
       "extractionState": "manual",
       "localizations": {
@@ -461,6 +512,23 @@
         }
       }
     },
+    "Gaming": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gaming"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "游戏"
+          }
+        }
+      }
+    },
     "Groups organize servers in the servers list.": {
       "extractionState": "manual",
       "localizations": {
@@ -491,6 +559,24 @@
           "stringUnit": {
             "state": "translated",
             "value": "用户名或密码错误"
+          }
+        }
+      }
+    },
+    "ip_category_streaming": {
+      "comment": "IP quality service category (Netflix, Disney+…), not live streaming.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "流媒体"
           }
         }
       }
@@ -750,6 +836,23 @@
         }
       }
     },
+    "Register": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Register"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册"
+          }
+        }
+      }
+    },
     "Residential": {
       "extractionState": "manual",
       "localizations": {
@@ -886,6 +989,23 @@
         }
       }
     },
+    "Social": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Social"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社交"
+          }
+        }
+      }
+    },
     "The agent that reported for this server is no longer enrolled. Generate a one-time code and run the install command on the host to enroll it again.": {
       "extractionState": "manual",
       "localizations": {
@@ -920,6 +1040,23 @@
         }
       }
     },
+    "Total (in + out)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total (in + out)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总计（入 + 出）"
+          }
+        }
+      }
+    },
     "Two-factor authentication is required": {
       "extractionState": "manual",
       "localizations": {
@@ -933,6 +1070,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要双因素认证"
+          }
+        }
+      }
+    },
+    "Upload only": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload only"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅上传"
           }
         }
       }
@@ -8887,7 +9041,6 @@
       }
     },
     "Login": {
-      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
