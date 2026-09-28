@@ -257,6 +257,23 @@
         }
       }
     },
+    "All of your servers are online.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All of your servers are online."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有服务器均在线。"
+          }
+        }
+      }
+    },
     "API keys let scripts and tools call the ServerBee API.": {
       "extractionState": "manual",
       "localizations": {
@@ -478,6 +495,40 @@
         }
       }
     },
+    "No offline servers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No offline servers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有离线的服务器"
+          }
+        }
+      }
+    },
+    "No online servers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No online servers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有在线的服务器"
+          }
+        }
+      }
+    },
     "No ping tasks": {
       "extractionState": "manual",
       "localizations": {
@@ -508,6 +559,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无定时命令"
+          }
+        }
+      }
+    },
+    "No servers in this filter match “%@”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No servers in this filter match “%@”."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此筛选下没有与“%@”匹配的服务器。"
+          }
+        }
+      }
+    },
+    "None of your servers are online right now.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None of your servers are online right now."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前没有服务器在线。"
           }
         }
       }
@@ -610,6 +695,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务监控"
+          }
+        }
+      }
+    },
+    "Show All Servers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show All Servers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部服务器"
           }
         }
       }
@@ -10107,23 +10209,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前没有被封锁的 IP。"
-          }
-        }
-      }
-    },
-    "No matching servers": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No matching servers"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无匹配的服务器"
           }
         }
       }

@@ -215,19 +215,35 @@ private extension ServersListView {
         .navigationLinkIndicatorVisibility(.hidden)
     }
 
+    /// Empty result for a search and/or the online filter. A filter gets its
+    /// own wording and a way back to every server; a plain search gets the
+    /// system search empty state.
+    @ViewBuilder
     var noMatchesView: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(String(localized: "No matching servers"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        let query = viewModel.debouncedSearchQuery.trimmingCharacters(in: .whitespaces)
+        switch viewModel.onlineFilter {
+        case .all:
+            ContentUnavailableView.search(text: query)
+        case .online, .offline:
+            let isOnline = viewModel.onlineFilter == .online
+            ContentUnavailableView {
+                Label(
+                    isOnline ? String(localized: "No online servers") : String(localized: "No offline servers"),
+                    systemImage: isOnline ? "wifi.slash" : "checkmark.circle"
+                )
+            } description: {
+                if !query.isEmpty {
+                    Text(String(localized: "No servers in this filter match “\(query)”."))
+                } else if isOnline {
+                    Text(String(localized: "None of your servers are online right now."))
+                } else {
+                    Text(String(localized: "All of your servers are online."))
+                }
+            } actions: {
+                Button(String(localized: "Show All Servers")) { viewModel.onlineFilter = .all }
+                    .buttonStyle(.bordered)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .accessibilityElement(children: .combine)
     }
 }
 
