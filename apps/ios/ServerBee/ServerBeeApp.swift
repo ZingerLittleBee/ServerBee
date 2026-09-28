@@ -31,16 +31,16 @@ struct ServerBeeApp: App {
                     networkMonitor.start()
 
                     await authManager.initialize()
-                    if authManager.isAuthenticated {
-                        #if DEBUG
-                        let isUITest = UITestSupport.seed != nil
-                        #else
-                        let isUITest = false
-                        #endif
-                        if !isUITest {
-                            await pushManager.requestPermission()
-                        }
-                    }
+                }
+                // Ask for notification permission once the user is signed in,
+                // whether the session was restored at launch or just created
+                // by logging in, rather than on some later cold launch.
+                .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
+                    guard isAuthenticated else { return }
+                    #if DEBUG
+                    if UITestSupport.seed != nil { return }
+                    #endif
+                    Task { await pushManager.requestPermission() }
                 }
         }
     }
