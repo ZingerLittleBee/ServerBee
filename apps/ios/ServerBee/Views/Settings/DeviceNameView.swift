@@ -4,7 +4,10 @@ import SwiftUI
 /// (listed in Devices). The server has no rename endpoint, so the name is sent
 /// with the next sign-in; the footer says so instead of implying a live rename.
 struct DeviceNameView: View {
-    @State private var draft: String = DeviceNameProvider.current()
+    /// Only the custom name. The generated default stays the placeholder, so
+    /// opening and leaving the screen never pins it as a custom name.
+    @AppStorage(DeviceNameProvider.storageKey) private var customName = ""
+    @State private var draft = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -22,13 +25,16 @@ struct DeviceNameView: View {
         }
         .navigationTitle(String(localized: "Device Name"))
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { focused = true }
+        .onAppear {
+            draft = customName
+            focused = true
+        }
         .onDisappear(perform: commit)
     }
 
     private func commit() {
         DeviceNameProvider.set(draft)
-        // Refresh so an empty submission shows the generated default.
-        draft = DeviceNameProvider.current()
+        // Mirror what was stored: trimmed, and empty shows the default placeholder.
+        draft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
