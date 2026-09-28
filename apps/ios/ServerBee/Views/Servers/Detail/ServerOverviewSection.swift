@@ -18,6 +18,7 @@ struct ServerOverviewSection: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
 
     var body: some View {
         ScrollView {
@@ -318,8 +319,8 @@ private extension ServerOverviewSection {
 
     var systemRows: [OverviewInfoRow] {
         let candidates: [(String, String?)] = [
-            (String(localized: "IPv4"), config?.ipv4 ?? live?.ipv4),
-            (String(localized: "IPv6"), config?.ipv6 ?? live?.ipv6),
+            (String(localized: "IPv4"), (config?.ipv4 ?? live?.ipv4)?.maskingIPs(privacyMode)),
+            (String(localized: "IPv6"), (config?.ipv6 ?? live?.ipv6)?.maskingIPs(privacyMode)),
             (String(localized: "Location"), locationText),
             (String(localized: "OS"), config?.os ?? live?.os),
             (String(localized: "Kernel"), config?.kernelVersion),

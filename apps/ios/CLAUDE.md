@@ -151,6 +151,15 @@ render correctly via source fallback. Verify in the simulator by launching with
   Xcode's JSON style). Restore the committed key order and formatting before
   committing so the diff stays reviewable.
 
+## Privacy mode
+
+Settings → Privacy Mode masks the last two parts of every displayed IP
+(`203.0.*.*`, `2001:db8::*:*`). The flag is injected at the root as
+`@Environment(\.privacyMode)`; any view that shows an IP, or free text that may
+contain one (targets, URLs, audit details), passes it through
+`String.maskingIPs(privacyMode)` (`Utilities/PrivacyMode.swift`). Display only:
+edit fields, requests and actions keep the real address.
+
 ## Capability gating
 
 Sections and actions are gated on the server's **effective** capability bitmask

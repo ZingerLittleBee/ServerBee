@@ -7,6 +7,7 @@ struct ServiceMonitorDetailView: View {
     let isAdmin: Bool
 
     @Environment(\.apiClient) private var apiClient
+    @Environment(\.privacyMode) private var privacyMode
     @State private var viewModel = ServiceMonitorDetailViewModel()
 
     private var current: ServiceMonitor { viewModel.detail?.monitor ?? monitor }
@@ -48,7 +49,7 @@ struct ServiceMonitorDetailView: View {
                     Spacer()
                     Chip(text: current.typeLabel, systemImage: current.typeIcon, color: .brandAccent)
                 }
-                Text(current.target).font(.callout.monospaced()).foregroundStyle(.secondary)
+                Text(current.target.maskingIPs(privacyMode)).font(.callout.monospaced()).foregroundStyle(.secondary)
                     .textSelection(.enabled)
                 if let uptime = viewModel.recentUptime {
                     Divider()

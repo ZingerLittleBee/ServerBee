@@ -11,6 +11,7 @@ struct DockerContainerDetailView: View {
 
     @Environment(\.apiClient) private var apiClient
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.privacyMode) private var privacyMode
 
     @State private var showStopConfirm = false
     @State private var showRestartConfirm = false
@@ -196,7 +197,7 @@ struct DockerContainerDetailView: View {
 
     private var portsCard: some View {
         SectionCard(String(localized: "Ports"), systemImage: "point.3.connected.trianglepath.dotted") {
-            FlowChips(items: container.ports.map(\.display)) { port in
+            FlowChips(items: container.ports.map { $0.display.maskingIPs(privacyMode) }) { port in
                 Chip(text: port, color: .networkColor)
             }
         }

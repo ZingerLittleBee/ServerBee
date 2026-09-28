@@ -6,6 +6,7 @@ struct PingTasksView: View {
     let isAdmin: Bool
 
     @Environment(\.apiClient) private var apiClient
+    @Environment(\.privacyMode) private var privacyMode
     @State private var viewModel = PingTasksViewModel()
     @State private var showCreate = false
     @State private var editTarget: PingTask?
@@ -81,7 +82,7 @@ struct PingTasksView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.networkColor.opacity(0.15))
                         .clipShape(Capsule())
-                    Text(task.target).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(task.target.maskingIPs(privacyMode)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)

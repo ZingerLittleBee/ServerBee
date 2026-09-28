@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var viewModel = SettingsViewModel()
     @AppStorage("theme") private var theme: String = AppTheme.system.rawValue
     @AppStorage(DeviceNameProvider.storageKey) private var customDeviceName = ""
+    @AppStorage(PrivacyMode.storageKey) private var privacyMode = false
     /// Re-read on appear so the row reflects a choice made in LanguageView.
     @State private var appLanguage = AppLanguageStore().selected
 
@@ -239,6 +240,14 @@ private extension SettingsView {
                     systemImage: "globe",
                     color: .blue,
                     value: appLanguage.displayName
+                )
+            }
+            Toggle(isOn: $privacyMode) {
+                IconRowLabel(
+                    title: String(localized: "Privacy Mode"),
+                    systemImage: "eye.slash",
+                    color: .indigo,
+                    subtitle: String(localized: "Hide the last two parts of IP addresses")
                 )
             }
             IconRowLabel(

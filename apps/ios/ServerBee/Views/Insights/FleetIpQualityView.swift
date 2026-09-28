@@ -74,6 +74,7 @@ private struct FleetIpQualityRow: View {
     let data: ServerIpQualityData
     let serviceNames: [String: String]
 
+    @Environment(\.privacyMode) private var privacyMode
     @State private var isExpanded = false
 
     private var hasDetail: Bool { data.ipQuality != nil || !data.unlockResults.isEmpty }
@@ -108,7 +109,7 @@ private struct FleetIpQualityRow: View {
                 Text(name).font(.subheadline.weight(.medium))
                 if let snapshot = data.ipQuality {
                     HStack(spacing: 6) {
-                        Text(snapshot.ip).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        Text(snapshot.ip.maskingIPs(privacyMode)).font(.caption.monospaced()).foregroundStyle(.secondary)
                         if let loc = snapshot.location {
                             Text(loc).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                         }

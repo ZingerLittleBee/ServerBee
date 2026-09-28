@@ -50,6 +50,7 @@ struct ServerBeeApp: App {
 private struct RootView: View {
     @Environment(AuthManager.self) private var authManager
     @AppStorage("theme") private var theme: String = AppTheme.system.rawValue
+    @AppStorage(PrivacyMode.storageKey) private var privacyMode = false
 
     var body: some View {
         Group {
@@ -63,6 +64,7 @@ private struct RootView: View {
         }
         // Applied at the root so the Appearance choice covers every screen.
         .preferredColorScheme((AppTheme(rawValue: theme) ?? .system).colorScheme)
+        .environment(\.privacyMode, privacyMode)
     }
 }
 

@@ -146,6 +146,7 @@ struct SecurityEventRow: View {
     static let iconSpacing: CGFloat = 12
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
 
     var body: some View {
         HStack(alignment: .top, spacing: Self.iconSpacing) {
@@ -222,8 +223,9 @@ struct SecurityEventRow: View {
     /// no-break space keeps the separator on the IP's line when a long
     /// (IPv6) address forces a wrap, so "· user" never starts a line.
     private var sourceLine: String {
-        guard let user = event.username, !user.isEmpty else { return event.sourceIp }
-        return "\(event.sourceIp)\u{00A0}· \(user)"
+        let ip = event.sourceIp.maskingIPs(privacyMode)
+        guard let user = event.username, !user.isEmpty else { return ip }
+        return "\(ip)\u{00A0}· \(user)"
     }
 
     /// Time over date in the trailing column; side by side when inlined at

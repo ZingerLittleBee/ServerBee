@@ -16,6 +16,7 @@ struct SecurityEventDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthManager.self) private var authManager
     @Environment(\.apiClient) private var apiClient
+    @Environment(\.privacyMode) private var privacyMode
     @State private var firewallViewModel = FirewallViewModel()
     @State private var actions = SecurityEventActionsViewModel()
     @State private var showBlockSheet = false
@@ -124,7 +125,7 @@ private extension SecurityEventDetailView {
     }
 
     var sourceItems: [EventInfoItem] {
-        var items = [EventInfoItem(label: String(localized: "Source IP"), value: event.sourceIp, monospaced: true)]
+        var items = [EventInfoItem(label: String(localized: "Source IP"), value: event.sourceIp.maskingIPs(privacyMode), monospaced: true)]
         if let port = event.sourcePort {
             items.append(EventInfoItem(label: String(localized: "Port"), value: "\(port)", monospaced: true))
         }
@@ -185,7 +186,7 @@ private extension SecurityEventDetailView {
             Button {
                 showBlockSheet = true
             } label: {
-                Label(String(localized: "Block \(ip) in firewall"), systemImage: "hand.raised.fill")
+                Label(String(localized: "Block \(ip.maskingIPs(privacyMode)) in firewall"), systemImage: "hand.raised.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color.serverOffline)
                     .actionRowLayout()

@@ -546,6 +546,23 @@
         }
       }
     },
+    "Hide the last two parts of IP addresses": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide the last two parts of IP addresses"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏 IP 地址的后两段"
+          }
+        }
+      }
+    },
     "Invalid username or password": {
       "extractionState": "manual",
       "localizations": {
@@ -883,6 +900,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ping 任务测量服务器到目标主机的延迟。"
+          }
+        }
+      }
+    },
+    "Privacy Mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy Mode"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私模式"
           }
         }
       }

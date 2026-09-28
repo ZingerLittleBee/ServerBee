@@ -138,6 +138,7 @@ struct IpQualitySnapshotCard: View {
     let snapshot: IpQualitySnapshot
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
 
     var body: some View {
         VStack(spacing: 16) {
@@ -192,7 +193,7 @@ struct IpQualitySnapshotCard: View {
 
     /// "ip · last checked <relative>", dropping the check time when unknown.
     private var subtitle: String {
-        var parts = [snapshot.ip]
+        var parts = [snapshot.ip.maskingIPs(privacyMode)]
         if let checked = snapshot.checkedAt {
             let relative = Formatters.formatRelativeTime(checked)
             parts.append(String(localized: "last checked \(relative)"))

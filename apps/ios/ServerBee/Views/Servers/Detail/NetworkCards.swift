@@ -91,6 +91,7 @@ struct NetworkLatencyChart: View {
     var isLoading = false
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
     @ScaledMetric(relativeTo: .body) private var chartHeight: CGFloat = 160
 
     /// Plot height, capped so accessibility text sizes don't produce a
@@ -113,7 +114,7 @@ struct NetworkLatencyChart: View {
         let nameCounts = Dictionary(targets.map { ($0.name, 1) }, uniquingKeysWith: +)
         return Dictionary(targets.map { target in
             let isShared = (nameCounts[target.name] ?? 0) > 1
-            let label = isShared ? "\(target.name) (\(target.probeType.uppercased()) \(target.target))" : target.name
+            let label = isShared ? "\(target.name) (\(target.probeType.uppercased()) \(target.target.maskingIPs(privacyMode)))" : target.name
             return (target.id, label)
         }, uniquingKeysWith: { a, _ in a })
     }
@@ -241,6 +242,7 @@ struct NetworkTargetsCard: View {
     let palette: NetworkTargetPalette
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
     @ScaledMetric(relativeTo: .body) private var dotSize: CGFloat = 9
 
     private var summaryByID: [String: TargetSummary] {
@@ -336,7 +338,7 @@ private extension NetworkTargetsCard {
                         .accessibilityHidden(true)
                 }
             }
-            Text(verbatim: "\(target.probeType.uppercased()) · \(target.target)")
+            Text(verbatim: "\(target.probeType.uppercased()) · \(target.target.maskingIPs(privacyMode))")
                 .lineLimit(stacked ? nil : 1)
                 .truncationMode(.middle)
         }

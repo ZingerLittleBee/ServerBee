@@ -11,6 +11,7 @@ struct TracerouteView: View {
 
     @Environment(\.apiClient) private var apiClient
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.privacyMode) private var privacyMode
     @State private var viewModel = TracerouteViewModel()
     @State private var showClearConfirm = false
     @FocusState private var targetFocused: Bool
@@ -149,7 +150,7 @@ struct TracerouteView: View {
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(record.target)
+                                Text(record.target.maskingIPs(privacyMode))
                                     .font(.subheadline)
                                     .foregroundStyle(.primary)
                                 Text(record.startedDate, style: .relative)
@@ -199,6 +200,8 @@ struct TracerouteResultCard: View {
     let snapshot: TracerouteSnapshot
     let isRunning: Bool
 
+    @Environment(\.privacyMode) private var privacyMode
+
     var body: some View {
         SectionCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -228,7 +231,7 @@ struct TracerouteResultCard: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(snapshot.target)
+                Text(snapshot.target.maskingIPs(privacyMode))
                     .font(.headline)
                 Text("\(snapshot.protocolValue.uppercased()) · \(String(localized: "round \(snapshot.round)/\(snapshot.totalRounds))"))")
                     .font(.caption)
@@ -255,14 +258,14 @@ struct TracerouteResultCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let ip = hop.primaryIP {
                     HStack(spacing: 6) {
-                        Text(ip)
+                        Text(ip.maskingIPs(privacyMode))
                             .font(.subheadline.monospaced())
                         if hop.extraIPCount > 0 {
                             Chip(text: "+\(hop.extraIPCount)", color: .secondary)
                         }
                     }
                     if let host = hop.hostname, host != ip {
-                        Text(host)
+                        Text(host.maskingIPs(privacyMode))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

@@ -74,6 +74,8 @@ struct AuditLogView: View {
 private struct AuditRow: View {
     let entry: AuditLogEntry
 
+    @Environment(\.privacyMode) private var privacyMode
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -85,12 +87,12 @@ private struct AuditRow: View {
                     .foregroundStyle(.secondary)
             }
             if let detail = entry.detail, !detail.isEmpty {
-                Text(detail)
+                Text(detail.maskingIPs(privacyMode))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
             }
-            Text(verbatim: "\(entry.ip)")
+            Text(verbatim: entry.ip.maskingIPs(privacyMode))
                 .font(.caption2.monospaced())
                 .foregroundStyle(.tertiary)
         }

@@ -38,6 +38,8 @@ struct ServiceMonitorsView: View {
 struct ServiceMonitorRow: View {
     let monitor: ServiceMonitor
 
+    @Environment(\.privacyMode) private var privacyMode
+
     var body: some View {
         SectionCard {
             HStack(spacing: 12) {
@@ -47,7 +49,7 @@ struct ServiceMonitorRow: View {
                         Text(monitor.name).font(.subheadline.bold()).lineLimit(1)
                         Chip(text: monitor.typeLabel, systemImage: monitor.typeIcon, color: .brandAccent)
                     }
-                    Text(monitor.target).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                    Text(monitor.target.maskingIPs(privacyMode)).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if !monitor.enabled {

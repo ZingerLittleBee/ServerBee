@@ -26,6 +26,7 @@ struct ServerCardView: View, Equatable {
     let server: ServerStatus
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
     @ScaledMetric(relativeTo: .headline) private var dotSize: CGFloat = 9
 
     var body: some View {
@@ -140,7 +141,7 @@ private extension ServerCardView {
 
     /// Primary IP and OS joined, e.g. "192.168.1.100 · Ubuntu 22.04".
     var detailsText: String? {
-        let parts = [server.primaryIP, server.os].compactMap { $0 }.filter { !$0.isEmpty }
+        let parts = [server.primaryIP?.maskingIPs(privacyMode), server.os].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
