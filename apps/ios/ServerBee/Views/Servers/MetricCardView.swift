@@ -1,58 +1,83 @@
 import SwiftUI
 
-/// A compact card displaying a single metric with label, value, and optional subtitle.
-/// Used in the 2-column metrics grid on the server detail view.
-struct MetricCardView: View {
+/// A metric tile for the server Overview grid: a small label above arbitrary
+/// metric content (a `MetricTileReadout`, a `UsageBar`, a caption, …) on the
+/// standard card surface. The tile stretches to its grid row's height so tiles
+/// side by side line up, and reads to VoiceOver as one "label, value" element.
+struct MetricCardView<Content: View>: View {
     let label: String
-    let value: String
-    var subtitle: String?
-    var valueColor: Color = .primary
+    let accessibilityValue: String
+    @ViewBuilder var content: Content
 
-    @ScaledMetric(relativeTo: .body) private var verticalPad: CGFloat = 14
-    @ScaledMetric(relativeTo: .body) private var horizontalPad: CGFloat = 14
+    init(_ label: String, accessibilityValue: String, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.accessibilityValue = accessibilityValue
+        self.content = content()
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.subheadline)
+                .font(.footnote.weight(.medium))
                 .foregroundStyle(.secondary)
-            Text(value)
-                .font(.title2.bold())
-                .foregroundStyle(valueColor)
-                .minimumScaleFactor(0.7)
                 .lineLimit(1)
-            if let subtitle {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .cardSurface()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(accessibilityValue))
+    }
+}
+
+/// Large tinted metric number with a smaller trailing unit in the same tint
+/// (`23` `%`, `3.1` `/ 8 GB`). Metric colours are pastel, so in light mode the
+/// tint is deepened slightly to keep the number legible on a white card.
+struct MetricTileReadout: View {
+    let value: String
+    var unit: String?
+    var color: Color = .primary
+    var font: Font = .title.weight(.bold)
+    var unitFont: Font = .callout.weight(.bold)
+    var systemImage: String?
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(unitFont)
+                    .accessibilityHidden(true)
+            }
+            Text(value)
+                .font(font)
+            if let unit {
+                Text(unit)
+                    .font(unitFont)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, horizontalPad)
-        .padding(.vertical, verticalPad)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(subtitle.map { "\(value), \($0)" } ?? value))
+        .foregroundStyle(color)
+        .brightness(colorScheme == .dark ? 0 : -0.12)
+        .monospacedDigit()
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
     }
 }
 
 #Preview {
-    VStack(spacing: 12) {
-        MetricCardView(
-            label: "CPU",
-            value: "45.2%",
-            subtitle: "Intel i7-12700K",
-            valueColor: .green
-        )
-        MetricCardView(
-            label: "Memory",
-            value: "72.3%",
-            subtitle: "11.6 GB / 16.0 GB",
-            valueColor: .orange
-        )
+    Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+        GridRow {
+            MetricCardView("CPU", accessibilityValue: "23.4%") {
+                MetricTileReadout(value: "23.4", unit: "%", color: .cpuColor)
+                UsageBar(value: 0.234, height: 6, tint: .cpuColor)
+            }
+            MetricCardView("Network", accessibilityValue: "↓ 4.8 MB/s, ↑ 1.2 MB/s") {
+                MetricTileReadout(value: "4.8 MB/s", color: .networkColor, font: .title3.weight(.bold), systemImage: "arrow.down")
+                MetricTileReadout(value: "1.2 MB/s", font: .title3.weight(.bold), systemImage: "arrow.up")
+            }
+        }
     }
     .padding()
     .background(Color(.systemGroupedBackground))

@@ -1,22 +1,23 @@
 import SwiftUI
 
-/// The "Overview" tab of the server detail screen: status header, live metric
-/// grid, system info, capabilities, and billing — composed from the live WS
-/// status (metrics) and the REST config (static metadata).
+/// The "Overview" tab of the server detail screen: live metric tiles, runtime
+/// counters, system info, billing and agent capabilities — composed from the
+/// live WS status (metrics) and the REST config (static metadata). Admins also
+/// get the advanced-tools entry points and the agent lifecycle card.
+///
+/// The status chips, section picker and edit action live in the detail shell
+/// (`ServerDetailView`), which is shared by every section.
 struct ServerOverviewSection: View {
     let serverId: String
     let live: ServerStatus?
     let config: ServerConfig?
-    let groupName: String?
     let capabilities: CapabilitySet
     let isAdmin: Bool
     /// Re-fetch the server's REST config after an edit / enrollment change.
     var onReloadConfig: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
-    @State private var showEdit = false
-
-    private let columns = [GridItem(.flexible()), GridItem(.flexible())]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ScrollView {
@@ -24,23 +25,30 @@ struct ServerOverviewSection: View {
                 if isPending {
                     pendingBanner
                 }
-                statusHeader
-                if hasAnyMetric {
-                    metricsGrid
+                if let live, hasAnyMetric {
+                    metricsGrid(live)
+                    let runtime = runtimeRows(live)
+                    if !runtime.isEmpty {
+                        OverviewInfoGroup(title: String(localized: "Runtime")) {
+                            OverviewInfoCard(rows: runtime)
+                        }
+                    }
                 }
-                systemInfoCard
-                capabilitiesCard
+                let system = systemRows
+                if !system.isEmpty {
+                    OverviewInfoGroup(title: String(localized: "System info")) {
+                        OverviewInfoCard(rows: system)
+                    }
+                }
                 if hasBilling {
-                    billingCard
+                    OverviewInfoGroup(title: String(localized: "Billing")) {
+                        billingCard
+                    }
+                }
+                OverviewInfoGroup(title: String(localized: "Agent capabilities")) {
+                    capabilitiesCard
                 }
                 if isAdmin {
-                    if config != nil {
-                        Button { showEdit = true } label: {
-                            Label(String(localized: "Edit server"), systemImage: "pencil")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                    }
                     AdvancedToolsCard(capabilities: capabilities)
                     ServerLifecycleCard(
                         serverId: serverId,
@@ -53,28 +61,10 @@ struct ServerOverviewSection: View {
                     )
                 }
             }
-            .padding()
+            .padding(16)
         }
         .background(Color(.systemGroupedBackground))
-        .sheet(isPresented: $showEdit) {
-            if let config {
-                EditServerSheet(serverId: serverId, config: config, onSaved: onReloadConfig)
-            }
-        }
-        #if DEBUG
-        // Visual-verification hook: auto-open the edit form (a plain Button the
-        // cliclick harness can't reliably activate). `config` loads async, so
-        // fire on first appear AND when it becomes available.
-        .task { debugPresentEditIfReady() }
-        .onChange(of: config != nil) { _, _ in debugPresentEditIfReady() }
-        #endif
     }
-
-    #if DEBUG
-    private func debugPresentEditIfReady() {
-        if UITestSupport.autoPresent == "edit-server", config != nil { showEdit = true }
-    }
-    #endif
 
     // MARK: - Derived
 
@@ -90,8 +80,9 @@ struct ServerOverviewSection: View {
         return s.cpuUsage != nil || s.memoryUsed != nil || s.diskUsed != nil || s.load1 != nil
     }
 
+    /// Matches the web detail page: an expiry date alone is billing info too.
     private var hasBilling: Bool {
-        config?.price != nil || config?.billingCycle != nil || config?.trafficLimit != nil
+        config?.price != nil || config?.billingCycle != nil || config?.trafficLimit != nil || config?.expiredDate != nil
     }
 
     // MARK: - Pending enrollment
@@ -100,280 +91,392 @@ struct ServerOverviewSection: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "person.badge.clock")
                 .foregroundStyle(Color.warningAmber)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "Pending enrollment"))
-                    .font(.subheadline.bold())
+                    .font(.subheadline.weight(.semibold))
                 Text(String(localized: "This server is waiting for its agent to connect with an enrollment code."))
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.warningAmber.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Status header
-
-    private var statusHeader: some View {
-        SectionCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    if let flag = CountryFlag.emoji(for: config?.countryCode ?? live?.country) {
-                        Text(flag).font(.title2)
-                    }
-                    StatusPill(isOnline: isOnline)
-                    Spacer()
-                    if let uptime = live?.uptime, isOnline {
-                        Label(Formatters.formatUptime(uptime), systemImage: "clock")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if let ip = config?.ipv4 ?? live?.ipv4 ?? config?.ipv6 ?? live?.ipv6 {
-                    Label(ip, systemImage: "network")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-
-                HStack(spacing: 8) {
-                    if let groupName {
-                        Chip(text: groupName, systemImage: "folder", color: .brandAccent)
-                    }
-                    if let tags = live?.tags, !tags.isEmpty {
-                        ForEach(tags.prefix(4), id: \.self) { tag in
-                            Chip(text: tag, systemImage: "tag")
-                        }
-                    }
-                }
-
-                if !isOnline, let last = live?.lastActiveAt {
-                    Text(String(format: String(localized: "Last seen %@"), Formatters.formatRelativeTime(last)))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
+        .background(Color.warningAmber.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Metrics grid
 
-    private var metricsGrid: some View {
-        LazyVGrid(columns: columns, spacing: 12) {
-            ForEach(metricTiles) { tile in
-                MetricCardView(
-                    label: tile.label,
-                    value: tile.value,
-                    subtitle: tile.subtitle,
-                    valueColor: tile.color
-                )
+    /// 2x2 tiles; a single column at accessibility text sizes, where half-width
+    /// tiles would shrink or truncate the readouts.
+    @ViewBuilder
+    private func metricsGrid(_ s: ServerStatus) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 10) {
+                cpuTile(s)
+                memoryTile(s)
+                diskTile(s)
+                networkTile(s)
+            }
+        } else {
+            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                GridRow {
+                    cpuTile(s)
+                    memoryTile(s)
+                }
+                GridRow {
+                    diskTile(s)
+                    networkTile(s)
+                }
             }
         }
-    }
-
-    fileprivate struct Tile: Identifiable {
-        let id: String
-        let label: String
-        let value: String
-        var subtitle: String?
-        var color: Color = .primary
     }
 }
 
 // MARK: - Metric tiles
 
 private extension ServerOverviewSection {
-    var metricTiles: [Tile] {
-        guard let s = live else { return [] }
-        var tiles: [Tile] = []
+    func cpuTile(_ s: ServerStatus) -> some View {
+        MetricCardView(
+            String(localized: "CPU"),
+            accessibilityValue: [Formatters.formatPercentage(s.cpuUsage), s.cpuName].compactMap { $0 }.joined(separator: ", ")
+        ) {
+            MetricTileReadout(
+                value: s.cpuUsage.map { String(format: "%.1f", $0) } ?? "—",
+                unit: s.cpuUsage == nil ? nil : "%",
+                color: Self.usageTint(s.cpuUsage, base: .cpuColor)
+            )
+            if let cpu = s.cpuUsage {
+                UsageBar(value: cpu / 100, height: 6, tint: Self.usageTint(cpu, base: .cpuColor))
+            }
+            if let name = s.cpuName {
+                Self.tileCaption(name)
+            }
+        }
+    }
 
-        tiles.append(Tile(
-            id: "cpu",
-            label: String(localized: "CPU"),
-            value: Formatters.formatPercentage(s.cpuUsage),
-            subtitle: s.cpuName,
-            color: s.cpuUsage.map { Formatters.cpuColor(for: $0) } ?? .primary
-        ))
-        tiles.append(Tile(
-            id: "mem",
-            label: String(localized: "Memory"),
-            value: Formatters.formatPercentage(s.memoryPercent),
-            subtitle: Formatters.formatBytesRatio(used: s.memoryUsed, total: s.memoryTotal),
-            color: s.memoryPercent.map { Formatters.usageColor(for: $0) } ?? .primary
-        ))
-        if let swapTotal = s.swapTotal, swapTotal > 0 {
-            tiles.append(Tile(
-                id: "swap",
-                label: String(localized: "Swap"),
-                value: Formatters.formatPercentage(s.swapPercent),
-                subtitle: Formatters.formatBytesRatio(used: s.swapUsed, total: s.swapTotal),
-                color: s.swapPercent.map { Formatters.usageColor(for: $0) } ?? .primary
+    func memoryTile(_ s: ServerStatus) -> some View {
+        let parts = Self.sharedUnitParts(used: s.memoryUsed, total: s.memoryTotal)
+        return MetricCardView(
+            String(localized: "Memory"),
+            accessibilityValue: [
+                Formatters.formatPercentage(s.memoryPercent),
+                Formatters.formatBytesRatio(used: s.memoryUsed, total: s.memoryTotal)
+            ].compactMap { $0 }.joined(separator: ", ")
+        ) {
+            MetricTileReadout(
+                value: parts?.used ?? "—",
+                unit: parts.map { "/ \($0.total)" },
+                color: Self.usageTint(s.memoryPercent, base: .memoryColor)
+            )
+            if let percent = s.memoryPercent {
+                UsageBar(value: percent / 100, height: 6, tint: Self.usageTint(percent, base: .memoryColor))
+                Self.tileCaption(Formatters.formatPercentage(percent))
+            }
+        }
+    }
+
+    func diskTile(_ s: ServerStatus) -> some View {
+        let parts = Self.sharedUnitParts(used: s.diskUsed, total: s.diskTotal)
+        return MetricCardView(
+            String(localized: "Disk"),
+            accessibilityValue: [
+                Formatters.formatPercentage(s.diskPercent),
+                Formatters.formatBytesRatio(used: s.diskUsed, total: s.diskTotal)
+            ].compactMap { $0 }.joined(separator: ", ")
+        ) {
+            MetricTileReadout(
+                value: s.diskPercent.map { String(format: "%.1f", $0) } ?? "—",
+                unit: s.diskPercent == nil ? nil : "%",
+                color: Self.usageTint(s.diskPercent, base: .diskColor)
+            )
+            if let percent = s.diskPercent {
+                UsageBar(value: percent / 100, height: 6, tint: Self.usageTint(percent, base: .diskColor))
+            }
+            if let parts {
+                Self.tileCaption("\(parts.used) / \(parts.total)")
+            }
+        }
+    }
+
+    func networkTile(_ s: ServerStatus) -> some View {
+        let down = Formatters.formatSpeed(s.networkIn)
+        let up = Formatters.formatSpeed(s.networkOut)
+        return MetricCardView(String(localized: "Network"), accessibilityValue: "↓ \(down), ↑ \(up)") {
+            MetricTileReadout(
+                value: down,
+                color: .networkColor,
+                font: .title3.weight(.bold),
+                unitFont: .subheadline.weight(.bold),
+                systemImage: "arrow.down"
+            )
+            MetricTileReadout(
+                value: up,
+                font: .title3.weight(.bold),
+                unitFont: .subheadline.weight(.bold),
+                systemImage: "arrow.up"
+            )
+        }
+    }
+
+    static func tileCaption(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+
+    /// Metric identity colour, escalating to warning / critical at high usage.
+    static func usageTint(_ percent: Double?, base: Color) -> Color {
+        guard let percent else { return base }
+        if percent >= 90 { return .serverOffline }
+        if percent >= 80 { return .warningAmber }
+        return base
+    }
+
+    /// Formats `used` in the unit chosen for `total`, so the pair reads as
+    /// `3.1` + `8 GB` (rendered "3.1 / 8 GB") instead of repeating the unit.
+    static func sharedUnitParts(used: Int64?, total: Int64?) -> (used: String, total: String)? {
+        guard let used, let total, total > 0 else { return nil }
+        let unit: ByteCountFormatter.Units
+        switch total {
+        case (1 << 40)...: unit = .useTB
+        case (1 << 30)...: unit = .useGB
+        case (1 << 20)...: unit = .useMB
+        default: unit = .useKB
+        }
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .binary
+        formatter.allowedUnits = unit
+        formatter.allowsNonnumericFormatting = false
+        let totalText = formatter.string(fromByteCount: total)
+        formatter.includesUnit = false
+        return (formatter.string(fromByteCount: used), totalText)
+    }
+}
+
+// MARK: - Runtime + system rows
+
+private extension ServerOverviewSection {
+    func runtimeRows(_ s: ServerStatus) -> [OverviewInfoRow] {
+        var rows: [OverviewInfoRow] = []
+        if let load1 = s.load1 {
+            let loads = [load1, s.load5, s.load15].compactMap { $0 }.map { String(format: "%.2f", $0) }
+            rows.append(OverviewInfoRow(label: String(localized: "Load"), value: loads.joined(separator: " · ")))
+        }
+        if let processes = s.processCount {
+            rows.append(OverviewInfoRow(label: String(localized: "Processes"), value: "\(processes)"))
+        }
+        if s.tcpCount != nil || s.udpCount != nil {
+            rows.append(OverviewInfoRow(
+                label: String(localized: "TCP / UDP"),
+                value: "\(s.tcpCount.map(String.init) ?? "—") / \(s.udpCount.map(String.init) ?? "—")"
             ))
         }
-        tiles.append(Tile(
-            id: "disk",
-            label: String(localized: "Disk"),
-            value: Formatters.formatPercentage(s.diskPercent),
-            subtitle: Formatters.formatBytesRatio(used: s.diskUsed, total: s.diskTotal),
-            color: s.diskPercent.map { Formatters.usageColor(for: $0) } ?? .primary
-        ))
-        tiles.append(Tile(
-            id: "load",
-            label: String(localized: "Load"),
-            value: s.load1.map { String(format: "%.2f", $0) } ?? "—",
-            subtitle: loadSubtitle(s)
-        ))
-        tiles.append(Tile(
-            id: "proc",
-            label: String(localized: "Processes"),
-            value: s.processCount.map { "\($0)" } ?? "—"
-        ))
-        tiles.append(Tile(
-            id: "conn",
-            label: String(localized: "TCP / UDP"),
-            value: "\(s.tcpCount.map(String.init) ?? "—") / \(s.udpCount.map(String.init) ?? "—")"
-        ))
-        tiles.append(Tile(
-            id: "net",
-            label: String(localized: "Network"),
-            value: "↓ \(Formatters.formatSpeed(s.networkIn))",
-            subtitle: "↑ \(Formatters.formatSpeed(s.networkOut))",
-            color: .networkColor
-        ))
+        if let swapTotal = s.swapTotal, swapTotal > 0 {
+            let ratio = Formatters.formatBytesRatio(used: s.swapUsed, total: s.swapTotal)
+            rows.append(OverviewInfoRow(
+                label: String(localized: "Swap"),
+                value: [Formatters.formatPercentage(s.swapPercent), ratio].compactMap { $0 }.joined(separator: " · "),
+                valueColor: s.swapPercent.map { Self.usageTint($0, base: .secondary) }
+            ))
+        }
         if s.diskReadPerSec != nil || s.diskWritePerSec != nil {
-            tiles.append(Tile(
-                id: "diskio",
+            rows.append(OverviewInfoRow(
                 label: String(localized: "Disk I/O"),
-                value: "R \(Formatters.formatSpeed(s.diskReadPerSec))",
-                subtitle: "W \(Formatters.formatSpeed(s.diskWritePerSec))",
-                color: .diskColor
+                value: "R \(Formatters.formatSpeed(s.diskReadPerSec)) · W \(Formatters.formatSpeed(s.diskWritePerSec))"
             ))
         }
         if let inT = s.netInTransfer, let outT = s.netOutTransfer {
-            tiles.append(Tile(
-                id: "transfer",
+            rows.append(OverviewInfoRow(
                 label: String(localized: "Transfer"),
-                value: "↓ \(Formatters.formatBytes(inT))",
-                subtitle: "↑ \(Formatters.formatBytes(outT))"
+                value: "↓ \(Formatters.formatBytes(inT)) · ↑ \(Formatters.formatBytes(outT))"
             ))
         }
-        return tiles
+        return rows
     }
 
-    private func loadSubtitle(_ s: ServerStatus) -> String? {
-        guard let l5 = s.load5, let l15 = s.load15 else { return nil }
-        return String(format: "%.2f / %.2f", l5, l15)
-    }
-
-    // MARK: - System info
-
-    private var systemInfoCard: some View {
-        SectionCard(String(localized: "System"), systemImage: "cpu") {
-            VStack(spacing: 8) {
-                DetailRow(label: String(localized: "OS"), value: config?.os ?? live?.os)
-                DetailRow(label: String(localized: "Kernel"), value: config?.kernelVersion)
-                DetailRow(label: String(localized: "CPU"), value: config?.cpuName ?? live?.cpuName)
-                DetailRow(label: String(localized: "Cores"), value: (config?.cpuCores ?? live?.cpuCores).map { "\($0)" })
-                DetailRow(label: String(localized: "Architecture"), value: config?.cpuArch)
-                DetailRow(label: String(localized: "Virtualization"), value: config?.virtualization)
-                DetailRow(label: String(localized: "Agent"), value: config?.agentVersion)
-                DetailRow(label: String(localized: "IPv4"), value: config?.ipv4 ?? live?.ipv4, monospaced: true)
-                DetailRow(label: String(localized: "IPv6"), value: config?.ipv6 ?? live?.ipv6, monospaced: true)
-                if let location = locationText {
-                    DetailRow(label: String(localized: "Region"), value: location)
-                }
-            }
+    var systemRows: [OverviewInfoRow] {
+        let candidates: [(String, String?)] = [
+            (String(localized: "IPv4"), config?.ipv4 ?? live?.ipv4),
+            (String(localized: "IPv6"), config?.ipv6 ?? live?.ipv6),
+            (String(localized: "Location"), locationText),
+            (String(localized: "OS"), config?.os ?? live?.os),
+            (String(localized: "Kernel"), config?.kernelVersion),
+            (String(localized: "Architecture"), config?.cpuArch),
+            (String(localized: "CPU"), config?.cpuName ?? live?.cpuName),
+            (String(localized: "Cores"), (config?.cpuCores ?? live?.cpuCores).map { "\($0)" }),
+            (String(localized: "Virtualization"), config?.virtualization),
+            (String(localized: "Agent"), config?.agentVersion),
+            (String(localized: "Last boot"), lastBootText)
+        ]
+        return candidates.compactMap { label, value in
+            guard let value, !value.isEmpty else { return nil }
+            return OverviewInfoRow(label: label, value: value)
         }
     }
 
-    private var locationText: String? {
+    var locationText: String? {
         let region = config?.region ?? live?.region
         let country = config?.countryCode ?? live?.country
-        switch (region, country) {
-        case let (r?, c?): return "\(r), \(c)"
-        case let (r?, nil): return r
-        case let (nil, c?): return c
-        default: return nil
+        let place: String? = switch (region, country) {
+        case let (r?, c?): "\(r), \(c)"
+        case let (r?, nil): r
+        case let (nil, c?): c
+        default: nil
+        }
+        guard let place else { return nil }
+        if let flag = CountryFlag.emoji(for: country) { return "\(flag) \(place)" }
+        return place
+    }
+
+    /// Boot time derived from the live uptime counter (only while online, when
+    /// the counter is current).
+    var lastBootText: String? {
+        guard isOnline, let uptime = live?.uptime, uptime > 0 else { return nil }
+        return Date(timeIntervalSinceNow: -TimeInterval(uptime)).formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+// MARK: - Billing + capabilities
+
+private extension ServerOverviewSection {
+    var billingCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let price = config?.price {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(Formatters.formatCurrency(price, code: config?.currency ?? "USD"))
+                            .font(.title2.weight(.bold))
+                            .monospacedDigit()
+                        if let cycle = config?.billingCycle {
+                            Text(Self.perCycleText(cycle))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    // An explicit label replaces a combined one, so the amount
+                    // is carried as the value instead.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(String(localized: "Price")))
+                    .accessibilityValue(Text(priceAccessibilityValue(price)))
+                    Spacer(minLength: 8)
+                    expiryText
+                }
+            } else {
+                expiryText
+            }
+            ForEach(billingRows) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(row.label)
+                    Spacer(minLength: 12)
+                    Text(row.value)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .multilineTextAlignment(.trailing)
+                }
+                .font(.footnote)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .cardSurface()
+    }
+
+    func priceAccessibilityValue(_ price: Double) -> String {
+        let amount = Formatters.formatCurrency(price, code: config?.currency ?? "USD")
+        guard let cycle = config?.billingCycle else { return amount }
+        return "\(amount) \(Self.perCycleText(cycle))"
+    }
+
+    @ViewBuilder
+    var expiryText: some View {
+        if let expiry = config?.expiredDate {
+            let date = expiry.formatted(date: .abbreviated, time: .omitted)
+            let isPast = expiry < Date()
+            Text(isPast ? String(localized: "Expired \(date)") : String(localized: "Expires \(date)"))
+                .font(.footnote.weight(isPast ? .semibold : .regular))
+                .foregroundStyle(isPast ? Color.serverOffline : .secondary)
         }
     }
 
-    // MARK: - Capabilities
+    var billingRows: [OverviewInfoRow] {
+        var rows: [OverviewInfoRow] = []
+        // With a price, the cycle already reads as "/ month" next to it.
+        if config?.price == nil, let cycle = config?.billingCycle {
+            rows.append(OverviewInfoRow(label: String(localized: "Cycle"), value: Self.cycleName(cycle)))
+        }
+        if let day = config?.billingStartDay {
+            rows.append(OverviewInfoRow(label: String(localized: "Billing day"), value: "\(day)"))
+        }
+        if let limit = config?.trafficLimit {
+            rows.append(OverviewInfoRow(
+                label: String(localized: "Traffic limit"),
+                value: "\(Formatters.formatBytes(limit))\(config?.trafficLimitType.map { " (\($0))" } ?? "")"
+            ))
+        }
+        return rows
+    }
 
-    private var capabilitiesCard: some View {
-        SectionCard(String(localized: "Capabilities"), systemImage: "switch.2") {
-            VStack(alignment: .leading, spacing: 10) {
-                let enabled = Capability.allCases.filter { capabilities.isEnabled($0) }
-                if enabled.isEmpty {
-                    Text(String(localized: "No capabilities enabled."))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    FlexibleWrap(items: enabled) { cap in
-                        Chip(text: cap.label, systemImage: cap.systemImage, color: .brandAccent)
-                    }
-                }
-                let gaps = capabilities.configuredButUnavailable
-                if !gaps.isEmpty {
-                    Divider()
-                    Label {
-                        Text(String(
-                            format: String(localized: "Configured but unavailable: %@"),
-                            gaps.map(\.label).joined(separator: ", ")
-                        ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    } icon: {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(Color.warningAmber)
+    static func cycleName(_ cycle: String) -> String {
+        switch cycle {
+        case "monthly": String(localized: "Monthly")
+        case "quarterly": String(localized: "Quarterly")
+        case "yearly": String(localized: "Yearly")
+        default: cycle.capitalized
+        }
+    }
+
+    static func perCycleText(_ cycle: String) -> String {
+        switch cycle {
+        case "monthly": String(localized: "/ month")
+        case "quarterly": String(localized: "/ quarter")
+        case "yearly": String(localized: "/ year")
+        default: "/ \(cycle)"
+        }
+    }
+
+    var capabilitiesCard: some View {
+        let enabled = Capability.allCases.filter { capabilities.isEnabled($0) }
+        let disabled = Capability.allCases.filter { !capabilities.isEnabled($0) }
+        let gaps = capabilities.configuredButUnavailable
+        // With no mask at all (config not loaded / fetch failed) nothing is
+        // known, so don't list every capability as "off".
+        let isKnown = capabilities.configured != nil || capabilities.agentLocal != nil || capabilities.effective != nil
+        return VStack(alignment: .leading, spacing: 10) {
+            if enabled.isEmpty {
+                Text(String(localized: "No capabilities enabled."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            if isKnown {
+                FlexibleWrap(items: enabled + disabled) { cap in
+                    if enabled.contains(cap) {
+                        Chip(text: cap.label, color: .accentColor)
+                    } else {
+                        Chip(text: String(localized: "\(cap.label) · off"), color: .secondary)
                     }
                 }
             }
-        }
-    }
-
-    // MARK: - Billing
-
-    private var billingCard: some View {
-        SectionCard(String(localized: "Billing"), systemImage: "creditcard") {
-            VStack(spacing: 8) {
-                if let price = config?.price {
-                    DetailRow(
-                        label: String(localized: "Price"),
-                        value: priceText(price, currency: config?.currency, cycle: config?.billingCycle)
-                    )
+            if !gaps.isEmpty {
+                Label {
+                    Text(String(
+                        format: String(localized: "Configured but unavailable: %@"),
+                        gaps.map(\.label).joined(separator: ", ")
+                    ))
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(Color.warningAmber)
                 }
-                if let cycle = config?.billingCycle {
-                    DetailRow(label: String(localized: "Cycle"), value: cycle.capitalized)
-                }
-                if let day = config?.billingStartDay {
-                    DetailRow(label: String(localized: "Billing day"), value: "\(day)")
-                }
-                if let expiry = config?.expiredDate {
-                    DetailRow(
-                        label: String(localized: "Expires"),
-                        value: expiry.formatted(date: .abbreviated, time: .omitted),
-                        valueColor: expiry < Date() ? .red : .primary
-                    )
-                }
-                if let limit = config?.trafficLimit {
-                    DetailRow(
-                        label: String(localized: "Traffic limit"),
-                        value: "\(Formatters.formatBytes(limit))\(config?.trafficLimitType.map { " (\($0))" } ?? "")"
-                    )
-                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
+            Text(String(localized: "Set on the agent host. Read-only here."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-    }
-
-    private func priceText(_ price: Double, currency: String?, cycle: String?) -> String {
-        let amount = String(format: "%.2f", price)
-        let cur = currency ?? "USD"
-        if let cycle { return "\(amount) \(cur) / \(cycle)" }
-        return "\(amount) \(cur)"
+        .cardSurface()
     }
 }
