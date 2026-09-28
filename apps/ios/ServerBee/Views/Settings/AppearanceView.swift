@@ -28,17 +28,17 @@ struct AppearanceView: View {
     var body: some View {
         List {
             Section {
-                Picker(selection: $theme) {
+                // Inline checkmark rows, like the system Display settings.
+                Picker(String(localized: "Theme"), selection: $theme) {
                     ForEach(AppTheme.allCases, id: \.rawValue) { option in
                         Text(option.localizedName).tag(option.rawValue)
                     }
-                } label: {
-                    Text(String(localized: "Theme"))
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             } header: {
                 Text(String(localized: "Theme"))
             }
-
         }
         .navigationTitle(String(localized: "Appearance"))
     }
