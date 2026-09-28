@@ -2,6 +2,23 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
+    "%@ burned this cycle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ burned this cycle"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周期已消耗 %@"
+          }
+        }
+      }
+    },
     "%@ total": {
       "extractionState": "manual",
       "localizations": {
@@ -739,23 +756,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "占限额 %@"
-          }
-        }
-      }
-    },
-    "%@ this cycle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ this cycle"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本周期 %@"
           }
         }
       }

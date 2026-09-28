@@ -178,7 +178,7 @@ private extension InsightsView {
         let servers = count == 1 ? String(localized: "\(count) server") : String(localized: "\(count) servers")
         let perDay = String(format: String(localized: "%@ / day"),
                             Formatters.formatCurrency(summary.dailyTotal, code: summary.currency))
-        let thisCycle = String(format: String(localized: "%@ this cycle"),
+        let thisCycle = String(format: String(localized: "%@ burned this cycle"),
                                Formatters.formatCurrency(summary.cycleElapsedTotal, code: summary.currency))
         return VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
