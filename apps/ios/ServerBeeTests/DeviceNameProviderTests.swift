@@ -22,7 +22,8 @@ final class DeviceNameProviderTests: XCTestCase {
     func test_defaultName_isNonEmpty_andContainsFourCharSuffix() {
         let name = DeviceNameProvider.defaultName(defaults: defaults)
         XCTAssertFalse(name.isEmpty)
-        // Suffix is wrapped in parentheses at the end: "Model 17.0 (AB12)".
+        XCTAssertTrue(name.contains(" · iOS "), "Default name should label the OS version: \(name)")
+        // Suffix is wrapped in parentheses at the end: "iPhone · iOS 17.0 (AB12)".
         guard let open = name.lastIndex(of: "("),
               let close = name.lastIndex(of: ")"),
               open < close

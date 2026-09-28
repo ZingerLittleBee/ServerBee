@@ -40,7 +40,8 @@ enum DeviceNameProvider {
         let suffix = stableSuffix(defaults: defaults)
         let model = UIDevice.current.model
         let version = UIDevice.current.systemVersion
-        return "\(model) \(version) (\(suffix))"
+        // "iPhone · iOS 27.0 (AB12)": the OS label keeps the version from reading as a model number.
+        return "\(model) · iOS \(version) (\(suffix))"
     }
 
     private static func stableSuffix(defaults: UserDefaults) -> String {
