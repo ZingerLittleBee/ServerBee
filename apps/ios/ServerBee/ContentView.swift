@@ -86,6 +86,9 @@ struct ContentView: View {
             }
             .environment(\.apiClient, apiClient)
             .environment(serversViewModel)
+            // Toggles default to green regardless of the accent colour; tint the
+            // whole tree so switches, links and controls share the theme colour.
+            .tint(Color.accentColor)
 
             OfflineBannerView(isConnected: networkMonitor.isConnected)
                 .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)

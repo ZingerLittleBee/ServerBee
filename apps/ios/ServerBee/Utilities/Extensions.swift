@@ -8,7 +8,9 @@ extension Color {
     static let alertFiring = Color("AlertFiring")
     static let alertResolved = Color("ServerOnline")
     static let warningAmber = Color("WarningAmber")
-    static let brandAccent = Color("BrandAccent")
+    /// The app theme colour. Follows the system accent (the AccentColor asset
+    /// references `systemBlue`) so green stays reserved for online/healthy state.
+    static let brandAccent = Color.accentColor
     static let cpuColor = Color("CPUColor")
     static let memoryColor = Color("MemoryColor")
     static let diskColor = Color("DiskColor")

@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// A titled card container used throughout the detail screens. Wraps content in
-/// the standard rounded-rectangle surface with an optional header and trailing
-/// accessory (e.g. a "view all" affordance).
+/// the standard grouped surface (`cardSurface`) with an optional header and
+/// trailing accessory (e.g. a "view all" affordance).
 struct SectionCard<Content: View, Accessory: View>: View {
     let title: String?
     var systemImage: String?
@@ -22,7 +22,7 @@ struct SectionCard<Content: View, Accessory: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             if let title {
                 HStack {
                     Label {
@@ -32,7 +32,7 @@ struct SectionCard<Content: View, Accessory: View>: View {
                             Image(systemName: systemImage)
                         }
                     }
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .labelStyle(TitleIconLabelStyle())
                     Spacer()
                     accessory
@@ -40,11 +40,7 @@ struct SectionCard<Content: View, Accessory: View>: View {
             }
             content
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+        .cardSurface()
     }
 }
 
@@ -172,10 +168,10 @@ struct Chip: View {
                     .accessibilityHidden(true)
             }
             Text(text)
-                .font(.caption2.weight(.medium))
+                .font(.caption.weight(.medium))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 3)
         .foregroundStyle(filled ? color : .secondary)
         .background(filled ? color.opacity(0.12) : Color(.systemGray6))
         .clipShape(Capsule())
