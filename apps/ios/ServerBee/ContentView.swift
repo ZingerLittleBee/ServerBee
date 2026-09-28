@@ -103,8 +103,7 @@ struct ContentView: View {
             pushManager.configure(apiClient: apiClient)
 
             await wsClient.setTokenRefresher { [weak authManager] in
-                guard let authManager else { return nil }
-                return try? await authManager.refreshAccessToken()
+                await authManager?.accessTokenForReconnect()
             }
             await wsClient.setOnMessage {
                 [weak serversViewModel, weak alertsViewModel, weak securityFeed, weak upgradeJobs, apiClient] message in

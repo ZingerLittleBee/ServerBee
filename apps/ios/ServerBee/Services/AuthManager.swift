@@ -133,6 +133,20 @@ final class AuthManager {
         }
     }
 
+    /// Token for a WebSocket reconnect. A transient refresh failure (offline,
+    /// timeout, 5xx) falls back to the stored token, so the socket keeps
+    /// retrying with backoff instead of giving up for good; only a session
+    /// the server rejected, or one with no stored token, yields `nil`.
+    func accessTokenForReconnect() async -> String? {
+        do {
+            return try await refreshAccessToken()
+        } catch AuthError.refreshUnauthorized {
+            return nil
+        } catch {
+            return getAccessToken()
+        }
+    }
+
     // MARK: - Token Refresh (private)
 
     /// Directly calls the refresh endpoint using URLSession.
