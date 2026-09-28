@@ -1,34 +1,120 @@
 import Charts
 import SwiftUI
 
-/// A reusable container for a chart with a title.
+// MARK: - Chart card
+
+/// Legend entry drawn beneath a `ChartSection` chart: a short colour swatch
+/// followed by a caption label.
+struct ChartLegendItem: Identifiable {
+    let label: String
+    let color: Color
+
+    var id: String { label }
+}
+
+/// A reusable card for a chart: a title with an optional trailing summary
+/// (e.g. "avg 21.8% · max 34.1%"), the chart at a fixed height, and an
+/// optional legend row underneath.
 struct ChartSection<Content: View>: View {
     let title: String
-    var subtitle: String?
-    @ViewBuilder let content: Content
+    let subtitle: String?
+    let legend: [ChartLegendItem]
+    let height: CGFloat
+    let content: Content
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        legend: [ChartLegendItem] = [],
+        height: CGFloat = 200,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.legend = legend
+        self.height = height
+        self.content = content()
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title)
-                    .font(.headline)
-                if let subtitle {
-                    Spacer()
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
+        VStack(alignment: .leading, spacing: 10) {
+            header
             content
-                .frame(height: 200)
+                .frame(height: height)
+            if !legend.isEmpty {
+                ChartLegendRow(items: legend)
+            }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+        .cardSurface()
+        .accessibilityElement(children: .contain)
+    }
+
+    /// Title and summary share one baseline; at large Dynamic Type sizes the
+    /// summary drops below the title instead of truncating.
+    private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                titleLabel
+                Spacer(minLength: 8)
+                summaryLabel(wraps: false)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                titleLabel
+                summaryLabel(wraps: true)
+            }
+        }
+    }
+
+    private var titleLabel: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder
+    private func summaryLabel(wraps: Bool) -> some View {
+        if let subtitle {
+            Text(subtitle)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .lineLimit(wraps ? nil : 1)
+                .fixedSize(horizontal: false, vertical: wraps)
+        }
     }
 }
+
+/// Legend of colour swatches used under multi-series charts: one row, or a
+/// column when the labels no longer fit (large Dynamic Type sizes).
+private struct ChartLegendRow: View {
+    let items: [ChartLegendItem]
+
+    @ScaledMetric(relativeTo: .caption) private var swatchWidth: CGFloat = 10
+    @ScaledMetric(relativeTo: .caption) private var swatchHeight: CGFloat = 3
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 14) { entries }
+            VStack(alignment: .leading, spacing: 4) { entries }
+        }
+    }
+
+    private var entries: some View {
+        ForEach(items) { item in
+            HStack(spacing: 6) {
+                Capsule()
+                    .fill(item.color)
+                    .frame(width: swatchWidth, height: swatchHeight)
+                    .accessibilityHidden(true)
+                Text(item.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// MARK: - Metric history chart
 
 /// (date, record) pair with a guaranteed-parsable timestamp.
 struct ChartDataPoint {
@@ -36,222 +122,153 @@ struct ChartDataPoint {
     let record: MetricRecord
 }
 
-/// Renders the standard set of history charts from raw metric records:
-/// CPU %, Memory %, Disk %, Load, Network I/O, and (when present) Disk I/O.
-/// Pure presentation — owns no fetching, scroll, or navigation chrome so it
-/// can be embedded in both the standalone history screen and the detail tab.
-struct MetricsCharts: View {
-    let records: [MetricRecord]
+/// A single value on a metric history series.
+struct MetricChartSample {
+    let date: Date
+    let value: Double
+}
 
-    private var data: [ChartDataPoint] {
-        records.compactMap { record in
-            guard let date = record.date else { return nil }
-            return ChartDataPoint(date: date, record: record)
+/// One plotted line on a metric history chart. `filled` adds the light area
+/// wash under the line (used for the primary series only).
+struct MetricChartSeries: Identifiable {
+    let name: String
+    let color: Color
+    let samples: [MetricChartSample]
+    var filled = false
+
+    var id: String { name }
+}
+
+/// Value formatting and axis scaling for a metric chart's trailing Y axis.
+enum MetricAxisFormat {
+    case percent
+    case bytes
+    case bytesPerSecond
+    case decimal
+    case celsius
+
+    /// Compact axis label; zero is always rendered as a bare "0".
+    func label(for value: Double) -> String {
+        guard value != 0 else { return "0" }
+        switch self {
+        case .percent: return "\(Int(value.rounded()))%"
+        case .bytes: return Formatters.formatBytes(Int64(value))
+        case .bytesPerSecond: return Formatters.formatSpeed(Int64(value))
+        case .decimal: return value.formatted(.number.precision(.fractionLength(0...2)))
+        case .celsius: return "\(Int(value.rounded()))°"
         }
     }
 
-    private var hasDiskIO: Bool {
-        records.contains { !$0.diskIoSamples.isEmpty || $0.diskReadPerSec != nil || $0.diskWritePerSec != nil }
+    /// Readable axis top for a series maximum, so the three gridlines
+    /// (0, mid, top) land on round values. Keeps a little headroom so a peak
+    /// never sits exactly on the top gridline.
+    func axisTop(for maxValue: Double) -> Double {
+        let padded = maxValue * 1.05
+        switch self {
+        case .percent:
+            return 100
+        case .celsius:
+            return max(100, (padded / 10).rounded(.up) * 10)
+        case .decimal:
+            return Self.niceCeiling(max(padded, 1))
+        case .bytes, .bytesPerSecond:
+            return Self.niceBinaryCeiling(padded)
+        }
     }
 
-    private var hasLoad: Bool {
-        records.contains { $0.load1 != nil }
+    /// Rounds up to the next 1 / 2 / 2.5 / 5 step of the value's magnitude.
+    private static func niceCeiling(_ value: Double) -> Double {
+        guard value > 0, value.isFinite else { return 1 }
+        let magnitude = pow(10, floor(log10(value)))
+        let fraction = value / magnitude
+        let step = [1, 2, 2.5, 5, 10].first { fraction <= $0 } ?? 10
+        return step * magnitude
     }
 
-    private var hasTemperature: Bool {
-        records.contains { ($0.temperature ?? 0) > 0 }
+    /// Nice ceiling within the binary unit (KB / MB / GB …) the value falls
+    /// in, so byte labels read "5 MB" rather than "4.77 MB". Minimum 1 KB.
+    private static func niceBinaryCeiling(_ value: Double) -> Double {
+        guard value > 1_024, value.isFinite else { return 1_024 }
+        var unit: Double = 1
+        while value / unit >= 1_024 { unit *= 1_024 }
+        let scaled = value / unit
+        return scaled > 500 ? 1_024 * unit : niceCeiling(scaled) * unit
+    }
+}
+
+/// Standard metric history chart: trailing Y axis with three gridlines
+/// (0, mid, top), three compact time labels pinned to the plot edges, a light
+/// area wash under filled series and 2pt lines.
+struct MetricHistoryChart: View {
+    /// Accessibility name for the plotted values (usually the card title).
+    let valueLabel: String
+    let series: [MetricChartSeries]
+    let format: MetricAxisFormat
+    let timeDomain: ClosedRange<Date>
+
+    private var peak: Double {
+        series.flatMap(\.samples).map(\.value).max() ?? 0
     }
 
     var body: some View {
-        let data = data
-        cpuChart(data: data)
-        memoryChart(data: data)
-        diskChart(data: data)
-        if hasLoad { loadChart(data: data) }
-        networkChart(data: data)
-        if hasDiskIO { diskIOChart(data: data) }
-        if hasTemperature { temperatureChart(data: data) }
-    }
-
-    private func cpuChart(data: [ChartDataPoint]) -> some View {
-        ChartSection(title: String(localized: "CPU Usage")) {
-            Chart(data, id: \.date) { point in
-                if let cpu = point.record.cpuUsage {
-                    LineMark(x: .value("Time", point.date), y: .value("CPU %", cpu))
-                        .foregroundStyle(Color.cpuColor)
-                        .interpolationMethod(.catmullRom)
-                }
-            }
-            .percentageYAxis()
-            .timeXAxis()
-        }
-    }
-
-    private func memoryChart(data: [ChartDataPoint]) -> some View {
-        // History records carry `mem_used` bytes but no total, so plot absolute
-        // used memory (bytes) rather than a percentage that would always be nil.
-        ChartSection(title: String(localized: "Memory Used")) {
-            Chart(data, id: \.date) { point in
-                if let used = point.record.memoryUsed {
-                    AreaMark(x: .value("Time", point.date), y: .value("Bytes", used))
-                        .foregroundStyle(gradient(.memoryColor))
-                        .interpolationMethod(.catmullRom)
-                    LineMark(x: .value("Time", point.date), y: .value("Bytes", used))
-                        .foregroundStyle(Color.memoryColor)
-                        .interpolationMethod(.catmullRom)
-                }
-            }
-            .storageBytesYAxis()
-            .timeXAxis()
-        }
-    }
-
-    private func diskChart(data: [ChartDataPoint]) -> some View {
-        // History records carry `disk_used` bytes but no total, so plot absolute
-        // used disk (bytes) rather than a percentage that would always be nil.
-        ChartSection(title: String(localized: "Disk Used")) {
-            Chart(data, id: \.date) { point in
-                if let used = point.record.diskUsed {
-                    AreaMark(x: .value("Time", point.date), y: .value("Bytes", used))
-                        .foregroundStyle(gradient(.diskColor))
-                        .interpolationMethod(.catmullRom)
-                    LineMark(x: .value("Time", point.date), y: .value("Bytes", used))
-                        .foregroundStyle(Color.diskColor)
-                        .interpolationMethod(.catmullRom)
-                }
-            }
-            .storageBytesYAxis()
-            .timeXAxis()
-        }
-    }
-
-    private func loadChart(data: [ChartDataPoint]) -> some View {
-        ChartSection(title: String(localized: "Load Average (1m)")) {
-            Chart(data, id: \.date) { point in
-                if let load = point.record.load1 {
-                    LineMark(x: .value("Time", point.date), y: .value("Load", load))
-                        .foregroundStyle(Color.warningAmber)
-                        .interpolationMethod(.catmullRom)
-                }
-            }
-            .timeXAxis()
-        }
-    }
-
-    private func networkChart(data: [ChartDataPoint]) -> some View {
-        ChartSection(title: String(localized: "Network I/O")) {
-            Chart(data, id: \.date) { point in
-                if let netIn = point.record.networkIn {
+        let peak = peak
+        let top = format.axisTop(for: peak)
+        let format = format
+        Chart {
+            ForEach(series) { line in
+                ForEach(line.samples, id: \.date) { sample in
+                    if line.filled {
+                        AreaMark(
+                            x: .value("Time", sample.date),
+                            y: .value(valueLabel, sample.value),
+                            series: .value(valueLabel, line.name),
+                            stacking: .unstacked
+                        )
+                        .foregroundStyle(line.color.opacity(0.14))
+                        .interpolationMethod(.monotone)
+                    }
                     LineMark(
-                        x: .value("Time", point.date),
-                        y: .value("Bytes/s", netIn),
-                        series: .value("Direction", "In")
+                        x: .value("Time", sample.date),
+                        y: .value(valueLabel, sample.value),
+                        series: .value(valueLabel, line.name)
                     )
-                    .foregroundStyle(Color.networkColor)
-                    .interpolationMethod(.catmullRom)
-                }
-                if let netOut = point.record.networkOut {
-                    LineMark(
-                        x: .value("Time", point.date),
-                        y: .value("Bytes/s", netOut),
-                        series: .value("Direction", "Out")
-                    )
-                    .foregroundStyle(Color.cpuColor)
-                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(line.color)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .interpolationMethod(.monotone)
                 }
             }
-            .chartForegroundStyleScale([
-                "In": Color.networkColor,
-                "Out": Color.cpuColor
-            ])
-            .bytesYAxis()
-            .timeXAxis()
         }
-    }
-
-    private func diskIOChart(data: [ChartDataPoint]) -> some View {
-        ChartSection(title: String(localized: "Disk I/O")) {
-            Chart(data, id: \.date) { point in
-                // History records expose disk I/O via the merged disk_io_json
-                // sum; the live flat fields are the fallback.
-                if let read = point.record.diskReadMerged ?? point.record.diskReadPerSec {
-                    LineMark(
-                        x: .value("Time", point.date),
-                        y: .value("Bytes/s", read),
-                        series: .value("Direction", "Read")
-                    )
-                    .foregroundStyle(Color.diskColor)
-                    .interpolationMethod(.catmullRom)
-                }
-                if let write = point.record.diskWriteMerged ?? point.record.diskWritePerSec {
-                    LineMark(
-                        x: .value("Time", point.date),
-                        y: .value("Bytes/s", write),
-                        series: .value("Direction", "Write")
-                    )
-                    .foregroundStyle(Color.warningAmber)
-                    .interpolationMethod(.catmullRom)
+        .chartLegend(.hidden)
+        .chartXScale(domain: timeDomain)
+        .chartYScale(domain: 0...max(top, peak))
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: [0, top / 2, top]) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let number = value.as(Double.self) {
+                        Text(verbatim: format.label(for: number))
+                    }
                 }
             }
-            .chartForegroundStyleScale([
-                "Read": Color.diskColor,
-                "Write": Color.warningAmber
-            ])
-            .bytesYAxis()
-            .timeXAxis()
         }
-    }
-
-    private func temperatureChart(data: [ChartDataPoint]) -> some View {
-        ChartSection(title: String(localized: "Temperature")) {
-            Chart(data, id: \.date) { point in
-                if let temp = point.record.temperature, temp > 0 {
-                    LineMark(x: .value("Time", point.date), y: .value("°C", temp))
-                        .foregroundStyle(Color.warningAmber)
-                        .interpolationMethod(.catmullRom)
-                }
-            }
-            .timeXAxis()
-        }
-    }
-
-    private func gradient(_ color: Color) -> LinearGradient {
-        .linearGradient(
-            colors: [color.opacity(0.3), color.opacity(0.05)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        .edgeTimeXAxis(domain: timeDomain)
+        // Axis labels stop growing at the first accessibility size so the
+        // plot keeps usable width; card titles and summaries still scale.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 }
 
 // MARK: - Shared Chart Axis Modifiers
 
-private struct PercentageYAxisModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .chartYScale(domain: 0...100)
-            .chartYAxis {
-                AxisMarks(values: [0, 25, 50, 75, 100]) { value in
-                    AxisGridLine()
-                    AxisValueLabel {
-                        if let v = value.as(Int.self) {
-                            Text("\(v)%")
-                        }
-                    }
-                }
-            }
-    }
-}
-
+/// Three compact time labels without vertical gridlines.
 private struct TimeXAxisModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .chartXAxis {
-                AxisMarks { value in
-                    AxisGridLine()
+                AxisMarks(values: .automatic(desiredCount: 3)) { value in
                     AxisValueLabel {
                         if let date = value.as(Date.self) {
-                            Text(Formatters.formatChartTime(date))
+                            Text(verbatim: Formatters.formatChartTime(date))
                         }
                     }
                 }
@@ -259,41 +276,40 @@ private struct TimeXAxisModifier: ViewModifier {
     }
 }
 
-private struct BytesYAxisModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content.chartYAxis {
-            AxisMarks { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let bytes = value.as(Double.self) {
-                        Text(Formatters.formatSpeed(Int64(bytes)))
-                    }
-                }
-            }
-        }
-    }
-}
+/// Start / middle / end time labels pinned inside the plot edges (start / end
+/// only at accessibility text sizes, where three labels collide). Spans longer
+/// than a day and a half switch from "HH:mm" to "M/d" labels.
+private struct EdgeTimeXAxisModifier: ViewModifier {
+    let domain: ClosedRange<Date>
 
-/// Y axis for absolute storage sizes (memory/disk used), formatted as plain
-/// bytes (e.g. "1.5 GB") rather than the per-second rate used by `bytesYAxis`.
-private struct StorageBytesYAxisModifier: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     func body(content: Content) -> some View {
-        content.chartYAxis {
-            AxisMarks { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let bytes = value.as(Double.self) {
-                        Text(Formatters.formatBytes(Int64(bytes)))
+        let start = domain.lowerBound
+        let end = domain.upperBound
+        let middle = start.addingTimeInterval(end.timeIntervalSince(start) / 2)
+        let showsDates = end.timeIntervalSince(start) > 36 * 3_600
+        let values = dynamicTypeSize.isAccessibilitySize ? [start, end] : [start, middle, end]
+        return content
+            .chartXAxis {
+                AxisMarks(values: values) { value in
+                    AxisValueLabel(anchor: Self.anchor(index: value.index, count: value.count)) {
+                        if let date = value.as(Date.self) {
+                            Text(verbatim: showsDates ? Formatters.formatDayAxis(date) : Formatters.formatChartTime(date))
+                        }
                     }
                 }
             }
-        }
+    }
+
+    private static func anchor(index: Int, count: Int) -> UnitPoint {
+        if index == 0 { return .topLeading }
+        if index == count - 1 { return .topTrailing }
+        return .top
     }
 }
 
 extension View {
-    func percentageYAxis() -> some View { modifier(PercentageYAxisModifier()) }
     func timeXAxis() -> some View { modifier(TimeXAxisModifier()) }
-    func bytesYAxis() -> some View { modifier(BytesYAxisModifier()) }
-    func storageBytesYAxis() -> some View { modifier(StorageBytesYAxisModifier()) }
+    func edgeTimeXAxis(domain: ClosedRange<Date>) -> some View { modifier(EdgeTimeXAxisModifier(domain: domain)) }
 }
