@@ -22,7 +22,20 @@ struct SettingsView: View {
 
     /// DEBUG-only value-routed admin destinations, used by the launch hook to
     /// push a sub-screen without the cliclick harness scrolling the list.
-    enum AdminRoute: Hashable { case administration, networkProbes, ipQuality, statusPage, users }
+    enum AdminRoute: Hashable {
+        case administration, networkProbes, ipQuality, statusPage, users
+        case groups, pingTasks, tasks, rateLimit, audit, databases
+        // Direct children of Settings (not under Administration).
+        case password, twoFactor, firewall, apiKeys, devices, deviceName, appearance, language
+
+        var isUnderAdministration: Bool {
+            switch self {
+            case .password, .twoFactor, .firewall, .apiKeys, .devices, .deviceName, .appearance, .language,
+                 .administration: false
+            default: true
+            }
+        }
+    }
     #endif
 
     var body: some View {
@@ -51,6 +64,20 @@ private extension SettingsView {
                 case .ipQuality: IpQualityConfigView(isAdmin: isAdmin)
                 case .statusPage: StatusPageConfigView(isAdmin: isAdmin)
                 case .users: UsersView()
+                case .groups: ServerGroupsView()
+                case .pingTasks: PingTasksView(isAdmin: isAdmin)
+                case .tasks: TasksView(isAdmin: isAdmin)
+                case .rateLimit: RateLimitView()
+                case .audit: AuditLogView()
+                case .databases: DatabasesView(isAdmin: isAdmin)
+                case .password: PasswordChangeView()
+                case .twoFactor: TwoFactorView()
+                case .firewall: FirewallBlocklistView()
+                case .apiKeys: ApiKeysView()
+                case .devices: DevicesView()
+                case .deviceName: DeviceNameView()
+                case .appearance: AppearanceView()
+                case .language: LanguageView()
                 }
             }
             .task { applyDebugAdminRoute() }
@@ -60,7 +87,7 @@ private extension SettingsView {
     #if DEBUG
     /// Pushes `SB_UITEST_ADMIN` once per launch. Admin sub-screens live under
     /// Administration, so the hook pushes that hub first to keep the back stack
-    /// identical to a manual tap-through.
+    /// identical to a manual tap-through; Settings' own rows push directly.
     func applyDebugAdminRoute() {
         guard !didApplyDebugRoute else { return }
         didApplyDebugRoute = true
@@ -70,11 +97,25 @@ private extension SettingsView {
         case "status-page": .statusPage
         case "users": .users
         case "administration": .administration
+        case "groups": .groups
+        case "ping-tasks": .pingTasks
+        case "tasks": .tasks
+        case "rate-limit": .rateLimit
+        case "audit": .audit
+        case "databases": .databases
+        case "password": .password
+        case "two-factor": .twoFactor
+        case "firewall": .firewall
+        case "api-keys": .apiKeys
+        case "devices": .devices
+        case "device-name": .deviceName
+        case "appearance": .appearance
+        case "language": .language
         default: nil
         }
         guard let route else { return }
-        debugPath.append(AdminRoute.administration)
-        if route != .administration { debugPath.append(route) }
+        if route.isUnderAdministration { debugPath.append(AdminRoute.administration) }
+        debugPath.append(route)
     }
     #endif
 }

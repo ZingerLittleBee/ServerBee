@@ -17,6 +17,7 @@ struct InsightsView: View {
 
     #if DEBUG
     @State private var debugShowIncidents = false
+    @State private var debugShowMonitors = false
     #endif
 
     var body: some View {
@@ -41,11 +42,15 @@ struct InsightsView: View {
                token.hasPrefix("insights-incidents") || token == "insights-maintenance-create" {
                 debugShowIncidents = true
             }
+            if UITestSupport.autoPresent == "insights-monitors" { debugShowMonitors = true }
             #endif
         }
         #if DEBUG
         .navigationDestination(isPresented: $debugShowIncidents) {
             IncidentsView(viewModel: viewModel, isAdmin: isAdmin)
+        }
+        .navigationDestination(isPresented: $debugShowMonitors) {
+            ServiceMonitorsView(monitors: viewModel.monitors, isAdmin: isAdmin)
         }
         #endif
     }
