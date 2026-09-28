@@ -34,6 +34,9 @@ struct ServersListView: View {
             text: $viewModel.searchQuery,
             prompt: String(localized: "Search name, IP, tag")
         )
+        // Names, IPs and tags are matched literally; don't let the keyboard rewrite them.
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 filterMenu
