@@ -78,7 +78,22 @@ final class FleetOverviewModelsTests: XCTestCase {
         XCTAssertNil(o.latencySparkline[1])
         // Worst (highest) latency / loss across targets.
         XCTAssertEqual(o.worstLatency, 120.0)
-        XCTAssertEqual(o.worstLoss, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(o.worstLoss ?? -1, 0.2, accuracy: 0.0001)
+    }
+
+    func test_decode_fleetOverview_withoutSamplesHasNoLoss() throws {
+        let json = """
+        {
+          "server_id": "s2", "server_name": "idle", "online": false, "anomaly_count": 0,
+          "targets": [
+            { "target_id": "t1", "target_name": "CT", "provider": "ct", "packet_loss": 0, "availability": 1 }
+          ],
+          "latency_sparkline": [], "loss_sparkline": []
+        }
+        """
+        let idle = try JSONDecoder.snakeCase.decode(NetworkProbeFleetOverview.self, from: Data(json.utf8))
+        XCTAssertNil(idle.worstLatency)
+        XCTAssertNil(idle.worstLoss)
     }
 
     // MARK: - Incident create scope

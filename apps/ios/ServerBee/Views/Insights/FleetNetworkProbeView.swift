@@ -66,7 +66,7 @@ private struct FleetProbeRow: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(server.serverName).font(.subheadline.weight(.medium))
+                        Text(server.serverName).font(.headline)
                         StatusPill(isOnline: server.online)
                     }
                     Spacer()
@@ -84,7 +84,7 @@ private struct FleetProbeRow: View {
                 }
                 HStack(spacing: 16) {
                     metric(String(localized: "Latency"), NetworkFormat.latency(server.worstLatency))
-                    metric(String(localized: "Loss"), NetworkFormat.loss(server.worstLoss))
+                    metric(String(localized: "Loss"), server.worstLoss.map { NetworkFormat.loss($0) } ?? "—")
                     Spacer()
                     Text(String(format: String(localized: "%d targets"), server.targets.count))
                         .font(.caption).foregroundStyle(.secondary)

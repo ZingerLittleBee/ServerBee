@@ -134,17 +134,17 @@ struct StatusPill: View {
     var body: some View {
         let label = isOnline ? String(localized: "Online") : String(localized: "Offline")
         let color = isOnline ? Color.serverOnline : Color.serverOffline
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Circle()
                 .fill(color)
-                .frame(width: 9, height: 9)
+                .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
             Text(label)
-                .font(.subheadline.bold())
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(color)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
         .background(color.opacity(0.12))
         .clipShape(Capsule())
         .accessibilityElement(children: .combine)
