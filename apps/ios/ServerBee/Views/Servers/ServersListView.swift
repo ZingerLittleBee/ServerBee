@@ -10,6 +10,10 @@ struct ServersListView: View {
     @Environment(\.apiClient) private var apiClient
     @Environment(AuthManager.self) private var authManager
 
+    /// Rebuilds the live WebSocket. REST carries no online state, so a
+    /// pull-to-refresh must also resync the socket to be a real refresh.
+    var resyncLive: @MainActor () async -> Void = {}
+
     @State private var showAddServer = false
 
     private var isAdmin: Bool {
@@ -87,14 +91,17 @@ struct ServersListView: View {
 // MARK: - Subviews
 
 private extension ServersListView {
-    /// Pull-to-refresh: servers and alert events (for the firing count) in parallel.
+    /// Pull-to-refresh: the live socket, servers and alert events (for the
+    /// firing count) in parallel.
     func refreshAll() async {
         let servers = viewModel
         let alerts = alertsViewModel
         let client = apiClient
+        let resync = resyncLive
+        async let liveDone: Void = resync()
         async let serversDone: Void = servers.refresh(apiClient: client)
         async let alertsDone: Void = alerts.refresh(apiClient: client)
-        _ = await (serversDone, alertsDone)
+        _ = await (liveDone, serversDone, alertsDone)
     }
 
     /// Firing alert count for the summary, or `nil` while alerts are

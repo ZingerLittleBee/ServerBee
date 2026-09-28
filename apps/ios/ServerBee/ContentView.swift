@@ -41,7 +41,7 @@ struct ContentView: View {
         ZStack(alignment: .top) {
             TabView(selection: $selectedTab) {
                 NavigationStack(path: $serversPath) {
-                    ServersListView()
+                    ServersListView(resyncLive: resyncLive)
                         .navigationDestination(for: ServerNavigationTarget.self) { target in
                             switch target {
                             case .detailById(let serverId):
