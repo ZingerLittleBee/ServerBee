@@ -66,7 +66,7 @@ struct ContentView: View {
                         }
                 }
                 .tabItem {
-                    Label("Alerts", systemImage: "bell.badge")
+                    Label("Alerts", systemImage: "bell")
                 }
                 .badge(alertsViewModel.firingCount)
                 .tag(ContentView.alertsTabTag)
