@@ -74,8 +74,10 @@ private extension InsightsView {
             if fleet.avgCpu != nil || fleet.avgMemory != nil {
                 // Bottom-aligned so the bars line up when only one label wraps.
                 adaptiveLayout(spacing: 16, rowAlignment: .bottom) {
-                    FleetUsageBar(label: String(localized: "Avg CPU"), percent: fleet.avgCpu, color: .cpuColor)
-                    FleetUsageBar(label: String(localized: "Avg Memory"), percent: fleet.avgMemory, color: .memoryColor)
+                    FleetUsageBar(label: String(localized: "Avg CPU"), percent: fleet.avgCpu, color: .cpuColor,
+                                  textColor: .cpuTextColor)
+                    FleetUsageBar(label: String(localized: "Avg Memory"), percent: fleet.avgMemory, color: .memoryColor,
+                                  textColor: .memoryTextColor)
                 }
             }
         }
@@ -105,7 +107,7 @@ private extension InsightsView {
         tile {
             tileLabel(String(localized: "Live traffic"))
             rateLine(systemImage: "arrow.down", value: Formatters.formatSpeed(fleet.totalNetworkIn),
-                     color: .networkColor, accessibilityLabel: String(localized: "Download"))
+                     color: .networkTextColor, accessibilityLabel: String(localized: "Download"))
             rateLine(systemImage: "arrow.up", value: Formatters.formatSpeed(fleet.totalNetworkOut),
                      color: .primary, accessibilityLabel: String(localized: "Upload"))
             VStack(alignment: .leading, spacing: 2) {
@@ -389,10 +391,13 @@ private struct FleetUsageBar: View {
     /// Percentage in `0...100`; `nil` renders a dash and an empty track.
     let percent: Double?
     let color: Color
+    /// Colour for the percentage text; a darker variant of `color` for contrast.
+    let textColor: Color
     var warnAt: Double = 80
     @ScaledMetric(relativeTo: .footnote) private var barHeight: CGFloat = 6
 
-    private var tint: Color { (percent ?? 0) >= warnAt ? .warningAmber : color }
+    private var isHot: Bool { (percent ?? 0) >= warnAt }
+    private var tint: Color { isHot ? .warningAmber : color }
     private var fraction: CGFloat { CGFloat(min(max((percent ?? 0) / 100, 0), 1)) }
 
     private var labelText: some View {
@@ -403,7 +408,7 @@ private struct FleetUsageBar: View {
     private var percentText: some View {
         Text(verbatim: Formatters.formatPercentage(percent))
             .fontWeight(.semibold)
-            .foregroundStyle(percent == nil ? Color.secondary : tint)
+            .foregroundStyle(percent == nil ? Color.secondary : (isHot ? .warningAmber : textColor))
             .monospacedDigit()
             .lineLimit(1)
     }
