@@ -393,6 +393,23 @@
         }
       }
     },
+    "No scheduled commands yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No scheduled commands yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无定时命令。"
+          }
+        }
+      }
+    },
     "Nothing is open, and no maintenance is scheduled.": {
       "extractionState": "manual",
       "localizations": {
@@ -423,6 +440,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "住宅"
+          }
+        }
+      }
+    },
+    "Service Monitors": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Service Monitors"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务监控"
           }
         }
       }
@@ -9090,23 +9124,6 @@
         }
       }
     },
-    "Monitors": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Monitors"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "监控器"
-          }
-        }
-      }
-    },
     "Monthly": {
       "extractionState": "manual",
       "localizations": {
@@ -10413,23 +10430,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "未在此服务器上检测到可疑活动。"
-          }
-        }
-      }
-    },
-    "No tasks yet.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No tasks yet."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无任务。"
           }
         }
       }

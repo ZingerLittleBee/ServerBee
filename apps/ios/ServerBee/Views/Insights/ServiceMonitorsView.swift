@@ -30,7 +30,7 @@ struct ServiceMonitorsView: View {
                 .background(Color(.systemGroupedBackground))
             }
         }
-        .navigationTitle(String(localized: "Monitors"))
+        .navigationTitle(String(localized: "Service Monitors"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }

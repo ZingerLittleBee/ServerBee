@@ -20,7 +20,7 @@ struct TasksView: View {
             }
             if viewModel.tasks.isEmpty, !viewModel.isLoading {
                 Section {
-                    Text(String(localized: "No tasks yet.")).foregroundStyle(.secondary)
+                    Text(String(localized: "No scheduled commands yet.")).foregroundStyle(.secondary)
                 }
             }
             ForEach(viewModel.tasks) { task in
