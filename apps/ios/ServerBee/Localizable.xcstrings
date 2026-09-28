@@ -461,6 +461,23 @@
         }
       }
     },
+    "Rules evaluate live metrics and fire when thresholds are crossed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rules evaluate live metrics and fire when thresholds are crossed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则实时评估指标，超过阈值时触发告警。"
+          }
+        }
+      }
+    },
     "Service Monitors": {
       "extractionState": "manual",
       "localizations": {
@@ -13167,23 +13184,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "规则名称"
-          }
-        }
-      }
-    },
-    "Rules evaluate live metrics and fire when thresholds are crossed. Edit conditions on the web dashboard.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rules evaluate live metrics and fire when thresholds are crossed. Edit conditions on the web dashboard."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "规则实时评估指标，超过阈值时触发告警。请在网页仪表盘上编辑条件。"
           }
         }
       }

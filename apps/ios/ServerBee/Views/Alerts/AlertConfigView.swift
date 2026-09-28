@@ -55,7 +55,9 @@ private extension AlertConfigView {
         } header: {
             Text(String(localized: "Notification channels"))
         } footer: {
-            Text(String(localized: "Swipe a channel to send a test notification."))
+            if !viewModel.channels.isEmpty {
+                Text(String(localized: "Swipe a channel to send a test notification."))
+            }
         }
     }
 
@@ -126,7 +128,8 @@ private extension AlertConfigView {
         } header: {
             Text(String(localized: "Alert rules"))
         } footer: {
-            Text(String(localized: "Rules evaluate live metrics and fire when thresholds are crossed. Edit conditions on the web dashboard."))
+            // Web authoring is noted once, in the closing footer section.
+            Text(String(localized: "Rules evaluate live metrics and fire when thresholds are crossed."))
         }
     }
 
