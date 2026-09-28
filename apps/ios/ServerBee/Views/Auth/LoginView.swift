@@ -66,6 +66,10 @@ struct LoginView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Color(.systemGroupedBackground))
+            .onChange(of: viewModel.serverUrlInput) { clearErrors() }
+            .onChange(of: viewModel.username) { clearErrors() }
+            .onChange(of: viewModel.password) { clearErrors() }
+            .onChange(of: viewModel.totpCode) { clearErrors() }
             .onAppear {
                 // Signing out keeps the server URL so the user can log straight
                 // back in to the same server.
@@ -107,10 +111,28 @@ struct LoginView: View {
         }
     }
 
+    /// Every field the current step needs is filled in.
+    private var canSubmit: Bool {
+        switch viewModel.step {
+        case .credentials:
+            !viewModel.serverUrlInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !viewModel.username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !viewModel.password.isEmpty
+        case .totp:
+            !viewModel.totpCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    /// A failed attempt's message stops applying once the user edits a field.
+    private func clearErrors() {
+        viewModel.errorMessage = ""
+        pairErrorMessage = ""
+    }
+
     /// Shared by the Log In button and the keyboard submit key, so both paths
     /// respect the same in-flight guards.
     private func submitLogin() {
-        guard !viewModel.isLoading, !isPairing else { return }
+        guard !viewModel.isLoading, !isPairing, canSubmit else { return }
         Task {
             await viewModel.login(authManager: authManager)
         }
@@ -247,7 +269,7 @@ private extension LoginView {
             }
         }
         .buttonStyle(LoginButtonStyle(prominent: true, isBusy: viewModel.isLoading))
-        .disabled(viewModel.isLoading || isPairing)
+        .disabled(viewModel.isLoading || isPairing || !canSubmit)
         .accessibilityLabel(Text("Log In"))
     }
 
