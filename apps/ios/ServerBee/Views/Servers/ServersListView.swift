@@ -206,13 +206,18 @@ private extension ServersListView {
     }
 
     func serverRow(_ server: ServerStatus) -> some View {
-        NavigationLink(value: ServerNavigationTarget.detailById(server.id)) {
+        let link = NavigationLink(value: ServerNavigationTarget.detailById(server.id)) {
             ServerCardView(server: server)
                 .equatable()
         }
-        // The whole row is the tap target, so hide the chevron. Older systems
-        // may ignore this and keep the standard disclosure indicator.
-        .navigationLinkIndicatorVisibility(.hidden)
+        // The whole row is the tap target, so hide the chevron. The modifier
+        // ships with the iOS 26 SDK (Swift 6.2); older toolchains, such as the
+        // Xcode 16.4 CI runner, keep the standard disclosure indicator.
+        #if compiler(>=6.2)
+        return link.navigationLinkIndicatorVisibility(.hidden)
+        #else
+        return link
+        #endif
     }
 
     /// Empty result for a search and/or the online filter. A filter gets its
