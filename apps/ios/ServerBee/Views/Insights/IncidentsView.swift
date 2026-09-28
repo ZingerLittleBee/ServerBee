@@ -117,9 +117,9 @@ struct IncidentsView: View {
 
     private var allClear: some View {
         ContentUnavailableView {
-            Label(String(localized: "All systems operational"), systemImage: "checkmark.circle.fill")
+            Label(String(localized: "No active incidents"), systemImage: "checkmark.circle.fill")
         } description: {
-            Text(String(localized: "No active incidents or scheduled maintenance."))
+            Text(String(localized: "Nothing is open, and no maintenance is scheduled."))
         }
         .frame(minHeight: 240)
     }

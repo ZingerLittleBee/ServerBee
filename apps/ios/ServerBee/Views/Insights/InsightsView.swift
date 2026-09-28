@@ -241,10 +241,20 @@ private extension InsightsView {
     var statusSubtitle: String {
         let active = viewModel.activeIncidents.count
         let maint = viewModel.upcomingMaintenances.count
-        if active == 0 && maint == 0 { return String(localized: "All systems operational") }
+        // Incidents are declared by hand, so say exactly that rather than
+        // "all systems operational", which reads as a fleet health verdict.
+        if active == 0 && maint == 0 { return String(localized: "No active incidents") }
         var parts: [String] = []
-        if active > 0 { parts.append(String(format: String(localized: "%d active incident(s)"), active)) }
-        if maint > 0 { parts.append(String(format: String(localized: "%d maintenance"), maint)) }
+        if active > 0 {
+            parts.append(active == 1
+                ? String(localized: "1 active incident")
+                : String(localized: "\(active) active incidents"))
+        }
+        if maint > 0 {
+            parts.append(maint == 1
+                ? String(localized: "1 maintenance window")
+                : String(localized: "\(maint) maintenance windows"))
+        }
         return parts.joined(separator: " · ")
     }
 

@@ -19,6 +19,74 @@
         }
       }
     },
+    "%lld active incidents": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld active incidents"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个活跃事件"
+          }
+        }
+      }
+    },
+    "%lld maintenance windows": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld maintenance windows"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个维护窗口"
+          }
+        }
+      }
+    },
+    "1 active incident": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 active incident"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个活跃事件"
+          }
+        }
+      }
+    },
+    "1 maintenance window": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 maintenance window"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个维护窗口"
+          }
+        }
+      }
+    },
     "Business": {
       "extractionState": "manual",
       "localizations": {
@@ -117,6 +185,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "刚刚"
+          }
+        }
+      }
+    },
+    "No active incidents": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No active incidents"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无活跃事件"
+          }
+        }
+      }
+    },
+    "Nothing is open, and no maintenance is scheduled.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing is open, and no maintenance is scheduled."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前没有未解决的事件，也没有计划中的维护。"
           }
         }
       }
@@ -420,23 +522,6 @@
         }
       }
     },
-    "%d active incident(s)": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d active incident(s)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d 个活跃事件"
-          }
-        }
-      }
-    },
     "%d days left": {
       "extractionState": "manual",
       "localizations": {
@@ -467,23 +552,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%d 台离线"
-          }
-        }
-      }
-    },
-    "%d maintenance": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d maintenance"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d 个维护"
           }
         }
       }
@@ -1981,23 +2049,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "所有服务器"
-          }
-        }
-      }
-    },
-    "All systems operational": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All systems operational"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "所有系统运行正常"
           }
         }
       }
@@ -9427,23 +9478,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无活跃设备。"
-          }
-        }
-      }
-    },
-    "No active incidents or scheduled maintenance.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No active incidents or scheduled maintenance."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无活跃事件或计划维护。"
           }
         }
       }
