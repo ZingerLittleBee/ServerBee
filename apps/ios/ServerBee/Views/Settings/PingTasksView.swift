@@ -18,17 +18,20 @@ struct PingTasksView: View {
                     Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.serverOffline)
                 }
             }
-            if viewModel.tasks.isEmpty, !viewModel.isLoading {
-                Section {
-                    Text(String(localized: "No ping tasks yet.")).foregroundStyle(.secondary)
-                }
-            }
             ForEach(viewModel.tasks) { task in
                 row(for: task)
             }
         }
         .overlay {
-            if viewModel.isLoading, viewModel.tasks.isEmpty { ProgressView() }
+            if viewModel.isLoading, viewModel.tasks.isEmpty {
+                ProgressView()
+            } else if viewModel.tasks.isEmpty, viewModel.loadError == nil {
+                ContentUnavailableView(
+                    String(localized: "No ping tasks"),
+                    systemImage: "dot.radiowaves.left.and.right",
+                    description: Text(String(localized: "Ping tasks measure latency from your servers to a host."))
+                )
+            }
         }
         .navigationTitle(String(localized: "Ping Tasks"))
         .navigationBarTitleDisplayMode(.inline)

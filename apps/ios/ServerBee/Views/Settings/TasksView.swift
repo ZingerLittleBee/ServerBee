@@ -18,11 +18,6 @@ struct TasksView: View {
                     Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.serverOffline)
                 }
             }
-            if viewModel.tasks.isEmpty, !viewModel.isLoading {
-                Section {
-                    Text(String(localized: "No scheduled commands yet.")).foregroundStyle(.secondary)
-                }
-            }
             ForEach(viewModel.tasks) { task in
                 NavigationLink {
                     TaskDetailView(task: task, viewModel: viewModel, isAdmin: isAdmin)
@@ -32,7 +27,15 @@ struct TasksView: View {
             }
         }
         .overlay {
-            if viewModel.isLoading, viewModel.tasks.isEmpty { ProgressView() }
+            if viewModel.isLoading, viewModel.tasks.isEmpty {
+                ProgressView()
+            } else if viewModel.tasks.isEmpty, viewModel.loadError == nil {
+                ContentUnavailableView(
+                    String(localized: "No scheduled commands"),
+                    systemImage: "terminal",
+                    description: Text(String(localized: "Scheduled commands run on your servers on a cron schedule."))
+                )
+            }
         }
         .navigationTitle(String(localized: "Scheduled Commands"))
         .navigationBarTitleDisplayMode(.inline)

@@ -257,6 +257,23 @@
         }
       }
     },
+    "API keys let scripts and tools call the ServerBee API.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API keys let scripts and tools call the ServerBee API."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 密钥可让脚本和工具调用 ServerBee API。"
+          }
+        }
+      }
+    },
     "Business": {
       "extractionState": "manual",
       "localizations": {
@@ -359,6 +376,23 @@
         }
       }
     },
+    "Groups organize servers in the servers list.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groups organize servers in the servers list."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分组用于在服务器列表中整理服务器。"
+          }
+        }
+      }
+    },
     "ISP": {
       "extractionState": "manual",
       "localizations": {
@@ -410,19 +444,70 @@
         }
       }
     },
-    "No scheduled commands yet.": {
+    "No API keys": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No scheduled commands yet."
+            "value": "No API keys"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无定时命令。"
+            "value": "暂无 API 密钥"
+          }
+        }
+      }
+    },
+    "No groups": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No groups"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无分组"
+          }
+        }
+      }
+    },
+    "No ping tasks": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No ping tasks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无 Ping 任务"
+          }
+        }
+      }
+    },
+    "No scheduled commands": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No scheduled commands"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无定时命令"
           }
         }
       }
@@ -440,6 +525,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前没有未解决的事件，也没有计划中的维护。"
+          }
+        }
+      }
+    },
+    "Ping tasks measure latency from your servers to a host.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ping tasks measure latency from your servers to a host."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ping 任务测量服务器到目标主机的延迟。"
           }
         }
       }
@@ -474,6 +576,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "规则实时评估指标，超过阈值时触发告警。"
+          }
+        }
+      }
+    },
+    "Scheduled commands run on your servers on a cron schedule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scheduled commands run on your servers on a cron schedule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定时命令按 cron 计划在服务器上运行。"
           }
         }
       }
@@ -9771,23 +9890,6 @@
         }
       }
     },
-    "No API keys yet.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No API keys yet."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无 API Key。"
-          }
-        }
-      }
-    },
     "No billing configured on any server.": {
       "extractionState": "manual",
       "localizations": {
@@ -9958,23 +10060,6 @@
         }
       }
     },
-    "No groups yet.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No groups yet."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无分组。"
-          }
-        }
-      }
-    },
     "No IP quality data": {
       "extractionState": "manual",
       "localizations": {
@@ -10124,23 +10209,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前没有未完成的 Enrollment Offer，请从已有服务器管理 Agent Authority。"
-          }
-        }
-      }
-    },
-    "No ping tasks yet.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No ping tasks yet."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无 Ping 任务。"
           }
         }
       }
