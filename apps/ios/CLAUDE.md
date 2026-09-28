@@ -134,6 +134,23 @@ templates (`%@ ms`, `v%@`, `· %@`, `*`) intentionally have no zh value — they
 render correctly via source fallback. Verify in the simulator by launching with
 `-AppleLanguages "(zh-Hans)" -AppleLocale zh_CN`.
 
+- Follow the web's zh terminology (`apps/web/src/locales/zh`): product and
+  protocol names stay English (Agent, Docker, Ping, Webhook, Swap, CPU, GeoIP,
+  ASN, 2FA, Telegram, Bark), and zh copy uses full-width punctuation.
+- Raw server values (roles, billing cycles, traffic types, rate-limit scopes,
+  IP-quality categories, incident severity) are mapped to localized labels in
+  the model layer; never show the wire value directly. When one English word
+  needs two translations, use a distinct key with `defaultValue:` (e.g.
+  `ip_category_streaming` vs Docker's "Streaming").
+- `InfoPlist.xcstrings` localizes Info.plist keys (permission prompts); the
+  bundle name is marked `shouldTranslate: false`.
+- Settings → Language (`LanguageView`) writes the per-app `AppleLanguages`
+  override, applied on next launch. iOS hides its own per-app Language setting
+  when the device has only one preferred language, hence the in-app picker.
+- **Building or exporting rewrites `Localizable.xcstrings`** (re-sorted keys,
+  Xcode's JSON style). Restore the committed key order and formatting before
+  committing so the diff stays reviewable.
+
 ## Capability gating
 
 Sections and actions are gated on the server's **effective** capability bitmask
@@ -172,9 +189,12 @@ credentials are compiled in. Pass via `simctl launch` using the
   `SB_UITEST_SECTION` (`DetailSection.rawValue`),
   `SB_UITEST_PRESENT` (per-view auto-present token, e.g. `edit-server`,
   `upgrade-progress[:stage]`, `insights-maintenance-create`, `advanced-tools`),
-  `SB_UITEST_ADMIN` (push a Settings admin screen on launch: `administration` /
-  `users` / `network-probes` / `ip-quality` / `status-page`; admin screens live
-  under Settings → Administration, so the hook always pushes that hub first).
+  `SB_UITEST_ADMIN` (push a Settings screen on launch. Administration screens
+  `administration` / `users` / `groups` / `ping-tasks` / `tasks` /
+  `network-probes` / `ip-quality` / `status-page` / `rate-limit` / `audit` /
+  `databases` push that hub first; Settings' own rows `password` /
+  `two-factor` / `firewall` / `api-keys` / `devices` / `device-name` /
+  `appearance` / `language` push directly).
 - Add a hook when a screen needs a navbar/plain-`Button` tap the headless
   cliclick harness can't reliably trigger, or a backend state the shared demo
   can't produce. See the verification-rig memory for the simulator commands.
