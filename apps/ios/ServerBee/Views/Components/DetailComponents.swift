@@ -73,15 +73,19 @@ struct DetailRow: View {
                     .frame(width: 18)
                     .accessibilityHidden(true)
             }
+            // Priorities keep the short label whole and let the value take the
+            // rest of the row before the spacer, instead of an even split.
             Text(label)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .layoutPriority(2)
             Spacer(minLength: 12)
             Text(value ?? "—")
                 .font(monospaced ? .subheadline.monospaced() : .subheadline)
                 .foregroundStyle(value == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(valueColor))
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
+                .layoutPriority(1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(label))

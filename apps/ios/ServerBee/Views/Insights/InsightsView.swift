@@ -192,7 +192,15 @@ private extension InsightsView {
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             Group {
-                Text(verbatim: "\(servers) · \(perDay)")
+                // One line when it fits; on narrow screens split at the dot
+                // rather than letting the rate wrap mid-phrase.
+                ViewThatFits(in: .horizontal) {
+                    Text(verbatim: "\(servers) · \(perDay)")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: servers)
+                        Text(verbatim: perDay)
+                    }
+                }
                 Text(verbatim: thisCycle)
             }
             .font(.caption)
