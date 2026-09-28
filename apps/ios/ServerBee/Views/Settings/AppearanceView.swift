@@ -25,10 +25,6 @@ enum AppTheme: String, CaseIterable, Sendable {
 struct AppearanceView: View {
     @AppStorage("theme") private var theme: String = AppTheme.system.rawValue
 
-    private var selectedTheme: AppTheme {
-        AppTheme(rawValue: theme) ?? .system
-    }
-
     var body: some View {
         List {
             Section {
@@ -45,6 +41,5 @@ struct AppearanceView: View {
 
         }
         .navigationTitle(String(localized: "Appearance"))
-        .preferredColorScheme(selectedTheme.colorScheme)
     }
 }

@@ -49,6 +49,7 @@ struct ServerBeeApp: App {
 /// Shows a loading spinner while auth state is restored, then either LoginView or ContentView.
 private struct RootView: View {
     @Environment(AuthManager.self) private var authManager
+    @AppStorage("theme") private var theme: String = AppTheme.system.rawValue
 
     var body: some View {
         Group {
@@ -60,6 +61,8 @@ private struct RootView: View {
                 LoginView()
             }
         }
+        // Applied at the root so the Appearance choice covers every screen.
+        .preferredColorScheme((AppTheme(rawValue: theme) ?? .system).colorScheme)
     }
 }
 
