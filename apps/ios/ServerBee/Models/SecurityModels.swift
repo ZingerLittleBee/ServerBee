@@ -60,8 +60,12 @@ struct SecurityEvidence: Decodable, Sendable {
 
     /// One-line summary for the feed row.
     var summary: String? {
-        if let failedCount { return String(localized: "\(failedCount) failed logins") }
-        if let distinctPorts { return String(localized: "\(distinctPorts) ports scanned") }
+        if let failedCount {
+            return failedCount == 1 ? String(localized: "1 failed login") : String(localized: "\(failedCount) failed logins")
+        }
+        if let distinctPorts {
+            return distinctPorts == 1 ? String(localized: "1 port scanned") : String(localized: "\(distinctPorts) ports scanned")
+        }
         if let authMethod { return String(localized: "via \(authMethod)") }
         return nil
     }

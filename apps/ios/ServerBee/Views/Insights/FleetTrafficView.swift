@@ -94,7 +94,9 @@ private struct FleetTrafficRow: View {
                     .foregroundStyle(Color.trafficUpload)
                 Spacer()
                 if server.daysRemaining > 0 {
-                    Text(String(format: String(localized: "%d days left"), server.daysRemaining))
+                    Text(server.daysRemaining == 1
+                        ? String(localized: "1 day left")
+                        : String(localized: "\(server.daysRemaining) days left"))
                         .foregroundStyle(.secondary)
                 }
             }

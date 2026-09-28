@@ -20,7 +20,7 @@ struct NetworkSummaryCard: View {
         var parts = [
             targetCount == 1
                 ? String(localized: "1 target")
-                : String(format: String(localized: "%d targets"), targetCount)
+                : String(localized: "\(targetCount) targets")
         ]
         if let last = summary.lastProbeAt {
             parts.append(String(localized: "last probe \(Formatters.formatRelativeTime(last))"))

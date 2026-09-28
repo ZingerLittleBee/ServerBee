@@ -72,7 +72,9 @@ private struct FleetProbeRow: View {
                     Spacer()
                     if server.anomalyCount > 0 {
                         Chip(
-                            text: String(localized: "\(server.anomalyCount) anomalies"),
+                            text: server.anomalyCount == 1
+                                ? String(localized: "1 anomaly")
+                                : String(localized: "\(server.anomalyCount) anomalies"),
                             systemImage: "exclamationmark.triangle.fill",
                             color: .warningAmber
                         )
@@ -86,7 +88,9 @@ private struct FleetProbeRow: View {
                     metric(String(localized: "Latency"), NetworkFormat.latency(server.worstLatency))
                     metric(String(localized: "Loss"), server.worstLoss.map { NetworkFormat.loss($0) } ?? "—")
                     Spacer()
-                    Text(String(format: String(localized: "%d targets"), server.targets.count))
+                    Text(server.targets.count == 1
+                        ? String(localized: "1 target")
+                        : String(localized: "\(server.targets.count) targets"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

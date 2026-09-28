@@ -107,7 +107,7 @@ private extension CostInsightsCard {
             )
         ]
         if let days = cost.daysRemaining {
-            stats.append(CostStat(label: String(localized: "Days remaining"), value: String(localized: "\(days) days")))
+            stats.append(CostStat(label: String(localized: "Days remaining"), value: days == 1 ? String(localized: "1 day") : String(localized: "\(days) days")))
         }
         return stats
     }

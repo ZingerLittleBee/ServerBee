@@ -161,7 +161,7 @@ struct TracerouteView: View {
                                 Image(systemName: "exclamationmark.triangle")
                                     .foregroundStyle(Color.warningAmber)
                             }
-                            Text(String(localized: "\(record.hopCount) hops"))
+                            Text(record.hopCount == 1 ? String(localized: "1 hop") : String(localized: "\(record.hopCount) hops"))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Image(systemName: "chevron.right")

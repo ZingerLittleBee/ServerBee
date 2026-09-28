@@ -23,7 +23,7 @@ struct SecuritySummaryCard: View {
                     .font(.subheadline.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
-                Text(String(localized: "\(total) events"))
+                Text(total == 1 ? String(localized: "1 event") : String(localized: "\(total) events"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()

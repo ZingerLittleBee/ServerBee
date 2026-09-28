@@ -174,7 +174,8 @@ private extension InsightsView {
     }
 
     func costSummary(_ summary: CurrencyCostSummary) -> some View {
-        let servers = String(format: String(localized: "%d servers"), summary.configuredServerCount)
+        let count = summary.configuredServerCount
+        let servers = count == 1 ? String(localized: "\(count) server") : String(localized: "\(count) servers")
         let perDay = String(format: String(localized: "%@ / day"),
                             Formatters.formatCurrency(summary.dailyTotal, code: summary.currency))
         let thisCycle = String(format: String(localized: "%@ this cycle"),

@@ -36,6 +36,23 @@
         }
       }
     },
+    "%lld days left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld days left"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩 %lld 天"
+          }
+        }
+      }
+    },
     "%lld maintenance windows": {
       "extractionState": "manual",
       "localizations": {
@@ -49,6 +66,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个维护窗口"
+          }
+        }
+      }
+    },
+    "%lld targets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld targets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个目标"
           }
         }
       }
@@ -70,6 +104,108 @@
         }
       }
     },
+    "1 anomaly": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 anomaly"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个异常"
+          }
+        }
+      }
+    },
+    "1 day": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 day"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 天"
+          }
+        }
+      }
+    },
+    "1 day left": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 day left"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩 1 天"
+          }
+        }
+      }
+    },
+    "1 event": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 event"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个事件"
+          }
+        }
+      }
+    },
+    "1 failed login": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 failed login"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 次登录失败"
+          }
+        }
+      }
+    },
+    "1 hop": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 hop"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 跳"
+          }
+        }
+      }
+    },
     "1 maintenance window": {
       "extractionState": "manual",
       "localizations": {
@@ -83,6 +219,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 个维护窗口"
+          }
+        }
+      }
+    },
+    "1 port scanned": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 port scanned"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描了 1 个端口"
           }
         }
       }
@@ -590,23 +743,6 @@
         }
       }
     },
-    "%d days left": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d days left"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "剩 %d 天"
-          }
-        }
-      }
-    },
     "%d down": {
       "extractionState": "manual",
       "localizations": {
@@ -637,40 +773,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已选 %d 个"
-          }
-        }
-      }
-    },
-    "%d servers": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d servers"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d 台服务器"
-          }
-        }
-      }
-    },
-    "%d targets": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d targets"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%d 个目标"
           }
         }
       }
