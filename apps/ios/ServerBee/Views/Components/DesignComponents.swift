@@ -120,7 +120,10 @@ struct StatusBadge: View {
 struct IconTile: View {
     let systemImage: String
     let color: Color
-    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var scaledSize: CGFloat = 30
+
+    /// Capped so accessibility text sizes keep the row's width for the title.
+    private var size: CGFloat { min(scaledSize, 44) }
 
     var body: some View {
         Image(systemName: systemImage)
@@ -134,6 +137,8 @@ struct IconTile: View {
 
 /// A navigation row with a leading icon tile, title, optional subtitle and an
 /// optional trailing value. Use inside a `List` row or a `NavigationLink` label.
+/// At accessibility text sizes the value moves under the title so the title
+/// keeps the full row width.
 struct IconRowLabel: View {
     let title: String
     let systemImage: String
@@ -141,28 +146,44 @@ struct IconRowLabel: View {
     var subtitle: String?
     var value: String?
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         HStack(spacing: 12) {
             IconTile(systemImage: systemImage, color: color)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .foregroundStyle(.primary)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    titleStack
+                    if let value { valueText(value) }
                 }
-            }
-            Spacer(minLength: 8)
-            if let value {
-                Text(value)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
+                Spacer(minLength: 0)
+            } else {
+                titleStack
+                Spacer(minLength: 8)
+                if let value { valueText(value) }
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var titleStack: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .foregroundStyle(.primary)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            }
+        }
+    }
+
+    private func valueText(_ value: String) -> some View {
+        Text(value)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .lineLimit(1)
     }
 }
 

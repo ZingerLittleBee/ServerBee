@@ -262,10 +262,13 @@ struct MetricHistoryChart: View {
 
 /// Three compact time labels without vertical gridlines.
 private struct TimeXAxisModifier: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     func body(content: Content) -> some View {
+        // Three clock labels collide at accessibility text sizes.
         content
             .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                AxisMarks(values: .automatic(desiredCount: dynamicTypeSize.isAccessibilitySize ? 2 : 3)) { value in
                     AxisValueLabel {
                         if let date = value.as(Date.self) {
                             Text(verbatim: Formatters.formatChartTime(date))
