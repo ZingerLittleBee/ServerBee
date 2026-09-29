@@ -34,6 +34,7 @@ actor WebSocketClient {
 
     private let transportFactory: WebSocketTransportFactory
     private let pingInterval: TimeInterval
+    private let pongTimeout: TimeInterval
     private var pingTask: Task<Void, Never>?
 
     // MARK: - Constants
@@ -46,10 +47,12 @@ actor WebSocketClient {
 
     init(
         transportFactory: @escaping WebSocketTransportFactory = DefaultWebSocketTransportFactory.factory,
-        pingInterval: TimeInterval = 25.0
+        pingInterval: TimeInterval = 25.0,
+        pongTimeout: TimeInterval = 10.0
     ) {
         self.transportFactory = transportFactory
         self.pingInterval = pingInterval
+        self.pongTimeout = pongTimeout
     }
 
     // MARK: - Configuration
@@ -88,16 +91,20 @@ actor WebSocketClient {
         await closeInternal()
     }
 
-    /// Called from `ScenePhase` listener: if we believe the socket is dead,
-    /// rebuild it without resetting the backoff timer.
-    func reconnectIfNeeded() async {
+    /// Rebuild the socket now, even if it still looks connected, so the
+    /// server sends a fresh `full_sync`. Called on return to the foreground,
+    /// when the network comes back, and on pull-to-refresh: a socket that
+    /// lived through a suspension or a network change can stay half-open,
+    /// looking connected while no frame ever arrives. `accessToken` is the
+    /// latest stored token (REST calls may have rotated it); `nil` keeps the
+    /// current one. No-op before `connect` or after `close`.
+    func reconnect(accessToken: String?) async {
         guard !intentionallyClosed else { return }
         guard !currentServerUrl.isEmpty else { return }
-        if connectionState == .disconnected {
-            await closeInternal()
-            intentionallyClosed = false
-            establishConnection()
-        }
+        await closeInternal()
+        if let accessToken { currentAccessToken = accessToken }
+        reconnectDelay = minReconnectDelay
+        establishConnection()
     }
 
     #if DEBUG
@@ -207,6 +214,16 @@ actor WebSocketClient {
     private func sendHeartbeat(on transport: WebSocketTransport) async -> Bool {
         guard let current = self.transport,
               (current as AnyObject) === (transport as AnyObject) else { return false }
+        // A half-open socket never answers the ping and never fails it
+        // either; cancel it once the pong is overdue so the receive loop
+        // fails and reconnects.
+        let watchdog = Task { [pongTimeout] in
+            try? await Task.sleep(nanoseconds: UInt64(pongTimeout * 1_000_000_000))
+            if Task.isCancelled { return }
+            AppLog.ws.error("Heartbeat pong timed out")
+            transport.cancel(with: .abnormalClosure, reason: nil)
+        }
+        defer { watchdog.cancel() }
         do {
             try await transport.sendPing()
             return true

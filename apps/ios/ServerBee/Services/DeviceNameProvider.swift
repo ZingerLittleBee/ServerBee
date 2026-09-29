@@ -9,7 +9,8 @@ import UIKit
 /// installation a stable, distinguishable name composed of model + iOS version
 /// + a random 4-character suffix that is generated exactly once.
 enum DeviceNameProvider {
-    private static let storageKey = "deviceName"
+    /// UserDefaults key of the custom name; views observe it with `@AppStorage`.
+    static let storageKey = "deviceName"
     private static let suffixKey = "deviceNameSuffix"
 
     /// Returns the user-customised name if set, otherwise the auto-generated
@@ -39,7 +40,8 @@ enum DeviceNameProvider {
         let suffix = stableSuffix(defaults: defaults)
         let model = UIDevice.current.model
         let version = UIDevice.current.systemVersion
-        return "\(model) \(version) (\(suffix))"
+        // "iPhone · iOS 27.0 (AB12)": the OS label keeps the version from reading as a model number.
+        return "\(model) · iOS \(version) (\(suffix))"
     }
 
     private static func stableSuffix(defaults: UserDefaults) -> String {

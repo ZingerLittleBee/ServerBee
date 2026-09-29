@@ -11,6 +11,9 @@ import SwiftUI
 struct AdvancedToolsCard: View {
     let capabilities: CapabilitySet
 
+    /// Matches `IconTile`'s scaled size so row separators start at the title.
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 30
+
     private struct Tool: Identifiable {
         let id: String
         let capability: Capability
@@ -53,43 +56,45 @@ struct AdvancedToolsCard: View {
 
     var body: some View {
         if !visibleTools.isEmpty {
-            SectionCard(String(localized: "Advanced"), systemImage: "wrench.and.screwdriver") {
+            VStack(alignment: .leading, spacing: 8) {
+                GroupHeader(String(localized: "Advanced"))
                 VStack(spacing: 0) {
                     ForEach(Array(visibleTools.enumerated()), id: \.element.id) { index, tool in
+                        if index > 0 {
+                            Divider().padding(.leading, 28 + iconSize)
+                        }
                         row(tool)
-                        if index != visibleTools.count - 1 { Divider() }
                     }
-                    Divider()
-                    Label(String(localized: "These actions run on the server and are audited. Open the web dashboard for the full experience."),
-                          systemImage: "info.circle")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .cardSurface(padding: 0)
+                Text(String(localized: "These actions run on the server and are audited. Open the web dashboard for the full experience."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
     private func row(_ tool: Tool) -> some View {
         let available = isAvailable(tool)
-        return HStack(alignment: .top, spacing: 10) {
-            Image(systemName: tool.capability.systemImage)
-                .frame(width: 24)
-                .foregroundStyle(available ? Color.brandAccent : Color.secondary)
+        return HStack(spacing: 12) {
+            IconTile(systemImage: tool.capability.systemImage, color: available ? .accentColor : Color(.systemGray))
             VStack(alignment: .leading, spacing: 2) {
-                Text(tool.title).font(.subheadline.weight(.medium))
-                Text(tool.note).font(.caption).foregroundStyle(.secondary)
+                Text(tool.title)
+                    .font(.subheadline.weight(.medium))
+                Text(tool.note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            Text(available ? String(localized: "Available") : String(localized: "Offline"))
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(available ? Color.serverOnline : Color.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background((available ? Color.serverOnline : Color.secondary).opacity(0.14))
-                .clipShape(Capsule())
+            StatusBadge(
+                text: available ? String(localized: "Available") : String(localized: "Offline"),
+                color: available ? .serverOnline : .secondary
+            )
         }
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .accessibilityElement(children: .combine)
     }
 }

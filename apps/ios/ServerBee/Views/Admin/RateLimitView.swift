@@ -61,11 +61,13 @@ struct RateLimitView: View {
 private struct BucketRow: View {
     let bucket: RateLimitBucket
 
+    @Environment(\.privacyMode) private var privacyMode
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Chip(text: bucket.scope.capitalized, color: bucket.blocked ? .serverOffline : .secondary)
-                Text(bucket.ip).font(.subheadline.monospaced())
+                Chip(text: bucket.scopeLabel, color: bucket.blocked ? .serverOffline : .secondary)
+                Text(bucket.ip.maskingIPs(privacyMode)).font(.subheadline.monospaced())
                 Spacer()
                 if bucket.blocked {
                     Chip(text: String(localized: "Blocked"), color: .serverOffline)

@@ -116,10 +116,13 @@ private struct TwoFactorEnrollSheet: View {
                     Text(String(localized: "Or enter this key manually:"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    // Keep the key on one line; a wrapped key strands its last
+                    // characters on a line of their own on narrow screens.
                     Text(setup.secret)
                         .font(.callout.monospaced())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .textSelection(.enabled)
-                        .multilineTextAlignment(.center)
                 }
             }
             .frame(maxWidth: .infinity)

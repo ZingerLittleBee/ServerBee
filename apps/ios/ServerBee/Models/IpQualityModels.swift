@@ -53,6 +53,19 @@ struct IpQualitySnapshot: Decodable, Sendable {
         return f
     }
 
+    /// Localized IP type; `nil` when the provider could not classify it.
+    var ipTypeLabel: String? {
+        switch ipType.lowercased() {
+        case "", "unknown": nil
+        case "datacenter": String(localized: "Datacenter")
+        case "residential": String(localized: "Residential")
+        case "isp": String(localized: "ISP")
+        case "business": String(localized: "Business")
+        case "mobile": String(localized: "Mobile")
+        default: ipType.capitalized
+        }
+    }
+
     var location: String? {
         let parts = [city, region, country].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
@@ -115,10 +128,16 @@ struct UnlockService: Decodable, Identifiable, Sendable {
     /// be deleted.
     var builtin: Bool { isBuiltin ?? false }
 
-    /// Category label, capitalized; "Other" when unset.
+    /// Localized category label; "Other" when unset.
     var categoryLabel: String {
-        guard let category, !category.isEmpty else { return String(localized: "Other") }
-        return category.capitalized
+        switch category?.lowercased() ?? "" {
+        case "", "other": String(localized: "Other")
+        case "ai": String(localized: "AI")
+        case "streaming": String(localized: "ip_category_streaming", defaultValue: "Streaming")
+        case "social": String(localized: "Social")
+        case "gaming": String(localized: "Gaming")
+        default: category?.capitalized ?? ""
+        }
     }
 }
 

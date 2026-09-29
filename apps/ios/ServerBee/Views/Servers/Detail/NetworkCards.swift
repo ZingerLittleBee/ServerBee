@@ -1,92 +1,225 @@
 import Charts
 import SwiftUI
 
-// MARK: - Summary
+// MARK: - Probe health
 
-/// Probe summary: online state, last probe time, 24h anomaly count.
+/// Probe health summary: 24h anomaly badge, server online state, assigned
+/// target count and the last probe time.
 struct NetworkSummaryCard: View {
     let summary: NetworkProbeServerSummary
+    let targetCount: Int
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var statusColor: Color { summary.online ? .serverOnline : .serverOffline }
+    private var statusLabel: String {
+        summary.online ? String(localized: "Online") : String(localized: "Offline")
+    }
+
+    private var detailLine: String {
+        var parts = [
+            targetCount == 1
+                ? String(localized: "1 target")
+                : String(localized: "\(targetCount) targets")
+        ]
+        if let last = summary.lastProbeAt {
+            parts.append(String(localized: "last probe \(Formatters.formatRelativeTime(last))"))
+        }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
-        SectionCard {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 4) {
-                    StatusPill(isOnline: summary.online)
-                    if let last = summary.lastProbeAt {
-                        Text(String(localized: "Last probe \(Formatters.formatRelativeTime(last))"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let titleLayout = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+        VStack(alignment: .leading, spacing: 8) {
+            titleLayout {
+                Text(String(localized: "Probe health"))
+                    .font(.subheadline.weight(.semibold))
+                if !isAccessibilitySize {
+                    Spacer(minLength: 8)
                 }
-                Spacer()
-                if summary.anomalyCount > 0 {
-                    Chip(
-                        text: String(localized: "\(summary.anomalyCount) anomalies (24h)"),
-                        systemImage: "exclamationmark.triangle.fill",
-                        color: .warningAmber
-                    )
-                } else {
-                    Chip(text: String(localized: "Healthy"), systemImage: "checkmark.circle.fill", color: .serverOnline)
-                }
+                healthBadge
             }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "circle.fill")
+                    .font(.caption2)
+                    .imageScale(.small)
+                    .foregroundStyle(statusColor)
+                    .accessibilityHidden(true)
+                Text(statusLabel)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(statusColor)
+                Text(verbatim: "·")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(detailLine)
+                    .foregroundStyle(.secondary)
+            }
+            .font(.footnote)
+            .monospacedDigit()
+        }
+        .cardSurface()
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var healthBadge: some View {
+        switch summary.anomalyCount {
+        case 0:
+            // "Healthy" only means something while probes are actually running.
+            if summary.online, targetCount > 0 {
+                StatusBadge(text: String(localized: "Healthy"), color: .serverOnline)
+            }
+        case 1:
+            StatusBadge(text: String(localized: "1 anomaly · 24h"), color: .warningAmber)
+        default:
+            StatusBadge(text: String(localized: "\(summary.anomalyCount) anomalies · 24h"), color: .warningAmber)
         }
     }
 }
 
-// MARK: - Latency Chart
+// MARK: - Latency chart
 
-/// Average latency over time, one line per target.
+/// Average latency over time, one coloured line per target, with a legend
+/// below the plot.
 struct NetworkLatencyChart: View {
     let records: [ProbeRecordDto]
     let targets: [NetworkProbeTarget]
+    let palette: NetworkTargetPalette
+    var isLoading = false
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
+    @ScaledMetric(relativeTo: .body) private var chartHeight: CGFloat = 160
+
+    /// Plot height, capped so accessibility text sizes don't produce a
+    /// screen-filling chart.
+    private var plotHeight: CGFloat { min(chartHeight, 280) }
 
     private struct Point: Identifiable {
         let id: String
         let date: Date
         let latency: Double
-        let target: String
+        let targetId: String
+        /// Human series label (target name), used by the legend, VoiceOver and
+        /// Audio Graph instead of the (often UUID) target id.
+        let series: String
     }
 
-    private var nameByID: [String: String] {
-        Dictionary(targets.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+    /// Target name per id, extended with probe type + address when another
+    /// assigned target shares that name so the series stay distinct.
+    private var seriesLabelByID: [String: String] {
+        let nameCounts = Dictionary(targets.map { ($0.name, 1) }, uniquingKeysWith: +)
+        return Dictionary(targets.map { target in
+            let isShared = (nameCounts[target.name] ?? 0) > 1
+            let label = isShared ? "\(target.name) (\(target.probeType.uppercased()) \(target.target.maskingIPs(privacyMode)))" : target.name
+            return (target.id, label)
+        }, uniquingKeysWith: { a, _ in a })
     }
 
     private var points: [Point] {
-        records.compactMap { rec in
+        let labels = seriesLabelByID
+        return records.compactMap { rec in
             guard let date = rec.date, let latency = rec.avgLatency else { return nil }
-            let name = nameByID[rec.targetId] ?? rec.targetId
-            return Point(id: "\(rec.targetId)-\(rec.timestamp)", date: date, latency: latency, target: name)
+            return Point(
+                id: "\(rec.targetId)-\(rec.timestamp)", date: date, latency: latency,
+                targetId: rec.targetId, series: labels[rec.targetId] ?? rec.targetId
+            )
         }
     }
 
+    /// Distinct probe types of the assigned targets, e.g. "ICMP · ms".
+    private var unitCaption: String {
+        var types: [String] = []
+        for type in targets.map({ $0.probeType.uppercased() }) where !types.contains(type) {
+            types.append(type)
+        }
+        return types.isEmpty ? "ms" : "\(types.joined(separator: "/")) · ms"
+    }
+
     var body: some View {
-        ChartSection(title: String(localized: "Latency")) {
+        let points = points
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(String(localized: "Latency"))
+                    .font(.subheadline.weight(.semibold))
+                Spacer(minLength: 8)
+                if isLoading && !points.isEmpty {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Text(verbatim: unitCaption)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if points.isEmpty {
-                emptyChart
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, minHeight: plotHeight)
+                } else {
+                    emptyChart
+                }
             } else {
-                Chart(points) { point in
-                    LineMark(
-                        x: .value("Time", point.date),
-                        y: .value("Latency", point.latency),
-                        series: .value("Target", point.target)
-                    )
-                    .foregroundStyle(by: .value("Target", point.target))
-                    .interpolationMethod(.catmullRom)
-                }
-                .chartLegend(position: .bottom, alignment: .leading)
-                .chartYAxis {
-                    AxisMarks { value in
-                        AxisGridLine()
-                        AxisValueLabel {
-                            if let ms = value.as(Double.self) {
-                                Text("\(Int(ms)) ms")
-                            }
-                        }
-                    }
-                }
-                .timeXAxis()
+                chart(points)
+                legend(points)
             }
         }
+        .cardSurface()
+    }
+
+    private func chart(_ points: [Point]) -> some View {
+        Chart(points) { point in
+            LineMark(
+                x: .value("Time", point.date),
+                y: .value("Latency", point.latency),
+                series: .value("Target", point.series)
+            )
+            .foregroundStyle(palette.color(for: point.targetId))
+            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .interpolationMethod(.catmullRom)
+        }
+        .chartLegend(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let ms = value.as(Double.self) {
+                        Text(verbatim: "\(Int(ms)) ms")
+                    }
+                }
+            }
+        }
+        .timeXAxis()
+        .frame(height: plotHeight)
+    }
+
+    /// Wrapping legend; stacks vertically at accessibility sizes because
+    /// `WrapLayout` sizes items at their ideal (single-line) width, which would
+    /// clip long target names against the card edge.
+    private func legend(_ points: [Point]) -> some View {
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let labels = Dictionary(points.map { ($0.targetId, $0.series) }, uniquingKeysWith: { a, _ in a })
+        let ids = labels.keys.sorted { palette.order(for: $0) < palette.order(for: $1) }
+        let layout = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(WrapLayout(spacing: 14, lineSpacing: 6))
+        return layout {
+            ForEach(ids, id: \.self) { id in
+                HStack(spacing: 6) {
+                    Capsule()
+                        .fill(palette.color(for: id))
+                        .frame(width: 10, height: 3)
+                        .accessibilityHidden(true)
+                    Text(labels[id] ?? id)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(isAccessibilitySize ? nil : 1)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var emptyChart: some View {
@@ -101,86 +234,151 @@ struct NetworkLatencyChart: View {
 
 // MARK: - Targets
 
-/// Per-provider grouped target health cards.
+/// "Targets" group: per-provider grouped rows with the chart colour dot,
+/// packet loss, probe type + address, and the average latency.
 struct NetworkTargetsCard: View {
     let targets: [NetworkProbeTarget]
     let summaries: [TargetSummary]
+    let palette: NetworkTargetPalette
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
+    @ScaledMetric(relativeTo: .body) private var dotSize: CGFloat = 9
 
     private var summaryByID: [String: TargetSummary] {
         Dictionary(summaries.map { ($0.targetId, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
-    /// Group targets by provider, ordered ct/cu/cm/international/custom.
-    private var groups: [(provider: String, targets: [NetworkProbeTarget])] {
-        let grouped = Dictionary(grouping: targets, by: { $0.provider })
-        return grouped
-            .map { (provider: $0.key, targets: $0.value.sorted { $0.name < $1.name }) }
-            .sorted { NetworkProvider.order(for: $0.provider) < NetworkProvider.order(for: $1.provider) }
-    }
+    /// Leading inset of row separators: aligns with the target name.
+    private var rowInset: CGFloat { 16 + dotSize + 12 }
 
     var body: some View {
-        SectionCard(String(localized: "Targets"), systemImage: "scope") {
+        VStack(alignment: .leading, spacing: 8) {
+            GroupHeader(String(localized: "Targets"))
             if targets.isEmpty {
                 Text(String(localized: "No probe targets assigned"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .cardSurface()
             } else {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(groups, id: \.provider) { group in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(NetworkProvider.label(for: group.provider))
-                                .font(.caption.bold())
-                                .foregroundStyle(.secondary)
-                            ForEach(group.targets) { target in
-                                targetRow(target)
-                            }
-                        }
-                    }
-                }
+                groupedRows
             }
         }
     }
 
-    private func targetRow(_ target: NetworkProbeTarget) -> some View {
-        let summary = summaryByID[target.id]
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(target.name)
-                    .font(.subheadline.weight(.medium))
-                Chip(text: target.probeType.uppercased(), color: .secondary)
-                Spacer()
-                Text(NetworkFormat.latency(summary?.avgLatency))
-                    .font(.subheadline.bold().monospacedDigit())
-                    .foregroundStyle(latencyColor(summary?.avgLatency))
-            }
-            HStack(spacing: 8) {
-                Text(target.target)
-                    .font(.caption)
+    private var groupedRows: some View {
+        let summaries = summaryByID
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(NetworkTargetGroup.groups(targets).enumerated()), id: \.element.id) { index, group in
+                if index > 0 {
+                    Divider()
+                }
+                Text(NetworkProvider.label(for: group.provider))
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                if let loss = summary?.packetLoss, loss > 0 {
-                    Text(String(localized: "loss \(NetworkFormat.loss(loss))"))
-                        .font(.caption)
-                        .foregroundStyle(lossColor(loss))
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(Array(group.targets.enumerated()), id: \.element.id) { rowIndex, target in
+                    if rowIndex > 0 {
+                        Divider()
+                            .padding(.leading, rowInset)
+                    }
+                    targetRow(target, summary: summaries[target.id])
                 }
             }
         }
-        .padding(.vertical, 4)
+        .cardSurface(padding: 0)
+    }
+}
+
+private extension NetworkTargetsCard {
+    func targetRow(_ target: NetworkProbeTarget, summary: TargetSummary?) -> some View {
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let contentLayout = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return HStack(spacing: 12) {
+            Circle()
+                .fill(palette.color(for: target.id))
+                .frame(width: dotSize, height: dotSize)
+                .accessibilityHidden(true)
+            contentLayout {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(target.name)
+                        .lineLimit(isAccessibilitySize ? nil : 2)
+                    detailLine(target, summary: summary, stacked: isAccessibilitySize)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                if !isAccessibilitySize {
+                    Spacer(minLength: 0)
+                }
+                latencyValue(summary?.avgLatency)
+                    .layoutPriority(1)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .accessibilityElement(children: .combine)
     }
 
-    private func latencyColor(_ ms: Double?) -> Color {
-        guard let ms else { return .secondary }
+    /// Loss + probe type/address. `stacked` (accessibility sizes) puts them
+    /// on separate wrapping lines instead of truncating the address.
+    func detailLine(_ target: NetworkProbeTarget, summary: TargetSummary?, stacked: Bool) -> some View {
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 1))
+            : AnyLayout(HStackLayout(spacing: 4))
+        return layout {
+            if let loss = summary?.packetLoss {
+                Text(String(localized: "loss \(NetworkFormat.loss(loss))"))
+                    .foregroundStyle(lossColor(loss))
+                    .fixedSize(horizontal: !stacked, vertical: false)
+                if !stacked {
+                    Text(verbatim: "·")
+                        .accessibilityHidden(true)
+                }
+            }
+            Text(verbatim: "\(target.probeType.uppercased()) · \(target.target.maskingIPs(privacyMode))")
+                .lineLimit(stacked ? nil : 1)
+                .truncationMode(.middle)
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+    }
+
+    @ViewBuilder
+    func latencyValue(_ ms: Double?) -> some View {
+        if let ms {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(verbatim: ms < 10 ? String(format: "%.1f", ms) : String(format: "%.0f", ms))
+                    .font(.headline)
+                    .foregroundStyle(latencyColor(ms))
+                Text(verbatim: "ms")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .monospacedDigit()
+        } else {
+            Text(verbatim: "—")
+                .font(.headline)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    /// Normal latency stays primary; elevated values escalate amber → red.
+    func latencyColor(_ ms: Double) -> Color {
         switch ms {
-        case ..<100: return .serverOnline
+        case ..<100: return .primary
         case ..<300: return .warningAmber
         default: return .serverOffline
         }
     }
 
-    private func lossColor(_ ratio: Double) -> Color {
+    /// Anything that renders as "0.0%" stays neutral.
+    func lossColor(_ ratio: Double) -> Color {
         switch ratio {
+        case ..<0.0005: return .secondary
         case ..<0.1: return .warningAmber
         default: return .serverOffline
         }
@@ -189,44 +387,71 @@ struct NetworkTargetsCard: View {
 
 // MARK: - Anomalies
 
-/// Recent probe anomalies list.
+/// "Anomalies" group: recent latency / packet-loss anomalies in the range.
 struct NetworkAnomaliesCard: View {
     let anomalies: [NetworkProbeAnomaly]
+
+    @ScaledMetric(relativeTo: .body) private var tileSize: CGFloat = 30
 
     /// Cap the list to keep the section compact on mobile.
     private var visible: [NetworkProbeAnomaly] { Array(anomalies.prefix(20)) }
 
     var body: some View {
-        SectionCard(String(localized: "Anomalies"), systemImage: "exclamationmark.triangle") {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(visible) { anomaly in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Image(systemName: anomaly.isLatency ? "timer" : "wifi.slash")
-                            .font(.caption)
-                            .foregroundStyle(Color.warningAmber)
-                            .frame(width: 18)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(anomaly.targetName)
-                                .font(.subheadline)
-                            Text(anomalyDescription(anomaly))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if let date = anomaly.date {
-                            Text(date, style: .time)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
+        VStack(alignment: .leading, spacing: 8) {
+            GroupHeader(String(localized: "Anomalies"))
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(visible.enumerated()), id: \.element.id) { index, anomaly in
+                    if index > 0 {
+                        Divider()
+                            .padding(.leading, 16 + tileSize + 12)
                     }
+                    anomalyRow(anomaly)
                 }
                 if anomalies.count > visible.count {
+                    Divider()
                     Text(String(localized: "+\(anomalies.count - visible.count) more"))
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 11)
                 }
             }
+            .cardSurface(padding: 0)
         }
+    }
+
+    private func anomalyRow(_ anomaly: NetworkProbeAnomaly) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: anomaly.isLatency ? "timer" : "wifi.slash")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Color.warningAmber)
+                .frame(width: tileSize, height: tileSize)
+                .background(
+                    Color.warningAmber.opacity(0.16),
+                    in: RoundedRectangle(cornerRadius: tileSize * 0.27, style: .continuous)
+                )
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(anomalyDescription(anomaly))
+                Text(verbatim: subtitle(anomaly))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func subtitle(_ anomaly: NetworkProbeAnomaly) -> String {
+        guard let date = anomaly.date else { return anomaly.targetName }
+        let time = Calendar.current.isDateInToday(date)
+            ? date.formatted(date: .omitted, time: .shortened)
+            : date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        return "\(anomaly.targetName) · \(time)"
     }
 
     private func anomalyDescription(_ anomaly: NetworkProbeAnomaly) -> String {

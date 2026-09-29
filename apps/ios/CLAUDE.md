@@ -21,7 +21,12 @@ xcodebuild -project ServerBee.xcodeproj -scheme ServerBee \
   -destination 'platform=iOS Simulator,id=<SIM_UDID>' \
   -skipPackagePluginValidation build      # build (SwiftLint runs as a build phase)
 xcodebuild ... test                       # run the unit test bundle (ServerBeeTests)
+make ios-install                          # (repo root) Debug build → install + launch on the connected iPhone
 ```
+
+`make ios-install` (`scripts/ios-install.sh`) signs automatically with
+`IOS_DEVELOPMENT_TEAM` from the root `.env` and picks the first paired physical
+iPhone (override with `IOS_DEVICE=<udid>`).
 
 - **SwiftLint runs as a build-tool plugin**, so `BUILD SUCCEEDED` means lint is
   clean (warnings don't fail the build; treat them as must-fix anyway).
@@ -40,8 +45,8 @@ ServerBee/
   Services/            — APIClient (actor), AuthManager, WebSocketClient, WebSocketRouter, live stores
   Views/               — SwiftUI views, grouped by feature: Account, Admin, Alerts, Auth, Components,
                          Firewall, Insights, Network, Servers, Settings
-  Utilities/           — Formatters, Keychain, ISO8601 parsing, color extensions, InstallationID
-  Support/             — UITestSupport (DEBUG-only launch hooks)
+  Utilities/           — Formatters, Keychain, ISO8601 parsing, color extensions, InstallationID,
+                         UITestSupport (DEBUG-only launch hooks)
 ServerBeeTests/        — XCTest unit tests (decoding, view-model logic, routing)
 ```
 
@@ -129,6 +134,32 @@ templates (`%@ ms`, `v%@`, `· %@`, `*`) intentionally have no zh value — they
 render correctly via source fallback. Verify in the simulator by launching with
 `-AppleLanguages "(zh-Hans)" -AppleLocale zh_CN`.
 
+- Follow the web's zh terminology (`apps/web/src/locales/zh`): product and
+  protocol names stay English (Agent, Docker, Ping, Webhook, Swap, CPU, GeoIP,
+  ASN, 2FA, Telegram, Bark), and zh copy uses full-width punctuation.
+- Raw server values (roles, billing cycles, traffic types, rate-limit scopes,
+  IP-quality categories, incident severity) are mapped to localized labels in
+  the model layer; never show the wire value directly. When one English word
+  needs two translations, use a distinct key with `defaultValue:` (e.g.
+  `ip_category_streaming` vs Docker's "Streaming").
+- `InfoPlist.xcstrings` localizes Info.plist keys (permission prompts); the
+  bundle name is marked `shouldTranslate: false`.
+- Settings → Language (`LanguageView`) writes the per-app `AppleLanguages`
+  override, applied on next launch. iOS hides its own per-app Language setting
+  when the device has only one preferred language, hence the in-app picker.
+- **Building or exporting rewrites `Localizable.xcstrings`** (re-sorted keys,
+  Xcode's JSON style). Restore the committed key order and formatting before
+  committing so the diff stays reviewable.
+
+## Privacy mode
+
+Settings → Privacy Mode masks the last two parts of every displayed IP
+(`203.0.*.*`, `2001:db8::*:*`). The flag is injected at the root as
+`@Environment(\.privacyMode)`; any view that shows an IP, or free text that may
+contain one (targets, URLs, audit details), passes it through
+`String.maskingIPs(privacyMode)` (`Utilities/PrivacyMode.swift`). Display only:
+edit fields, requests and actions keep the real address.
+
 ## Capability gating
 
 Sections and actions are gated on the server's **effective** capability bitmask
@@ -154,7 +185,7 @@ Defense-in-depth: the server enforces the same caps/role; the client gate is UX.
   `line_length` warn 200 / err 300.
 - `force_unwrapping` is an opt-in warning — avoid `!`.
 
-## DEBUG visual-verification hooks (`Support/UITestSupport.swift`)
+## DEBUG visual-verification hooks (`Utilities/UITestSupport.swift`)
 
 `#if DEBUG` only (compiled out of Release). Driven by launch environment so no
 credentials are compiled in. Pass via `simctl launch` using the
@@ -167,8 +198,12 @@ credentials are compiled in. Pass via `simctl launch` using the
   `SB_UITEST_SECTION` (`DetailSection.rawValue`),
   `SB_UITEST_PRESENT` (per-view auto-present token, e.g. `edit-server`,
   `upgrade-progress[:stage]`, `insights-maintenance-create`, `advanced-tools`),
-  `SB_UITEST_ADMIN` (push a Settings admin sub-screen on launch:
-  `network-probes` / `ip-quality` / `status-page`).
+  `SB_UITEST_ADMIN` (push a Settings screen on launch. Administration screens
+  `administration` / `users` / `groups` / `ping-tasks` / `tasks` /
+  `network-probes` / `ip-quality` / `status-page` / `rate-limit` / `audit` /
+  `databases` push that hub first; Settings' own rows `password` /
+  `two-factor` / `firewall` / `api-keys` / `devices` / `device-name` /
+  `appearance` / `language` push directly).
 - Add a hook when a screen needs a navbar/plain-`Button` tap the headless
   cliclick harness can't reliably trigger, or a backend state the shared demo
   can't produce. See the verification-rig memory for the simulator commands.

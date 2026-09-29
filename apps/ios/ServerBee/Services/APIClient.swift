@@ -197,15 +197,15 @@ enum APIError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noServerUrl:
-            return "No server URL configured"
+            return String(localized: "No server URL configured")
         case .unauthorized:
-            return "Session expired — please log in again"
+            return String(localized: "Session expired. Please log in again.")
         case .network(let error):
-            return "Network error: \(error.localizedDescription)"
+            return String(localized: "Network error: \(error.localizedDescription)")
         case .httpError(let statusCode, _):
-            return "Server returned HTTP \(statusCode)"
+            return String(localized: "Server returned HTTP \(statusCode)")
         case .decodingError(let error):
-            return "Failed to decode response: \(error.localizedDescription)"
+            return String(localized: "Failed to decode response: \(error.localizedDescription)")
         }
     }
 }

@@ -93,9 +93,11 @@ struct NetworkProbeFleetOverview: Decodable, Identifiable, Sendable {
         targets.compactMap(\.avgLatency).max()
     }
 
-    /// Highest packet-loss ratio across targets.
-    var worstLoss: Double {
-        targets.map(\.packetLoss).max() ?? 0
+    /// Highest packet-loss ratio across measured targets, or `nil` when
+    /// nothing has been measured (no targets, or probes that never ran). A
+    /// target at 100% loss has no latency but does count.
+    var worstLoss: Double? {
+        targets.filter { $0.avgLatency != nil || $0.packetLoss > 0 }.map(\.packetLoss).max()
     }
 }
 

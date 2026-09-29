@@ -89,12 +89,14 @@ private struct FleetTrafficRow: View {
             }
             HStack(spacing: 10) {
                 Label(Formatters.formatBytes(server.cycleIn), systemImage: "arrow.down")
-                    .foregroundStyle(Color.networkColor)
+                    .foregroundStyle(Color.networkTextColor)
                 Label(Formatters.formatBytes(server.cycleOut), systemImage: "arrow.up")
-                    .foregroundStyle(Color.cpuColor)
+                    .foregroundStyle(Color.trafficUpload)
                 Spacer()
                 if server.daysRemaining > 0 {
-                    Text(String(format: String(localized: "%d days left"), server.daysRemaining))
+                    Text(server.daysRemaining == 1
+                        ? String(localized: "1 day left")
+                        : String(localized: "\(server.daysRemaining) days left"))
                         .foregroundStyle(.secondary)
                 }
             }

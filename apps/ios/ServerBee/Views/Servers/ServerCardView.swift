@@ -1,136 +1,225 @@
 import SwiftUI
 
-/// A card representing a single server in the servers list.
-/// Shows online status, name, IP, and key metric pills (CPU, Memory, OS).
+/// A single server row in the servers list: status dot, name, live network
+/// rate (or a high-CPU warning), IP / OS, and inline CPU / memory / disk bars.
+/// Offline servers collapse to the name plus an "Offline · <relative time>" label.
 struct ServerCardView: View, Equatable {
     nonisolated static func == (lhs: ServerCardView, rhs: ServerCardView) -> Bool {
         lhs.server.id == rhs.server.id &&
             lhs.server.isOnline == rhs.server.isOnline &&
+            lhs.server.name == rhs.server.name &&
             lhs.server.cpuUsage == rhs.server.cpuUsage &&
             lhs.server.memoryUsed == rhs.server.memoryUsed &&
-            lhs.server.name == rhs.server.name &&
+            lhs.server.memoryTotal == rhs.server.memoryTotal &&
+            lhs.server.diskUsed == rhs.server.diskUsed &&
+            lhs.server.diskTotal == rhs.server.diskTotal &&
+            lhs.server.networkIn == rhs.server.networkIn &&
+            lhs.server.networkOut == rhs.server.networkOut &&
             lhs.server.lastActiveAt == rhs.server.lastActiveAt &&
             lhs.server.primaryIP == rhs.server.primaryIP &&
             lhs.server.os == rhs.server.os
     }
 
+    /// CPU percentage at or above which an online row is flagged as high load.
+    static let highCPUThreshold: Double = 85
+
     let server: ServerStatus
 
-    @ScaledMetric(relativeTo: .body) private var cardPad: CGFloat = 14
-    @ScaledMetric(relativeTo: .caption2) private var dotSize: CGFloat = 10
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
+    @ScaledMetric(relativeTo: .headline) private var dotSize: CGFloat = 9
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(server.isOnline ? Color.serverOnline : Color.serverOffline)
-                    .frame(width: dotSize, height: dotSize)
-                    .accessibilityHidden(true)
+        HStack(alignment: .center, spacing: 12) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: dotSize, height: dotSize)
+                .accessibilityHidden(true)
 
-                Text(server.name)
-                    .font(.headline)
-                    .lineLimit(1)
-
-                Spacer()
-
-                if let lastActive = server.lastActiveAt, !server.isOnline {
-                    Text(Formatters.formatRelativeTime(lastActive))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
+                    titleLine
+                    if let details = detailsText {
+                        Text(verbatim: details)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-            }
-
-            if let ip = server.primaryIP {
-                Text(ip)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            HStack(spacing: 8) {
-                MetricPill(
-                    label: String(localized: "CPU"),
-                    value: Formatters.formatPercentage(server.cpuUsage),
-                    color: .cpuColor
-                )
-
-                MetricPill(
-                    label: String(localized: "MEM"),
-                    value: server.memoryUsed.map { Formatters.formatBytes($0) } ?? "-",
-                    color: .memoryColor
-                )
-
-                if let os = server.os {
-                    MetricPill(
-                        label: String(localized: "OS"),
-                        value: os,
-                        color: .secondary
-                    )
+                if server.isOnline {
+                    usageBars
                 }
             }
         }
-        .padding(cardPad)
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.05), radius: 3, y: 2)
-        .accessibilityElement(children: .combine)
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibilityLabelText))
-    }
-
-    private var accessibilityLabelText: String {
-        let status = server.isOnline
-            ? String(localized: "Online")
-            : String(localized: "Offline")
-        let cpu = Formatters.formatPercentage(server.cpuUsage)
-        let mem = server.memoryUsed.map { Formatters.formatBytes($0) } ?? "-"
-        return String(
-            format: String(localized: "%1$@, %2$@, CPU %3$@, memory %4$@"),
-            server.name, status, cpu, mem
-        )
+        .accessibilityValue(Text(accessibilityValueText))
     }
 }
 
-// MARK: - Metric Pill
+// MARK: - Subviews
 
-/// A small pill showing a label and value, used at the bottom of the server card.
-private struct MetricPill: View {
-    let label: String
-    let value: String
-    let color: Color
+private extension ServerCardView {
+    var isHighLoad: Bool {
+        server.isOnline && (server.cpuUsage ?? 0) >= Self.highCPUThreshold
+    }
 
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(label)
-                .font(.caption2.bold())
-                .foregroundStyle(color)
-            Text(value)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+    var statusColor: Color {
+        if !server.isOnline { return .serverOffline }
+        return isHighLoad ? .warningAmber : .serverOnline
+    }
+
+    /// Name on the leading edge, status/rate on the trailing edge. Stacks
+    /// vertically at accessibility sizes so neither side truncates to nothing.
+    var titleLine: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+        return layout {
+            Text(server.name)
+                .font(.headline)
+                .foregroundStyle(server.isOnline ? .primary : .secondary)
                 .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            trailingStatus
+                .lineLimit(1)
+                .layoutPriority(1)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.1))
-        .clipShape(Capsule())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(value))
+    }
+
+    @ViewBuilder
+    var trailingStatus: some View {
+        if !server.isOnline {
+            Text(verbatim: offlineText)
+                .font(.footnote)
+                .foregroundStyle(Color.serverOffline)
+        } else if isHighLoad {
+            Text(String(localized: "CPU high"))
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Color.warningAmber)
+        } else if let rate = rateText {
+            Text(verbatim: rate)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+    }
+
+    /// Three equal columns of usage bars; a single column at accessibility sizes.
+    var usageBars: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 8))
+        return layout {
+            InlineUsageBar(
+                label: String(localized: "CPU"),
+                percent: server.cpuUsage,
+                color: .cpuColor,
+                warnAt: Self.highCPUThreshold
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            InlineUsageBar(label: String(localized: "MEM"), percent: server.memoryPercent, color: .memoryColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            InlineUsageBar(label: String(localized: "DISK"), percent: server.diskPercent, color: .diskColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// "Offline · 2 hr. ago", or just "Offline" when the last-active time is unknown.
+    var offlineText: String {
+        let offline = String(localized: "Offline")
+        guard let lastActive = server.lastActiveAt else { return offline }
+        return "\(offline) · \(Formatters.formatRelativeTime(lastActive))"
+    }
+
+    /// "↓4.8 ↑1.2 MB/s", or `nil` when the agent has not reported network rates.
+    var rateText: String? {
+        guard server.networkIn != nil || server.networkOut != nil else { return nil }
+        return ServerListRateFormat.pair(down: server.networkIn ?? 0, up: server.networkOut ?? 0)
+    }
+
+    /// Primary IP and OS joined, e.g. "192.168.1.100 · Ubuntu 22.04".
+    var detailsText: String? {
+        let parts = [server.primaryIP?.maskingIPs(privacyMode), server.os].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    // MARK: Accessibility
+
+    var accessibilityLabelText: String {
+        guard server.isOnline else { return server.name }
+        let cpu = Formatters.formatPercentage(server.cpuUsage)
+        let mem = Formatters.formatPercentage(server.memoryPercent)
+        return String(
+            format: String(localized: "%1$@, %2$@, CPU %3$@, memory %4$@"),
+            server.name, String(localized: "Online"), cpu, mem
+        )
+    }
+
+    var accessibilityValueText: String {
+        var parts: [String] = []
+        if server.isOnline {
+            if isHighLoad { parts.append(String(localized: "CPU high")) }
+            parts.append("\(String(localized: "Disk")) \(Formatters.formatPercentage(server.diskPercent))")
+            if server.networkIn != nil || server.networkOut != nil {
+                parts.append("\(String(localized: "Download")) \(Formatters.formatSpeed(server.networkIn ?? 0))")
+                parts.append("\(String(localized: "Upload")) \(Formatters.formatSpeed(server.networkOut ?? 0))")
+            }
+        } else {
+            parts.append(String(localized: "Offline"))
+            if let lastActive = server.lastActiveAt {
+                parts.append(String(localized: "Last seen \(Formatters.formatRelativeTime(lastActive))"))
+            }
+        }
+        if let details = detailsText { parts.append(details) }
+        return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: - Rate formatting
+
+/// Formats live byte rates for the servers list with the shared byte units.
+/// A down/up pair shares the larger value's unit so it reads as one figure.
+enum ServerListRateFormat {
+    /// Splits a rate into a display number and unit, e.g. `("38", "MB/s")`.
+    static func split(_ bytesPerSec: Int64) -> (value: String, unit: String) {
+        let value = Double(max(bytesPerSec, 0))
+        let index = Formatters.byteUnitIndex(for: value)
+        return (Formatters.byteNumber(value, unitIndex: index), unit(index))
+    }
+
+    /// Down/up pair in one shared unit, e.g. `"↓4.8 ↑1.2 MB/s"`.
+    static func pair(down: Int64, up: Int64) -> String {
+        let downValue = Double(max(down, 0))
+        let upValue = Double(max(up, 0))
+        let index = Formatters.byteUnitIndex(for: max(downValue, upValue))
+        let downText = Formatters.byteNumber(downValue, unitIndex: index)
+        let upText = Formatters.byteNumber(upValue, unitIndex: index)
+        return "↓\(downText) ↑\(upText) \(unit(index))"
+    }
+
+    private static func unit(_ index: Int) -> String {
+        "\(Formatters.byteUnits[index])/s"
     }
 }
 
 #Preview {
-    ServerCardView(
-        server: ServerStatus(
-            id: "1",
-            name: "Production Web Server",
-            online: true,
-            cpuUsage: 45.2,
-            memoryTotal: 17_179_869_184,
-            memoryUsed: 12_516_925_440,
-            os: "Ubuntu 22.04",
-            ipv4: "192.168.1.100"
+    List {
+        ServerCardView(
+            server: ServerStatus(
+                id: "1",
+                name: "Production Web Server",
+                online: true,
+                cpuUsage: 45.2,
+                memoryTotal: 17_179_869_184,
+                memoryUsed: 12_516_925_440,
+                os: "Ubuntu 22.04",
+                ipv4: "192.168.1.100"
+            )
         )
-    )
-    .padding()
-    .background(Color(.systemGroupedBackground))
+        ServerCardView(server: ServerStatus(id: "2", name: "Busy Relay", online: true, cpuUsage: 91))
+        ServerCardView(server: ServerStatus(id: "3", name: "Lab Box", online: false))
+    }
+    .listStyle(.insetGrouped)
 }

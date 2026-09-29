@@ -8,11 +8,20 @@ extension Color {
     static let alertFiring = Color("AlertFiring")
     static let alertResolved = Color("ServerOnline")
     static let warningAmber = Color("WarningAmber")
-    static let brandAccent = Color("BrandAccent")
+    /// The app theme colour. Follows the system accent (the AccentColor asset
+    /// references `systemBlue`) so green stays reserved for online/healthy state.
+    static let brandAccent = Color.accentColor
     static let cpuColor = Color("CPUColor")
     static let memoryColor = Color("MemoryColor")
     static let diskColor = Color("DiskColor")
     static let networkColor = Color("NetworkColor")
+    /// Upload colour: neutral so download (the metric colour) leads.
+    static let trafficUpload = Color(.systemGray)
+    /// Text-legible variants of the metric colours: darker in light mode so
+    /// small values keep 4.5:1 on white cards; same as the base colour in dark.
+    static let cpuTextColor = Color("CPUTextColor")
+    static let memoryTextColor = Color("MemoryTextColor")
+    static let networkTextColor = Color("NetworkTextColor")
 }
 
 // MARK: - ISO8601DateFormatter Extension

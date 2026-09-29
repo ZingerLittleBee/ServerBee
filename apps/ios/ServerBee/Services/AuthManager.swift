@@ -133,6 +133,20 @@ final class AuthManager {
         }
     }
 
+    /// Token for a WebSocket reconnect. A transient refresh failure (offline,
+    /// timeout, 5xx) falls back to the stored token, so the socket keeps
+    /// retrying with backoff instead of giving up for good; only a session
+    /// the server rejected, or one with no stored token, yields `nil`.
+    func accessTokenForReconnect() async -> String? {
+        do {
+            return try await refreshAccessToken()
+        } catch AuthError.refreshUnauthorized {
+            return nil
+        } catch {
+            return getAccessToken()
+        }
+    }
+
     // MARK: - Token Refresh (private)
 
     /// Directly calls the refresh endpoint using URLSession.
@@ -253,19 +267,19 @@ enum AuthError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noServerUrl:
-            return "No server URL configured"
+            return String(localized: "No server URL configured")
         case .refreshUnauthorized:
-            return "Session expired — please log in again"
+            return String(localized: "Session expired. Please log in again.")
         case .refreshNetworkFailure:
-            return "Could not reach the server — please check your connection"
+            return String(localized: "Could not reach the server. Please check your connection.")
         case .invalidCredentials:
-            return "Invalid username or password"
+            return String(localized: "Invalid username or password")
         case .twoFactorRequired:
-            return "Two-factor authentication is required"
+            return String(localized: "Two-factor authentication is required")
         case .tooManyAttempts:
-            return "Too many login attempts — please try again later"
+            return String(localized: "Too many attempts. Please try again later.")
         case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
+            return String(localized: "Network error: \(error.localizedDescription)")
         }
     }
 }

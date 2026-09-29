@@ -77,7 +77,7 @@ private extension TaskDetailView {
                 DetailRow(label: String(localized: "Cron"), value: cron, monospaced: true)
             }
             if let next = current.nextRunAt {
-                DetailRow(label: String(localized: "Next run"), value: Formatters.formatRelativeTime(next))
+                DetailRow(label: String(localized: "Next run"), value: Formatters.formatRelativeTime(next, allowsFuture: true))
             }
             if let last = current.lastRunAt {
                 DetailRow(label: String(localized: "Last run"), value: Formatters.formatRelativeTime(last))

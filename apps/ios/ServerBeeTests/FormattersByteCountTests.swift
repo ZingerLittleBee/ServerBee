@@ -2,28 +2,42 @@ import XCTest
 @testable import ServerBee
 
 final class FormattersByteCountTests: XCTestCase {
-    func test_formatBytes_zero() {
-        // We set `allowsNonnumericFormatting = false` so a true 0 reads as the
-        // numeric "0 bytes" rather than the locale word "Zero bytes" — clearer
-        // in dense metric grids (e.g. "Disk I/O 0 bytes/s").
-        XCTAssertEqual(Formatters.formatBytes(0), "0 bytes")
+    func test_formatBytes_zeroAndBytesUseTheBUnit() {
+        // No locale words ("0 bytes" / "0 字节"): they overflow dense metric rows.
+        XCTAssertEqual(Formatters.formatBytes(0), "0 B")
+        XCTAssertEqual(Formatters.formatBytes(512), "512 B")
     }
 
-    func test_formatBytes_oneKibibyte() {
-        // ByteCountFormatter with .binary uses the unambiguous 1024 base
-        // and "KB" label (per Apple's default countStyle = .file behaviour
-        // which interprets KB as 1024). We assert "1 KB" because that's
-        // exactly what ByteCountFormatter.string(fromByteCount:) emits at
-        // en_US locale for 1024.
+    func test_formatBytes_binaryUnits() {
         XCTAssertEqual(Formatters.formatBytes(1024), "1 KB")
-    }
-
-    func test_formatBytes_oneMebibyte() {
         XCTAssertEqual(Formatters.formatBytes(1_048_576), "1 MB")
+        XCTAssertEqual(Formatters.formatBytes(1_572_864), "1.5 MB")
+        XCTAssertEqual(Formatters.formatBytes(20 * 1_073_741_824), "20 GB")
     }
 
-    func test_formatBytes_belowOneKB() {
-        // Under 1024 ByteCountFormatter emits bytes verbatim.
-        XCTAssertEqual(Formatters.formatBytes(512), "512 bytes")
+    func test_formatBytes_rollsOverBeforeFourDigits() {
+        XCTAssertEqual(Formatters.formatBytes(1010 * 1024), "1 MB")
+        XCTAssertEqual(Formatters.formatBytes(999 * 1024), "999 KB")
+        XCTAssertEqual(Formatters.formatBytes(1000), "1 KB")
+    }
+
+    func test_formatBytes_clampsNegativeToZero() {
+        XCTAssertEqual(Formatters.formatBytes(-5), "0 B")
+    }
+
+    func test_formatSpeed_appendsPerSecondAndDashesMissingValues() {
+        XCTAssertEqual(Formatters.formatSpeed(0), "0 B/s")
+        XCTAssertEqual(Formatters.formatSpeed(5 * 1_048_576), "5 MB/s")
+        XCTAssertEqual(Formatters.formatSpeed(nil), "—")
+    }
+
+    func test_formatPercentage_dashesMissingValues() {
+        XCTAssertEqual(Formatters.formatPercentage(42.26), "42.3%")
+        XCTAssertEqual(Formatters.formatPercentage(nil), "—")
+    }
+
+    func test_serverListRatePair_sharesTheLargerUnit() {
+        XCTAssertEqual(ServerListRateFormat.pair(down: 1010 * 1024, up: 300 * 1024), "↓1 ↑0.3 MB/s")
+        XCTAssertEqual(ServerListRateFormat.pair(down: 0, up: 0), "↓0 ↑0 B/s")
     }
 }

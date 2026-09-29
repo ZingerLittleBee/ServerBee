@@ -117,9 +117,9 @@ struct IncidentsView: View {
 
     private var allClear: some View {
         ContentUnavailableView {
-            Label(String(localized: "All systems operational"), systemImage: "checkmark.circle.fill")
+            Label(String(localized: "No active incidents"), systemImage: "checkmark.circle.fill")
         } description: {
-            Text(String(localized: "No active incidents or scheduled maintenance."))
+            Text(String(localized: "Nothing is open, and no maintenance is scheduled."))
         }
         .frame(minHeight: 240)
     }
@@ -138,7 +138,7 @@ struct IncidentsView: View {
                 HStack {
                     Text(incident.title).font(.subheadline.bold())
                     Spacer()
-                    Chip(text: incident.severity.capitalized, color: incident.severityColor)
+                    Chip(text: incident.severityLabel, color: incident.severityColor)
                 }
                 HStack(spacing: 8) {
                     Chip(text: incident.statusLabel, color: incident.isResolved ? .serverOnline : .warningAmber)
@@ -186,8 +186,8 @@ struct IncidentsView: View {
                     Text(desc).font(.caption).foregroundStyle(.secondary)
                 }
                 Text(String(format: String(localized: "%@ → %@"),
-                            Formatters.formatRelativeTime(maintenance.startAt),
-                            Formatters.formatRelativeTime(maintenance.endAt)))
+                            Formatters.formatRelativeTime(maintenance.startAt, allowsFuture: true),
+                            Formatters.formatRelativeTime(maintenance.endAt, allowsFuture: true)))
                     .font(.caption2).foregroundStyle(.secondary)
                 if isAdmin {
                     Divider()

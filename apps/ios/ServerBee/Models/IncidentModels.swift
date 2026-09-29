@@ -33,6 +33,10 @@ struct Incident: Decodable, Identifiable, Hashable, Sendable {
         }
     }
 
+    var severityLabel: String {
+        IncidentSeverity(rawValue: severity.lowercased())?.label ?? severity.capitalized
+    }
+
     var statusLabel: String {
         switch status.lowercased() {
         case "investigating": String(localized: "Investigating")

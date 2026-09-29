@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Server detail "Traffic" section: billing-cycle usage, daily trend, cost /
-/// value insights and a 90-day uptime timeline. All data is member-readable.
+/// Server detail "Traffic" section: billing-cycle usage, daily trend, a 90-day
+/// uptime timeline and cost / value insights. All data is member-readable.
 struct ServerTrafficSection: View {
     let serverId: String
     let config: ServerConfig?
@@ -38,10 +38,10 @@ struct ServerTrafficSection: View {
                         TrafficDailyChart(daily: traffic.daily)
                     }
                 }
+                UptimeCard(days: viewModel.uptime, windowDays: viewModel.uptimeDays)
                 if let cost = viewModel.cost {
                     CostInsightsCard(cost: cost, config: config)
                 }
-                UptimeCard(days: viewModel.uptime, windowDays: viewModel.uptimeDays)
             }
         }
     }

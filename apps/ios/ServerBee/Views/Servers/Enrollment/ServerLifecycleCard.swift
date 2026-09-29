@@ -165,9 +165,18 @@ private extension ServerLifecycleCard {
 
     // MARK: - Pending
 
+    /// An unclaimed server that has reported an agent version had an agent
+    /// before (authority revoked or re-enrollment pending), so "yet" would mislead.
+    var pendingDescription: String {
+        if config?.agentVersion?.isEmpty == false {
+            return String(localized: "The agent that reported for this server is no longer enrolled. Generate a one-time code and run the install command on the host to enroll it again.")
+        }
+        return String(localized: "This server has no connected agent yet. Generate a one-time code and run the install command on the host.")
+    }
+
     @ViewBuilder
     var pendingContent: some View {
-        Text(String(localized: "This server has no connected agent yet. Generate a one-time code and run the install command on the host."))
+        Text(pendingDescription)
             .font(.caption)
             .foregroundStyle(.secondary)
 
@@ -181,7 +190,7 @@ private extension ServerLifecycleCard {
                     DetailRow(label: String(localized: "Current code"), value: "\(prefix)…", monospaced: true)
                 }
                 if let expiry = outstanding.expiresAt {
-                    DetailRow(label: String(localized: "Expires"), value: Formatters.formatRelativeTime(expiry))
+                    DetailRow(label: String(localized: "Expires"), value: Formatters.formatRelativeTime(expiry, allowsFuture: true))
                 }
             }
         }
@@ -325,7 +334,7 @@ private extension ServerLifecycleCard {
                 DetailRow(label: String(localized: "Code"), value: "\(prefix)…", monospaced: true)
             }
             if let expiry = outstanding.expiresAt {
-                DetailRow(label: String(localized: "Expires"), value: Formatters.formatRelativeTime(expiry))
+                DetailRow(label: String(localized: "Expires"), value: Formatters.formatRelativeTime(expiry, allowsFuture: true))
             }
             Text(String(localized: "Replace this exact offer if its plaintext code was lost, or revoke it without creating a successor."))
                 .font(.caption2)

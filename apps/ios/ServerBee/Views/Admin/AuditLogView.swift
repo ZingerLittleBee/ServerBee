@@ -49,7 +49,21 @@ struct AuditLogView: View {
                 }
             }
         }
-        .overlay { if viewModel.isLoading, viewModel.entries.isEmpty { ProgressView() } }
+        .overlay {
+            if viewModel.isLoading, viewModel.entries.isEmpty {
+                ProgressView()
+            } else if viewModel.entries.isEmpty, viewModel.loadError == nil {
+                ContentUnavailableView(
+                    String(localized: "No audit entries"),
+                    systemImage: "list.bullet.rectangle",
+                    description: Text(
+                        viewModel.actionFilter == nil
+                            ? String(localized: "Sign-ins and admin changes are recorded here.")
+                            : String(localized: "No entries for this action.")
+                    )
+                )
+            }
+        }
         .navigationTitle(String(localized: "Audit Log"))
         .navigationBarTitleDisplayMode(.inline)
         .task { if viewModel.entries.isEmpty { await viewModel.reload(apiClient: apiClient) } }
@@ -59,6 +73,8 @@ struct AuditLogView: View {
 
 private struct AuditRow: View {
     let entry: AuditLogEntry
+
+    @Environment(\.privacyMode) private var privacyMode
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -71,12 +87,12 @@ private struct AuditRow: View {
                     .foregroundStyle(.secondary)
             }
             if let detail = entry.detail, !detail.isEmpty {
-                Text(detail)
+                Text(detail.maskingIPs(privacyMode))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
             }
-            Text(verbatim: "\(entry.ip)")
+            Text(verbatim: entry.ip.maskingIPs(privacyMode))
                 .font(.caption2.monospaced())
                 .foregroundStyle(.tertiary)
         }

@@ -6,6 +6,7 @@ struct PingTasksView: View {
     let isAdmin: Bool
 
     @Environment(\.apiClient) private var apiClient
+    @Environment(\.privacyMode) private var privacyMode
     @State private var viewModel = PingTasksViewModel()
     @State private var showCreate = false
     @State private var editTarget: PingTask?
@@ -18,17 +19,20 @@ struct PingTasksView: View {
                     Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.serverOffline)
                 }
             }
-            if viewModel.tasks.isEmpty, !viewModel.isLoading {
-                Section {
-                    Text(String(localized: "No ping tasks yet.")).foregroundStyle(.secondary)
-                }
-            }
             ForEach(viewModel.tasks) { task in
                 row(for: task)
             }
         }
         .overlay {
-            if viewModel.isLoading, viewModel.tasks.isEmpty { ProgressView() }
+            if viewModel.isLoading, viewModel.tasks.isEmpty {
+                ProgressView()
+            } else if viewModel.tasks.isEmpty, viewModel.loadError == nil {
+                ContentUnavailableView(
+                    String(localized: "No ping tasks"),
+                    systemImage: "dot.radiowaves.left.and.right",
+                    description: Text(String(localized: "Ping tasks measure latency from your servers to a host."))
+                )
+            }
         }
         .navigationTitle(String(localized: "Ping Tasks"))
         .navigationBarTitleDisplayMode(.inline)
@@ -78,7 +82,7 @@ struct PingTasksView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.networkColor.opacity(0.15))
                         .clipShape(Capsule())
-                    Text(task.target).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(task.target.maskingIPs(privacyMode)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)

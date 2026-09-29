@@ -6,6 +6,7 @@ import SwiftUI
 struct FirewallBlocklistView: View {
     @Environment(\.apiClient) private var apiClient
     @Environment(AuthManager.self) private var authManager
+    @Environment(\.privacyMode) private var privacyMode
     @State private var viewModel = FirewallViewModel()
     @State private var showAdd = false
     @State private var pendingDelete: BlockListItem?
@@ -47,7 +48,7 @@ struct FirewallBlocklistView: View {
             titleVisibility: .visible
         ) {
             if let block = pendingDelete {
-                Button(String(localized: "Remove \(block.target)"), role: .destructive) {
+                Button(String(localized: "Remove \(block.target.maskingIPs(privacyMode))"), role: .destructive) {
                     Task { await viewModel.delete(id: block.id, apiClient: apiClient) }
                 }
             }
@@ -164,6 +165,8 @@ struct BlockRow: View {
     let canDelete: Bool
     let onDelete: () -> Void
 
+    @Environment(\.privacyMode) private var privacyMode
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: block.isAuto ? "bolt.shield" : "hand.raised.fill")
@@ -171,7 +174,7 @@ struct BlockRow: View {
                 .foregroundStyle(block.isAuto ? Color.warningAmber : .blue)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 3) {
-                Text(block.target)
+                Text(block.target.maskingIPs(privacyMode))
                     .font(.subheadline.monospaced())
                 HStack(spacing: 6) {
                     Chip(text: block.coverLabel, color: .secondary)

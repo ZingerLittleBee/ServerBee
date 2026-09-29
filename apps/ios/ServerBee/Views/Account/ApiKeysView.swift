@@ -10,16 +10,10 @@ struct ApiKeysView: View {
 
     var body: some View {
         List {
-            if let error = viewModel.actionError {
+            if let error = viewModel.actionError ?? viewModel.loadError {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(Color.serverOffline)
-                }
-            }
-            if viewModel.keys.isEmpty, !viewModel.isLoading {
-                Section {
-                    Text(String(localized: "No API keys yet."))
-                        .foregroundStyle(.secondary)
                 }
             }
             ForEach(viewModel.keys) { key in
@@ -40,7 +34,15 @@ struct ApiKeysView: View {
             }
         }
         .overlay {
-            if viewModel.isLoading, viewModel.keys.isEmpty { ProgressView() }
+            if viewModel.isLoading, viewModel.keys.isEmpty {
+                ProgressView()
+            } else if viewModel.keys.isEmpty, viewModel.loadError == nil {
+                ContentUnavailableView(
+                    String(localized: "No API keys"),
+                    systemImage: "chevron.left.forwardslash.chevron.right",
+                    description: Text(String(localized: "API keys let scripts and tools call the ServerBee API."))
+                )
+            }
         }
         .navigationTitle(String(localized: "API Keys"))
         .navigationBarTitleDisplayMode(.inline)

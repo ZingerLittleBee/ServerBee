@@ -74,7 +74,7 @@ private extension EditServerSheet {
             }
             Picker(String(localized: "Cycle"), selection: $viewModel.billingCycle) {
                 Text(String(localized: "None")).tag("")
-                ForEach(Self.cycles, id: \.self) { Text($0.capitalized).tag($0) }
+                ForEach(Self.cycles, id: \.self) { Text(Self.cycleLabel($0)).tag($0) }
             }
             TextField(String(localized: "Billing day (1-28)"), text: $viewModel.billingStartDayText)
                 .keyboardType(.numberPad)
@@ -86,7 +86,7 @@ private extension EditServerSheet {
                 .keyboardType(.decimalPad)
             Picker(String(localized: "Traffic type"), selection: $viewModel.trafficLimitType) {
                 Text(String(localized: "None")).tag("")
-                ForEach(Self.trafficTypes, id: \.self) { Text($0.capitalized).tag($0) }
+                ForEach(Self.trafficTypes, id: \.self) { Text(Self.trafficTypeLabel($0)).tag($0) }
             }
         }
     }
@@ -110,6 +110,28 @@ private extension EditServerSheet {
                 }
                 .disabled(viewModel.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+        }
+    }
+}
+
+// MARK: - Labels
+
+private extension EditServerSheet {
+    static func cycleLabel(_ cycle: String) -> String {
+        switch cycle {
+        case "monthly": String(localized: "Monthly")
+        case "quarterly": String(localized: "Quarterly")
+        case "yearly": String(localized: "Yearly")
+        default: cycle.capitalized
+        }
+    }
+
+    static func trafficTypeLabel(_ type: String) -> String {
+        switch type {
+        case "sum": String(localized: "Total (in + out)")
+        case "up": String(localized: "Upload only")
+        case "down": String(localized: "Download only")
+        default: type.capitalized
         }
     }
 }

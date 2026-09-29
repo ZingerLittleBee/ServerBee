@@ -10,14 +10,9 @@ struct ServerGroupsView: View {
 
     var body: some View {
         List {
-            if let error = viewModel.actionError {
+            if let error = viewModel.actionError ?? viewModel.loadError {
                 Section {
                     Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.serverOffline)
-                }
-            }
-            if viewModel.groups.isEmpty, !viewModel.isLoading {
-                Section {
-                    Text(String(localized: "No groups yet.")).foregroundStyle(.secondary)
                 }
             }
             ForEach(viewModel.groups) { group in
@@ -37,7 +32,15 @@ struct ServerGroupsView: View {
             }
         }
         .overlay {
-            if viewModel.isLoading, viewModel.groups.isEmpty { ProgressView() }
+            if viewModel.isLoading, viewModel.groups.isEmpty {
+                ProgressView()
+            } else if viewModel.groups.isEmpty, viewModel.loadError == nil {
+                ContentUnavailableView(
+                    String(localized: "No groups"),
+                    systemImage: "folder",
+                    description: Text(String(localized: "Groups organize servers in the servers list."))
+                )
+            }
         }
         .navigationTitle(String(localized: "Server Groups"))
         .navigationBarTitleDisplayMode(.inline)

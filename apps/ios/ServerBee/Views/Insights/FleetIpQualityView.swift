@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Cross-server IP-quality overview: each server's egress IP reputation at a
-/// glance (risk level, flags, location) with a tap-through to the full snapshot.
+/// glance (risk level, flags, location), expanding in place to the full snapshot.
 /// Read-only; rechecking stays on the per-server detail screen.
 struct FleetIpQualityView: View {
     @Environment(\.apiClient) private var apiClient
@@ -66,26 +66,39 @@ struct FleetIpQualityView: View {
     }
 }
 
-/// Per-server IP-quality summary, expandable to the full reputation snapshot.
+/// Per-server IP-quality summary card. Servers with a snapshot or unlock
+/// results expand in place; the detail cards follow the header as full-width
+/// cards of their own rather than nesting inside it.
 private struct FleetIpQualityRow: View {
     let name: String
     let data: ServerIpQualityData
     let serviceNames: [String: String]
 
+    @Environment(\.privacyMode) private var privacyMode
+    @State private var isExpanded = false
+
+    private var hasDetail: Bool { data.ipQuality != nil || !data.unlockResults.isEmpty }
+
     var body: some View {
-        SectionCard {
-            DisclosureGroup {
-                VStack(spacing: 14) {
-                    if let snapshot = data.ipQuality {
-                        IpQualitySnapshotCard(snapshot: snapshot)
-                    }
-                    if !data.unlockResults.isEmpty {
-                        UnlockResultsCard(results: data.unlockResults, serviceNames: serviceNames)
-                    }
+        VStack(spacing: 8) {
+            if hasDetail {
+                Button {
+                    withAnimation(.snappy) { isExpanded.toggle() }
+                } label: {
+                    header.cardSurface()
                 }
-                .padding(.top, 8)
-            } label: {
-                header
+                .buttonStyle(.plain)
+                .accessibilityValue(Text(isExpanded ? String(localized: "Expanded") : String(localized: "Collapsed")))
+            } else {
+                header.cardSurface()
+            }
+            if isExpanded {
+                if let snapshot = data.ipQuality {
+                    IpQualitySnapshotCard(snapshot: snapshot)
+                }
+                if !data.unlockResults.isEmpty {
+                    UnlockResultsCard(results: data.unlockResults, serviceNames: serviceNames)
+                }
             }
         }
     }
@@ -96,7 +109,7 @@ private struct FleetIpQualityRow: View {
                 Text(name).font(.subheadline.weight(.medium))
                 if let snapshot = data.ipQuality {
                     HStack(spacing: 6) {
-                        Text(snapshot.ip).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        Text(snapshot.ip.maskingIPs(privacyMode)).font(.caption.monospaced()).foregroundStyle(.secondary)
                         if let loc = snapshot.location {
                             Text(loc).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                         }
@@ -109,7 +122,16 @@ private struct FleetIpQualityRow: View {
             if let snapshot = data.ipQuality {
                 riskBadge(snapshot)
             }
+            if hasDetail {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .accessibilityHidden(true)
+            }
         }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     private func riskBadge(_ snapshot: IpQualitySnapshot) -> some View {

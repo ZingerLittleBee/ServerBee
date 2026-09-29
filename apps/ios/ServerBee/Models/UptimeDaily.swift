@@ -53,6 +53,15 @@ extension Array where Element == UptimeDailyEntry {
         return Swift.min(1.0, Double(online) / Double(total))
     }
 
+    /// Health bucket for the whole window: green from 99%, and the same "down"
+    /// threshold as a single day so a fully red timeline never reads amber.
+    var overallStatus: UptimeStatus {
+        guard let ratio = overallRatio else { return .noData }
+        if ratio >= 0.99 { return .operational }
+        if ratio < 0.95 { return .down }
+        return .degraded
+    }
+
     /// Total counted downtime incidents across the window.
     var totalIncidents: Int {
         reduce(0) { $0 + $1.downtimeIncidents }

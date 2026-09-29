@@ -32,6 +32,11 @@ struct ServerSecuritySection: View {
         }
         .task {
             await viewModel.loadIfNeeded(serverId: serverId, apiClient: apiClient)
+            #if DEBUG
+            // Visual-verification hook: rows are plain Buttons the headless
+            // harness can't tap, so open the newest event's detail sheet.
+            if UITestSupport.autoPresent == "security-event" { selected = mergedEvents.first }
+            #endif
         }
         .sheet(item: $selected) { event in
             SecurityEventDetailView(event: event) {

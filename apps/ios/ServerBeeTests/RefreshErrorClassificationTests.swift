@@ -81,6 +81,28 @@ final class RefreshErrorClassificationTests: XCTestCase {
         }
     }
 
+    func test_accessTokenForReconnect_keepsStoredTokenOnTransientFailure() async {
+        URLProtocolStub.stubResponse = (503, Data())
+        let auth = AuthManager()
+        auth.serverUrl = "https://stub.test"
+        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        try? KeychainService.saveString("stored", for: KeychainService.accessTokenKey)
+
+        let token = await auth.accessTokenForReconnect()
+        XCTAssertEqual(token, "stored", "a transient failure must not stop the socket from retrying")
+    }
+
+    func test_accessTokenForReconnect_isNilWhenTheSessionIsRejected() async {
+        URLProtocolStub.stubResponse = (401, Data())
+        let auth = AuthManager()
+        auth.serverUrl = "https://stub.test"
+        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        try? KeychainService.saveString("stored", for: KeychainService.accessTokenKey)
+
+        let token = await auth.accessTokenForReconnect()
+        XCTAssertNil(token)
+    }
+
     func test503MapsToRefreshNetworkFailure() async {
         URLProtocolStub.stubResponse = (503, Data())
         let auth = AuthManager()

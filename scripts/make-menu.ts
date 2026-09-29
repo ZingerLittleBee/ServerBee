@@ -450,6 +450,13 @@ const COMMANDS: CommandDefinition[] = [
     description: 'Follow logs from the Docker compose stack',
     command: 'docker compose logs -f',
     featured: true
+  },
+  {
+    key: 'ios-install',
+    name: 'ios:install',
+    category: 'iOS',
+    description: 'Build the iOS app and install it on a connected iPhone (needs IOS_DEVELOPMENT_TEAM)',
+    command: 'bash scripts/ios-install.sh'
   }
 ]
 

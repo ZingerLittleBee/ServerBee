@@ -21,7 +21,9 @@ export function EnrollmentOfferDialog({ open, onOpenChange, outstandingOffer, se
     <Dialog onOpenChange={onOpenChange} open={open}>
       {open && (
         <EnrollmentOfferDialogContent
-          key={`${serverId}:${outstandingOffer?.id ?? 'none'}`}
+          // Keyed by server only: issuing projects the new offer into the
+          // catalog, and an offer-keyed remount would auto-issue again forever.
+          key={serverId}
           onOpenChange={onOpenChange}
           outstandingOffer={outstandingOffer}
           serverId={serverId}

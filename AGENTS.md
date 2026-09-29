@@ -15,20 +15,30 @@ cd apps/web && bun install && bun run build     # Frontend (embedded into server
 
 # Run
 cargo run -p serverbee-server                   # Server on port 9527
-cargo run -p serverbee-agent                    # Agent (needs server_url configured)
+cargo run -p serverbee-agent                    # Agent (needs server_url + enrollment code, see tests/README.md)
+make dev-full                                   # Server + web dev, prints an agent command with a fresh enrollment code
+make dev-demo                                   # Server with seeded demo data (admin / admin123)
+make                                            # Interactive menu of all targets (scripts/make-menu.ts)
 
 # Test
 cargo test --workspace                          # Rust: unit + integration tests
-bun run test                                    # Frontend: vitest
-cargo test -p serverbee-server --test integration  # One integration suite (crates/server/tests/*.rs)
+bun run test                                    # Frontend: vitest (apps/web)
+cargo test -p serverbee-server --test router_smoke # One integration file (crates/server/tests/<name>.rs; shared helpers in tests/common/)
 cargo test -p serverbee-server test_name        # Single Rust test
 
 # Lint & Format
-cargo clippy --workspace -- -D warnings         # Rust (CI enforced, 0 warnings)
+cargo clippy --workspace --benches --tests --examples --all-features --locked -- -D warnings  # Same flags as CI (0 warnings)
+cargo fmt -p <crate>                            # Format only the crates you changed
 bun x ultracite check                           # Frontend (Biome)
 bun x ultracite fix                             # Frontend auto-fix
-bun run typecheck                               # TypeScript (web + docs)
+bun run typecheck                               # TypeScript (ui + web + docs)
+
+# Codegen (run in apps/web)
+bun run generate:api-types                      # OpenAPI (dump_openapi example) -> src/lib/api-types.ts
+bun run generate:capabilities                   # Capability metadata -> src/lib/capability-bits.generated.ts
 ```
+
+`crates/server/build.rs` creates an empty `apps/web/dist/builtin-widgets` so a cold `cargo build` succeeds, but the embedded SPA and built-in widgets are only present after `bun run build` in `apps/web`.
 
 ## Architecture
 
@@ -50,8 +60,12 @@ crates/
 apps/
   web/        — React 19 SPA (TanStack Router + Query, shadcn/ui, Bklit charts, xterm.js)
   docs/       — Documentation site (TanStack Start + Fumadocs MDX, CN+EN bilingual)
-  ios/        — iOS mobile client (separate Xcode project)
+  ios/        — iOS mobile client (separate Xcode project, own apps/ios/CLAUDE.md)
+packages/
+  widget-sdk/ — Custom-widget SDK consumed by apps/web
 ```
+
+The other `packages/*` (db, api, auth, env, ui, config) are Turborepo scaffold packages; neither the Rust server nor `apps/web` uses them for data or auth.
 
 ### Data Flow
 
@@ -67,21 +81,25 @@ Agent → WebSocket (JSON) → Server → SQLite (sea-orm)
 
 ### AppState
 
-Shared state passed to all handlers via `Arc<AppState>`:
+Shared state passed to all handlers via `Arc<AppState>` (`crates/server/src/state.rs`). Key fields:
 - `db: DatabaseConnection` — sea-orm SQLite pool
-- `agent_manager: AgentManager` — DashMap of connected agents with WS senders
+- `agent_manager` — DashMap of connected agents with WS senders
+- `agent_authority` / `server_onboarding` — enrollment and run-token lifecycle (see below)
+- `agent_desired_state` — projects server-owned desired state (ping tasks, probes, firewall, etc.) into full-state agent messages
 - `browser_tx: broadcast::Sender<BrowserMessage>` — fan-out to browser clients
 - `config: AppConfig` — Figment-loaded configuration
-- `login_rate_limit / register_rate_limit: DashMap` — IP-based rate limiting (15min window)
+- `login_rate_limit / register_rate_limit / public_rate_limit: DashMap` — IP-based rate limiting
 
 ### Authentication Model
 
-Three auth paths, all checked in `middleware/auth.rs`:
+User credentials resolve through one shared policy, `resolve_connection` in `middleware/auth.rs` (used by HTTP middleware, optional-auth public routes, and every browser WS handler). Order:
 1. **Session cookie** — Browser login via `/api/auth/login`, argon2 password hash
 2. **API key** — `X-API-Key` header, `serverbee_` prefix + argon2 hash stored
-3. **Agent token** — WebSocket query param, per-server token from registration
+3. **Bearer token** — mobile (iOS) sessions
 
 RBAC: Admin (full access) vs Member (read-only). `require_admin` middleware on write routes.
+
+**Agents** authenticate separately with a per-server **run token** sent as `Authorization: Bearer` on the agent WS (the `?token=` query param is a deprecated fallback, `router/ws/agent/mod.rs`). The agent generates the run token itself and claims a pre-created Server identity with a short-lived, single-use **enrollment code**; there is no fingerprint-based enrollment. `service/agent_authority` owns enrollment offers, run-token transitions, and connection fencing. Read `CONTEXT.md` (ubiquitous language) and `docs/adr/0004-*` before touching enrollment or re-enrollment.
 
 ## Key Conventions
 
@@ -119,8 +137,9 @@ E2E manual verification checklists are in `tests/` directory, organized by featu
 
 ## Documentation
 
-- **Fumadocs site**: `apps/docs/content/docs/{en,zh}/` — 16 MDX pages per language
+- **Fumadocs site**: `apps/docs/content/docs/{en,zh}/` — MDX pages per language, kept in sync across both
 - **OpenAPI**: Auto-generated at `/swagger-ui/` and `/api-docs/openapi.json`
+- **Domain language + ADRs**: `CONTEXT.md`, `docs/adr/`
 - **Architecture spec**: `docs/superpowers/specs/2026-03-12-serverbee-architecture-design.md`
 - **Progress tracking**: `docs/superpowers/plans/PROGRESS.md`
 

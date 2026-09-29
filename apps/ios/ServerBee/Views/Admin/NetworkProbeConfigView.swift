@@ -7,6 +7,7 @@ struct NetworkProbeConfigView: View {
     let isAdmin: Bool
 
     @Environment(\.apiClient) private var apiClient
+    @Environment(\.privacyMode) private var privacyMode
     @State private var viewModel = NetworkProbeConfigViewModel()
 
     @State private var loaded = false
@@ -143,7 +144,7 @@ private extension NetworkProbeConfigView {
                     .background(Color.secondary.opacity(0.15))
                     .clipShape(Capsule())
             }
-            Text("\(NetworkProvider.label(for: target.provider)) · \(target.target)")
+            Text("\(NetworkProvider.label(for: target.provider)) · \(target.target.maskingIPs(privacyMode))")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }

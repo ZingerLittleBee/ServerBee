@@ -152,5 +152,19 @@ final class TrafficModelsDecodingTests: XCTestCase {
         // overall = (1440+1430+0) / (1440*3)
         let expected = Double(1440 + 1430) / Double(1440 * 3)
         XCTAssertEqual(days.overallRatio ?? -1, expected, accuracy: 0.0001)
+        // ~66% overall is below the 95% "down" threshold.
+        XCTAssertEqual(days.overallStatus, .down)
+    }
+
+    func test_uptime_overallStatusThresholds() throws {
+        func window(online: Int) throws -> [UptimeDailyEntry] {
+            try decode([UptimeDailyEntry].self, """
+            [{ "date": "2026-06-01", "total_minutes": 10000, "online_minutes": \(online), "downtime_incidents": 0 }]
+            """)
+        }
+        XCTAssertEqual(try window(online: 9950).overallStatus, .operational)
+        XCTAssertEqual(try window(online: 9700).overallStatus, .degraded)
+        XCTAssertEqual(try window(online: 0).overallStatus, .down)
+        XCTAssertEqual([UptimeDailyEntry]().overallStatus, .noData)
     }
 }

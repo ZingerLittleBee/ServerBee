@@ -16,6 +16,22 @@ final class FormattersRelativeTimeTests: XCTestCase {
         XCTAssertFalse(result.contains("Z"), "Should not echo back the raw ISO timestamp")
     }
 
+    func test_formatRelativeTime_pastEventAheadOfClockReadsJustNow() {
+        let now = Date()
+        let justAhead = ISO8601DateFormatter.shared.string(from: now.addingTimeInterval(1))
+        let farAhead = ISO8601DateFormatter.shared.string(from: now.addingTimeInterval(90))
+        XCTAssertEqual(Formatters.formatRelativeTime(justAhead, now: now), String(localized: "just now"))
+        XCTAssertEqual(Formatters.formatRelativeTime(farAhead, now: now), String(localized: "just now"))
+    }
+
+    func test_formatRelativeTime_allowsFutureKeepsUpcomingTimes() {
+        let now = Date()
+        let upcoming = ISO8601DateFormatter.shared.string(from: now.addingTimeInterval(3600))
+        let result = Formatters.formatRelativeTime(upcoming, allowsFuture: true, now: now)
+        XCTAssertNotEqual(result, String(localized: "just now"))
+        XCTAssertFalse(result.isEmpty)
+    }
+
     func test_formatRelativeTime_returnsOriginalOnParseFailure() {
         let garbage = "not-a-date"
         XCTAssertEqual(Formatters.formatRelativeTime(garbage), garbage)

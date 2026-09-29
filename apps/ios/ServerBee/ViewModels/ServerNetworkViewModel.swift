@@ -10,7 +10,8 @@ final class ServerNetworkViewModel {
     var records: [ProbeRecordDto] = []
     var anomalies: [NetworkProbeAnomaly] = []
 
-    var range: NetworkRange = .sixHours
+    /// Same default window as the Metrics tab.
+    var range: NetworkRange = .oneHour
     var isLoading = false
     var isLoadingRecords = false
     var loadError: String?

@@ -2,7 +2,8 @@ import SwiftUI
 
 // MARK: - Summary
 
-/// Event-type KPI summary (brute force / port scan / login counts).
+/// Event-type KPI summary: large colored brute force / port scan / login counts
+/// under a "Last 30 days" title with the total across every event type.
 struct SecuritySummaryCard: View {
     let typeCounts: [StatsBucket]
 
@@ -10,35 +11,57 @@ struct SecuritySummaryCard: View {
         typeCounts.first { $0.key == type }?.count ?? 0
     }
 
-    var body: some View {
-        SectionCard(String(localized: "Last 30 days"), systemImage: "shield.lefthalf.filled") {
-            HStack(spacing: 12) {
-                kpi(count("ssh_brute_force"), String(localized: "Brute force"), "lock.trianglebadge.exclamationmark", .red)
-                kpi(count("port_scan"), String(localized: "Port scans"), "dot.radiowaves.left.and.right", .orange)
-                kpi(count("ssh_login"), String(localized: "Logins"), "person.badge.key", .blue)
-            }
-        }
+    /// Sum of every bucket, including event types without a dedicated KPI.
+    private var total: Int {
+        typeCounts.reduce(0) { $0 + $1.count }
     }
 
-    private func kpi(_ value: Int, _ label: String, _ icon: String, _ color: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(color)
-            Text("\(value)")
-                .font(.title2.bold().monospacedDigit())
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(String(localized: "Last 30 days"))
+                    .font(.subheadline.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                Text(total == 1 ? String(localized: "1 event") : String(localized: "\(total) events"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            HStack(alignment: .top, spacing: 8) {
+                kpi("ssh_brute_force", String(localized: "Brute force"))
+                kpi("port_scan", String(localized: "Port scans"))
+                kpi("ssh_login", String(localized: "Logins"))
+            }
         }
-        .frame(maxWidth: .infinity)
+        .cardSurface()
+    }
+
+    private func kpi(_ type: String, _ label: String) -> some View {
+        let value = count(type)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(value, format: .number)
+                .font(.title.bold())
+                .monospacedDigit()
+                .foregroundStyle(SecurityEventKind.color(type))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(value, format: .number))
     }
 }
 
 // MARK: - Feed
 
-/// Scrollable list of security events with a load-more affordance.
+/// "Events" group: a grouped surface of event rows plus a plain load-more
+/// affordance underneath.
 struct SecurityFeedCard: View {
     let events: [SecurityEvent]
     let onSelect: (SecurityEvent) -> Void
@@ -50,111 +73,214 @@ struct SecurityFeedCard: View {
     var serverName: (SecurityEvent) -> String? = { _ in nil }
 
     var body: some View {
-        SectionCard(String(localized: "Events"), systemImage: "list.bullet.rectangle") {
-            VStack(spacing: 0) {
-                ForEach(events) { event in
-                    Button { onSelect(event) } label: {
-                        SecurityEventRow(event: event, serverName: serverName(event))
-                    }
-                    .buttonStyle(.plain)
-                    if event.id != events.last?.id {
-                        Divider()
-                    }
-                }
-                if canLoadMore {
-                    Divider()
-                    Button(action: onLoadMore) {
-                        HStack {
-                            if isLoadingMore {
-                                ProgressView().controlSize(.small)
-                            }
-                            Text(isLoadingMore ? String(localized: "Loading…") : String(localized: "Load more"))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                    }
-                    .disabled(isLoadingMore)
-                }
+        VStack(spacing: 8) {
+            GroupHeader(String(localized: "Events"))
+            SecurityEventRows(events: events, onSelect: onSelect, serverName: serverName)
+            if canLoadMore {
+                loadMoreButton
             }
         }
     }
+
+    private var loadMoreButton: some View {
+        Button(action: onLoadMore) {
+            HStack(spacing: 6) {
+                if isLoadingMore {
+                    ProgressView().controlSize(.small)
+                }
+                Text(isLoadingMore ? String(localized: "Loading…") : String(localized: "Load more"))
+            }
+            .font(.subheadline)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(isLoadingMore)
+    }
 }
 
-/// One event row: severity-tinted type icon, type/IP/time, first-seen badge.
-/// `serverName`, when set, renders a server chip (used in the fleet overview).
+/// The grouped surface holding the event rows, separated by hairlines inset to
+/// the text column (past the icon tile).
+private struct SecurityEventRows: View {
+    let events: [SecurityEvent]
+    let onSelect: (SecurityEvent) -> Void
+    let serverName: (SecurityEvent) -> String?
+
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = SecurityKindIcon.defaultSize
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(events) { event in
+                if event.id != events.first?.id {
+                    Divider()
+                        .padding(.leading, SecurityEventRow.horizontalPadding + iconSize + SecurityEventRow.iconSpacing)
+                }
+                Button { onSelect(event) } label: {
+                    SecurityEventRow(event: event, serverName: serverName(event))
+                }
+                .buttonStyle(SecurityRowButtonStyle())
+            }
+        }
+        .cardSurface(padding: 0)
+    }
+}
+
+/// Grouped-row press feedback: a subtle fill while the finger is down.
+private struct SecurityRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color(.systemGray5) : Color.clear)
+    }
+}
+
+/// One event row: tinted kind tile, title + severity + first-seen badges,
+/// source IP · username, evidence summary, and a trailing time/date column.
+/// At accessibility text sizes the time/date moves under the details so the
+/// row never overflows horizontally.
+/// `serverName`, when set, adds a server line (used in the fleet overview).
 struct SecurityEventRow: View {
     let event: SecurityEvent
     var serverName: String?
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: SecurityEventKind.icon(event.eventType))
-                .font(.body)
-                .foregroundStyle(SecurityEventKind.color(event.eventType))
-                .frame(width: 24)
+    static let horizontalPadding: CGFloat = 16
+    static let iconSpacing: CGFloat = 12
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(SecurityEventKind.label(event.eventType))
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                    SeverityBadge(severity: event.severity)
-                    if event.firstSeen {
-                        Chip(text: String(localized: "New"), color: .blue)
-                    }
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.privacyMode) private var privacyMode
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Self.iconSpacing) {
+            SecurityKindIcon(eventType: event.eventType)
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    details
+                    timestamp
                 }
-                if let serverName {
-                    Label(serverName, systemImage: "server.rack")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                HStack(spacing: 6) {
-                    Text(event.sourceIp)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                    if let user = event.username {
-                        Text("· \(user)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                if let summary = event.evidence?.summary {
-                    Text(summary)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                if let date = event.date {
-                    Text(date, style: .time)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text(date, format: .dateTime.month().day())
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    details
+                    Spacer(minLength: 0)
+                    timestamp
+                        .fixedSize()
                 }
             }
         }
-        .padding(.vertical, 8)
+        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    title
+                    badges
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    title
+                    HStack(spacing: 6) { badges }
+                }
+            }
+            if let serverName {
+                Label(serverName, systemImage: "server.rack")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Text(verbatim: sourceLine)
+                .font(.footnote)
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+            if let summary = event.evidence?.summary {
+                Text(summary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var title: some View {
+        Text(SecurityEventKind.label(event.eventType))
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var badges: some View {
+        SeverityBadge(severity: event.severity)
+            .fixedSize()
+        if event.firstSeen {
+            StatusBadge(text: String(localized: "New"), color: .accentColor)
+                .fixedSize()
+        }
+    }
+
+    /// "203.0.113.5 · deploy" — the username is appended when known. The
+    /// no-break space keeps the separator on the IP's line when a long
+    /// (IPv6) address forces a wrap, so "· user" never starts a line.
+    private var sourceLine: String {
+        let ip = event.sourceIp.maskingIPs(privacyMode)
+        guard let user = event.username, !user.isEmpty else { return ip }
+        return "\(ip)\u{00A0}· \(user)"
+    }
+
+    /// Time over date in the trailing column; side by side when inlined at
+    /// accessibility sizes.
+    @ViewBuilder
+    private var timestamp: some View {
+        if let date = event.date {
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+                : AnyLayout(VStackLayout(alignment: .trailing, spacing: 2))
+            layout {
+                Text(date, style: .time)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text(date, format: .dateTime.month().day())
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .monospacedDigit()
+            .lineLimit(1)
+        }
     }
 }
 
-/// Small severity capsule.
+// MARK: - Badges & icon
+
+/// Severity capsule, tinted by `SecuritySeverity.color`.
 struct SeverityBadge: View {
     let severity: String
 
     var body: some View {
-        let color = SecuritySeverity.color(severity)
-        Text(SecuritySeverity.label(severity))
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+        StatusBadge(text: SecuritySeverity.label(severity), color: SecuritySeverity.color(severity))
+    }
+}
+
+/// Rounded square tinted with the event kind's colour at low opacity, holding
+/// the kind's coloured SF Symbol. Scales with Dynamic Type.
+struct SecurityKindIcon: View {
+    static let defaultSize: CGFloat = 30
+
+    let eventType: String
+    @ScaledMetric private var size: CGFloat
+
+    init(eventType: String, baseSize: CGFloat = SecurityKindIcon.defaultSize) {
+        self.eventType = eventType
+        _size = ScaledMetric(wrappedValue: baseSize, relativeTo: .body)
+    }
+
+    var body: some View {
+        let color = SecurityEventKind.color(eventType)
+        Image(systemName: SecurityEventKind.icon(eventType))
+            .font(.system(size: size * 0.55, weight: .semibold))
             .foregroundStyle(color)
-            .background(color.opacity(0.14))
-            .clipShape(Capsule())
+            .frame(width: size, height: size)
+            .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+            .accessibilityHidden(true)
     }
 }

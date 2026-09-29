@@ -41,7 +41,7 @@ struct ContentView: View {
         ZStack(alignment: .top) {
             TabView(selection: $selectedTab) {
                 NavigationStack(path: $serversPath) {
-                    ServersListView()
+                    ServersListView(resyncLive: resyncLive)
                         .navigationDestination(for: ServerNavigationTarget.self) { target in
                             switch target {
                             case .detailById(let serverId):
@@ -66,8 +66,9 @@ struct ContentView: View {
                         }
                 }
                 .tabItem {
-                    Label("Alerts", systemImage: "bell.badge")
+                    Label("Alerts", systemImage: "bell")
                 }
+                .badge(alertsViewModel.firingCount)
                 .tag(ContentView.alertsTabTag)
 
                 NavigationStack {
@@ -86,6 +87,9 @@ struct ContentView: View {
             }
             .environment(\.apiClient, apiClient)
             .environment(serversViewModel)
+            // Toggles default to green regardless of the accent colour; tint the
+            // whole tree so switches, links and controls share the theme colour.
+            .tint(Color.accentColor)
 
             OfflineBannerView(isConnected: networkMonitor.isConnected)
                 .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)
@@ -99,8 +103,7 @@ struct ContentView: View {
             pushManager.configure(apiClient: apiClient)
 
             await wsClient.setTokenRefresher { [weak authManager] in
-                guard let authManager else { return nil }
-                return try? await authManager.refreshAccessToken()
+                await authManager?.accessTokenForReconnect()
             }
             await wsClient.setOnMessage {
                 [weak serversViewModel, weak alertsViewModel, weak securityFeed, weak upgradeJobs, apiClient] message in
@@ -134,12 +137,27 @@ struct ContentView: View {
             if let tab = UITestSupport.initialTab { selectedTab = tab }
             if let link = UITestSupport.deepLink { handleDeepLink(link) }
             #endif
+
+            // Prime the Alerts tab badge on cold start; afterwards alert_event
+            // frames keep it current without visiting the tab.
+            await alertsViewModel.fetchEvents(apiClient: apiClient)
         }
         .onChange(of: scenePhase) { old, new in
             if old == .background && new == .active {
-                Task { await wsClient.reconnectIfNeeded() }
+                Task { await resyncLive() }
             }
         }
+        .onChange(of: networkMonitor.isConnected) { _, isConnected in
+            if isConnected {
+                Task { await resyncLive() }
+            }
+        }
+    }
+
+    /// Rebuild the live socket for a fresh `full_sync` (online state and
+    /// metrics only arrive over the WebSocket, never from REST).
+    private func resyncLive() async {
+        await wsClient.reconnect(accessToken: authManager.getAccessToken())
     }
 
     /// Route the three upgrade-related frames into the live job store. Full sync

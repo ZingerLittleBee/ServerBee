@@ -42,7 +42,7 @@ struct DatabasesView: View {
                     valueColor: status.installed ? .serverOnline : .secondary
                 )
                 if let source = status.source {
-                    DetailRow(label: String(localized: "Source"), value: source.capitalized)
+                    DetailRow(label: String(localized: "Source"), value: Self.sourceLabel(source))
                 }
                 if let size = status.fileSize {
                     DetailRow(label: String(localized: "Size"), value: Formatters.formatBytes(size))
@@ -65,6 +65,19 @@ struct DatabasesView: View {
                 }
                 .disabled(downloading)
             }
+        }
+    }
+}
+
+// MARK: - Labels
+
+private extension DatabasesView {
+    /// `source` from the GeoIP status: "custom" (a configured mmdb path) or "downloaded".
+    static func sourceLabel(_ source: String) -> String {
+        switch source {
+        case "custom": String(localized: "Custom")
+        case "downloaded": String(localized: "Downloaded")
+        default: source.capitalized
         }
     }
 }

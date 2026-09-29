@@ -92,6 +92,15 @@ final class ServersViewModel {
         servers.filter(\.isOnline).count
     }
 
+    /// Sum of live download rates (bytes/s) across online servers, for the
+    /// fleet summary. Offline servers are skipped so stale rates don't count.
+    var onlineDownloadBytesPerSec: Int64 {
+        servers.reduce(into: Int64(0)) { total, server in
+            guard server.isOnline, let rate = server.networkIn, rate > 0 else { return }
+            total += rate
+        }
+    }
+
     func fetchServers(apiClient: APIClient) async {
         isLoading = true
         defer { isLoading = false }
