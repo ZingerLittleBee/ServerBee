@@ -7,9 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.3] - 2026-09-29
+
+### Added
+
+- **iOS app speaks Simplified Chinese** -- Every screen, error message, and permission prompt is translated, with product and protocol names kept in English as on the web, and Settings → Language switches the app language without changing the device language
+
+- **iOS privacy mode** -- A Settings switch masks the last two parts of every IP address the app shows (`203.0.*.*`, `2001:db8::*:*`), for screenshots and screen sharing
+
+### Changed
+
+- **iOS app redesigned in a native style** -- The server list, server detail tabs, alerts, insights, settings, and login screens follow the system look, and the app icon is the ServerBee radar logo
+
 ### Fixed
 
 - **Linux disk totals count each filesystem once** -- The Agent summed capacity per mount point, so bind mounts, btrfs subvolumes, an SSHFS remote mounted twice, or the files Docker bind-mounts into an Agent container inflated disk total and used space several times over (#183). Mounts of the same device or remote are now counted once
+
+- **Issuing a new enrollment offer no longer loops** -- On a pending server, "Issue new enrollment offer" kept replacing the offer it had just issued, so the dialog stayed loading and the code never settled. It now issues exactly one offer per click
+
+- **iOS live updates recover after network drops** -- The app rebuilds a half-open live connection, keeps retrying after a failed token refresh, and resyncs on pull-to-refresh, and offline servers no longer show their last live metrics
 
 ## [1.0.0-beta.2] - 2026-09-25
 
