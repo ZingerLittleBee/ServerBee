@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Linux disk totals count each filesystem once** -- The Agent summed capacity per mount point, so bind mounts, btrfs subvolumes, an SSHFS remote mounted twice, or the files Docker bind-mounts into an Agent container inflated disk total and used space several times over (#183). Mounts of the same device or remote are now counted once
+
 ## [1.0.0-beta.2] - 2026-09-25
 
 ### Changed
