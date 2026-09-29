@@ -136,7 +136,7 @@ make cargo-clippy     # Rust 代码检查
 
 ### 测试与质量
 
-ServerBee 自带 **3800+ 自动化测试** —— 其中 3200+ 为 Rust（单元测试 + 42 个集成套件，通过 mock-agent 测试桩驱动真实 Axum 路由、经由 HTTP/WebSocket 演练），以及 600+ 前端 Vitest 测试。覆盖率使用 `cargo-llvm-cov` 测量（总体区域覆盖率超过 91%；common ~98%、agent ~90%、server ~92%）。每次 push 都会在 CI 中运行零警告 Clippy、完整 Rust 测试套件，以及前端类型/lint 检查。详见 [测试与质量](https://docs.serverbee.app/zh/docs/testing) 指南。
+ServerBee 自带 **3800+ 自动化测试** —— 其中 3200+ 为 Rust（单元测试 + 42 个集成套件，通过 mock-agent 测试桩驱动真实 Axum 路由、经由 HTTP/WebSocket 演练），以及 600+ 前端 Vitest 测试。覆盖率使用 `cargo-llvm-cov` 测量（总体区域覆盖率超过 91%；common ~98%、agent ~90%、server ~92%）。CI 会按每次变更涉及的领域运行零警告 Clippy、Rust 测试套件，以及前端类型/lint 检查。详见 [测试与质量](https://docs.serverbee.app/zh/docs/testing) 指南。
 
 ## API
 

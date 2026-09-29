@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths-ignore:
       - '**/*.md'
+      - '**/*.mdx'
       - 'LICENSE'
       - 'docs/**'
       - 'apps/ios/**'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths-ignore:
       - '**/*.md'
+      - '**/*.mdx'
       - 'LICENSE'
       - 'docs/**'
       - 'apps/ios/**'
@@ -29,12 +31,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.paths.outputs.rust }}
+      web: ${{ steps.paths.outputs.web }}
+      lint: ${{ steps.paths.outputs.lint }}
+      install: ${{ steps.paths.outputs.install }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Detect Rust changes
+      - name: Detect changed areas
         id: paths
         shell: bash
         env:
@@ -42,28 +47,42 @@ jobs:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            rust_changed=true
-          elif ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
+          # A new branch or force push has no usable base: run everything.
+          run_all=
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] \
+            || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null \
             || ! git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
-            rust_changed=true
-          elif git diff --quiet "$BASE_SHA...$HEAD_SHA" -- \
-            .cargo \
-            .github/workflows/ci.yml \
-            Cargo.lock \
-            Cargo.toml \
-            crates \
-            'rust-toolchain*'; then
-            rust_changed=false
+            run_all=1
+          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
+            files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA")
           else
-            rust_changed=true
+            files=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           fi
 
-          echo "rust=$rust_changed" >> "$GITHUB_OUTPUT"
+          # Workflow edits run every job they could affect.
+          if [[ -z "$run_all" ]] && grep -qE '^\.github/workflows/' <<<"$files"; then
+            run_all=1
+          fi
+
+          area() {
+            local name=$1 pattern=$2 changed=false
+            if [[ -n "$run_all" ]] || grep -qE "$pattern" <<<"$files"; then
+              changed=true
+            fi
+            echo "$name=$changed" | tee -a "$GITHUB_OUTPUT"
+          }
+
+          # Server integration tests exercise the embedded SPA and built-in widgets.
+          area rust '^(\.cargo/|crates/|Cargo\.(toml|lock)$|rust-toolchain|packages/widget-sdk/|apps/web/(src/builtin-widgets/|vite-plugins/|vite\.config\.ts$))'
+          area web '^(apps/web/|packages/|package\.json$|bun\.lock$|tsconfig[^/]*\.json$|turbo\.json$)'
+          # Biome lints the whole repository.
+          area lint '(^biome\.jsonc?$|^package\.json$|^bun\.lock$|\.[cm]?[jt]sx?$|\.jsonc?$|\.css$)'
+          area install '^(deploy/(install|test-install-upgrade)\.sh|scripts/(test-)?extract-changelog\.sh)$'
 
   check:
     name: Check & Lint
     needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -226,6 +245,8 @@ jobs:
 
   frontend:
     name: Frontend Check
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.lint == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -236,18 +257,23 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Type check
+        if: needs.changes.outputs.web == 'true'
         working-directory: apps/web
         run: bun run tsc -b
 
       - name: Test
+        if: needs.changes.outputs.web == 'true'
         working-directory: apps/web
         run: bun run test
 
       - name: Lint
+        if: needs.changes.outputs.lint == 'true'
         run: bun x ultracite check
 
   install-script:
     name: Install Script Lint
+    needs: changes
+    if: needs.changes.outputs.install == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

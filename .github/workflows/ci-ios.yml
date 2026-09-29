@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - 'apps/ios/**'
+      - '!apps/ios/**/*.md'
+      - '.github/workflows/ci-ios.yml'
   pull_request:
     branches: [main]
     paths:
       - 'apps/ios/**'
+      - '!apps/ios/**/*.md'
+      - '.github/workflows/ci-ios.yml'
 
 concurrency:
   group: ci-ios-${{ github.ref }}

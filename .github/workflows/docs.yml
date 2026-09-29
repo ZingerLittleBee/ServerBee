@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/ci.yml'
       - '.github/workflows/docs.yml'
       - '.github/workflows/release.yml'
       - 'apps/docs/**'
@@ -19,6 +20,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - '.github/workflows/ci.yml'
       - '.github/workflows/docs.yml'
       - '.github/workflows/release.yml'
       - 'apps/docs/**'
