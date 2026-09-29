@@ -240,30 +240,36 @@ for (const [locale, testing] of [
 
 const enTestingProse = normalizedProse(enTesting)
 for (const fact of [
-  /pull requests?.{0,100}rust(?:-relevant| related) changes?/i,
-  /(?:(?:skip|omit|do not run).{0,60}rust (?:jobs|gates|checks|tests)|rust (?:jobs|gates|checks|tests).{0,60}(?:skipped|omitted|not run))/i,
-  /push(?:es)?.{0,100}trigger.{0,100}(?:run|enable).{0,60}rust (?:jobs|gates|checks|tests)/i
+  /runs? only the gates for the areas/i,
+  /widget.{0,80}run the rust gates/i,
+  /(?:workflow file|usable base commit).{0,120}runs? every gate/i
 ]) {
-  invariant(fact.test(enTestingProse), 'en/testing.mdx does not explain the path-aware Rust CI boundary')
+  invariant(fact.test(enTestingProse), 'en/testing.mdx does not explain the path-aware CI areas')
 }
 
 const zhTestingProse = normalizedProse(zhTesting)
 for (const fact of [
-  /(?:Pull Request.{0,100}Rust.{0,30}(?:相关)?变更|Rust.{0,30}(?:相关)?变更.{0,100}Pull Request)/i,
-  /(?:跳过|不(?:会)?运行).{0,40}Rust (?:任务|质量门槛|检查|测试)/i,
-  /(?:push.{0,100}触发|触发.{0,100}push).{0,100}(?:运行|执行|启用).{0,40}Rust (?:任务|质量门槛|检查|测试)/i
+  /只运行受影响领域的检查/,
+  /widget.{0,60}也会运行 Rust 检查/i,
+  /(?:工作流文件|基准提交).{0,80}都会运行全部检查/
 ]) {
-  invariant(fact.test(zhTestingProse), 'zh/testing.mdx does not explain the path-aware Rust CI boundary')
+  invariant(fact.test(zhTestingProse), 'zh/testing.mdx does not explain the path-aware CI areas')
 }
 
 const ciWorkflow = await text(join(repository, '.github/workflows/ci.yml'))
+for (const area of ['rust', 'web', 'lint', 'install']) {
+  invariant(
+    new RegExp(`area ${area} '`).test(ciWorkflow) && ciWorkflow.includes(`needs.changes.outputs.${area} == 'true'`),
+    `CI no longer gates jobs on the ${area} area; update the testing documentation`
+  )
+}
 invariant(
-  /EVENT_NAME[\s\S]{0,100}!= "pull_request"[\s\S]{0,100}rust_changed=true/.test(ciWorkflow),
-  'CI no longer enables Rust jobs for every triggering push; update the testing documentation'
+  /area rust '[^\n]*builtin-widgets/.test(ciWorkflow),
+  'CI no longer runs Rust gates for built-in widget changes; update the testing documentation'
 )
 invariant(
-  /git diff --quiet[\s\S]{0,400}rust_changed=false/.test(ciWorkflow),
-  'CI no longer skips Rust jobs for pull requests without Rust-relevant changes; update the testing documentation'
+  /\^\\\.github\/workflows\/[\s\S]{0,120}run_all=1/.test(ciWorkflow),
+  'CI no longer runs every gate for workflow changes; update the testing documentation'
 )
 
 const enIndex = await text(join(contentRoot, 'en/index.mdx'))
@@ -272,26 +278,16 @@ invariant(!enIndex.includes('every change passes'), 'en/index.mdx overstates CI 
 invariant(!zhIndex.includes('每次改动都要通过'), 'zh/index.mdx overstates CI coverage')
 const enIndexProse = normalizedProse(enIndex)
 for (const fact of [
-  /rust-relevant pull requests?/i,
-  /every push.{0,100}trigger/i,
+  /changed files/i,
+  /only for the areas/i,
   /(?:run|enable).{0,60}rust (?:(?:test )?jobs|gates|checks|tests)|rust (?:(?:test )?jobs|gates|checks|tests).{0,60}(?:run|enabled)/i
 ]) {
-  invariant(
-    fact.test(enIndexProse),
-    'en/index.mdx does not distinguish path-gated pull requests from triggering pushes'
-  )
+  invariant(fact.test(enIndexProse), 'en/index.mdx does not describe the path-aware CI areas')
 }
 
 const zhIndexProse = normalizedProse(zhIndex)
-for (const fact of [
-  /Rust.{0,30}相关变更.{0,100}Pull Request/i,
-  /(?:触发.{0,100}push|push.{0,100}触发)/i,
-  /(?:运行|执行).{0,40}Rust (?:任务|质量门槛|检查|测试)/i
-]) {
-  invariant(
-    fact.test(zhIndexProse),
-    'zh/index.mdx does not distinguish path-gated pull requests from triggering pushes'
-  )
+for (const fact of [/变更文件/, /只针对变更涉及的领域/, /(?:运行|执行).{0,40}Rust (?:任务|质量门槛|检查|测试)/i]) {
+  invariant(fact.test(zhIndexProse), 'zh/index.mdx does not describe the path-aware CI areas')
 }
 
 const zhAlerts = await text(join(contentRoot, 'zh/alerts.mdx'))

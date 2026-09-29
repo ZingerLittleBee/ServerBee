@@ -1,0 +1,5 @@
+# Fast local git hooks only. Do not add tests, tsc, or clippy here.
+commit-msg:
+  commands:
+    attribution:
+      run: bash .github/scripts/check-commit-msg.sh "{1}"
