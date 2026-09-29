@@ -45,7 +45,8 @@
     "db:local": "turbo -F @serverbee/db db:local",
     "check": "ultracite check",
     "lint": "bun run check",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "prepare": "lefthook install"
   },
   "dependencies": {
     "@serverbee/env": "workspace:*",
@@ -56,6 +57,7 @@
     "@biomejs/biome": "2.4.5",
     "@serverbee/config": "workspace:*",
     "@types/node": "catalog:",
+    "lefthook": "^2.1.14",
     "turbo": "^2.8.12",
     "typescript": "^5",
     "ultracite": "7.2.5"

@@ -63,3 +63,6 @@ agent.toml
 .superpowers/
 .testloop/*
 !.testloop/reports/
+
+# Personal Lefthook overrides
+lefthook-local.yml
