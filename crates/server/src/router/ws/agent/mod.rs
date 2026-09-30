@@ -439,23 +439,23 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             ref transfer_id,
             size,
         } => {
-            file_transfer::on_download_ready(state, transfer_id, size).await;
+            file_transfer::on_download_ready(state, server_id, transfer_id, size).await;
         }
         AgentMessage::FileDownloadChunk {
             ref transfer_id,
             offset,
             ref data,
         } => {
-            file_transfer::on_download_chunk(state, transfer_id, offset, data).await;
+            file_transfer::on_download_chunk(state, server_id, transfer_id, offset, data).await;
         }
         AgentMessage::FileDownloadEnd { ref transfer_id } => {
-            file_transfer::on_download_end(state, transfer_id);
+            file_transfer::on_download_end(state, server_id, transfer_id);
         }
         AgentMessage::FileDownloadError {
             ref transfer_id,
             ref error,
         } => {
-            file_transfer::on_download_error(state, transfer_id, error);
+            file_transfer::on_download_error(state, server_id, transfer_id, error);
         }
         // File upload transfer messages
         AgentMessage::FileUploadAck {

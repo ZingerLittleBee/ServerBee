@@ -26,7 +26,31 @@ pub(super) fn relay_control_response(
     }
 }
 
-pub(super) async fn on_download_ready(state: &Arc<AppState>, transfer_id: &str, size: u64) {
+/// Transfer ids are agent-supplied, so only the agent a transfer was started
+/// on may drive it. Unknown transfers are ignored silently (late frames after
+/// cleanup); transfers owned by another server are dropped with a warning.
+fn sender_owns_transfer(state: &Arc<AppState>, server_id: &str, transfer_id: &str) -> bool {
+    match state.file_transfers.server_id_of(transfer_id) {
+        Some(owner) if owner == server_id => true,
+        Some(owner) => {
+            tracing::warn!(
+                "Dropping file transfer frame for {transfer_id}: server_id mismatch (transfer={owner}, sender={server_id})"
+            );
+            false
+        }
+        None => false,
+    }
+}
+
+pub(super) async fn on_download_ready(
+    state: &Arc<AppState>,
+    server_id: &str,
+    transfer_id: &str,
+    size: u64,
+) {
+    if !sender_owns_transfer(state, server_id, transfer_id) {
+        return;
+    }
     state.file_transfers.update_size(transfer_id, size);
     state.file_transfers.mark_in_progress(transfer_id);
     // Create the temp file and keep it open for the duration of the transfer
@@ -47,12 +71,16 @@ pub(super) async fn on_download_ready(state: &Arc<AppState>, transfer_id: &str, 
 
 pub(super) async fn on_download_chunk(
     state: &Arc<AppState>,
+    server_id: &str,
     transfer_id: &str,
     offset: u64,
     data: &str,
 ) {
     use base64::Engine;
     use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+    if !sender_owns_transfer(state, server_id, transfer_id) {
+        return;
+    }
     if let Some(file_handle) = state.file_transfers.get_file_handle(transfer_id) {
         match base64::engine::general_purpose::STANDARD.decode(data) {
             Ok(bytes) => {
@@ -87,12 +115,23 @@ pub(super) async fn on_download_chunk(
     }
 }
 
-pub(super) fn on_download_end(state: &Arc<AppState>, transfer_id: &str) {
+pub(super) fn on_download_end(state: &Arc<AppState>, server_id: &str, transfer_id: &str) {
+    if !sender_owns_transfer(state, server_id, transfer_id) {
+        return;
+    }
     state.file_transfers.remove_file_handle(transfer_id);
     state.file_transfers.mark_ready(transfer_id);
 }
 
-pub(super) fn on_download_error(state: &Arc<AppState>, transfer_id: &str, error: &str) {
+pub(super) fn on_download_error(
+    state: &Arc<AppState>,
+    server_id: &str,
+    transfer_id: &str,
+    error: &str,
+) {
+    if !sender_owns_transfer(state, server_id, transfer_id) {
+        return;
+    }
     state.file_transfers.remove_file_handle(transfer_id);
     state
         .file_transfers
@@ -106,6 +145,9 @@ pub(super) fn on_upload_ack(
     offset: u64,
     msg: &AgentMessage,
 ) {
+    if !sender_owns_transfer(state, server_id, transfer_id) {
+        return;
+    }
     state.file_transfers.update_progress(transfer_id, offset);
     let ack_key = AgentManager::upload_ack_key(transfer_id);
     state
@@ -119,6 +161,9 @@ pub(super) fn on_upload_complete(
     transfer_id: &str,
     msg: &AgentMessage,
 ) {
+    if !sender_owns_transfer(state, server_id, transfer_id) {
+        return;
+    }
     state.file_transfers.mark_ready(transfer_id);
     let complete_key = AgentManager::upload_complete_key(transfer_id);
     state
@@ -133,6 +178,9 @@ pub(super) fn on_upload_error(
     error: &str,
     msg: &AgentMessage,
 ) {
+    if !sender_owns_transfer(state, server_id, transfer_id) {
+        return;
+    }
     state
         .file_transfers
         .mark_failed(transfer_id, error.to_string());
