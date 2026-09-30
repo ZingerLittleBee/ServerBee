@@ -467,11 +467,29 @@ async fn test_capability_denied_writes_synthetic_task_result() {
     let client = http_client();
     login_admin(&client, &base_url).await;
 
-    let (_server_id, mut sink, mut reader) = bring_up_agent(&client, &base_url).await;
+    let (server_id, mut sink, mut reader) = bring_up_agent(&client, &base_url).await;
 
     // A CapabilityDenied carrying a msg_id (treated as a task id) with no pending
-    // exec waiter is persisted directly as a task_result with exit_code = -2.
-    let denied_task_id = "denied-task-42";
+    // exec waiter is persisted directly as a task_result with exit_code = -2,
+    // provided it names a one-shot task that targets this agent.
+    let create_resp = client
+        .post(format!("{}/api/tasks", base_url))
+        .json(&json!({
+            "command": "echo hi",
+            "server_ids": [server_id],
+            "task_type": "oneshot",
+            "name": "denied-exec"
+        }))
+        .send()
+        .await
+        .expect("create task failed");
+    assert_eq!(create_resp.status(), 200, "task creation should succeed");
+    let task_body: Value = create_resp.json().await.expect("parse task response");
+    let denied_task_id = task_body["data"]["id"]
+        .as_str()
+        .expect("task id missing")
+        .to_string();
+    let denied_task_id = denied_task_id.as_str();
     send_agent_frame(
         &mut sink,
         json!({

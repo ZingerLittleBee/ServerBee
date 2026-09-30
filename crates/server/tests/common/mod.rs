@@ -226,7 +226,11 @@ pub async fn register_agent(client: &reqwest::Client, base_url: &str) -> (String
 
 /// Open the agent WebSocket with the given token and return its split halves.
 pub async fn connect_agent(base_url: &str, token: &str) -> (AgentSink, AgentReader) {
-    let ws_url = format!("{}/api/agent/ws?token={}", base_url.replace("http://", "ws://"), token);
+    let ws_url = format!(
+        "{}/api/agent/ws?token={}",
+        base_url.replace("http://", "ws://"),
+        token
+    );
     let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
         .expect("agent WebSocket connection failed");

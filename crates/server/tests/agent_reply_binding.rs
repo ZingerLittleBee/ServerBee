@@ -174,3 +174,135 @@ async fn test_agent_cannot_answer_scheduled_exec_of_another_server() {
         "forged output must not be persisted: {rows:?}"
     );
 }
+
+async fn wait_for_ack(reader: &mut AgentReader, msg_id: &str) {
+    loop {
+        let msg = recv_agent_text(reader).await;
+        if msg["type"] == "ack" && msg["msg_id"] == msg_id {
+            return;
+        }
+    }
+}
+
+async fn task_results(client: &reqwest::Client, base_url: &str, task_id: &str) -> Vec<Value> {
+    let body: Value = client
+        .get(format!("{base_url}/api/tasks/{task_id}/results"))
+        .send()
+        .await
+        .expect("GET task results failed")
+        .json()
+        .await
+        .expect("parse task results");
+    body["data"].as_array().cloned().unwrap_or_default()
+}
+
+async fn exec_finished_audits_for(
+    client: &reqwest::Client,
+    base_url: &str,
+    task_id: &str,
+) -> Vec<Value> {
+    let body: Value = client
+        .get(format!(
+            "{base_url}/api/audit-logs?action=exec_finished&limit=200"
+        ))
+        .send()
+        .await
+        .expect("GET audit logs failed")
+        .json()
+        .await
+        .expect("parse audit logs");
+    body["data"]["entries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|entry| serde_json::from_str::<Value>(entry["detail"].as_str()?).ok())
+        .filter(|detail| detail["task_id"] == task_id)
+        .collect()
+}
+
+/// A result with no pending waiter is only accepted for a one-shot task that
+/// was sent to the reporting agent. Agent A must not be able to attach a
+/// result, a capability-denied row, or an exec_finished audit entry to a task
+/// that only targets agent B; B itself still can.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_unsolicited_task_result_for_other_server_is_dropped() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (_a_id, mut a_sink, mut a_reader) = bring_up_exec_agent(&client, &base_url, "a").await;
+    let (b_id, mut b_sink, mut b_reader) = bring_up_exec_agent(&client, &base_url, "b").await;
+
+    // One-shot task targeting only B, created but never run.
+    let created: Value = client
+        .post(format!("{base_url}/api/tasks"))
+        .json(&json!({
+            "command": "uptime",
+            "server_ids": [b_id],
+            "task_type": "oneshot",
+            "name": "b only"
+        }))
+        .send()
+        .await
+        .expect("create task failed")
+        .json()
+        .await
+        .expect("parse task response");
+    let task_id = created["data"]["id"]
+        .as_str()
+        .expect("task id missing")
+        .to_string();
+
+    send_agent_frame(
+        &mut a_sink,
+        json!({
+            "type": "capability_denied",
+            "msg_id": task_id,
+            "session_id": null,
+            "capability": "exec",
+            "reason": "agent_capability_disabled"
+        }),
+    )
+    .await;
+    send_agent_frame(
+        &mut a_sink,
+        json!({"type": "task_result", "msg_id": "a1", "task_id": task_id,
+            "output": "forged by agent A\n", "exit_code": 0}),
+    )
+    .await;
+    // Still acked so a well-behaved agent stops retrying.
+    wait_for_ack(&mut a_reader, "a1").await;
+
+    assert!(
+        task_results(&client, &base_url, &task_id).await.is_empty(),
+        "results from a non-target agent must not be persisted"
+    );
+    assert!(
+        exec_finished_audits_for(&client, &base_url, &task_id)
+            .await
+            .is_empty(),
+        "a non-target agent must not produce exec_finished audit entries"
+    );
+
+    // Positive control: the targeted agent's result is still accepted.
+    send_agent_frame(
+        &mut b_sink,
+        json!({"type": "task_result", "msg_id": "b1", "task_id": task_id,
+            "output": "up 3 days\n", "exit_code": 0}),
+    )
+    .await;
+    wait_for_ack(&mut b_reader, "b1").await;
+
+    let rows = task_results(&client, &base_url, &task_id).await;
+    assert_eq!(rows.len(), 1, "only B's result should be stored: {rows:?}");
+    assert_eq!(rows[0]["server_id"], b_id.as_str());
+    assert_eq!(rows[0]["output"], "up 3 days\n");
+    assert_eq!(
+        exec_finished_audits_for(&client, &base_url, &task_id)
+            .await
+            .len(),
+        1,
+        "B's result should be audited once"
+    );
+}
