@@ -382,7 +382,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             network::on_ping_result(state, server_id, result).await;
         }
         AgentMessage::TerminalOutput { session_id, data } => {
-            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+            if let Some(tx) = state
+                .agent_manager
+                .get_terminal_session(server_id, &session_id)
+            {
                 let _ = tx
                     .send(crate::service::agent_manager::TerminalSessionEvent::Output(
                         data,
@@ -391,14 +394,20 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::TerminalStarted { session_id } => {
-            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+            if let Some(tx) = state
+                .agent_manager
+                .get_terminal_session(server_id, &session_id)
+            {
                 let _ = tx
                     .send(crate::service::agent_manager::TerminalSessionEvent::Started)
                     .await;
             }
         }
         AgentMessage::TerminalError { session_id, error } => {
-            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+            if let Some(tx) = state
+                .agent_manager
+                .get_terminal_session(server_id, &session_id)
+            {
                 let _ = tx
                     .send(crate::service::agent_manager::TerminalSessionEvent::Error(
                         error,

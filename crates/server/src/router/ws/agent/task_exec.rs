@@ -92,7 +92,9 @@ pub(super) async fn on_capability_denied(
     }
     // For terminal: unregister session so browser gets notified
     if let Some(sid) = &session_id {
-        state.agent_manager.unregister_terminal_session(sid);
+        state
+            .agent_manager
+            .unregister_agent_terminal_session(server_id, sid);
     }
 }
 

@@ -413,10 +413,24 @@ impl AgentManager {
         self.terminal_sessions.remove(session_id);
     }
 
-    /// Get the terminal output sender for a session.
-    pub fn get_terminal_session(&self, session_id: &str) -> Option<TerminalOutputTx> {
+    /// Unregister a terminal session on behalf of agent `server_id`. Sessions
+    /// owned by another server are left untouched.
+    pub fn unregister_agent_terminal_session(&self, server_id: &str, session_id: &str) {
+        self.terminal_sessions
+            .remove_if(session_id, |_, session| session.server_id == server_id);
+    }
+
+    /// Get the terminal output sender for a session opened on `server_id`.
+    /// Returns None for unknown sessions and for sessions owned by another
+    /// server, so an agent can only feed its own terminal sessions.
+    pub fn get_terminal_session(
+        &self,
+        server_id: &str,
+        session_id: &str,
+    ) -> Option<TerminalOutputTx> {
         self.terminal_sessions
             .get(session_id)
+            .filter(|session| session.server_id == server_id)
             .map(|session| session.tx.clone())
     }
 
@@ -1207,9 +1221,9 @@ mod tests {
         let (mgr, _rx) = make_manager();
         let (tx, _) = mpsc::channel(1);
         mgr.register_terminal_session("sess1".into(), "server1".into(), tx);
-        assert!(mgr.get_terminal_session("sess1").is_some());
+        assert!(mgr.get_terminal_session("server1", "sess1").is_some());
         mgr.unregister_terminal_session("sess1");
-        assert!(mgr.get_terminal_session("sess1").is_none());
+        assert!(mgr.get_terminal_session("server1", "sess1").is_none());
     }
 
     #[test]
@@ -1471,6 +1485,20 @@ mod tests {
             Ok(AgentMessage::TaskResult { result, .. }) => assert_eq!(result.output, "genuine"),
             other => panic!("unexpected pending result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_terminal_session_is_bound_to_its_server() {
+        let (mgr, _rx) = make_manager();
+        let (tx, _trx) = mpsc::channel(1);
+        mgr.register_terminal_session("sess1".into(), "server1".into(), tx);
+
+        assert!(mgr.get_terminal_session("server2", "sess1").is_none());
+        mgr.unregister_agent_terminal_session("server2", "sess1");
+        assert!(mgr.get_terminal_session("server1", "sess1").is_some());
+
+        mgr.unregister_agent_terminal_session("server1", "sess1");
+        assert!(mgr.get_terminal_session("server1", "sess1").is_none());
     }
 
     #[tokio::test]
