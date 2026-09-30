@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.4] - 2026-09-30
+
+### Security
+
+- **Agents can only answer requests sent to their own server** -- The Server matched an Agent's reply to a pending request by the id inside the reply alone, so one connected Agent could answer a scheduled task run on another server and record a forged exit code and output for it (#187, reported by @Koukyosyumei). Replies are now accepted only from the server the request was sent to, and the same check covers terminal sessions, file downloads and uploads, and Docker requests
+
+- **Task results are only accepted for tasks sent to the reporting Agent** -- An Agent could store a result, and an `exec_finished` audit entry, for any task id, including tasks that never targeted it. Such results are now dropped
+
 ## [1.0.0-beta.3] - 2026-09-29
 
 ### Added

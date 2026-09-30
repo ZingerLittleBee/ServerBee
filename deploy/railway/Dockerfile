@@ -1,4 +1,4 @@
-ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.3
+ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.4
 FROM ghcr.io/zingerlittlebee/serverbee-server:${SERVERBEE_IMAGE_TAG}
 
 # ── Server ──────────────────────────────────────────────────────
