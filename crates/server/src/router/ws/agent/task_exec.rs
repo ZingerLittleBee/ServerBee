@@ -16,6 +16,7 @@ pub(super) async fn on_task_result(
 ) {
     // Try pending dispatch first (scheduler or other waiters)
     let dispatched = state.agent_manager.dispatch_pending_response(
+        server_id,
         &result.task_id,
         AgentMessage::TaskResult {
             msg_id: msg_id.clone(),
@@ -56,6 +57,7 @@ pub(super) async fn on_capability_denied(
             exit_code: -2,
         };
         let dispatched = state.agent_manager.dispatch_pending_response(
+            server_id,
             task_id,
             AgentMessage::TaskResult {
                 msg_id: task_id.clone(),

@@ -20,7 +20,7 @@ pub(super) fn on_docker_info(
     if let Some(msg_id) = msg_id {
         state
             .agent_manager
-            .dispatch_pending_response(msg_id, msg.clone());
+            .dispatch_pending_response(server_id, msg_id, msg.clone());
     }
     state
         .agent_manager
@@ -43,7 +43,7 @@ pub(super) fn on_docker_containers(
     if let Some(msg_id) = msg_id {
         state
             .agent_manager
-            .dispatch_pending_response(msg_id, msg.clone());
+            .dispatch_pending_response(server_id, msg_id, msg.clone());
     }
     let stats = state.agent_manager.get_docker_stats(server_id);
     state
@@ -109,7 +109,7 @@ pub(super) async fn on_docker_unavailable(
     if let Some(msg_id) = msg_id {
         state
             .agent_manager
-            .dispatch_pending_response(msg_id, msg.clone());
+            .dispatch_pending_response(server_id, msg_id, msg.clone());
     }
 }
 

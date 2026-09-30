@@ -605,15 +605,32 @@ impl AgentManager {
         }
     }
 
-    /// Dispatch a response from the agent to a pending HTTP request.
-    /// Returns true if the response was delivered, false if no pending request was found.
-    pub fn dispatch_pending_response(&self, msg_id: &str, message: AgentMessage) -> bool {
-        if let Some((_, pending)) = self.pending_requests.remove(msg_id) {
+    /// Dispatch a response from agent `server_id` to a pending HTTP request.
+    ///
+    /// The slot is only consumed when it was registered for the same server:
+    /// correlation ids are agent-supplied, so a reply naming another server's
+    /// request is dropped and that request keeps waiting for its own agent.
+    /// Returns true if the response was delivered, false otherwise.
+    pub fn dispatch_pending_response(
+        &self,
+        server_id: &str,
+        msg_id: &str,
+        message: AgentMessage,
+    ) -> bool {
+        if let Some((_, pending)) = self
+            .pending_requests
+            .remove_if(msg_id, |_, pending| pending.server_id == server_id)
+        {
             let _ = pending.tx.send(message);
-            true
-        } else {
-            false
+            return true;
         }
+        if let Some(pending) = self.pending_requests.get(msg_id) {
+            tracing::warn!(
+                "Dropping agent response {msg_id}: server_id mismatch (pending={}, sender={server_id})",
+                pending.server_id
+            );
+        }
+        false
     }
 
     // --- Docker cache methods ---
@@ -1387,6 +1404,7 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(10));
         mgr.cleanup_expired_requests();
         let dispatched = mgr.dispatch_pending_response(
+            "s1",
             "old",
             AgentMessage::FileOpResult {
                 msg_id: "old".into(),
@@ -1404,6 +1422,7 @@ mod tests {
         assert!(rx.try_recv().is_err());
 
         let dispatched = mgr.dispatch_pending_response(
+            "s1",
             "req1",
             AgentMessage::FileOpResult {
                 msg_id: "req1".into(),
@@ -1414,6 +1433,7 @@ mod tests {
         assert!(dispatched);
 
         let dispatched2 = mgr.dispatch_pending_response(
+            "s1",
             "req1",
             AgentMessage::FileOpResult {
                 msg_id: "req1".into(),
@@ -1422,6 +1442,35 @@ mod tests {
             },
         );
         assert!(!dispatched2);
+    }
+
+    #[test]
+    fn test_pending_response_from_other_server_is_dropped() {
+        let (mgr, _rx) = make_manager();
+        let mut rx = mgr.register_pending_request("s1", "req1".into());
+        let reply = |output: &str| AgentMessage::TaskResult {
+            msg_id: "m".into(),
+            result: serverbee_common::types::TaskResult {
+                task_id: "req1".into(),
+                output: output.into(),
+                exit_code: 0,
+            },
+        };
+
+        // A reply naming s1's request but sent by s2 must not consume the slot.
+        assert!(!mgr.dispatch_pending_response("s2", "req1", reply("forged")));
+        assert!(mgr.has_pending_request("req1"));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+
+        // The genuine reply from s1 is still delivered afterwards.
+        assert!(mgr.dispatch_pending_response("s1", "req1", reply("genuine")));
+        match rx.try_recv() {
+            Ok(AgentMessage::TaskResult { result, .. }) => assert_eq!(result.output, "genuine"),
+            other => panic!("unexpected pending result: {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -1501,6 +1550,7 @@ mod tests {
                 panic!("unexpected outbound message");
             };
             assert!(mgr.dispatch_pending_response(
+                "s1",
                 &msg_id,
                 AgentMessage::FileOpResult {
                     msg_id: msg_id.clone(),

@@ -423,7 +423,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         | AgentMessage::FileStatResult { ref msg_id, .. }
         | AgentMessage::FileReadResult { ref msg_id, .. }
         | AgentMessage::FileOpResult { ref msg_id, .. } => {
-            file_transfer::relay_control_response(state, msg_id, &msg);
+            file_transfer::relay_control_response(state, server_id, msg_id, &msg);
         }
         // File download transfer messages
         AgentMessage::FileDownloadReady {
@@ -453,16 +453,16 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             ref transfer_id,
             offset,
         } => {
-            file_transfer::on_upload_ack(state, transfer_id, offset, &msg);
+            file_transfer::on_upload_ack(state, server_id, transfer_id, offset, &msg);
         }
         AgentMessage::FileUploadComplete { ref transfer_id } => {
-            file_transfer::on_upload_complete(state, transfer_id, &msg);
+            file_transfer::on_upload_complete(state, server_id, transfer_id, &msg);
         }
         AgentMessage::FileUploadError {
             ref transfer_id,
             ref error,
         } => {
-            file_transfer::on_upload_error(state, transfer_id, error, &msg);
+            file_transfer::on_upload_error(state, server_id, transfer_id, error, &msg);
         }
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
@@ -508,7 +508,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         | AgentMessage::DockerActionResult { ref msg_id, .. } => {
             state
                 .agent_manager
-                .dispatch_pending_response(msg_id, msg.clone());
+                .dispatch_pending_response(server_id, msg_id, msg.clone());
         }
         AgentMessage::IpChanged {
             ipv4,

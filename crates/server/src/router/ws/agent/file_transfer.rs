@@ -12,10 +12,15 @@ use serverbee_common::protocol::AgentMessage;
 
 /// Relay a file control response (list/stat/read/op result) to the pending
 /// HTTP request that initiated it.
-pub(super) fn relay_control_response(state: &Arc<AppState>, msg_id: &str, msg: &AgentMessage) {
+pub(super) fn relay_control_response(
+    state: &Arc<AppState>,
+    server_id: &str,
+    msg_id: &str,
+    msg: &AgentMessage,
+) {
     if !state
         .agent_manager
-        .dispatch_pending_response(msg_id, msg.clone())
+        .dispatch_pending_response(server_id, msg_id, msg.clone())
     {
         tracing::debug!("Orphaned file control response for msg_id={msg_id}");
     }
@@ -96,6 +101,7 @@ pub(super) fn on_download_error(state: &Arc<AppState>, transfer_id: &str, error:
 
 pub(super) fn on_upload_ack(
     state: &Arc<AppState>,
+    server_id: &str,
     transfer_id: &str,
     offset: u64,
     msg: &AgentMessage,
@@ -104,19 +110,25 @@ pub(super) fn on_upload_ack(
     let ack_key = AgentManager::upload_ack_key(transfer_id);
     state
         .agent_manager
-        .dispatch_pending_response(&ack_key, msg.clone());
+        .dispatch_pending_response(server_id, &ack_key, msg.clone());
 }
 
-pub(super) fn on_upload_complete(state: &Arc<AppState>, transfer_id: &str, msg: &AgentMessage) {
+pub(super) fn on_upload_complete(
+    state: &Arc<AppState>,
+    server_id: &str,
+    transfer_id: &str,
+    msg: &AgentMessage,
+) {
     state.file_transfers.mark_ready(transfer_id);
     let complete_key = AgentManager::upload_complete_key(transfer_id);
     state
         .agent_manager
-        .dispatch_pending_response(&complete_key, msg.clone());
+        .dispatch_pending_response(server_id, &complete_key, msg.clone());
 }
 
 pub(super) fn on_upload_error(
     state: &Arc<AppState>,
+    server_id: &str,
     transfer_id: &str,
     error: &str,
     msg: &AgentMessage,
@@ -129,10 +141,10 @@ pub(super) fn on_upload_error(
     let complete_key = AgentManager::upload_complete_key(transfer_id);
     if !state
         .agent_manager
-        .dispatch_pending_response(&complete_key, msg.clone())
+        .dispatch_pending_response(server_id, &complete_key, msg.clone())
     {
         state
             .agent_manager
-            .dispatch_pending_response(&ack_key, msg.clone());
+            .dispatch_pending_response(server_id, &ack_key, msg.clone());
     }
 }
