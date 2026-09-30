@@ -16,19 +16,16 @@ pub(super) async fn on_task_result(
 ) {
     // Try pending dispatch first (scheduler or other waiters)
     let dispatched = state.agent_manager.dispatch_pending_response(
+        server_id,
         &result.task_id,
         AgentMessage::TaskResult {
             msg_id: msg_id.clone(),
             result: result.clone(),
         },
     );
-    if !dispatched {
-        // No waiter — one-shot task, save directly
-        if let Err(e) = save_task_result(&state.db, server_id, &result).await {
-            tracing::error!("Failed to save task result for {server_id}: {e}");
-        }
-    }
-    if let Err(e) = audit_exec_finished(state, server_id, &result).await {
+    // No waiter — one-shot task, save directly
+    let accepted = dispatched || save_oneshot_result(state, server_id, &result).await;
+    if accepted && let Err(e) = audit_exec_finished(state, server_id, &result).await {
         tracing::error!("Failed to write exec_finished audit log for {server_id}: {e}");
     }
     // Send Ack
@@ -56,13 +53,21 @@ pub(super) async fn on_capability_denied(
             exit_code: -2,
         };
         let dispatched = state.agent_manager.dispatch_pending_response(
+            server_id,
             task_id,
             AgentMessage::TaskResult {
                 msg_id: task_id.clone(),
                 result: synthetic,
             },
         );
-        if !dispatched {
+        let is_target = !dispatched
+            && is_oneshot_target(&state.db, task_id, server_id)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to look up task {task_id} for {server_id}: {e}");
+                    false
+                });
+        if is_target {
             use crate::entity::task_result;
             use sea_orm::{ActiveModelTrait, NotSet, Set};
             let result = task_result::ActiveModel {
@@ -90,8 +95,67 @@ pub(super) async fn on_capability_denied(
     }
     // For terminal: unregister session so browser gets notified
     if let Some(sid) = &session_id {
-        state.agent_manager.unregister_terminal_session(sid);
+        state
+            .agent_manager
+            .unregister_agent_terminal_session(server_id, sid);
     }
+}
+
+/// Persist a task result that had no pending waiter. Returns whether it was
+/// accepted, i.e. it answers a one-shot task that was sent to `server_id`.
+async fn save_oneshot_result(
+    state: &Arc<AppState>,
+    server_id: &str,
+    result: &serverbee_common::types::TaskResult,
+) -> bool {
+    match is_oneshot_target(&state.db, &result.task_id, server_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::warn!(
+                "Dropping task result {} from {server_id}: no matching exec was sent to this server",
+                result.task_id
+            );
+            return false;
+        }
+        Err(e) => {
+            tracing::error!(
+                "Failed to look up task {} for {server_id}: {e}",
+                result.task_id
+            );
+            return false;
+        }
+    }
+    if let Err(e) = save_task_result(&state.db, server_id, result).await {
+        tracing::error!("Failed to save task result for {server_id}: {e}");
+    }
+    true
+}
+
+/// Whether `task_id` names a one-shot task that was sent to `server_id`.
+///
+/// Scheduled runs are answered through their pending waiter, so a result with
+/// no waiter is only legitimate for a one-shot task targeting the sender. The
+/// task id is agent-supplied; without this check an agent could attach results
+/// and exec audit entries to tasks it was never asked to run.
+async fn is_oneshot_target(
+    db: &sea_orm::DatabaseConnection,
+    task_id: &str,
+    server_id: &str,
+) -> Result<bool, crate::error::AppError> {
+    use crate::entity::task;
+    use sea_orm::EntityTrait;
+
+    let Some(task_model) = task::Entity::find_by_id(task_id).one(db).await? else {
+        return Ok(false);
+    };
+    if task_model.task_type != "oneshot" {
+        return Ok(false);
+    }
+    let server_ids: Vec<String> =
+        serde_json::from_str(&task_model.server_ids_json).map_err(|e| {
+            crate::error::AppError::Internal(format!("Invalid task server_ids_json: {e}"))
+        })?;
+    Ok(server_ids.iter().any(|id| id == server_id))
 }
 
 /// Save a task result to the database.

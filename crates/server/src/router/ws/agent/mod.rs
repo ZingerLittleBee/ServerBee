@@ -382,7 +382,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             network::on_ping_result(state, server_id, result).await;
         }
         AgentMessage::TerminalOutput { session_id, data } => {
-            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+            if let Some(tx) = state
+                .agent_manager
+                .get_terminal_session(server_id, &session_id)
+            {
                 let _ = tx
                     .send(crate::service::agent_manager::TerminalSessionEvent::Output(
                         data,
@@ -391,14 +394,20 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             }
         }
         AgentMessage::TerminalStarted { session_id } => {
-            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+            if let Some(tx) = state
+                .agent_manager
+                .get_terminal_session(server_id, &session_id)
+            {
                 let _ = tx
                     .send(crate::service::agent_manager::TerminalSessionEvent::Started)
                     .await;
             }
         }
         AgentMessage::TerminalError { session_id, error } => {
-            if let Some(tx) = state.agent_manager.get_terminal_session(&session_id) {
+            if let Some(tx) = state
+                .agent_manager
+                .get_terminal_session(server_id, &session_id)
+            {
                 let _ = tx
                     .send(crate::service::agent_manager::TerminalSessionEvent::Error(
                         error,
@@ -423,46 +432,46 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         | AgentMessage::FileStatResult { ref msg_id, .. }
         | AgentMessage::FileReadResult { ref msg_id, .. }
         | AgentMessage::FileOpResult { ref msg_id, .. } => {
-            file_transfer::relay_control_response(state, msg_id, &msg);
+            file_transfer::relay_control_response(state, server_id, msg_id, &msg);
         }
         // File download transfer messages
         AgentMessage::FileDownloadReady {
             ref transfer_id,
             size,
         } => {
-            file_transfer::on_download_ready(state, transfer_id, size).await;
+            file_transfer::on_download_ready(state, server_id, transfer_id, size).await;
         }
         AgentMessage::FileDownloadChunk {
             ref transfer_id,
             offset,
             ref data,
         } => {
-            file_transfer::on_download_chunk(state, transfer_id, offset, data).await;
+            file_transfer::on_download_chunk(state, server_id, transfer_id, offset, data).await;
         }
         AgentMessage::FileDownloadEnd { ref transfer_id } => {
-            file_transfer::on_download_end(state, transfer_id);
+            file_transfer::on_download_end(state, server_id, transfer_id);
         }
         AgentMessage::FileDownloadError {
             ref transfer_id,
             ref error,
         } => {
-            file_transfer::on_download_error(state, transfer_id, error);
+            file_transfer::on_download_error(state, server_id, transfer_id, error);
         }
         // File upload transfer messages
         AgentMessage::FileUploadAck {
             ref transfer_id,
             offset,
         } => {
-            file_transfer::on_upload_ack(state, transfer_id, offset, &msg);
+            file_transfer::on_upload_ack(state, server_id, transfer_id, offset, &msg);
         }
         AgentMessage::FileUploadComplete { ref transfer_id } => {
-            file_transfer::on_upload_complete(state, transfer_id, &msg);
+            file_transfer::on_upload_complete(state, server_id, transfer_id, &msg);
         }
         AgentMessage::FileUploadError {
             ref transfer_id,
             ref error,
         } => {
-            file_transfer::on_upload_error(state, transfer_id, error, &msg);
+            file_transfer::on_upload_error(state, server_id, transfer_id, error, &msg);
         }
         AgentMessage::Pong => {
             // Agent responded to our protocol-level Ping; already handled by WS Pong frames
@@ -508,7 +517,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
         | AgentMessage::DockerActionResult { ref msg_id, .. } => {
             state
                 .agent_manager
-                .dispatch_pending_response(msg_id, msg.clone());
+                .dispatch_pending_response(server_id, msg_id, msg.clone());
         }
         AgentMessage::IpChanged {
             ipv4,

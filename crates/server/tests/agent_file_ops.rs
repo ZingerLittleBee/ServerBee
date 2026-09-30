@@ -958,3 +958,104 @@ async fn test_cancel_transfer_member_is_403() {
         "member cancel transfer should be 403 (admin-only)"
     );
 }
+
+/// Download frames name the transfer by id, so another agent that knows the id
+/// must not be able to fill or finish it: the transfer stays pending until its
+/// own agent streams the file, and the downloaded bytes are that agent's.
+#[tokio::test]
+async fn test_download_frames_from_another_agent_are_ignored() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+
+    let (_a_id, a_token) = register_agent(&client, &base_url).await;
+    let (mut a_sink, mut a_reader) =
+        connect_agent_with_caps(&base_url, &a_token, CAP_DEFAULT | CAP_FILE).await;
+    let (b_id, b_token) = register_agent(&client, &base_url).await;
+    let (mut b_sink, mut b_reader) =
+        connect_agent_with_caps(&base_url, &b_token, CAP_DEFAULT | CAP_FILE).await;
+
+    let resp = client
+        .post(format!("{base_url}/api/files/{b_id}/download"))
+        .json(&json!({ "path": "/etc/hosts" }))
+        .send()
+        .await
+        .expect("download request failed");
+    assert_eq!(resp.status(), 200, "download start should succeed");
+    let transfer_id = loop {
+        let msg = recv_agent_text(&mut b_reader).await;
+        if msg["type"] == "file_download_start" {
+            break msg["transfer_id"]
+                .as_str()
+                .expect("transfer_id missing")
+                .to_string();
+        }
+    };
+
+    let send = |frame: serde_json::Value| tungstenite::Message::Text(frame.to_string().into());
+    // Agent A streams forged content into B's transfer and marks it done.
+    for frame in [
+        json!({ "type": "file_download_ready", "transfer_id": transfer_id, "size": 6 }),
+        json!({
+            "type": "file_download_chunk",
+            "transfer_id": transfer_id,
+            "offset": 0,
+            "data": "Zm9yZ2Vk"
+        }),
+        json!({ "type": "file_download_end", "transfer_id": transfer_id }),
+        // Acked, so once the Ack arrives every frame above has been handled.
+        json!({ "type": "task_result", "msg_id": "file-cross-sync", "task_id": "file-cross-sync",
+            "output": "", "exit_code": 0 }),
+    ] {
+        a_sink.send(send(frame)).await.expect("send agent A frame");
+    }
+    loop {
+        let msg = recv_agent_text(&mut a_reader).await;
+        if msg["type"] == "ack" && msg["msg_id"] == "file-cross-sync" {
+            break;
+        }
+    }
+
+    let early = client
+        .get(format!("{base_url}/api/files/download/{transfer_id}"))
+        .send()
+        .await
+        .expect("download fetch failed");
+    assert_eq!(early.status(), 400, "transfer must still be pending after agent A's frames");
+
+    // Agent B streams the real file.
+    for frame in [
+        json!({ "type": "file_download_ready", "transfer_id": transfer_id, "size": 7 }),
+        json!({
+            "type": "file_download_chunk",
+            "transfer_id": transfer_id,
+            "offset": 0,
+            "data": "Z2VudWluZQ=="
+        }),
+        json!({ "type": "file_download_end", "transfer_id": transfer_id }),
+    ] {
+        b_sink.send(send(frame)).await.expect("send agent B frame");
+    }
+
+    let mut body = None;
+    for _ in 0..40 {
+        let resp = client
+            .get(format!("{base_url}/api/files/download/{transfer_id}"))
+            .send()
+            .await
+            .expect("download fetch failed");
+        if resp.status() == 200 {
+            body = Some(resp.bytes().await.expect("read download body"));
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        body.as_deref(),
+        Some(&b"genuine"[..]),
+        "downloaded bytes must come from the owning agent"
+    );
+
+    let _ = a_sink.close().await;
+    let _ = b_sink.close().await;
+}

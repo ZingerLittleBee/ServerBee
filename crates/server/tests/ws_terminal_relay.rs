@@ -18,6 +18,8 @@
 //!   - Browser `{"type":"resize"}` -> server `TerminalResize` to agent.
 //!   - Malformed text, binary, and ping frames do not interrupt later input.
 //!   - Agent `terminal_error` -> browser `{"type":"error","error":..}`.
+//!   - Cross-agent isolation: frames naming the session from a different agent
+//!     are neither relayed nor able to close it.
 //!   - Capability gate: an agent advertising CAP_DEFAULT (no CAP_TERMINAL bit)
 //!     makes the handshake fail with HTTP 403.
 //!   - AuthZ: a member (non-admin) is rejected with HTTP 403.
@@ -688,6 +690,114 @@ async fn terminal_ws_relays_agent_error_to_browser() {
 
     let _ = browser_sink.send(tungstenite::Message::Close(None)).await;
     let _ = tokio::time::timeout(Duration::from_secs(5), agent_task).await;
+}
+
+// ── Cross-agent isolation: another agent cannot feed or close the session ──
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_ws_ignores_frames_from_another_agent() {
+    let (base_url, _tmp) = start_test_server().await;
+    let client = http_client();
+    login_admin(&client, &base_url).await;
+    let api_key = create_api_key(&client, &base_url, "term-cross-agent-key").await;
+
+    let (_a_id, mut a_sink, mut a_reader) =
+        bring_up_agent(&client, &base_url, CAP_DEFAULT | CAP_TERMINAL, "term-cross-a").await;
+    let (b_id, b_sink, b_reader) =
+        bring_up_agent(&client, &base_url, CAP_DEFAULT | CAP_TERMINAL, "term-cross-b").await;
+
+    // Agent B answers TerminalOpen with started, then waits for the go signal
+    // before emitting its own output.
+    let (b_opened_tx, b_opened_rx) = tokio::sync::oneshot::channel::<()>();
+    let (b_go_tx, b_go_rx) = tokio::sync::oneshot::channel::<()>();
+    let agent_b = {
+        let mut sink = b_sink;
+        let mut reader = b_reader;
+        tokio::spawn(async move {
+            let mut b_opened_tx = Some(b_opened_tx);
+            let mut b_go_rx = Some(b_go_rx);
+            loop {
+                let msg = recv_agent_text(&mut reader).await;
+                match msg["type"].as_str() {
+                    Some("terminal_open") => {
+                        let sid = msg["session_id"].as_str().expect("session_id").to_string();
+                        send_agent_frame(
+                            &mut sink,
+                            json!({ "type": "terminal_started", "session_id": sid }),
+                        )
+                        .await;
+                        if let Some(tx) = b_opened_tx.take() {
+                            let _ = tx.send(());
+                        }
+                        if let Some(rx) = b_go_rx.take() {
+                            let _ = rx.await;
+                        }
+                        send_agent_frame(
+                            &mut sink,
+                            json!({
+                                "type": "terminal_output",
+                                "session_id": sid,
+                                "data": "Ym9iLW91dHB1dA==" // "bob-output"
+                            }),
+                        )
+                        .await;
+                    }
+                    Some("terminal_close") => return,
+                    _ => {}
+                }
+            }
+        })
+    };
+
+    let request = terminal_ws_request_with_key(&base_url, &b_id, &api_key);
+    let (browser_ws, _) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("terminal WebSocket connect should succeed");
+    let (mut browser_sink, mut browser_reader): (BrowserSink, BrowserReader) = browser_ws.split();
+    let session = recv_browser_until(&mut browser_reader, "session").await;
+    let session_id = session["session_id"].as_str().expect("session_id").to_string();
+    recv_browser_until(&mut browser_reader, "started").await;
+    b_opened_rx.await.expect("agent B should open the session");
+
+    // Agent A targets B's session: inject output, an error, and a
+    // capability_denied that would unregister the session.
+    for frame in [
+        json!({ "type": "terminal_output", "session_id": session_id, "data": "Zm9yZ2Vk" }),
+        json!({ "type": "terminal_error", "session_id": session_id, "error": "forged" }),
+        json!({
+            "type": "capability_denied",
+            "msg_id": null,
+            "session_id": session_id,
+            "capability": "terminal",
+            "reason": "agent_capability_disabled"
+        }),
+        // Acked, so once the Ack arrives every frame above has been handled.
+        json!({
+            "type": "task_result",
+            "msg_id": "term-cross-sync",
+            "task_id": "term-cross-sync",
+            "output": "",
+            "exit_code": 0
+        }),
+    ] {
+        send_agent_frame(&mut a_sink, frame).await;
+    }
+    loop {
+        let msg = recv_agent_text(&mut a_reader).await;
+        if msg["type"] == "ack" && msg["msg_id"] == "term-cross-sync" {
+            break;
+        }
+    }
+    let _ = b_go_tx.send(());
+
+    // The first frame the browser sees after A's attempt is B's own output:
+    // nothing from A was relayed and the session is still registered.
+    let next = recv_browser_text(&mut browser_reader).await;
+    assert_eq!(next["type"], "output", "unexpected browser frame: {next}");
+    assert_eq!(next["data"], "Ym9iLW91dHB1dA==", "only B's output may reach B's session");
+
+    let _ = browser_sink.send(tungstenite::Message::Close(None)).await;
+    let _ = tokio::time::timeout(Duration::from_secs(5), agent_b).await;
 }
 
 // ── Capability gate: agent without CAP_TERMINAL → connect rejected (403) ────

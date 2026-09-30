@@ -230,6 +230,13 @@ impl FileTransferManager {
             .count()
     }
 
+    /// Server the transfer was started on, if it is still tracked.
+    pub fn server_id_of(&self, transfer_id: &str) -> Option<String> {
+        self.transfers
+            .get(transfer_id)
+            .map(|meta| meta.server_id.clone())
+    }
+
     pub fn get_user_id(&self, transfer_id: &str) -> Option<String> {
         self.transfers
             .get(transfer_id)
@@ -304,6 +311,22 @@ mod tests {
     fn make_manager() -> FileTransferManager {
         let dir = std::env::temp_dir().join("serverbee-test-transfers");
         FileTransferManager::new(dir)
+    }
+
+    #[test]
+    fn test_server_id_of() {
+        let mgr = make_manager();
+        let id = mgr
+            .create_transfer(
+                "srv1".into(),
+                "usr1".into(),
+                TransferDirection::Download,
+                "/tmp/file.txt".into(),
+            )
+            .unwrap();
+        assert_eq!(mgr.server_id_of(&id).as_deref(), Some("srv1"));
+        assert_eq!(mgr.server_id_of("missing"), None);
+        mgr.remove(&id);
     }
 
     #[test]
