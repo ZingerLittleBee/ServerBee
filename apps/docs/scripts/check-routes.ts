@@ -131,8 +131,8 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '用 Docker 部署', page: '/zh/docs/deployment', same: 'Docker 部署' }
 ]
 
-// Words that no page holds find nothing, though ICU splits them into words that pages do hold: 区块 and 链, and 企业, 微
-// and 信.
+// Words that no page holds find nothing, though pages hold words that start with pieces ICU splits them into: the 区块
+// and 链 of 区块链, and the 信 of 企业微信 (信息, 信号).
 const misses = ['区块链', '企业微信']
 
 async function waitUntilReady(): Promise<void> {
