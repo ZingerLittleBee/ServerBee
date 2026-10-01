@@ -16,6 +16,13 @@ import {
 import { useI18n } from 'fumadocs-ui/contexts/i18n'
 import { type KeyboardEvent, useEffect, useId, useState } from 'react'
 
+import { type DocsLanguage, i18n, isDocsLanguage } from '@/lib/i18n'
+
+const resultCount: Record<DocsLanguage, (count: number) => string> = {
+  en: (count) => (count === 1 ? '1 result' : `${count} results`),
+  zh: (count) => `${count} 个结果`
+}
+
 interface ResultOptionProps {
   item: SearchItemType
   onActive: (optionId: string) => void
@@ -51,12 +58,18 @@ function keepEnterOnClose(event: KeyboardEvent<HTMLButtonElement>) {
  * highlighted one is the input's active descendant.
  */
 export default function DocsSearchDialog(props: SharedProps) {
-  const { locale } = useI18n()
+  const { locale, text } = useI18n()
   const { search, setSearch, query } = useDocsSearch({ type: 'fetch', locale })
   const listId = useId()
   const [activeId, setActiveId] = useState<string>()
   const items = query.data === 'empty' ? null : query.data
   const hasResults = Boolean(items && items.length > 0)
+  const lang = locale && isDocsLanguage(locale) ? locale : i18n.defaultLanguage
+  // What a screen reader announces once results arrive: how many, or that there are none.
+  let status = ''
+  if (items && !query.isLoading) {
+    status = items.length > 0 ? resultCount[lang](items.length) : text.searchNoResult
+  }
 
   return (
     <SearchDialog isLoading={query.isLoading} onSearchChange={setSearch} search={search} {...props}>
@@ -86,6 +99,9 @@ export default function DocsSearchDialog(props: SharedProps) {
           items={items}
           role={hasResults ? 'listbox' : undefined}
         />
+        <output aria-live="polite" className="sr-only">
+          {status}
+        </output>
       </SearchDialogContent>
     </SearchDialog>
   )
