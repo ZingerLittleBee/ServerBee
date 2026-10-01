@@ -5,6 +5,8 @@ const baseUrl = process.env.SERVERBEE_DOCS_BASE_URL ?? 'http://127.0.0.1:4000'
 const routes = [
   { path: '/en', lang: 'en', marker: 'Self-hosted VPS monitoring' },
   { path: '/zh', lang: 'zh', marker: '自托管的 VPS 监控' },
+  { path: '/en/docs', lang: 'en', marker: 'ServerBee has two core components' },
+  { path: '/zh/docs', lang: 'zh', marker: 'ServerBee 由两个核心组件构成' },
   { path: '/en/docs/quick-start', lang: 'en', marker: 'Choose a deployment method' },
   { path: '/zh/docs/quick-start', lang: 'zh', marker: '先选择部署方式' },
   { path: '/en/docs/configuration', lang: 'en', marker: 'Configuration Loading Priority' },

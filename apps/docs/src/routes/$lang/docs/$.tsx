@@ -24,7 +24,8 @@ function getDocsContentPath(lang: string, slugs: string[]): string {
 export const Route = createFileRoute('/$lang/docs/$')({
   component: Page,
   loader: async ({ params }) => {
-    const slugs = params._splat?.split('/') ?? []
+    // The docs index has an empty splat, which splits into [''] rather than [].
+    const slugs = params._splat?.split('/').filter(Boolean) ?? []
     const path = getDocsContentPath(params.lang, slugs)
     const preloadResult = clientLoader.preload(path).then(
       () => null,
