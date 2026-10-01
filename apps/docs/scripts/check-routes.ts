@@ -287,6 +287,55 @@ for (const { path, first, foreign } of [
 }
 expect((await fetch(`${baseUrl}/fr/llms-full.txt`)).status === 404, '/fr/llms-full.txt is not a 404')
 
+// The sitemap lists the landing and every docs page in each language, each with its hreflang alternates, and only
+// URLs that answer 200: a redirect or a 404 in a sitemap is a crawl error.
+for (const method of ['GET', 'HEAD'] as const) {
+  const response = await fetch(`${baseUrl}/sitemap.xml`, { method })
+  expect(response.status === 200, `${method} /sitemap.xml returned ${response.status}`)
+  expect(
+    contentType(response) === 'application/xml;charset=utf-8',
+    `${method} /sitemap.xml returned Content-Type ${response.headers.get('content-type')}`
+  )
+}
+const sitemap = await (await fetch(`${baseUrl}/sitemap.xml`)).text()
+const entries = [...sitemap.matchAll(/<url><loc>([^<]*)<\/loc>(.*?)<\/url>/g)]
+const sitemapUrls = entries.map((entry) => entry[1])
+// The pages of each language, as llms.txt links their Markdown exports.
+for (const { lang, index } of [
+  { lang: 'en', index: '/llms.txt' },
+  { lang: 'zh', index: '/zh/llms.txt' }
+]) {
+  const llms = await (await fetch(`${baseUrl}${index}`)).text()
+  const pages = [...llms.matchAll(/\]\((https:\/\/docs\.serverbee\.app\/[^)]*)\.mdx\)/g)].map((match) => match[1])
+  const listed = sitemapUrls.filter((url) => url.startsWith(`https://docs.serverbee.app/${lang}/docs`))
+  expect(
+    pages.length > 0 && listed.length === pages.length && pages.every((page) => listed.includes(page)),
+    `/sitemap.xml lists ${listed.length} ${lang} docs pages, ${index} links ${pages.length}`
+  )
+  expect(sitemapUrls.includes(`https://docs.serverbee.app/${lang}`), `/sitemap.xml does not list the ${lang} landing`)
+}
+expect(
+  entries.every((entry) => ['en', 'zh-Hans', 'x-default'].every((code) => entry[2].includes(`hreflang="${code}"`))),
+  '/sitemap.xml has an entry without its hreflang alternates'
+)
+const unreachable: string[] = []
+for (let start = 0; start < sitemapUrls.length; start += 8) {
+  await Promise.all(
+    sitemapUrls.slice(start, start + 8).map(async (url) => {
+      const response = await fetch(url.replace('https://docs.serverbee.app', baseUrl), { redirect: 'manual' })
+      if (response.status !== 200) {
+        unreachable.push(`${url} (${response.status})`)
+      }
+    })
+  )
+}
+expect(unreachable.length === 0, `/sitemap.xml lists URLs that do not answer 200: ${unreachable.join(', ')}`)
+const robots = await (await fetch(`${baseUrl}/robots.txt`)).text()
+expect(
+  robots.split('\n').includes('Sitemap: https://docs.serverbee.app/sitemap.xml'),
+  'robots.txt does not point to the sitemap'
+)
+
 console.log(
-  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages, localized 404 pages`
+  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages, localized 404 pages, ${sitemapUrls.length} sitemap URLs`
 )

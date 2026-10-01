@@ -14,13 +14,20 @@ export const ogLocale: Record<DocsLanguage, string> = { en: 'en_US', zh: 'zh_CN'
 export const hrefLangs: Record<DocsLanguage, string> = { en: 'en', zh: 'zh-Hans' }
 
 /**
- * A page's canonical link and its hreflang alternates, from its absolute URL in each language. Every page exists in
- * every language (scripts/check-contracts.ts), and x-default is the default language, where / redirects.
+ * A page's hreflang alternates, from its absolute URL in each language. Every page exists in every language
+ * (scripts/check-contracts.ts), and x-default is the default language, where / redirects.
  */
+export function languageAlternates(url: (lang: DocsLanguage) => string) {
+  return [
+    ...i18n.languages.map((lang) => ({ hrefLang: hrefLangs[lang], href: url(lang) })),
+    { hrefLang: 'x-default', href: url(i18n.defaultLanguage) }
+  ]
+}
+
+/** A page's canonical link and its hreflang alternates, from its absolute URL in each language. */
 export function languageLinks(url: (lang: DocsLanguage) => string, current: DocsLanguage) {
   return [
     { rel: 'canonical', href: url(current) },
-    ...i18n.languages.map((lang) => ({ rel: 'alternate', hrefLang: hrefLangs[lang], href: url(lang) })),
-    { rel: 'alternate', hrefLang: 'x-default', href: url(i18n.defaultLanguage) }
+    ...languageAlternates(url).map((alternate) => ({ rel: 'alternate', ...alternate }))
   ]
 }
