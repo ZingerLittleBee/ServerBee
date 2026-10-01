@@ -45,8 +45,8 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  // The landing (/en, /zh) has no search box, only the Cmd/Ctrl+K hotkey, so it loads the search dialog on first open
-  // instead of preloading it.
+  // The landing (/en, /zh) has no search box, only the Cmd/Ctrl+K hotkey, so it loads the search dialog once the page
+  // is idle instead of with the page.
   const isLanding = useRouterState({ select: (s) => s.matches.some((match) => match.routeId === '/$lang/') })
   const segment = pathname.split('/').filter(Boolean)[0] ?? ''
   const lang = (i18n.languages as string[]).includes(segment)
@@ -60,7 +60,7 @@ function RootComponent() {
       </head>
       <body className="flex min-h-screen flex-col">
         <RootProvider i18n={provider(lang)} search={isLanding ? { SearchDialog, preload: false } : { SearchDialog }}>
-          {isLanding ? null : <PreloadSearchDialog />}
+          <PreloadSearchDialog whenIdle={isLanding} />
           <Outlet />
         </RootProvider>
         <Scripts />
@@ -72,15 +72,29 @@ function RootComponent() {
 /**
  * SearchProvider reads `preload` only on its first render, so a client-side move from the landing into the docs would
  * keep the dialog unloaded. Mounting it closed loads its chunk, as `preload` does when a docs page is opened directly.
+ * The landing waits for an idle moment: a dialog first mounted by the hotkey suspends while its chunk loads (and React
+ * holds a revealed boundary back for at least 300 ms), so the first characters typed after Cmd/Ctrl+K were lost.
  */
-function PreloadSearchDialog() {
+function PreloadSearchDialog({ whenIdle }: { whenIdle: boolean }) {
   const { open, setOpenSearch } = useSearchContext()
 
   useEffect(() => {
-    if (!open) {
-      setOpenSearch(false)
+    if (open) {
+      return
     }
-  }, [open, setOpenSearch])
+    if (!whenIdle) {
+      setOpenSearch(false)
+      return
+    }
+    const mount = () => setOpenSearch(false)
+    // Safari has no requestIdleCallback.
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(mount, { timeout: 5000 })
+      return () => cancelIdleCallback(id)
+    }
+    const id = setTimeout(mount, 2000)
+    return () => clearTimeout(id)
+  }, [open, setOpenSearch, whenIdle])
 
   return null
 }
