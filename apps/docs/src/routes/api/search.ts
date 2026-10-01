@@ -69,7 +69,9 @@ const server = createFromSource(source, {
       components: { tokenizer: chineseTokenizer },
       plugins: [anyWordFallback],
       // What fumadocs documents for Chinese: a result must contain every word of the query, and no typo tolerance,
-      // which would let a two-character word match any word sharing one character with it.
+      // which would let a two-character word match any word sharing one character with it. Orama counted a query word
+      // once for each word it starts, so for `server.toml` a section holding `server` and `serverbee` counted as one
+      // holding both words; patches/@orama%2Forama@3.1.18.patch counts each query word once.
       search: { threshold: 0, tolerance: 0 }
     }
   }

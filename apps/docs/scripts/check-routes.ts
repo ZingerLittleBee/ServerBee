@@ -32,6 +32,8 @@ const docsLabels = {
 // and Radix names the 404 page's header "Main".
 const ariaLabelAttribute = /\baria-label="([^"]*)"/g
 const hanCharacter = /\p{Script=Han}/u
+// fumadocs marks the query's words in the results it returns.
+const highlightTags = /<\/?mark>/g
 
 function englishLabels(html: string): string[] {
   return [...html.matchAll(ariaLabelAttribute)]
@@ -67,8 +69,16 @@ const missingExports = [
   '/en/docs/%2571uick-start.mdx'
 ]
 
+interface SearchCheck {
+  /** Words that every section found holds. */
+  every?: string[]
+  locale: 'en' | 'zh'
+  page: string
+  query: string
+}
+
 // Each query must find its page, and only pages in the requested language.
-const searches = [
+const searches: SearchCheck[] = [
   { locale: 'en', query: 'firewall', page: '/en/docs/firewall' },
   { locale: 'en', query: 'alert', page: '/en/docs/alerts' },
   { locale: 'zh', query: '防火墙', page: '/zh/docs/firewall' },
@@ -84,9 +94,11 @@ const searches = [
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.
   { locale: 'zh', query: 'ｗｅｂｓｏｃｋｅｔ', page: '/zh/docs/api-reference' },
-  // `server.toml` is split as on the English pages, so its parts still match.
-  { locale: 'zh', query: 'toml', page: '/zh/docs/deployment' }
-] as const
+  // `server.toml` is split as on the English pages, so its parts still match, and a section must hold both of them,
+  // not one of them twice.
+  { locale: 'zh', query: 'toml', page: '/zh/docs/deployment' },
+  { locale: 'zh', query: 'server.toml', page: '/zh/docs/configuration', every: ['server', 'toml'] }
+]
 
 async function waitUntilReady(): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -181,6 +193,15 @@ for (const search of searches) {
   const rawJsx = results.find((result) => result.content.includes('<Card'))
   if (rawJsx) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned raw JSX at ${rawJsx.url}`)
+  }
+  const sections = results.filter((result) => result.type !== 'page')
+  const partial = sections.find((section) =>
+    search.every?.some((word) => !section.content.replace(highlightTags, '').toLowerCase().includes(word))
+  )
+  if (partial) {
+    throw new Error(
+      `Search for "${search.query}" (${search.locale}) returned a section without all its words: ${partial.url}`
+    )
   }
 }
 
