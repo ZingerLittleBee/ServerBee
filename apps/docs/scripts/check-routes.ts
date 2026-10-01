@@ -189,6 +189,26 @@ for (const { path, lang, other } of [
 }
 expect((await fetch(`${baseUrl}/fr/llms.txt`)).status === 404, '/fr/llms.txt is not a 404')
 
+// Each llms-full.txt holds one language's pages in navigation order, each with its URL.
+for (const { path, first, foreign } of [
+  { path: '/llms-full.txt', first: '# Introduction\n', foreign: '\n# 快速安装\n' },
+  { path: '/zh/llms-full.txt', first: '# 介绍\n', foreign: '\n# Quick Install\n' }
+]) {
+  for (const method of ['GET', 'HEAD'] as const) {
+    const response = await fetch(`${baseUrl}${path}`, { method })
+    expect(response.status === 200, `${method} ${path} returned ${response.status}`)
+    expect(
+      contentType(response) === 'text/plain;charset=utf-8',
+      `${method} ${path} returned Content-Type ${response.headers.get('content-type')}`
+    )
+  }
+  const full = await (await fetch(`${baseUrl}${path}`)).text()
+  expect(full.startsWith(first), `${path} does not start with the introduction`)
+  expect(!full.includes(foreign), `${path} contains pages of the other language`)
+  expect(full.includes('\nURL: https://docs.serverbee.app/'), `${path} does not give the page URLs`)
+}
+expect((await fetch(`${baseUrl}/fr/llms-full.txt`)).status === 404, '/fr/llms-full.txt is not a 404')
+
 console.log(
   `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages`
 )
