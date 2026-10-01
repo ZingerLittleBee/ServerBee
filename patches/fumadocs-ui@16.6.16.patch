@@ -27,7 +27,7 @@ index cd43329912d3125f4bdd411125d9be5f3ab9e469..10549d1b0d61619ad8e0b32332ac0d4d
  		...props,
  		children: checked ? /* @__PURE__ */ jsx(Check, {}) : /* @__PURE__ */ jsx(Clipboard, {})
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..a9707f6590fe46363a98a166ef94793f4ea2537a 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..96633487e78de6bea14a915fecdbf7e88f8afe31 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
 @@ -1,6 +1,7 @@
@@ -38,14 +38,16 @@ index 78c7d59de854993ca206520fda17399432dce1ce..a9707f6590fe46363a98a166ef94793f
  import { createContext, use, useEffect, useMemo, useRef, useState } from "react";
  import { usePathname } from "fumadocs-core/framework";
  import { jsx, jsxs } from "react/jsx-runtime";
-@@ -199,8 +200,9 @@ function SidebarFolderContent(props) {
+@@ -198,9 +199,10 @@ function SidebarFolderContent(props) {
+ 	});
  }
  function SidebarTrigger({ children, ...props }) {
- 	const { setOpen } = useSidebar();
+-	const { setOpen } = useSidebar();
++	const { open, setOpen } = useSidebar();
 +	const { text } = useI18n();
  	return /* @__PURE__ */ jsx("button", {
 -		"aria-label": "Open Sidebar",
-+		"aria-label": text.openSidebar,
++		"aria-label": open ? text.closeSidebar : text.openSidebar,
  		onClick: () => setOpen((prev) => !prev),
  		...props,
  		children
@@ -57,21 +59,23 @@ index 78c7d59de854993ca206520fda17399432dce1ce..a9707f6590fe46363a98a166ef94793f
  	return /* @__PURE__ */ jsx("button", {
  		type: "button",
 -		"aria-label": "Collapse Sidebar",
-+		"aria-label": text.collapseSidebar,
++		"aria-label": collapsed ? text.expandSidebar : text.collapseSidebar,
  		"data-collapsed": collapsed,
  		onClick: () => {
  			setCollapsed((prev) => !prev);
 diff --git a/dist/contexts/i18n.d.ts b/dist/contexts/i18n.d.ts
-index 50c735388b049b2316f7fb957de7855a8fdbe0bc..24b515c5efa35791cec2cd41d55058ca4cbb0554 100644
+index 50c735388b049b2316f7fb957de7855a8fdbe0bc..dcbc0d0caf59daac8dffa869c7d427fa7130d90a 100644
 --- a/dist/contexts/i18n.d.ts
 +++ b/dist/contexts/i18n.d.ts
-@@ -13,6 +13,21 @@ interface Translations {
+@@ -13,6 +13,23 @@ interface Translations {
    previousPage: string;
    chooseTheme: string;
    editOnGithub: string;
 +  openSearch: string;
 +  openSidebar: string;
++  closeSidebar: string;
 +  collapseSidebar: string;
++  expandSidebar: string;
 +  toggleTheme: string;
 +  toggleMenu: string;
 +  copyText: string;
@@ -88,10 +92,10 @@ index 50c735388b049b2316f7fb957de7855a8fdbe0bc..24b515c5efa35791cec2cd41d55058ca
  interface LocaleItem {
    name: string;
 diff --git a/dist/contexts/i18n.js b/dist/contexts/i18n.js
-index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..faddc4a1a33e94eba8ba39e7dc88dbf23ec2a254 100644
+index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..e174856ba87884f1e6fcbfaa05d41a0d8c37d1b7 100644
 --- a/dist/contexts/i18n.js
 +++ b/dist/contexts/i18n.js
-@@ -13,7 +13,20 @@ const defaultTranslations = {
+@@ -13,7 +13,22 @@ const defaultTranslations = {
  	nextPage: "Next Page",
  	previousPage: "Previous Page",
  	chooseTheme: "Theme",
@@ -99,7 +103,9 @@ index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..faddc4a1a33e94eba8ba39e7dc88dbf2
 +	editOnGithub: "Edit on GitHub",
 +	openSearch: "Open Search",
 +	openSidebar: "Open Sidebar",
++	closeSidebar: "Close Sidebar",
 +	collapseSidebar: "Collapse Sidebar",
++	expandSidebar: "Expand Sidebar",
 +	toggleTheme: "Toggle Theme",
 +	toggleMenu: "Toggle Menu",
 +	copyText: "Copy Text",

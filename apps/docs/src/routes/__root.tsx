@@ -51,7 +51,9 @@ const { provider } = defineI18nUI(i18n, {
       // in English through these translations.
       openSearch: '打开搜索',
       openSidebar: '打开侧边栏',
+      closeSidebar: '关闭侧边栏',
       collapseSidebar: '收起侧边栏',
+      expandSidebar: '展开侧边栏',
       toggleTheme: '切换主题',
       toggleMenu: '切换菜单',
       copyText: '复制代码',
