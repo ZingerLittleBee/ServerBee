@@ -30,6 +30,9 @@ const docsLabels = {
 
 const hrefAttribute = /\bhref="([^"]*)"/
 
+// Token colors of the default code themes under 4.5:1 on the code block backgrounds, replaced in source.config.ts.
+const lowContrastTokens = /--shiki-light:#(?:6a737d|d73a49|22863a|e36209)\b|--shiki-dark:#6a737d\b/i
+
 const siteNames = { en: 'ServerBee Docs', zh: 'ServerBee 文档' } as const
 
 // Markdown exports, each in its page's language with its section headings, and served as UTF-8.
@@ -118,6 +121,7 @@ for (const route of routes) {
       `${route.path} has the titles ${titles.join(', ') || '<none>'}`
     )
     expect(html.includes('<meta name="description" content="'), `${route.path} has no description`)
+    expect(!lowContrastTokens.test(html), `${route.path} renders a code token color under 4.5:1`)
     const pagePath = route.path.slice(route.lang.length + 1)
     for (const link of [
       `<link rel="canonical" href="https://docs.serverbee.app${route.path}"/>`,
