@@ -8,20 +8,22 @@ const wordSegmenter = new Intl.Segmenter('zh', { granularity: 'word' })
 // ICU keeps `server.toml`, `1.2.3` and `com.example.cpu` as one word, so they are split here as Orama's English
 // tokenizer splits them, and `toml` finds `server.toml` on the Chinese pages as it does on the English ones.
 const wordSeparators = /[^\p{L}\p{N}_'-]+/u
-// Words that phrase a question rather than say what it is about. A Chinese query needs every word in one heading or
-// paragraph, which rarely holds them, so 升级失败怎么办 and 配置文件在哪里 found nothing. 办 and 样 are what ICU leaves
-// of 怎么办 and 怎么样. 在 and 用 are not among them: ICU splits 在线 into 在 and 线 (the 线 of 离线), and 已用, 调用 and
-// 复用 into a character and 用, so dropping them cut those words in half.
+// Words that phrase a question or join the words it is about, rather than say what it is about. A Chinese query needs
+// every word in one heading or paragraph, which rarely holds them, so 升级失败怎么办 and 配置文件在哪里 found nothing,
+// and the 和 of 防火墙和告警 kept most firewall sections out of what it found. 办 and 样 are what ICU leaves of 怎么办 and
+// 怎么样, and ICU keeps 参与, 以及, 及时 and 涉及 whole. 在 and 用 are not among them: ICU splits 在线 into 在 and 线 (the
+// 线 of 离线), and 已用, 调用 and 复用 into a character and 用, so dropping them cut those words in half.
 const fillerWords = new Set(
   [
     '如何 怎么 怎样 咋 什么 啥 为什么 哪 哪里 哪儿 哪些 哪个 多久 多少 何时 办 样', // question words
     '是否 能否 能不能 可不可以 是不是 会不会', // yes-no questions
     '是 能 会 要 可以 请问', // the verbs a question is built with
-    '吗 呢 吧 啊 呀 的 了' // particles
+    '吗 呢 吧 啊 呀 的 了', // particles
+    '和 与 或 及 以及 或者 还是 并且 而且' // conjunctions
   ].flatMap((words) => words.split(' '))
 )
 
-/** The words ICU finds in a text, less the words that phrase a question. */
+/** The words ICU finds in a text, less the filler words. */
 function* chineseWords(text: string): Generator<string> {
   for (const { segment, isWordLike } of wordSegmenter.segment(text.normalize('NFKC').toLowerCase())) {
     if (isWordLike && !fillerWords.has(segment)) {

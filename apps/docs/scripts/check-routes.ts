@@ -77,6 +77,15 @@ interface SearchCheck {
   locale: 'en' | 'zh'
   page: string
   query: string
+  /** A query that finds the same results. */
+  same?: string
+}
+
+interface SearchResult {
+  content: string
+  id: string
+  type: string
+  url: string
 }
 
 // Each query must find its page, and only pages in the requested language.
@@ -96,6 +105,8 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '卸载 Agent', page: '/zh/docs/deployment' },
   { locale: 'zh', query: '卸载agent', page: '/zh/docs/deployment' },
   { locale: 'zh', query: 'Agent卸载', page: '/zh/docs/deployment' },
+  // A conjunction joins the words a query is about, and is not one of them.
+  { locale: 'zh', query: '防火墙和告警', page: '/zh/docs/firewall', same: '防火墙告警' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.
@@ -130,6 +141,11 @@ async function waitUntilReady(): Promise<void> {
 /** A Content-Type compared without case or spaces: text/plain;charset=UTF-8 equals text/plain; charset=utf-8. */
 function contentType(response: Response): string {
   return (response.headers.get('content-type') ?? '').replace(/\s/g, '').toLowerCase()
+}
+
+async function searchFor(query: string, locale: string): Promise<SearchResult[]> {
+  const response = await fetch(`${baseUrl}/api/search?query=${encodeURIComponent(query)}&locale=${locale}`)
+  return (await response.json()) as SearchResult[]
 }
 
 function expect(condition: unknown, message: string): asserts condition {
@@ -189,10 +205,7 @@ for (const route of routes) {
 }
 
 for (const search of searches) {
-  const response = await fetch(
-    `${baseUrl}/api/search?query=${encodeURIComponent(search.query)}&locale=${search.locale}`
-  )
-  const results = (await response.json()) as { content: string; type: string; url: string }[]
+  const results = await searchFor(search.query, search.locale)
   const pages = results.filter((result) => result.type === 'page').map((result) => result.url)
   if (!pages.includes(search.page)) {
     throw new Error(`Search for "${search.query}" (${search.locale}) did not find ${search.page}`)
@@ -219,11 +232,17 @@ for (const search of searches) {
   if (search.first && !first?.includes(search.first)) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned first a section without ${search.first}`)
   }
+  if (search.same) {
+    const ids = (list: SearchResult[]) => list.map((result) => result.id).join('\n')
+    expect(
+      ids(results) === ids(await searchFor(search.same, search.locale)),
+      `Search for "${search.query}" (${search.locale}) did not find what "${search.same}" finds`
+    )
+  }
 }
 
 for (const query of misses) {
-  const response = await fetch(`${baseUrl}/api/search?query=${encodeURIComponent(query)}&locale=zh`)
-  const results = (await response.json()) as { url: string }[]
+  const results = await searchFor(query, 'zh')
   expect(results.length === 0, `Search for "${query}" (zh) found ${results[0]?.url}`)
 }
 
