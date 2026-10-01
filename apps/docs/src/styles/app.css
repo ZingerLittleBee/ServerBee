@@ -29,12 +29,18 @@
 
 /*
  * fumadocs removes the outline of its buttons and code blocks and marks their focus with a ring, a box-shadow, which
- * forced colors drop: draw an outline there instead, inside the control, where no scroll container clips it.
+ * forced colors drop: draw an outline there instead, inside the control, where no scroll container clips it. The
+ * search result that Enter opens is marked only by its background, which forced colors replace, so it gets one too.
  */
 @media (forced-colors: active) {
   .focus-visible\:outline-none:focus-visible,
   .outline-none:focus-visible {
     outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+
+  [role="option"][aria-selected="true"] {
+    outline: 2px solid Highlight;
     outline-offset: -2px;
   }
 }
