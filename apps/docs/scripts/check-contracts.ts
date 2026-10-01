@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url'
 
 import { getTableOfContents } from 'fumadocs-core/content/toc'
 import { remarkGfm } from 'fumadocs-core/mdx-plugins/remark-gfm'
+import { defaultTranslations, type Translations } from 'fumadocs-ui/i18n'
 
 import { docsPages, landingCopy } from '../src/components/landing/translations'
+import { uiTranslations } from '../src/lib/ui-translations'
 
 const docsApp = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const repository = resolve(docsApp, '../..')
@@ -510,6 +512,17 @@ for (const theme of new Set(themeRules.flatMap(([, names]) => names))) {
       )
     }
   }
+}
+
+// fumadocs-ui falls back to its English text for a key a language leaves out, and some of that text appears only after
+// a click, such as the names of the sidebar triggers once the sidebar is open or collapsed, where no route check sees
+// it. Chinese translates every key, the keys patches/fumadocs-ui@16.6.16.patch adds among them.
+for (const [key, english] of Object.entries(defaultTranslations)) {
+  const chinese = uiTranslations.zh[key as keyof Translations]
+  invariant(
+    chinese && /\p{Script=Han}/u.test(chinese),
+    `apps/docs/src/lib/ui-translations.ts leaves fumadocs-ui's "${english}" (${key}) untranslated in zh`
+  )
 }
 
 const constants = await text(join(repository, 'crates/common/src/constants.rs'))

@@ -14,7 +14,7 @@ const routes = [
 ] as const
 
 // Labels every docs page renders. fumadocs-ui hard-codes most of them in English, and patches/fumadocs-ui@16.6.16.patch
-// routes them through the translations in src/routes/__root.tsx.
+// routes them through the translations in src/lib/ui-translations.ts.
 const docsLabels = {
   en: [
     'On this page',
@@ -444,17 +444,26 @@ expect(
   '/sitemap.xml has an entry without its hreflang alternates'
 )
 const unreachable: string[] = []
+// Every Chinese docs page names its controls in Chinese. The names a control takes only after a click, such as the
+// sidebar triggers' once the sidebar is open, never reach this HTML: check-contracts covers those.
+const englishNamed: string[] = []
 for (let start = 0; start < sitemapUrls.length; start += 8) {
   await Promise.all(
     sitemapUrls.slice(start, start + 8).map(async (url) => {
       const response = await fetch(url.replace('https://docs.serverbee.app', baseUrl), { redirect: 'manual' })
       if (response.status !== 200) {
         unreachable.push(`${url} (${response.status})`)
+      } else if (url.startsWith('https://docs.serverbee.app/zh/docs')) {
+        const english = englishLabels(await response.text())
+        if (english.length > 0) {
+          englishNamed.push(`${url} (${english.join(', ')})`)
+        }
       }
     })
   )
 }
 expect(unreachable.length === 0, `/sitemap.xml lists URLs that do not answer 200: ${unreachable.join(', ')}`)
+expect(englishNamed.length === 0, `Chinese docs pages name controls in English: ${englishNamed.join(', ')}`)
 const robots = await (await fetch(`${baseUrl}/robots.txt`)).text()
 expect(
   robots.split('\n').includes('Sitemap: https://docs.serverbee.app/sitemap.xml'),
