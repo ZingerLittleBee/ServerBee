@@ -91,6 +91,10 @@ export default function DocsSearchDialog(props: SharedProps) {
             role="combobox"
           />
           <SearchDialogClose aria-label={closeLabel[lang]} onKeyDown={keepEnterOnClose} />
+          {/* In the header, since the dialog draws a border under each of its parts but the last, the result list. */}
+          <output aria-live="polite" className="sr-only">
+            {status}
+          </output>
         </SearchDialogHeader>
         <SearchDialogList
           Item={({ item, onClick }) => (
@@ -105,9 +109,6 @@ export default function DocsSearchDialog(props: SharedProps) {
           items={items}
           role={hasResults ? 'listbox' : undefined}
         />
-        <output aria-live="polite" className="sr-only">
-          {status}
-        </output>
       </SearchDialogContent>
     </SearchDialog>
   )
