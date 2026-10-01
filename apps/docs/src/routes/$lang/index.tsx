@@ -5,9 +5,7 @@ import type { ComponentProps } from 'react'
 import { LandingPage } from '@/components/landing'
 import { type LandingSeoCopy, landingSeo } from '@/components/landing/seo'
 import type { LandingLang } from '@/components/landing/translations'
-
-/** The canonical docs host. /en/ redirects to /en, so page URLs carry no trailing slash. */
-const SITE = 'https://docs.serverbee.app'
+import { SITE } from '@/lib/site'
 
 const ogLocale: Record<LandingLang, string> = { en: 'en_US', zh: 'zh_CN' }
 

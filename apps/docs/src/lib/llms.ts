@@ -1,10 +1,26 @@
+import type { Node } from 'fumadocs-core/page-tree'
 import type { InferPageType } from 'fumadocs-core/source'
 
 import { i18n } from './i18n'
+import { SITE } from './site'
 import { source } from './source'
 
 type DocsPage = InferPageType<typeof source>
 type DocsLanguage = (typeof i18n.languages)[number]
+
+const languageNames: Record<DocsLanguage, string> = { en: 'English', zh: '简体中文' }
+
+/** The llms.txt prose, in the file's language. With two languages, "other" is unambiguous. */
+const indexCopy: Record<DocsLanguage, { about: string; other: string }> = {
+  en: {
+    about: 'Each link is a documentation page as Markdown. Without `.mdx`, the same link opens the HTML page.',
+    other: 'This documentation in Simplified Chinese'
+  },
+  zh: {
+    about: '每个链接都是一篇文档的 Markdown 版本，去掉末尾的 `.mdx` 即为对应的 HTML 页面。',
+    other: '本文档的英文版'
+  }
+}
 
 export function isDocsLanguage(lang: string): lang is DocsLanguage {
   return (i18n.languages as string[]).includes(lang)
@@ -29,7 +45,16 @@ export async function getLLMText(page: DocsPage): Promise<string> {
   return `# ${page.data.title}\n\n${processed}`
 }
 
+/** The llms.txt of a language. The default language's sits at the root, where it has always been. */
+function llmsPath(lang: DocsLanguage): string {
+  return lang === i18n.defaultLanguage ? '/llms.txt' : `/${lang}/llms.txt`
+}
+
 const plainText = { 'Content-Type': 'text/plain; charset=utf-8' }
+
+export function textResponse(body: string): Response {
+  return new Response(body, { headers: plainText })
+}
 
 /** A server route that throws notFound() answers 200 with a JSON body, so the export routes return this instead. */
 export function notFoundText(): Response {
@@ -44,4 +69,56 @@ export async function markdownResponse(lang: string, slugs: string[]): Promise<R
   }
   // text/markdown has no default charset (RFC 7763), so without one browsers decode the export as windows-1252.
   return new Response(await getLLMText(page), { headers: { 'Content-Type': 'text/markdown; charset=utf-8' } })
+}
+
+function escapeLinkText(text: string): string {
+  return text.replace(/([[\]])/g, '\\$1')
+}
+
+/** An llms.txt (https://llmstxt.org): one H1, a summary, a note, and an H2 section of Markdown links per sidebar group. */
+export function llmsIndex(lang: DocsLanguage): string {
+  const lines = ['# ServerBee', '']
+  const summary = source.getPage([], lang)?.data.description
+  if (summary) {
+    lines.push(`> ${summary}`, '')
+  }
+  // The reference parser (llms_txt) only reads the summary when something follows it before the first H2.
+  lines.push(indexCopy[lang].about)
+  const link = (page: DocsPage) => {
+    const description = page.data.description ? `: ${page.data.description}` : ''
+    return `- [${escapeLinkText(page.data.title)}](${SITE}${getPageMarkdownUrl(page)})${description}`
+  }
+  // llms.txt readers only collect links under an H2, so pages listed before the first sidebar group get one too.
+  let inSection = false
+  const section = (name: string) => {
+    lines.push('', `## ${name}`, '')
+    inSection = true
+  }
+  const visit = (node: Node) => {
+    if (node.type === 'separator') {
+      section(String(node.name))
+    } else if (node.type === 'page') {
+      const page = source.getNodePage(node, lang)
+      if (page) {
+        if (!inSection) {
+          section(page.data.title)
+        }
+        lines.push(link(page))
+      }
+    } else {
+      section(String(node.name))
+      if (node.index) {
+        visit(node.index)
+      }
+      node.children.forEach(visit)
+    }
+  }
+  source.getPageTree(lang).children.forEach(visit)
+  lines.push('', '## Optional', '')
+  for (const other of i18n.languages) {
+    if (other !== lang) {
+      lines.push(`- [${languageNames[other]}](${SITE}${llmsPath(other)}): ${indexCopy[lang].other}`)
+    }
+  }
+  return `${lines.join('\n').replace(/\n{3,}/g, '\n\n')}\n`
 }

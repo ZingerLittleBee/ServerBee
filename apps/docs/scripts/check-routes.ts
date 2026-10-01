@@ -159,6 +159,36 @@ expect(
   `/docs/quick-start.mdx returned ${legacy.status} to ${legacy.headers.get('location') ?? '<none>'}`
 )
 
+// Each llms.txt (https://llmstxt.org) lists its own language's pages, linking their Markdown exports.
+for (const { path, lang, other } of [
+  { path: '/llms.txt', lang: 'en', other: 'zh' },
+  { path: '/zh/llms.txt', lang: 'zh', other: 'en' }
+]) {
+  for (const method of ['GET', 'HEAD'] as const) {
+    const response = await fetch(`${baseUrl}${path}`, { method })
+    expect(response.status === 200, `${method} ${path} returned ${response.status}`)
+    expect(
+      contentType(response) === 'text/plain;charset=utf-8',
+      `${method} ${path} returned Content-Type ${response.headers.get('content-type')}`
+    )
+  }
+  const index = await (await fetch(`${baseUrl}${path}`)).text()
+  expect(index.match(/^# /gm)?.length === 1, `${path} must have exactly one H1`)
+  expect(
+    /^# ServerBee\n\n> .+\n\n[^#\n]/.test(index),
+    `${path} does not open with the project name, a summary and a note`
+  )
+  expect(/^## /m.test(index), `${path} has no H2 link sections`)
+  const pageLinks = [...index.matchAll(/\]\((https:\/\/docs\.serverbee\.app\/(en|zh)\/docs[^)]*)\)/g)]
+  expect(pageLinks.length > 0, `${path} links no pages with absolute URLs`)
+  expect(
+    pageLinks.every((link) => link[2] === lang && link[1].endsWith('.mdx')),
+    `${path} links a page outside ${lang} or not to its Markdown export`
+  )
+  expect(!index.includes(`](/${other}/docs`), `${path} mixes in ${other} pages`)
+}
+expect((await fetch(`${baseUrl}/fr/llms.txt`)).status === 404, '/fr/llms.txt is not a 404')
+
 console.log(
-  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports`
+  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages`
 )

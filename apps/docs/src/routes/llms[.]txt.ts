@@ -1,14 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { llms } from 'fumadocs-core/source'
 
-import { source } from '@/lib/source'
+import { i18n } from '@/lib/i18n'
+import { llmsIndex, textResponse } from '@/lib/llms'
+
+const GET = () => textResponse(llmsIndex(i18n.defaultLanguage))
 
 export const Route = createFileRoute('/llms.txt')({
-  server: {
-    handlers: {
-      GET() {
-        return new Response(llms(source).index())
-      }
-    }
-  }
+  server: { handlers: { GET, HEAD: GET } }
 })
