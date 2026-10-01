@@ -3,6 +3,9 @@ import { createRequire } from 'node:module'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { getTableOfContents } from 'fumadocs-core/content/toc'
+import { remarkGfm } from 'fumadocs-core/mdx-plugins/remark-gfm'
+
 import { docsPages, landingCopy } from '../src/components/landing/translations'
 
 const docsApp = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -16,6 +19,8 @@ const iosVersionMention = /\biOS (\d+)/g
 const darkClassRoot = /:root\.dark(?![\w-])/g
 const darkMediaRoot = ':root:not(.light):not(.dark)'
 const darkMediaQuery = /^@media \(prefers-color-scheme: ?dark\)$/
+// remark, without a frontmatter plugin, reads a page's frontmatter as a heading.
+const frontmatter = /^---\n[\s\S]*?\n---\n/
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -55,24 +60,13 @@ function firstMarkdownTable(markdown: string): string[][] {
   return []
 }
 
-function headingSlugs(markdown: string): Set<string> {
-  const counts = new Map<string, number>()
-  const slugs = new Set<string>()
-  for (const match of markdown.matchAll(/^#{1,6}\s+(.+)$/gm)) {
-    const heading = match[1]
-      .replace(/<[^>]+>/g, '')
-      .replace(/[`*_~]/g, '')
-      .trim()
-      .toLowerCase()
-    const base = heading
-      .replace(/[^\p{L}\p{N}\s-]/gu, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-    const count = counts.get(base) ?? 0
-    counts.set(base, count + 1)
-    slugs.add(count === 0 ? base : `${base}-${count}`)
-  }
-  return slugs
+/**
+ * The ids of a page's headings, computed as fumadocs-mdx computes them (remark-heading, after GFM): GitHub's slugs,
+ * numbered when repeated, or a custom `[#id]`. A `#` line in a code block is not a heading.
+ */
+async function headingIds(mdx: string): Promise<Set<string>> {
+  const toc = await getTableOfContents(mdx.replace(frontmatter, ''), [remarkGfm])
+  return new Set(toc.map((item) => item.url.slice(1)))
 }
 
 interface LandingDocsLink {
@@ -243,16 +237,18 @@ for (const locale of locales) {
       )
       if (encodedFragment) {
         const target = await text(join(contentRoot, targetLocale, `${targetPage}.mdx`))
-        const fragment = decodeURIComponent(encodedFragment).toLowerCase()
+        // A fragment names an id exactly, case included.
+        const fragment = decodeURIComponent(encodedFragment)
         invariant(
-          headingSlugs(target).has(fragment),
+          (await headingIds(target)).has(fragment),
           `${locale}/${page} links to missing heading ${targetLocale}/${targetPage}#${fragment}`
         )
       }
     }
+    const ids = await headingIds(source)
     for (const [, encodedFragment] of source.matchAll(samePageLinkPattern)) {
-      const fragment = decodeURIComponent(encodedFragment).toLowerCase()
-      invariant(headingSlugs(source).has(fragment), `${locale}/${page} links to missing heading #${fragment}`)
+      const fragment = decodeURIComponent(encodedFragment)
+      invariant(ids.has(fragment), `${locale}/${page} links to missing heading #${fragment}`)
     }
   }
 }
@@ -295,7 +291,7 @@ for (const link of landingParts.links) {
   if (link.hash) {
     const target = await text(join(contentRoot, link.lang, `${link.page}.mdx`))
     invariant(
-      headingSlugs(target).has(link.hash.toLowerCase()),
+      (await headingIds(target)).has(link.hash),
       `The landing links to missing heading ${link.lang}/${link.page}#${link.hash}: update ${landingTranslations}`
     )
   }
