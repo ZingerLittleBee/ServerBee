@@ -1,4 +1,4 @@
-import { type OramaPlugin, search } from '@orama/orama'
+import { count, type OramaPlugin, search } from '@orama/orama'
 import { createFileRoute } from '@tanstack/react-router'
 import { createFromSource } from 'fumadocs-core/search/server'
 
@@ -21,6 +21,15 @@ const fillerWords = new Set(
   ].flatMap((words) => words.split(' '))
 )
 
+/** The words ICU finds in a text, less the words that phrase a question. */
+function* chineseWords(text: string): Generator<string> {
+  for (const { segment, isWordLike } of wordSegmenter.segment(text.normalize('NFKC').toLowerCase())) {
+    if (isWordLike && !fillerWords.has(segment)) {
+      yield segment
+    }
+  }
+}
+
 /**
  * Orama's built-in tokenizers keep only Latin letters, so Chinese text produced no tokens and no Chinese query could
  * match. ICU word segmentation (the engine @orama/tokenizers/mandarin also uses) splits Chinese and the English terms
@@ -32,10 +41,7 @@ const chineseTokenizer = {
   normalizationCache: new Map<string, string>(),
   tokenize(raw: string): string[] {
     const tokens = new Set<string>()
-    for (const { segment, isWordLike } of wordSegmenter.segment(raw.normalize('NFKC').toLowerCase())) {
-      if (!isWordLike || fillerWords.has(segment)) {
-        continue
-      }
+    for (const segment of chineseWords(raw)) {
       for (const word of segment.split(wordSeparators)) {
         if (word) {
           tokens.add(word)
@@ -46,20 +52,90 @@ const chineseTokenizer = {
   }
 }
 
+// What a reader typed between spaces, with a run of Chinese characters taken apart from the other characters typed
+// against it, as in 卸载agent.
+const typedWords = /\p{Script=Han}+|[^\s\p{Script=Han}]+/gu
+const hanCharacter = /\p{Script=Han}/u
+
+/**
+ * The words of a query. A character alone matches the start of any word, so a word of one character is left out, and
+ * in a run of Chinese, where ICU splits the words it does not know into characters (卸载 into 卸 and 载, 区块链 into
+ * 区块 and 链), each character stays with the word before it.
+ */
+function queryWords(term: string): string[] {
+  const words: string[][] = []
+  for (const typed of term.match(typedWords) ?? []) {
+    if (!hanCharacter.test(typed)) {
+      words.push([typed])
+      continue
+    }
+    const run: string[][] = []
+    for (const segment of chineseWords(typed)) {
+      const word = run.at(-1)
+      if (segment.length === 1 && word) {
+        word.push(segment)
+      } else {
+        run.push([segment])
+      }
+    }
+    words.push(...run)
+  }
+  return words.map((pieces) => pieces.join(' ')).filter((word) => chineseTokenizer.tokenize(word).join('').length > 1)
+}
+
+/** Groups hits as Orama does: by the values of `properties`, in the order they come, at most `maxResult` a group. */
+function groupHits<Hit extends { document: object }>(
+  hits: Hit[],
+  { maxResult, properties }: { maxResult?: number; properties: string[] }
+) {
+  const groups = new Map<string, { result: Hit[]; values: unknown[] }>()
+  for (const hit of hits) {
+    const values = properties.map((property) => Reflect.get(hit.document, property))
+    const key = JSON.stringify(values)
+    let group = groups.get(key)
+    if (!group) {
+      group = { result: [], values }
+      groups.set(key, group)
+    }
+    if (group.result.length < (maxResult || Number.POSITIVE_INFINITY)) {
+      group.result.push(hit)
+    }
+  }
+  return [...groups.values()]
+}
+
+// The searches the fallback runs, which it does not search again.
+const wordSearches = new WeakSet<object>()
+
 /**
  * Requiring every word of a Chinese query keeps one-character words, which match the start of any word, from finding
  * everything, but a query whose words sit in a heading and the paragraphs under it, such as 卸载 Agent, found nothing.
- * Such a query is searched again for any of its words, which is how English queries are searched.
+ * Such a query is searched again for each of its words, a word needing every piece ICU splits it into, and finds the
+ * sections holding any of the words, those holding more first, which is how English queries are searched. Searching it
+ * again for any of the pieces instead filled the results of 区块链 and 企业微信, which no page mentions, with sections
+ * holding a word that starts with 链 or 信.
  */
 const anyWordFallback: OramaPlugin = {
   name: 'any-word-fallback',
   async afterSearch(db, params, language, results) {
-    // A vector search has no words to require, and the search below, which needs any word, is not searched again.
-    if (params.mode === 'vector' || params.threshold !== 0 || results.count > 0) {
+    if (params.mode === 'vector' || !params.term || results.count > 0 || wordSearches.has(params)) {
       return
     }
-    const { count, groups, hits } = await search(db, { ...params, threshold: 1 }, language)
-    Object.assign(results, { count, groups, hits })
+    const matches = new Map<string, (typeof results.hits)[number]>()
+    for (const word of queryWords(params.term)) {
+      const wordSearch = { ...params, groupBy: undefined, limit: count(db), offset: 0, term: word }
+      wordSearches.add(wordSearch)
+      for (const hit of (await search(db, wordSearch, language)).hits) {
+        matches.set(hit.id, { ...hit, score: hit.score + (matches.get(hit.id)?.score ?? 0) })
+      }
+    }
+    const hits = [...matches.values()].sort((a, b) => b.score - a.score)
+    const { groupBy, limit = 10, offset = 0 } = params
+    Object.assign(results, {
+      count: hits.length,
+      groups: groupBy && groupHits(hits, groupBy),
+      hits: hits.slice(offset, offset + limit)
+    })
   }
 }
 

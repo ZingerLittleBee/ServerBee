@@ -86,12 +86,16 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '防火墙', page: '/zh/docs/firewall' },
   { locale: 'zh', query: '安装', page: '/zh/docs/quick-start' },
   { locale: 'zh', query: 'Docker 安装', page: '/zh/docs/quick-start' },
-  // Question words, which the pages rarely contain, do not empty the results.
+  // Question words, which the pages rarely contain, do not empty the results, and the sections found hold every other
+  // word of the question.
   { locale: 'zh', query: '如何安装', page: '/zh/docs/quick-start' },
-  { locale: 'zh', query: '升级失败怎么办', page: '/zh/docs/deployment' },
-  { locale: 'zh', query: '配置文件在哪里', page: '/zh/docs/configuration' },
-  // Words that no heading or paragraph holds together, here a heading and the paragraphs under it.
+  { locale: 'zh', query: '升级失败怎么办', page: '/zh/docs/deployment', every: ['升级', '失败'] },
+  { locale: 'zh', query: '配置文件在哪里', page: '/zh/docs/configuration', every: ['配置', '文件'] },
+  // Words that no heading or paragraph holds together, here a heading and the paragraphs under it, with or without a
+  // space between them.
   { locale: 'zh', query: '卸载 Agent', page: '/zh/docs/deployment' },
+  { locale: 'zh', query: '卸载agent', page: '/zh/docs/deployment' },
+  { locale: 'zh', query: 'Agent卸载', page: '/zh/docs/deployment' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.
@@ -103,6 +107,10 @@ const searches: SearchCheck[] = [
   // 用 is a word of its own: ICU leaves it alone in 已用, 调用 and 复用, and sections holding the term come first.
   { locale: 'zh', query: '已用', page: '/zh/docs/alerts', first: '已用' }
 ]
+
+// Words that no page holds find nothing, though ICU splits them into words that pages do hold: 区块 and 链, and 企业, 微
+// and 信.
+const misses = ['区块链', '企业微信']
 
 async function waitUntilReady(): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -211,6 +219,12 @@ for (const search of searches) {
   if (search.first && !first?.includes(search.first)) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned first a section without ${search.first}`)
   }
+}
+
+for (const query of misses) {
+  const response = await fetch(`${baseUrl}/api/search?query=${encodeURIComponent(query)}&locale=zh`)
+  const results = (await response.json()) as { url: string }[]
+  expect(results.length === 0, `Search for "${query}" (zh) found ${results[0]?.url}`)
 }
 
 // fumadocs links go through src/components/framework-link.tsx. A link to a heading on the same page stays a fragment,
@@ -423,5 +437,5 @@ expect(
 )
 
 console.log(
-  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages, localized 404 pages, ${sitemapUrls.length} sitemap URLs`
+  `PASS: ${routes.length} localized documentation routes, ${searches.length + misses.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages, localized 404 pages, ${sitemapUrls.length} sitemap URLs`
 )
