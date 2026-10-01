@@ -1,0 +1,2533 @@
+/* ServerBee landing: faithful recreations of the product UI (web SPA + iOS).
+   Scoped like landing.css: every design selector carries one extra .sb. */
+
+.sb {
+  --f-product:
+    "Inter Variable", "Inter Fallback", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --f-ios:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Helvetica Neue", system-ui, sans-serif;
+  --p-green: oklch(0.696 0.17 162.48);
+  --p-amber: oklch(0.769 0.188 70.08);
+  --p-red: oklch(0.637 0.237 25.331);
+  --p-in: oklch(0.809 0.105 251.8);
+  --p-out: oklch(0.765 0.177 163.2);
+  --p-bar: #8ec5ff;
+  --p-grid-ok: #76ad2a;
+  --p-grid-warn: #f0a72a;
+  --p-grid-sev: #e86135;
+  --p-grid-fail: #e04343;
+  --p-track: rgb(128 128 128 / 0.18);
+}
+
+/* Product palettes (web SPA and iOS): light by default, dark on the same conditions as the landing palette. */
+.sb {
+  --p-bg: oklch(0.975 0 0);
+  --p-panel: oklch(1 0 0);
+  --p-card: oklch(1 0 0);
+  --p-muted: oklch(0.955 0 0);
+  --p-soft: oklch(0.97 0 0);
+  --p-line: oklch(0.915 0 0);
+  --p-ink: oklch(0.145 0 0);
+  --p-mute: oklch(0.5 0 0);
+  --p-dim: oklch(0.66 0 0);
+  --p-primary: oklch(0.205 0 0);
+  --p-destr: oklch(0.577 0.245 27.325);
+  --p-grid: oklch(0.93 0 0);
+  --p-c1: oklch(0.67 0.14 241.966);
+  --p-c3: oklch(0.8 0.16 55.934);
+  --p-c4: oklch(0.71 0.2 16.439);
+  --p-green-t: oklch(0.508 0.118 165.6);
+  --p-amber-t: oklch(0.555 0.163 48.998);
+  --p-red-t: oklch(0.505 0.213 27.518);
+  --ios-bg: #f2f2f7;
+  --ios-cell: #fff;
+  --ios-fill: rgb(118 118 128 / 0.12);
+  --ios-seg-on: #fff;
+  --ios-ink: #000;
+  --ios-mute: rgb(60 60 67 / 0.6);
+  --ios-sep: rgb(60 60 67 / 0.2);
+  --ios-blue: #007aff;
+  --ios-green: #22c55e;
+  --ios-amber: #f59e0b;
+  --ios-red: #ff3b30;
+  --ios-cpu: #38bdf8;
+  --ios-mem: #a78bfa;
+  --ios-disk: #fbbd23;
+  --ios-bar: rgb(249 249 249 / 0.9);
+  --ios-push: rgb(250 250 250 / 0.88);
+}
+:root.dark .sb {
+  --p-bg: oklch(0.145 0 0);
+  --p-panel: oklch(0.172 0 0);
+  --p-card: oklch(0.205 0 0);
+  --p-muted: oklch(0.269 0 0);
+  --p-soft: oklch(0.235 0 0);
+  --p-line: oklch(1 0 0 / 0.1);
+  --p-ink: oklch(0.985 0 0);
+  --p-mute: oklch(0.78 0 0);
+  --p-dim: oklch(0.56 0 0);
+  --p-primary: oklch(0.922 0 0);
+  --p-destr: oklch(0.704 0.191 22.216);
+  --p-grid: oklch(0.27 0 0);
+  --p-c1: oklch(0.707 0.165 254.624);
+  --p-c3: oklch(0.769 0.188 70.08);
+  --p-c4: oklch(0.704 0.191 22.216);
+  --p-green-t: oklch(0.765 0.177 163.2);
+  --p-amber-t: oklch(0.828 0.189 84.4);
+  --p-red-t: oklch(0.704 0.191 22.216);
+  --ios-bg: #000;
+  --ios-cell: #1c1c1e;
+  --ios-fill: rgb(118 118 128 / 0.24);
+  --ios-seg-on: #636366;
+  --ios-ink: #fff;
+  --ios-mute: rgb(235 235 245 / 0.6);
+  --ios-sep: rgb(84 84 88 / 0.6);
+  --ios-blue: #0a84ff;
+  --ios-green: #34d399;
+  --ios-amber: #fbbf24;
+  --ios-red: #ff453a;
+  --ios-cpu: #7dd3fc;
+  --ios-mem: #c4b5fd;
+  --ios-disk: #fcd34d;
+  --ios-bar: rgb(22 22 24 / 0.86);
+  --ios-push: rgb(44 44 46 / 0.86);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) .sb {
+    --p-bg: oklch(0.145 0 0);
+    --p-panel: oklch(0.172 0 0);
+    --p-card: oklch(0.205 0 0);
+    --p-muted: oklch(0.269 0 0);
+    --p-soft: oklch(0.235 0 0);
+    --p-line: oklch(1 0 0 / 0.1);
+    --p-ink: oklch(0.985 0 0);
+    --p-mute: oklch(0.78 0 0);
+    --p-dim: oklch(0.56 0 0);
+    --p-primary: oklch(0.922 0 0);
+    --p-destr: oklch(0.704 0.191 22.216);
+    --p-grid: oklch(0.27 0 0);
+    --p-c1: oklch(0.707 0.165 254.624);
+    --p-c3: oklch(0.769 0.188 70.08);
+    --p-c4: oklch(0.704 0.191 22.216);
+    --p-green-t: oklch(0.765 0.177 163.2);
+    --p-amber-t: oklch(0.828 0.189 84.4);
+    --p-red-t: oklch(0.704 0.191 22.216);
+    --ios-bg: #000;
+    --ios-cell: #1c1c1e;
+    --ios-fill: rgb(118 118 128 / 0.24);
+    --ios-seg-on: #636366;
+    --ios-ink: #fff;
+    --ios-mute: rgb(235 235 245 / 0.6);
+    --ios-sep: rgb(84 84 88 / 0.6);
+    --ios-blue: #0a84ff;
+    --ios-green: #34d399;
+    --ios-amber: #fbbf24;
+    --ios-red: #ff453a;
+    --ios-cpu: #7dd3fc;
+    --ios-mem: #c4b5fd;
+    --ios-disk: #fcd34d;
+    --ios-bar: rgb(22 22 24 / 0.86);
+    --ios-push: rgb(44 44 46 / 0.86);
+  }
+}
+
+/* shared product surface */
+.sb .pm {
+  font-family: var(--f-product);
+  font-size: 12px;
+  font-feature-settings:
+    "tnum" 1,
+    "cv11" 1;
+  line-height: 1.4;
+  color: var(--p-ink);
+}
+.sb .panel {
+  background: var(--p-panel);
+  border: 1px solid var(--p-line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---------- web app window (servers page) ---------- */
+.sb .pw {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--p-bg);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+.sb .pw-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 7px;
+}
+.sb .pw-logo {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.sb .pw-logo img {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+.sb .pw-nav {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 7px 9px;
+  font-size: 12.5px;
+  color: var(--p-ink);
+  border-radius: 7px;
+}
+.sb .pw-nav > i {
+  flex: none;
+  font-size: 14px;
+}
+.sb .pw-nav.on {
+  background: var(--p-muted);
+}
+.sb .pw-logo > span,
+.sb .pw-nav > span {
+  display: none;
+}
+.sb .pw-main {
+  min-width: 0;
+  margin: 7px 7px 7px 0;
+  overflow: hidden;
+  background: var(--p-panel);
+  border: 1px solid var(--p-line);
+  border-radius: 11px;
+}
+.sb .pw-top {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  height: 42px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--p-line);
+}
+.sb .pw-top > i {
+  font-size: 14px;
+  color: var(--p-mute);
+}
+.sb .pw-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sb .pw-search {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 150px;
+  height: 26px;
+  padding: 0 9px;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--p-mute);
+  border: 1px solid var(--p-line);
+  border-radius: 7px;
+}
+.sb .pw-add {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--p-panel);
+  white-space: nowrap;
+  background: var(--p-ink);
+  border-radius: 7px;
+}
+.sb .pw-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+/* server card; a size container for the narrow-card rules after .sv-rl */
+.sb .sv-card {
+  min-width: 0;
+  padding: 10px 11px 11px;
+  container: sv-card / inline-size;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 10px;
+}
+.sb .sv-card.is-off {
+  opacity: 0.62;
+  filter: grayscale(1);
+}
+.sb .sv-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 9px;
+}
+/* The inline SVG flag (mocks/flag.tsx) keeps the box of the emoji glyph it replaced: 1.25em by a 1em line. */
+.sb .sv-flag {
+  flex: none;
+  width: 1.25em;
+  height: 1em;
+  font-size: 12px;
+}
+.sb .sv-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sb .sv-pill {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+.sb .sv-pill::before {
+  width: 5px;
+  height: 5px;
+  content: "";
+  background: currentColor;
+  border-radius: 50%;
+}
+.sb .sv-pill.on {
+  color: var(--p-green-t);
+  background: color-mix(in oklch, var(--p-green) 15%, transparent);
+}
+.sb .sv-pill.off {
+  color: var(--p-red-t);
+  background: color-mix(in oklch, var(--p-red) 15%, transparent);
+}
+.sb .sv-rings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.sb .sv-ring {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+.sb .sv-dial {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.sb .sv-dial::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: conic-gradient(var(--c) calc(var(--v) * 1%), var(--p-track) 0);
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2.6px),
+    #000 calc(100% - 2.2px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2.6px),
+    #000 calc(100% - 2.2px)
+  );
+}
+.sb .sv-dial > b {
+  position: relative;
+  font-weight: 600;
+}
+.sb .sv-rl {
+  min-width: 0;
+  line-height: 1.28;
+}
+.sb .sv-rl > b {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.sb .sv-rl > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9.5px;
+  color: var(--p-mute);
+  white-space: nowrap;
+}
+/* Cards this narrow (the two-column hero just above its 1180px breakpoint) cannot fit "15.2 GB / 40.0 GB" at full
+   size, so the dial row scales with the card: one unit of 4% of its width, of which the em values below are the
+   pixel sizes above at a 10px unit. */
+@container sv-card (width < 243px) {
+  .sb .sv-rings {
+    gap: 0.8em;
+    font-size: 4cqi;
+  }
+  .sb .sv-ring {
+    gap: 0.7em;
+  }
+  .sb .sv-dial {
+    width: 2.8em;
+    height: 2.8em;
+    font-size: inherit;
+  }
+  .sb .sv-dial > b {
+    font-size: 0.95em;
+  }
+  .sb .sv-rl > b {
+    font-size: 1.05em;
+  }
+  .sb .sv-rl > span {
+    font-size: 0.95em;
+  }
+}
+.sb .sv-net {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 10px;
+  padding: 7px 8px;
+  margin-top: 9px;
+  background: var(--p-soft);
+  border-radius: 7px;
+}
+.sb .sv-nk {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 9.5px;
+  color: var(--p-mute);
+}
+.sb .sv-nk > b {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--p-ink);
+}
+.sb .sv-nv {
+  margin-top: 1px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sb .sv-nv > small {
+  margin-left: 2px;
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--p-mute);
+}
+.sb .sv-strips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 9px;
+}
+.sb .sv-sh {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 9.5px;
+  color: var(--p-mute);
+}
+.sb .sv-val {
+  font-weight: 600;
+}
+.sb .sv-val > small {
+  margin-left: 1px;
+  font-weight: 400;
+  color: var(--p-mute);
+}
+.sb .t-ok {
+  color: var(--p-green-t);
+}
+.sb .t-warn {
+  color: var(--p-amber-t);
+}
+.sb .t-sev,
+.sb .t-fail {
+  color: var(--p-red-t);
+}
+.sb .t-none {
+  color: var(--p-mute);
+}
+.sb .strip {
+  display: flex;
+  gap: 1px;
+  height: 12px;
+}
+.sb .cell {
+  flex: 1;
+  min-width: 0;
+  background: var(--p-track);
+  border-radius: 1px;
+}
+.sb .cell.ok {
+  background: var(--p-grid-ok);
+}
+.sb .cell.warn {
+  background: var(--p-grid-warn);
+}
+.sb .cell.sev {
+  background: var(--p-grid-sev);
+}
+.sb .cell.fail {
+  background: var(--p-grid-fail);
+}
+
+/* ---------- network tab ---------- */
+.sb .np {
+  padding: 18px;
+}
+.sb .np-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sb .np-head .sv-flag {
+  font-size: 15px;
+}
+.sb .np-name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.sb .np-meta {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--p-mute);
+}
+.sb .np-meta > span {
+  white-space: nowrap;
+}
+.sb .np-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  margin-top: 14px;
+  background: var(--p-muted);
+  border-radius: 9px;
+}
+.sb .np-tab {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: var(--p-mute);
+  border-radius: 7px;
+}
+.sb .np-tab > i {
+  font-size: 12px;
+}
+.sb .np-tab.on {
+  color: var(--p-ink);
+  background: var(--p-card);
+  box-shadow: 0 0 0 1px var(--p-line);
+}
+.sb .np-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.sb .np-probe {
+  font-size: 12px;
+  color: var(--p-mute);
+}
+.sb .np-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sb .np-act {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 26px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 7px;
+}
+.sb .np-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 12px;
+}
+.sb .np-range {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border: 1px solid var(--p-line);
+  border-radius: 6px;
+}
+.sb .np-range.on {
+  color: var(--p-panel);
+  background: var(--p-ink);
+  border-color: transparent;
+}
+/* The fieldset that names the two view buttons as a group: no box of its own, .np-seg inside keeps the look. */
+.sb .np-views {
+  min-inline-size: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.sb .np-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  margin-top: 12px;
+  background: var(--p-muted);
+  border-radius: 9px;
+}
+.sb .np-seg-btn {
+  padding: 5px 10px;
+  font: 500 12px / 1.2 var(--f-product);
+  color: var(--p-mute);
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+}
+.sb .np-seg-btn:hover {
+  color: var(--p-ink);
+}
+.sb .np-seg-btn.on {
+  color: var(--p-ink);
+  background: var(--p-card);
+  box-shadow: 0 0 0 1px var(--p-line);
+}
+/* The swap area holds either view at the taller view's height, so the chart below never jumps. The chips fill
+   it with their rows centred, so the spare height splits above and below them; the carrier view keeps its place. */
+.sb .np-view {
+  margin-top: 12px;
+  container: np-view / inline-size;
+}
+.sb .np-swap {
+  display: flex;
+  flex-direction: column;
+  min-height: 143px;
+}
+.sb .np-chips {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-content: center;
+}
+.sb .np-chip {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 9px;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 9px;
+}
+.sb .np-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+/* A size container, so the loss label drops out wherever the stats line would not fit. */
+.sb .np-cn {
+  flex: 1;
+  min-width: 0;
+  container: np-cn / inline-size;
+}
+.sb .np-cn > b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.sb .np-st {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  overflow: hidden;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--p-mute);
+  white-space: nowrap;
+}
+.sb .np-lat {
+  font-family: var(--f-mono);
+  font-weight: 500;
+}
+.sb .np-sep {
+  font-style: normal;
+  color: color-mix(in oklch, var(--p-mute) 60%, transparent);
+}
+.sb .np-eye {
+  font-size: 13px;
+  color: var(--p-mute);
+}
+/* Thresholds are the measured full-line widths of "39.7 ms | Packet Loss 0.0%" and "39.7 ms | 丢包率 0.0%". */
+@container np-cn (width < 150px) {
+  .sb.l-en .np-ll {
+    display: none;
+  }
+}
+@container np-cn (width < 121px) {
+  .sb .np-ll {
+    display: none;
+  }
+}
+/* Narrow panels (the 1024px split layout): two chips per row, and the swap area grows by a row. */
+@container np-view (width < 600px) {
+  .sb .np-chips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sb .np-swap {
+    min-height: 165px;
+  }
+}
+/* The pv container exists only in the phone layout (see 760px): name, average and loss share one line,
+   and the English loss label goes first when they would not fit. */
+@container pv (width < 256px) {
+  .sb.l-en .pv-ll {
+    display: none;
+  }
+}
+.sb .np-chart {
+  padding: 12px 14px;
+  margin-top: 12px;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 10px;
+}
+.sb .np-ct {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sb .plot {
+  position: relative;
+  margin-left: 44px;
+}
+.sb .np-chart .plot {
+  height: 176px;
+  margin-top: 12px;
+}
+.sb .gl {
+  position: absolute;
+  right: 0;
+  left: 0;
+  border-top: 1px dashed var(--p-grid);
+}
+.sb .gl > span {
+  position: absolute;
+  top: -7px;
+  right: calc(100% + 8px);
+  font-size: 10.5px;
+  color: var(--p-mute);
+  white-space: nowrap;
+}
+.sb .gl.base {
+  border-top-style: solid;
+}
+.sb .plot-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.sb .ln {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.sb .np-prov {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.sb .pv {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 10px;
+}
+.sb .pv-name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sb .pv-avg {
+  margin-top: 4px;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.sb .pv-avg > small {
+  margin-left: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--p-mute);
+}
+.sb .pv-loss {
+  font-size: 11px;
+  color: var(--p-green-t);
+}
+/* A shrinkable column, so long carrier names truncate instead of pushing the rows out of the card. */
+.sb .pv-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+.sb .pv-row {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding-top: 5px;
+  font-size: 11.5px;
+  border-top: 1px solid var(--p-line);
+}
+.sb .pv-row > .np-dot {
+  width: 7px;
+  height: 7px;
+}
+.sb .pv-row > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb .pv-row > b {
+  font: 500 11px / 1 var(--f-mono);
+}
+
+/* ---------- IP quality (full width) ---------- */
+.sb .ipp {
+  padding: 20px;
+}
+.sb .ipp-title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.sb .ipp-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--p-mute);
+}
+.sb .ipc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.sb .ipc {
+  min-width: 0;
+  padding: 12px 14px;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 10px;
+}
+.sb .ipc-top {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+.sb .ipc-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.sb .ipc-risk {
+  flex: none;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  border: 1px solid var(--p-line);
+  border-radius: 999px;
+}
+.sb .ipc-risk.low {
+  color: var(--p-green-t);
+  border-color: color-mix(in oklch, var(--p-green) 45%, transparent);
+}
+.sb .ipc-risk.mid {
+  color: var(--p-amber-t);
+  border-color: color-mix(in oklch, var(--p-amber) 45%, transparent);
+}
+.sb .ipc-risk.high {
+  color: var(--p-red-t);
+  border-color: color-mix(in oklch, var(--p-red) 45%, transparent);
+}
+.sb .ipc-ip {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-top: 10px;
+  font: 500 14px / 1 var(--f-mono);
+}
+.sb .ipc-type {
+  padding: 3px 6px;
+  font: 600 10px / 1 var(--f-product);
+  white-space: nowrap;
+  background: var(--p-muted);
+  border-radius: 5px;
+}
+.sb .ipc-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 19px;
+  margin-top: 9px;
+}
+.sb .ipc-flag {
+  padding: 2px 6px;
+  font-size: 10px;
+  color: var(--p-mute);
+  border: 1px solid var(--p-line);
+  border-radius: 5px;
+}
+.sb .ipc-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--p-mute);
+}
+.sb .ipc-row > b {
+  font-weight: 500;
+  color: var(--p-ink);
+}
+.sb .mx-title {
+  margin-top: 20px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.sb .mx-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 10px;
+}
+.sb .mx {
+  display: grid;
+  grid-template-columns: 132px repeat(9, minmax(64px, 1fr));
+  min-width: 760px;
+  font-size: 11.5px;
+}
+.sb .mx > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 9px 6px;
+  text-align: center;
+  border-bottom: 1px solid var(--p-line);
+}
+.sb .mx > div:nth-last-child(-n + 10) {
+  border-bottom: 0;
+}
+.sb .mx > .mx-srv {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  justify-content: flex-start;
+  padding-left: 14px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  background: var(--p-card);
+  border-right: 1px solid var(--p-line);
+}
+.sb .mx > .mx-corner {
+  grid-row: span 2;
+  align-items: flex-end;
+  color: var(--p-mute);
+}
+.sb .mx-grp {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--p-mute);
+}
+.sb .mx-th {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+.sb .mx > .end {
+  border-right: 1px solid var(--p-line);
+}
+.sb .mx-b {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+.sb .mx-b.ok {
+  color: var(--p-green-t);
+  background: color-mix(in oklch, var(--p-green) 12%, transparent);
+  border-color: color-mix(in oklch, var(--p-green) 40%, transparent);
+}
+.sb .mx-b.lim {
+  color: var(--p-amber-t);
+  background: color-mix(in oklch, var(--p-amber) 12%, transparent);
+  border-color: color-mix(in oklch, var(--p-amber) 40%, transparent);
+}
+.sb .mx-b.blk {
+  color: var(--p-red-t);
+  background: color-mix(in oklch, var(--p-red) 12%, transparent);
+  border-color: color-mix(in oklch, var(--p-red) 40%, transparent);
+}
+.sb .mx-b.fail {
+  color: var(--p-mute);
+  background: var(--p-soft);
+  border-color: var(--p-line);
+}
+.sb .mx-dash {
+  color: var(--p-dim);
+}
+
+/* ---------- capabilities + terminal ---------- */
+.sb .cap {
+  padding: 18px;
+}
+.sb .cap-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.sb .cap-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.sb .cap-srv {
+  font-size: 12px;
+  color: var(--p-mute);
+}
+.sb .cap-desc {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--p-mute);
+}
+.sb .cap-grp {
+  margin-top: 16px;
+}
+.sb .cap-gt {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sb .cap-gd {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--p-mute);
+}
+.sb .cap-rows {
+  margin-top: 8px;
+  overflow: hidden;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 10px;
+}
+.sb .cap-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  border-top: 1px solid var(--p-line);
+}
+.sb .cap-row:first-child {
+  border-top: 0;
+}
+.sb .cap-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+.sb .cap-risk {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--p-red-t);
+  white-space: nowrap;
+  background: color-mix(in oklch, var(--p-red) 13%, transparent);
+  border-radius: 5px;
+}
+.sb .cap-tmp {
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--p-amber-t);
+  background: color-mix(in oklch, var(--p-amber) 16%, transparent);
+  border-radius: 5px;
+}
+.sb .cap-st {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 64px;
+  font-size: 11px;
+  color: var(--p-mute);
+  white-space: nowrap;
+}
+.sb .cap-st::before {
+  width: 6px;
+  height: 6px;
+  content: "";
+  background: var(--p-dim);
+  border-radius: 50%;
+}
+.sb .cap-st.on {
+  color: var(--p-green-t);
+}
+.sb .cap-st.on::before {
+  background: var(--p-green);
+}
+.sb .cap-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.sb .cap-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 9px;
+  font-size: 11.5px;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 7px;
+}
+.sb .cap-chip::before {
+  width: 6px;
+  height: 6px;
+  content: "";
+  background: var(--p-green);
+  border-radius: 50%;
+}
+.sb .cap-chip > small {
+  font-size: 10px;
+  color: var(--p-mute);
+}
+
+.sb .term {
+  overflow: hidden;
+  font: 500 12.5px / 1.75 var(--f-mono);
+  color: #c0caf5;
+  background: #1a1b26;
+  border-radius: 14px;
+  box-shadow: var(--shadow-md);
+}
+.sb .term-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 14px;
+  font-size: 11px;
+  /* The terminal is read out, so its dim tones keep 4.5:1 on #1a1b26: the title 4.81:1, the comment 5.13:1. */
+  color: #7e86ae;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+.sb .term-bar > i {
+  width: 10px;
+  height: 10px;
+  background: #2f3549;
+  border-radius: 50%;
+}
+.sb .term-bar > span {
+  margin-left: 8px;
+}
+.sb .term-body {
+  padding: 14px 16px 16px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.sb .term-c {
+  color: #838bb3;
+}
+.sb .term-p {
+  margin-right: 0.6em;
+  color: #9ece6a;
+}
+.sb .term-cur {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  margin-left: 2px;
+  vertical-align: -3px;
+  background: #c0caf5;
+  /* Four blinks (4.4s, under the 5s of WCAG 2.2.2), then the cursor stays on. */
+  animation: sb-blink 1.1s steps(1) 4;
+}
+@keyframes sb-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- dashboard (edit mode) ---------- */
+.sb .db {
+  overflow: hidden;
+  background: var(--p-panel);
+}
+.sb .db-top {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  min-height: 50px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--p-line);
+}
+.sb .db-top > i {
+  font-size: 14px;
+  color: var(--p-mute);
+}
+.sb .db-switch {
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 170px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  border: 1px solid var(--p-line);
+  border-radius: 8px;
+}
+.sb .db-switch > i {
+  color: var(--p-mute);
+}
+.sb .db-acts {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.sb .db-btn {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 7px;
+}
+.sb .db-btn.pri {
+  color: var(--p-panel);
+  background: var(--p-ink);
+  border-color: transparent;
+}
+.sb .db-canvas {
+  padding: 14px;
+  background: var(--p-bg);
+}
+.sb .db-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: 64px;
+  gap: 12px;
+}
+.sb .dw {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 11px 12px;
+  overflow: hidden;
+  background: var(--p-card);
+  border: 1px solid var(--p-line);
+  border-radius: 11px;
+}
+.sb .dw-chip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--p-panel);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 14px -6px rgb(0 0 0 / 0.45),
+    0 0 0 1px var(--p-line);
+}
+.sb .dw-chip > i {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  background: var(--p-muted);
+  border-radius: 5px;
+}
+.sb .dw-chip > i.del {
+  color: var(--p-destr);
+  background: color-mix(in oklch, var(--p-destr) 16%, transparent);
+}
+.sb .dw-rs {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--p-dim);
+  border-bottom: 2px solid var(--p-dim);
+  border-radius: 0 0 3px 0;
+}
+.sb .dw-t {
+  font-size: 12px;
+  font-weight: 600;
+}
+.sb .dw-s {
+  font-size: 10.5px;
+  color: var(--p-mute);
+}
+.sb .g-s1 {
+  grid-row: 1;
+  grid-column: 1 / 4;
+}
+.sb .g-s2 {
+  grid-row: 1;
+  grid-column: 4 / 7;
+}
+.sb .g-s3 {
+  grid-row: 1;
+  grid-column: 7 / 10;
+}
+.sb .g-s4 {
+  grid-row: 1;
+  grid-column: 10 / 13;
+}
+.sb .g-cmp {
+  grid-row: 2 / 6;
+  grid-column: 1 / 7;
+}
+.sb .g-ga {
+  grid-row: 2 / 4;
+  grid-column: 7 / 9;
+}
+.sb .g-gb {
+  grid-row: 4 / 6;
+  grid-column: 7 / 9;
+}
+.sb .g-top {
+  grid-row: 2 / 6;
+  grid-column: 9 / 13;
+}
+.sb .g-up {
+  grid-row: 6 / 8;
+  grid-column: 1 / 6;
+}
+.sb .g-trf {
+  grid-row: 6 / 8;
+  grid-column: 6 / 10;
+}
+.sb .g-ph {
+  grid-row: 6 / 8;
+  grid-column: 10 / 13;
+}
+.sb .db-ph {
+  background: var(--p-primary);
+  border-radius: 11px;
+  opacity: 0.15;
+}
+.sb .db-drag {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  cursor: grabbing;
+  box-shadow:
+    0 30px 50px -18px rgb(0 0 0 / 0.55),
+    0 0 0 1px var(--p-line);
+  transform: translate(-26px, -12px) rotate(-1.6deg);
+}
+
+/* stat tile: same layout and tones as the product's stat-number widget */
+.sb .tone-1 {
+  --tone: var(--p-primary);
+}
+.sb .tone-2 {
+  --tone: var(--p-c4);
+}
+.sb .tone-3 {
+  --tone: var(--p-c3);
+}
+.sb .tone-4 {
+  --tone: var(--p-c1);
+}
+.sb .dw-stat {
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
+  padding: 0 78px 0 14px;
+  background: linear-gradient(
+    to bottom right,
+    color-mix(in oklch, var(--tone) 10%, var(--p-card)),
+    var(--p-card) 60%
+  );
+}
+.sb .db-ico {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  color: var(--tone);
+  background: color-mix(in oklch, var(--tone) 10%, transparent);
+  border-radius: 10px;
+}
+.sb .dws {
+  min-width: 0;
+  line-height: 1.25;
+}
+.sb .dws-l {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--p-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.sb .dws-v {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+.sb .dws-s {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--p-mute);
+  white-space: nowrap;
+}
+
+.sb .dw .plot {
+  flex: 1;
+  margin: 12px 0 0 26px;
+}
+.sb .dw .gl > span {
+  right: calc(100% + 6px);
+  font-size: 9.5px;
+}
+.sb .lgd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 10.5px;
+  color: var(--p-mute);
+}
+.sb .lgd > span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.sb .lgd i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.sb .dw-gauge {
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 22px;
+  text-align: center;
+}
+.sb .dw-gauge > .dw-s {
+  position: absolute;
+  right: 12px;
+  bottom: 9px;
+  left: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb .gauge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+}
+.sb .gauge::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: conic-gradient(
+    from 225deg,
+    var(--c) 0 calc(var(--v) * 2.7deg),
+    var(--p-track) 0 270deg,
+    transparent 0
+  );
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 7px),
+    #000 calc(100% - 6.5px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 7px),
+    #000 calc(100% - 6.5px)
+  );
+}
+.sb .gauge-in {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+}
+.sb .gauge-in > i {
+  font-size: 12px;
+  color: var(--c);
+}
+.sb .gauge-in > span {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--c);
+}
+.sb .gauge-in > b {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.sb .gauge-in > b > small {
+  margin-left: 1px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--p-mute);
+}
+
+/* top-n: horizontal bars, name inside the bar (#8EC5FF default color) */
+.sb .tn {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-evenly;
+  margin-top: 10px;
+  background-image: linear-gradient(
+    to right,
+    var(--p-grid) 1px,
+    transparent 1px
+  );
+  background-size: 25% 100%;
+  border-right: 1px solid var(--p-grid);
+}
+.sb .tn-bar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #09090b;
+  white-space: nowrap;
+  background: var(--p-bar);
+  border-radius: 0 5px 5px 0;
+}
+.sb .tn-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--p-mute);
+}
+
+.sb .up-rows {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sb .up-row {
+  display: grid;
+  grid-template-columns: minmax(0, 88px) minmax(0, 1fr) 46px;
+  gap: 8px;
+  align-items: center;
+  font-size: 10.5px;
+}
+.sb .up-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb .up-row > b {
+  font-weight: 600;
+  text-align: right;
+}
+.sb .up-cells {
+  display: flex;
+  gap: 1px;
+  height: 14px;
+}
+.sb .db-up {
+  flex: 1;
+  min-width: 0;
+  background: var(--p-green);
+  border-radius: 1px;
+}
+.sb .db-up.deg {
+  background: var(--p-amber);
+}
+.sb .db-up.down {
+  background: var(--p-red);
+}
+.sb .tb-plot {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: flex-end;
+  min-height: 0;
+  margin: 10px 0 0;
+}
+.sb .tb-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  min-width: 0;
+  height: 100%;
+}
+.sb .tb-in {
+  background: var(--p-in);
+  border-radius: 0 0 2px 2px;
+}
+.sb .tb-out {
+  background: var(--p-out);
+  border-radius: 2px 2px 0 0;
+}
+.sb .tb-lab {
+  display: flex;
+  gap: 10px;
+  margin-top: 5px;
+  font-size: 9.5px;
+  color: var(--p-mute);
+}
+/* One date per bar, never wrapped; min-width 0 keeps every label as wide as its bar. */
+.sb .tb-lab > span {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  white-space: nowrap;
+}
+.sb .md-body {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.sb .md-body > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- iPhone ---------- */
+.sb .ph-wrap {
+  position: relative;
+  flex: none;
+  width: calc(415px * var(--s));
+  height: calc(874px * var(--s));
+}
+.sb .ph-sm {
+  --s: 0.5;
+}
+.sb .ph-md {
+  --s: 0.62;
+}
+.sb .phone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 415px;
+  height: 874px;
+  padding: 11px;
+  background: #0c0c0d;
+  border-radius: 64px;
+  box-shadow:
+    inset 0 0 0 2px #3a3a3d,
+    0 0 0 1px rgb(0 0 0 / 0.6),
+    0 60px 90px -40px rgb(0 0 0 / 0.7);
+  transform: scale(var(--s));
+  transform-origin: 0 0;
+}
+.sb .ph-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--f-ios);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.3;
+  color: var(--ios-ink);
+  background: var(--ios-bg);
+  border-radius: 53px;
+}
+.sb .ph-island {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  z-index: 6;
+  width: 124px;
+  height: 36px;
+  margin-left: -62px;
+  background: #000;
+  border-radius: 20px;
+}
+.sb .ios-status {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 54px;
+  padding: 4px 32px 0 44px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.sb .ios-sys {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.sb .ios-sig {
+  display: flex;
+  gap: 1.5px;
+  align-items: flex-end;
+  height: 12px;
+}
+.sb .ios-sig > i {
+  width: 3px;
+  background: var(--ios-ink);
+  border-radius: 1px;
+}
+.sb .ios-sig > i:nth-child(1) {
+  height: 4px;
+}
+.sb .ios-sig > i:nth-child(2) {
+  height: 6px;
+}
+.sb .ios-sig > i:nth-child(3) {
+  height: 9px;
+}
+.sb .ios-sig > i:nth-child(4) {
+  height: 12px;
+}
+.sb .ios-wifi {
+  font-size: 15px;
+}
+.sb .ios-bat {
+  position: relative;
+  box-sizing: border-box;
+  width: 25px;
+  height: 12px;
+  padding: 1.5px;
+  border: 1.3px solid rgb(128 128 128 / 0.6);
+  border-radius: 4px;
+}
+.sb .ios-bat::after {
+  position: absolute;
+  top: 3.5px;
+  right: -4px;
+  width: 2px;
+  height: 4px;
+  content: "";
+  background: rgb(128 128 128 / 0.6);
+  border-radius: 0 1px 1px 0;
+}
+.sb .ios-bat > i {
+  display: block;
+  width: 78%;
+  height: 100%;
+  background: var(--ios-ink);
+  border-radius: 2px;
+}
+.sb .ios-content {
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px;
+  overflow: hidden;
+}
+.sb .ios-navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+}
+.sb .ios-back {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  font-size: 17px;
+  color: var(--ios-blue);
+}
+.sb .ios-back > i {
+  font-size: 22px;
+}
+.sb .ios-navt {
+  position: absolute;
+  right: 0;
+  left: 0;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+}
+.sb .ios-navbar.inl {
+  position: relative;
+}
+.sb .ios-plus {
+  font-size: 22px;
+  color: var(--ios-blue);
+}
+.sb .ios-large {
+  margin: 2px 0 10px;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.sb .ios-search {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  height: 36px;
+  padding: 0 9px;
+  font-size: 17px;
+  color: var(--ios-mute);
+  background: var(--ios-fill);
+  border-radius: 10px;
+}
+.sb .ios-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.sb .ios-tile {
+  padding: 10px 11px;
+  background: var(--ios-cell);
+  border-radius: 12px;
+}
+.sb .ios-tile > span {
+  display: block;
+  font-size: 13px;
+  color: var(--ios-mute);
+}
+.sb .ios-tile > b {
+  display: block;
+  margin-top: 3px;
+  font-size: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sb .ios-tile > b > small {
+  margin-left: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ios-mute);
+}
+.sb .ios-tile > b.warn {
+  color: var(--ios-amber);
+}
+.sb .ios-list {
+  margin-top: 16px;
+  overflow: hidden;
+  background: var(--ios-cell);
+  border-radius: 12px;
+}
+.sb .ios-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 14px 11px 16px;
+  border-top: 0.5px solid var(--ios-sep);
+}
+.sb .ios-row:first-child {
+  border-top: 0;
+}
+.sb .ios-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: var(--ios-green);
+  border-radius: 50%;
+}
+.sb .ios-dot.warn {
+  background: var(--ios-amber);
+}
+.sb .ios-dot.off {
+  background: rgb(142 142 147);
+}
+.sb .ios-rm {
+  flex: 1;
+  min-width: 0;
+}
+.sb .ios-rt {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.sb .ios-rt > b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sb .ios-trail {
+  flex: none;
+  font-size: 13px;
+  color: var(--ios-mute);
+}
+.sb .ios-trail.warn {
+  font-weight: 600;
+  color: var(--ios-amber);
+}
+.sb .ios-trail.off {
+  color: rgb(142 142 147);
+}
+.sb .ios-det {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--ios-mute);
+}
+.sb .ios-bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.sb .ios-bl {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ios-mute);
+}
+.sb .ios-bt {
+  height: 4px;
+  margin-top: 3px;
+  overflow: hidden;
+  background: var(--ios-fill);
+  border-radius: 2px;
+}
+.sb .ios-bt > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+.sb .ios-push {
+  position: absolute;
+  top: 58px;
+  right: 10px;
+  left: 10px;
+  z-index: 5;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  /* The height of a two-line alert, so a one-line one still covers the large title under the banner. */
+  min-height: 57px;
+  padding: 13px 14px;
+  background: var(--ios-push);
+  border-radius: 24px;
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+}
+/* Hidden under the banner, so no stroke of the large title peeks out at the banner's rounded corners. */
+.sb .ios-push ~ .ios-content .ios-large {
+  visibility: hidden;
+}
+.sb .ios-push > img {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  background: #fff;
+  border-radius: 9px;
+}
+.sb .ios-pm {
+  flex: 1;
+  min-width: 0;
+}
+.sb .ios-pt {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 600;
+}
+.sb .ios-pt > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb .ios-pt > small {
+  flex: none;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ios-mute);
+}
+.sb .ios-pb {
+  margin-top: 1px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.sb .ios-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.sb .ios-chip {
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ios-mute);
+  background: var(--ios-fill);
+  border-radius: 999px;
+}
+.sb .ios-chip.on {
+  color: var(--ios-green);
+  background: color-mix(in srgb, var(--ios-green) 16%, transparent);
+}
+.sb .ios-seg {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  margin-top: 12px;
+  background: var(--ios-fill);
+  border-radius: 9px;
+}
+.sb .ios-seg > span {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 7px;
+}
+.sb .ios-seg > span.on {
+  font-weight: 600;
+  background: var(--ios-seg-on);
+  box-shadow:
+    0 3px 8px rgb(0 0 0 / 0.12),
+    0 0 0 0.5px rgb(0 0 0 / 0.04);
+}
+.sb .ios-seg i {
+  font-size: 11px;
+}
+.sb .ios-seg.sm {
+  margin-top: 14px;
+}
+.sb .ios-card {
+  padding: 13px 14px;
+  margin-top: 12px;
+  background: var(--ios-cell);
+  border-radius: 12px;
+}
+.sb .ios-cap {
+  font-size: 13px;
+  color: var(--ios-mute);
+}
+.sb .ios-health {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 4px;
+}
+.sb .ios-health > b {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ios-green);
+}
+.sb .ios-health > span {
+  font-size: 13px;
+  color: var(--ios-mute);
+}
+.sb .ios-plot {
+  position: relative;
+  height: 128px;
+  margin-top: 10px;
+}
+.sb .ios-plot .gl {
+  border-top-color: var(--ios-sep);
+}
+.sb .ios-plot .gl > span {
+  right: auto;
+  left: 100%;
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--ios-mute);
+}
+/* The lines stop 36px short of the grid's right end. The width must stay explicit: `auto` would size the svg
+   from its square viewBox. */
+.sb .ios-plot .plot-svg {
+  width: calc(100% - 36px);
+}
+.sb .ios-grp {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ios-mute);
+}
+.sb .ios-cap + .ios-grp {
+  margin-top: 4px;
+}
+.sb .ios-trow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 0;
+  font-size: 15px;
+  border-top: 0.5px solid var(--ios-sep);
+}
+.sb .ios-trow > i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.sb .ios-trow > span {
+  flex: 1;
+  min-width: 0;
+}
+.sb .ios-trow > b {
+  font-size: 14px;
+  font-weight: 500;
+}
+.sb .ios-trow > small {
+  width: 34px;
+  font-size: 13px;
+  color: var(--ios-mute);
+  text-align: right;
+}
+.sb .ios-risk {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+.sb .ios-ring {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+}
+.sb .ios-ring::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: conic-gradient(
+    var(--ios-amber) calc(var(--v) * 1%),
+    var(--ios-fill) 0
+  );
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 8px),
+    #000 calc(100% - 7.5px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 8px),
+    #000 calc(100% - 7.5px)
+  );
+}
+.sb .ios-ring > b {
+  position: relative;
+  font-size: 24px;
+  font-weight: 700;
+}
+.sb .ios-rk > b {
+  display: block;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ios-amber);
+}
+.sb .ios-rk > span {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ios-mute);
+}
+.sb .ios-ipline {
+  margin-top: 10px;
+}
+.sb .ios-badges {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.sb .ios-badge {
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--ios-fill);
+  border-radius: 7px;
+}
+.sb .ios-badge.warn {
+  color: var(--ios-amber);
+  background: color-mix(in srgb, var(--ios-amber) 16%, transparent);
+}
+.sb .ios-arow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 15px;
+  border-top: 0.5px solid var(--ios-sep);
+}
+.sb .ios-arow > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb .ios-arow > small {
+  font-size: 12px;
+  color: var(--ios-mute);
+}
+.sb .ios-st {
+  padding: 2px 8px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  border-radius: 6px;
+}
+.sb .ios-st.ok {
+  color: var(--ios-green);
+  background: color-mix(in srgb, var(--ios-green) 15%, transparent);
+}
+.sb .ios-st.blk {
+  color: var(--ios-red);
+  background: color-mix(in srgb, var(--ios-red) 15%, transparent);
+}
+.sb .ios-btn {
+  padding: 12px;
+  margin-top: 12px;
+  font-size: 17px;
+  color: var(--ios-blue);
+  text-align: center;
+  background: var(--ios-cell);
+  border-radius: 12px;
+}
+.sb .ios-tabbar {
+  position: relative;
+  z-index: 4;
+  box-sizing: border-box;
+  display: grid;
+  flex: none;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  height: 83px;
+  padding-top: 7px;
+  background: var(--ios-bar);
+  border-top: 0.5px solid var(--ios-sep);
+}
+.sb .ios-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgb(142 142 147);
+}
+.sb .ios-tab > i {
+  font-size: 23px;
+}
+.sb .ios-tab.on {
+  color: var(--ios-blue);
+}
+.sb .ios-badge-n {
+  position: absolute;
+  top: -3px;
+  left: 54%;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 18px;
+  color: #fff;
+  text-align: center;
+  background: var(--ios-red);
+  border-radius: 9px;
+}
+
+/* phones layout (iOS section) */
+.sb .phones {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  justify-content: center;
+}
+.sb .phones > .ph-wrap:nth-child(2) {
+  margin-top: 64px;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1180px) {
+  .sb .hv-phone {
+    right: -8px;
+  }
+}
+/* Narrow dashboards: two columns, no edit chrome, no drag preview. Below about 1172px the twelve-column grid
+   crowds its widgets (values under the edit chips, truncated subtitles, wrapped dates), so this starts at the
+   hero's 1180px breakpoint. */
+@media (max-width: 1180px) {
+  .sb .db-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: auto;
+    gap: 10px;
+  }
+  .sb .db-grid > .dw {
+    grid-row: auto;
+    grid-column: auto;
+  }
+  .sb .db-grid > .g-cmp,
+  .sb .db-grid > .g-top,
+  .sb .db-grid > .g-up,
+  .sb .db-grid > .g-trf {
+    grid-column: 1 / -1;
+  }
+  .sb .dw-stat {
+    min-height: 68px;
+    padding-right: 12px;
+  }
+  .sb .g-cmp,
+  .sb .g-trf {
+    min-height: 220px;
+  }
+  .sb .g-top {
+    min-height: 210px;
+  }
+  .sb .g-up {
+    min-height: 136px;
+  }
+  .sb .dw-gauge {
+    min-height: 150px;
+  }
+  .sb .db-ph,
+  .sb .db-drag,
+  .sb .dw-chip,
+  .sb .dw-rs {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .sb .pw {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sb .pw-side,
+  .sb .pw-search {
+    display: none;
+  }
+  .sb .pw-main {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .sb .pw-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sb .pw-body > div:nth-child(n + 3) {
+    display: none;
+  }
+  .sb .hv-phone {
+    display: none;
+  }
+  /* Two chips per row; the eye toggle goes and the loss label follows the container rules. */
+  .sb .np-chips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sb .np-eye {
+    display: none;
+  }
+  .sb .np-swap {
+    min-height: 165px;
+  }
+  /* One line per carrier on phones: name, average, loss. */
+  .sb .np-prov {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .sb .pv {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    container: pv / inline-size;
+  }
+  .sb .pv-name {
+    flex: 1;
+    min-width: 0;
+  }
+  .sb .pv-avg {
+    margin-top: 0;
+    font-size: 16px;
+  }
+  .sb .pv-rows {
+    display: none;
+  }
+  .sb .ipc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sb .phones {
+    flex-direction: column;
+    gap: 36px;
+    align-items: center;
+  }
+  .sb .phones > .ph-wrap:nth-child(2) {
+    margin-top: 0;
+  }
+  .sb .ph-md {
+    --s: 0.56;
+  }
+}
+/* Phones: the tab strip becomes a full-width segmented row and toolbar icons go,
+   so tabs, actions and ranges each keep to one row in both languages at 360px. */
+@media (max-width: 480px) {
+  .sb .np {
+    padding: 14px;
+  }
+  .sb .np-tabs {
+    display: flex;
+    gap: 1px;
+  }
+  .sb .np-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding-inline: 5px;
+    font-size: 11.5px;
+  }
+  .sb .np-tab > i,
+  .sb .np-act > i {
+    display: none;
+  }
+  .sb .np-acts {
+    gap: 5px;
+  }
+  .sb .np-act,
+  .sb .np-range {
+    padding-inline: 8px;
+  }
+  .sb .dw-stat {
+    gap: 10px;
+    padding-left: 12px;
+  }
+  .sb .db-ico {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+  .sb .dws-v {
+    font-size: 19px;
+  }
+  .sb .db-top {
+    gap: 8px;
+  }
+  /* A slightly smaller date keeps each label within its bar down to a 360px screen. */
+  .sb .tb-lab {
+    font-size: 8.5px;
+  }
+}
+/* Contrast themes (Windows forced colors) drop the pressed view's fill and ring: outline it with the system
+   highlight instead. They also paint every background as Canvas, which would erase the mocks' data marks (legend
+   and status dots, strips, bars, rings) while the chart lines beside them keep their colors, so the marks keep
+   theirs. */
+@media (forced-colors: active) {
+  .sb .np-seg-btn {
+    border: 1px solid Canvas;
+  }
+  .sb .np-seg-btn.on {
+    border-color: Highlight;
+  }
+  .sb :is(.np-dot, .lgd i, .ios-trow > i, .ios-dot, .term-bar > i),
+  .sb :is(.cell, .db-up, .tb-in, .tb-out, .tn-bar, .term-cur),
+  .sb :is(.sv-dial, .gauge, .ios-ring, .sv-pill, .cap-st, .cap-chip)::before {
+    forced-color-adjust: none;
+  }
+}

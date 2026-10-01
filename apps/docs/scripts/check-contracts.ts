@@ -1,6 +1,9 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, realpath } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { docsPages, landingCopy } from '../src/components/landing/translations'
 
 const docsApp = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const repository = resolve(docsApp, '../..')
@@ -8,6 +11,11 @@ const contentRoot = join(docsApp, 'content/docs')
 const locales = ['en', 'zh'] as const
 const markdownTableDivider = /^\|(?:\s*:?-+:?\s*\|)+$/
 const numericTableCell = /^[\d,+~\s]+$/
+const landingTranslations = 'apps/docs/src/components/landing/translations.ts'
+const iosVersionMention = /\biOS (\d+)/g
+const darkClassRoot = /:root\.dark(?![\w-])/g
+const darkMediaRoot = ':root:not(.light):not(.dark)'
+const darkMediaQuery = /^@media \(prefers-color-scheme: ?dark\)$/
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -65,6 +73,131 @@ function headingSlugs(markdown: string): Set<string> {
     slugs.add(count === 0 ? base : `${base}-${count}`)
   }
   return slugs
+}
+
+interface LandingDocsLink {
+  hash?: string
+  lang: string
+  page: string
+}
+
+interface LandingCopyParts {
+  links: LandingDocsLink[]
+  strings: string[]
+}
+
+/** Every string and every documentation link (a docsPath() value: { lang, page, hash? }) in the landing copy. */
+function collectLandingCopy(value: unknown, parts: LandingCopyParts): LandingCopyParts {
+  if (typeof value === 'string') {
+    parts.strings.push(value)
+  } else if (typeof value === 'object' && value !== null) {
+    if ('lang' in value && 'page' in value && typeof value.lang === 'string' && typeof value.page === 'string') {
+      const hash = 'hash' in value && typeof value.hash === 'string' ? value.hash : undefined
+      parts.links.push({ hash, lang: value.lang, page: value.page })
+    } else {
+      for (const item of Object.values(value)) {
+        collectLandingCopy(item, parts)
+      }
+    }
+  }
+  return parts
+}
+
+/** The real directory of package `name` as Node's module lookup finds it from `directory`. */
+async function packageDirectory(name: string, directory: string): Promise<string | undefined> {
+  for (const lookup of createRequire(join(directory, 'package.json')).resolve.paths(name) ?? []) {
+    const found = await realpath(join(lookup, name)).catch(() => undefined)
+    if (found) {
+      return found
+    }
+  }
+  return undefined
+}
+
+/** The index just past the CSS string that opens with the quote at `start`. */
+function cssStringEnd(css: string, start: number): number {
+  let index = start + 1
+  while (index < css.length && css[index] !== css[start]) {
+    index += css[index] === '\\' ? 2 : 1
+  }
+  return index + 1
+}
+
+/** CSS with its comments replaced by spaces; comment markers inside strings are kept. */
+function withoutCssComments(css: string): string {
+  let result = ''
+  let index = 0
+  while (index < css.length) {
+    let next = index + 1
+    if (css[index] === '"' || css[index] === "'") {
+      next = cssStringEnd(css, index)
+      result += css.slice(index, next)
+    } else if (css.startsWith('/*', index)) {
+      const end = css.indexOf('*/', index + 2)
+      next = end === -1 ? css.length : end + 2
+      result += ' '
+    } else {
+      result += css[index]
+    }
+    index = next
+  }
+  return result
+}
+
+interface CssBlock {
+  body: string
+  children: CssBlock[]
+  /** The selector list or at-rule prelude, whitespace collapsed. */
+  prelude: string
+}
+
+/** The block tree of a stylesheet. Braces inside strings do not count. */
+function cssBlocks(source: string): CssBlock[] {
+  const css = withoutCssComments(source)
+  const top: CssBlock[] = []
+  const open: { children: CssBlock[]; prelude: string; start: number }[] = []
+  let statementStart = 0
+  let index = 0
+  while (index < css.length) {
+    const char = css[index]
+    let next = index + 1
+    if (char === '"' || char === "'") {
+      next = cssStringEnd(css, index)
+    } else if (char === '{') {
+      const prelude = css.slice(statementStart, index).replace(/\s+/g, ' ').trim()
+      open.push({ children: [], prelude, start: next })
+      statementStart = next
+    } else if (char === '}') {
+      const block = open.pop()
+      invariant(block, 'Unbalanced braces in a landing stylesheet')
+      const parent = open.at(-1)?.children ?? top
+      parent.push({ body: css.slice(block.start, index), children: block.children, prelude: block.prelude })
+      statementStart = next
+    } else if (char === ';') {
+      statementStart = next
+    }
+    index = next
+  }
+  invariant(open.length === 0, 'Unclosed block in a landing stylesheet')
+  return top
+}
+
+/** A style block's declarations by property, values whitespace collapsed. */
+function cssDeclarations(body: string): Map<string, string> {
+  const declarations = new Map<string, string>()
+  for (const declaration of body.split(';')) {
+    const colon = declaration.indexOf(':')
+    if (colon > 0) {
+      declarations.set(
+        declaration.slice(0, colon).trim(),
+        declaration
+          .slice(colon + 1)
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
+    }
+  }
+  return declarations
 }
 
 const localePages = new Map<string, Set<string>>()
@@ -127,6 +260,95 @@ invariant(packageVersion, 'Unable to read the workspace package version')
 const landing = await text(join(docsApp, 'src/components/landing/translations.ts'))
 invariant(!/\bMIT\b/.test(landing), 'Landing page still claims an MIT license')
 invariant(landing.includes(license), 'Landing page does not show the workspace license')
+const landingVersion = landing.match(/export const LANDING_VERSION = '([^']+)'/)?.[1]
+invariant(
+  landingVersion === packageVersion,
+  `LANDING_VERSION is ${landingVersion ?? 'missing'}, expected ${packageVersion}: ` +
+    'update it in apps/docs/src/components/landing/translations.ts'
+)
+
+// Every documentation page the landing can link to exists in both locales, and every heading it links to exists.
+for (const page of docsPages) {
+  for (const locale of locales) {
+    invariant(
+      pagesFor(locale).has(page),
+      `The landing links to missing ${locale}/${page}: update docsPages in ${landingTranslations}`
+    )
+  }
+}
+const landingParts = collectLandingCopy(landingCopy, { links: [], strings: [] })
+invariant(
+  landingParts.links.length > 0,
+  'Found no documentation links in the landing copy: update collectLandingCopy in apps/docs/scripts/check-contracts.ts'
+)
+for (const link of landingParts.links) {
+  invariant(
+    localePages.get(link.lang)?.has(link.page),
+    `The landing links to missing ${link.lang}/${link.page}: update ${landingTranslations}`
+  )
+  if (link.hash) {
+    const target = await text(join(contentRoot, link.lang, `${link.page}.mdx`))
+    invariant(
+      headingSlugs(target).has(link.hash.toLowerCase()),
+      `The landing links to missing heading ${link.lang}/${link.page}#${link.hash}: update ${landingTranslations}`
+    )
+  }
+}
+
+// The landing's theme toggle (useTheme in landing/chrome/header.tsx) reaches the ThemeProvider inside fumadocs'
+// RootProvider only while both load the same next-themes module.
+const fumadocsUi = await packageDirectory('fumadocs-ui', docsApp)
+invariant(fumadocsUi, 'apps/docs cannot resolve fumadocs-ui')
+const appNextThemes = await packageDirectory('next-themes', docsApp)
+const fumadocsNextThemes = await packageDirectory('next-themes', fumadocsUi)
+invariant(
+  appNextThemes !== undefined && appNextThemes === fumadocsNextThemes,
+  `apps/docs resolves next-themes to ${appNextThemes ?? 'nothing'}, but fumadocs-ui resolves it to ` +
+    `${fumadocsNextThemes ?? 'nothing'}: pin next-themes in apps/docs/package.json to the version fumadocs-ui uses, ` +
+    'so the landing theme toggle and the docs share one theme'
+)
+
+// Every dark rule is written twice: for the .dark class next-themes sets, and as the prefers-color-scheme fallback
+// that applies before JavaScript runs. The two must declare the same values.
+for (const file of ['landing.css', 'landing-mocks.css']) {
+  const stylesheet = `apps/docs/src/styles/${file}`
+  const blocks = cssBlocks(await text(join(docsApp, 'src/styles', file)))
+  const classRules = new Map<string, CssBlock>()
+  const fallbackRules = new Map<string, CssBlock>()
+  for (const block of blocks) {
+    if (block.prelude.startsWith(':root.dark')) {
+      classRules.set(block.prelude.replace(darkClassRoot, ':root'), block)
+    }
+    if (darkMediaQuery.test(block.prelude)) {
+      for (const rule of block.children) {
+        if (rule.prelude.startsWith(darkMediaRoot)) {
+          fallbackRules.set(rule.prelude.replaceAll(darkMediaRoot, ':root'), rule)
+        }
+      }
+    }
+  }
+  invariant(
+    classRules.size > 0,
+    `${stylesheet} has no :root.dark rules: update the dark palette check in apps/docs/scripts/check-contracts.ts`
+  )
+  for (const [key, rule] of classRules) {
+    const fallback = fallbackRules.get(key)
+    invariant(fallback, `${stylesheet}: "${rule.prelude}" has no prefers-color-scheme: dark fallback`)
+    const declared = cssDeclarations(rule.body)
+    const fallbackDeclared = cssDeclarations(fallback.body)
+    const drift = [...new Set([...declared.keys(), ...fallbackDeclared.keys()])].find(
+      (property) => declared.get(property) !== fallbackDeclared.get(property)
+    )
+    invariant(
+      drift === undefined,
+      `${stylesheet}: ${drift} differs between "${rule.prelude}" and its prefers-color-scheme: dark fallback ` +
+        `"${fallback.prelude}"; keep both dark palettes identical`
+    )
+  }
+  for (const [key, fallback] of fallbackRules) {
+    invariant(classRules.has(key), `${stylesheet}: "${fallback.prelude}" has no :root.dark rule with the same values`)
+  }
+}
 
 const constants = await text(join(repository, 'crates/common/src/constants.rs'))
 const protocolVersion = constants.match(/PROTOCOL_VERSION:\s*u32\s*=\s*(\d+)/)?.[1]
@@ -202,6 +424,16 @@ invariant(iosTarget, 'Unable to read the iOS deployment target')
 for (const locale of locales) {
   const mobile = await text(join(contentRoot, locale, 'mobile.mdx'))
   invariant(mobile.includes(`iOS ${iosTarget}`), `${locale}/mobile.mdx has a stale iOS deployment target`)
+}
+const iosMajor = iosTarget.split('.')[0]
+for (const copyText of landingParts.strings) {
+  for (const match of copyText.matchAll(iosVersionMention)) {
+    invariant(
+      match[1] === iosMajor,
+      `The landing copy names iOS ${match[1]}, but apps/ios/project.yml targets iOS ${iosTarget}: ` +
+        `update ${landingTranslations}`
+    )
+  }
 }
 
 for (const locale of locales) {
