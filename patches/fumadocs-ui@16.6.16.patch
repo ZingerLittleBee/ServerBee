@@ -49,18 +49,20 @@ index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710a
  			children: /* @__PURE__ */ jsxs(ListContext, {
  				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..96633487e78de6bea14a915fecdbf7e88f8afe31 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..f21462ade58d1fde530a921499e1d081c6dba5e8 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
-@@ -1,6 +1,7 @@
+@@ -1,7 +1,9 @@
  "use client";
  import { cn } from "../../utils/cn.js";
  import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible.js";
 +import { useI18n } from "../../contexts/i18n.js";
  import { createContext, use, useEffect, useMemo, useRef, useState } from "react";
++import { flushSync } from "react-dom";
  import { usePathname } from "fumadocs-core/framework";
  import { jsx, jsxs } from "react/jsx-runtime";
-@@ -198,9 +199,10 @@ function SidebarFolderContent(props) {
+ import Link from "fumadocs-core/link";
+@@ -198,9 +200,10 @@ function SidebarFolderContent(props) {
  	});
  }
  function SidebarTrigger({ children, ...props }) {
@@ -73,7 +75,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..96633487e78de6bea14a915fecdbf7e8
  		onClick: () => setOpen((prev) => !prev),
  		...props,
  		children
-@@ -208,9 +210,10 @@ function SidebarTrigger({ children, ...props }) {
+@@ -208,12 +211,16 @@ function SidebarTrigger({ children, ...props }) {
  }
  function SidebarCollapseTrigger(props) {
  	const { collapsed, setCollapsed } = useSidebar();
@@ -82,9 +84,17 @@ index 78c7d59de854993ca206520fda17399432dce1ce..96633487e78de6bea14a915fecdbf7e8
  		type: "button",
 -		"aria-label": "Collapse Sidebar",
 +		"aria-label": collapsed ? text.expandSidebar : text.collapseSidebar,
++		"aria-controls": "nd-sidebar",
  		"data-collapsed": collapsed,
- 		onClick: () => {
- 			setCollapsed((prev) => !prev);
+-		onClick: () => {
+-			setCollapsed((prev) => !prev);
++		onClick: (e) => {
++			const button = e.currentTarget;
++			flushSync(() => setCollapsed((prev) => !prev));
++			if (button.matches("[inert] *")) document.querySelector("[aria-controls=\"nd-sidebar\"]:not([inert] *)")?.focus();
+ 		},
+ 		...props,
+ 		children: props.children
 diff --git a/dist/contexts/i18n.d.ts b/dist/contexts/i18n.d.ts
 index 50c735388b049b2316f7fb957de7855a8fdbe0bc..8f2d365cacbbb96072bb7a898f6a19059505cd33 100644
 --- a/dist/contexts/i18n.d.ts
@@ -156,6 +166,26 @@ index 8590fe5f9069e232fc63ccee717244216ccaa0c9..1f77c3bf7fd5bbb2dbd2d120e10ba832
  			"data-full": full,
  			className: cn("flex flex-col w-full max-w-[900px] mx-auto [grid-area:main] px-4 py-6 gap-4 md:px-6 md:pt-8 xl:px-8 xl:pt-14", full ? "max-w-[1168px]" : "xl:layout:[--fd-toc-width:268px]", className),
  			children: [
+diff --git a/dist/layouts/docs/sidebar.js b/dist/layouts/docs/sidebar.js
+index 5601a88cfbc88240756b33994eeae99cbbe449d3..61c376f9285d71f4b156d4dc2c170bdf9c22275f 100644
+--- a/dist/layouts/docs/sidebar.js
++++ b/dist/layouts/docs/sidebar.js
+@@ -58,6 +58,7 @@ function SidebarContent({ ref: refProp, className, children, ...props }) {
+ 			ref: mergeRefs(ref, refProp, asideRef),
+ 			"data-collapsed": collapsed,
+ 			"data-hovered": collapsed && hovered,
++			inert: collapsed && !hovered,
+ 			className: cn("absolute flex flex-col w-full start-0 inset-y-0 items-end bg-fd-card text-sm border-e duration-250 *:w-(--fd-sidebar-width)", collapsed && ["inset-y-2 rounded-xl transition-transform border w-(--fd-sidebar-width)", hovered ? "shadow-lg translate-x-2 rtl:-translate-x-2" : "-translate-x-(--fd-sidebar-width) rtl:translate-x-full"], ref.current && ref.current.getAttribute("data-collapsed") === "true" !== collapsed && "transition-[width,inset-block,translate,background-color]", className),
+ 			...props,
+ 			...rest,
+@@ -66,6 +67,7 @@ function SidebarContent({ ref: refProp, className, children, ...props }) {
+ 	}), /* @__PURE__ */ jsxs("div", {
+ 		"data-sidebar-panel": "",
+ 		className: cn("fixed flex top-[calc(--spacing(4)+var(--fd-docs-row-3))] start-4 shadow-lg transition-opacity rounded-xl p-0.5 border bg-fd-muted text-fd-muted-foreground z-10", (!collapsed || hovered) && "pointer-events-none opacity-0"),
++		inert: !collapsed || hovered,
+ 		children: [/* @__PURE__ */ jsx(SidebarCollapseTrigger$1, {
+ 			className: cn(buttonVariants({
+ 				color: "ghost",
 diff --git a/dist/layouts/home/client.js b/dist/layouts/home/client.js
 index cdd3c964bae0b8217e42c18f4ef7f75886774cb3..6a402c4db0f66821401d771cb0d4d4e770b0b932 100644
 --- a/dist/layouts/home/client.js
