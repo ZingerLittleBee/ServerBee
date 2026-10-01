@@ -117,8 +117,12 @@ const searches: SearchCheck[] = [
   // not one of them twice.
   { locale: 'zh', query: 'toml', page: '/zh/docs/deployment' },
   { locale: 'zh', query: 'server.toml', page: '/zh/docs/configuration', every: ['server', 'toml'] },
-  // 用 is a word of its own: ICU leaves it alone in 已用, 调用 and 复用, and sections holding the term come first.
-  { locale: 'zh', query: '已用', page: '/zh/docs/alerts', first: '已用' }
+  // ICU leaves 用 (use) from 已用, 调用 and 复用, so 用 is a word right after a character alone and a filler word
+  // elsewhere: the first section found for 已用 holds 已用, the fallback searches 已用 with its 用, and 用 Docker 部署
+  // finds what Docker 部署 finds.
+  { locale: 'zh', query: '已用', page: '/zh/docs/alerts', first: '已用' },
+  { locale: 'zh', query: '已用 带宽', page: '/zh/docs/alerts' },
+  { locale: 'zh', query: '用 Docker 部署', page: '/zh/docs/deployment', same: 'Docker 部署' }
 ]
 
 // Words that no page holds find nothing, though ICU splits them into words that pages do hold: 区块 and 链, and 企业, 微

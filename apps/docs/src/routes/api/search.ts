@@ -8,11 +8,13 @@ const wordSegmenter = new Intl.Segmenter('zh', { granularity: 'word' })
 // ICU keeps `server.toml`, `1.2.3` and `com.example.cpu` as one word, so they are split here as Orama's English
 // tokenizer splits them, and `toml` finds `server.toml` on the Chinese pages as it does on the English ones.
 const wordSeparators = /[^\p{L}\p{N}_'-]+/u
+const hanCharacter = /\p{Script=Han}/u
 // Words that phrase a question or join the words it is about, rather than say what it is about. A Chinese query needs
 // every word in one heading or paragraph, which rarely holds them, so 升级失败怎么办 and 配置文件在哪里 found nothing,
 // and the 和 of 防火墙和告警 kept most firewall sections out of what it found. 办 and 样 are what ICU leaves of 怎么办 and
-// 怎么样, and ICU keeps 参与, 以及, 及时 and 涉及 whole. 在 and 用 are not among them: ICU splits 在线 into 在 and 线 (the
-// 线 of 离线), and 已用, 调用 and 复用 into a character and 用, so dropping them cut those words in half.
+// 怎么样, and ICU keeps 参与, 以及, 及时 and 涉及 whole. 在 is not among them, as ICU splits 在线 into 在 and 线 (the 线 of
+// 离线) and dropping it cut the word in half. ICU also splits 已用, 调用 and 复用 into a character and 用 (use), so 用 is
+// a filler word only where it does not follow a character alone, as in 可以用 Nginx 吗 and 用 Docker 部署.
 const fillerWords = new Set(
   [
     '如何 怎么 怎样 咋 什么 啥 为什么 哪 哪里 哪儿 哪些 哪个 多久 多少 何时 办 样', // question words
@@ -23,12 +25,23 @@ const fillerWords = new Set(
   ].flatMap((words) => words.split(' '))
 )
 
+/** Whether a word is a Chinese character alone. */
+function isCharacter(word: string | undefined): boolean {
+  return word?.length === 1 && hanCharacter.test(word)
+}
+
 /** The words ICU finds in a text, each marked as a filler word or not. */
 function* segmentWords(text: string): Generator<{ filler: boolean; word: string }> {
+  // The word right before, unless it is a filler word.
+  let previous: string | undefined
   for (const { segment, isWordLike } of wordSegmenter.segment(text.normalize('NFKC').toLowerCase())) {
-    if (isWordLike) {
-      yield { filler: fillerWords.has(segment), word: segment }
+    if (!isWordLike) {
+      previous = undefined
+      continue
     }
+    const filler = fillerWords.has(segment) || (segment === '用' && !isCharacter(previous))
+    yield { filler, word: segment }
+    previous = filler ? undefined : segment
   }
 }
 
@@ -66,7 +79,6 @@ const chineseTokenizer = {
 // What a reader typed between spaces, with a run of Chinese characters taken apart from the other characters typed
 // against it, as in 卸载agent.
 const typedWords = /\p{Script=Han}+|[^\s\p{Script=Han}]+/gu
-const hanCharacter = /\p{Script=Han}/u
 
 /**
  * The words of a query. A character alone matches the start of any word, so a word of one character is left out, and
@@ -94,7 +106,8 @@ function queryWords(term: string): string[] {
       }
     }
   }
-  return words.map((pieces) => pieces.join(' ')).filter((word) => chineseTokenizer.tokenize(word).join('').length > 1)
+  // A word is searched as it was typed, so that the 用 of 已用 still follows the character before it.
+  return words.map((pieces) => pieces.join('')).filter((word) => chineseTokenizer.tokenize(word).join('').length > 1)
 }
 
 /** Groups hits as Orama does: by the values of `properties`, in the order they come, at most `maxResult` a group. */
