@@ -10,12 +10,13 @@ const wordSegmenter = new Intl.Segmenter('zh', { granularity: 'word' })
 const wordSeparators = /[^\p{L}\p{N}_'-]+/u
 // Words that phrase a question rather than say what it is about. A Chinese query needs every word in one heading or
 // paragraph, which rarely holds them, so 升级失败怎么办 and 配置文件在哪里 found nothing. 办 and 样 are what ICU leaves
-// of 怎么办 and 怎么样. 在 is not one of them: ICU splits 在线 into 在 and 线, the 线 of 离线.
+// of 怎么办 and 怎么样. 在 and 用 are not among them: ICU splits 在线 into 在 and 线 (the 线 of 离线), and 已用, 调用 and
+// 复用 into a character and 用, so dropping them cut those words in half.
 const fillerWords = new Set(
   [
     '如何 怎么 怎样 咋 什么 啥 为什么 哪 哪里 哪儿 哪些 哪个 多久 多少 何时 办 样', // question words
     '是否 能否 能不能 可不可以 是不是 会不会', // yes-no questions
-    '是 能 会 要 可以 用 请问', // the verbs a question is built with
+    '是 能 会 要 可以 请问', // the verbs a question is built with
     '吗 呢 吧 啊 呀 的 了' // particles
   ].flatMap((words) => words.split(' '))
 )

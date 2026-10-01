@@ -72,6 +72,8 @@ const missingExports = [
 interface SearchCheck {
   /** Words that every section found holds. */
   every?: string[]
+  /** Text that the first section found holds. */
+  first?: string
   locale: 'en' | 'zh'
   page: string
   query: string
@@ -97,7 +99,9 @@ const searches: SearchCheck[] = [
   // `server.toml` is split as on the English pages, so its parts still match, and a section must hold both of them,
   // not one of them twice.
   { locale: 'zh', query: 'toml', page: '/zh/docs/deployment' },
-  { locale: 'zh', query: 'server.toml', page: '/zh/docs/configuration', every: ['server', 'toml'] }
+  { locale: 'zh', query: 'server.toml', page: '/zh/docs/configuration', every: ['server', 'toml'] },
+  // 用 is a word of its own: ICU leaves it alone in 已用, 调用 and 复用, and sections holding the term come first.
+  { locale: 'zh', query: '已用', page: '/zh/docs/alerts', first: '已用' }
 ]
 
 async function waitUntilReady(): Promise<void> {
@@ -202,6 +206,10 @@ for (const search of searches) {
     throw new Error(
       `Search for "${search.query}" (${search.locale}) returned a section without all its words: ${partial.url}`
     )
+  }
+  const first = sections[0]?.content.replace(highlightTags, '')
+  if (search.first && !first?.includes(search.first)) {
+    throw new Error(`Search for "${search.query}" (${search.locale}) returned first a section without ${search.first}`)
   }
 }
 
