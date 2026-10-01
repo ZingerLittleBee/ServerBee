@@ -3,7 +3,7 @@ import type { InferPageType } from 'fumadocs-core/source'
 
 import { type DocsLanguage, i18n, isDocsLanguage } from './i18n'
 import { SITE } from './site'
-import { source } from './source'
+import { findPage, source } from './source'
 
 type DocsPage = InferPageType<typeof source>
 
@@ -62,7 +62,7 @@ export function notFoundText(): Response {
 
 /** The Markdown export of one page, or a 404 for an unknown language or page. */
 export async function markdownResponse(lang: string, slugs: string[]): Promise<Response> {
-  const page = isDocsLanguage(lang) ? source.getPage(slugs, lang) : undefined
+  const page = isDocsLanguage(lang) ? findPage(slugs, lang) : undefined
   if (!page) {
     return notFoundText()
   }

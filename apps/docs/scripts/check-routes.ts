@@ -56,7 +56,16 @@ const markdownExports = [
   { path: '/llms.mdx/docs/quick-start', title: '# Quick Install', heading: '\n## Choose a deployment method' }
 ] as const
 
-const missingExports = ['/en/docs/nope.mdx', '/zh/docs/nope.mdx', '/fr/docs/quick-start.mdx', '/llms.mdx/docs/nope']
+const missingExports = [
+  '/en/docs/nope.mdx',
+  '/zh/docs/nope.mdx',
+  '/fr/docs/quick-start.mdx',
+  '/llms.mdx/docs/nope',
+  // Slugs holding a `%`, which answered 500 when decoded again, or found the quick start (%2571uick-start).
+  '/en/docs/x%25y.mdx',
+  '/llms.mdx/docs/x%25y',
+  '/en/docs/%2571uick-start.mdx'
+]
 
 // Each query must find its page, and only pages in the requested language.
 const searches = [
@@ -195,10 +204,12 @@ for (const path of ['/en/docs/quick-start', '/zh/docs/quick-start?ref=github', '
   )
 }
 
-// A missing page answers 404 in the language of its URL, titled and linked within that language: a missing docs page,
-// a path under a language that no route matches, and an unknown language.
+// A missing page answers 404 in the language of its URL, titled and linked within that language: a missing docs page
+// (also one whose slug holds a `%`), a path under a language that no route matches, and an unknown language.
 for (const { path, lang, heading } of [
   { path: '/en/docs/nope', lang: 'en', heading: 'Page not found' },
+  { path: '/en/docs/x%25y', lang: 'en', heading: 'Page not found' },
+  { path: '/en/docs/%2571uick-start', lang: 'en', heading: 'Page not found' },
   { path: '/zh/docs/nope', lang: 'zh', heading: '页面不存在' },
   { path: '/zh/nope', lang: 'zh', heading: '页面不存在' },
   { path: '/nope', lang: 'en', heading: 'Page not found' }

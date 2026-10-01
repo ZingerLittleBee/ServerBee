@@ -18,7 +18,7 @@ import { type DocsLanguage, i18n, isDocsLanguage, pathLanguage } from '@/lib/i18
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
 import { getPageMarkdownUrl } from '@/lib/llms'
 import { docsSiteName, languageLinks, notFoundHead, ogLocale, SITE, shareImageAlt } from '@/lib/site'
-import { source } from '@/lib/source'
+import { findPage, source } from '@/lib/source'
 
 function getDocsContentPath(lang: string, slugs: string[]): string {
   return `${lang}/${slugs.length > 0 ? slugs.join('/') : 'index'}.mdx`
@@ -101,7 +101,7 @@ const serverLoader = createServerFn({
     if (!isDocsLanguage(lang)) {
       throw notFound()
     }
-    const page = source.getPage(slugs, lang)
+    const page = findPage(slugs, lang)
     if (!page) {
       throw notFound()
     }
