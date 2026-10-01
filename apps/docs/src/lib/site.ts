@@ -1,6 +1,4 @@
-import { i18n } from './i18n'
-
-type DocsLanguage = (typeof i18n.languages)[number]
+import { type DocsLanguage, i18n } from './i18n'
 
 /**
  * The canonical docs host, for page metadata and crawler-facing files rather than whichever host served a request.

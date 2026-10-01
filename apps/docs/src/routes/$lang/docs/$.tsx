@@ -14,6 +14,7 @@ import {
 import { type ComponentProps, type ComponentType, Suspense } from 'react'
 
 import { useMDXComponents } from '@/components/mdx'
+import { type DocsLanguage, i18n, isDocsLanguage } from '@/lib/i18n'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
 import { getPageMarkdownUrl } from '@/lib/llms'
 import { docsSiteName, languageLinks, ogLocale, SITE } from '@/lib/site'
@@ -48,14 +49,13 @@ export const Route = createFileRoute('/$lang/docs/$')({
 
 interface DocsHeadData {
   description?: string
-  lang: string
+  lang: DocsLanguage
   markdownUrl: string
   title: string
   url: string
 }
 
-function docsHead({ description, lang: pageLang, markdownUrl, title, url }: DocsHeadData) {
-  const lang = pageLang === 'zh' ? 'zh' : 'en'
+function docsHead({ description, lang, markdownUrl, title, url }: DocsHeadData) {
   // The page's URL in another language swaps the language prefix.
   const inLanguage = (other: string) => `${SITE}/${other}${url.slice(lang.length + 1)}`
   const image = `${SITE}/og/landing-${lang}.png`
@@ -70,7 +70,9 @@ function docsHead({ description, lang: pageLang, markdownUrl, title, url }: Docs
       { property: 'og:title', content: title },
       ...describe.map((content) => ({ property: 'og:description', content })),
       { property: 'og:locale', content: ogLocale[lang] },
-      { property: 'og:locale:alternate', content: ogLocale[lang === 'zh' ? 'en' : 'zh'] },
+      ...i18n.languages
+        .filter((code) => code !== lang)
+        .map((code) => ({ property: 'og:locale:alternate', content: ogLocale[code] })),
       { property: 'og:image', content: image },
       { property: 'og:image:width', content: '1200' },
       { property: 'og:image:height', content: '630' },
@@ -89,6 +91,9 @@ const serverLoader = createServerFn({
 })
   .inputValidator((data: { slugs: string[]; lang: string }) => data)
   .handler(async ({ data: { slugs, lang } }) => {
+    if (!isDocsLanguage(lang)) {
+      throw notFound()
+    }
     const page = source.getPage(slugs, lang)
     if (!page) {
       throw notFound()

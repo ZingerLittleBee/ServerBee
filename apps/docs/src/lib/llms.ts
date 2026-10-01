@@ -1,12 +1,11 @@
 import type { Node } from 'fumadocs-core/page-tree'
 import type { InferPageType } from 'fumadocs-core/source'
 
-import { i18n } from './i18n'
+import { type DocsLanguage, i18n, isDocsLanguage } from './i18n'
 import { SITE } from './site'
 import { source } from './source'
 
 type DocsPage = InferPageType<typeof source>
-type DocsLanguage = (typeof i18n.languages)[number]
 
 const languageNames: Record<DocsLanguage, string> = { en: 'English', zh: '简体中文' }
 
@@ -22,10 +21,6 @@ const indexCopy: Record<DocsLanguage, { about: string; full: string; other: stri
     full: '以上全部页面合并为一个文件',
     other: '本文档的英文版'
   }
-}
-
-export function isDocsLanguage(lang: string): lang is DocsLanguage {
-  return (i18n.languages as string[]).includes(lang)
 }
 
 /** A page's Markdown export: its URL with `.mdx` appended, so the index is `/en/docs.mdx`. */

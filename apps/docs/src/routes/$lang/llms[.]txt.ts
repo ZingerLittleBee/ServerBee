@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { isDocsLanguage, llmsIndex, notFoundText, textResponse } from '@/lib/llms'
+import { isDocsLanguage } from '@/lib/i18n'
+import { llmsIndex, notFoundText, textResponse } from '@/lib/llms'
 
 const GET = ({ params }: { params: { lang: string } }) =>
   isDocsLanguage(params.lang) ? textResponse(llmsIndex(params.lang)) : notFoundText()
