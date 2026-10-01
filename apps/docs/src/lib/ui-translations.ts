@@ -42,3 +42,18 @@ export const uiTranslations: Record<DocsLanguage, Partial<Translations> & { disp
     askAboutPage: '阅读 {url}，我想就这个页面提问。'
   }
 }
+
+/**
+ * The search dialog's text that fumadocs-ui has no key for. Its close button showed its key, ESC, and that was all its
+ * name said, so the name keeps the key it shows. A screen reader hears the result count once results arrive.
+ */
+export const searchDialogText: Record<DocsLanguage, { closeSearch: string; resultCount: (count: number) => string }> = {
+  en: {
+    closeSearch: 'Close search (Esc)',
+    resultCount: (count) => (count === 1 ? '1 result' : `${count} results`)
+  },
+  zh: {
+    closeSearch: '关闭搜索（Esc）',
+    resultCount: (count) => `${count} 个结果`
+  }
+}

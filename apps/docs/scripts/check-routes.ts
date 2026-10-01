@@ -493,7 +493,8 @@ expect(
 )
 const unreachable: string[] = []
 // Every Chinese docs page names its controls in Chinese. The names a control takes only after a click, such as the
-// sidebar triggers' once the sidebar is open, never reach this HTML: check-contracts covers those.
+// sidebar triggers' once the sidebar is open and those in the search dialog, never reach this HTML: check-contracts
+// covers those.
 const englishNamed: string[] = []
 for (let start = 0; start < sitemapUrls.length; start += 8) {
   await Promise.all(

@@ -17,18 +17,8 @@ import {
 import { useI18n } from 'fumadocs-ui/contexts/i18n'
 import { type KeyboardEvent, useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 
-import { type DocsLanguage, i18n, isDocsLanguage } from '@/lib/i18n'
-
-const resultCount: Record<DocsLanguage, (count: number) => string> = {
-  en: (count) => (count === 1 ? '1 result' : `${count} results`),
-  zh: (count) => `${count} 个结果`
-}
-
-// fumadocs' close button shows its key, ESC, and that was all its name said. The name keeps the key it shows.
-const closeLabel: Record<DocsLanguage, string> = {
-  en: 'Close search (Esc)',
-  zh: '关闭搜索（Esc）'
-}
+import { i18n, isDocsLanguage } from '@/lib/i18n'
+import { searchDialogText } from '@/lib/ui-translations'
 
 /**
  * The results of each search URL. fumadocs' fetch client answers a query it has searched before with the array it got
@@ -119,7 +109,7 @@ export default function DocsSearchDialog(props: SharedProps) {
     if (!results) {
       return ''
     }
-    return results.length > 0 ? resultCount[lang](results.length) : text.searchNoResult
+    return results.length > 0 ? searchDialogText[lang].resultCount(results.length) : text.searchNoResult
   })
   useEffect(() => {
     setStatus(describe(items))
@@ -163,7 +153,7 @@ export default function DocsSearchDialog(props: SharedProps) {
             aria-expanded={hasResults}
             role="combobox"
           />
-          <SearchDialogClose aria-label={closeLabel[lang]} onKeyDown={keepEnterOnClose} />
+          <SearchDialogClose aria-label={searchDialogText[lang].closeSearch} onKeyDown={keepEnterOnClose} />
           {/* In the header, since the dialog draws a border under each of its parts but the last, the result list. */}
           <output aria-live="polite" className="sr-only">
             {status}

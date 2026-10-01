@@ -8,7 +8,7 @@ import { remarkGfm } from 'fumadocs-core/mdx-plugins/remark-gfm'
 import { defaultTranslations, type Translations } from 'fumadocs-ui/i18n'
 
 import { docsPages, landingCopy } from '../src/components/landing/translations'
-import { uiTranslations } from '../src/lib/ui-translations'
+import { searchDialogText, uiTranslations } from '../src/lib/ui-translations'
 
 const docsApp = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const repository = resolve(docsApp, '../..')
@@ -522,6 +522,14 @@ for (const [key, english] of Object.entries(defaultTranslations)) {
   invariant(
     chinese && /\p{Script=Han}/u.test(chinese),
     `apps/docs/src/lib/ui-translations.ts leaves fumadocs-ui's "${english}" (${key}) untranslated in zh`
+  )
+}
+// Chinese translates the search dialog's own text too, which appears only once the dialog is open.
+for (const [key, value] of Object.entries(searchDialogText.zh)) {
+  const chinese = typeof value === 'function' ? value(2) : value
+  invariant(
+    /\p{Script=Han}/u.test(chinese),
+    `apps/docs/src/lib/ui-translations.ts leaves the search dialog's ${key} untranslated in zh`
   )
 }
 
