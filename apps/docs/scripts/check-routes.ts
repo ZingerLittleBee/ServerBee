@@ -42,6 +42,10 @@ function englishLabels(html: string): string[] {
 }
 
 const hrefAttribute = /\bhref="([^"]*)"/
+const labelElement = /<label>(.*?)<\/label>/gs
+const checkboxInput = /<input\b[^>]*\btype="checkbox"/g
+// Tags, and the comments React puts between adjacent text nodes.
+const markup = /<!-- -->|<[^>]*>/g
 
 // Token colors of the default code themes under 4.5:1 on the code block backgrounds, replaced in source.config.ts.
 const lowContrastTokens = /--shiki-light:#(?:6a737d|d73a49|22863a|e36209)\b|--shiki-dark:#6a737d\b/i
@@ -296,14 +300,27 @@ for (const query of misses) {
 
 // fumadocs links go through src/components/framework-link.tsx. A link to a heading on the same page stays a fragment,
 // which the router would otherwise turn into the path /<page>/#<heading>. The checkboxes of the deployment checklist
-// are named by the text after them (src/components/list-item.tsx).
+// are named by the text after them (src/components/list-item.tsx): each task holds its checkbox in its one label, with
+// text beside it.
 for (const path of ['/en/docs/deployment', '/zh/docs/deployment']) {
   const html = await (await fetch(`${baseUrl}${path}`)).text()
   expect(!html.includes(`href="${path}/#`), `${path} renders a same-page heading link as a path`)
-  const tasks = html.split('<li class="task-list-item">').slice(1)
+  const tasks = html
+    .split('<li class="task-list-item">')
+    .slice(1)
+    .map((task) => task.slice(0, task.indexOf('</li>')))
+  const labeled = tasks.filter((task) => {
+    const labels = [...task.matchAll(labelElement)].map((match) => match[1])
+    return (
+      labels.length === 1 &&
+      task.match(checkboxInput)?.length === 1 &&
+      labels[0].match(checkboxInput)?.length === 1 &&
+      labels[0].replace(markup, '').trim() !== ''
+    )
+  })
   expect(
-    tasks.length > 0 && tasks.every((task) => task.startsWith('<label><input type="checkbox"')),
-    `${path} renders a task list checkbox without a label`
+    tasks.length > 0 && labeled.length === tasks.length,
+    `${path} renders a task list checkbox without a label naming it`
   )
 }
 
