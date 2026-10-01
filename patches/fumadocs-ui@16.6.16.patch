@@ -49,7 +49,7 @@ index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710a
  			children: /* @__PURE__ */ jsxs(ListContext, {
  				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..f21462ade58d1fde530a921499e1d081c6dba5e8 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..336ad1ec03e5e3bbb2a7fd4708ee41ebd518b3a6 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
 @@ -1,7 +1,9 @@
@@ -62,7 +62,48 @@ index 78c7d59de854993ca206520fda17399432dce1ce..f21462ade58d1fde530a921499e1d081
  import { usePathname } from "fumadocs-core/framework";
  import { jsx, jsxs } from "react/jsx-runtime";
  import Link from "fumadocs-core/link";
-@@ -198,9 +200,10 @@ function SidebarFolderContent(props) {
+@@ -54,6 +56,13 @@ function useFolder() {
+ function useFolderDepth() {
+ 	return use(FolderContext)?.depth ?? 0;
+ }
++function focusTwin(element) {
++	const twin = element.matches("[data-search], [data-search-full]") ? "[data-search], [data-search-full]" : "[aria-controls=\"nd-sidebar\"]";
++	for (const candidate of document.querySelectorAll(`:is(${twin}):not([inert] *)`)) {
++		candidate.focus();
++		if (document.activeElement === candidate) return;
++	}
++}
+ function SidebarContent({ mode: allowedMode = "full", children }) {
+ 	const { collapsed, mode } = useSidebar();
+ 	const [hover, setHover] = useState(false);
+@@ -68,6 +77,11 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
+ 		if (!element) return true;
+ 		return !collapsed || e.pointerType === "touch" || element.getAnimations().length > 0;
+ 	}
++	function setHovered(value) {
++		const focused = document.activeElement;
++		flushSync(() => setHover(value));
++		if (focused?.matches("[inert] *")) focusTwin(focused);
++	}
+ 	return children({
+ 		ref,
+ 		collapsed,
+@@ -75,12 +89,12 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
+ 		onPointerEnter(e) {
+ 			if (shouldIgnoreHover(e)) return;
+ 			window.clearTimeout(timerRef.current);
+-			setHover(true);
++			setHovered(true);
+ 		},
+ 		onPointerLeave(e) {
+ 			if (shouldIgnoreHover(e)) return;
+ 			window.clearTimeout(timerRef.current);
+-			timerRef.current = window.setTimeout(() => setHover(false), Math.min(e.clientX, document.body.clientWidth - e.clientX) > 100 ? 0 : 500);
++			timerRef.current = window.setTimeout(() => setHovered(false), Math.min(e.clientX, document.body.clientWidth - e.clientX) > 100 ? 0 : 500);
+ 		}
+ 	});
+ }
+@@ -198,9 +212,10 @@ function SidebarFolderContent(props) {
  	});
  }
  function SidebarTrigger({ children, ...props }) {
@@ -75,7 +116,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..f21462ade58d1fde530a921499e1d081
  		onClick: () => setOpen((prev) => !prev),
  		...props,
  		children
-@@ -208,12 +211,16 @@ function SidebarTrigger({ children, ...props }) {
+@@ -208,12 +223,16 @@ function SidebarTrigger({ children, ...props }) {
  }
  function SidebarCollapseTrigger(props) {
  	const { collapsed, setCollapsed } = useSidebar();
@@ -91,7 +132,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..f21462ade58d1fde530a921499e1d081
 +		onClick: (e) => {
 +			const button = e.currentTarget;
 +			flushSync(() => setCollapsed((prev) => !prev));
-+			if (button.matches("[inert] *")) document.querySelector("[aria-controls=\"nd-sidebar\"]:not([inert] *)")?.focus();
++			if (button.matches("[inert] *")) focusTwin(button);
  		},
  		...props,
  		children: props.children
