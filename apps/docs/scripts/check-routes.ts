@@ -266,6 +266,9 @@ for (const { path, status, to } of [
   // Redirecting to the decoded path puts a character in the Location header that fails the request.
   { path: '/zh-CN/docs/%E5%AE%89%E8%A3%85', status: 308, to: '/zh/docs/%E5%AE%89%E8%A3%85' },
   { path: '/EN/docs', status: 308, to: '/en/docs' },
+  // A query comes back as it was, where JSON would read 1.10 as 1.1 and "x" as x.
+  { path: '/en/docs/quick-start?v=1.10&q=%22x%22', status: 200 },
+  { path: '/docs/quick-start?v=1.10', status: 307, to: '/en/docs/quick-start?v=1.10' },
   { path: '/nope', status: 404 },
   { path: '/fr/docs/quick-start', status: 404 },
   { path: '/constructor/docs', status: 404 },
