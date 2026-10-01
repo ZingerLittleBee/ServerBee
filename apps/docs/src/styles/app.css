@@ -11,3 +11,13 @@
 [role="listbox"] [aria-selected="true"] > .text-fd-muted-foreground {
   color: inherit;
 }
+
+/*
+ * fumadocs' light theme sets muted text (#737373) at 4.1-4.4:1 on its backgrounds and the focus ring (#a3a3a3) at
+ * 2.2-2.3:1, under the 4.5:1 that text needs and the 3:1 that a focus indicator needs. Its dark values pass.
+ */
+:root:not(.dark) {
+  --color-fd-muted-foreground: hsl(0, 0%, 39%);
+  --color-fd-ring: hsl(0, 0%, 45%);
+}
+

@@ -21,6 +21,7 @@ const darkMediaRoot = ':root:not(.light):not(.dark)'
 const darkMediaQuery = /^@media \(prefers-color-scheme: ?dark\)$/
 // remark, without a frontmatter plugin, reads a page's frontmatter as a heading.
 const frontmatter = /^---\n[\s\S]*?\n---\n/
+const hslNotation = /^hsla?\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%(?:,\s*([\d.]+)(%?))?\)$/
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -163,7 +164,7 @@ function cssBlocks(source: string): CssBlock[] {
       statementStart = next
     } else if (char === '}') {
       const block = open.pop()
-      invariant(block, 'Unbalanced braces in a landing stylesheet')
+      invariant(block, 'Unbalanced braces in a stylesheet')
       const parent = open.at(-1)?.children ?? top
       parent.push({ body: css.slice(block.start, index), children: block.children, prelude: block.prelude })
       statementStart = next
@@ -172,7 +173,7 @@ function cssBlocks(source: string): CssBlock[] {
     }
     index = next
   }
-  invariant(open.length === 0, 'Unclosed block in a landing stylesheet')
+  invariant(open.length === 0, 'Unclosed block in a stylesheet')
   return top
 }
 
@@ -192,6 +193,42 @@ function cssDeclarations(body: string): Map<string, string> {
     }
   }
   return declarations
+}
+
+/** An sRGB color, channels and alpha from 0 to 1. */
+type Rgba = [number, number, number, number]
+
+/** An hsl() or hsla() color, the notation fumadocs' themes use. */
+function hslColor(value: string | undefined): Rgba {
+  const match = value?.match(hslNotation)
+  invariant(match, `Unexpected color ${value ?? '<missing>'}: update hslColor in apps/docs/scripts/check-contracts.ts`)
+  const [hue, saturation, lightness] = [Number(match[1]), Number(match[2]) / 100, Number(match[3]) / 100]
+  const channel = (n: number) => {
+    const k = (n + hue / 30) % 12
+    return lightness - saturation * Math.min(lightness, 1 - lightness) * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+  }
+  const alpha = match[4] === undefined ? 1 : Number(match[4]) / (match[5] ? 100 : 1)
+  return [channel(0), channel(8), channel(4), alpha]
+}
+
+/** A color painted over the opaque `ground`. */
+function composite([red, green, blue, alpha]: Rgba, ground: Rgba): Rgba {
+  return [
+    red * alpha + ground[0] * (1 - alpha),
+    green * alpha + ground[1] * (1 - alpha),
+    blue * alpha + ground[2] * (1 - alpha),
+    1
+  ]
+}
+
+/** The WCAG 2 contrast ratio of two opaque colors. */
+function contrastRatio(first: Rgba, second: Rgba): number {
+  const luminance = ([red, green, blue]: Rgba) => {
+    const linear = (channel: number) => (channel <= 0.040_45 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+  }
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a)
+  return (lighter + 0.05) / (darker + 0.05)
 }
 
 const localePages = new Map<string, Set<string>>()
@@ -349,6 +386,42 @@ for (const file of ['landing.css', 'landing-mocks.css']) {
   }
   for (const [key, fallback] of fallbackRules) {
     invariant(classRules.has(key), `${stylesheet}: "${fallback.prelude}" has no :root.dark rule with the same values`)
+  }
+}
+
+// fumadocs' light theme put muted text and the focus ring under the contrast they need on its surfaces, 4.5:1 for text
+// and 3:1 for a focus indicator, and src/styles/app.css raises them. Both themes keep them.
+function themeColors(blocks: CssBlock[], prelude: string, file: string): Map<string, string> {
+  const block = blocks.find((candidate) => candidate.prelude === prelude)
+  invariant(
+    block,
+    `${file} has no "${prelude}" block: update the contrast check in apps/docs/scripts/check-contracts.ts`
+  )
+  return cssDeclarations(block.body)
+}
+const fumadocsColors = cssBlocks(await text(join(fumadocsUi, 'css/lib/default-colors.css')))
+const appStyles = cssBlocks(await text(join(docsApp, 'src/styles/app.css')))
+const themes = {
+  light: new Map([
+    ...themeColors(fumadocsColors, '@theme', 'fumadocs-ui/css/lib/default-colors.css'),
+    ...themeColors(appStyles, ':root:not(.dark)', 'apps/docs/src/styles/app.css')
+  ]),
+  dark: themeColors(fumadocsColors, '.dark', 'fumadocs-ui/css/lib/default-colors.css')
+}
+for (const [theme, colors] of Object.entries(themes)) {
+  for (const surface of ['background', 'card', 'secondary', 'muted', 'popover']) {
+    const ground = hslColor(colors.get(`--color-fd-${surface}`))
+    for (const [token, minimum] of [
+      ['muted-foreground', 4.5],
+      ['ring', 3]
+    ] as const) {
+      const ratio = contrastRatio(composite(hslColor(colors.get(`--color-fd-${token}`)), ground), ground)
+      invariant(
+        ratio >= minimum,
+        `The ${theme} --color-fd-${token} is ${ratio.toFixed(2)}:1 on --color-fd-${surface}, under ${minimum}:1: ` +
+          'update apps/docs/src/styles/app.css'
+      )
+    }
   }
 }
 
