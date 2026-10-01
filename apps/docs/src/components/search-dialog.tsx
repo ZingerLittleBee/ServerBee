@@ -71,11 +71,22 @@ export default function DocsSearchDialog(props: SharedProps) {
   const items = query.data === 'empty' ? null : query.data
   const hasResults = Boolean(items && items.length > 0)
   const lang = locale && isDocsLanguage(locale) ? locale : i18n.defaultLanguage
-  // What a screen reader announces once results arrive: how many, or that there are none.
-  let status = ''
-  if (items && !query.isLoading) {
-    status = items.length > 0 ? resultCount[lang](items.length) : text.searchNoResult
-  }
+  // What a screen reader announces once results arrive: how many, or that there are none. fumadocs also stops loading
+  // when a search that a newer one replaced ends, with the older results still shown, so the status follows the
+  // results, and is cleared each time a search starts.
+  const [status, setStatus] = useState('')
+  useEffect(() => {
+    let found = ''
+    if (items) {
+      found = items.length > 0 ? resultCount[lang](items.length) : text.searchNoResult
+    }
+    setStatus(found)
+  }, [items, lang, text.searchNoResult])
+  useEffect(() => {
+    if (query.isLoading) {
+      setStatus('')
+    }
+  }, [query.isLoading])
 
   return (
     <SearchDialog isLoading={query.isLoading} onSearchChange={setSearch} search={search} {...props}>
