@@ -15,7 +15,7 @@ import {
   useSearchList
 } from 'fumadocs-ui/components/dialog/search'
 import { useI18n } from 'fumadocs-ui/contexts/i18n'
-import { type KeyboardEvent, useEffect, useEffectEvent, useId, useState } from 'react'
+import { type KeyboardEvent, useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 
 import { type DocsLanguage, i18n, isDocsLanguage } from '@/lib/i18n'
 
@@ -65,6 +65,30 @@ function ResultOption({ item, onActive, onClick, optionId }: ResultOptionProps) 
   return <SearchDialogListItem id={optionId} item={item} onClick={onClick} role="option" tabIndex={-1} />
 }
 
+// fumadocs' search buttons. The docs sidebar has one in each of its halves, the docked sidebar and the floating panel
+// shown once it is collapsed, and the half off screen is inert. The header has one too, hidden beside the sidebar.
+const searchButtons = '[data-search], [data-search-full]'
+
+/**
+ * Focuses the element focused before the dialog opened or, if the half of the sidebar holding it went off screen
+ * meanwhile, its search button or sidebar toggle in the other half, and returns whether one took focus.
+ */
+function restoreFocus(opener: Element | null): boolean {
+  if (!(opener instanceof HTMLElement)) {
+    return false
+  }
+  const twins = opener.matches(searchButtons) ? searchButtons : '[aria-controls="nd-sidebar"]'
+  // Of the twins, the first that takes focus: neither an inert one nor a hidden one does.
+  const candidates = opener.matches('[inert] *') ? document.querySelectorAll<HTMLElement>(twins) : [opener]
+  for (const candidate of candidates) {
+    candidate.focus({ preventScroll: true })
+    if (document.activeElement === candidate) {
+      return true
+    }
+  }
+  return false
+}
+
 /** fumadocs opens the highlighted result on an Enter anywhere in the window, so Enter on the close button did too. */
 function keepEnterOnClose(event: KeyboardEvent<HTMLButtonElement>) {
   if (event.key === 'Enter') {
@@ -105,11 +129,31 @@ export default function DocsSearchDialog(props: SharedProps) {
       setStatus('')
     }
   }, [query.isLoading])
+  // fumadocs opens the dialog without a Radix trigger, the element Radix hands focus back to, so focus fell to the page
+  // when the dialog closed. It goes back to the element focused before, unless a result was chosen, which navigates.
+  const opener = useRef<Element | null>(null)
 
   return (
-    <SearchDialog isLoading={query.isLoading} onSearchChange={setSearch} search={search} {...props}>
+    <SearchDialog
+      isLoading={query.isLoading}
+      onSearchChange={setSearch}
+      onSelect={() => {
+        opener.current = null
+      }}
+      search={search}
+      {...props}
+    >
       <SearchDialogOverlay />
-      <SearchDialogContent>
+      <SearchDialogContent
+        onCloseAutoFocus={(event) => {
+          if (restoreFocus(opener.current)) {
+            event.preventDefault()
+          }
+        }}
+        onOpenAutoFocus={() => {
+          opener.current = document.activeElement
+        }}
+      >
         <SearchDialogHeader>
           <SearchDialogIcon />
           <SearchDialogInput
