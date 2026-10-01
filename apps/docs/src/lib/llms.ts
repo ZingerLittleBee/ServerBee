@@ -15,8 +15,17 @@ export function getPageMarkdownUrl(page: DocsPage): string {
   return `${page.url}.mdx`
 }
 
+/**
+ * fumadocs-mdx 14.x wraps the Markdown serializer's handlers without their `peek`, so a bold span after plain text
+ * comes out as `&#x2A;*text**`. fumadocs-core fixed the wrapper later (`Object.assign(wrapped, handler)`), but no 14.x
+ * release of fumadocs-mdx bundles that fix.
+ */
+function restoreAttentionMarkers(markdown: string): string {
+  return markdown.replaceAll('&#x2A;', '*')
+}
+
 export async function getLLMText(page: DocsPage): Promise<string> {
-  const processed = await page.data.getText('processed')
+  const processed = restoreAttentionMarkers(await page.data.getText('processed'))
   return `# ${page.data.title}\n\n${processed}`
 }
 

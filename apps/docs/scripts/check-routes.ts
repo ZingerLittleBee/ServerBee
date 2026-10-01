@@ -28,14 +28,14 @@ const docsLabels = {
   zh: ['本页目录', '选择语言', '打开搜索', '打开侧边栏', '收起侧边栏', '切换主题', '复制 Markdown']
 } as const
 
-// Markdown exports, each in its page's language and served as UTF-8.
+// Markdown exports, each in its page's language with its section headings, and served as UTF-8.
 const markdownExports = [
-  { path: '/en/docs.mdx', title: '# Introduction' },
-  { path: '/zh/docs.mdx', title: '# 介绍' },
-  { path: '/en/docs/quick-start.mdx', title: '# Quick Install' },
-  { path: '/zh/docs/quick-start.mdx', title: '# 快速安装' },
+  { path: '/en/docs.mdx', title: '# Introduction', heading: '\n## What Is ServerBee' },
+  { path: '/zh/docs.mdx', title: '# 介绍', heading: '\n## ServerBee 是什么' },
+  { path: '/en/docs/quick-start.mdx', title: '# Quick Install', heading: '\n## Choose a deployment method' },
+  { path: '/zh/docs/quick-start.mdx', title: '# 快速安装', heading: '\n## 先选择部署方式' },
   // The first export URL, which deployed pages linked to before the export was localized.
-  { path: '/llms.mdx/docs/quick-start', title: '# Quick Install' }
+  { path: '/llms.mdx/docs/quick-start', title: '# Quick Install', heading: '\n## Choose a deployment method' }
 ] as const
 
 const missingExports = ['/en/docs/nope.mdx', '/zh/docs/nope.mdx', '/fr/docs/quick-start.mdx', '/llms.mdx/docs/nope']
@@ -139,6 +139,8 @@ for (const route of markdownExports) {
     if (method === 'GET') {
       const markdown = await response.text()
       expect(markdown.startsWith(`${route.title}\n`), `${route.path} does not start with "${route.title}"`)
+      expect(markdown.includes(route.heading), `${route.path} lost its section headings`)
+      expect(!markdown.includes('&#x2A;'), `${route.path} encodes an emphasis marker as &#x2A;`)
     }
   }
 }
