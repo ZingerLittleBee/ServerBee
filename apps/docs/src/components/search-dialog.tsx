@@ -14,7 +14,7 @@ import {
   useSearchList
 } from 'fumadocs-ui/components/dialog/search'
 import { useI18n } from 'fumadocs-ui/contexts/i18n'
-import { useEffect, useId, useState } from 'react'
+import { type KeyboardEvent, useEffect, useId, useState } from 'react'
 
 interface ResultOptionProps {
   item: SearchItemType
@@ -33,7 +33,15 @@ function ResultOption({ item, onActive, onClick, optionId }: ResultOptionProps) 
     }
   }, [isActive, onActive, optionId])
 
-  return <SearchDialogListItem id={optionId} item={item} onClick={onClick} role="option" />
+  // Options take no focus: focus stays in the input, which names the highlighted one as its active descendant.
+  return <SearchDialogListItem id={optionId} item={item} onClick={onClick} role="option" tabIndex={-1} />
+}
+
+/** fumadocs opens the highlighted result on an Enter anywhere in the window, so Enter on the close button did too. */
+function keepEnterOnClose(event: KeyboardEvent<HTMLButtonElement>) {
+  if (event.key === 'Enter') {
+    event.stopPropagation()
+  }
 }
 
 /**
@@ -63,7 +71,7 @@ export default function DocsSearchDialog(props: SharedProps) {
             aria-expanded={hasResults}
             role="combobox"
           />
-          <SearchDialogClose />
+          <SearchDialogClose onKeyDown={keepEnterOnClose} />
         </SearchDialogHeader>
         <SearchDialogList
           Item={({ item, onClick }) => (
