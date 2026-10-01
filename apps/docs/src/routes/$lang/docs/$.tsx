@@ -17,7 +17,7 @@ import { useMDXComponents } from '@/components/mdx'
 import { type DocsLanguage, i18n, isDocsLanguage, pathLanguage } from '@/lib/i18n'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
 import { getPageMarkdownUrl } from '@/lib/llms'
-import { docsSiteName, languageLinks, notFoundHead, ogLocale, SITE } from '@/lib/site'
+import { docsSiteName, languageLinks, notFoundHead, ogLocale, SITE, shareImageAlt } from '@/lib/site'
 import { source } from '@/lib/source'
 
 function getDocsContentPath(lang: string, slugs: string[]): string {
@@ -82,10 +82,12 @@ function docsHead({ description, lang, markdownUrl, title, url }: DocsHeadData) 
       { property: 'og:image:width', content: '1200' },
       { property: 'og:image:height', content: '630' },
       { property: 'og:image:type', content: 'image/png' },
+      { property: 'og:image:alt', content: shareImageAlt[lang] },
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: title },
       ...describe.map((content) => ({ name: 'twitter:description', content })),
-      { name: 'twitter:image', content: image }
+      { name: 'twitter:image', content: image },
+      { name: 'twitter:image:alt', content: shareImageAlt[lang] }
     ],
     links: [...languageLinks(inLanguage, lang), { rel: 'alternate', type: 'text/markdown', href: markdownUrl }]
   }

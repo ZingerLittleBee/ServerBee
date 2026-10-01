@@ -18,6 +18,12 @@ export function notFoundHead(lang: DocsLanguage) {
 
 export const ogLocale: Record<DocsLanguage, string> = { en: 'en_US', zh: 'zh_CN' }
 
+/** Alt text of the share image the landing and docs pages declare, public/og/landing-{lang}.png. */
+export const shareImageAlt: Record<DocsLanguage, string> = {
+  en: 'ServerBee: Self-hosted VPS monitoring, down to every route. A radar shows each server’s latency to Shanghai.',
+  zh: 'ServerBee：自托管的 VPS 监控，细到每一条线路。雷达图显示各服务器到上海的延迟。'
+}
+
 /** The hreflang of each language: the Chinese pages are written in Simplified Chinese. */
 export const hrefLangs: Record<DocsLanguage, string> = { en: 'en', zh: 'zh-Hans' }
 

@@ -129,6 +129,8 @@ for (const route of routes) {
       `hrefLang="zh-Hans" href="https://docs.serverbee.app/zh${pagePath}"`,
       `hrefLang="x-default" href="https://docs.serverbee.app/en${pagePath}"`,
       `property="og:image" content="https://docs.serverbee.app/og/landing-${route.lang}.png"`,
+      'property="og:image:alt" content="ServerBee',
+      'name="twitter:image:alt" content="ServerBee',
       `type="text/markdown" href="${route.path}.mdx"`
     ]) {
       expect(html.includes(link), `${route.path} lacks ${link}`)
