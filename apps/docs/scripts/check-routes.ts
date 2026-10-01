@@ -247,10 +247,16 @@ for (const query of misses) {
 }
 
 // fumadocs links go through src/components/framework-link.tsx. A link to a heading on the same page stays a fragment,
-// which the router would otherwise turn into the path /<page>/#<heading>.
+// which the router would otherwise turn into the path /<page>/#<heading>. The checkboxes of the deployment checklist
+// are named by the text after them (src/components/list-item.tsx).
 for (const path of ['/en/docs/deployment', '/zh/docs/deployment']) {
   const html = await (await fetch(`${baseUrl}${path}`)).text()
   expect(!html.includes(`href="${path}/#`), `${path} renders a same-page heading link as a path`)
+  const tasks = html.split('<li class="task-list-item">').slice(1)
+  expect(
+    tasks.length > 0 && tasks.every((task) => task.startsWith('<label><input type="checkbox"')),
+    `${path} renders a task list checkbox without a label`
+  )
 }
 
 // Only the page itself is the current page: not the home and docs index links above it, and not for another query.
