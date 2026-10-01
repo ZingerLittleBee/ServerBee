@@ -65,8 +65,12 @@ const searches = [
   { locale: 'zh', query: '防火墙', page: '/zh/docs/firewall' },
   { locale: 'zh', query: '安装', page: '/zh/docs/quick-start' },
   { locale: 'zh', query: 'Docker 安装', page: '/zh/docs/quick-start' },
-  // A question word the pages do not contain does not empty the results.
+  // Question words, which the pages rarely contain, do not empty the results.
   { locale: 'zh', query: '如何安装', page: '/zh/docs/quick-start' },
+  { locale: 'zh', query: '升级失败怎么办', page: '/zh/docs/deployment' },
+  { locale: 'zh', query: '配置文件在哪里', page: '/zh/docs/configuration' },
+  // Words that no heading or paragraph holds together, here a heading and the paragraphs under it.
+  { locale: 'zh', query: '卸载 Agent', page: '/zh/docs/deployment' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.
