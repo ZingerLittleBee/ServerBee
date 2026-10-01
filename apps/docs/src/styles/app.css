@@ -3,3 +3,11 @@
 @import "fumadocs-ui/css/preset.css";
 @import "./landing.css";
 @import "./landing-mocks.css";
+
+/*
+ * The breadcrumb of the highlighted search result is muted text on the accent background, under 4.5:1 in both themes.
+ * The highlighted option is the one the listbox marks selected (components/search-dialog.tsx).
+ */
+[role="listbox"] [aria-selected="true"] > .text-fd-muted-foreground {
+  color: inherit;
+}

@@ -2,10 +2,12 @@ import { createRootRoute, HeadContent, Outlet, Scripts, useRouterState } from '@
 import { useSearchContext } from 'fumadocs-ui/contexts/search'
 import { defineI18nUI } from 'fumadocs-ui/i18n'
 import { RootProvider } from 'fumadocs-ui/provider/tanstack'
-import { useEffect } from 'react'
+import { lazy, useEffect } from 'react'
 
 import { i18n } from '@/lib/i18n'
 import appCss from '@/styles/app.css?url'
+
+const SearchDialog = lazy(() => import('@/components/search-dialog'))
 
 const { provider } = defineI18nUI(i18n, {
   translations: {
@@ -57,7 +59,7 @@ function RootComponent() {
         <HeadContent />
       </head>
       <body className="flex min-h-screen flex-col">
-        <RootProvider i18n={provider(lang)} search={isLanding ? { preload: false } : undefined}>
+        <RootProvider i18n={provider(lang)} search={isLanding ? { SearchDialog, preload: false } : { SearchDialog }}>
           {isLanding ? null : <PreloadSearchDialog />}
           <Outlet />
         </RootProvider>
