@@ -136,13 +136,18 @@ function PreloadSearchDialog({ whenIdle }: { whenIdle: boolean }) {
       return
     }
     const mount = () => setOpenSearch(false)
-    // Safari has no requestIdleCallback.
     if (typeof requestIdleCallback === 'function') {
       const id = requestIdleCallback(mount, { timeout: 5000 })
       return () => cancelIdleCallback(id)
     }
-    const id = setTimeout(mount, 2000)
-    return () => clearTimeout(id)
+    // Safari has no requestIdleCallback, so it mounts the dialog once the page has loaded. A fixed delay kept the
+    // hotkey losing keys for as long as it lasted.
+    if (document.readyState === 'complete') {
+      mount()
+      return
+    }
+    window.addEventListener('load', mount, { once: true })
+    return () => window.removeEventListener('load', mount)
   }, [open, setOpenSearch, whenIdle])
 
   return null
