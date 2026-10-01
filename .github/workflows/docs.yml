@@ -17,6 +17,10 @@ on:
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
+      # The docs dependencies, and patches/fumadocs-ui@16.6.16.patch, which translates its labels.
+      - 'bun.lock'
+      - 'package.json'
+      - 'patches/**'
   pull_request:
     branches: [main]
     paths:
@@ -33,6 +37,10 @@ on:
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
+      # The docs dependencies, and patches/fumadocs-ui@16.6.16.patch, which translates its labels.
+      - 'bun.lock'
+      - 'package.json'
+      - 'patches/**'
 
 concurrency:
   group: docs-${{ github.ref }}
@@ -44,6 +52,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The route checks run against the Vite dev server, which runs on Node. On Node 26 it drops every response header
+      # the app sets, such as Content-Type and Location, so pin a release the checks pass on.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
