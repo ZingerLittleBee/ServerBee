@@ -230,6 +230,8 @@ for (const locale of locales) {
 }
 
 const internalLinkPattern = /(?:\]\(|href=")\/(en|zh)\/docs\/([^\s)#"]+)(?:#([^\s)"]+))?/g
+// A link to a heading on its own page.
+const samePageLinkPattern = /(?:\]\(|href=")#([^\s)"]+)/g
 for (const locale of locales) {
   for (const page of pagesFor(locale)) {
     const source = await text(join(contentRoot, locale, `${page}.mdx`))
@@ -247,6 +249,10 @@ for (const locale of locales) {
           `${locale}/${page} links to missing heading ${targetLocale}/${targetPage}#${fragment}`
         )
       }
+    }
+    for (const [, encodedFragment] of source.matchAll(samePageLinkPattern)) {
+      const fragment = decodeURIComponent(encodedFragment).toLowerCase()
+      invariant(headingSlugs(source).has(fragment), `${locale}/${page} links to missing heading #${fragment}`)
     }
   }
 }

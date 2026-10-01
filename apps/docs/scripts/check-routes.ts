@@ -28,6 +28,8 @@ const docsLabels = {
   zh: ['本页目录', '选择语言', '打开搜索', '打开侧边栏', '收起侧边栏', '切换主题', '复制 Markdown']
 } as const
 
+const hrefAttribute = /\bhref="([^"]*)"/
+
 const siteNames = { en: 'ServerBee Docs', zh: 'ServerBee 文档' } as const
 
 // Markdown exports, each in its page's language with its section headings, and served as UTF-8.
@@ -144,6 +146,26 @@ for (const search of searches) {
   if (rawJsx) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned raw JSX at ${rawJsx.url}`)
   }
+}
+
+// fumadocs links go through src/components/framework-link.tsx. A link to a heading on the same page stays a fragment,
+// which the router would otherwise turn into the path /<page>/#<heading>.
+for (const path of ['/en/docs/deployment', '/zh/docs/deployment']) {
+  const html = await (await fetch(`${baseUrl}${path}`)).text()
+  expect(!html.includes(`href="${path}/#`), `${path} renders a same-page heading link as a path`)
+}
+
+// Only the page itself is the current page: not the home and docs index links above it, and not for another query.
+for (const path of ['/en/docs/quick-start', '/zh/docs/quick-start?ref=github', '/en/docs']) {
+  const html = await (await fetch(`${baseUrl}${path}`)).text()
+  const current = [...html.matchAll(/<a\b[^>]*\baria-current="page"[^>]*>/g)].map(
+    (match) => match[0].match(hrefAttribute)?.[1]
+  )
+  const pathname = path.split('?')[0]
+  expect(
+    current.length > 0 && current.every((href) => href === pathname),
+    `${path} marks ${current.join(', ') || 'no link'} as the current page`
+  )
 }
 
 for (const route of markdownExports) {

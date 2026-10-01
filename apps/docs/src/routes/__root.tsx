@@ -4,6 +4,7 @@ import { defineI18nUI } from 'fumadocs-ui/i18n'
 import { RootProvider } from 'fumadocs-ui/provider/tanstack'
 import { lazy, useEffect, useState } from 'react'
 
+import { FrameworkLink } from '@/components/framework-link'
 import { i18n } from '@/lib/i18n'
 import appCss from '@/styles/app.css?url'
 
@@ -104,6 +105,7 @@ function RootComponent() {
       </head>
       <body className="flex min-h-screen flex-col">
         <RootProvider
+          components={{ Link: FrameworkLink }}
           i18n={provider(lang)}
           search={isLanding ? { SearchDialog, hotKey, preload: false } : { SearchDialog, hotKey }}
         >
