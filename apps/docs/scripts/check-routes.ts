@@ -176,18 +176,21 @@ for (const path of ['/en/docs/quick-start', '/zh/docs/quick-start?ref=github', '
   )
 }
 
-// A missing page answers 404 in the language of its URL, titled and linked within that language.
+// A missing page answers 404 in the language of its URL, titled and linked within that language: a missing docs page,
+// a path under a language that no route matches, and an unknown language.
 for (const { path, lang, heading } of [
   { path: '/en/docs/nope', lang: 'en', heading: 'Page not found' },
   { path: '/zh/docs/nope', lang: 'zh', heading: '页面不存在' },
-  { path: '/zh/nope', lang: 'zh', heading: '页面不存在' }
+  { path: '/zh/nope', lang: 'zh', heading: '页面不存在' },
+  { path: '/nope', lang: 'en', heading: 'Page not found' }
 ] as const) {
   const response = await fetch(`${baseUrl}${path}`, { redirect: 'manual' })
   expect(response.status === 404, `${path} returned ${response.status} instead of 404`)
   const html = await response.text()
   expect(html.includes(`<html lang="${lang}">`), `${path} did not render lang=${lang}`)
   expect(html.includes(heading), `${path} did not render "${heading}"`)
-  expect(html.includes(`<title>${siteNames[lang]}</title>`), `${path} is not titled ${siteNames[lang]}`)
+  const title = `${heading} | ${siteNames[lang]}`
+  expect(html.includes(`<title>${title}</title>`), `${path} is not titled ${title}`)
   for (const href of [`/${lang}`, `/${lang}/docs`]) {
     expect(html.includes(`href="${href}"`), `${path} does not link ${href}`)
   }

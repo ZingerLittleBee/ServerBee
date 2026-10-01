@@ -5,16 +5,15 @@ import { BookOpen, HomeIcon } from 'lucide-react'
 
 import { type DocsLanguage, pathLanguage } from '@/lib/i18n'
 import { baseOptions } from '@/lib/layout.shared'
+import { notFoundTitle } from '@/lib/site'
 
-const copy: Record<DocsLanguage, { body: string; docs: string; home: string; title: string }> = {
+const copy: Record<DocsLanguage, { body: string; docs: string; home: string }> = {
   en: {
-    title: 'Page not found',
     body: 'This page may have been moved or removed. Search the docs, or start from the introduction.',
     docs: 'Open the docs',
     home: 'Home'
   },
   zh: {
-    title: '页面不存在',
     body: '这个页面可能已经移动或删除。可以搜索文档，或者从介绍页开始。',
     docs: '打开文档',
     home: '首页'
@@ -34,7 +33,7 @@ export function NotFound() {
     <HomeLayout {...baseOptions(lang)}>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
         <p className="font-bold text-6xl text-fd-muted-foreground">404</p>
-        <h1 className="font-semibold text-2xl">{text.title}</h1>
+        <h1 className="font-semibold text-2xl">{notFoundTitle[lang]}</h1>
         <p className="max-w-md text-balance break-keep text-fd-muted-foreground">{text.body}</p>
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <Link

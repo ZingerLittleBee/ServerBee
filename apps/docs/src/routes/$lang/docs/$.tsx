@@ -14,10 +14,10 @@ import {
 import { type ComponentProps, type ComponentType, Suspense } from 'react'
 
 import { useMDXComponents } from '@/components/mdx'
-import { type DocsLanguage, i18n, isDocsLanguage } from '@/lib/i18n'
+import { type DocsLanguage, i18n, isDocsLanguage, pathLanguage } from '@/lib/i18n'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
 import { getPageMarkdownUrl } from '@/lib/llms'
-import { docsSiteName, languageLinks, ogLocale, SITE } from '@/lib/site'
+import { docsSiteName, languageLinks, notFoundHead, ogLocale, SITE } from '@/lib/site'
 import { source } from '@/lib/source'
 
 function getDocsContentPath(lang: string, slugs: string[]): string {
@@ -44,7 +44,12 @@ export const Route = createFileRoute('/$lang/docs/$')({
     return data
   },
   // After loader, which TanStack Router reads first to type loaderData.
-  head: ({ loaderData }) => (loaderData ? docsHead(loaderData) : {})
+  head: ({ loaderData, match }) => {
+    if (loaderData) {
+      return docsHead(loaderData)
+    }
+    return match.status === 'notFound' ? notFoundHead(pathLanguage(match.pathname)) : {}
+  }
 })
 
 interface DocsHeadData {

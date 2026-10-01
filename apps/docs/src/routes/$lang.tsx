@@ -1,7 +1,7 @@
 import { createFileRoute, notFound, Outlet, redirect } from '@tanstack/react-router'
 
-import { type DocsLanguage, i18n, isDocsLanguage } from '@/lib/i18n'
-import { docsSiteName } from '@/lib/site'
+import { type DocsLanguage, i18n, isDocsLanguage, pathLanguage } from '@/lib/i18n'
+import { docsSiteName, notFoundHead } from '@/lib/site'
 
 const subtagSeparator = /[-_]/
 const firstSegment = /^\/[^/?#]*/
@@ -38,9 +38,13 @@ export const Route = createFileRoute('/$lang')({
     }
     throw redirect({ href: location.href.replace(firstSegment, `/${lang}`), statusCode: 308 })
   },
-  // The title of a page without its own, such as a 404 in Chinese, in the page's language.
-  head: ({ params }) => ({
-    meta: [{ title: docsSiteName[isDocsLanguage(params.lang) ? params.lang : i18n.defaultLanguage] }]
-  }),
+  // The title of a page without its own, in the language the 404 page takes from the path. An unknown language is a
+  // 404 here, and so is a path under a language that no route matches (globalNotFound).
+  head: ({ match }) => {
+    const lang = pathLanguage(match.pathname)
+    return match.status === 'notFound' || match.globalNotFound
+      ? notFoundHead(lang)
+      : { meta: [{ title: docsSiteName[lang] }] }
+  },
   component: () => <Outlet />
 })

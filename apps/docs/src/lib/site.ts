@@ -8,6 +8,14 @@ export const SITE = 'https://docs.serverbee.app'
 
 export const docsSiteName: Record<DocsLanguage, string> = { en: 'ServerBee Docs', zh: 'ServerBee 文档' }
 
+/** The heading of the 404 page (src/components/not-found.tsx), which its title also gives. */
+export const notFoundTitle: Record<DocsLanguage, string> = { en: 'Page not found', zh: '页面不存在' }
+
+/** The head of a 404 page, titled like a docs page so the title says what the page is. */
+export function notFoundHead(lang: DocsLanguage) {
+  return { meta: [{ title: `${notFoundTitle[lang]} | ${docsSiteName[lang]}` }] }
+}
+
 export const ogLocale: Record<DocsLanguage, string> = { en: 'en_US', zh: 'zh_CN' }
 
 /** The hreflang of each language: the Chinese pages are written in Simplified Chinese. */
