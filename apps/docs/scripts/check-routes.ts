@@ -280,6 +280,17 @@ for (const { path, status, to } of [
   )
 }
 
+// The router redirected a path holding one of these characters to the path with it unencoded, which the next request
+// encoded again, until the browser gave up.
+for (const character of ['"', '<', '>', '^', '`', '{', '}']) {
+  const path = `/en/docs/x${encodeURIComponent(character)}y`
+  const response = await fetch(`${baseUrl}${path}`, { redirect: 'manual' })
+  expect(
+    response.status === 404,
+    `${path} returned ${response.status} to ${response.headers.get('location') ?? '<none>'}`
+  )
+}
+
 // Each llms.txt (https://llmstxt.org) lists its own language's pages, linking their Markdown exports.
 for (const { path, lang, other } of [
   { path: '/llms.txt', lang: 'en', other: 'zh' },
