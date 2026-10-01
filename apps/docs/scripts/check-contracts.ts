@@ -1,6 +1,6 @@
 import { readdir, readFile, realpath } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { getTableOfContents } from 'fumadocs-core/content/toc'
@@ -22,6 +22,9 @@ const darkMediaQuery = /^@media \(prefers-color-scheme: ?dark\)$/
 // remark, without a frontmatter plugin, reads a page's frontmatter as a heading.
 const frontmatter = /^---\n[\s\S]*?\n---\n/
 const hslNotation = /^hsla?\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%(?:,\s*([\d.]+)(%?))?\)$/
+const cssImport = /@import\s+([^;]+);/g
+const cssImportTarget = /^(["'])([^"']+)\1$/
+const packagePath = /^((?:@[^/]+\/)?[^/]+)\/(.+)$/
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -142,6 +145,8 @@ function withoutCssComments(css: string): string {
 interface CssBlock {
   body: string
   children: CssBlock[]
+  /** The body without the blocks nested in it. */
+  ownBody: string
   /** The selector list or at-rule prelude, whitespace collapsed. */
   prelude: string
 }
@@ -150,7 +155,7 @@ interface CssBlock {
 function cssBlocks(source: string): CssBlock[] {
   const css = withoutCssComments(source)
   const top: CssBlock[] = []
-  const open: { children: CssBlock[]; prelude: string; start: number }[] = []
+  const open: { children: CssBlock[]; ownBody: string; ownStart: number; prelude: string; start: number }[] = []
   let statementStart = 0
   let index = 0
   while (index < css.length) {
@@ -159,14 +164,27 @@ function cssBlocks(source: string): CssBlock[] {
     if (char === '"' || char === "'") {
       next = cssStringEnd(css, index)
     } else if (char === '{') {
+      const parent = open.at(-1)
+      if (parent) {
+        parent.ownBody += css.slice(parent.ownStart, statementStart)
+      }
       const prelude = css.slice(statementStart, index).replace(/\s+/g, ' ').trim()
-      open.push({ children: [], prelude, start: next })
+      open.push({ children: [], ownBody: '', ownStart: next, prelude, start: next })
       statementStart = next
     } else if (char === '}') {
       const block = open.pop()
       invariant(block, 'Unbalanced braces in a stylesheet')
-      const parent = open.at(-1)?.children ?? top
-      parent.push({ body: css.slice(block.start, index), children: block.children, prelude: block.prelude })
+      const parent = open.at(-1)
+      if (parent) {
+        parent.ownStart = next
+      }
+      const siblings = parent?.children ?? top
+      siblings.push({
+        body: css.slice(block.start, index),
+        children: block.children,
+        ownBody: block.ownBody + css.slice(block.ownStart, index),
+        prelude: block.prelude
+      })
       statementStart = next
     } else if (char === ';') {
       statementStart = next
@@ -193,6 +211,46 @@ function cssDeclarations(body: string): Map<string, string> {
     }
   }
   return declarations
+}
+
+/** Every block of a block tree, with the preludes of the blocks it is nested in. */
+function* nestedBlocks(blocks: CssBlock[], outer: string[] = []): Generator<[CssBlock, string[]]> {
+  for (const block of blocks) {
+    yield [block, outer]
+    yield* nestedBlocks(block.children, [...outer, block.prelude])
+  }
+}
+
+/** The file of a stylesheet that `from` imports by a relative path or a package's path. */
+async function importedStylesheet(path: string, from: string): Promise<string> {
+  if (path.startsWith('.')) {
+    return resolve(dirname(from), path)
+  }
+  const match = path.match(packagePath)
+  const directory = match ? await packageDirectory(match[1], dirname(from)) : undefined
+  invariant(match && directory, `${relative(repository, from)} imports ${path}, which apps/docs cannot resolve`)
+  return join(directory, match[2])
+}
+
+/**
+ * The blocks of a stylesheet and of the stylesheets it imports, in the order the cascade reads them. Tailwind's own
+ * stylesheet is left out: it sets no fumadocs colors.
+ */
+async function stylesheetBlocks(file: string): Promise<{ blocks: CssBlock[]; file: string }[]> {
+  const css = await text(file)
+  const sheets: { blocks: CssBlock[]; file: string }[] = []
+  for (const [statement, target] of withoutCssComments(css).matchAll(cssImport)) {
+    const path = target.trim().match(cssImportTarget)?.[2]
+    invariant(
+      path,
+      `${relative(repository, file)}: unexpected ${statement}: update stylesheetBlocks in apps/docs/scripts/check-contracts.ts`
+    )
+    if (path !== 'tailwindcss') {
+      sheets.push(...(await stylesheetBlocks(await importedStylesheet(path, file))))
+    }
+  }
+  sheets.push({ blocks: cssBlocks(css), file })
+  return sheets
 }
 
 /** An sRGB color, channels and alpha from 0 to 1. */
@@ -390,32 +448,61 @@ for (const file of ['landing.css', 'landing-mocks.css']) {
 }
 
 // fumadocs' light theme put muted text and the focus ring under the contrast they need on its surfaces, 4.5:1 for text
-// and 3:1 for a focus indicator, and src/styles/app.css raises them. Both themes keep them.
-function themeColors(blocks: CssBlock[], prelude: string, file: string): Map<string, string> {
-  const block = blocks.find((candidate) => candidate.prelude === prelude)
-  invariant(
-    block,
-    `${file} has no "${prelude}" block: update the contrast check in apps/docs/scripts/check-contracts.ts`
-  )
-  return cssDeclarations(block.body)
+// and 3:1 for a focus indicator, and src/styles/app.css raises them. Every theme keeps them, with the colors that the
+// rules of app.css and of the stylesheets it imports set, and a rule that sets them for a theme this check does not
+// know fails it.
+const surfaces = ['background', 'card', 'secondary', 'muted', 'popover']
+const foregrounds = [
+  ['muted-foreground', 4.5],
+  ['ring', 3]
+] as const
+const checkedColors = new Set(
+  [...surfaces, ...foregrounds.map(([token]) => token)].map((token) => `--color-fd-${token}`)
+)
+// The rules that set them, weakest first, and the themes each sets them for. `@theme` colors are in a cascade layer,
+// under every other rule, and `.dark #nd-sidebar` sets the colors of the sidebar.
+const themeRules: [prelude: string, themes: string[]][] = [
+  ['@theme', ['light', 'dark', 'dark sidebar']],
+  ['.dark', ['dark', 'dark sidebar']],
+  [':root.dark', ['dark', 'dark sidebar']],
+  [':root:not(.dark)', ['light']],
+  ['.dark #nd-sidebar', ['dark sidebar']]
+]
+const colorRules: { colors: Map<string, string>; prelude: string }[] = []
+for (const { blocks, file } of await stylesheetBlocks(join(docsApp, 'src/styles/app.css'))) {
+  for (const [block, outer] of nestedBlocks(blocks)) {
+    const colors = new Map([...cssDeclarations(block.ownBody)].filter(([property]) => checkedColors.has(property)))
+    if (colors.size > 0) {
+      invariant(
+        outer.length === 0 && themeRules.some(([prelude]) => prelude === block.prelude),
+        `${relative(repository, file)}: "${[...outer, block.prelude].join(' { ')}" sets ${[...colors.keys()].join(', ')} ` +
+          'for a theme the contrast check does not know: update apps/docs/scripts/check-contracts.ts'
+      )
+      colorRules.push({ colors, prelude: block.prelude })
+    }
+  }
 }
-const fumadocsColors = cssBlocks(await text(join(fumadocsUi, 'css/lib/default-colors.css')))
-const appStyles = cssBlocks(await text(join(docsApp, 'src/styles/app.css')))
-const themes = {
-  light: new Map([
-    ...themeColors(fumadocsColors, '@theme', 'fumadocs-ui/css/lib/default-colors.css'),
-    ...themeColors(appStyles, ':root:not(.dark)', 'apps/docs/src/styles/app.css')
-  ]),
-  dark: themeColors(fumadocsColors, '.dark', 'fumadocs-ui/css/lib/default-colors.css')
+const themes = new Map<string, Map<string, string>>()
+for (const [prelude, names] of themeRules) {
+  for (const rule of colorRules.filter((candidate) => candidate.prelude === prelude)) {
+    for (const name of names) {
+      themes.set(name, new Map([...(themes.get(name) ?? []), ...rule.colors]))
+    }
+  }
 }
-for (const [theme, colors] of Object.entries(themes)) {
-  for (const surface of ['background', 'card', 'secondary', 'muted', 'popover']) {
-    const ground = hslColor(colors.get(`--color-fd-${surface}`))
-    for (const [token, minimum] of [
-      ['muted-foreground', 4.5],
-      ['ring', 3]
-    ] as const) {
-      const ratio = contrastRatio(composite(hslColor(colors.get(`--color-fd-${token}`)), ground), ground)
+for (const theme of new Set(themeRules.flatMap(([, names]) => names))) {
+  const color = (token: string) => {
+    const value = themes.get(theme)?.get(`--color-fd-${token}`)
+    invariant(
+      value,
+      `No rule sets the ${theme} --color-fd-${token}: update the contrast check in apps/docs/scripts/check-contracts.ts`
+    )
+    return hslColor(value)
+  }
+  for (const surface of surfaces) {
+    const ground = color(surface)
+    for (const [token, minimum] of foregrounds) {
+      const ratio = contrastRatio(composite(color(token), ground), ground)
       invariant(
         ratio >= minimum,
         `The ${theme} --color-fd-${token} is ${ratio.toFixed(2)}:1 on --color-fd-${surface}, under ${minimum}:1: ` +
