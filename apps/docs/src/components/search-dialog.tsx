@@ -15,7 +15,7 @@ import {
   useSearchList
 } from 'fumadocs-ui/components/dialog/search'
 import { useI18n } from 'fumadocs-ui/contexts/i18n'
-import { type KeyboardEvent, useEffect, useId, useState } from 'react'
+import { type KeyboardEvent, useEffect, useEffectEvent, useId, useState } from 'react'
 
 import { type DocsLanguage, i18n, isDocsLanguage } from '@/lib/i18n'
 
@@ -88,15 +88,18 @@ export default function DocsSearchDialog(props: SharedProps) {
   const lang = locale && isDocsLanguage(locale) ? locale : i18n.defaultLanguage
   // What a screen reader announces once results arrive: how many, or that there are none. fumadocs also stops loading
   // when a search that a newer one replaced ends, with the older results still shown, so the status follows the
-  // results, and is cleared each time a search starts.
+  // results, and is cleared each time a search starts. The language is read when results arrive: a change of language
+  // starts a search, and announcing the results shown in the new language would announce them before its results.
   const [status, setStatus] = useState('')
-  useEffect(() => {
-    let found = ''
-    if (items) {
-      found = items.length > 0 ? resultCount[lang](items.length) : text.searchNoResult
+  const describe = useEffectEvent((results: typeof items) => {
+    if (!results) {
+      return ''
     }
-    setStatus(found)
-  }, [items, lang, text.searchNoResult])
+    return results.length > 0 ? resultCount[lang](results.length) : text.searchNoResult
+  })
+  useEffect(() => {
+    setStatus(describe(items))
+  }, [items])
   useEffect(() => {
     if (query.isLoading) {
       setStatus('')
