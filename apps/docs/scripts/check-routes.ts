@@ -28,6 +28,8 @@ const docsLabels = {
   zh: ['本页目录', '选择语言', '打开搜索', '打开侧边栏', '收起侧边栏', '切换主题', '复制 Markdown']
 } as const
 
+const siteNames = { en: 'ServerBee Docs', zh: 'ServerBee 文档' } as const
+
 // Markdown exports, each in its page's language with its section headings, and served as UTF-8.
 const markdownExports = [
   { path: '/en/docs.mdx', title: '# Introduction', heading: '\n## What Is ServerBee' },
@@ -103,6 +105,23 @@ for (const route of routes) {
     const missing = docsLabels[route.lang].filter((label) => !html.includes(label))
     if (missing.length > 0) {
       throw new Error(`${route.path} did not render the labels: ${missing.join(', ')}`)
+    }
+    const titles = [...html.matchAll(/<title>([^<]*)<\/title>/g)].map((match) => match[1])
+    expect(
+      titles.length === 1 && titles[0].endsWith(` | ${siteNames[route.lang]}`),
+      `${route.path} has the titles ${titles.join(', ') || '<none>'}`
+    )
+    expect(html.includes('<meta name="description" content="'), `${route.path} has no description`)
+    const pagePath = route.path.slice(route.lang.length + 1)
+    for (const link of [
+      `<link rel="canonical" href="https://docs.serverbee.app${route.path}"/>`,
+      `hrefLang="en" href="https://docs.serverbee.app/en${pagePath}"`,
+      `hrefLang="zh-Hans" href="https://docs.serverbee.app/zh${pagePath}"`,
+      `hrefLang="x-default" href="https://docs.serverbee.app/en${pagePath}"`,
+      `property="og:image" content="https://docs.serverbee.app/og/landing-${route.lang}.png"`,
+      `type="text/markdown" href="${route.path}.mdx"`
+    ]) {
+      expect(html.includes(link), `${route.path} lacks ${link}`)
     }
   }
 }

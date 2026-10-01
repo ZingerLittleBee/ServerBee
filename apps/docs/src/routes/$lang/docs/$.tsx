@@ -16,6 +16,7 @@ import { type ComponentProps, type ComponentType, Suspense } from 'react'
 import { useMDXComponents } from '@/components/mdx'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
 import { getPageMarkdownUrl } from '@/lib/llms'
+import { docsSiteName, languageLinks, ogLocale, SITE } from '@/lib/site'
 import { source } from '@/lib/source'
 
 function getDocsContentPath(lang: string, slugs: string[]): string {
@@ -40,8 +41,48 @@ export const Route = createFileRoute('/$lang/docs/$')({
       throw preloadError
     }
     return data
-  }
+  },
+  // After loader, which TanStack Router reads first to type loaderData.
+  head: ({ loaderData }) => (loaderData ? docsHead(loaderData) : {})
 })
+
+interface DocsHeadData {
+  description?: string
+  lang: string
+  markdownUrl: string
+  title: string
+  url: string
+}
+
+function docsHead({ description, lang: pageLang, markdownUrl, title, url }: DocsHeadData) {
+  const lang = pageLang === 'zh' ? 'zh' : 'en'
+  // The page's URL in another language swaps the language prefix.
+  const inLanguage = (other: string) => `${SITE}/${other}${url.slice(lang.length + 1)}`
+  const image = `${SITE}/og/landing-${lang}.png`
+  const describe = description ? [description] : []
+  return {
+    meta: [
+      { title: `${title} | ${docsSiteName[lang]}` },
+      ...describe.map((content) => ({ name: 'description', content })),
+      { property: 'og:type', content: 'article' },
+      { property: 'og:site_name', content: 'ServerBee' },
+      { property: 'og:url', content: `${SITE}${url}` },
+      { property: 'og:title', content: title },
+      ...describe.map((content) => ({ property: 'og:description', content })),
+      { property: 'og:locale', content: ogLocale[lang] },
+      { property: 'og:locale:alternate', content: ogLocale[lang === 'zh' ? 'en' : 'zh'] },
+      { property: 'og:image', content: image },
+      { property: 'og:image:width', content: '1200' },
+      { property: 'og:image:height', content: '630' },
+      { property: 'og:image:type', content: 'image/png' },
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'twitter:title', content: title },
+      ...describe.map((content) => ({ name: 'twitter:description', content })),
+      { name: 'twitter:image', content: image }
+    ],
+    links: [...languageLinks(inLanguage, lang), { rel: 'alternate', type: 'text/markdown', href: markdownUrl }]
+  }
+}
 
 const serverLoader = createServerFn({
   method: 'GET'
@@ -58,6 +99,9 @@ const serverLoader = createServerFn({
     return {
       path: getDocsContentPath(lang, page.slugs),
       lang,
+      url: page.url,
+      title: page.data.title,
+      description: page.data.description,
       markdownUrl: getPageMarkdownUrl(page),
       pageTree: await source.serializePageTree(pageTree)
     }

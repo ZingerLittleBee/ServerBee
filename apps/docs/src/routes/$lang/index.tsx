@@ -5,9 +5,7 @@ import type { ComponentProps } from 'react'
 import { LandingPage } from '@/components/landing'
 import { type LandingSeoCopy, landingSeo } from '@/components/landing/seo'
 import type { LandingLang } from '@/components/landing/translations'
-import { SITE } from '@/lib/site'
-
-const ogLocale: Record<LandingLang, string> = { en: 'en_US', zh: 'zh_CN' }
+import { languageLinks, ogLocale, SITE } from '@/lib/site'
 
 /**
  * Latin Archivo sets the hero heading, subtitle and buttons. The stylesheet's @font-face uses this same URL, so the
@@ -59,13 +57,7 @@ function landingHead(lang: LandingLang, seo: LandingSeoCopy | undefined) {
       { name: 'twitter:image', content: image },
       { name: 'twitter:image:alt', content: seo.imageAlt }
     ],
-    links: [
-      { rel: 'canonical', href: url },
-      { rel: 'alternate', hrefLang: 'en', href: `${SITE}/en` },
-      { rel: 'alternate', hrefLang: 'zh-Hans', href: `${SITE}/zh` },
-      { rel: 'alternate', hrefLang: 'x-default', href: `${SITE}/en` },
-      ...fontPreloads
-    ]
+    links: [...languageLinks((code) => `${SITE}/${code}`, lang), ...fontPreloads]
   }
 }
 
