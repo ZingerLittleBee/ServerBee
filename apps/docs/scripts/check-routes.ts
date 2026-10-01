@@ -101,12 +101,14 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '升级失败怎么办', page: '/zh/docs/deployment', every: ['升级', '失败'] },
   { locale: 'zh', query: '配置文件在哪里', page: '/zh/docs/configuration', every: ['配置', '文件'] },
   // Words that no heading or paragraph holds together, here a heading and the paragraphs under it, with or without a
-  // space between them.
+  // space between them, or with a question word between them.
   { locale: 'zh', query: '卸载 Agent', page: '/zh/docs/deployment' },
   { locale: 'zh', query: '卸载agent', page: '/zh/docs/deployment' },
   { locale: 'zh', query: 'Agent卸载', page: '/zh/docs/deployment' },
+  { locale: 'zh', query: '服务端怎么卸载', page: '/zh/docs/deployment' },
   // A conjunction joins the words a query is about, and is not one of them.
   { locale: 'zh', query: '防火墙和告警', page: '/zh/docs/firewall', same: '防火墙告警' },
+  { locale: 'zh', query: '流量和带宽', page: '/zh/docs/monitoring', same: '流量 带宽' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.

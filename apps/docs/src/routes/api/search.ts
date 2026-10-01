@@ -23,11 +23,20 @@ const fillerWords = new Set(
   ].flatMap((words) => words.split(' '))
 )
 
+/** The words ICU finds in a text, each marked as a filler word or not. */
+function* segmentWords(text: string): Generator<{ filler: boolean; word: string }> {
+  for (const { segment, isWordLike } of wordSegmenter.segment(text.normalize('NFKC').toLowerCase())) {
+    if (isWordLike) {
+      yield { filler: fillerWords.has(segment), word: segment }
+    }
+  }
+}
+
 /** The words ICU finds in a text, less the filler words. */
 function* chineseWords(text: string): Generator<string> {
-  for (const { segment, isWordLike } of wordSegmenter.segment(text.normalize('NFKC').toLowerCase())) {
-    if (isWordLike && !fillerWords.has(segment)) {
-      yield segment
+  for (const { filler, word } of segmentWords(text)) {
+    if (!filler) {
+      yield word
     }
   }
 }
@@ -62,7 +71,8 @@ const hanCharacter = /\p{Script=Han}/u
 /**
  * The words of a query. A character alone matches the start of any word, so a word of one character is left out, and
  * in a run of Chinese, where ICU splits the words it does not know into characters (卸载 into 卸 and 载, 区块链 into
- * 区块 and 链), each character stays with the word before it.
+ * 区块 and 链), each character stays with the word before it. A filler word ends a word, so the 卸载 of 服务端怎么卸载
+ * is a word of its own.
  */
 function queryWords(term: string): string[] {
   const words: string[][] = []
@@ -71,16 +81,18 @@ function queryWords(term: string): string[] {
       words.push([typed])
       continue
     }
-    const run: string[][] = []
-    for (const segment of chineseWords(typed)) {
-      const word = run.at(-1)
-      if (segment.length === 1 && word) {
-        word.push(segment)
+    // The word that a character alone joins: none at the start of the run or after a filler word.
+    let previous: string[] | undefined
+    for (const { filler, word } of segmentWords(typed)) {
+      if (filler) {
+        previous = undefined
+      } else if (word.length === 1 && previous) {
+        previous.push(word)
       } else {
-        run.push([segment])
+        previous = [word]
+        words.push(previous)
       }
     }
-    words.push(...run)
   }
   return words.map((pieces) => pieces.join(' ')).filter((word) => chineseTokenizer.tokenize(word).join('').length > 1)
 }
