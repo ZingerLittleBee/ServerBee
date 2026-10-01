@@ -25,6 +25,20 @@ const fillerWords = new Set(
   ].flatMap((words) => words.split(' '))
 )
 
+// Words that ICU splits into characters, one of them a filler word, kept whole: the 和 (and) of 校验和 (checksum).
+const wholeWords = /校验和/g
+
+/** The segments ICU finds in a text, each whole word being one. */
+function* segments(text: string): Generator<Pick<Intl.SegmentData, 'isWordLike' | 'segment'>> {
+  let start = 0
+  for (const match of text.matchAll(wholeWords)) {
+    yield* wordSegmenter.segment(text.slice(start, match.index))
+    yield { isWordLike: true, segment: match[0] }
+    start = match.index + match[0].length
+  }
+  yield* wordSegmenter.segment(text.slice(start))
+}
+
 /** Whether a word is a Chinese character alone. */
 function isCharacter(word: string | undefined): boolean {
   return word?.length === 1 && hanCharacter.test(word)
@@ -34,7 +48,7 @@ function isCharacter(word: string | undefined): boolean {
 function* segmentWords(text: string): Generator<{ filler: boolean; word: string }> {
   // The word right before, unless it is a filler word.
   let previous: string | undefined
-  for (const { segment, isWordLike } of wordSegmenter.segment(text.normalize('NFKC').toLowerCase())) {
+  for (const { segment, isWordLike } of segments(text.normalize('NFKC').toLowerCase())) {
     if (!isWordLike) {
       previous = undefined
       continue
