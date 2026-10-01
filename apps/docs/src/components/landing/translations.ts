@@ -128,6 +128,11 @@ interface IosCopy extends FeatureCopy {
 /** A footnote. One that ends in a link reads `text`, then the linked `link.label`, then `after`. */
 export type NoteCopy = string | { after: string; link: LinkCopy; text: string }
 
+interface StatCopy {
+  l: string
+  v: string
+}
+
 interface HowCopy {
   diagram: {
     agents: string
@@ -140,10 +145,15 @@ interface HowCopy {
     clients: PointCopy[]
   }
   h2: string
-  /** Footnotes to the stats, in the same order: the list numbers them and each stat's mark is its position. */
-  notes: NoteCopy[]
+  /** Accessible name of a stat's mark, which links to its footnote: read as "<noteRef> <number>". */
+  noteRef: string
+  /**
+   * Footnotes to the stats, one per stat in the same order: the list numbers them, and each stat's mark is its
+   * position and links to its note. Both are tuples so a stat cannot lose its note.
+   */
+  notes: [NoteCopy, NoteCopy, NoteCopy, NoteCopy]
   notesTitle: string
-  stats: { v: string; l: string }[]
+  stats: [StatCopy, StatCopy, StatCopy, StatCopy]
   steps: { n: string; t: string; d: string }[]
 }
 
@@ -583,6 +593,7 @@ const zh: LandingCopy = {
         l: '自动化测试'
       }
     ],
+    noteRef: '来源',
     notesTitle: '数据来源',
     notes: [
       '由服务端统一下发，每份上报到达后立即推送给浏览器。',
@@ -1072,6 +1083,7 @@ const en: LandingCopy = {
         l: 'automated tests'
       }
     ],
+    noteRef: 'Source',
     notesTitle: 'Sources',
     notes: [
       'Set by the server; each report is pushed to browsers as it arrives.',

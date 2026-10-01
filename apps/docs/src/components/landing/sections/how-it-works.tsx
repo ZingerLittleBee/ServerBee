@@ -1,13 +1,47 @@
+import { useSyncExternalStore } from 'react'
+
 import { LandingLink } from '../chrome/landing-link'
 import { typeset } from '../chrome/typeset'
 import { CommandSegments } from '../mocks/command'
 import { buildHowItWorks } from '../model/how-it-works'
 import { type LandingLang, landingCopy } from '../translations'
 
+/** The id of the n-th note (1-based), which the n-th stat's mark links to. */
+const noteId = (n: number) => `how-note-${n}`
+
+function subscribeHash(onChange: () => void): () => void {
+  window.addEventListener('hashchange', onChange)
+  window.addEventListener('popstate', onChange)
+  return () => {
+    window.removeEventListener('hashchange', onChange)
+    window.removeEventListener('popstate', onChange)
+  }
+}
+
+/** The URL fragment without its '#', percent-decoded as the browser does when it looks for the target element. */
+function readHash(): string {
+  const raw = window.location.hash.slice(1)
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+/**
+ * The URL fragment, empty on the server and while hydrating, so hydration matches.
+ * The jumped-to note is highlighted from this rather than with :target, which WebKit leaves on the last note after
+ * Back once the router has set history.scrollRestoration to manual.
+ */
+function useHash(): string {
+  return useSyncExternalStore(subscribeHash, readHash, () => '')
+}
+
 export function HowItWorksSection({ lang }: { lang: LandingLang }) {
   const how = landingCopy[lang].how
   const diagram = how.diagram
   const model = buildHowItWorks(lang)
+  const hash = useHash()
   return (
     <section className="sec alt" id="how">
       <div className="shell">
@@ -60,13 +94,18 @@ export function HowItWorksSection({ lang }: { lang: LandingLang }) {
             </div>
           ))}
         </div>
-        {/* Each stat's mark is its position, matching the browser's numbering of the notes below. */}
+        {/* Each stat's mark is its position, matching the browser's numbering of the notes below, and links to that
+            note. */}
         <ul className="stats">
           {how.stats.map((stat, index) => (
             <li key={stat.l}>
               <div className="stat-v">
                 {stat.v}
-                <sup>{index + 1}</sup>
+                <sup>
+                  <a aria-label={`${how.noteRef} ${index + 1}`} href={`#${noteId(index + 1)}`}>
+                    {index + 1}
+                  </a>
+                </sup>
               </div>
               <div className="stat-l">{typeset(stat.l)}</div>
             </li>
@@ -74,17 +113,21 @@ export function HowItWorksSection({ lang }: { lang: LandingLang }) {
         </ul>
         <p className="notes-t">{how.notesTitle}</p>
         <ol className="notes">
-          {how.notes.map((note) =>
-            typeof note === 'string' ? (
-              <li key={note}>{typeset(note)}</li>
+          {how.notes.map((note, index) => {
+            const id = noteId(index + 1)
+            const className = hash === id ? 'on' : undefined
+            return typeof note === 'string' ? (
+              <li className={className} id={id} key={note}>
+                {typeset(note)}
+              </li>
             ) : (
-              <li key={note.text}>
+              <li className={className} id={id} key={note.text}>
                 {typeset(note.text)}
                 <LandingLink href={note.link.href}>{note.link.label}</LandingLink>
                 {note.after}
               </li>
             )
-          )}
+          })}
         </ol>
       </div>
     </section>

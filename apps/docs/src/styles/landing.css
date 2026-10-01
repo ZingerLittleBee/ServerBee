@@ -1185,7 +1185,23 @@
   margin-left: 4px;
   font: 600 12px / 1 var(--f-mono);
   vertical-align: super;
-  color: var(--accent-ink);
+}
+/* The mark links to its note: no underline under a lone digit, and a hit area of about 24px that stops at the sup's
+   margin, so the value's last character stays selectable. */
+.sb .stat-v > sup > a {
+  position: relative;
+  text-decoration: none;
+}
+.sb .stat-v > sup > a::after {
+  position: absolute;
+  inset: -6px -14px -6px -4px;
+  content: "";
+}
+/* An own ring: the default auto ring would wrap the hit area as well and cross the value's last character. */
+.sb .stat-v > sup > a:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 .sb .stat-l {
   margin-top: 6px;
@@ -1196,16 +1212,38 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px 32px;
+  /* Each note keeps its own height rather than its row's, so a highlight covers only its lines. */
+  align-items: start;
   padding: 0;
   margin: 28px 0 0;
   /* The browser numbers the notes; each stat's mark is the note's position. */
   list-style: decimal inside;
 }
 .sb .notes > li {
+  position: relative;
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--ink-3);
   text-wrap: pretty;
+  /* A jump stops the note this far below the root's 72px scroll padding: mid-screen, or at least 300px, since on a
+     phone a stat can sit up to about 280px above its note and should stay in view, yet never past 100svh - 120px
+     (the padding, a two-line note and room for its highlight), so the note itself stays on a short screen. */
+  scroll-margin-top: clamp(0px, max(40svh, 300px), 100svh - 120px);
+  /* Keeps the highlight's tint, drawn at z-index -1, above the section's background. */
+  isolation: isolate;
+}
+/* The note the URL points at, tinted the way footnotes usually are. The tint is a pseudo-element, so the note's own
+   box, which the jump scrolls to, does not move. */
+.sb .notes > li.on {
+  color: var(--ink);
+}
+.sb .notes > li.on::before {
+  position: absolute;
+  inset: -2px -8px;
+  z-index: -1;
+  content: "";
+  background: var(--accent-soft);
+  border-radius: 6px;
 }
 .sb .notes-t {
   margin: 36px 0 0;
@@ -1538,5 +1576,10 @@
   .sb .step-cmd,
   .sb .avail {
     border: 1px solid CanvasText;
+  }
+  /* The highlighted note's tint is a background too: outline the note instead. */
+  .sb .notes > li.on {
+    outline: 1px solid Highlight;
+    outline-offset: 2px;
   }
 }
