@@ -28,6 +28,17 @@ const docsLabels = {
   zh: ['本页目录', '选择语言', '打开搜索', '打开侧边栏', '收起侧边栏', '切换主题', '复制 Markdown']
 } as const
 
+// A Chinese page names its controls in Chinese, apart from the GitHub link: fumadocs-ui hard-codes names in English,
+// and Radix names the 404 page's header "Main".
+const ariaLabelAttribute = /\baria-label="([^"]*)"/g
+const hanCharacter = /\p{Script=Han}/u
+
+function englishLabels(html: string): string[] {
+  return [...html.matchAll(ariaLabelAttribute)]
+    .map((match) => match[1])
+    .filter((label) => label !== 'GitHub' && !hanCharacter.test(label))
+}
+
 const hrefAttribute = /\bhref="([^"]*)"/
 
 // Token colors of the default code themes under 4.5:1 on the code block backgrounds, replaced in source.config.ts.
@@ -115,6 +126,8 @@ for (const route of routes) {
     if (missing.length > 0) {
       throw new Error(`${route.path} did not render the labels: ${missing.join(', ')}`)
     }
+    const english = route.lang === 'zh' ? englishLabels(html) : []
+    expect(english.length === 0, `${route.path} names controls in English: ${english.join(', ')}`)
     const titles = [...html.matchAll(/<title>([^<]*)<\/title>/g)].map((match) => match[1])
     expect(
       titles.length === 1 && titles[0].endsWith(` | ${siteNames[route.lang]}`),
@@ -197,6 +210,8 @@ for (const { path, lang, heading } of [
     expect(html.includes(`href="${href}"`), `${path} does not link ${href}`)
   }
   expect(!html.includes('aria-current="page"'), `${path} marks a link as the current page`)
+  const english = lang === 'zh' ? englishLabels(html) : []
+  expect(english.length === 0, `${path} names controls in English: ${english.join(', ')}`)
 }
 
 for (const route of markdownExports) {

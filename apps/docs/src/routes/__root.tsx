@@ -56,6 +56,7 @@ const { provider } = defineI18nUI(i18n, {
       expandSidebar: '展开侧边栏',
       toggleTheme: '切换主题',
       toggleMenu: '切换菜单',
+      mainNavigation: '主要',
       copyText: '复制代码',
       copiedText: '已复制',
       copyMarkdown: '复制 Markdown',

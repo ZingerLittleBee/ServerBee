@@ -64,10 +64,10 @@ index 78c7d59de854993ca206520fda17399432dce1ce..96633487e78de6bea14a915fecdbf7e8
  		onClick: () => {
  			setCollapsed((prev) => !prev);
 diff --git a/dist/contexts/i18n.d.ts b/dist/contexts/i18n.d.ts
-index 50c735388b049b2316f7fb957de7855a8fdbe0bc..dcbc0d0caf59daac8dffa869c7d427fa7130d90a 100644
+index 50c735388b049b2316f7fb957de7855a8fdbe0bc..8f2d365cacbbb96072bb7a898f6a19059505cd33 100644
 --- a/dist/contexts/i18n.d.ts
 +++ b/dist/contexts/i18n.d.ts
-@@ -13,6 +13,23 @@ interface Translations {
+@@ -13,6 +13,25 @@ interface Translations {
    previousPage: string;
    chooseTheme: string;
    editOnGithub: string;
@@ -78,6 +78,8 @@ index 50c735388b049b2316f7fb957de7855a8fdbe0bc..dcbc0d0caf59daac8dffa869c7d427fa
 +  expandSidebar: string;
 +  toggleTheme: string;
 +  toggleMenu: string;
++  /** The name of the home layout's header, Radix's default name for a navigation menu. */
++  mainNavigation: string;
 +  copyText: string;
 +  copiedText: string;
 +  copyMarkdown: string;
@@ -92,10 +94,10 @@ index 50c735388b049b2316f7fb957de7855a8fdbe0bc..dcbc0d0caf59daac8dffa869c7d427fa
  interface LocaleItem {
    name: string;
 diff --git a/dist/contexts/i18n.js b/dist/contexts/i18n.js
-index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..e174856ba87884f1e6fcbfaa05d41a0d8c37d1b7 100644
+index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..3b0d094db086a50b0bfc5f82a4e6b842624234b4 100644
 --- a/dist/contexts/i18n.js
 +++ b/dist/contexts/i18n.js
-@@ -13,7 +13,22 @@ const defaultTranslations = {
+@@ -13,7 +13,23 @@ const defaultTranslations = {
  	nextPage: "Next Page",
  	previousPage: "Previous Page",
  	chooseTheme: "Theme",
@@ -108,6 +110,7 @@ index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..e174856ba87884f1e6fcbfaa05d41a0d
 +	expandSidebar: "Expand Sidebar",
 +	toggleTheme: "Toggle Theme",
 +	toggleMenu: "Toggle Menu",
++	mainNavigation: "Main",
 +	copyText: "Copy Text",
 +	copiedText: "Copied Text",
 +	copyMarkdown: "Copy Markdown",
@@ -132,7 +135,7 @@ index 8590fe5f9069e232fc63ccee717244216ccaa0c9..1f77c3bf7fd5bbb2dbd2d120e10ba832
  			className: cn("flex flex-col w-full max-w-[900px] mx-auto [grid-area:main] px-4 py-6 gap-4 md:px-6 md:pt-8 xl:px-8 xl:pt-14", full ? "max-w-[1168px]" : "xl:layout:[--fd-toc-width:268px]", className),
  			children: [
 diff --git a/dist/layouts/home/client.js b/dist/layouts/home/client.js
-index cdd3c964bae0b8217e42c18f4ef7f75886774cb3..c5e9d2f111ba0fb8794d8cbafb98a691363e4c11 100644
+index cdd3c964bae0b8217e42c18f4ef7f75886774cb3..6a402c4db0f66821401d771cb0d4d4e770b0b932 100644
 --- a/dist/layouts/home/client.js
 +++ b/dist/layouts/home/client.js
 @@ -1,5 +1,6 @@
@@ -159,6 +162,21 @@ index cdd3c964bae0b8217e42c18f4ef7f75886774cb3..c5e9d2f111ba0fb8794d8cbafb98a691
  						className: cn(buttonVariants({
  							size: "icon",
  							color: "ghost",
+@@ -114,12 +116,14 @@ function isSecondary(item) {
+ 	return item.type === "icon";
+ }
+ function HeaderNavigationMenu({ transparentMode = "none", ...props }) {
++	const { text } = useI18n();
+ 	const [value, setValue] = useState("");
+ 	const isTop = useIsScrollTop({ enabled: transparentMode === "top" }) ?? true;
+ 	const isTransparent = transparentMode === "top" ? isTop : transparentMode === "always";
+ 	return /* @__PURE__ */ jsx(NavigationMenu, {
+ 		value,
+ 		onValueChange: setValue,
++		"aria-label": text.mainNavigation,
+ 		asChild: true,
+ 		children: /* @__PURE__ */ jsx("header", {
+ 			id: "nd-nav",
 diff --git a/dist/layouts/shared/page-actions.js b/dist/layouts/shared/page-actions.js
 index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891668cbcfe 100644
 --- a/dist/layouts/shared/page-actions.js
