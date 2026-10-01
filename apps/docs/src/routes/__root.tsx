@@ -5,7 +5,7 @@ import { RootProvider } from 'fumadocs-ui/provider/tanstack'
 import { lazy, useEffect, useState } from 'react'
 
 import { FrameworkLink } from '@/components/framework-link'
-import { i18n } from '@/lib/i18n'
+import { i18n, pathLanguage } from '@/lib/i18n'
 import appCss from '@/styles/app.css?url'
 
 const SearchDialog = lazy(() => import('@/components/search-dialog'))
@@ -93,10 +93,7 @@ function RootComponent() {
   // The landing (/en, /zh) has no search box, only the Cmd/Ctrl+K hotkey, so it loads the search dialog once the page
   // is idle instead of with the page.
   const isLanding = useRouterState({ select: (s) => s.matches.some((match) => match.routeId === '/$lang/') })
-  const segment = pathname.split('/').filter(Boolean)[0] ?? ''
-  const lang = (i18n.languages as string[]).includes(segment)
-    ? (segment as (typeof i18n.languages)[number])
-    : i18n.defaultLanguage
+  const lang = pathLanguage(pathname)
 
   return (
     <html lang={lang} suppressHydrationWarning>
