@@ -211,12 +211,31 @@ for (const path of missingExports) {
   }
 }
 
-const legacy = await fetch(`${baseUrl}/docs/quick-start.mdx`, { redirect: 'manual' })
-expect(
-  legacy.status === 308 &&
-    new URL(legacy.headers.get('location') ?? '', baseUrl).pathname === '/en/docs/quick-start.mdx',
-  `/docs/quick-start.mdx returned ${legacy.status} to ${legacy.headers.get('location') ?? '<none>'}`
-)
+// Old and language-less URLs keep their page and query. A first segment that names no language is a 404.
+for (const { path, status, to } of [
+  { path: '/?ref=github', status: 307, to: '/en?ref=github' },
+  { path: '/docs/quick-start?ref=github', status: 307, to: '/en/docs/quick-start?ref=github' },
+  // The Markdown export before it was localized.
+  { path: '/docs/quick-start.mdx?ref=github', status: 308, to: '/en/docs/quick-start.mdx?ref=github' },
+  // The Chinese pages were published under /cn before the locale was renamed zh.
+  { path: '/cn/docs/configuration', status: 308, to: '/zh/docs/configuration' },
+  { path: '/zh-CN/docs/quick-start?ref=github', status: 308, to: '/zh/docs/quick-start?ref=github' },
+  // Redirecting to the decoded path puts a character in the Location header that fails the request.
+  { path: '/zh-CN/docs/%E5%AE%89%E8%A3%85', status: 308, to: '/zh/docs/%E5%AE%89%E8%A3%85' },
+  { path: '/EN/docs', status: 308, to: '/en/docs' },
+  { path: '/nope', status: 404 },
+  { path: '/fr/docs/quick-start', status: 404 },
+  { path: '/constructor/docs', status: 404 },
+  { path: '/apple-touch-icon.png', status: 404 }
+]) {
+  const response = await fetch(`${baseUrl}${path}`, { redirect: 'manual' })
+  const location = response.headers.get('location')
+  const target = location === null ? undefined : new URL(location, baseUrl)
+  expect(
+    response.status === status && (to === undefined || `${target?.pathname}${target?.search}` === to),
+    `${path} returned ${response.status} to ${location ?? '<none>'}`
+  )
+}
 
 // Each llms.txt (https://llmstxt.org) lists its own language's pages, linking their Markdown exports.
 for (const { path, lang, other } of [

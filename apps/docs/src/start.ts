@@ -12,7 +12,7 @@ const llmMiddleware = createMiddleware().server(({ next, request }) => {
   const path = rewriteLegacyMarkdown(url.pathname)
 
   if (path) {
-    throw redirect({ href: new URL(path, url).href, statusCode: 308 })
+    throw redirect({ href: new URL(`${path}${url.search}`, url).href, statusCode: 308 })
   }
 
   return next()
