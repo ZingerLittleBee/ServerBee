@@ -152,9 +152,10 @@ const wordSearches = new WeakSet<object>()
  * Requiring every word of a Chinese query keeps one-character words, which match the start of any word, from finding
  * everything, but a query whose words sit in a heading and the paragraphs under it, such as 卸载 Agent, found nothing.
  * Such a query is searched again for each of its words, a word needing every piece ICU splits it into, and finds the
- * sections holding any of the words, those holding more first, which is how English queries are searched. Searching it
- * again for any of the pieces instead filled the results of 区块链 and 企业微信, which no page mentions, with sections
- * holding a word that starts with 链 or 信.
+ * sections holding any of the words, as an English query does. Those holding more of the words come first, and those
+ * holding as many by score: by score alone, a short section holding one word came before a long one holding two.
+ * Searching it again for any of the pieces instead filled the results of 区块链 and 企业微信, which no page mentions,
+ * with sections holding a word that starts with 链 or 信.
  */
 const anyWordFallback: OramaPlugin = {
   name: 'any-word-fallback',
@@ -162,15 +163,22 @@ const anyWordFallback: OramaPlugin = {
     if (params.mode === 'vector' || !params.term || results.count > 0 || wordSearches.has(params)) {
       return
     }
-    const matches = new Map<string, (typeof results.hits)[number]>()
+    // Each section found, with the number of words it holds.
+    const matches = new Map<string, { hit: (typeof results.hits)[number]; words: number }>()
     for (const word of queryWords(params.term)) {
       const wordSearch = { ...params, groupBy: undefined, limit: count(db), offset: 0, term: word }
       wordSearches.add(wordSearch)
       for (const hit of (await search(db, wordSearch, language)).hits) {
-        matches.set(hit.id, { ...hit, score: hit.score + (matches.get(hit.id)?.score ?? 0) })
+        const match = matches.get(hit.id)
+        matches.set(hit.id, {
+          hit: { ...hit, score: hit.score + (match?.hit.score ?? 0) },
+          words: (match?.words ?? 0) + 1
+        })
       }
     }
-    const hits = [...matches.values()].sort((a, b) => b.score - a.score)
+    const hits = [...matches.values()]
+      .sort((a, b) => b.words - a.words || b.hit.score - a.hit.score)
+      .map(({ hit }) => hit)
     const { groupBy, limit = 10, offset = 0 } = params
     Object.assign(results, {
       count: hits.length,

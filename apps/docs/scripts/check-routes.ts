@@ -77,6 +77,8 @@ interface SearchCheck {
   locale: 'en' | 'zh'
   page: string
   query: string
+  /** Whether the sections holding more of the query's words, split at spaces, come first. */
+  ranked?: boolean
   /** A query that finds the same results. */
   same?: string
 }
@@ -106,6 +108,8 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '卸载agent', page: '/zh/docs/deployment' },
   { locale: 'zh', query: 'Agent卸载', page: '/zh/docs/deployment' },
   { locale: 'zh', query: '服务端怎么卸载', page: '/zh/docs/deployment' },
+  // Sections holding two of these words come before those holding one, though a short one holding one scores more.
+  { locale: 'zh', query: '告警 通知 邮件', page: '/zh/docs/alerts', ranked: true },
   // A conjunction joins the words a query is about, and is not one of them.
   { locale: 'zh', query: '防火墙和告警', page: '/zh/docs/firewall', same: '防火墙告警' },
   { locale: 'zh', query: '流量和带宽', page: '/zh/docs/monitoring', same: '流量 带宽' },
@@ -154,6 +158,40 @@ function contentType(response: Response): string {
 async function searchFor(query: string, locale: string): Promise<SearchResult[]> {
   const response = await fetch(`${baseUrl}/api/search?query=${encodeURIComponent(query)}&locale=${locale}`)
   return (await response.json()) as SearchResult[]
+}
+
+/** A result's text, without the marks of the query's words. */
+function plainText(result: SearchResult): string {
+  return result.content.replace(highlightTags, '').toLowerCase()
+}
+
+/**
+ * The URL of a section found after one holding fewer of `words`, on the same page, or of a page found after one whose
+ * best section, or title, holds fewer. Results list each page and then its sections.
+ */
+function outranked(results: SearchResult[], words: string[]): string | undefined {
+  const held = (result: SearchResult) => words.filter((word) => plainText(result).includes(word)).length
+  let pageBest = Number.POSITIVE_INFINITY
+  let previous = Number.POSITIVE_INFINITY
+  let page: SearchResult | undefined
+  for (const result of results) {
+    if (result.type === 'page') {
+      page = result
+      continue
+    }
+    const count = held(result)
+    if (page) {
+      const best = Math.max(count, held(page))
+      if (best > pageBest) {
+        return page.url
+      }
+      pageBest = best
+      page = undefined
+    } else if (count > previous) {
+      return result.url
+    }
+    previous = count
+  }
 }
 
 function expect(condition: unknown, message: string): asserts condition {
@@ -228,9 +266,7 @@ for (const search of searches) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned raw JSX at ${rawJsx.url}`)
   }
   const sections = results.filter((result) => result.type !== 'page')
-  const partial = sections.find((section) =>
-    search.every?.some((word) => !section.content.replace(highlightTags, '').toLowerCase().includes(word))
-  )
+  const partial = sections.find((section) => search.every?.some((word) => !plainText(section).includes(word)))
   if (partial) {
     throw new Error(
       `Search for "${search.query}" (${search.locale}) returned a section without all its words: ${partial.url}`
@@ -239,6 +275,10 @@ for (const search of searches) {
   const first = sections[0]?.content.replace(highlightTags, '')
   if (search.first && !first?.includes(search.first)) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned first a section without ${search.first}`)
+  }
+  const above = search.ranked ? outranked(results, search.query.toLowerCase().split(' ')) : undefined
+  if (above) {
+    throw new Error(`Search for "${search.query}" (${search.locale}) ranked ${above} under fewer of its words`)
   }
   if (search.same) {
     const ids = (list: SearchResult[]) => list.map((result) => result.id).join('\n')
