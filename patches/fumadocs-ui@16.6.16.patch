@@ -26,6 +26,28 @@ index cd43329912d3125f4bdd411125d9be5f3ab9e469..10549d1b0d61619ad8e0b32332ac0d4d
  		onClick,
  		...props,
  		children: checked ? /* @__PURE__ */ jsx(Check, {}) : /* @__PURE__ */ jsx(Clipboard, {})
+diff --git a/dist/components/dialog/search.js b/dist/components/dialog/search.js
+index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710ac968fd62 100644
+--- a/dist/components/dialog/search.js
++++ b/dist/components/dialog/search.js
+@@ -191,7 +191,7 @@ function SearchDialogContent({ children, ...props }) {
+ function SearchDialogList({ items = null, Empty = () => /* @__PURE__ */ jsx("div", {
+ 	className: "py-12 text-center text-sm text-fd-muted-foreground",
+ 	children: /* @__PURE__ */ jsx(I18nLabel, { label: "searchNoResult" })
+-}), Item = (props) => /* @__PURE__ */ jsx(SearchDialogListItem, { ...props }), ...props }) {
++}), Item = (props) => /* @__PURE__ */ jsx(SearchDialogListItem, { ...props }), role, id, ...props }) {
+ 	const ref = useRef(null);
+ 	const { onSelect } = useSearch();
+ 	const [active, setActive] = useState(() => items && items.length > 0 ? items[0].id : null);
+@@ -235,6 +235,8 @@ function SearchDialogList({ items = null, Empty = () => /* @__PURE__ */ jsx("div
+ 		"data-empty": items === null,
+ 		className: cn("overflow-hidden h-(--fd-animated-height) transition-[height]", props.className),
+ 		children: /* @__PURE__ */ jsx("div", {
++			role,
++			id,
+ 			className: cn("w-full flex flex-col overflow-y-auto max-h-[460px] p-1", !items && "hidden"),
+ 			children: /* @__PURE__ */ jsxs(ListContext, {
+ 				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
 index 78c7d59de854993ca206520fda17399432dce1ce..96633487e78de6bea14a915fecdbf7e88f8afe31 100644
 --- a/dist/components/sidebar/base.js
