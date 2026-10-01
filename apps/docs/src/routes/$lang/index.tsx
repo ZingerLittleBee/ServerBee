@@ -1,4 +1,6 @@
+import archivoLatin from '@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2?url'
 import { createFileRoute, useParams } from '@tanstack/react-router'
+import type { ComponentProps } from 'react'
 
 import { LandingPage } from '@/components/landing'
 import { type LandingSeoCopy, landingSeo } from '@/components/landing/seo'
@@ -8,6 +10,14 @@ import type { LandingLang } from '@/components/landing/translations'
 const SITE = 'https://docs.serverbee.app'
 
 const ogLocale: Record<LandingLang, string> = { en: 'en_US', zh: 'zh_CN' }
+
+/**
+ * Latin Archivo sets the hero heading, subtitle and buttons. The stylesheet's @font-face uses this same URL, so the
+ * preload starts the download before the stylesheet is parsed instead of fetching the file a second time.
+ */
+const fontPreloads: ComponentProps<'link'>[] = [
+  { rel: 'preload', href: archivoLatin, as: 'font', type: 'font/woff2', crossOrigin: 'anonymous' }
+]
 
 function toLandingLang(lang: string): LandingLang {
   return lang === 'zh' ? 'zh' : 'en'
@@ -24,7 +34,7 @@ export const Route = createFileRoute('/$lang/')({
 
 function landingHead(lang: LandingLang, seo: LandingSeoCopy | undefined) {
   if (!seo) {
-    return {}
+    return { links: fontPreloads }
   }
   const url = `${SITE}/${lang}`
   const image = `${SITE}/og/landing-${lang}.png`
@@ -55,7 +65,8 @@ function landingHead(lang: LandingLang, seo: LandingSeoCopy | undefined) {
       { rel: 'canonical', href: url },
       { rel: 'alternate', hrefLang: 'en', href: `${SITE}/en` },
       { rel: 'alternate', hrefLang: 'zh-Hans', href: `${SITE}/zh` },
-      { rel: 'alternate', hrefLang: 'x-default', href: `${SITE}/en` }
+      { rel: 'alternate', hrefLang: 'x-default', href: `${SITE}/en` },
+      ...fontPreloads
     ]
   }
 }
