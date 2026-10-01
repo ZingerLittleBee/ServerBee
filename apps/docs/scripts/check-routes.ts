@@ -13,6 +13,22 @@ const routes = [
   { path: '/zh/docs/configuration', lang: 'zh', marker: '配置加载优先级' }
 ] as const
 
+// Each query must find its page, and only pages in the requested language.
+const searches = [
+  { locale: 'en', query: 'firewall', page: '/en/docs/firewall' },
+  { locale: 'zh', query: '防火墙', page: '/zh/docs/firewall' },
+  { locale: 'zh', query: '安装', page: '/zh/docs/quick-start' },
+  { locale: 'zh', query: 'Docker 安装', page: '/zh/docs/quick-start' },
+  // A question word the pages do not contain does not empty the results.
+  { locale: 'zh', query: '如何安装', page: '/zh/docs/quick-start' },
+  // English words inside Chinese prose match case-insensitively.
+  { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
+  // Full-width Latin, which Chinese input methods can produce.
+  { locale: 'zh', query: 'ｗｅｂｓｏｃｋｅｔ', page: '/zh/docs/api-reference' },
+  // `server.toml` is split as on the English pages, so its parts still match.
+  { locale: 'zh', query: 'toml', page: '/zh/docs/deployment' }
+] as const
+
 async function waitUntilReady(): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     try {
@@ -46,4 +62,19 @@ for (const route of routes) {
   }
 }
 
-console.log(`PASS: ${routes.length} localized documentation routes`)
+for (const search of searches) {
+  const response = await fetch(
+    `${baseUrl}/api/search?query=${encodeURIComponent(search.query)}&locale=${search.locale}`
+  )
+  const results = (await response.json()) as { type: string; url: string }[]
+  const pages = results.filter((result) => result.type === 'page').map((result) => result.url)
+  if (!pages.includes(search.page)) {
+    throw new Error(`Search for "${search.query}" (${search.locale}) did not find ${search.page}`)
+  }
+  const foreign = results.find((result) => !result.url.startsWith(`/${search.locale}/docs`))
+  if (foreign) {
+    throw new Error(`Search for "${search.query}" (${search.locale}) returned ${foreign.url}`)
+  }
+}
+
+console.log(`PASS: ${routes.length} localized documentation routes, ${searches.length} search queries`)
