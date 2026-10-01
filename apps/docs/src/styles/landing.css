@@ -1526,4 +1526,17 @@
   .sb .ins-tab.on {
     border-bottom-color: Highlight;
   }
+  /* Backgrounds are painted as Canvas, which erases the dots: draw each in the color of the text around it. */
+  .sb .release-dot {
+    background: LinkText;
+  }
+  .sb .facts > li::before {
+    background: CanvasText;
+  }
+  /* The step numbers, step commands and availability chip lose their fills: keep their shapes with a border. */
+  .sb .step-n,
+  .sb .step-cmd,
+  .sb .avail {
+    border: 1px solid CanvasText;
+  }
 }
