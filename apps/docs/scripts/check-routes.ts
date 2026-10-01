@@ -16,6 +16,7 @@ const routes = [
 // Each query must find its page, and only pages in the requested language.
 const searches = [
   { locale: 'en', query: 'firewall', page: '/en/docs/firewall' },
+  { locale: 'en', query: 'alert', page: '/en/docs/alerts' },
   { locale: 'zh', query: '防火墙', page: '/zh/docs/firewall' },
   { locale: 'zh', query: '安装', page: '/zh/docs/quick-start' },
   { locale: 'zh', query: 'Docker 安装', page: '/zh/docs/quick-start' },
@@ -66,7 +67,7 @@ for (const search of searches) {
   const response = await fetch(
     `${baseUrl}/api/search?query=${encodeURIComponent(search.query)}&locale=${search.locale}`
   )
-  const results = (await response.json()) as { type: string; url: string }[]
+  const results = (await response.json()) as { content: string; type: string; url: string }[]
   const pages = results.filter((result) => result.type === 'page').map((result) => result.url)
   if (!pages.includes(search.page)) {
     throw new Error(`Search for "${search.query}" (${search.locale}) did not find ${search.page}`)
@@ -74,6 +75,11 @@ for (const search of searches) {
   const foreign = results.find((result) => !result.url.startsWith(`/${search.locale}/docs`))
   if (foreign) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned ${foreign.url}`)
+  }
+  // A component indexed as its source opens the page holding it, not the page it describes.
+  const rawJsx = results.find((result) => result.content.includes('<Card'))
+  if (rawJsx) {
+    throw new Error(`Search for "${search.query}" (${search.locale}) returned raw JSX at ${rawJsx.url}`)
   }
 }
 
