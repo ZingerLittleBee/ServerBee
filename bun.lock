@@ -243,6 +243,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "fumadocs-ui@16.6.16": "patches/fumadocs-ui@16.6.16.patch",
+  },
   "catalog": {
     "@libsql/client": "0.15.15",
     "@orpc/client": "^1.12.2",

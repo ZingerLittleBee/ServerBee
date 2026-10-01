@@ -62,5 +62,8 @@
     "typescript": "^5",
     "ultracite": "7.2.5"
   },
-  "packageManager": "bun@1.3.4"
+  "packageManager": "bun@1.3.4",
+  "patchedDependencies": {
+    "fumadocs-ui@16.6.16": "patches/fumadocs-ui@16.6.16.patch"
+  }
 }

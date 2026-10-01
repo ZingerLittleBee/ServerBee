@@ -36,7 +36,31 @@ const { provider } = defineI18nUI(i18n, {
     },
     zh: {
       displayName: '中文',
-      search: '搜索文档'
+      search: '搜索文档',
+      searchNoResult: '没有找到结果',
+      toc: '本页目录',
+      tocNoHeadings: '本页没有标题',
+      lastUpdate: '最后更新于',
+      chooseLanguage: '选择语言',
+      nextPage: '下一页',
+      previousPage: '上一页',
+      chooseTheme: '主题',
+      editOnGithub: '在 GitHub 上编辑',
+      // The keys below exist through patches/fumadocs-ui@16.6.16.patch, which routes the labels fumadocs-ui hard-codes
+      // in English through these translations.
+      openSearch: '打开搜索',
+      openSidebar: '打开侧边栏',
+      collapseSidebar: '收起侧边栏',
+      toggleTheme: '切换主题',
+      toggleMenu: '切换菜单',
+      copyText: '复制代码',
+      copiedText: '已复制',
+      copyMarkdown: '复制 Markdown',
+      openPageActions: '打开',
+      openInGitHub: '在 GitHub 上打开',
+      viewAsMarkdown: '查看 Markdown',
+      openInApp: '在 {app} 中打开',
+      askAboutPage: '阅读 {url}，我想就这个页面提问。'
     }
   }
 })

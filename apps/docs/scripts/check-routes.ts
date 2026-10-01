@@ -13,6 +13,21 @@ const routes = [
   { path: '/zh/docs/configuration', lang: 'zh', marker: '配置加载优先级' }
 ] as const
 
+// Labels every docs page renders. fumadocs-ui hard-codes most of them in English, and patches/fumadocs-ui@16.6.16.patch
+// routes them through the translations in src/routes/__root.tsx.
+const docsLabels = {
+  en: [
+    'On this page',
+    'Choose a language',
+    'Open Search',
+    'Open Sidebar',
+    'Collapse Sidebar',
+    'Toggle Theme',
+    'Copy Markdown'
+  ],
+  zh: ['本页目录', '选择语言', '打开搜索', '打开侧边栏', '收起侧边栏', '切换主题', '复制 Markdown']
+} as const
+
 // Each query must find its page, and only pages in the requested language.
 const searches = [
   { locale: 'en', query: 'firewall', page: '/en/docs/firewall' },
@@ -60,6 +75,12 @@ for (const route of routes) {
   }
   if (!html.includes(route.marker)) {
     throw new Error(`${route.path} did not render its expected localized content`)
+  }
+  if (route.path.includes('/docs')) {
+    const missing = docsLabels[route.lang].filter((label) => !html.includes(label))
+    if (missing.length > 0) {
+      throw new Error(`${route.path} did not render the labels: ${missing.join(', ')}`)
+    }
   }
 }
 
