@@ -1,3 +1,4 @@
+import type { SortedResult } from 'fumadocs-core/search'
 import { useDocsSearch } from 'fumadocs-core/search/client'
 import {
   SearchDialog,
@@ -28,6 +29,20 @@ const closeLabel: Record<DocsLanguage, string> = {
   en: 'Close search (Esc)',
   zh: '关闭搜索（Esc）'
 }
+
+/**
+ * The results of each search URL. fumadocs' fetch client answers a query it has searched before with the array it got
+ * then, which React takes for the results already shown, so going back to the query whose results were shown left the
+ * status cleared. A copy arrives as new results.
+ */
+class SearchCache extends Map<string, SortedResult[]> {
+  override get(url: string): SortedResult[] | undefined {
+    const results = super.get(url)
+    return results && [...results]
+  }
+}
+
+const searchCache = new SearchCache()
 
 interface ResultOptionProps {
   item: SearchItemType
@@ -65,7 +80,7 @@ function keepEnterOnClose(event: KeyboardEvent<HTMLButtonElement>) {
  */
 export default function DocsSearchDialog(props: SharedProps) {
   const { locale, text } = useI18n()
-  const { search, setSearch, query } = useDocsSearch({ type: 'fetch', locale })
+  const { search, setSearch, query } = useDocsSearch({ cache: searchCache, locale, type: 'fetch' })
   const listId = useId()
   const [activeId, setActiveId] = useState<string>()
   const items = query.data === 'empty' ? null : query.data
