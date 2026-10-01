@@ -178,7 +178,7 @@ index cdd3c964bae0b8217e42c18f4ef7f75886774cb3..6a402c4db0f66821401d771cb0d4d4e7
  		children: /* @__PURE__ */ jsx("header", {
  			id: "nd-nav",
 diff --git a/dist/layouts/shared/page-actions.js b/dist/layouts/shared/page-actions.js
-index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891668cbcfe 100644
+index 15f4b75bab187ea333e39716fad6a8784c5ceda6..61ab80a2ba0c6cdbb9dd9760241f12bfc723f2c5 100644
 --- a/dist/layouts/shared/page-actions.js
 +++ b/dist/layouts/shared/page-actions.js
 @@ -1,5 +1,6 @@
@@ -196,7 +196,7 @@ index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891
  	const [isLoading, setLoading] = useState(false);
  	const [checked, onClick] = useCopyButton(async () => {
  		const cached = cache.get(markdownUrl);
-@@ -34,18 +36,20 @@ function MarkdownCopyButton({ markdownUrl, ...props }) {
+@@ -34,18 +36,21 @@ function MarkdownCopyButton({ markdownUrl, ...props }) {
  			size: "sm",
  			className: "gap-2 [&_svg]:size-3.5 [&_svg]:text-fd-muted-foreground"
  		}), props.className),
@@ -211,8 +211,9 @@ index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891
 +	const { text } = useI18n();
  	const items = useMemo(() => {
 -		const q = `Read ${typeof window !== "undefined" ? window.location.href : "loading"}, I want to ask questions about it.`;
-+		const q = text.askAboutPage.replace("{url}", typeof window !== "undefined" ? window.location.href : "loading");
-+		const openIn = (app) => text.openInApp.replace("{app}", app);
++		const href = typeof window !== "undefined" ? window.location.href : "loading";
++		const q = text.askAboutPage.replace("{url}", () => href);
++		const openIn = (app) => text.openInApp.replace("{app}", () => app);
  		return [
  			{
 -				title: "Open in GitHub",
@@ -220,7 +221,7 @@ index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891
  				href: githubUrl,
  				icon: /* @__PURE__ */ jsxs("svg", {
  					fill: "currentColor",
-@@ -55,12 +59,12 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+@@ -55,12 +60,12 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
  				})
  			},
  			{
@@ -235,7 +236,7 @@ index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891
  				href: `https://scira.ai/?${new URLSearchParams({ q })}`,
  				icon: /* @__PURE__ */ jsxs("svg", {
  					width: "910",
-@@ -121,7 +125,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+@@ -121,7 +126,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
  				})
  			},
  			{
@@ -244,7 +245,7 @@ index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891
  				href: `https://chatgpt.com/?${new URLSearchParams({
  					hints: "search",
  					q
-@@ -135,7 +139,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+@@ -135,7 +140,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
  				})
  			},
  			{
@@ -253,7 +254,7 @@ index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891
  				href: `https://claude.ai/new?${new URLSearchParams({ q })}`,
  				icon: /* @__PURE__ */ jsxs("svg", {
  					fill: "currentColor",
-@@ -146,7 +150,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+@@ -146,7 +151,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
  				})
  			},
  			{
@@ -262,7 +263,7 @@ index 15f4b75bab187ea333e39716fad6a8784c5ceda6..f9e1d89af1112d7f27cf666a2a9aa891
  				icon: /* @__PURE__ */ jsxs("svg", {
  					fill: "currentColor",
  					role: "img",
-@@ -157,14 +161,18 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+@@ -157,14 +162,18 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
  				href: `https://cursor.com/link/prompt?${new URLSearchParams({ text: q })}`
  			}
  		];
