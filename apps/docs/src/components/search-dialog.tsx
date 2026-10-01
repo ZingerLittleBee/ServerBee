@@ -23,6 +23,12 @@ const resultCount: Record<DocsLanguage, (count: number) => string> = {
   zh: (count) => `${count} 个结果`
 }
 
+// fumadocs' close button shows its key, ESC, and that was all its name said. The name keeps the key it shows.
+const closeLabel: Record<DocsLanguage, string> = {
+  en: 'Close search (Esc)',
+  zh: '关闭搜索（Esc）'
+}
+
 interface ResultOptionProps {
   item: SearchItemType
   onActive: (optionId: string) => void
@@ -84,7 +90,7 @@ export default function DocsSearchDialog(props: SharedProps) {
             aria-expanded={hasResults}
             role="combobox"
           />
-          <SearchDialogClose onKeyDown={keepEnterOnClose} />
+          <SearchDialogClose aria-label={closeLabel[lang]} onKeyDown={keepEnterOnClose} />
         </SearchDialogHeader>
         <SearchDialogList
           Item={({ item, onClick }) => (
