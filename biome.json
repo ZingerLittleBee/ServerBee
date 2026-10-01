@@ -102,6 +102,8 @@
         "apps/docs/src/routes/$lang.tsx",
         "apps/docs/src/routes/$lang/docs/$.tsx",
         "apps/docs/src/routes/llms*",
+        "apps/docs/src/routes/$lang/docs*mdx.ts",
+        "apps/docs/src/routes/$lang/docs/*mdx.ts",
         "apps/web/src/routes/_authed/terminal.$serverId.tsx",
         "apps/web/src/routes/_authed/terminal.$serverId-page.tsx",
         "apps/web/src/routes/_authed/network/$serverId.tsx",

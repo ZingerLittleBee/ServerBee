@@ -28,6 +28,18 @@ const docsLabels = {
   zh: ['本页目录', '选择语言', '打开搜索', '打开侧边栏', '收起侧边栏', '切换主题', '复制 Markdown']
 } as const
 
+// Markdown exports, each in its page's language and served as UTF-8.
+const markdownExports = [
+  { path: '/en/docs.mdx', title: '# Introduction' },
+  { path: '/zh/docs.mdx', title: '# 介绍' },
+  { path: '/en/docs/quick-start.mdx', title: '# Quick Install' },
+  { path: '/zh/docs/quick-start.mdx', title: '# 快速安装' },
+  // The first export URL, which deployed pages linked to before the export was localized.
+  { path: '/llms.mdx/docs/quick-start', title: '# Quick Install' }
+] as const
+
+const missingExports = ['/en/docs/nope.mdx', '/zh/docs/nope.mdx', '/fr/docs/quick-start.mdx', '/llms.mdx/docs/nope']
+
 // Each query must find its page, and only pages in the requested language.
 const searches = [
   { locale: 'en', query: 'firewall', page: '/en/docs/firewall' },
@@ -58,6 +70,17 @@ async function waitUntilReady(): Promise<void> {
     await delay(200)
   }
   throw new Error(`Documentation server did not become ready at ${baseUrl}`)
+}
+
+/** A Content-Type compared without case or spaces: text/plain;charset=UTF-8 equals text/plain; charset=utf-8. */
+function contentType(response: Response): string {
+  return (response.headers.get('content-type') ?? '').replace(/\s/g, '').toLowerCase()
+}
+
+function expect(condition: unknown, message: string): asserts condition {
+  if (!condition) {
+    throw new Error(message)
+  }
 }
 
 await waitUntilReady()
@@ -104,4 +127,36 @@ for (const search of searches) {
   }
 }
 
-console.log(`PASS: ${routes.length} localized documentation routes, ${searches.length} search queries`)
+for (const route of markdownExports) {
+  // HEAD needs its own handler, or it gets the HTML page's headers.
+  for (const method of ['GET', 'HEAD'] as const) {
+    const response = await fetch(`${baseUrl}${route.path}`, { method, redirect: 'manual' })
+    expect(response.status === 200, `${method} ${route.path} returned ${response.status}`)
+    expect(
+      contentType(response) === 'text/markdown;charset=utf-8',
+      `${method} ${route.path} returned Content-Type ${response.headers.get('content-type')}`
+    )
+    if (method === 'GET') {
+      const markdown = await response.text()
+      expect(markdown.startsWith(`${route.title}\n`), `${route.path} does not start with "${route.title}"`)
+    }
+  }
+}
+
+for (const path of missingExports) {
+  for (const method of ['GET', 'HEAD'] as const) {
+    const response = await fetch(`${baseUrl}${path}`, { method, redirect: 'manual' })
+    expect(response.status === 404, `${method} ${path} returned ${response.status} instead of 404`)
+  }
+}
+
+const legacy = await fetch(`${baseUrl}/docs/quick-start.mdx`, { redirect: 'manual' })
+expect(
+  legacy.status === 308 &&
+    new URL(legacy.headers.get('location') ?? '', baseUrl).pathname === '/en/docs/quick-start.mdx',
+  `/docs/quick-start.mdx returned ${legacy.status} to ${legacy.headers.get('location') ?? '<none>'}`
+)
+
+console.log(
+  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports`
+)

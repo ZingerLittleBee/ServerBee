@@ -15,6 +15,7 @@ import { type ComponentProps, type ComponentType, Suspense } from 'react'
 
 import { useMDXComponents } from '@/components/mdx'
 import { baseOptions, gitConfig } from '@/lib/layout.shared'
+import { getPageMarkdownUrl } from '@/lib/llms'
 import { source } from '@/lib/source'
 
 function getDocsContentPath(lang: string, slugs: string[]): string {
@@ -55,9 +56,9 @@ const serverLoader = createServerFn({
     const pageTree = source.getPageTree(lang)
 
     return {
-      slugs: page.slugs,
       path: getDocsContentPath(lang, page.slugs),
       lang,
+      markdownUrl: getPageMarkdownUrl(page),
       pageTree: await source.serializePageTree(pageTree)
     }
   })
@@ -110,10 +111,9 @@ function DocsClientPage({ Content, frontmatter, markdownUrl, path, toc }: DocsCl
 }
 
 function Page() {
-  const { path, pageTree, slugs, lang } = useFumadocsLoader(Route.useLoaderData())
+  const { path, pageTree, markdownUrl, lang } = useFumadocsLoader(Route.useLoaderData())
   const { lang: routeLang } = useParams({ from: '/$lang/docs/$' })
   const currentLang = lang ?? routeLang
-  const markdownUrl = `/llms.mdx/docs/${slugs.join('/')}`
 
   return (
     <DocsLayout {...baseOptions(currentLang)} tree={pageTree}>
