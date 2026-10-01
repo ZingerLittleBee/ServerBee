@@ -1,246 +1,1522 @@
-/* Landing-only keyframes and scoped utilities.
-   All rules nest under .serverbee-landing so they never affect the docs reader. */
-@layer landing {
-  .serverbee-landing {
-    --landing-bg: oklch(0.16 0.01 260);
-    --landing-bg-elevated: oklch(0.2 0.012 260);
-    --landing-fg: oklch(0.96 0.005 260);
-    --landing-fg-muted: oklch(0.72 0.01 260);
-    --landing-border: oklch(0.28 0.015 260);
-    --landing-amber: #ffb300;
-    --landing-amber-soft: #ffd166;
-    --landing-cyan: #4cc9f0;
-    color: var(--landing-fg);
-    background: var(--landing-bg);
-  }
+/* ServerBee landing: page chrome, type, sections. Product mocks live in landing-mocks.css.
+   Ported from the design reference: every design selector carries exactly one extra .sb (the landing root), so
+   the design's cascade holds and nothing reaches the docs reader. */
 
-  .serverbee-landing .gradient-text {
-    color: #ffd166;
-    -webkit-text-fill-color: transparent;
-    background: linear-gradient(
-      120deg,
-      #fff 0%,
-      #ffd166 40%,
-      #ffb300 70%,
-      #ff8a3d 100%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-  }
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/inter/index.css";
+@import "@fontsource-variable/jetbrains-mono/index.css";
 
-  .serverbee-landing .hex-bg {
-    background-image:
-      radial-gradient(
-        circle at 20% 10%,
-        rgba(255, 179, 0, 0.1),
-        transparent 40%
-      ),
-      radial-gradient(
-        circle at 80% 30%,
-        rgba(76, 201, 240, 0.08),
-        transparent 40%
-      );
-  }
+/* Metric-matched fallbacks. Until a web font arrives, Latin text renders in a local font (Arial, Menlo for mono)
+   scaled to the web font's advance widths, so the swap changes no line break and moves nothing (otherwise the CJK
+   families next in the stacks stand in, and their wider Latin glyphs rewrap the hero). size-adjust is the measured
+   width ratio of the landing's own text, web font over local font, for each weight and width in use; the vertical
+   overrides restate the web font's ascent and descent divided by size-adjust, which scales them too. Latin only:
+   Chinese text keeps the system CJK fonts. */
+/* Archivo (--f-display): 400 to 700 at the normal width, and 700 at the h2 (108%) and h1 (112%) widths. */
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial"), local("ArialMT");
+  font-weight: 100 450;
+  size-adjust: 98.05%;
+  ascent-override: 89.55%;
+  descent-override: 21.42%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial"), local("ArialMT");
+  font-weight: 451 550;
+  size-adjust: 100.53%;
+  ascent-override: 87.34%;
+  descent-override: 20.89%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT");
+  font-weight: 551 625;
+  size-adjust: 94.93%;
+  ascent-override: 92.49%;
+  descent-override: 22.12%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT");
+  font-weight: 626 675;
+  size-adjust: 96.34%;
+  ascent-override: 91.14%;
+  descent-override: 21.8%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT");
+  font-weight: 676 900;
+  size-adjust: 98.64%;
+  ascent-override: 89.01%;
+  descent-override: 21.29%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT");
+  font-weight: 676 900;
+  font-stretch: 108%;
+  size-adjust: 105.98%;
+  ascent-override: 82.85%;
+  descent-override: 19.82%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT");
+  font-weight: 676 900;
+  font-stretch: 112%;
+  size-adjust: 111.15%;
+  ascent-override: 78.99%;
+  descent-override: 18.89%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* Inter (--f-product, the product mocks): regular and medium, semibold and bold. */
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial"), local("ArialMT");
+  font-weight: 100 550;
+  size-adjust: 106.06%;
+  ascent-override: 91.34%;
+  descent-override: 22.74%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT");
+  font-weight: 551 900;
+  size-adjust: 103.9%;
+  ascent-override: 93.24%;
+  descent-override: 23.22%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* JetBrains Mono (--f-mono): Menlo's advance scaled to JetBrains Mono's 0.6em, so every command wraps the same. */
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src: local("Menlo Regular"), local("Menlo-Regular");
+  font-weight: 100 550;
+  size-adjust: 99.66%;
+  ascent-override: 102.35%;
+  descent-override: 30.1%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono Fallback";
+  src: local("Menlo Bold"), local("Menlo-Bold");
+  font-weight: 551 900;
+  size-adjust: 99.66%;
+  ascent-override: 102.35%;
+  descent-override: 30.1%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
-  @keyframes landing-pulse {
-    0%,
-    100% {
-      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
-    }
-    70% {
-      box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
-    }
-  }
-  .serverbee-landing .pulse-dot {
-    animation: landing-pulse 2s ease-out infinite;
-  }
+/* Isolation: the design was drawn against browser defaults, so undo Tailwind preflight, the fumadocs base layer
+   and any colliding Tailwind utility inside the landing (revert rolls back to the browser's own styles). The reset
+   is unlayered, so on elements inside .sb it beats every Tailwind utility and fumadocs style (they live in cascade
+   layers): utilities such as hidden, flex or sr-only, and fumadocs components embedded in the landing, do not work
+   there. Use scoped .sb classes instead (.vh hides text visually) and render fumadocs pieces outside the root.
+   These selectors weigh 0,1,0 (0,1,1 for pseudo-elements): every scoped design rule outweighs them or, like the
+   root's own .sb rules, comes later. SVG and img stay out to keep their presentation attributes, so preflight's svg
+   and img rules (display: block; img max-width: 100% and height: auto) still apply to them. */
+.sb,
+.sb :where(*:not(svg, svg *, img)),
+.sb :where(*:not(svg, svg *, img))::before,
+.sb :where(*:not(svg, svg *, img))::after {
+  all: revert;
+}
 
-  @keyframes landing-ring {
-    0% {
-      stroke-dashoffset: 220;
-    }
-    50% {
-      stroke-dashoffset: 70;
-    }
-    100% {
-      stroke-dashoffset: 220;
-    }
-  }
-  .serverbee-landing .ring-anim {
-    animation: landing-ring 4s ease-in-out infinite;
-  }
-
-  @keyframes landing-spark {
-    0% {
-      transform: translateX(0);
-    }
-    100% {
-      transform: translateX(-50%);
-    }
-  }
-  .serverbee-landing .spark-scroll {
-    animation: landing-spark 6s linear infinite;
-  }
-
-  @keyframes landing-hex-drift {
-    0% {
-      transform: translateY(0);
-    }
-    100% {
-      transform: translateY(-40px);
-    }
-  }
-  .serverbee-landing .hex-drift {
-    animation: landing-hex-drift 30s linear infinite;
-  }
-
-  @keyframes landing-orbit {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  .serverbee-landing .orbit-anim {
-    animation: landing-orbit 8s linear infinite;
-  }
-  .serverbee-landing .orbit-counter {
-    animation: landing-orbit 8s linear infinite reverse;
-  }
-
-  @keyframes landing-stream {
-    0% {
-      left: 0;
-      opacity: 0;
-    }
-    10% {
-      opacity: 1;
-    }
-    90% {
-      opacity: 1;
-    }
-    100% {
-      left: calc(100% - 12px);
-      opacity: 0;
-    }
-  }
-  .serverbee-landing .stream-particle {
-    animation: landing-stream 3s linear infinite;
-  }
-
-  @keyframes landing-blink {
-    0%,
-    60%,
-    100% {
-      opacity: 1;
-    }
-    30% {
-      opacity: 0;
-    }
-  }
-  .serverbee-landing .blink {
-    animation: landing-blink 1s steps(1) infinite;
-  }
-
-  @keyframes landing-shake {
-    0%,
-    92%,
-    100% {
-      transform: rotate(0);
-    }
-    94% {
-      transform: rotate(-14deg);
-    }
-    96% {
-      transform: rotate(12deg);
-    }
-    98% {
-      transform: rotate(-6deg);
-    }
-  }
-  .serverbee-landing .bell-shake {
-    animation: landing-shake 5s ease-in-out infinite;
-  }
-
-  @keyframes landing-uprotate {
-    from {
-      transform: rotate(0);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  .serverbee-landing .upgrade-spin {
-    animation: landing-uprotate 6s linear infinite;
-  }
-
-  @keyframes landing-band {
-    0% {
-      left: -40%;
-    }
-    100% {
-      left: 100%;
-    }
-  }
-  .serverbee-landing .light-band {
-    animation: landing-band 3.5s ease-in-out infinite;
-  }
-
-  @keyframes landing-fade-cycle {
-    0%,
-    25% {
-      opacity: 1;
-    }
-    35%,
-    90% {
-      opacity: 0.25;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-  .serverbee-landing .fade-cycle {
-    animation: landing-fade-cycle 4s ease-in-out infinite;
-  }
-
-  @keyframes landing-typewriter {
-    0%,
-    5% {
-      width: 0;
-    }
-    35%,
-    60% {
-      width: 100%;
-    }
-    95%,
-    100% {
-      width: 0;
-    }
-  }
-  .serverbee-landing .typewriter {
-    display: inline-block;
-    overflow: hidden;
-    white-space: nowrap;
-    animation: landing-typewriter 8s steps(40, end) infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .serverbee-landing *,
-    .serverbee-landing *::before,
-    .serverbee-landing *::after {
-      transition-duration: 0.001ms !important;
-      animation-duration: 0.001ms !important;
-      animation-iteration-count: 1 !important;
-    }
+/* The design paints html and body with the page ground; follow the landing palette so overscroll matches. */
+:root:has(.sb) {
+  color-scheme: light;
+  background: oklch(0.975 0.005 85);
+}
+:root.dark:has(.sb) {
+  color-scheme: dark;
+  background: oklch(0.155 0.006 70);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark):has(.sb) {
+    color-scheme: dark;
+    background: oklch(0.155 0.006 70);
   }
 }
 
-/* Unlayered to outrank Fumadocs `p { display: flow-root }` base styles. */
-.serverbee-landing .landing-clamp-3 {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
+.sb {
+  --f-display:
+    "Archivo Variable", "Archivo Fallback", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --f-mono:
+    "JetBrains Mono Variable", "JetBrains Mono Fallback", ui-monospace,
+    "SF Mono", Menlo, Consolas, monospace;
+  --r-lg: 16px;
+  --r-md: 12px;
+  --shell: 1240px;
+  --gutter: 32px;
+  min-height: 100vh;
+  overflow-x: clip;
+  font-family: var(--f-display);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.6;
+  color: var(--ink-2);
+  background: var(--bg);
+}
+
+/* Palettes. Light is the default; the dark palette (warm near-black ground, amber accent) follows the docs theme
+   class that next-themes sets on <html>, and prefers-color-scheme stands in when no class is set (no JavaScript).
+   landing-mocks.css switches the product palettes on the same conditions. */
+.sb {
+  --bg: oklch(0.975 0.005 85);
+  --bg-2: oklch(0.955 0.007 82);
+  --bg-3: oklch(0.93 0.008 80);
+  --line: oklch(0.89 0.009 80);
+  --line-2: oklch(0.8 0.01 78);
+  --ink: oklch(0.2 0.012 65);
+  --ink-2: oklch(0.34 0.012 65);
+  --ink-3: oklch(0.47 0.012 65);
+  --amber: oklch(0.82 0.15 75);
+  --amber-hi: oklch(0.78 0.15 72);
+  --amber-ink: oklch(0.5 0.12 62);
+  --amber-soft: oklch(0.82 0.15 75 / 0.16);
+  --on-amber: oklch(0.2 0.03 60);
+  --shadow-lg:
+    0 40px 80px -36px oklch(0.3 0.03 60 / 0.35),
+    0 0 0 1px oklch(0.3 0.02 60 / 0.08);
+  --shadow-md: 0 18px 40px -20px oklch(0.3 0.03 60 / 0.35);
+  color-scheme: light;
+}
+:root.dark .sb {
+  --bg: oklch(0.155 0.006 70);
+  --bg-2: oklch(0.183 0.007 70);
+  --bg-3: oklch(0.215 0.008 70);
+  --line: oklch(0.285 0.008 70);
+  --line-2: oklch(0.36 0.009 70);
+  --ink: oklch(0.965 0.006 85);
+  --ink-2: oklch(0.82 0.008 80);
+  --ink-3: oklch(0.68 0.009 75);
+  --amber: oklch(0.82 0.15 75);
+  --amber-hi: oklch(0.87 0.14 80);
+  --amber-ink: oklch(0.84 0.14 78);
+  --amber-soft: oklch(0.82 0.15 75 / 0.12);
+  --on-amber: oklch(0.2 0.03 60);
+  --shadow-lg:
+    0 40px 80px -32px oklch(0 0 0 / 0.75), 0 0 0 1px oklch(1 0 0 / 0.06);
+  --shadow-md: 0 18px 40px -18px oklch(0 0 0 / 0.7);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) .sb {
+    --bg: oklch(0.155 0.006 70);
+    --bg-2: oklch(0.183 0.007 70);
+    --bg-3: oklch(0.215 0.008 70);
+    --line: oklch(0.285 0.008 70);
+    --line-2: oklch(0.36 0.009 70);
+    --ink: oklch(0.965 0.006 85);
+    --ink-2: oklch(0.82 0.008 80);
+    --ink-3: oklch(0.68 0.009 75);
+    --amber: oklch(0.82 0.15 75);
+    --amber-hi: oklch(0.87 0.14 80);
+    --amber-ink: oklch(0.84 0.14 78);
+    --amber-soft: oklch(0.82 0.15 75 / 0.12);
+    --on-amber: oklch(0.2 0.03 60);
+    --shadow-lg:
+      0 40px 80px -32px oklch(0 0 0 / 0.75), 0 0 0 1px oklch(1 0 0 / 0.06);
+    --shadow-md: 0 18px 40px -18px oklch(0 0 0 / 0.7);
+    color-scheme: dark;
+  }
+}
+
+/* The design's page-wide link colors, scoped to the landing. */
+.sb a {
+  color: var(--amber-ink);
+}
+.sb a:hover {
+  color: var(--ink);
+}
+
+.sb .shell {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(var(--shell) + var(--gutter) * 2);
+  padding-inline: var(--gutter);
+  margin-inline: auto;
+}
+
+.sb .page {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- type ---------- */
+/* English flows across balanced lines; Chinese breaks at the comma. */
+.sb .h1 {
+  margin: 0;
+  font-family: var(--f-display);
+  font-size: clamp(36px, 3.75vw, 54px);
+  font-weight: 700;
+  font-stretch: 112%;
+  line-height: 1.06;
+  color: var(--ink);
+  letter-spacing: -0.028em;
+  text-wrap: balance;
+}
+.sb.l-zh .h1 {
+  font-size: clamp(34px, 3.6vw, 52px);
+  line-height: 1.18;
+  letter-spacing: -0.01em;
+}
+.sb.l-zh .h1 > span {
+  display: block;
+}
+.sb .h2 {
+  margin: 0;
+  font-family: var(--f-display);
+  font-size: clamp(28px, 3vw, 42px);
+  font-weight: 700;
+  font-stretch: 108%;
+  line-height: 1.12;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.sb.l-zh .h2 {
+  font-size: clamp(26px, 2.7vw, 38px);
+  line-height: 1.28;
+  letter-spacing: 0;
+}
+/* Chinese headings break at punctuation and spaces, never inside a word. */
+.sb.l-zh .h1,
+.sb.l-zh .h2 {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.sb .lede {
+  max-width: 36em;
+  margin: 18px 0 0;
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.sb .mono {
+  font-family: var(--f-mono);
+}
+/* Runs that typeset() keeps on one line: a number with its unit, an identifier such as AGPL-3.0-or-later. */
+.sb .nw {
+  white-space: nowrap;
+}
+/* Visually hidden, still read by screen readers (Tailwind's sr-only does not apply inside .sb). */
+.sb .vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}
+
+/* ---------- buttons ---------- */
+.sb .btn {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  height: 44px;
+  padding: 0 18px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.sb .btn-primary {
+  color: var(--on-amber);
+  background: var(--amber);
+}
+.sb .btn-primary:hover {
+  color: var(--on-amber);
+  background: var(--amber-hi);
+}
+.sb .btn-ghost {
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--line-2);
+}
+.sb .btn-ghost:hover {
+  color: var(--ink);
+  background: var(--bg-3);
+}
+.sb .btn-sm {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 14px;
+  border-radius: 9px;
+}
+.sb .icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--ink-2);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.sb .icon-btn:hover {
+  color: var(--ink);
+  background: var(--bg-3);
+}
+.sb .txt-btn {
+  height: 36px;
+  padding: 0 10px;
+  font: 600 13px / 1 var(--f-display);
+  color: var(--ink-2);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.sb .txt-btn:hover {
+  color: var(--ink);
+  background: var(--bg-3);
+}
+/* The language switch is a link to the other locale where the design drew a button: give the anchor the
+   button box (border-box height, centered label, no underline). */
+.sb a.txt-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+.sb .more-link {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 28px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--amber-ink);
+  text-decoration: none;
+}
+.sb .more-link:hover {
+  color: var(--ink);
+}
+
+/* ---------- icons ---------- */
+/* <i class="ic"> wraps a lucide-react SVG in place of the design's lucide icon font, whose glyph filled a 1em square
+   centered in a line box as tall as the inherited line-height. The margins rebuild that box, so icon rows and
+   stacks (tab bars, gauges, sidebar items) keep the design's heights. */
+.sb i.ic {
+  font-style: normal;
+}
+.sb i.ic > svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+  margin-block: calc((1lh - 1em) / 2);
+}
+/* The theme toggle renders both icons and shows the one for the other palette (the design shows the sun on dark). */
+.sb .th-sun {
+  display: none;
+}
+:root.dark .sb .th-sun {
+  display: block;
+}
+:root.dark .sb .th-moon {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not(.dark) .sb .th-sun {
+    display: block;
+  }
+  :root:not(.light):not(.dark) .sb .th-moon {
+    display: none;
+  }
+}
+
+/* ---------- nav ---------- */
+/* Anchor jumps and focus scrolling stop just below the sticky nav (65px with its border), never under it. */
+:root:has(.sb) {
+  scroll-padding-top: 72px;
+}
+/* The nav's own controls stay in view, but the padding would still make focusing one scroll the page to reveal it. */
+.sb .nav :is(a[href], button) {
+  scroll-margin-top: -72px;
+}
+/* Above every landing layer (the mocks top out at 6) but below fumadocs' search overlay and dialog (z-50), whose
+   portals come before the landing root in <body>. */
+.sb .nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in oklch, var(--bg) 82%, transparent);
+  border-bottom: 1px solid var(--line);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  backdrop-filter: saturate(1.4) blur(14px);
+}
+.sb .nav-in {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  height: 64px;
+}
+.sb .brand {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--ink);
+  text-decoration: none;
+}
+.sb .brand:hover {
+  color: var(--ink);
+}
+.sb .brand-mark {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+.sb .brand-name {
+  font-size: 17px;
+  font-weight: 700;
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+}
+.sb .nav-links {
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  margin-right: auto;
+}
+.sb .nav-links > a {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.sb .nav-links > a:hover {
+  color: var(--ink);
+}
+/* Text links: keep the focus ring off the letters. */
+.sb .nav-links > a:focus-visible,
+.sb .foot-links > a:focus-visible {
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.sb .nav-act {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+.sb .gh-link {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-2);
+  text-decoration: none;
+  border-radius: 9px;
+}
+.sb .gh-link:hover {
+  color: var(--ink);
+  background: var(--bg-3);
+}
+
+/* ---------- hero ---------- */
+.sb .hero {
+  position: relative;
+  padding-block: 72px 112px;
+}
+.sb .hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.94fr) minmax(0, 1.06fr);
+  gap: 56px;
+  align-items: center;
+}
+.sb .hero-copy {
+  min-width: 0;
+}
+.sb .release {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 12px 5px 10px;
+  margin-bottom: 26px;
+  font: 500 12.5px / 1.4 var(--f-mono);
+  color: var(--ink-2);
+  text-decoration: none;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.sb .release:hover {
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+.sb .release-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--amber);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--amber-soft);
+}
+.sb .release-link {
+  color: var(--amber-ink);
+}
+.sb .hero-sub {
+  max-width: 33em;
+  margin: 22px 0 0;
+  font-size: 18px;
+  line-height: 1.68;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.sb .cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.sb .install {
+  max-width: 640px;
+  margin-top: 28px;
+  overflow: hidden;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+/* Wraps when the tabs leave no room (narrow phones with larger text spacing): the Copy button moves under them. */
+.sb .ins-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 6px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.sb .ins-tab {
+  padding: 9px 10px 11px;
+  margin-bottom: -1px;
+  font: 600 13px / 1 var(--f-display);
+  color: var(--ink-3);
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+}
+.sb .ins-tab:hover {
+  color: var(--ink);
+}
+.sb .ins-tab.on {
+  color: var(--ink);
+  border-bottom-color: var(--amber);
+}
+.sb .ins-copy {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  margin-bottom: 5px;
+  margin-left: auto;
+  font: 600 12px / 1 var(--f-display);
+  color: var(--ink-2);
+  cursor: pointer;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.sb .ins-copy:hover {
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+/* The three tab bodies share one grid cell, so the box keeps the tallest one's height on every tab. The others stay
+   laid out but hidden, and inert. */
+.sb .ins-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 14px 16px;
+}
+.sb .ins-pane {
+  grid-area: 1 / 1;
+}
+.sb .ins-pane:not(.on) {
+  visibility: hidden;
+}
+.sb .ins-cmd {
+  margin: 0;
+  font: 500 13px / 1.65 var(--f-mono);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.sb .ins-cmd > b {
+  margin-right: 0.6em;
+  font-weight: 500;
+  color: var(--amber-ink);
+  user-select: none;
+}
+/* Commands render as unbreakable segments: lines break only at the spaces between them and at the <wbr> after a URL
+   or path part, never inside a flag or between a flag and its short value. inline-block: WebKit ignores nowrap and
+   pre on an inline span in a pre-wrap box, breaks it at a hyphen or space, paints part of it twice, and can carry
+   the space before a segment to the next line. */
+.sb .cmd-seg {
+  display: inline-block;
+  white-space: pre;
+}
+/* The Railway tab's body, centered in the height of the command bodies. */
+.sb .ins-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+  align-self: center;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.sb .ins-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.sb .facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding: 0;
+  margin: 22px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-3);
+  list-style: none;
+}
+.sb .facts > li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  text-wrap: pretty;
+}
+.sb .facts > li::before {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  content: "";
+  background: var(--amber);
+  border-radius: 50%;
+}
+
+.sb .hero-visual {
+  position: relative;
+  min-width: 0;
+}
+.sb .hv {
+  position: relative;
+  padding-bottom: 40px;
+}
+.sb .hv-rings {
+  position: absolute;
+  top: -250px;
+  right: -260px;
+  width: 820px;
+  height: 820px;
+  pointer-events: none;
+  background: repeating-radial-gradient(
+    circle,
+    transparent 0 69px,
+    var(--line) 69px 70px
+  );
+  border-radius: 50%;
+  opacity: 0.75;
+  -webkit-mask-image: radial-gradient(closest-side, #000 20%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 20%, transparent 100%);
+}
+.sb .hv-phone {
+  position: absolute;
+  right: -28px;
+  bottom: -72px;
+  z-index: 3;
+}
+/* Pause and resume for the live mocks (WCAG 2.2.2): a pill in the strip that .hv keeps free under the window, left
+   of the phone at every width. */
+.sb .live-btn {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 12px 5px 10px;
+  font: 500 12.5px / 1.4 var(--f-mono);
+  color: var(--ink-3);
+  cursor: pointer;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.sb .live-btn:hover {
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+/* A stopped preview also stops the CSS animations (the terminal cursor). !important: animation shorthands such as
+   .term-cur's reset the play state and would win by source order. */
+.sb[data-motion="paused"] *,
+.sb[data-motion="paused"] ::before,
+.sb[data-motion="paused"] ::after {
+  animation-play-state: paused !important;
+}
+/* A paused blink could hold the cursor in its hidden phase; show it steady instead. */
+.sb[data-motion="paused"] .term-cur {
+  animation: none !important;
+}
+
+/* ---------- sections ---------- */
+.sb .sec {
+  position: relative;
+  padding-block: 128px;
+}
+.sb .sec.alt {
+  background: var(--bg-2);
+}
+.sb .feat {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 72px;
+  align-items: start;
+}
+.sb .feat-copy {
+  position: sticky;
+  top: 104px;
+  min-width: 0;
+}
+.sb .feat-visual {
+  min-width: 0;
+}
+.sb .points {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  margin: 36px 0 0;
+  list-style: none;
+}
+.sb .points > li {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.sb .points > li:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.sb .pt-t {
+  display: block;
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+.sb .pt-d {
+  display: block;
+  margin-top: 4px;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+.sb .sec-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 40px;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 48px;
+}
+.sb .sec-head-copy {
+  max-width: 720px;
+}
+.sb .sec-head .more-link {
+  margin-top: 0;
+}
+.sb .pts-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 40px;
+  padding: 0;
+  margin: 48px 0 0;
+  list-style: none;
+}
+.sb .pts-row.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 32px;
+}
+.sb .pts-row > li {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.sb .avail {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 12px;
+  margin-top: 20px;
+  font: 600 13px / 1.3 var(--f-mono);
+  color: var(--amber-ink);
+  background: var(--amber-soft);
+  border-radius: 999px;
+}
+
+/* When the chip wraps (the narrowest phones), it breaks only between clauses, never inside one. */
+.sb .avail-clause {
+  white-space: nowrap;
+}
+
+/* security */
+.sb .sec-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-top: 44px;
+}
+.sb .sec-pts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 32px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.sb .sec-pts > li {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.sb .sec-side {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* more */
+.sb .more-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 56px;
+  padding: 0;
+  margin: 48px 0 0;
+  list-style: none;
+}
+.sb .more-grid > li {
+  display: grid;
+  grid-template-columns: minmax(0, 190px) minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.sb .more-t {
+  font-size: 15.5px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.sb .more-d {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+/* how it works */
+.sb .arch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 150px) minmax(0, 1.1fr) minmax(
+      0,
+      60px
+    ) minmax(0, 1fr);
+  align-items: center;
+  margin-top: 48px;
+}
+.sb .arch-box {
+  padding: 18px;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+}
+.sb .arch-cap {
+  font: 600 12px / 1.3 var(--f-mono);
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sb .arch-title {
+  margin-top: 6px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.sb .arch-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 14px 0 0;
+  list-style: none;
+}
+.sb .arch-list > li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 11px;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.sb .arch-list > li > small {
+  font: 500 11.5px / 1 var(--f-mono);
+  color: var(--ink-3);
+}
+.sb .arch-srv {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 4px var(--amber-soft);
+}
+.sb .arch-srv .arch-list > li {
+  justify-content: flex-start;
+}
+.sb .arch-wire {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 10px;
+  text-align: center;
+}
+.sb .arch-wire::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  content: "";
+  border-top: 2px dashed var(--line-2);
+}
+/* biome-ignore lint/style/noDescendingSpecificity: matches other spans than .l-zh .h1 > span */
+.sb .arch-wire > span {
+  position: relative;
+  z-index: 1;
+  padding: 3px 8px;
+  font: 600 12px / 1.3 var(--f-mono);
+  color: var(--amber-ink);
+  background: var(--bg-2);
+  border-radius: 6px;
+}
+/* biome-ignore lint/style/noDescendingSpecificity: matches other elements than .arch-list > li > small */
+.sb .arch-wire > small {
+  position: relative;
+  z-index: 1;
+  padding: 2px 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  text-wrap: pretty;
+  background: var(--bg-2);
+}
+.sb .arch-clients {
+  display: grid;
+  gap: 10px;
+}
+.sb .arch-client {
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+}
+.sb .arch-client > b {
+  display: block;
+  font-size: 14.5px;
+  color: var(--ink);
+}
+/* biome-ignore lint/style/noDescendingSpecificity: matches other spans than .l-zh .h1 > span */
+.sb .arch-client > span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.sb .steps {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 56px;
+}
+.sb .step {
+  min-width: 0;
+  padding: 24px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.sb .sec.alt .step {
+  background: var(--bg);
+}
+.sb .step-n {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font: 700 14px / 1 var(--f-mono);
+  color: var(--on-amber);
+  background: var(--amber);
+  border-radius: 50%;
+}
+.sb .step-t {
+  margin: 14px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.sb .step-d {
+  margin: 8px 0 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+.sb .step-cmd {
+  padding: 12px 14px;
+  margin: 16px 0 0;
+  font: 500 12.5px / 1.65 var(--f-mono);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  background: var(--bg-3);
+  border-radius: 10px;
+}
+.sb .stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  padding: 0;
+  margin: 56px 0 0;
+  list-style: none;
+}
+.sb .stats > li {
+  padding-top: 14px;
+  border-top: 2px solid var(--ink);
+}
+.sb .stat-v {
+  font-size: clamp(28px, 2.6vw, 38px);
+  font-weight: 700;
+  font-stretch: 112%;
+  line-height: 1.1;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.sb .stat-v > sup {
+  margin-left: 4px;
+  font: 600 12px / 1 var(--f-mono);
+  vertical-align: super;
+  color: var(--amber-ink);
+}
+.sb .stat-l {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+.sb .notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 32px;
+  padding: 0;
+  margin: 28px 0 0;
+  /* The browser numbers the notes; each stat's mark is the note's position. */
+  list-style: decimal inside;
+}
+.sb .notes > li {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+.sb .notes-t {
+  margin: 36px 0 0;
+  font: 600 12px / 1 var(--f-mono);
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* faq */
+.sb .faq-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  gap: 72px;
+  align-items: start;
+}
+.sb .faq-list {
+  border-top: 1px solid var(--line);
+}
+.sb .faq-item {
+  border-bottom: 1px solid var(--line);
+}
+.sb .faq-item > summary {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0;
+  font-size: 16.5px;
+  font-weight: 650;
+  color: var(--ink);
+  text-wrap: balance;
+  cursor: pointer;
+  list-style: none;
+}
+/* A plain rectangle around the row: the default ring bulges around the rotated marker. */
+.sb .faq-item > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.sb .faq-item > summary::-webkit-details-marker {
+  display: none;
+}
+/* Empty alt text keeps the decorative marker out of the question's accessible name. */
+.sb .faq-item > summary::after {
+  flex: none;
+  font: 400 22px / 1 var(--f-mono);
+  color: var(--ink-3);
+  content: "+";
+  /* biome-ignore lint/suspicious/noDuplicateProperties: engines without alt text for generated content keep the first */
+  content: "+" / "";
+  transition: transform 0.2s;
+}
+.sb .faq-item[open] > summary::after {
+  transform: rotate(45deg);
+}
+.sb .faq-a {
+  padding: 0 48px 22px 0;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+/* final */
+.sb .final {
+  position: relative;
+  padding: 88px 32px;
+  overflow: hidden;
+  text-align: center;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+}
+.sb .final::before {
+  position: absolute;
+  inset: -40% -10%;
+  pointer-events: none;
+  content: "";
+  background: repeating-radial-gradient(
+    circle at 50% 100%,
+    transparent 0 55px,
+    var(--line) 55px 56px
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 60% 70% at 50% 100%,
+    #000,
+    transparent
+  );
+  mask-image: radial-gradient(ellipse 60% 70% at 50% 100%, #000, transparent);
+}
+.sb .final > * {
+  position: relative;
+}
+.sb .final-mark {
+  display: block;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 26px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 8px var(--amber-soft);
+}
+.sb .final .h2 {
+  font-size: clamp(30px, 3.6vw, 50px);
+}
+.sb .final-sub {
+  max-width: 32em;
+  margin: 16px auto 0;
+  font-size: 17px;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.sb .final .cta-row {
+  justify-content: center;
+}
+.sb .sec-final {
+  padding-block: 32px 112px;
+}
+
+/* footer */
+.sb .foot {
+  padding-block: 36px 48px;
+  border-top: 1px solid var(--line);
+}
+.sb .foot-in {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+}
+.sb .foot-brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 700;
+  color: var(--ink);
+}
+/* biome-ignore lint/style/noDescendingSpecificity: matches other spans than .l-zh .h1 > span */
+.sb .foot-brand > span {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.sb .foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+.sb .foot-links > a {
+  font-size: 14px;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.sb .foot-links > a:hover {
+  color: var(--ink);
+}
+.sb .foot-legal {
+  margin: 18px 0 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1180px) {
+  .sb .hero-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 64px;
+  }
+  .sb .hero-visual {
+    max-width: 780px;
+  }
+  .sb .hero-split .hero-visual {
+    width: 100%;
+    margin-inline: auto;
+  }
+  .sb .feat {
+    gap: 48px;
+  }
+  .sb .arch {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 110px) minmax(0, 1.1fr) minmax(
+        0,
+        40px
+      ) minmax(0, 1fr);
+  }
+}
+@media (max-width: 1020px) {
+  .sb .nav-links {
+    display: none;
+  }
+  .sb .feat,
+  .sb .faq-wrap {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 44px;
+  }
+  .sb .feat-copy {
+    position: static;
+  }
+  .sb .sec-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sb .more-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sb .pts-row.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px 32px;
+  }
+  .sb .arch {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .sb .arch-wire {
+    height: 72px;
+  }
+  .sb .arch-wire::before {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    border-top: 0;
+    border-left: 2px dashed var(--line-2);
+  }
+  .sb .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px 20px;
+  }
+}
+@media (max-width: 760px) {
+  .sb {
+    --gutter: 20px;
+  }
+  .sb .sec {
+    padding-block: 88px;
+  }
+  .sb .hero {
+    padding-block: 48px 88px;
+  }
+  .sb .steps,
+  .sb .pts-row,
+  .sb .pts-row.four,
+  .sb .sec-pts,
+  .sb .notes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sb .pts-row,
+  .sb .pts-row.four {
+    gap: 0;
+  }
+  .sb .pts-row > li {
+    padding-bottom: 18px;
+  }
+  .sb .more-grid > li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .sb .gh-text {
+    display: none;
+  }
+  .sb .final {
+    padding: 64px 22px;
+  }
+  .sb .faq-a {
+    padding-right: 0;
+  }
+}
+@media (max-width: 480px) {
+  .sb {
+    --gutter: 16px;
+  }
+  .sb .hero-sub {
+    font-size: 16.5px;
+  }
+  .sb .lede {
+    font-size: 16px;
+  }
+  .sb .nav-in {
+    gap: 12px;
+  }
+  .sb .nav-cta {
+    display: none;
+  }
+  .sb .brand-name {
+    font-size: 16px;
+  }
+  .sb .step {
+    padding: 18px;
+  }
+  .sb .step-cmd {
+    padding: 12px;
+  }
+}
+/* Keep each Chinese headline half on one line on 360px phones. */
+@media (max-width: 400px) {
+  .sb.l-zh .h1 {
+    font-size: 31px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* biome-ignore lint/style/noDescendingSpecificity: !important wins regardless of specificity */
+  .sb *,
+  .sb *::before,
+  .sb *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+/* Contrast themes (Windows forced colors) replace the tab colors, so the chosen install method would look like the
+   others: underline it with the system highlight. The tabs also stop overlapping the rule under them, which their
+   Canvas underlines would otherwise cut. */
+@media (forced-colors: active) {
+  .sb .ins-tab {
+    margin-bottom: 0;
+    border-bottom-color: Canvas;
+  }
+  .sb .ins-tab.on {
+    border-bottom-color: Highlight;
+  }
 }

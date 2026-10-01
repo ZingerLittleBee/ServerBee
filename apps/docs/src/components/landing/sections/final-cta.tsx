@@ -1,40 +1,28 @@
-import { ArrowRight, Github } from 'lucide-react'
+import { LandingLink } from '../chrome/landing-link'
+import { typeset } from '../chrome/typeset'
+import { Icon } from '../icon'
+import { docsPath, type LandingLang, landingCopy, landingLinks } from '../translations'
 
-import { CodeCopy } from '../primitives/code-copy'
-import { GradientHeading } from '../primitives/gradient-heading'
-import { HexBackground } from '../primitives/hex-background'
-import { Section } from '../primitives/section'
-import { INSTALL_COMMAND, type LandingLang, t } from '../translations'
-
-export function FinalCta({ lang }: { lang: LandingLang }) {
-  const copy = t(lang).finalCta
-  const docsHref = `/${lang}/docs/quick-start`
+export function FinalCtaSection({ lang }: { lang: LandingLang }) {
+  const final = landingCopy[lang].final
   return (
-    <Section className="overflow-hidden">
-      <HexBackground />
-      <div className="relative mx-auto max-w-3xl text-center">
-        <GradientHeading className="mx-auto">{copy.title}</GradientHeading>
-        <p className="mx-auto mt-4 max-w-xl text-base text-zinc-400">{copy.sub}</p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <a
-            className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-5 py-2.5 font-medium text-amber-950 text-sm transition hover:bg-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-            href={docsHref}
-          >
-            {copy.readDocs} <ArrowRight className="h-4 w-4" />
-          </a>
-          <a
-            className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/[0.04] px-5 py-2.5 font-medium text-sm text-zinc-100 transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-            href="https://github.com/ZingerLittleBee/ServerBee"
-            rel="noreferrer"
-            target="_blank"
-          >
-            <Github className="h-4 w-4" /> {copy.star}
-          </a>
-        </div>
-        <div className="mt-8 flex justify-center">
-          <CodeCopy command={INSTALL_COMMAND} />
+    <section className="sec sec-final">
+      <div className="shell">
+        <div className="final">
+          <img alt="" className="final-mark" height={56} src="/logo-icon.svg" width={56} />
+          <h2 className="h2">{final.h2}</h2>
+          <p className="final-sub">{typeset(final.sub)}</p>
+          <div className="cta-row">
+            <LandingLink className="btn btn-primary" href={docsPath(lang, 'quick-start')}>
+              {final.cta1}
+            </LandingLink>
+            <a className="btn btn-ghost" href={landingLinks.github}>
+              <Icon name="github" />
+              {final.cta2}
+            </a>
+          </div>
         </div>
       </div>
-    </Section>
+    </section>
   )
 }
