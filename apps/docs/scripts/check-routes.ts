@@ -103,6 +103,8 @@ for (const route of routes) {
   if (!html.includes(route.marker)) {
     throw new Error(`${route.path} did not render its expected localized content`)
   }
+  // fumadocs' docs layout has no main landmark (patches/fumadocs-ui@16.6.16.patch gives its article the role).
+  expect(html.match(/<main\b|role="main"/g)?.length === 1, `${route.path} does not have exactly one main landmark`)
   if (route.path.includes('/docs')) {
     const missing = docsLabels[route.lang].filter((label) => !html.includes(label))
     if (missing.length > 0) {

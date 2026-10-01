@@ -113,6 +113,18 @@ index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..faddc4a1a33e94eba8ba39e7dc88dbf2
  };
  const I18nContext = createContext({ text: defaultTranslations });
  function I18nLabel(props) {
+diff --git a/dist/layouts/docs/page/index.js b/dist/layouts/docs/page/index.js
+index 8590fe5f9069e232fc63ccee717244216ccaa0c9..1f77c3bf7fd5bbb2dbd2d120e10ba832f44d9573 100644
+--- a/dist/layouts/docs/page/index.js
++++ b/dist/layouts/docs/page/index.js
+@@ -38,6 +38,7 @@ function DocsPage({ breadcrumb: { enabled: breadcrumbEnabled = true, component:
+ 		] })] })),
+ 		/* @__PURE__ */ jsxs("article", {
+ 			id: "nd-page",
++			role: "main",
+ 			"data-full": full,
+ 			className: cn("flex flex-col w-full max-w-[900px] mx-auto [grid-area:main] px-4 py-6 gap-4 md:px-6 md:pt-8 xl:px-8 xl:pt-14", full ? "max-w-[1168px]" : "xl:layout:[--fd-toc-width:268px]", className),
+ 			children: [
 diff --git a/dist/layouts/home/client.js b/dist/layouts/home/client.js
 index cdd3c964bae0b8217e42c18f4ef7f75886774cb3..c5e9d2f111ba0fb8794d8cbafb98a691363e4c11 100644
 --- a/dist/layouts/home/client.js
