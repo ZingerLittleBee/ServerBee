@@ -69,6 +69,7 @@ docker compose up -d
 | [agent-upgrade-pinned-source.md](agent-upgrade-pinned-source.md) | Pinned-source 升级：来源配置、防降级、SPKI pin、向后兼容 | Agent 进程 + `/servers/:id` (Upgrade button) |
 | [ip-quality/ipapi-is.md](./ip-quality/ipapi-is.md) | IP Quality ipapi.is provider + fallback verification (2026-05-25) | `/ip-quality`, `crates/server/src/service/ip_risk.rs` |
 | [manual/server-memory-soak.md](manual/server-memory-soak.md) | Server memory soak for release builds (allocator regression) | `scripts/memory-soak.sh` |
+| [manual/docs-scroll-restoration.md](manual/docs-scroll-restoration.md) | Docs site scroll restoration: scrolling before hydration, Back/Forward to fragment entries | `apps/docs` (`/en`, `/en/docs/*`) |
 
 ## 页面渲染快速验证
 
