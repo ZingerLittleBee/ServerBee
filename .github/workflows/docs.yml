@@ -17,6 +17,8 @@ on:
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
+      # scripts/check-contracts.ts checks that the configuration pages document every variable ENV.md lists.
+      - 'ENV.md'
       # The docs dependencies, and patches/fumadocs-ui@16.6.16.patch, which translates its labels.
       - 'bun.lock'
       - 'package.json'
@@ -37,6 +39,8 @@ on:
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
+      # scripts/check-contracts.ts checks that the configuration pages document every variable ENV.md lists.
+      - 'ENV.md'
       # The docs dependencies, and patches/fumadocs-ui@16.6.16.patch, which translates its labels.
       - 'bun.lock'
       - 'package.json'
