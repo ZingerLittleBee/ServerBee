@@ -168,6 +168,24 @@ for (const path of ['/en/docs/quick-start', '/zh/docs/quick-start?ref=github', '
   )
 }
 
+// A missing page answers 404 in the language of its URL, titled and linked within that language.
+for (const { path, lang, heading } of [
+  { path: '/en/docs/nope', lang: 'en', heading: 'Page not found' },
+  { path: '/zh/docs/nope', lang: 'zh', heading: '页面不存在' },
+  { path: '/zh/nope', lang: 'zh', heading: '页面不存在' }
+] as const) {
+  const response = await fetch(`${baseUrl}${path}`, { redirect: 'manual' })
+  expect(response.status === 404, `${path} returned ${response.status} instead of 404`)
+  const html = await response.text()
+  expect(html.includes(`<html lang="${lang}">`), `${path} did not render lang=${lang}`)
+  expect(html.includes(heading), `${path} did not render "${heading}"`)
+  expect(html.includes(`<title>${siteNames[lang]}</title>`), `${path} is not titled ${siteNames[lang]}`)
+  for (const href of [`/${lang}`, `/${lang}/docs`]) {
+    expect(html.includes(`href="${href}"`), `${path} does not link ${href}`)
+  }
+  expect(!html.includes('aria-current="page"'), `${path} marks a link as the current page`)
+}
+
 for (const route of markdownExports) {
   // HEAD needs its own handler, or it gets the HTML page's headers.
   for (const method of ['GET', 'HEAD'] as const) {
@@ -251,5 +269,5 @@ for (const { path, first, foreign } of [
 expect((await fetch(`${baseUrl}/fr/llms-full.txt`)).status === 404, '/fr/llms-full.txt is not a 404')
 
 console.log(
-  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages`
+  `PASS: ${routes.length} localized documentation routes, ${searches.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages, localized 404 pages`
 )
