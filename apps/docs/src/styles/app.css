@@ -21,3 +21,20 @@
   --color-fd-ring: hsl(0, 0%, 45%);
 }
 
+/* fumadocs removes the outline of the mobile table of contents trigger and marks its focus with nothing else. */
+[data-toc-popover-trigger]:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: -2px;
+}
+
+/*
+ * fumadocs removes the outline of its buttons and code blocks and marks their focus with a ring, a box-shadow, which
+ * forced colors drop: draw an outline there instead, inside the control, where no scroll container clips it.
+ */
+@media (forced-colors: active) {
+  .focus-visible\:outline-none:focus-visible,
+  .outline-none:focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+}
