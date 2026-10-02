@@ -125,13 +125,17 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     /// Save intent first. The view reflects only the returned Server state.
     func savePreferences(_ preferences: PushPreferences) async {
         guard !isSaving, acceptingRegistrations, let apiClient, let captured = context, let confirmed else { return }
+        // The Server's current role confirmation takes precedence over cached
+        // login metadata and hidden draft categories after an administrator demotion.
+        var permitted = preferences
+        if !confirmed.securityAllowed { permitted.security = false }
         let write = UUID()
         beginWrite(write)
         defer { finishWrite(write) }
         do {
             let setup: PushSetup = try await apiClient.send(
                 "/api/mobile/push/settings", method: "PUT",
-                body: PushPreferencesRequest(expectedRevision: confirmed.revision, preferences: preferences), context: captured
+                body: PushPreferencesRequest(expectedRevision: confirmed.revision, preferences: permitted), context: captured
             )
             guard ownsWrite(write, captured: captured) else { return }
             guard setup.revision >= (self.confirmed?.revision ?? 0) else { throw PushSetupError.unavailable }

@@ -84,6 +84,8 @@ The device will be immediately logged out and all its tokens invalidated.
 
 Signing in does not request notification permission. Open **Settings → Notifications**, choose subscriptions, then tap **Enable notifications**. The Server confirms the saved preferences before iOS asks for permission. Security subscriptions require an administrator; successful task outcomes are separately opt-in.
 
+The notification page uses permissions confirmed by the Server, even if the cached login role is outdated. After an administrator is demoted, saving subscriptions or disabling notifications clears the unavailable security category. Failed saves do not replace the confirmed preferences.
+
 The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Unsupported or rejected App Attest leaves push unavailable while login and monitoring continue to work. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
 
 **Setup confirmation does not mean category delivery is operational.** Event delivery, encrypted notification rendering and navigation have separate implementation and real-device acceptance gates. This build does not provide a test-notification action yet.

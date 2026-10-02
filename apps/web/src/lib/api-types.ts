@@ -3377,6 +3377,8 @@ export interface components {
             relay_url: string;
             /** Format: int64 */
             revision: number;
+            /** @description Whether the current account role permits security subscriptions. */
+            security_allowed: boolean;
         };
         RateLimitEntryDto: {
             /** @description True if `count >= max` and the window is still open. */

@@ -12131,6 +12131,7 @@
         "required": [
           "revision",
           "preferences",
+          "security_allowed",
           "registered",
           "relay_url",
           "delivery_available"
@@ -12159,6 +12160,10 @@
           "revision": {
             "type": "integer",
             "format": "int64"
+          },
+          "security_allowed": {
+            "type": "boolean",
+            "description": "Whether the current account role permits security subscriptions."
           }
         }
       },

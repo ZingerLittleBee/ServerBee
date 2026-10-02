@@ -50,6 +50,8 @@ pub struct VerifiedPushRequest {
 pub struct PushSetupResponse {
     pub revision: i64,
     pub preferences: PushPreferences,
+    /// Whether the current account role permits security subscriptions.
+    pub security_allowed: bool,
     pub registered: bool,
     pub grant_expires_at: Option<DateTime<Utc>>,
     pub relay_url: String,
@@ -72,7 +74,11 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/mobile/push/verified-register", post(verified_register))
 }
 
-fn response(row: Option<&registration::Model>, relay_url: &str) -> PushSetupResponse {
+fn response(
+    row: Option<&registration::Model>,
+    relay_url: &str,
+    security_allowed: bool,
+) -> PushSetupResponse {
     PushSetupResponse {
         revision: row.map_or(0, |r| r.revision),
         preferences: PushPreferences {
@@ -82,6 +88,7 @@ fn response(row: Option<&registration::Model>, relay_url: &str) -> PushSetupResp
             task_failure: row.is_some_and(|r| r.task_failure),
             task_success: row.is_some_and(|r| r.task_success),
         },
+        security_allowed,
         registered: row.is_some_and(|r| {
             r.enabled
                 && r.grant_token.is_some()
@@ -183,7 +190,7 @@ pub async fn settings(
     // A locally unexpired grant can already be revoked by Relay rotation. Never
     // report confirmation from the database alone, including after a restart.
     let verified = if let Some(row) = snapshot.as_ref() {
-        response(Some(row), &state.config.push_relay.url).registered
+        response(Some(row), &state.config.push_relay.url, false).registered
             && relay_confirmed(row, &state.config.push_relay.url).await
     } else {
         false
@@ -191,7 +198,15 @@ pub async fn settings(
     let txn = state.db.begin().await?;
     let (session, mobile) = push_session(&txn, &token).await?;
     let current = owned_row(&txn, &mobile.installation_id, &session.user_id, &mobile.id).await?;
-    let mut result = response(current.as_ref(), &state.config.push_relay.url);
+    let owner = user::Entity::find_by_id(&session.user_id)
+        .one(&txn)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    let mut result = response(
+        current.as_ref(),
+        &state.config.push_relay.url,
+        owner.role == "admin",
+    );
     result.registered &= verified
         && current
             .as_ref()
@@ -313,6 +328,10 @@ pub async fn verified_register(
     if !row.enabled {
         return Err(AppError::Forbidden("Notifications are disabled".into()));
     }
+    let owner = user::Entity::find_by_id(&session.user_id)
+        .one(&txn)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
     let mut model: registration::ActiveModel = row.into();
     model.revision = Set(body.expected_revision + 1);
     model.device_token = Set(Some(body.device_token));
@@ -323,7 +342,7 @@ pub async fn verified_register(
     model.grant_expires_at = Set(Some(expires));
     model.updated_at = Set(Utc::now());
     let row = model.update(&txn).await?;
-    let result = response(Some(&row), url);
+    let result = response(Some(&row), url, owner.role == "admin");
     txn.commit().await?;
     ok(result)
 }

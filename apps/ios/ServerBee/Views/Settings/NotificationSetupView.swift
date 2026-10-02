@@ -4,7 +4,6 @@ import UserNotifications
 
 struct NotificationSetupView: View {
     @Environment(PushNotificationManager.self) private var manager
-    @Environment(AuthManager.self) private var auth
     @State private var draft = PushPreferences()
 
     var body: some View {
@@ -20,7 +19,7 @@ struct NotificationSetupView: View {
 
             Section("Subscriptions") {
                 Toggle("Alerts and recoveries", isOn: $draft.alerts)
-                if auth.user?.role.lowercased() == "admin" {
+                if manager.confirmed?.securityAllowed == true {
                     Toggle("Security rule matches", isOn: $draft.security)
                 }
                 Toggle("Final task failures", isOn: $draft.taskFailure)
@@ -60,11 +59,18 @@ struct NotificationSetupView: View {
         .navigationTitle("Notifications")
         .task {
             await manager.reconcile()
-            if let confirmed = manager.confirmed { draft = confirmed.preferences }
+            refreshDraft()
         }
         .onChange(of: manager.confirmed?.revision) { _, _ in
-            if let confirmed = manager.confirmed { draft = confirmed.preferences }
+            refreshDraft()
         }
+        .onChange(of: manager.confirmed?.securityAllowed) { _, _ in refreshDraft() }
+    }
+
+    private func refreshDraft() {
+        guard let confirmed = manager.confirmed else { return }
+        draft = confirmed.preferences
+        if !confirmed.securityAllowed { draft.security = false }
     }
 
     private var permissionLabel: String {

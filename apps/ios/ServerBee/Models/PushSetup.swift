@@ -17,6 +17,7 @@ struct PushPreferences: Codable, Sendable, Equatable {
 struct PushSetup: Decodable, Sendable {
     let revision: Int64
     let preferences: PushPreferences
+    let securityAllowed: Bool
     var registered: Bool
     let grantExpiresAt: String?
     let relayUrl: String
@@ -24,6 +25,7 @@ struct PushSetup: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case revision, preferences, registered
+        case securityAllowed = "security_allowed"
         case grantExpiresAt = "grant_expires_at"
         case relayUrl = "relay_url"
         case deliveryAvailable = "delivery_available"

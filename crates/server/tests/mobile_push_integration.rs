@@ -493,6 +493,93 @@ async fn verified_setup_rejects_bad_grants_and_stale_saves_without_false_confirm
 }
 
 #[tokio::test]
+async fn demoted_administrator_can_save_permitted_subscriptions_and_disable_setup() {
+    use serverbee_server::entity::mobile_push_registration as registration;
+
+    for enabled in [true, false] {
+        let (base, state, _tmp) = setup_http().await;
+        let client = reqwest::Client::new();
+        AuthService::create_user(&state.db, "operator", "testpass", "admin")
+            .await
+            .unwrap();
+        let operator = login_http(&client, &base, "operator", "operator-install").await;
+        let login = login_http(&client, &base, "admin", "demoted-install").await;
+        let access = login["access_token"].as_str().unwrap();
+        assert_eq!(login["user"]["role"], "admin");
+        assert_eq!(
+            preferences_http(&client, &base, access, 0, intent(true, true))
+                .await
+                .status(),
+            200
+        );
+        assert_eq!(
+            setup_http_request(&client, &base, access, 1, "verified-fixture")
+                .await
+                .status(),
+            200
+        );
+        let before = status_http(&client, &base, access).await;
+        assert_eq!(before["security_allowed"], true);
+        assert_eq!(before["preferences"]["security"], true);
+        assert_eq!(before["registered"], true);
+
+        // Change the real persisted role through the authenticated user API.
+        let demotion = client
+            .put(format!(
+                "{base}/api/users/{}",
+                login["user"]["id"].as_str().unwrap()
+            ))
+            .bearer_auth(operator["access_token"].as_str().unwrap())
+            .json(&serde_json::json!({"role":"member"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(demotion.status(), 200);
+        let after = status_http(&client, &base, access).await;
+        assert_eq!(after["security_allowed"], false);
+        assert_eq!(after["revision"], 2);
+        assert_eq!(after["preferences"]["security"], true);
+        assert_eq!(after["registered"], true);
+        // A stale admin draft is still forbidden, even when disabling setup.
+        assert_eq!(
+            preferences_http(&client, &base, access, 2, intent(true, enabled))
+                .await
+                .status(),
+            403
+        );
+        assert_eq!(status_http(&client, &base, access).await, after);
+
+        let mut permitted = intent(false, enabled);
+        permitted["alerts"] = serde_json::json!(false);
+        permitted["task_success"] = serde_json::json!(true);
+        let saved = preferences_http(&client, &base, access, 2, permitted.clone()).await;
+        assert_eq!(saved.status(), 200);
+        let saved = saved.json::<serde_json::Value>().await.unwrap()["data"].clone();
+        assert_eq!(saved["preferences"], permitted);
+        assert_eq!(saved["revision"], 3);
+        assert_eq!(saved["security_allowed"], false);
+        assert_eq!(saved["registered"], enabled);
+        assert_eq!(saved["delivery_available"], false);
+        assert_eq!(status_http(&client, &base, access).await, saved);
+        let row = registration::Entity::find_by_id("demoted-install")
+            .one(&state.db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.user_id, login["user"]["id"].as_str().unwrap());
+        assert_eq!(row.revision, 3);
+        assert_eq!(row.enabled, enabled);
+        assert!(!row.security);
+        assert!(!row.alerts);
+        assert!(row.task_failure);
+        assert!(row.task_success);
+        assert_eq!(row.grant_token.is_some(), enabled);
+        assert_eq!(row.grant_id.is_some(), enabled);
+        assert_eq!(row.grant_expires_at.is_some(), enabled);
+    }
+}
+
+#[tokio::test]
 async fn verified_setup_rejects_forged_installation_and_scopes_cleanup() {
     let (base, _, _tmp) = setup_http().await;
     let client = reqwest::Client::new();
