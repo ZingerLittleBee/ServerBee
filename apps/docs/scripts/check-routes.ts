@@ -174,12 +174,16 @@ function plainText(result: SearchResult): string {
   return result.content.replace(highlightTags, '').toLowerCase()
 }
 
+/** How many of `words` a result holds. */
+function held(result: SearchResult, words: string[]): number {
+  return words.filter((word) => plainText(result).includes(word)).length
+}
+
 /**
  * The URL of a section found after one holding fewer of `words`, on the same page, or of a page found after one whose
  * best section, or title, holds fewer. Results list each page and then its sections.
  */
 function outranked(results: SearchResult[], words: string[]): string | undefined {
-  const held = (result: SearchResult) => words.filter((word) => plainText(result).includes(word)).length
   let pageBest = Number.POSITIVE_INFINITY
   let previous = Number.POSITIVE_INFINITY
   let page: SearchResult | undefined
@@ -188,9 +192,9 @@ function outranked(results: SearchResult[], words: string[]): string | undefined
       page = result
       continue
     }
-    const count = held(result)
+    const count = held(result, words)
     if (page) {
-      const best = Math.max(count, held(page))
+      const best = Math.max(count, held(page, words))
       if (best > pageBest) {
         return page.url
       }
@@ -285,9 +289,15 @@ for (const search of searches) {
   if (search.first && !first?.includes(search.first)) {
     throw new Error(`Search for "${search.query}" (${search.locale}) returned first a section without ${search.first}`)
   }
-  const above = search.ranked ? outranked(results, search.query.toLowerCase().split(' ')) : undefined
-  if (above) {
-    throw new Error(`Search for "${search.query}" (${search.locale}) ranked ${above} under fewer of its words`)
+  if (search.ranked) {
+    const words = search.query.toLowerCase().split(' ')
+    // Sections holding as many of the words pass in any order.
+    expect(
+      new Set(sections.map((section) => held(section, words))).size > 1,
+      `Search for "${search.query}" (${search.locale}) found no sections holding more of its words than others`
+    )
+    const above = outranked(results, words)
+    expect(!above, `Search for "${search.query}" (${search.locale}) ranked ${above} under fewer of its words`)
   }
   if (search.same) {
     const ids = (list: SearchResult[]) => list.map((result) => result.id).join('\n')
