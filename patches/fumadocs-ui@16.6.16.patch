@@ -49,7 +49,7 @@ index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710a
  			children: /* @__PURE__ */ jsxs(ListContext, {
  				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..336ad1ec03e5e3bbb2a7fd4708ee41ebd518b3a6 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..8312d54c2ed53cf751e47a6a2c79168c9ef0fd57 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
 @@ -1,7 +1,9 @@
@@ -81,7 +81,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..336ad1ec03e5e3bbb2a7fd4708ee41eb
  		return !collapsed || e.pointerType === "touch" || element.getAnimations().length > 0;
  	}
 +	function setHovered(value) {
-+		const focused = document.activeElement;
++		const focused = document.activeElement?.matches(":focus-visible") ? document.activeElement : null;
 +		flushSync(() => setHover(value));
 +		if (focused?.matches("[inert] *")) focusTwin(focused);
 +	}
@@ -116,7 +116,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..336ad1ec03e5e3bbb2a7fd4708ee41eb
  		onClick: () => setOpen((prev) => !prev),
  		...props,
  		children
-@@ -208,12 +223,16 @@ function SidebarTrigger({ children, ...props }) {
+@@ -208,12 +223,17 @@ function SidebarTrigger({ children, ...props }) {
  }
  function SidebarCollapseTrigger(props) {
  	const { collapsed, setCollapsed } = useSidebar();
@@ -131,8 +131,9 @@ index 78c7d59de854993ca206520fda17399432dce1ce..336ad1ec03e5e3bbb2a7fd4708ee41eb
 -			setCollapsed((prev) => !prev);
 +		onClick: (e) => {
 +			const button = e.currentTarget;
++			const keyboard = button.matches(":focus-visible");
 +			flushSync(() => setCollapsed((prev) => !prev));
-+			if (button.matches("[inert] *")) focusTwin(button);
++			if (keyboard && button.matches("[inert] *")) focusTwin(button);
  		},
  		...props,
  		children: props.children
