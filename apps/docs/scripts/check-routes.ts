@@ -117,8 +117,9 @@ const searches: SearchCheck[] = [
   // A conjunction joins the words a query is about, and is not one of them.
   { locale: 'zh', query: '防火墙和告警', page: '/zh/docs/firewall', same: '防火墙告警' },
   { locale: 'zh', query: '流量和带宽', page: '/zh/docs/monitoring', same: '流量 带宽' },
-  // The 和 of 校验和 (checksum) is part of the word, and 校验 alone means validation.
+  // The 和 of 校验和 (checksum) is part of the word, and 校验 alone means validation, which finds a checksum too.
   { locale: 'zh', query: '校验和', page: '/zh/docs/troubleshooting', every: ['校验和'] },
+  { locale: 'zh', query: '校验', page: '/zh/docs/troubleshooting' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.

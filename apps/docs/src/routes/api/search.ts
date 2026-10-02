@@ -26,12 +26,14 @@ const fillerWords = new Set(
 )
 
 // Words that ICU splits into characters, one of them a filler word, kept whole: the 和 (and) of 校验和 (checksum).
-const wholeWords = /校验和/g
+// Their pieces, less the filler word, are tokens too, so that 校验 (validation) still finds a checksum.
+const wholeWords = ['校验和']
+const wholeWord = new RegExp(wholeWords.join('|'), 'g')
 
 /** The segments ICU finds in a text, each whole word being one. */
 function* segments(text: string): Generator<Pick<Intl.SegmentData, 'isWordLike' | 'segment'>> {
   let start = 0
-  for (const match of text.matchAll(wholeWords)) {
+  for (const match of text.matchAll(wholeWord)) {
     yield* wordSegmenter.segment(text.slice(start, match.index))
     yield { isWordLike: true, segment: match[0] }
     start = match.index + match[0].length
@@ -83,6 +85,13 @@ const chineseTokenizer = {
       for (const word of segment.split(wordSeparators)) {
         if (word) {
           tokens.add(word)
+        }
+      }
+      if (wholeWords.includes(segment)) {
+        for (const piece of wordSegmenter.segment(segment)) {
+          if (piece.isWordLike && !fillerWords.has(piece.segment)) {
+            tokens.add(piece.segment)
+          }
         }
       }
     }
