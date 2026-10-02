@@ -77,9 +77,29 @@ interface Opener {
   onScreen: boolean
 }
 
+/**
+ * Whether the middle of an element is in view: in the window, and in each element around it that clips what overflows
+ * it, as the sidebar and the table of contents do with their scrollers, up to one fixed in the window, which the elements
+ * around it do not clip. A link whose middle the sidebar's header hides shows only a sliver of itself and its focus ring.
+ */
 function isOnScreen(element: Element): boolean {
-  const { bottom, left, right, top } = element.getBoundingClientRect()
-  return bottom > 0 && right > 0 && top < window.innerHeight && left < window.innerWidth
+  const { height, left, top, width } = element.getBoundingClientRect()
+  const x = left + width / 2
+  const y = top + height / 2
+  for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
+    const { overflowX, overflowY, position } = getComputedStyle(node)
+    const box = node.getBoundingClientRect()
+    if (
+      (overflowX !== 'visible' && (x <= box.left || x >= box.right)) ||
+      (overflowY !== 'visible' && (y <= box.top || y >= box.bottom))
+    ) {
+      return false
+    }
+    if (position === 'fixed') {
+      break
+    }
+  }
+  return x > 0 && x < window.innerWidth && y > 0 && y < window.innerHeight
 }
 
 /**
@@ -149,9 +169,9 @@ function restoreFocus(opener: Opener | null): boolean {
   }
   for (const target of [opener.element, ...opener.controls]) {
     for (const candidate of [target, ...twinsOf(target)]) {
-      // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
-      // page stays where the reader left it otherwise. The browser scrolls an element it focuses to the middle only of
-      // the scrollers it is out of view in, so the page behind the sticky sidebar or table of contents stays put.
+      // The page can move while the dialog is open, as on Back. Focus that was on screen comes back on screen, and the
+      // page stays where the reader left it otherwise. The browser scrolls an element it focuses only in the scrollers
+      // that do not show all of it, so the page behind the sticky sidebar or table of contents stays put.
       candidate.focus({ preventScroll: !opener.onScreen || isOnScreen(candidate) })
       if (document.activeElement === candidate) {
         return true
