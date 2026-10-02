@@ -59,11 +59,27 @@ function ResultOption({ item, onActive, onClick, optionId }: ResultOptionProps) 
 // shown once it is collapsed, and the half off screen is inert. The header has one too, shown only while the sidebar is
 // not docked.
 const searchButtons = '[data-search], [data-search-full]'
-// The parts of the sidebar, which show the same controls: its halves and, on a narrow screen, the drawer.
-const sidebarParts = '#nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]'
-// The buttons that show and hide the sidebar: one in each of its halves and, on a narrow screen, where the sidebar is a
-// drawer, one in the header and one in the drawer.
-const sidebarToggles = '[aria-controls="nd-sidebar"], [aria-controls="nd-sidebar-mobile"]'
+/** Parts of the page that show the same controls. */
+interface Places {
+  /** The parts. */
+  holders: string
+  /** The controls that stand in for theirs. */
+  standIns: string
+}
+
+// The halves of the sidebar and, on a narrow screen, where the sidebar is a drawer, the drawer, with the buttons that
+// show and hide the sidebar: one in each of its halves and, where it is a drawer, one in the header and one in the
+// drawer.
+const sidebar: Places = {
+  holders: '#nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]',
+  standIns: '[aria-controls="nd-sidebar"], [aria-controls="nd-sidebar-mobile"]'
+}
+// The table of contents, beside the page on a wide screen and in a popover above it otherwise, with the button that
+// opens the popover and, beside the page, the links to the headings in view.
+const tableOfContents: Places = {
+  holders: '#nd-toc, [data-toc-popover]',
+  standIns: '[data-toc-popover-trigger], #nd-toc a[data-active="true"]'
+}
 
 /** What focus goes back to once the dialog closes. */
 interface Opener {
@@ -135,35 +151,42 @@ function identity(element: Element): string {
   return [tagName, element.getAttribute('href'), element.getAttribute('aria-label'), textContent].join('\n')
 }
 
+/** The parts of the page holding an element, or whose controls it stands in for. */
+function placesOf(element: HTMLElement): Places | undefined {
+  return [sidebar, tableOfContents].find(
+    ({ holders, standIns }) => element.matches(standIns) || element.closest(holders)
+  )
+}
+
 /**
- * The same control elsewhere in the sidebar: in the docked sidebar for one of the drawer, and back, once the window is
- * widened or narrowed past the width where the sidebar becomes a drawer, or in a sidebar that mounted again while the
- * dialog was open, as the docked one does once the window is narrowed and widened again, or after Back and Forward.
+ * The same control in another of the parts holding it: in the docked sidebar for one of the drawer, and back, once the
+ * window is widened or narrowed past the width where the sidebar becomes a drawer, beside the page for a link of the
+ * table of contents' popover, and back, or in a part that mounted again while the dialog was open, as the docked
+ * sidebar does once the window is narrowed and widened again, or after Back and Forward.
  */
-function copiesOf(element: HTMLElement): HTMLElement[] {
-  const controls = document.querySelectorAll<HTMLElement>(`:is(${sidebarParts}) ${element.localName}`)
+function copiesOf(element: HTMLElement, { holders }: Places): HTMLElement[] {
+  const controls = document.querySelectorAll<HTMLElement>(`:is(${holders}) ${element.localName}`)
   return [...controls].filter((control) => control !== element && identity(control) === identity(element))
 }
 
 /**
- * The controls that stand in for one that cannot take focus: the same search button or, for a sidebar toggle or
- * another control of the sidebar, its copy elsewhere in the sidebar, or else a sidebar toggle, in the other half of the
- * sidebar or in the header.
+ * The controls that stand in for one that cannot take focus: the same search button or, for a control of the sidebar
+ * or the table of contents, its copy in another of their parts, or else a sidebar toggle, in the other half of the
+ * sidebar or in the header, or the button of the table of contents' popover, or the links beside the page to the
+ * headings in view.
  */
 function twinsOf(element: HTMLElement): HTMLElement[] {
   if (element.matches(searchButtons)) {
     return [...document.querySelectorAll<HTMLElement>(searchButtons)]
   }
-  return element.matches(sidebarToggles) || element.closest(sidebarParts)
-    ? [...copiesOf(element), ...document.querySelectorAll<HTMLElement>(sidebarToggles)]
-    : []
+  const places = placesOf(element)
+  return places ? [...copiesOf(element, places), ...document.querySelectorAll<HTMLElement>(places.standIns)] : []
 }
 
 /**
  * Focuses the element focused before the dialog opened or, if its popup closed meanwhile, the popup's control, and
  * returns whether one took focus. In place of one that cannot take focus, as when the half of the sidebar holding it
- * went off screen or a resize hid it, it focuses the same control elsewhere in the sidebar, or a search button or
- * sidebar toggle wherever one is shown.
+ * went off screen or a resize hid it, it focuses one of its twins.
  */
 function restoreFocus(opener: Opener | null): boolean {
   if (!opener) {
