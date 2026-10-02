@@ -30,32 +30,66 @@ const fillerWords = new Set(
   ].flatMap((words) => words.split(' '))
 )
 
-// Words that ICU splits into characters, one of them a filler word, kept whole where the segments ICU finds in a text
-// spell them: the 和 (and) of 校验和 (checksum) and the 就 (then) of 就地 (in place), but not the 就 of 就地址 (then
-// the address), which ICU splits into 就 and 地址. Their pieces, less the filler word, are tokens too, so that 校验
-// (validation) still finds a checksum.
+// Words that ICU splits into characters, one of them a filler word, kept whole where a text reads as them: the 和 (and)
+// of 校验和 (checksum) and the 就 (then) of 就地 (in place). ICU can join the first character to the word before, as
+// in 也可就地升级 (也, 可就, 地, 升级), or the last one to the characters after, as in 就地上报 (就, 地上, 报), where
+// those characters still make a word with what follows (上报), but not in 就地址变了 (就, 地址, 变, 了: then the address
+// changed), where 址 is left alone. Their pieces, less the filler word, are tokens too, so that 校验 (validation) still
+// finds a checksum.
 const wholeWords = ['校验和', '就地']
 // Where a word starts that ICU joins to the word before: after 都, 也, 并 or 为何, it takes the 不 (not) of 不可用
 // (unavailable) into the word before, and leaves 可用 (available).
 const wordStart = /(?=不可用)/
 
-/** The segments ICU finds in a text, with the segments that spell a whole word joined into one. */
+/** The segments ICU finds in a text, with each whole word it reads as one segment, and the text around it apart. */
 function* segments(text: string): Generator<Pick<Intl.SegmentData, 'isWordLike' | 'segment'>> {
-  const found = [...icuSegments(text)]
-  for (let start = 0; start < found.length; start += 1) {
-    let word = ''
-    let end = start
-    while (end < found.length && wholeWords.some((whole) => whole.startsWith(word + found[end].segment))) {
-      word += found[end].segment
-      end += 1
-    }
-    if (wholeWords.includes(word)) {
+  let start = 0
+  for (const { index, word } of wholeWordsIn(text)) {
+    if (index >= start) {
+      yield* icuSegments(text.slice(start, index))
       yield { isWordLike: true, segment: word }
-      start = end - 1
-    } else {
-      yield found[start]
+      start = index + word.length
     }
   }
+  yield* icuSegments(text.slice(start))
+}
+
+/**
+ * The whole words a text reads as, in order: where ICU splits one and ends a segment with its last character, or joins
+ * that character to characters that, taken from it, still start a word. Where ICU keeps one in a segment, alone or in a
+ * longer word, the segment stays.
+ */
+function wholeWordsIn(text: string): { index: number; word: string }[] {
+  const found: { index: number; word: string }[] = []
+  let ends: Set<number> | undefined
+  for (const word of wholeWords) {
+    for (let index = text.indexOf(word); index >= 0; index = text.indexOf(word, index + word.length)) {
+      ends ??= segmentEnds(text)
+      const end = index + word.length
+      const split = [...word.slice(1)].some((_, offset) => ends?.has(index + offset + 1))
+      if (split && (ends.has(end) || startsWord(text.slice(end)))) {
+        found.push({ index, word })
+      }
+    }
+  }
+  return found.sort((a, b) => a.index - b.index)
+}
+
+/** Where the segments ICU finds in a text end. */
+function segmentEnds(text: string): Set<number> {
+  const ends = new Set<number>()
+  let end = 0
+  for (const { segment } of icuSegments(text)) {
+    end += segment.length
+    ends.add(end)
+  }
+  return ends
+}
+
+/** Whether ICU finds a word of more than one character at the start of a text. */
+function startsWord(text: string): boolean {
+  const [first] = icuSegments(text)
+  return Boolean(first?.isWordLike && first.segment.length > 1)
 }
 
 /** The segments ICU finds in a text, a word starting at each word start. */

@@ -137,6 +137,10 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '校验', page: '/zh/docs/troubleshooting' },
   { locale: 'zh', query: '就地', page: '/zh/docs/custom-widgets', first: '就地' },
   { locale: 'zh', query: '就地址变了', page: '/zh/docs/configuration', same: '地址变了' },
+  // ICU takes the 就 of 就地 into the word before in 也可就地升级 (也, 可就, 地, 升级) and its 地 into the word after
+  // in 就地上报 (就, 地上, 报), which still read as 就地.
+  { locale: 'zh', query: '也可就地升级', page: '/zh/docs/custom-widgets', first: '就地' },
+  { locale: 'zh', query: '就地上报', page: '/zh/docs/custom-widgets', same: '就地 上报' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.
