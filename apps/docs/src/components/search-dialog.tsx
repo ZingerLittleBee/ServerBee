@@ -62,10 +62,11 @@ const searchButtons = '[data-search], [data-search-full]'
 /** What focus goes back to once the dialog closes. */
 interface Opener {
   /**
-   * The control of the popup holding the element, if any. A popover, a menu or the table of contents closes once focus
-   * moves into the dialog or a click lands outside it, and takes the element with it.
+   * The controls of the open popups holding the element, innermost first. A popover, a menu or the table of contents
+   * closes once focus moves into the dialog or a click lands outside it, and takes the element with it, and a menu can
+   * hold another popup's control, as the 404 page's mobile menu holds the language menu's.
    */
-  controller: HTMLElement | null
+  controls: HTMLElement[]
   /** The element focused before the dialog opened. */
   element: HTMLElement
   /** Whether the element was on screen. */
@@ -78,38 +79,43 @@ function isOnScreen(element: Element): boolean {
 }
 
 /**
- * An element, with the control of an open popup holding it: the element naming the popup in aria-controls and carrying
- * aria-expanded=true. The sidebar toggles name the sidebar too, and carry no aria-expanded.
+ * An element, with the control of each open popup holding it: the element naming the popup in aria-controls and
+ * carrying aria-expanded=true. The sidebar toggles name the sidebar too, and carry no aria-expanded. Focus can be on a
+ * popup itself, as on the page actions menu, whose items are links, which Radix does not focus when it opens.
  */
 function openerOf(element: Element | null): Opener | null {
   if (!(element instanceof HTMLElement)) {
     return null
   }
-  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
-    const controller = ancestor.id
-      ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(ancestor.id)}"][aria-expanded="true"]`)
+  const controls: HTMLElement[] = []
+  let node: HTMLElement | null = element
+  while (node) {
+    const control: HTMLElement | null = node.id
+      ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(node.id)}"][aria-expanded="true"]`)
       : null
-    if (controller) {
-      return { controller, element, onScreen: isOnScreen(element) }
+    if (control && !node.contains(control)) {
+      controls.push(control)
+      node = control
     }
+    node = node.parentElement
   }
-  return { controller: null, element, onScreen: isOnScreen(element) }
+  return { controls, element, onScreen: isOnScreen(element) }
 }
 
 /**
  * Focuses the element focused before the dialog opened or, if the half of the sidebar holding it went off screen
- * meanwhile, its search button or sidebar toggle in the other half, or, if its popup closed, the popup's control, and
- * returns whether one took focus.
+ * meanwhile, its search button or sidebar toggle in the other half, or, if its popup closed, the popup's control or,
+ * if that closed with an outer popup, the outer popup's, and returns whether one took focus.
  */
 function restoreFocus(opener: Opener | null): boolean {
   if (!opener) {
     return false
   }
-  const { controller, element } = opener
+  const { controls, element } = opener
   const twins = element.matches(searchButtons) ? searchButtons : '[aria-controls="nd-sidebar"]'
   // Of the twins, the first that takes focus: neither an inert one nor a hidden one does.
   const candidates = element.matches('[inert] *') ? [...document.querySelectorAll<HTMLElement>(twins)] : [element]
-  for (const candidate of controller ? [...candidates, controller] : candidates) {
+  for (const candidate of [...candidates, ...controls]) {
     candidate.focus({ preventScroll: true })
     if (document.activeElement === candidate) {
       // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
