@@ -38,6 +38,9 @@ const fillerWords = new Set(
 // 地区, 分组: can servers be grouped by region), where 区分 would end inside 分组. Their pieces, less the filler word,
 // are tokens too, so that 校验 (validation) still finds a checksum.
 const wholeWords = ['校验和', '就地']
+// How many characters after a whole word ICU reads to find the word they start. It finds that word from the first few,
+// and reading all the text after each whole word took time growing with the square of a long query's length.
+const lookahead = 16
 // Where a word starts that ICU joins to the word before: after 都, 也, 并 or 为何, it takes the 不 (not) of 不可用
 // (unavailable) into the word before, and leaves 可用 (available).
 const wordStart = /(?=不可用)/
@@ -92,7 +95,7 @@ function segmentEnds(text: string): Set<number> {
  * segment it finds in the whole text ends.
  */
 function startsWordAt(text: string, start: number, ends: Set<number>): boolean {
-  const [first] = icuSegments(text.slice(start))
+  const [first] = icuSegments(text.slice(start, start + lookahead))
   return Boolean(first?.isWordLike && first.segment.length > 1 && ends.has(start + first.segment.length))
 }
 
