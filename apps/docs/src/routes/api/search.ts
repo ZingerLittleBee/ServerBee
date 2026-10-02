@@ -30,16 +30,26 @@ const fillerWords = new Set(
 // Their pieces, less the filler word, are tokens too, so that 校验 (validation) still finds a checksum.
 const wholeWords = ['校验和']
 const wholeWord = new RegExp(wholeWords.join('|'), 'g')
+// Where a word starts that ICU joins to the word before: after 都, 也, 并 or 为何, it takes the 不 (not) of 不可用
+// (unavailable) into the word before, and leaves 可用 (available).
+const wordStart = /(?=不可用)/
 
 /** The segments ICU finds in a text, each whole word being one. */
 function* segments(text: string): Generator<Pick<Intl.SegmentData, 'isWordLike' | 'segment'>> {
   let start = 0
   for (const match of text.matchAll(wholeWord)) {
-    yield* wordSegmenter.segment(text.slice(start, match.index))
+    yield* icuSegments(text.slice(start, match.index))
     yield { isWordLike: true, segment: match[0] }
     start = match.index + match[0].length
   }
-  yield* wordSegmenter.segment(text.slice(start))
+  yield* icuSegments(text.slice(start))
+}
+
+/** The segments ICU finds in a text, a word starting at each word start. */
+function* icuSegments(text: string): Generator<Pick<Intl.SegmentData, 'isWordLike' | 'segment'>> {
+  for (const part of text.split(wordStart)) {
+    yield* wordSegmenter.segment(part)
+  }
 }
 
 /** Whether a word is a Chinese character alone. */

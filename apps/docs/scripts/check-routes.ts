@@ -139,7 +139,9 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '不可用', page: '/zh/docs/ip-quality', first: '不可用' },
   { locale: 'zh', query: '已用 带宽', page: '/zh/docs/alerts' },
   { locale: 'zh', query: '用 Docker 部署', page: '/zh/docs/deployment', same: 'Docker 部署' },
-  { locale: 'zh', query: '能用 Nginx 吗', page: '/zh/docs/deployment', same: 'Nginx' }
+  { locale: 'zh', query: '能用 Nginx 吗', page: '/zh/docs/deployment', same: 'Nginx' },
+  // After 都 (all), ICU took the 不 (not) of 不可用 into the word before, and left 可用 (available).
+  { locale: 'zh', query: '都不可用', page: '/zh/docs/ip-quality', first: '不可用' }
 ]
 
 // Words that no page holds find nothing, though pages hold words that start with pieces ICU splits them into: the 区块
