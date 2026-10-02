@@ -388,7 +388,7 @@ impl MobileAuthService {
         mobile_session::Entity::update_many()
             .col_expr(
                 mobile_session::Column::Id,
-                Expr::col(mobile_session::Column::Id),
+                Expr::col(mobile_session::Column::Id).into(),
             )
             .filter(mobile_session::Column::InstallationId.eq(installation_id))
             .exec(&txn)

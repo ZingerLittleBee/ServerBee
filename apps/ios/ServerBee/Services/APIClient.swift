@@ -75,19 +75,28 @@ actor APIClient {
         }
     }
 
-    /// A stable deletion-only proof survives committed rotations with lost
-    /// responses. It never authenticates requests or refreshes a replacement login.
-    func revokeSession(context: MobileAuthenticationContext) async throws {
-        if let credential = context.revocationToken {
+    /// Try only proofs captured from the original login. A saved stable proof
+    /// may be stale after iOS-first upgrades against a Server that replaced
+    /// sessions on refresh. Its captured refresh secret can delete that session
+    /// before consumption or through retained history after a lost response.
+    func revokeSession(context capturedContext: MobileAuthenticationContext) async throws {
+        let context = await cleanupContext(capturedContext)
+        var credentials = [String]()
+        for candidate in [context.revocationToken, context.refreshToken] {
+            if let candidate, !credentials.contains(candidate) { credentials.append(candidate) }
+        }
+        for credential in credentials {
             let (_, response) = try await sendRequest(
                 "/api/mobile/auth/revoke",
                 body: MobileRevokeRequest(installationId: context.installationId, revocationToken: credential),
                 context: context, token: nil
             )
             if (200...299).contains(response.statusCode) { return }
-            // Older Servers and not-yet-upgraded legacy sessions support bearer
-            // logout. This fallback must not enter automatic expiry recursively.
-            guard response.statusCode == 404 || response.statusCode == 401 else {
+            // A missing endpoint belongs to an older Server; additional proofs
+            // cannot help. A rejected proof may be stale, so try the original
+            // captured secret next, without refreshing or adopting a new login.
+            if response.statusCode == 404 { break }
+            guard response.statusCode == 401 else {
                 throw APIError.httpError(statusCode: response.statusCode, data: Data())
             }
         }
@@ -105,6 +114,21 @@ actor APIClient {
         guard authManager.serverUrl != nil else { throw APIError.noServerUrl }
         guard let context = authManager.captureContext() else { throw APIError.unauthorized }
         return context
+    }
+
+    /// Refresh credentials only at request entry, atomically with the complete
+    /// captured identity check. Long-lived push contexts can predate baseline
+    /// session replacements; a replacement login is never a credential source.
+    @MainActor
+    private func currentContext(matching captured: MobileAuthenticationContext) throws -> MobileAuthenticationContext {
+        guard authManager.isCurrent(captured), let current = authManager.captureContext() else { throw AuthError.staleIdentity }
+        return current
+    }
+
+    @MainActor
+    private func cleanupContext(_ captured: MobileAuthenticationContext) -> MobileAuthenticationContext {
+        guard authManager.isCurrent(captured), let current = authManager.captureContext() else { return captured }
+        return current
     }
 
     private func request<T: Decodable & Sendable>(
@@ -126,9 +150,10 @@ actor APIClient {
         _ path: String,
         method: String,
         body: (any Encodable & Sendable)? = nil,
-        context: MobileAuthenticationContext
+        context capturedContext: MobileAuthenticationContext
     ) async throws -> (Data, HTTPURLResponse) {
-        guard var token = await authManager.accessToken(ifCurrent: context) else { throw AuthError.staleIdentity }
+        let context = try await currentContext(matching: capturedContext)
+        var token = context.accessToken
         var result = try await sendRequest(path, method: method, body: body, context: context, token: token)
         guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
         if result.1.statusCode == 401 {

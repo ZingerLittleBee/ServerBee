@@ -1283,6 +1283,18 @@ async fn revoke_mobile_with_proof(
 /// before starting the real HTTP Server. No new-login response or revocation
 /// field existed when the client received these original credentials.
 async fn legacy_mobile_server() -> (String, tempfile::TempDir, Value) {
+    let (base, tmp, current, _) = legacy_mobile_server_after_replacements(0).await;
+    (base, tmp, current)
+}
+
+/// Seed the persisted outcome of the pinned baseline's refresh policy:
+/// 923a25555dbc09f60e226493707a1a6b733c19d0, mobile_auth.rs:247-259
+/// deletes the prior mobile session and issues a fresh pair on every rotation.
+/// Only historical fixture setup uses SQL; after migration all authorization,
+/// registration, refresh and cleanup run through the real current HTTP router.
+async fn legacy_mobile_server_after_replacements(
+    replacements: usize,
+) -> (String, tempfile::TempDir, Value, Vec<Value>) {
     use sea_orm::{ActiveModelTrait, ConnectionTrait, Database, DatabaseBackend, Set, Statement};
     use sea_orm_migration::MigratorTrait;
     use serverbee_server::{
@@ -1330,30 +1342,73 @@ async fn legacy_mobile_server() -> (String, tempfile::TempDir, Value) {
     let user = AuthService::create_user(&db, "admin", "testpass", "admin")
         .await
         .unwrap();
-    let access = AuthService::generate_session_token();
-    let refresh = MobileAuthService::generate_refresh_token();
-    let refresh_hash = MobileAuthService::hash_refresh_token(&refresh).unwrap();
-    let mobile_id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now();
-    db.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
-        "INSERT INTO mobile_sessions (id, user_id, refresh_token_hash, installation_id, device_name, created_at, expires_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [mobile_id.clone().into(), user.id.clone().into(), refresh_hash.into(), INST_ID.into(),
-         DEVICE_NAME.into(), now.into(), (now + chrono::Duration::days(30)).into(), now.into()],
-    )).await.unwrap();
-    session::ActiveModel {
-        id: Set(uuid::Uuid::new_v4().to_string()),
-        user_id: Set(user.id.clone()),
-        token: Set(AuthService::hash_session_token(&access)),
-        ip: Set("127.0.0.1".to_string()),
-        user_agent: Set("legacy-client".to_string()),
-        created_at: Set(now),
-        expires_at: Set(now + chrono::Duration::minutes(15)),
-        source: Set("mobile".to_string()),
-        mobile_session_id: Set(Some(mobile_id)),
+    let mut current = Value::Null;
+    let mut discarded = Vec::new();
+    let mut prior_id: Option<String> = None;
+    for _ in 0..=replacements {
+        if let Some(id) = &prior_id {
+            // Verify that the old app actually held the consumed secret before
+            // seeding the baseline's FK-ordered deletion and replacement.
+            let row = db
+                .query_one(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    "SELECT refresh_token_hash FROM mobile_sessions WHERE id = ?",
+                    [id.clone().into()],
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            let hash: String = row.try_get("", "refresh_token_hash").unwrap();
+            assert!(
+                MobileAuthService::verify_refresh_token(
+                    current["data"]["refresh_token"].as_str().unwrap(),
+                    &hash
+                )
+                .unwrap()
+            );
+            for (table, column) in [
+                ("device_tokens", "mobile_session_id"),
+                ("sessions", "mobile_session_id"),
+                ("mobile_sessions", "id"),
+            ] {
+                db.execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    format!("DELETE FROM {table} WHERE {column} = ?"),
+                    [id.clone().into()],
+                ))
+                .await
+                .unwrap();
+            }
+            discarded.push(current);
+        }
+        let access = AuthService::generate_session_token();
+        let refresh = MobileAuthService::generate_refresh_token();
+        let refresh_hash = MobileAuthService::hash_refresh_token(&refresh).unwrap();
+        let mobile_id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now();
+        db.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
+            "INSERT INTO mobile_sessions (id, user_id, refresh_token_hash, installation_id, device_name, created_at, expires_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [mobile_id.clone().into(), user.id.clone().into(), refresh_hash.into(), INST_ID.into(),
+             DEVICE_NAME.into(), now.into(), (now + chrono::Duration::days(30)).into(), now.into()],
+        )).await.unwrap();
+        session::ActiveModel {
+            id: Set(uuid::Uuid::new_v4().to_string()),
+            user_id: Set(user.id.clone()),
+            token: Set(AuthService::hash_session_token(&access)),
+            ip: Set("127.0.0.1".to_string()),
+            user_agent: Set("legacy-client".to_string()),
+            created_at: Set(now),
+            expires_at: Set(now + chrono::Duration::minutes(15)),
+            source: Set("mobile".to_string()),
+            mobile_session_id: Set(Some(mobile_id.clone())),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        current = json!({"data": {"access_token": access, "refresh_token": refresh,
+            "user": {"id": user.id, "username": user.username, "role": user.role}}});
+        prior_id = Some(mobile_id);
     }
-    .insert(&db)
-    .await
-    .unwrap();
     Migrator::up(&db, None).await.unwrap();
     let app = create_router(AppState::new(db, config).await.unwrap());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1366,9 +1421,7 @@ async fn legacy_mobile_server() -> (String, tempfile::TempDir, Value) {
         .await
         .unwrap();
     });
-    let tokens = json!({"data": {"access_token": access, "refresh_token": refresh,
-        "user": {"id": user.id, "username": user.username, "role": user.role}}});
-    (base, tmp, tokens)
+    (base, tmp, current, discarded)
 }
 
 async fn mobile_session_fixture(legacy: bool) -> (String, tempfile::TempDir, Value) {
@@ -1912,13 +1965,56 @@ async fn assert_staged_upgrade_revocation(
     upgraded_client_rotations: usize,
     replacement_login: bool,
 ) {
+    assert_staged_upgrade_revocation_from_history(
+        legacy_server_session,
+        old_client_rotations,
+        upgraded_client_rotations,
+        replacement_login,
+        None,
+    )
+    .await;
+}
+
+async fn assert_staged_upgrade_revocation_from_history(
+    legacy_server_session: bool,
+    old_client_rotations: usize,
+    upgraded_client_rotations: usize,
+    replacement_login: bool,
+    ios_first_replacements: Option<usize>,
+) {
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     use serverbee_server::entity::{
         device_token, mobile_session, mobile_session_revocation_proof, session,
     };
     use serverbee_server::service::auth::AuthService;
-    let (base, tmp, mut current) = mobile_session_fixture(legacy_server_session).await;
+    let (base, tmp, mut current, discarded) = if let Some(replacements) = ios_first_replacements {
+        legacy_mobile_server_after_replacements(replacements).await
+    } else {
+        let (base, tmp, current) = mobile_session_fixture(legacy_server_session).await;
+        (base, tmp, current, Vec::new())
+    };
+    let stale_proof = discarded.first().map(|tokens| {
+        tokens["data"]["refresh_token"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    });
     let client = http_client();
+    for tokens in &discarded {
+        assert_eq!(register_mobile(&client, &base, tokens).await.status(), 401);
+        assert_eq!(refresh_mobile(&client, &base, tokens).await.status(), 401);
+        assert_eq!(
+            revoke_mobile_with_proof(
+                &client,
+                &base,
+                INST_ID,
+                tokens["data"]["refresh_token"].as_str().unwrap()
+            )
+            .await
+            .status(),
+            401
+        );
+    }
     // The old app reads only its token pair, ignoring any login proof field.
     current["data"]
         .as_object_mut()
@@ -1929,7 +2025,7 @@ async fn assert_staged_upgrade_revocation(
         200
     );
     let db = registration_db(&tmp).await;
-    let original = device_token::Entity::find()
+    let mut original = device_token::Entity::find()
         .one(&db)
         .await
         .unwrap()
@@ -1953,25 +2049,58 @@ async fn assert_staged_upgrade_revocation(
         .exec(&db)
         .await
         .unwrap();
-    let upgraded_proof = current["data"]["refresh_token"]
+    let mut upgraded_proof = current["data"]["refresh_token"]
         .as_str()
         .unwrap()
         .to_string();
-    let bound = mobile_session::Entity::find_by_id(&original.mobile_session_id)
-        .one(&db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(bound.revocation_token_hash.is_some());
-    assert_ne!(
-        bound.revocation_token_hash,
-        Some(AuthService::hash_session_token(&upgraded_proof)),
-        "staged upgrade starts with a nonempty, unknown Server proof"
-    );
+    if ios_first_replacements.is_none() {
+        let bound = mobile_session::Entity::find_by_id(&original.mobile_session_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(bound.revocation_token_hash.is_some());
+        assert_ne!(
+            bound.revocation_token_hash,
+            Some(AuthService::hash_session_token(&upgraded_proof)),
+            "staged upgrade starts with a nonempty, unknown Server proof"
+        );
+    }
     for _ in 0..upgraded_client_rotations {
         let response = refresh_mobile(&client, &base, &current).await;
         assert_eq!(response.status(), 200);
         current = response.json().await.unwrap();
+    }
+    if ios_first_replacements.is_some() {
+        // iOS already has a nonempty, stale R0. The Server has now successfully
+        // rotated its current session once. Re-registration must preserve that
+        // session, and later cleanup captures the current R(n+1), not R0.
+        assert!(upgraded_client_rotations > 0);
+        assert_eq!(
+            register_mobile(&client, &base, &current).await.status(),
+            200
+        );
+        let registration = device_token::Entity::find_by_id(&original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(registration.mobile_session_id, original.mobile_session_id);
+        original = registration;
+        upgraded_proof = current["data"]["refresh_token"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let bound = mobile_session::Entity::find_by_id(&original.mobile_session_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(bound.revocation_token_hash.is_some());
+        assert_ne!(
+            bound.revocation_token_hash,
+            stale_proof.as_deref().map(AuthService::hash_session_token)
+        );
     }
     let sibling = mobile_admin_token(&client, &base, "sibling-installation").await;
     assert_eq!(
@@ -2066,6 +2195,22 @@ async fn assert_staged_upgrade_revocation(
     } else {
         None
     };
+    if let Some(proof) = &stale_proof {
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, INST_ID, proof)
+                .await
+                .status(),
+            401,
+            "stale nonempty proof must not become an alias of another session"
+        );
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
     assert_eq!(
         revoke_mobile_with_proof(&client, &base, INST_ID, &upgraded_proof)
             .await
@@ -2469,6 +2614,148 @@ async fn staged_upgrade_current_secret_revocation_races_refresh_without_reviving
                 .unwrap()
                 .unwrap(),
             replacement_registration
+        );
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        assert_eq!(
+            refresh_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+    }
+}
+
+#[tokio::test]
+async fn ios_first_upgrade_with_stale_nonempty_proof_cleans_up_after_lost_response() {
+    for replacements in [1, 3] {
+        assert_staged_upgrade_revocation_from_history(true, 0, 1, false, Some(replacements)).await;
+    }
+}
+
+#[tokio::test]
+async fn ios_first_upgrade_stale_proof_cleanup_preserves_replacement_and_other_users() {
+    for replacements in [1, 3] {
+        assert_staged_upgrade_revocation_from_history(true, 0, 1, true, Some(replacements)).await;
+    }
+}
+
+#[tokio::test]
+async fn ios_first_upgrade_stale_proof_can_revoke_before_overlapping_refresh() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{
+        device_token, mobile_session, mobile_session_revocation_proof, session,
+    };
+    for replacements in [1, 3] {
+        let (base, tmp, historical, discarded) =
+            legacy_mobile_server_after_replacements(replacements).await;
+        let client = http_client();
+        let response = refresh_mobile(&client, &base, &historical).await;
+        assert_eq!(response.status(), 200);
+        let current: Value = response.json().await.unwrap();
+        assert_eq!(
+            register_mobile(&client, &base, &current).await.status(),
+            200
+        );
+        let db = registration_db(&tmp).await;
+        let original = device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let stale = discarded[0]["data"]["refresh_token"].as_str().unwrap();
+        let captured = current["data"]["refresh_token"].as_str().unwrap();
+        assert_ne!(
+            stale, captured,
+            "nonempty local proof predates the retained original session"
+        );
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        let registration = device_token::Entity::find_by_id(&original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let (release, pending) = hold_refresh_before_dispatch(
+            &base,
+            json!({
+                "installation_id": INST_ID, "refresh_token": captured
+            }),
+        )
+        .await;
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, INST_ID, stale)
+                .await
+                .status(),
+            401
+        );
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, INST_ID, captured)
+                .await
+                .status(),
+            200
+        );
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            session::Entity::find()
+                .filter(session::Column::MobileSessionId.eq(&original.mobile_session_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            device_token::Entity::find()
+                .filter(device_token::Column::MobileSessionId.eq(&original.mobile_session_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            mobile_session_revocation_proof::Entity::find()
+                .filter(
+                    mobile_session_revocation_proof::Column::MobileSessionId
+                        .eq(&original.mobile_session_id)
+                )
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        release.notify_one();
+        assert_eq!(
+            pending.await.unwrap().status(),
+            401,
+            "refresh cannot revive the revoked original session"
+        );
+        for tokens in discarded.iter().chain([&historical, &current]) {
+            assert_eq!(register_mobile(&client, &base, tokens).await.status(), 401);
+            assert_eq!(refresh_mobile(&client, &base, tokens).await.status(), 401);
+        }
+        assert_eq!(
+            device_token::Entity::find_by_id(&registration.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            registration
         );
         assert_eq!(
             register_mobile(&client, &base, &replacement).await.status(),

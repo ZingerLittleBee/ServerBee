@@ -63,7 +63,8 @@ final class AuthManager {
         let restored = MobileAuthenticationContext(
             serverUrl: serverUrl, userId: savedUser.id, installationId: InstallationID.getOrCreate(),
             generation: authenticationGeneration, accessToken: accessToken,
-            revocationToken: KeychainService.loadString(for: KeychainService.revocationTokenKey) ?? refreshToken
+            revocationToken: KeychainService.loadString(for: KeychainService.revocationTokenKey) ?? refreshToken,
+            refreshToken: refreshToken
         )
         do {
             let response = try await refreshTokens(refreshToken: refreshToken)
@@ -178,7 +179,8 @@ final class AuthManager {
             installationId: InstallationID.getOrCreate(),
             generation: authenticationGeneration, accessToken: token,
             revocationToken: KeychainService.loadString(for: KeychainService.revocationTokenKey)
-                ?? KeychainService.loadString(for: KeychainService.refreshTokenKey)
+                ?? KeychainService.loadString(for: KeychainService.refreshTokenKey),
+            refreshToken: KeychainService.loadString(for: KeychainService.refreshTokenKey)
         )
     }
 
@@ -239,6 +241,8 @@ private extension AuthManager {
         // A successful Server rotation retains the consumed secret's hash for
         // deletion only, even if an older client discarded the login proof.
         // Persist it before networking, including when the response is lost.
+        // Cleanup contexts also capture the current secret if this saved proof
+        // belongs to a session replaced by a Server before it was upgraded.
         if KeychainService.loadString(for: KeychainService.revocationTokenKey) == nil {
             try KeychainService.saveString(refreshToken, for: KeychainService.revocationTokenKey)
         }
@@ -402,4 +406,8 @@ struct MobileAuthenticationContext: Sendable {
     let generation: UUID
     let accessToken: String
     let revocationToken: String?
+    // The saved proof may belong to a session replaced by an older Server.
+    // Capture this login's current secret before rotation can lose its response.
+    // It is sent only to the deletion endpoint, never as an access credential.
+    let refreshToken: String?
 }
