@@ -49,7 +49,7 @@ index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710a
  			children: /* @__PURE__ */ jsxs(ListContext, {
  				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..089694ef65bef18aa4f9a37beb607c7d136ffebe 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..d872f69d48c9cc21e4f5595526cfa700e2571c08 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
 @@ -1,7 +1,9 @@
@@ -62,6 +62,15 @@ index 78c7d59de854993ca206520fda17399432dce1ce..089694ef65bef18aa4f9a37beb607c7d
  import { usePathname } from "fumadocs-core/framework";
  import { jsx, jsxs } from "react/jsx-runtime";
  import Link from "fumadocs-core/link";
+@@ -18,7 +20,7 @@ function SidebarProvider({ defaultOpenLevel = 0, prefetch, children }) {
+ 	const [open, setOpen] = useState(false);
+ 	const [collapsed, setCollapsed] = useState(false);
+ 	const pathname = usePathname();
+-	const mode = useMediaQuery("(width < 768px)") ? "drawer" : "full";
++	const mode = useMediaQuery("(width < 48rem)") ? "drawer" : "full";
+ 	useOnChange(pathname, () => {
+ 		if (closeOnRedirect.current) setOpen(false);
+ 		closeOnRedirect.current = true;
 @@ -54,6 +56,46 @@ function useFolder() {
  function useFolderDepth() {
  	return use(FolderContext)?.depth ?? 0;
