@@ -31,7 +31,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
 import type { Notification } from '@/lib/api-schema'
-import { buildEmailPayload } from './notification-payloads'
 
 type NotifyType = 'apns' | 'bark' | 'email' | 'telegram' | 'webhook'
 
@@ -336,7 +335,7 @@ export function NotificationChannelsSection({
       if (state.toAddresses.length === 0) {
         return
       }
-      submitChannel(buildEmailPayload(state.configFields.from ?? '', state.toAddresses))
+      submitChannel({ from: state.configFields.from ?? '', to: state.toAddresses })
       return
     }
     submitChannel(state.configFields)

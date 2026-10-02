@@ -25,14 +25,6 @@ describe('command discovery', () => {
       expect(getCommandByKey(key), `Make target ${key} has no menu command`).toBeDefined()
     }
   })
-
-  it('keeps scaffold database tools out of the default menu', () => {
-    expect(getCommandByKey('db-local')?.category).toBe('Scaffold')
-    expect(getCommandByKey('db-pull')?.category).toBe('Database')
-    for (const key of FEATURED_COMMAND_KEYS) {
-      expect(getCommandByKey(key)?.category).not.toBe('Scaffold')
-    }
-  })
 })
 
 describe('orderCommandsForMenu', () => {
@@ -84,18 +76,18 @@ describe('recent command history', () => {
 describe('menu display formatting', () => {
   it('aligns the command name and description columns with fixed widths', () => {
     const dockerLogs = getCommandByKey('docker-logs')
-    const dbMigrate = getCommandByKey('db-migrate')
+    const docsBrowser = getCommandByKey('docs-check-browser')
 
-    if (!(dockerLogs && dbMigrate)) {
+    if (!(dockerLogs && docsBrowser)) {
       throw new Error('Missing command fixtures for formatting test')
     }
 
-    const widths = getMenuColumnWidths([dockerLogs, dbMigrate])
+    const widths = getMenuColumnWidths([dockerLogs, docsBrowser])
     const dockerLabel = buildMenuDisplayLabel(dockerLogs, widths, {})
-    const dbLabel = buildMenuDisplayLabel(dbMigrate, widths, {})
+    const docsLabel = buildMenuDisplayLabel(docsBrowser, widths, {})
 
-    expect(dockerLabel.indexOf(dockerLogs.name)).toBe(dbLabel.indexOf(dbMigrate.name))
-    expect(dockerLabel.indexOf(dockerLogs.description)).toBe(dbLabel.indexOf(dbMigrate.description))
+    expect(dockerLabel.indexOf(dockerLogs.name)).toBe(docsLabel.indexOf(docsBrowser.name))
+    expect(dockerLabel.indexOf(dockerLogs.description)).toBe(docsLabel.indexOf(docsBrowser.description))
   })
 })
 

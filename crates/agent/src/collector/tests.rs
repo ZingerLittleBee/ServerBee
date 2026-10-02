@@ -19,6 +19,10 @@ fn test_collect_returns_valid_report() {
     let report = collector.collect();
     assert!(report.cpu >= 0.0 && report.cpu <= 100.0);
     assert!(report.process_count > 0);
+    for load in [report.load1, report.load5, report.load15] {
+        assert!(load >= 0.0, "load average must be non-negative, got {load}");
+        assert!(load.is_finite(), "load average must be finite, got {load}");
+    }
 }
 
 #[test]
@@ -44,7 +48,12 @@ fn test_memory_used_le_total() {
     let mut collector = Collector::new(true, false);
     let report = collector.collect();
     let info = collector.system_info();
+    assert!(report.mem_used >= 0);
     assert!(report.mem_used <= info.mem_total);
+    // Swap may legitimately be zero on a host.
+    assert!(info.swap_total >= 0);
+    assert!(report.swap_used >= 0);
+    assert!(report.swap_used <= info.swap_total);
 }
 
 #[cfg(target_os = "linux")]

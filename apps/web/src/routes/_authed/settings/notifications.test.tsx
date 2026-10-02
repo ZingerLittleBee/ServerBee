@@ -1,11 +1,28 @@
-import { render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Notification } from '@/lib/api-schema'
+import { EmailFormFields, NotificationChannelsSection } from './notification-channel-section'
 
 const SMTP_HOST_RE = /smtp_host/i
 const SMTP_PORT_RE = /smtp_port/i
 const SMTP_USERNAME_RE = /username/i
 const SMTP_PASSWORD_RE = /password/i
+const mockFetch = vi.fn<typeof fetch>()
+const getAnimationsDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'getAnimations')
+
+beforeAll(() => {
+  // jsdom has no Web Animations API; the real ScrollArea uses it during cleanup.
+  Object.defineProperty(Element.prototype, 'getAnimations', { configurable: true, value: () => [] })
+})
+
+afterAll(() => {
+  if (getAnimationsDescriptor) {
+    Object.defineProperty(Element.prototype, 'getAnimations', getAnimationsDescriptor)
+  } else {
+    Reflect.deleteProperty(Element.prototype, 'getAnimations')
+  }
+})
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -18,55 +35,144 @@ vi.mock('react-i18next', () => ({
   })
 }))
 
-vi.mock('@/components/ui/button', () => ({
-  Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
-    <button type="button" {...props}>
-      {children}
-    </button>
-  )
-}))
+beforeEach(() => {
+  mockFetch.mockReset()
+  mockFetch.mockImplementation(() => Promise.resolve(Response.json({ data: null })))
+  vi.stubGlobal('fetch', mockFetch)
+})
 
-vi.mock('@/components/ui/input', () => ({
-  Input: (props: Record<string, unknown>) => <input {...props} />
-}))
-
-vi.mock('@/components/ui/label', () => ({
-  // Tests don't care about label/control association; a span keeps Biome happy.
-  Label: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
-    <span {...props}>{children}</span>
-  )
-}))
-
-vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (config: Record<string, unknown>) => config
-}))
-
-const { buildEmailPayload } = await import('./notification-payloads')
-const { EmailFormFields } = await import('./notifications')
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function noop() {
   // intentionally empty
 }
 
-describe('buildEmailPayload', () => {
-  it('wraps a single recipient as a string array', () => {
-    const payload = buildEmailPayload('alerts@example.com', ['ops@example.com'])
-    expect(payload).toEqual({ from: 'alerts@example.com', to: ['ops@example.com'] })
+function renderChannels(notifications: Notification[] = []) {
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <NotificationChannelsSection isLoading={false} notifications={notifications} />
+    </QueryClientProvider>
+  )
+}
+
+async function openEmailChannel() {
+  fireEvent.click(screen.getByRole('button', { name: 'common:add' }))
+  fireEvent.click(await screen.findByRole('combobox'))
+  const emailOption = await screen.findByRole('option', { name: 'notifications.type_email' })
+  fireEvent.mouseMove(emailOption)
+  fireEvent.click(emailOption)
+  await screen.findByPlaceholderText('notifications.from_address')
+}
+
+function addRecipient(address: string) {
+  fireEvent.change(screen.getByPlaceholderText('notifications.recipient_placeholder'), {
+    target: { value: address }
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'notifications.add_recipient' }))
+}
+
+describe('email channel submission', () => {
+  it('creates a channel with trimmed, unique recipients in entry order', async () => {
+    renderChannels()
+    await openEmailChannel()
+    fireEvent.change(screen.getByPlaceholderText('notifications.channel_name'), {
+      target: { value: '  Team alerts  ' }
+    })
+    fireEvent.change(screen.getByPlaceholderText('notifications.from_address'), {
+      target: { value: 'alerts@example.com' }
+    })
+    addRecipient(' z@example.com ')
+    addRecipient('a@example.com')
+    addRecipient('z@example.com')
+    addRecipient('m@example.com')
+    fireEvent.click(screen.getByRole('button', { name: 'common:create' }))
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/notifications',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            name: 'Team alerts',
+            notify_type: 'email',
+            config_json: { from: 'alerts@example.com', to: ['z@example.com', 'a@example.com', 'm@example.com'] },
+            enabled: true
+          })
+        })
+      )
+    )
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('preserves multiple recipients in order', () => {
-    const payload = buildEmailPayload('alerts@example.com', ['a@x.com', 'b@y.com', 'c@z.com'])
-    expect(payload.to).toEqual(['a@x.com', 'b@y.com', 'c@z.com'])
+  it('updates an existing email channel without reordering recipients or replacing a blank sender', async () => {
+    renderChannels([
+      {
+        id: 'channel-email',
+        name: 'Existing alerts',
+        notify_type: 'email',
+        config_json: JSON.stringify({ to: ['z@example.com', 'a@example.com', 'm@example.com'] }),
+        enabled: false,
+        created_at: '2026-01-01T00:00:00Z'
+      }
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'common:a11y.edit_notification' }))
+    const fromInput = await screen.findByPlaceholderText('notifications.from_address')
+    expect(fromInput).toHaveValue('')
+    expect(fromInput).toBeRequired()
+    fireEvent.click(screen.getByRole('button', { name: 'notifications.remove_recipient_aria:a@example.com' }))
+    addRecipient('a@example.com')
+
+    // Dispatch submit directly to cover the existing blank-sender serialization;
+    // the required attribute above remains the browser's submission constraint.
+    const form = fromInput.closest('form')
+    if (!form) {
+      throw new Error('email channel form is missing')
+    }
+    fireEvent.submit(form)
+
+    await waitFor(() =>
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/notifications/channel-email',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({
+            name: 'Existing alerts',
+            notify_type: 'email',
+            config_json: { from: '', to: ['z@example.com', 'm@example.com', 'a@example.com'] },
+            enabled: false
+          })
+        })
+      )
+    )
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('allows an empty from (validation happens at submit time)', () => {
-    const payload = buildEmailPayload('', ['ops@example.com'])
-    expect(payload.from).toBe('')
-  })
+  it('does not send a request when recipients are missing or rejected', async () => {
+    renderChannels()
+    await openEmailChannel()
+    fireEvent.change(screen.getByPlaceholderText('notifications.channel_name'), {
+      target: { value: 'Team alerts' }
+    })
+    const fromInput = screen.getByPlaceholderText('notifications.from_address')
+    fireEvent.change(fromInput, { target: { value: 'alerts@example.com' } })
+    addRecipient('invalid@example')
+    const form = fromInput.closest('form')
+    if (!form) {
+      throw new Error('email channel form is missing')
+    }
+    await act(async () => {
+      fireEvent.submit(form)
+      await Promise.resolve()
+    })
 
-  it('includes recipients in preserved order for multi-address edits', () => {
-    const payload = buildEmailPayload('alerts@example.com', ['z@x.com', 'a@x.com', 'm@x.com'])
-    expect(payload.to).toEqual(['z@x.com', 'a@x.com', 'm@x.com'])
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'notifications.remove_recipient_aria:invalid@example' })).toBeNull()
   })
 })
 

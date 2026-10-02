@@ -126,8 +126,6 @@
     },
     {
       "includes": [
-        "apps/docs/src/lib/cn.ts",
-        "packages/db/src/schema/index.ts",
         "packages/widget-sdk/src/index.ts",
         "packages/widget-sdk/src/hooks/index.ts",
         "packages/widget-sdk/src/z/index.ts"

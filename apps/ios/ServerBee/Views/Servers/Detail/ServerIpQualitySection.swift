@@ -178,7 +178,7 @@ struct IpQualitySnapshotCard: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                     if !badges.isEmpty {
-                        FlowChips(items: badges) { badge in
+                        FlexibleWrap(items: badges) { badge in
                             StatusBadge(text: badge.text, color: badge.isFlag ? .warningAmber : .secondary)
                         }
                         .padding(.top, 2)

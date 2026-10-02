@@ -3,9 +3,9 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use reqwest::redirect::Policy;
 use serverbee_common::protocol::UnlockRequest;
+use serverbee_common::ssrf;
 
 use super::rule_engine::HttpOutcome;
-use super::ssrf;
 
 /// Maximum number of redirects to follow before giving up.
 const MAX_REDIRECTS: usize = 5;

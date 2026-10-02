@@ -8,24 +8,8 @@
     ],
     "catalog": {
       "dotenv": "^17.2.2",
-      "zod": "^4.1.13",
-      "@types/node": "^22.13.14",
-      "lucide-react": "^0.546.0",
-      "next-themes": "^0.4.6",
-      "react": "^19.2.3",
-      "react-dom": "^19.2.3",
-      "sonner": "^2.0.5",
-      "tailwindcss": "^4.1.18",
-      "@libsql/client": "0.15.15",
-      "libsql": "0.5.22",
-      "@orpc/server": "^1.12.2",
-      "@orpc/client": "^1.12.2",
-      "@orpc/openapi": "^1.12.2",
-      "@orpc/zod": "^1.12.2",
-      "better-auth": "1.5.2",
-      "@types/react": "^19.2.10",
-      "@types/react-dom": "^19.2.3",
-      "drizzle-orm": "^0.45.1"
+      "zod": "4.3.6",
+      "@types/node": "^22.13.14"
     }
   },
   "type": "module",
@@ -33,16 +17,11 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "build:web": "bun --filter @serverbee/web build",
-    "typecheck": "bun --filter @serverbee/ui check-types && bun --filter @serverbee/web typecheck && bun --filter @serverbee/docs types:check",
+    "typecheck": "bun --filter @serverbee/web typecheck && bun --filter @serverbee/docs types:check",
     "check-types": "bun run typecheck",
     "dev:web": "bun --filter @serverbee/web dev",
     "test": "bun --filter @serverbee/web test",
     "test:watch": "bun --filter @serverbee/web test:watch",
-    "db:push": "turbo -F @serverbee/db db:push",
-    "db:studio": "turbo -F @serverbee/db db:studio",
-    "db:generate": "turbo -F @serverbee/db db:generate",
-    "db:migrate": "turbo -F @serverbee/db db:migrate",
-    "db:local": "turbo -F @serverbee/db db:local",
     "check": "ultracite check",
     "check:agent-navigation": "bun scripts/check-agent-navigation.ts",
     "check:integration-targets": "bun scripts/check-integration-targets.ts",
@@ -52,7 +31,6 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
-    "@serverbee/env": "workspace:*",
     "dotenv": "catalog:",
     "zod": "catalog:"
   },
