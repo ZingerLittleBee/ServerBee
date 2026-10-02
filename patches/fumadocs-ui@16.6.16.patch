@@ -49,7 +49,7 @@ index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710a
  			children: /* @__PURE__ */ jsxs(ListContext, {
  				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..e7476b467885533e6b57ea0bcac04a314d49c10c 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..f2e219314a0d1fe09b0af4056edfd056f9663275 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
 @@ -1,7 +1,9 @@
@@ -62,7 +62,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..e7476b467885533e6b57ea0bcac04a31
  import { usePathname } from "fumadocs-core/framework";
  import { jsx, jsxs } from "react/jsx-runtime";
  import Link from "fumadocs-core/link";
-@@ -54,6 +56,20 @@ function useFolder() {
+@@ -54,6 +56,29 @@ function useFolder() {
  function useFolderDepth() {
  	return use(FolderContext)?.depth ?? 0;
  }
@@ -80,29 +80,37 @@ index 78c7d59de854993ca206520fda17399432dce1ce..e7476b467885533e6b57ea0bcac04a31
 +	}
 +	return null;
 +}
++let pointerInput = false;
++if (typeof document !== "undefined") {
++	document.addEventListener("pointerdown", () => {
++		pointerInput = true;
++	}, true);
++	document.addEventListener("keydown", (e) => {
++		if (!e.metaKey && !e.ctrlKey && !e.altKey) pointerInput = false;
++	}, true);
++}
  function SidebarContent({ mode: allowedMode = "full", children }) {
  	const { collapsed, mode } = useSidebar();
  	const [hover, setHover] = useState(false);
-@@ -68,6 +84,18 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
+@@ -68,6 +93,17 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
  		if (!element) return true;
  		return !collapsed || e.pointerType === "touch" || element.getAnimations().length > 0;
  	}
 +	function setHovered(value) {
 +		const focused = document.activeElement;
-+		const keyboard = focused?.matches(":focus-visible");
 +		const control = focused && popupControl(focused);
 +		flushSync(() => setHover(value));
 +		if (focused?.matches("[inert] *")) {
-+			if (keyboard) focusTwin(focused);
++			if (!pointerInput) focusTwin(focused);
 +		} else if (control?.matches("[inert] *")) {
 +			focusTwin(control);
-+			if (!keyboard) document.activeElement?.blur();
++			if (pointerInput) document.activeElement?.blur();
 +		}
 +	}
  	return children({
  		ref,
  		collapsed,
-@@ -75,12 +103,12 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
+@@ -75,12 +111,12 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
  		onPointerEnter(e) {
  			if (shouldIgnoreHover(e)) return;
  			window.clearTimeout(timerRef.current);
@@ -117,7 +125,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..e7476b467885533e6b57ea0bcac04a31
  		}
  	});
  }
-@@ -198,9 +226,10 @@ function SidebarFolderContent(props) {
+@@ -198,9 +234,10 @@ function SidebarFolderContent(props) {
  	});
  }
  function SidebarTrigger({ children, ...props }) {
@@ -130,7 +138,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..e7476b467885533e6b57ea0bcac04a31
  		onClick: () => setOpen((prev) => !prev),
  		...props,
  		children
-@@ -208,12 +237,17 @@ function SidebarTrigger({ children, ...props }) {
+@@ -208,12 +245,16 @@ function SidebarTrigger({ children, ...props }) {
  }
  function SidebarCollapseTrigger(props) {
  	const { collapsed, setCollapsed } = useSidebar();
@@ -145,9 +153,8 @@ index 78c7d59de854993ca206520fda17399432dce1ce..e7476b467885533e6b57ea0bcac04a31
 -			setCollapsed((prev) => !prev);
 +		onClick: (e) => {
 +			const button = e.currentTarget;
-+			const keyboard = button.matches(":focus-visible");
 +			flushSync(() => setCollapsed((prev) => !prev));
-+			if (keyboard && button.matches("[inert] *")) focusTwin(button);
++			if (!pointerInput && button.matches("[inert] *")) focusTwin(button);
  		},
  		...props,
  		children: props.children
