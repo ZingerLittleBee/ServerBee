@@ -141,6 +141,9 @@ const searches: SearchCheck[] = [
   // in 就地上报 (就, 地上, 报), which still read as 就地.
   { locale: 'zh', query: '也可就地升级', page: '/zh/docs/custom-widgets', first: '就地' },
   { locale: 'zh', query: '就地上报', page: '/zh/docs/custom-widgets', same: '就地 上报' },
+  // Unless the characters after its 地 make a word ending inside the next word ICU finds: 能否就地区分组 (能否, 就,
+  // 地区, 分组: can servers be grouped by region) does not read as 就地 and 区分.
+  { locale: 'zh', query: '能否就地区分组', page: '/zh/docs/monitoring', same: '地区分组' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.
