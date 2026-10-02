@@ -94,6 +94,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
                 )
             }
         }
+        if route != "push" { await fulfillment(of: [revoked], timeout: 3) }
         XCTAssertFalse(subject.isAuthenticated)
         XCTAssertNil(subject.getAccessToken())
         XCTAssertNil(KeychainService.loadString(for: KeychainService.refreshTokenKey))

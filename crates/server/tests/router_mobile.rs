@@ -2109,7 +2109,21 @@ async fn assert_staged_upgrade_revocation_from_history(
     );
     let admin = http_client();
     login_admin(&admin, &base).await;
-    let _other = login_as_new_user(&admin, &base, "other-push-user", "member").await;
+    // Avoid an unused Web login so replacement login stays within the shared
+    // default five-attempt budget. Ownership is exercised by the mobile login.
+    assert_eq!(
+        admin
+            .post(format!("{base}/api/users"))
+            .json(
+                &json!({"username": "other-push-user", "password": "memberpass", "role": "member"})
+            )
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200,
+        "other user creation should succeed"
+    );
     let other: Value = mobile_login(
         &client,
         &base,
