@@ -70,14 +70,17 @@ interface Opener {
   element: HTMLElement
 }
 
-/** An element, with the control that names a popup holding it as the popup it controls. */
+/**
+ * An element, with the control of an open popup holding it: the element naming the popup in aria-controls and carrying
+ * aria-expanded=true. The sidebar toggles name the sidebar too, and carry no aria-expanded.
+ */
 function openerOf(element: Element | null): Opener | null {
   if (!(element instanceof HTMLElement)) {
     return null
   }
   for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
     const controller = ancestor.id
-      ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(ancestor.id)}"]`)
+      ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(ancestor.id)}"][aria-expanded="true"]`)
       : null
     if (controller) {
       return { controller, element }
