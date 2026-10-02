@@ -49,7 +49,7 @@ index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710a
  			children: /* @__PURE__ */ jsxs(ListContext, {
  				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..04bd9b9c6e5bcdd8a0e4c30056548b361c826c7f 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..1b14a50b991fb0a506008d8715d16d62fbb7a85d 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
 @@ -1,7 +1,9 @@
@@ -92,7 +92,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..04bd9b9c6e5bcdd8a0e4c30056548b36
 +		if (focused && focused !== document.body && focused.contains(e.target)) pointerFocus.add(focused);
 +	}, true);
 +	document.addEventListener("keydown", (e) => {
-+		if (!e.metaKey && !e.ctrlKey && !e.altKey) pointerInput = false;
++		if (e.key === "Tab" || (!e.metaKey && !e.ctrlKey && !e.altKey)) pointerInput = false;
 +	}, true);
 +	document.addEventListener("focusin", (e) => {
 +		if (pointerInput) pointerFocus.add(e.target);
