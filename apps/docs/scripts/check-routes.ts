@@ -114,7 +114,9 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: 'Agent 又离线了', page: '/zh/docs/monitoring', same: 'Agent 离线' },
   // Words that no heading or paragraph holds together: 卸载 (uninstall) and Agent, which the heading 卸载与清除 and the
   // paragraphs under it hold, typed with or without a space between them, and 服务端 (server) and 卸载 with a question
-  // word between them. Of the sections holding one of them, those holding the rarer 卸载 score more and come first.
+  // word between them. Each section found holds one of them, and the one scoring most, the widgets page's 卸载 heading,
+  // comes first only if sections holding as many of the words are ordered by score: in the order the words were
+  // searched, a section holding Agent or 服务端 comes first for Agent卸载 and 服务端怎么卸载.
   { locale: 'zh', query: '卸载 Agent', page: '/zh/docs/deployment', first: '卸载' },
   { locale: 'zh', query: '卸载agent', page: '/zh/docs/deployment', first: '卸载' },
   { locale: 'zh', query: 'Agent卸载', page: '/zh/docs/deployment', first: '卸载' },
