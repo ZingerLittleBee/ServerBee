@@ -30,24 +30,32 @@ const fillerWords = new Set(
   ].flatMap((words) => words.split(' '))
 )
 
-// Words that ICU splits into characters, one of them a filler word, kept whole: the 和 (and) of 校验和 (checksum) and
-// the 就 (then) of 就地 (in place). Their pieces, less the filler word, are tokens too, so that 校验 (validation) still
-// finds a checksum.
+// Words that ICU splits into characters, one of them a filler word, kept whole where the segments ICU finds in a text
+// spell them: the 和 (and) of 校验和 (checksum) and the 就 (then) of 就地 (in place), but not the 就 of 就地址 (then
+// the address), which ICU splits into 就 and 地址. Their pieces, less the filler word, are tokens too, so that 校验
+// (validation) still finds a checksum.
 const wholeWords = ['校验和', '就地']
-const wholeWord = new RegExp(wholeWords.join('|'), 'g')
 // Where a word starts that ICU joins to the word before: after 都, 也, 并 or 为何, it takes the 不 (not) of 不可用
 // (unavailable) into the word before, and leaves 可用 (available).
 const wordStart = /(?=不可用)/
 
-/** The segments ICU finds in a text, each whole word being one. */
+/** The segments ICU finds in a text, with the segments that spell a whole word joined into one. */
 function* segments(text: string): Generator<Pick<Intl.SegmentData, 'isWordLike' | 'segment'>> {
-  let start = 0
-  for (const match of text.matchAll(wholeWord)) {
-    yield* icuSegments(text.slice(start, match.index))
-    yield { isWordLike: true, segment: match[0] }
-    start = match.index + match[0].length
+  const found = [...icuSegments(text)]
+  for (let start = 0; start < found.length; start += 1) {
+    let word = ''
+    let end = start
+    while (end < found.length && wholeWords.some((whole) => whole.startsWith(word + found[end].segment))) {
+      word += found[end].segment
+      end += 1
+    }
+    if (wholeWords.includes(word)) {
+      yield { isWordLike: true, segment: word }
+      start = end - 1
+    } else {
+      yield found[start]
+    }
   }
-  yield* icuSegments(text.slice(start))
 }
 
 /** The segments ICU finds in a text, a word starting at each word start. */

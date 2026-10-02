@@ -131,10 +131,12 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '防火墙和告警', page: '/zh/docs/firewall', same: '防火墙告警' },
   { locale: 'zh', query: '流量和带宽', page: '/zh/docs/monitoring', same: '流量 带宽' },
   // The 和 of 校验和 (checksum) is part of the word, and 校验 alone means validation, which finds a checksum too. So is
-  // the 就 (then) of 就地 (in place), and the one section holding 就地 comes first.
+  // the 就 (then) of 就地 (in place), and the one section holding 就地 comes first, but not the 就 of 就地址 (then the
+  // address), which ICU splits into 就 and 地址.
   { locale: 'zh', query: '校验和', page: '/zh/docs/troubleshooting', every: ['校验和'] },
   { locale: 'zh', query: '校验', page: '/zh/docs/troubleshooting' },
   { locale: 'zh', query: '就地', page: '/zh/docs/custom-widgets', first: '就地' },
+  { locale: 'zh', query: '就地址变了', page: '/zh/docs/configuration', same: '地址变了' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.
