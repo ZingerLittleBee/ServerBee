@@ -68,6 +68,13 @@ interface Opener {
   controller: HTMLElement | null
   /** The element focused before the dialog opened. */
   element: HTMLElement
+  /** Whether the element was on screen. */
+  onScreen: boolean
+}
+
+function isOnScreen(element: Element): boolean {
+  const { bottom, left, right, top } = element.getBoundingClientRect()
+  return bottom > 0 && right > 0 && top < window.innerHeight && left < window.innerWidth
 }
 
 /**
@@ -83,10 +90,10 @@ function openerOf(element: Element | null): Opener | null {
       ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(ancestor.id)}"][aria-expanded="true"]`)
       : null
     if (controller) {
-      return { controller, element }
+      return { controller, element, onScreen: isOnScreen(element) }
     }
   }
-  return { controller: null, element }
+  return { controller: null, element, onScreen: isOnScreen(element) }
 }
 
 /**
@@ -103,8 +110,13 @@ function restoreFocus(opener: Opener | null): boolean {
   // Of the twins, the first that takes focus: neither an inert one nor a hidden one does.
   const candidates = element.matches('[inert] *') ? [...document.querySelectorAll<HTMLElement>(twins)] : [element]
   for (const candidate of controller ? [...candidates, controller] : candidates) {
-    candidate.focus()
+    candidate.focus({ preventScroll: true })
     if (document.activeElement === candidate) {
+      // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
+      // page stays where the reader left it otherwise.
+      if (opener.onScreen && !isOnScreen(candidate)) {
+        candidate.scrollIntoView({ block: 'nearest' })
+      }
       return true
     }
   }
