@@ -100,7 +100,7 @@ function restoreFocus(opener: Opener | null): boolean {
   // Of the twins, the first that takes focus: neither an inert one nor a hidden one does.
   const candidates = element.matches('[inert] *') ? [...document.querySelectorAll<HTMLElement>(twins)] : [element]
   for (const candidate of controller ? [...candidates, controller] : candidates) {
-    candidate.focus({ preventScroll: true })
+    candidate.focus()
     if (document.activeElement === candidate) {
       return true
     }
