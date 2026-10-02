@@ -81,6 +81,16 @@ const tableOfContents: Places = {
   standIns: '[data-toc-popover-trigger], #nd-toc a[data-active="true"]'
 }
 
+/** An element to give focus back to. */
+interface Target {
+  element: HTMLElement
+  /**
+   * The parts of the page holding the element, found before the dialog opened: a change of language while it is open,
+   * as on Back, takes the links of the sidebar's page tree off the page, and so out of the sidebar, which stays.
+   */
+  places: Places | undefined
+}
+
 /** What focus goes back to once the dialog closes. */
 interface Opener {
   /**
@@ -88,9 +98,9 @@ interface Opener {
    * closes once focus moves into the dialog or a click lands outside it, and takes the element with it, and a menu can
    * hold another popup's control, as the 404 page's mobile menu holds the language menu's.
    */
-  controls: HTMLElement[]
+  controls: Target[]
   /** The element focused before the dialog opened. */
-  element: HTMLElement
+  element: Target
   /** Whether the element was on screen. */
   onScreen: boolean
 }
@@ -142,7 +152,7 @@ function openerOf(element: Element | null): Opener | null {
     }
     node = node.parentElement
   }
-  return { controls, element, onScreen: isOnScreen(element) }
+  return { controls: controls.map(targetOf), element: targetOf(element), onScreen: isOnScreen(element) }
 }
 
 /** What tells a control from the others around it: its kind, link and name. */
@@ -156,6 +166,11 @@ function placesOf(element: HTMLElement): Places | undefined {
   return [sidebar, tableOfContents].find(
     ({ holders, standIns }) => element.matches(standIns) || element.closest(holders)
   )
+}
+
+/** An element, with the parts of the page holding it. */
+function targetOf(element: HTMLElement): Target {
+  return { element, places: placesOf(element) }
 }
 
 /**
@@ -175,11 +190,10 @@ function copiesOf(element: HTMLElement, { holders }: Places): HTMLElement[] {
  * sidebar or in the header, or the button of the table of contents' popover, or the links beside the page to the
  * headings in view.
  */
-function twinsOf(element: HTMLElement): HTMLElement[] {
+function twinsOf({ element, places }: Target): HTMLElement[] {
   if (element.matches(searchButtons)) {
     return [...document.querySelectorAll<HTMLElement>(searchButtons)]
   }
-  const places = placesOf(element)
   return places ? [...copiesOf(element, places), ...document.querySelectorAll<HTMLElement>(places.standIns)] : []
 }
 
@@ -193,7 +207,7 @@ function restoreFocus(opener: Opener | null): boolean {
     return false
   }
   for (const target of [opener.element, ...opener.controls]) {
-    for (const candidate of [target, ...twinsOf(target)]) {
+    for (const candidate of [target.element, ...twinsOf(target)]) {
       // The page can move while the dialog is open, as on Back. Focus that was on screen comes back on screen, and the
       // page stays where the reader left it otherwise. The browser scrolls an element it focuses only in the scrollers
       // that do not show all of it, so the page behind the sticky sidebar or table of contents stays put.
