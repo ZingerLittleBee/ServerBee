@@ -30,9 +30,10 @@ const fillerWords = new Set(
   ].flatMap((words) => words.split(' '))
 )
 
-// Words that ICU splits into characters, one of them a filler word, kept whole: the 和 (and) of 校验和 (checksum).
-// Their pieces, less the filler word, are tokens too, so that 校验 (validation) still finds a checksum.
-const wholeWords = ['校验和']
+// Words that ICU splits into characters, one of them a filler word, kept whole: the 和 (and) of 校验和 (checksum) and
+// the 就 (then) of 就地 (in place). Their pieces, less the filler word, are tokens too, so that 校验 (validation) still
+// finds a checksum.
+const wholeWords = ['校验和', '就地']
 const wholeWord = new RegExp(wholeWords.join('|'), 'g')
 // Where a word starts that ICU joins to the word before: after 都, 也, 并 or 为何, it takes the 不 (not) of 不可用
 // (unavailable) into the word before, and leaves 可用 (available).
