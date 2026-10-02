@@ -63,22 +63,26 @@ const searchButtons = '[data-search], [data-search-full]'
 interface Places {
   /** The parts. */
   holders: string
-  /** The controls that stand in for theirs. */
-  standIns: string
+  /** The controls that stand in for theirs, the best first. */
+  standIns: string[]
 }
 
 // The halves of the sidebar and, on a narrow screen, where the sidebar is a drawer, the drawer and the header, which
-// shows the sidebar's title link, with the buttons that show and hide the sidebar: one in each of its halves and,
-// where it is a drawer, one in the header and one in the drawer.
+// shows the sidebar's title link. Its links to the page shown stand in for its controls, then the buttons that show
+// and hide it: one in each of its halves and, where it is a drawer, one in the header and one in the drawer. Space on
+// such a link scrolls the page, where on a toggle it hides the sidebar.
 const sidebar: Places = {
   holders: '#nd-subnav, #nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]',
-  standIns: '[aria-controls="nd-sidebar"], [aria-controls="nd-sidebar-mobile"]'
+  standIns: [
+    '#nd-sidebar a[data-active="true"], #nd-sidebar-mobile a[data-active="true"]',
+    '[aria-controls="nd-sidebar"], [aria-controls="nd-sidebar-mobile"]'
+  ]
 }
 // The table of contents, beside the page on a wide screen and in a popover above it otherwise, with the button that
 // opens the popover and, beside the page, the links to the headings in view.
 const tableOfContents: Places = {
   holders: '#nd-toc, [data-toc-popover]',
-  standIns: '[data-toc-popover-trigger], #nd-toc a[data-active="true"]'
+  standIns: ['[data-toc-popover-trigger]', '#nd-toc a[data-active="true"]']
 }
 
 /** An element to give focus back to. */
@@ -167,7 +171,7 @@ function identity(element: Element): string {
 /** The parts of the page holding an element, or whose controls it stands in for. */
 function placesOf(element: HTMLElement): Places | undefined {
   return [sidebar, tableOfContents].find(
-    ({ holders, standIns }) => element.matches(standIns) || element.closest(holders)
+    ({ holders, standIns }) => standIns.some((selector) => element.matches(selector)) || element.closest(holders)
   )
 }
 
@@ -189,15 +193,19 @@ function copiesOf(element: HTMLElement, { holders }: Places): HTMLElement[] {
 
 /**
  * The controls that stand in for one that cannot take focus: the same search button or, for a control of the sidebar
- * or the table of contents, its copy in another of their parts, or else a sidebar toggle, in the other half of the
- * sidebar or in the header, or the button of the table of contents' popover, or the links beside the page to the
- * headings in view.
+ * or the table of contents, its copy in another of their parts, or else the sidebar's link to the page shown or a
+ * sidebar toggle, in the other half of the sidebar or in the header, or the button of the table of contents' popover,
+ * or the links beside the page to the headings in view.
  */
 function twinsOf({ element, places }: Target): HTMLElement[] {
   if (element.matches(searchButtons)) {
     return [...document.querySelectorAll<HTMLElement>(searchButtons)]
   }
-  return places ? [...copiesOf(element, places), ...document.querySelectorAll<HTMLElement>(places.standIns)] : []
+  if (!places) {
+    return []
+  }
+  const standIns = places.standIns.flatMap((selector) => [...document.querySelectorAll<HTMLElement>(selector)])
+  return [...copiesOf(element, places), ...standIns]
 }
 
 /**
