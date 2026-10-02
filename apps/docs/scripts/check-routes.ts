@@ -114,6 +114,8 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '服务端怎么卸载', page: '/zh/docs/deployment' },
   // Sections holding two of these words come before those holding one, though a short one holding one scores more.
   { locale: 'zh', query: '告警 通知 邮件', page: '/zh/docs/alerts', ranked: true },
+  // A word typed twice, in either case, counts once.
+  { locale: 'zh', query: 'Docker docker 升级 回滚', page: '/zh/docs/deployment', same: 'Docker 升级 回滚' },
   // A conjunction joins the words a query is about, and is not one of them.
   { locale: 'zh', query: '防火墙和告警', page: '/zh/docs/firewall', same: '防火墙告警' },
   { locale: 'zh', query: '流量和带宽', page: '/zh/docs/monitoring', same: '流量 带宽' },

@@ -130,8 +130,17 @@ function queryWords(term: string): string[] {
       }
     }
   }
-  // A word is searched as it was typed, so that the 用 of 已用 still follows the character before it.
-  return words.map((pieces) => pieces.join('')).filter((word) => chineseTokenizer.tokenize(word).join('').length > 1)
+  // A word is searched as it was typed, so that the 用 of 已用 still follows the character before it, and once: a word
+  // typed twice counted twice for the sections holding it, which came before those holding the other words.
+  const searched = new Map<string, string>()
+  for (const word of words.map((pieces) => pieces.join(''))) {
+    const tokens = chineseTokenizer.tokenize(word)
+    const key = tokens.join(' ')
+    if (tokens.join('').length > 1 && !searched.has(key)) {
+      searched.set(key, word)
+    }
+  }
+  return [...searched.values()]
 }
 
 /** Groups hits as Orama does: by the values of `properties`, in the order they come, at most `maxResult` a group. */
