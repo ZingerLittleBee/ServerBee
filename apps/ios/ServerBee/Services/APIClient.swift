@@ -74,6 +74,79 @@ actor APIClient {
         }
     }
 
+    /// Registration and logout requests use one captured login. A stale 401
+    /// must never refresh or retry using a replacement account/deployment.
+    @MainActor
+    func captureContext() -> MobileAuthenticationContext? {
+        authManager.captureContext()
+    }
+
+    @MainActor
+    func isCurrent(_ context: MobileAuthenticationContext) -> Bool {
+        authManager.isCurrent(context)
+    }
+
+    func postVoid(
+        _ path: String,
+        body: (any Encodable & Sendable)? = nil,
+        context: MobileAuthenticationContext
+    ) async throws {
+        guard var token = await authManager.accessToken(ifCurrent: context) else { throw AuthError.staleIdentity }
+        var response = try await performCapturedRequest(path, body: body, context: context, token: token)
+        guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
+        if response.statusCode == 401 {
+            do {
+                token = try await authManager.refreshAccessToken(context: context)
+            } catch AuthError.refreshUnauthorized {
+                await authManager.clearAuth(ifCurrent: context)
+                throw APIError.unauthorized
+            }
+            guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
+            response = try await performCapturedRequest(path, body: body, context: context, token: token)
+            guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
+            if response.statusCode == 401 {
+                await authManager.clearAuth(ifCurrent: context)
+                throw APIError.unauthorized
+            }
+        }
+        guard (200...299).contains(response.statusCode) else {
+            throw APIError.httpError(statusCode: response.statusCode, data: Data())
+        }
+    }
+
+    /// Cleanup may finish after a login change, but always targets the captured
+    /// deployment and credential. Only the original active login may refresh.
+    func postCleanup(_ path: String, context: MobileAuthenticationContext) async throws {
+        let token = await authManager.accessToken(ifCurrent: context) ?? context.accessToken
+        let response = try await performCapturedRequest(path, body: nil, context: context, token: token)
+        if response.statusCode == 401, await authManager.isCurrent(context) {
+            try await postVoid(path, context: context)
+            return
+        }
+        guard (200...299).contains(response.statusCode) else {
+            throw APIError.httpError(statusCode: response.statusCode, data: Data())
+        }
+    }
+
+    private func performCapturedRequest(
+        _ path: String,
+        body: (any Encodable & Sendable)?,
+        context: MobileAuthenticationContext,
+        token: String
+    ) async throws -> HTTPURLResponse {
+        guard let url = URL(string: "\(context.serverUrl)\(path)") else { throw APIError.noServerUrl }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let body { request.httpBody = try JSONEncoder.snakeCase.encode(body) }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse else {
+            throw APIError.httpError(statusCode: -1, data: data)
+        }
+        return response
+    }
+
     // MARK: - Internal
 
     private func request<T: Decodable & Sendable>(

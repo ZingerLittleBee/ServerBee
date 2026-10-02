@@ -40,6 +40,9 @@ struct ServerBeeApp: App {
                     #if DEBUG
                     if UITestSupport.seed != nil { return }
                     #endif
+                    // Capture the login before permission can suspend; the
+                    // authenticated ContentView may not have appeared yet.
+                    pushManager.configure(apiClient: APIClient(authManager: authManager))
                     Task { await pushManager.requestPermission() }
                 }
         }

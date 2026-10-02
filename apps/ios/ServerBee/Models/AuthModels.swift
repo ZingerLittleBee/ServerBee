@@ -38,6 +38,12 @@ struct MobileUser: Codable, Hashable, Sendable {
     let id: String
     let username: String
     let role: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case username
+        case role
+    }
 }
 
 struct MobileRefreshRequest: Codable, Sendable {

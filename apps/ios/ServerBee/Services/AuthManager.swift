@@ -12,13 +12,18 @@ final class AuthManager {
     // MARK: - Private
 
     private let refreshCoordinator = RefreshCoordinator()
+    private(set) var authenticationGeneration = UUID()
 
     // MARK: - Published State
 
     var isLoading = true
     var isAuthenticated = false
     var user: MobileUser?
-    var serverUrl: String?
+    var serverUrl: String? {
+        didSet {
+            if serverUrl != oldValue { authenticationGeneration = UUID() }
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -59,6 +64,8 @@ final class AuthManager {
             do {
                 let response = try await refreshTokens(refreshToken: refreshToken)
                 handleLoginResponse(response)
+            } catch AuthError.staleIdentity {
+                return
             } catch {
                 clearAuth()
             }
@@ -77,6 +84,11 @@ final class AuthManager {
 
     /// Persist tokens & user from a successful login or refresh response.
     func handleLoginResponse(_ response: MobileTokenResponse) {
+        authenticationGeneration = UUID()
+        persistTokens(response)
+    }
+
+    private func persistTokens(_ response: MobileTokenResponse) {
         try? KeychainService.saveString(response.accessToken, for: KeychainService.accessTokenKey)
         try? KeychainService.saveString(response.refreshToken, for: KeychainService.refreshTokenKey)
         try? KeychainService.saveCodable(response.user, for: KeychainService.userKey)
@@ -111,6 +123,7 @@ final class AuthManager {
     /// If you need a hard reset (e.g. "Forget this server" affordance), add a
     /// separate `forgetServer()` API rather than expanding this method.
     func clearAuth() {
+        authenticationGeneration = UUID()
         KeychainService.delete(for: KeychainService.accessTokenKey)
         KeychainService.delete(for: KeychainService.refreshTokenKey)
         KeychainService.delete(for: KeychainService.userKey)
@@ -122,15 +135,51 @@ final class AuthManager {
 
     /// Centralized token refresh. Both APIClient (on 401) and WebSocketClient
     /// (on reconnect) call this. Concurrent calls are coalesced by RefreshCoordinator.
-    func refreshAccessToken() async throws -> String {
-        try await refreshCoordinator.refresh { [self] in
-            guard let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) else {
-                throw AuthError.refreshUnauthorized
-            }
-            let response = try await refreshTokens(refreshToken: refreshToken)
-            await handleLoginResponse(response)
-            return response.accessToken
+    func refreshAccessToken(context: MobileAuthenticationContext? = nil) async throws -> String {
+        if let context, !isCurrent(context) { throw AuthError.staleIdentity }
+        let generation = authenticationGeneration
+        let token = try await refreshCoordinator.refresh { [self] in
+            try await refreshCurrentIdentity(generation: generation)
         }
+        guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
+        return token
+    }
+
+    private func refreshCurrentIdentity(generation: UUID) async throws -> String {
+        guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
+        guard let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) else {
+            throw AuthError.refreshUnauthorized
+        }
+        let response = try await refreshTokens(refreshToken: refreshToken)
+        guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
+        // Ordinary rotation belongs to the same login; it must not invalidate
+        // captured registration context or adopt a replacement account.
+        persistTokens(response)
+        return response.accessToken
+    }
+
+    /// Capture deployment, account, installation and login generation together.
+    func captureContext() -> MobileAuthenticationContext? {
+        guard isAuthenticated, let serverUrl, let user, let token = getAccessToken() else { return nil }
+        return MobileAuthenticationContext(
+            serverUrl: serverUrl, userId: user.id,
+            installationId: InstallationID.getOrCreate(),
+            generation: authenticationGeneration, accessToken: token
+        )
+    }
+
+    func isCurrent(_ context: MobileAuthenticationContext) -> Bool {
+        isAuthenticated && serverUrl == context.serverUrl && user?.id == context.userId
+            && authenticationGeneration == context.generation
+            && InstallationID.getOrCreate() == context.installationId
+    }
+
+    func accessToken(ifCurrent context: MobileAuthenticationContext) -> String? {
+        isCurrent(context) ? getAccessToken() : nil
+    }
+
+    func clearAuth(ifCurrent context: MobileAuthenticationContext) {
+        if isCurrent(context) { clearAuth() }
     }
 
     /// Token for a WebSocket reconnect. A transient refresh failure (offline,
@@ -142,13 +191,16 @@ final class AuthManager {
             return try await refreshAccessToken()
         } catch AuthError.refreshUnauthorized {
             return nil
+        } catch AuthError.staleIdentity {
+            return nil
         } catch {
             return getAccessToken()
         }
     }
 
-    // MARK: - Token Refresh (private)
+}
 
+private extension AuthManager {
     /// Directly calls the refresh endpoint using URLSession.
     /// We intentionally bypass `APIClient` here to avoid a circular dependency.
     ///
@@ -158,10 +210,13 @@ final class AuthManager {
     ///    or expired). The caller MUST treat this as a permanent failure.
     /// - `.refreshNetworkFailure` for transport errors, timeouts, or 5xx — the
     ///    caller SHOULD retry rather than logging the user out.
-    private func refreshTokens(refreshToken: String) async throws -> MobileTokenResponse {
+    func refreshTokens(refreshToken: String) async throws -> MobileTokenResponse {
         guard let serverUrl else {
             throw AuthError.noServerUrl
         }
+        let generation = authenticationGeneration
+        let accountId = user?.id
+        let installationId = InstallationID.getOrCreate()
 
         guard let url = URL(string: "\(serverUrl)/api/mobile/auth/refresh") else {
             throw AuthError.noServerUrl
@@ -173,7 +228,7 @@ final class AuthManager {
 
         let body = MobileRefreshRequest(
             refreshToken: refreshToken,
-            installationId: InstallationID.getOrCreate()
+            installationId: installationId
         )
         request.httpBody = try JSONEncoder.snakeCase.encode(body)
 
@@ -182,9 +237,14 @@ final class AuthManager {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
+            guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
             throw AuthError.refreshNetworkFailure(error)
         }
 
+        guard authenticationGeneration == generation, self.serverUrl == serverUrl,
+              user?.id == accountId, InstallationID.getOrCreate() == installationId else {
+            throw AuthError.staleIdentity
+        }
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AuthError.refreshNetworkFailure(nil)
         }
@@ -196,7 +256,12 @@ final class AuthManager {
                     ApiResponse<MobileTokenResponse>.self,
                     from: data
                 )
+                if let accountId, apiResponse.data.user.id != accountId {
+                    throw AuthError.staleIdentity
+                }
                 return apiResponse.data
+            } catch AuthError.staleIdentity {
+                throw AuthError.staleIdentity
             } catch {
                 // Server replied 200 but body did not decode — treat as transient.
                 throw AuthError.refreshNetworkFailure(error)
@@ -228,26 +293,27 @@ final class AuthManager {
 /// Internal so tests can drive `refresh(using:)` directly without going
 /// through `AuthManager.refreshAccessToken()` — see RefreshCoordinatorTests.
 actor RefreshCoordinator {
-    private var inFlight: Task<String, Error>?
+    private var inFlight: (id: UUID, task: Task<String, Error>)?
 
     func refresh(using refreshFn: @Sendable @escaping () async throws -> String) async throws -> String {
-        if let existing = inFlight {
+        while let existing = inFlight {
             do {
-                return try await existing.value
+                return try await existing.task.value
             } catch {
-                // Leader failed transiently — fall through to start a fresh attempt.
+                // Only clear the failed attempt we awaited, never a newer retry.
+                if inFlight?.id == existing.id { inFlight = nil }
             }
         }
 
+        let id = UUID()
         let task = Task { try await refreshFn() }
-        inFlight = task
-
+        inFlight = (id, task)
         do {
             let token = try await task.value
-            inFlight = nil
+            if inFlight?.id == id { inFlight = nil }
             return token
         } catch {
-            inFlight = nil
+            if inFlight?.id == id { inFlight = nil }
             throw error
         }
     }
@@ -257,6 +323,7 @@ actor RefreshCoordinator {
 
 enum AuthError: Error, LocalizedError {
     case noServerUrl
+    case staleIdentity
     case refreshUnauthorized           // server returned 401 — credentials revoked
     case refreshNetworkFailure(Error?) // transient: no network, 5xx, timeout
     case invalidCredentials
@@ -268,7 +335,7 @@ enum AuthError: Error, LocalizedError {
         switch self {
         case .noServerUrl:
             return String(localized: "No server URL configured")
-        case .refreshUnauthorized:
+        case .refreshUnauthorized, .staleIdentity:
             return String(localized: "Session expired. Please log in again.")
         case .refreshNetworkFailure:
             return String(localized: "Could not reach the server. Please check your connection.")
@@ -282,4 +349,13 @@ enum AuthError: Error, LocalizedError {
             return String(localized: "Network error: \(error.localizedDescription)")
         }
     }
+}
+
+/// Immutable identity for an in-flight mobile registration or logout request.
+struct MobileAuthenticationContext: Sendable {
+    let serverUrl: String
+    let userId: String
+    let installationId: String
+    let generation: UUID
+    let accessToken: String
 }

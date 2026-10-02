@@ -185,7 +185,8 @@ impl MobileAuthService {
     // ── Refresh ──────────────────────────────────────────────────────────
 
     /// Validate a refresh token, rotate to a new token pair.
-    /// The old mobile session and its sessions are deleted, and a fresh pair is created.
+    /// Preserve the installation session and its push registration while atomically
+    /// replacing both credentials. Revocation deletes this stable session identity.
     pub async fn refresh(
         db: &DatabaseConnection,
         config: &MobileConfig,
@@ -211,52 +212,90 @@ impl MobileAuthService {
         }
 
         let old_session = matched_session.ok_or(AppError::Unauthorized)?;
-        let user_id = old_session.user_id.clone();
-        let device_name = old_session.device_name.clone();
-        let old_session_id = old_session.id.clone();
+        let access_token = AuthService::generate_session_token();
+        let new_refresh_token = Self::generate_refresh_token();
+        let new_refresh_hash = Self::hash_refresh_token(&new_refresh_token)?;
+        let now = Utc::now();
+        let txn = db.begin().await?;
 
-        // Fetch user
-        let user_model = user::Entity::find_by_id(&user_id)
-            .one(db)
+        // Consume the verified refresh secret with one conditional write. This
+        // is the first statement in the transaction so SQLite serializes it
+        // with refresh, logout and credential revocation before we read policy.
+        // A stale verifier cannot recreate a deleted or already-rotated row.
+        let rotated = mobile_session::Entity::update_many()
+            .col_expr(
+                mobile_session::Column::RefreshTokenHash,
+                Expr::value(new_refresh_hash),
+            )
+            .col_expr(
+                mobile_session::Column::ExpiresAt,
+                Expr::value(now + chrono::Duration::seconds(config.refresh_ttl)),
+            )
+            .col_expr(mobile_session::Column::LastUsedAt, Expr::value(now))
+            .filter(mobile_session::Column::Id.eq(&old_session.id))
+            .filter(mobile_session::Column::UserId.eq(&old_session.user_id))
+            .filter(mobile_session::Column::InstallationId.eq(installation_id))
+            .filter(mobile_session::Column::RefreshTokenHash.eq(&old_session.refresh_token_hash))
+            .filter(mobile_session::Column::ExpiresAt.gt(now))
+            .exec(&txn)
+            .await?;
+        if rotated.rows_affected != 1 {
+            return Err(AppError::Unauthorized);
+        }
+
+        let current_session = mobile_session::Entity::find_by_id(&old_session.id)
+            .one(&txn)
             .await?
             .ok_or(AppError::Unauthorized)?;
-
+        let user_model = user::Entity::find_by_id(&current_session.user_id)
+            .one(&txn)
+            .await?
+            .ok_or(AppError::Unauthorized)?;
         if user_model.must_change_password {
             return Err(AppError::Forbidden(
                 "MUST_CHANGE_PASSWORD: complete onboarding via the web UI before using mobile"
                     .to_string(),
             ));
         }
-
-        // Token versioning: reject a refresh whose mobile_session was issued
-        // before the user's last password change, even if the row still exists
-        // (e.g. it survived a revocation race). This is the authoritative
-        // kill-switch ensuring a password change / admin reset invalidates a
-        // stolen refresh token, independent of the best-effort row deletion in
-        // change_password / update_user.
         if let Some(changed_at) = user_model.password_changed_at
-            && old_session.created_at < changed_at
+            && current_session.created_at < changed_at
         {
             return Err(AppError::Unauthorized);
         }
 
-        // Delete the old mobile_session along with its linked sessions and
-        // device tokens. device_tokens.mobile_session_id has no ON DELETE
-        // cascade, so deleting the mobile_session without first removing a
-        // device_token created by push_register would fail the foreign key.
-        Self::delete_mobile_session_cascade(db, &old_session_id).await?;
+        // Keep the mobile session identity (and hence the registration FK),
+        // but remove every old access credential before inserting its successor.
+        session::Entity::delete_many()
+            .filter(session::Column::MobileSessionId.eq(&current_session.id))
+            .exec(&txn)
+            .await?;
+        session::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            user_id: Set(user_model.id.clone()),
+            token: Set(AuthService::hash_session_token(&access_token)),
+            ip: Set(ip.to_string()),
+            user_agent: Set(user_agent.to_string()),
+            expires_at: Set(now + chrono::Duration::seconds(config.access_ttl)),
+            created_at: Set(now),
+            source: Set("mobile".to_string()),
+            mobile_session_id: Set(Some(current_session.id)),
+        }
+        .insert(&txn)
+        .await?;
+        txn.commit().await?;
 
-        // Issue a fresh token pair
-        Self::login_for_user(
-            db,
-            config,
-            &user_model,
-            installation_id,
-            &device_name,
-            ip,
-            user_agent,
-        )
-        .await
+        Ok(MobileTokenResponse {
+            access_token,
+            access_expires_in_secs: config.access_ttl,
+            refresh_token: new_refresh_token,
+            refresh_expires_in_secs: config.refresh_ttl,
+            token_type: "Bearer".to_string(),
+            user: MobileUserResponse {
+                id: user_model.id,
+                username: user_model.username,
+                role: user_model.role,
+            },
+        })
     }
 
     // ── Logout ───────────────────────────────────────────────────────────
@@ -358,22 +397,25 @@ impl MobileAuthService {
         db: &DatabaseConnection,
         mobile_session_id: &str,
     ) -> Result<(), AppError> {
+        let txn = db.begin().await?;
         // Delete associated sessions
         session::Entity::delete_many()
             .filter(session::Column::MobileSessionId.eq(mobile_session_id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Delete associated device tokens
         device_token::Entity::delete_many()
             .filter(device_token::Column::MobileSessionId.eq(mobile_session_id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Delete the mobile session itself
         mobile_session::Entity::delete_by_id(mobile_session_id)
-            .exec(db)
+            .exec(&txn)
             .await?;
+
+        txn.commit().await?;
 
         Ok(())
     }
@@ -612,15 +654,15 @@ mod tests {
         .expect("refresh should succeed even after push_register");
         assert_ne!(refreshed.access_token, first.access_token);
 
-        // The old mobile_session and its device_token were cascade-deleted.
+        // Refresh preserves the registration on the same installation session.
         let old_dt = device_token::Entity::find()
             .filter(device_token::Column::MobileSessionId.eq(&ms.id))
             .one(&db)
             .await
             .unwrap();
         assert!(
-            old_dt.is_none(),
-            "device_token for the rotated mobile_session must be removed"
+            old_dt.is_some(),
+            "device_token for the rotated credentials must be preserved"
         );
     }
 

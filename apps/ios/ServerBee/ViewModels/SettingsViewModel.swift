@@ -23,6 +23,8 @@ final class SettingsViewModel {
         pushManager: any PushNotificationManaging,
         closeWebSocket: @MainActor () async -> Void
     ) async {
+        let context = authManager.captureContext()
+        let generation = authManager.authenticationGeneration
         isLoggingOut = true
         defer { isLoggingOut = false }
 
@@ -33,12 +35,13 @@ final class SettingsViewModel {
         // 2. Unregister push device token. Must happen BEFORE clearAuth so the
         //    bearer token is still valid for the request, and BEFORE the server
         //    logout so we do not leak a stale device-token binding to this user.
-        await pushManager.unregister()
+        await pushManager.unregister(context: context)
 
         // 3. Best-effort server-side logout (Bearer token provides identity).
-        try? await apiClient.postVoid("/api/mobile/auth/logout")
-
-        // 4. Clear local auth last.
-        authManager.clearAuth()
+        if let context {
+            try? await apiClient.postCleanup("/api/mobile/auth/logout", context: context)
+        }
+        // An account/deployment change during an await belongs to another login.
+        if authManager.authenticationGeneration == generation { authManager.clearAuth() }
     }
 }

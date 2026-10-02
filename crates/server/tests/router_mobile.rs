@@ -692,3 +692,520 @@ async fn mobile_push_register_with_api_key_is_401() {
         "an API-key request is not a mobile session, so push_register must 401"
     );
 }
+
+// Registration persistence is part of the public delivery contract. Inspect
+// migrated storage because this legacy API has no registration-status endpoint.
+async fn registration_db(tmp: &tempfile::TempDir) -> sea_orm::DatabaseConnection {
+    sea_orm::Database::connect(format!(
+        "sqlite://{}?mode=rw",
+        tmp.path().join("test.db").display()
+    ))
+    .await
+    .unwrap()
+}
+
+async fn refresh_mobile(client: &reqwest::Client, base: &str, tokens: &Value) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/auth/refresh"))
+        .json(
+            &json!({"refresh_token": tokens["data"]["refresh_token"], "installation_id": INST_ID}),
+        )
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn register_mobile(
+    client: &reqwest::Client,
+    base: &str,
+    tokens: &Value,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/push/register"))
+        .bearer_auth(tokens["data"]["access_token"].as_str().unwrap())
+        .json(&json!({"device_token": "test-apns-registration"}))
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn refresh_preserves_registration_and_logout_revokes_rotated_credentials() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::{device_token, mobile_session};
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let refreshed = refresh_mobile(&client, &base, &first).await;
+    assert_eq!(refreshed.status(), 200);
+    let rotated: Value = refreshed.json().await.unwrap();
+    let after = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .expect("ordinary refresh must preserve the installation registration");
+    assert_eq!(after.id, before.id);
+    assert_eq!(after.user_id, before.user_id);
+    assert_eq!(after.token, before.token);
+    let owner = mobile_session::Entity::find_by_id(&after.mobile_session_id)
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(owner.user_id, after.user_id);
+    assert_eq!(owner.installation_id, INST_ID);
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 401);
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 401);
+
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(rotated["data"]["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+    assert_eq!(
+        register_mobile(&client, &base, &rotated).await.status(),
+        401
+    );
+}
+
+#[tokio::test]
+async fn concurrent_refresh_consumes_credentials_once_and_preserves_registration() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let (one, two) = tokio::join!(
+        refresh_mobile(&client, &base, &first),
+        refresh_mobile(&client, &base, &first),
+    );
+    let winner = match (one.status().as_u16(), two.status().as_u16()) {
+        (200, 401) => one,
+        (401, 200) => two,
+        statuses => panic!("exactly one refresh must consume the old credential: {statuses:?}"),
+    };
+    let winner: Value = winner.json().await.unwrap();
+    assert_eq!(winner["data"]["user"]["id"], first["data"]["user"]["id"]);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 401);
+    assert_eq!(register_mobile(&client, &base, &winner).await.status(), 200);
+}
+
+#[tokio::test]
+async fn failed_rotation_rolls_back_credentials_and_registration() {
+    use sea_orm::{ConnectionTrait, EntityTrait};
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    // A real SQLite write failure after token consumption must roll back the
+    // whole rotation. No internal policy or persistence modules are mocked.
+    db.execute_unprepared("CREATE TRIGGER reject_rotated_access BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'injected access write failure'); END")
+        .await.unwrap();
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 500);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/api/mobile/auth/devices"))
+            .bearer_auth(first["data"]["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200,
+        "old access survives the failed transaction"
+    );
+    db.execute_unprepared("DROP TRIGGER reject_rotated_access")
+        .await
+        .unwrap();
+    assert_eq!(
+        refresh_mobile(&client, &base, &first).await.status(),
+        200,
+        "a failed transaction must not consume the refresh secret"
+    );
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn invalid_refresh_cannot_mutate_registered_installation() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let invalid = json!({"data": {"refresh_token": "invalid-refresh-secret"}});
+    assert_eq!(refresh_mobile(&client, &base, &invalid).await.status(), 401);
+    assert_eq!(client.post(format!("{base}/api/mobile/auth/refresh"))
+        .json(&json!({"refresh_token": first["data"]["refresh_token"], "installation_id": "wrong-installation"}))
+        .send().await.unwrap().status(), 401);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 200);
+}
+
+#[tokio::test]
+async fn concurrent_device_revocation_cannot_be_undone_by_refresh() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::{device_token, mobile_session};
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let (refresh, revoked) = tokio::join!(
+        refresh_mobile(&client, &base, &first),
+        admin
+            .delete(format!(
+                "{base}/api/mobile/auth/devices/{}",
+                registration.mobile_session_id
+            ))
+            .send(),
+    );
+    assert_eq!(revoked.unwrap().status(), 200);
+    assert!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        mobile_session::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 401);
+    if refresh.status() == 200 {
+        let rotated: Value = refresh.json().await.unwrap();
+        assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+        assert_eq!(
+            register_mobile(&client, &base, &rotated).await.status(),
+            401
+        );
+    } else {
+        assert_eq!(refresh.status(), 401);
+    }
+}
+
+#[tokio::test]
+async fn expired_access_can_refresh_but_expired_mobile_session_cannot_register_or_refresh() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{device_token, mobile_session, session};
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let past = chrono::Utc::now() - chrono::Duration::seconds(1);
+    session::Entity::update_many()
+        .col_expr(session::Column::ExpiresAt, Expr::value(past))
+        .filter(session::Column::MobileSessionId.eq(&registration.mobile_session_id))
+        .exec(&db)
+        .await
+        .unwrap();
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 401);
+    let refresh = refresh_mobile(&client, &base, &first).await;
+    assert_eq!(refresh.status(), 200);
+    let rotated: Value = refresh.json().await.unwrap();
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+    mobile_session::Entity::update_many()
+        .col_expr(mobile_session::Column::ExpiresAt, Expr::value(past))
+        .exec(&db)
+        .await
+        .unwrap();
+    assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+    assert_eq!(
+        register_mobile(&client, &base, &rotated).await.status(),
+        401
+    );
+}
+
+#[tokio::test]
+async fn password_and_user_revocation_stop_preserved_registration() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    for action in ["password-change", "password-reset", "user-delete"] {
+        let (base, tmp) = start_test_server().await;
+        let admin = http_client();
+        login_admin(&admin, &base).await;
+        let member = login_as_new_user(&admin, &base, "registered-member", "member").await;
+        let mobile = http_client();
+        let first: Value = mobile_login(&mobile, &base, "registered-member", "memberpass", INST_ID)
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 200);
+        let refreshed = refresh_mobile(&mobile, &base, &first).await;
+        assert_eq!(refreshed.status(), 200);
+        let rotated: Value = refreshed.json().await.unwrap();
+        let user_id = rotated["data"]["user"]["id"].as_str().unwrap();
+        let revoked = match action {
+            "password-change" => member
+                .put(format!("{base}/api/auth/password"))
+                .json(&json!({"old_password": "memberpass", "new_password": "replacementpass123"}))
+                .send()
+                .await
+                .unwrap(),
+            "password-reset" => admin
+                .put(format!("{base}/api/users/{user_id}"))
+                .json(&json!({"password": "replacementpass123"}))
+                .send()
+                .await
+                .unwrap(),
+            "user-delete" => admin
+                .delete(format!("{base}/api/users/{user_id}"))
+                .send()
+                .await
+                .unwrap(),
+            _ => unreachable!(),
+        };
+        assert_eq!(revoked.status(), 200, "{action}");
+        let db = registration_db(&tmp).await;
+        assert!(
+            device_token::Entity::find()
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none(),
+            "{action}"
+        );
+        assert_eq!(
+            refresh_mobile(&mobile, &base, &rotated).await.status(),
+            401,
+            "{action}"
+        );
+        assert_eq!(
+            register_mobile(&mobile, &base, &rotated).await.status(),
+            401,
+            "{action}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn refresh_never_transfers_registration_to_user_forging_installation_id() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    login_as_new_user(&admin, &base, "forged-member", "member").await;
+    let mobile = http_client();
+    let owner = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(register_mobile(&mobile, &base, &owner).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let member: Value = mobile_login(&mobile, &base, "forged-member", "memberpass", INST_ID)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let refreshed = refresh_mobile(&mobile, &base, &member).await;
+    assert_eq!(refreshed.status(), 200);
+    let member: Value = refreshed.json().await.unwrap();
+    assert_eq!(register_mobile(&mobile, &base, &member).await.status(), 403);
+    assert_eq!(
+        mobile
+            .post(format!("{base}/api/mobile/push/unregister"))
+            .bearer_auth(member["data"]["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+    assert_eq!(refresh_mobile(&mobile, &base, &owner).await.status(), 200);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+}
+
+#[tokio::test]
+async fn upload_racing_logout_cannot_restore_revoked_registration() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let mobile = http_client();
+    let first = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 200);
+    let (upload, logout) = tokio::join!(
+        register_mobile(&mobile, &base, &first),
+        mobile
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(first["data"]["access_token"].as_str().unwrap())
+            .send(),
+    );
+    assert_eq!(logout.unwrap().status(), 200);
+    assert!(matches!(upload.status().as_u16(), 200 | 401));
+    let db = registration_db(&tmp).await;
+    assert!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 401);
+}
+
+#[tokio::test]
+async fn old_login_cleanup_cannot_delete_same_users_replacement_registration() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let mobile = http_client();
+    let first = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 200);
+    let replacement = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(
+        register_mobile(&mobile, &base, &replacement).await.status(),
+        200
+    );
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    for path in ["push/unregister", "auth/logout"] {
+        assert_eq!(
+            mobile
+                .post(format!("{base}/api/mobile/{path}"))
+                .bearer_auth(first["data"]["access_token"].as_str().unwrap())
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        assert_eq!(
+            device_token::Entity::find()
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            registration
+        );
+    }
+    assert_eq!(
+        refresh_mobile(&mobile, &base, &replacement).await.status(),
+        200
+    );
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+}

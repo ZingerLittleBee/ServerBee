@@ -20,6 +20,13 @@ protocol PushNotificationManaging: AnyObject {
     /// Unregister the device token from the server. Must NOT throw — failures
     /// are logged. Local auth must still clear even if the server call fails.
     func unregister() async
+    func unregister(context: MobileAuthenticationContext?) async
+}
+
+extension PushNotificationManaging {
+    func unregister(context: MobileAuthenticationContext?) async {
+        await unregister()
+    }
 }
 
 @MainActor
@@ -29,18 +36,25 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     var deviceToken: String?
 
     private var apiClient: APIClient?
+    private var context: MobileAuthenticationContext?
+    private var acceptingRegistrations = false
+    private var uploads: [UUID: (generation: UUID, task: Task<Void, Never>)] = [:]
 
     func configure(apiClient: APIClient) {
         self.apiClient = apiClient
+        context = apiClient.captureContext()
+        acceptingRegistrations = context != nil
     }
 
     /// Request notification permission and register for remote notifications.
     func requestPermission() async {
+        let requestedContext = context
         do {
             let granted = try await UNUserNotificationCenter.current()
                 .requestAuthorization(options: [.alert, .badge, .sound])
             permissionGranted = granted
-            if granted {
+            if granted, acceptingRegistrations,
+               let requestedContext, apiClient?.isCurrent(requestedContext) == true {
                 UIApplication.shared.registerForRemoteNotifications()
             }
         } catch {
@@ -52,8 +66,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     nonisolated func didRegisterForRemoteNotifications(deviceToken data: Data) {
         let token = data.map { String(format: "%02x", $0) }.joined()
         Task { @MainActor in
-            self.deviceToken = token
-            await self.registerTokenWithServer(token)
+            self.uploadToken(token)
         }
     }
 
@@ -62,29 +75,51 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         AppLog.push.error("Registration failed: \(String(describing: error), privacy: .public)")
     }
 
-    /// Upload device token to server.
-    private func registerTokenWithServer(_ token: String) async {
-        guard let apiClient else { return }
-        do {
-            try await apiClient.postVoid("/api/mobile/push/register", body: ["device_token": token])
-        } catch {
-            AppLog.push.error("Failed to register token with server: \(String(describing: error), privacy: .public)")
+    /// Capture identity before launching asynchronous HTTP work. Each callback
+    /// belongs to the configured login, never whichever login exists on retry.
+    private func uploadToken(_ token: String) {
+        guard acceptingRegistrations, let apiClient, let context,
+              apiClient.isCurrent(context) else { return }
+        deviceToken = token
+        let id = UUID()
+        let upload = Task { @MainActor in
+            defer { self.uploads[id] = nil }
+            do {
+                try await apiClient.postVoid(
+                    "/api/mobile/push/register", body: ["device_token": token], context: context
+                )
+            } catch AuthError.staleIdentity {
+                // The previous login ended; do not retry or mutate its successor.
+            } catch {
+                AppLog.push.error("Failed to register token with server: \(String(describing: error), privacy: .public)")
+            }
         }
+        uploads[id] = (context.generation, upload)
     }
 
-    /// Unregister device token from server (called on logout).
-    /// Errors are swallowed — the device token will be re-bound on next register.
+    /// Stop accepting callbacks, drain uploads, then unregister using their
+    /// captured identity. Cancellation alone cannot retract a server-side write.
     func unregister() async {
-        guard let apiClient else {
+        await unregister(context: context)
+    }
+
+    func unregister(context capturedContext: MobileAuthenticationContext?) async {
+        let capturedClient = apiClient
+        if context?.generation == capturedContext?.generation { acceptingRegistrations = false }
+        let pending = uploads.values.filter { $0.generation == capturedContext?.generation }.map { $0.task }
+        for upload in pending { await upload.value }
+        if let capturedClient, let capturedContext {
+            do {
+                try await capturedClient.postCleanup("/api/mobile/push/unregister", context: capturedContext)
+            } catch {
+                AppLog.push.error("Failed to unregister token with server: \(String(describing: error), privacy: .public)")
+            }
+        }
+        // configure() may have installed a replacement login while we awaited.
+        if context?.generation == capturedContext?.generation {
+            context = nil
             deviceToken = nil
-            return
         }
-        do {
-            try await apiClient.postVoid("/api/mobile/push/unregister")
-        } catch {
-            AppLog.push.error("Failed to unregister token with server: \(String(describing: error), privacy: .public)")
-        }
-        deviceToken = nil
     }
 
     /// Parse a notification tap into a deep link.
