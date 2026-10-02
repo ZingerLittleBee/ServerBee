@@ -1,5 +1,9 @@
 # ServerBee VPS 探针 - 架构设计文档
 
+<!-- agent-navigation: historical -->
+
+> Historical snapshot. For current behavior, start with [source navigation](../../agents/navigation.md), [CONTEXT.md](../../../CONTEXT.md), and the accepted [ADRs](../../adr/). This record may describe superseded authentication, enrollment, capability, or routing behavior.
+
 > **服务端**: Rust (Axum + sea-orm + tokio)
 > **Agent**: Rust (共享 common crate)
 > **前端**: React 19+ SPA (Vite + TW4 + shadcn/ui + TanStack Router)

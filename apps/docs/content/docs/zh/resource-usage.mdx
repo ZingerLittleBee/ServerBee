@@ -1,77 +1,63 @@
 ---
 title: 资源开销
-description: ServerBee Agent 与 Server 的 CPU、内存、磁盘、网络运行时占用实测数据。
+description: ServerBee Agent 与 Server 的历史 CPU、内存、磁盘和网络观测记录。
 icon: Gauge
 ---
 
-本页记录 ServerBee **Agent** 与 **Server** 运行时的资源开销实测数据，涵盖 CPU、内存、磁盘和网络。磁盘（数据库）增长的详细容量规划见 [存储与容量规划](/zh/docs/storage-sizing)。
+本页保留 ServerBee **Agent** 与 **Server** 的历史资源观测记录，不代表当前版本的基准测试。数据库增长估算见[存储与容量规划](/zh/docs/storage-sizing)。
 
 <Callout type="info">
-以下数值为实测值，非估算。除非另有说明，均测于 2026-05-19，使用 v0.9.3。资源占用会随采集间隔、连接的 Agent 数量、是否启用 GPU/温度采集以及面板查询负载浮动，这里给出的是稳定的数量级参考。
+来源为本页原有的 v0.9.3 测量笔记，除另有说明外，日期为 2026-05-19。原始测试日志及二进制的具体链接方式未随笔记归档。内存和 CPU 数值是历史观测，Agent 网络用量则是按协议估算。设置资源限制前，请测量实际部署版本、分配器、Agent 数量、启用的采集器和查询负载。
 </Callout>
 
 ## Agent
 
-Agent 是轻量探针，CPU 开销可忽略，内存稳态在数十 MB 级别。
+原笔记记录的环境为：4 核 AMD EPYC 7B13 / 8 GB / Ubuntu 24.04（KVM），Agent v0.9.3，采集间隔 3 秒，启用温度采集，经 HTTPS WebSocket 上报至远端 Server。
 
-| 资源 | 冷启动（~90s） | 稳态（运行 8h） | 说明 |
-|------|--------------|----------------|------|
-| 内存（systemd cgroup，真实私有内存） | ~4.3 MB，峰值 ~5.1 MB | **~27 MB，峰值 ~28 MB** | 最准确的内存口径 |
-| 内存（`ps` RSS，含共享库映射） | ~10 MB | **~34 MB** | 偏高估，含共享库 |
-| CPU | ~0.7%（单核） | ~0.5%（单核） | 稳定，含每 3s 采集的瞬时尖峰 |
-| 线程数 | 10 | 9–10 | tokio runtime |
-| 二进制大小 | ~11 MB | — | linux-amd64 release |
-| 网络 | 每个采集间隔（默认 3s）一条 `SystemReport` JSON + 周期性 ping/pong；数量级 ≤ 1–2 KB/s | — | 随采集间隔与启用指标项变化 |
+| 资源 | 冷启动（约 90 秒） | 运行 8 小时后 | 范围 |
+|------|-------------------|---------------|------|
+| 内存（systemd cgroup） | ~4.3 MB，峰值 ~5.1 MB | ~27 MB，峰值 ~28 MB | Cgroup 统计，与进程 RSS 口径不同 |
+| 内存（`ps` RSS） | ~10 MB | ~34 MB | 进程驻留内存，包含共享映射 |
+| CPU | ~0.7%（单核） | ~0.5%（单核） | 当时的采集负载 |
+| 线程数 | 10 | 9–10 | 当时的 tokio runtime |
+| 二进制大小 | ~11 MB | — | 历史 linux-amd64 二进制 |
+| 网络 | 估算 ≤ 1–2 KB/s | — | 每 3 秒一条 `SystemReport` JSON，加上 ping/pong；随指标项变化 |
 
-测量环境：4 核 AMD EPYC 7B13 / 8 GB / Ubuntu 24.04（KVM），Agent v0.9.3，采集间隔 3s，启用温度采集，经 HTTPS WebSocket 上报至远端 Server。
-
-<Callout type="warn">
-内存从冷启动 ~5 MB 在 8 小时内升至 ~27 MB（8h 时当前值 ≈ 峰值，**疑似已接近平台，待 24h 数据确认**）。与 Server 同源：Agent 也是 Rust + tokio，glibc 默认的多 arena 分配器会把已释放内存攒在进程内不归还 OS（sysinfo 每 3s 采集产生大量小分配）。这不是代码层泄漏。若需进一步压低稳态内存，可给 Agent 的 systemd 服务设置 `MALLOC_ARENA_MAX=2`。
-</Callout>
-
-对比参考：同类常驻监控 Agent 中，Netdata 常达数十至上百 MB，Telegraf ~30–50 MB，node_exporter ~15–20 MB。ServerBee Agent 稳态 ~27 MB 内存 + &lt;1% CPU，仍属轻量一档。
+八小时观测期间内存有所增长。仅凭这些读数无法确认长期平台，也无法区分分配器驻留与内存泄漏。主机操作系统不能证明二进制实际使用的 libc。
 
 ## Server
 
-Server 内存开销主要受连接的 Agent 数量、面板/API 查询负载和数据保留策略影响。
+### 历史 Railway 观测
 
-### 生产参考（Railway，真实负载）
+原页面记录过一个接入少量 Agent、环境中存在 `MALLOC_ARENA_MAX=2` 的实例，内存约 140–170 MB；另一次运行记录为 2–3 天后达到 800 MB–1 GB。笔记没有记录具体构建链接方式、Agent 数量、查询负载或受控对比。这些历史读数不能证明环境变量导致了差异，也不构成当前版本的内存目标。
 
-接入少量 Agent 的生产实例，在配置 `MALLOC_ARENA_MAX=2`（抑制 glibc 多 arena 内存驻留）后：
+### 历史自托管空载观测
 
-| 资源 | 实测值 | 说明 |
+v0.9.3 笔记描述了同一 VPS 上近乎空载、没有活跃 Agent 连接的 Server：
+
+| 资源 | 观测值 | 范围 |
 |------|--------|------|
-| 内存 | 稳态 ~140–170 MB，长时间平稳无持续爬升 | 健康水位 |
+| 内存（systemd cgroup） | ~15 MB，峰值 ~23.8 MB | 历史空载观测，不代表带负载的资源需求 |
+| 线程数 | 7 | 当时的 tokio runtime |
+| CPU | 近乎为 0 | 空载负载 |
+| 二进制大小 | ~47 MB | 历史 linux-amd64 二进制，内嵌前端 SPA |
 
-<Callout type="warn">
-未设置 `MALLOC_ARENA_MAX=2`（或未改用 jemalloc）时，glibc 默认的多 arena 分配器会把已释放内存攒在进程内不归还 OS，长期运行 RSS 会持续爬升（观测到 2–3 天涨至 ~800 MB–1 GB）。这并非代码层内存泄漏，但部署 Server 时建议设置该环境变量。
-</Callout>
+### 分配器与构建范围
 
-<Callout type="warn">
-`MALLOC_ARENA_MAX` 只对 glibc 生效。官方 Linux release 二进制和 Docker 镜像是静态 musl 构建，该变量对其无效。`v1.0.0-beta.1` 的 release 二进制链接了一个不会复用跨线程释放内存的分配器，即使空载，Server 内存也会以每天约 20 MB 的速度增长。请升级到 `v1.0.0-beta.2` 或更新版本。
-</Callout>
+`MALLOC_ARENA_MAX` 适用于 glibc 分配器。官方 Linux release 二进制和 Docker 镜像使用 musl，该变量对其无效，因此标准部署示例不设置它。自定义 glibc 构建应根据自身测量评估分配器行为，不能套用旧 Railway 数值。
 
-### 自托管空载参考
-
-同一 VPS 上近乎空载（无活跃 Agent 连接）的 Server 实例：
-
-| 资源 | 实测值 | 说明 |
-|------|--------|------|
-| 内存（systemd cgroup） | ~15 MB，峰值 ~23.8 MB | 空载下限参考 |
-| 线程数 | 7 | tokio runtime |
-| CPU | 空载近乎为 0 | 随 Agent 数与查询负载上升 |
-| 二进制大小 | ~47 MB | linux-amd64 release，内嵌前端 SPA |
+另一项发布工具链回归影响了 `v1.0.0-beta.1`：记录中的空载 Server 因 Zig 0.16 内置分配器的跨线程释放行为，每天增长约 20 MB。发布工作流现已固定 Zig 0.15.2，修正随 `v1.0.0-beta.2` 发布。原因、观测范围和复现方法见[发布版本内存浸泡流程](https://github.com/ZingerLittleBee/ServerBee/blob/main/tests/manual/server-memory-soak.md)。这与上方 v0.9.3 数值是不同的观测。请使用当前版本，并在实际部署构建上排查持续增长。
 
 ### 磁盘
 
-Server 磁盘占用来自 SQLite 数据库，随服务器数量、启用功能和保留策略增长。完整的 30 天容量公式与场景目录见 [存储与容量规划](/zh/docs/storage-sizing)。生产环境请在数据库基础大小上额外预留 10%–20% 作为 WAL 与突发写入的缓冲。
+Server 磁盘占用包括 SQLite、上传的品牌图片、下载的 GeoIP/ASN MMDB 文件和配置。数据库增长取决于 Agent 数量、启用功能和保留策略。数据库估算见[存储与容量规划](/zh/docs/storage-sizing)，SQLite 之外的文件见[备份与恢复](/zh/docs/deployment#persistent-data)。除基础数据库外，还需为 WAL、突发写入及完整备份预留空间。
 
 ## 注意事项
 
-- Railway 内存数值依赖已设置 `MALLOC_ARENA_MAX=2`，未设置时不适用。
-- 自托管 Server 数值测于近乎空载状态，**不代表**大量 Agent 或高查询负载下的占用，仅作下限参考。
-- Agent 网络用量为按协议行为估算的数量级，实际值随采集间隔与启用的指标项变化。
-- 所有数值均为数量级参考，用于容量规划与异常判断（关注**趋势**而非绝对值：稳态平稳 = 健康，持续爬升不回落 = 需排查）。
+- 历史空载 Server 读数不代表大量 Agent 或高查询负载下的占用。
+- Cgroup 内存与进程 RSS 统计范围不同，应按相同口径比较。
+- Agent 网络用量是估算，没有对应的抓包基准测试。
+- 八小时内读数平稳不能证明长期稳定。排查异常增长时应同时考虑负载与分配器。
 
 ## 相关文档
 

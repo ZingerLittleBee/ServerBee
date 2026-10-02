@@ -14,6 +14,27 @@ import {
   recordRecentCommand
 } from './make-menu'
 
+describe('command discovery', () => {
+  it('resolves every documented Make target to a command', async () => {
+    const makefile = await readFile(new URL('../Makefile', import.meta.url), 'utf8')
+    const targets = makefile.split('COMMAND_TARGETS :=')[1]?.split('.PHONY:')[0]
+    expect(targets).toBeDefined()
+    const keys = [...(targets ?? '').matchAll(/^\s+([a-z][a-z-]*)\s*(?:\\)?$/gm)].map((match) => match[1])
+    expect(keys.length).toBeGreaterThan(0)
+    for (const key of keys) {
+      expect(getCommandByKey(key), `Make target ${key} has no menu command`).toBeDefined()
+    }
+  })
+
+  it('keeps scaffold database tools out of the default menu', () => {
+    expect(getCommandByKey('db-local')?.category).toBe('Scaffold')
+    expect(getCommandByKey('db-pull')?.category).toBe('Database')
+    for (const key of FEATURED_COMMAND_KEYS) {
+      expect(getCommandByKey(key)?.category).not.toBe('Scaffold')
+    }
+  })
+})
+
 describe('orderCommandsForMenu', () => {
   it('prioritizes recent featured commands before the default order', () => {
     const commands = FEATURED_COMMAND_KEYS.map((key) => {

@@ -1,5 +1,26 @@
 # 网络质量页面测试用例
 
+## Current route checklist
+
+Use [ADR-0001](../docs/adr/0001-network-detail-as-server-tab.md) and the [navigation policy](../apps/web/src/lib/server-detail-nav.ts) for current routes. Admin network detail lives in the server detail Network tab. The standalone admin route exists only as a compatibility redirect. Complete the setup in [README.md](README.md), then record the candidate commit, date, and result for each case below. These cases have not been run as part of the navigation-document update.
+
+| Case | Steps | Expected result | Result |
+| --- | --- | --- | --- |
+| Admin overview link | Open `/network` and select a server card | Opens `/servers/:id?tab=network&range=1h` | Not run |
+| Old admin bookmark | Open `/network/:id?range=24` | Replaces the old route with `/servers/:id?tab=network&range=24h` | Not run |
+| Missing/invalid old range | Open `/network/:id`, then `/network/:id?range=unknown` | Redirects to the Network tab with `range=realtime` | Not run |
+| Shared time range | Open `/servers/:id?tab=network&range=6h`, change the range, then switch to Metrics and back | Both tabs use the same metrics-style URL range key | Not run |
+| Reload and history | Reload a Network-tab URL, then use Back/Forward after changing the tab/range | Restores the URL-selected tab and range | Not run |
+| Public canonical tab | With `show_server_detail=true` and `show_network=true`, open `/status/network/:id` | Opens `/status/server/:id?tab=network` | Not run |
+| Public fallback | With `show_server_detail=false` and `show_network=true`, open `/status/network/:id` | Renders the standalone redacted network summary without redirecting into a disabled server detail | Not run |
+| Public network hidden | With `show_network=false`, open `/status/network/:id` | Returns to `/status` | Not run |
+
+Automated route coverage lives in [legacy redirect tests](../apps/web/src/routes/_authed/network/$server-id.test.tsx) and [public fallback tests](../apps/web/src/routes/public-network-detail.test.tsx). Run them through the web Vitest entry point when changing route behavior.
+
+## Historical functional checklist
+
+The detailed cases and checked statuses below record the earlier standalone network UI. They retain old routes, range values, and controls for historical reference; their original candidate/date was not recorded. Use the current route checklist above and revalidate applicable feature cases against current source before claiming a pass.
+
 ## 前置条件
 
 > 通用环境搭建参照 [README.md](README.md) 中的「启动本地环境」部分。以下为完整独立步骤：

@@ -29,7 +29,7 @@ docker compose up -d
 
 默认地址：`http://localhost:9527`，管理员用户名：`admin`
 
-> **注意**：`SERVERBEE_SERVER_URL` 应设置为 HTTP 基础地址（如 `http://127.0.0.1:9527`），Agent 会自动拼接 `/api/agent/register` 和 `/api/agent/ws?token=` 路径。
+> **Connection contract:** set `SERVERBEE_SERVER_URL` to the HTTP base URL (for example, `http://127.0.0.1:9527`). The Agent uses `/api/agent/register` for enrollment and `/api/agent/ws` with its run token in `Authorization: Bearer` for WebSocket admission. Query tokens are a deprecated server compatibility fallback, not the current Agent connection format.
 
 ## 测试文件索引
 
@@ -42,7 +42,7 @@ docker compose up -d
 | [agent-enrollment-smoke.md](agent-enrollment-smoke.md) | Agent Authority 生命周期冒烟测试 | `/api/servers`, `/api/agent/register`, `/api/servers/*/agent-authority` |
 | [manual/agent-reenrollment-e2e.md](manual/agent-reenrollment-e2e.md) | 真实 Linux VPS 的 graceful/emergency 重新接入 | Server 详情、Agent 进程、WebSocket |
 | [ping-tasks.md](ping-tasks.md) | Ping 探测任务管理 | `/settings/ping-tasks` |
-| [network-quality.md](network-quality.md) | 网络质量监控 | `/network`, `/network/:id`, `/settings/network-probes` |
+| [network-quality.md](network-quality.md) | 网络质量监控 | `/network`, `/servers/:id?tab=network`, `/settings/network-probes`; legacy `/network/:id` redirects |
 | [docker.md](docker.md) | Docker 容器监控 | `/servers/:id/docker` |
 | [disk-io.md](disk-io.md) | 磁盘 I/O 监控 | `/servers/:id` (历史模式) |
 | [traffic.md](traffic.md) | 月度流量统计 | `/traffic`, `/servers/:id` (Traffic tab) |
@@ -73,6 +73,8 @@ docker compose up -d
 
 ## 页面渲染快速验证
 
+Existing checked statuses below record prior manual runs without a pinned candidate or date. Re-run the relevant cases and record that evidence before treating them as verification of a current change.
+
 | 功能 | 路由 | 状态 |
 |------|------|------|
 | 登录 | `/login` | ✅ |
@@ -80,7 +82,7 @@ docker compose up -d
 | Servers 列表 | `/servers` | ✅ |
 | 服务器详情 | `/servers/:id` | ✅ |
 | 网络质量总览 | `/network` | ✅ |
-| 网络质量详情 | `/network/:id` | ✅ |
+| Network detail tab | `/servers/:id?tab=network` | — |
 | Docker 监控 | `/servers/:id/docker` | — |
 | 流量总览 | `/traffic` | ✅ |
 | 流量 Traffic Tab | `/servers/:id` (Traffic tab) | ✅ |

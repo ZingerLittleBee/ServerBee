@@ -67,6 +67,27 @@ const COMMANDS: CommandDefinition[] = [
     command: 'bun run check-types'
   },
   {
+    key: 'check-agent-navigation',
+    name: 'check:agent-navigation',
+    category: 'Tooling',
+    description: 'Check current agent pointers and historical document labels',
+    command: 'bun run check:agent-navigation'
+  },
+  {
+    key: 'check-integration-targets',
+    name: 'check:integration-targets',
+    category: 'Tooling',
+    description: 'Check every server integration suite is selected once in CI',
+    command: 'bun run check:integration-targets'
+  },
+  {
+    key: 'test-tooling',
+    name: 'test:tooling',
+    category: 'Tooling',
+    description: 'Run repository navigation, CI wiring, and command-menu tests',
+    command: 'bun run test:tooling'
+  },
+  {
     key: 'lint',
     name: 'lint',
     category: 'Workspace',
@@ -200,6 +221,27 @@ const COMMANDS: CommandDefinition[] = [
     command: 'bun --filter @serverbee/docs types:check'
   },
   {
+    key: 'docs-check-contracts',
+    name: 'docs:check:contracts',
+    category: 'Docs',
+    description: 'Check bilingual links and source-backed documentation contracts',
+    command: 'bun --filter @serverbee/docs check:contracts'
+  },
+  {
+    key: 'docs-check-routes',
+    name: 'docs:check:routes',
+    category: 'Docs',
+    description: 'Check docs HTTP routes (SERVERBEE_DOCS_BASE_URL)',
+    command: 'bun --filter @serverbee/docs check:routes'
+  },
+  {
+    key: 'docs-check-browser',
+    name: 'docs:check:browser',
+    category: 'Docs',
+    description: 'Check hydration and scroll restoration in Chromium (BASE_URL)',
+    command: 'bun --filter @serverbee/docs check:browser'
+  },
+  {
     key: 'docs-lint',
     name: 'docs:lint',
     category: 'Docs',
@@ -224,74 +266,71 @@ const COMMANDS: CommandDefinition[] = [
   {
     key: 'db-local',
     name: 'db:local',
-    category: 'Database',
-    description: 'Start the local Turso database',
-    command: 'bun run db:local',
-    featured: true
+    category: 'Scaffold',
+    description: 'Start the unused packages/db Turso scaffold',
+    command: 'bun run db:local'
   },
   {
     key: 'db-push',
     name: 'db:push',
-    category: 'Database',
-    description: 'Push the Drizzle schema to the database',
+    category: 'Scaffold',
+    description: 'Push the unused packages/db Drizzle schema',
     command: 'bun run db:push'
   },
   {
     key: 'db-generate',
     name: 'db:generate',
-    category: 'Database',
-    description: 'Generate Drizzle migration files',
-    command: 'bun run db:generate',
-    featured: true
+    category: 'Scaffold',
+    description: 'Generate migrations for the unused packages/db scaffold',
+    command: 'bun run db:generate'
   },
   {
     key: 'db-migrate',
     name: 'db:migrate',
-    category: 'Database',
-    description: 'Run pending Drizzle migrations',
-    command: 'bun run db:migrate',
-    featured: true
+    category: 'Scaffold',
+    description: 'Run migrations for the unused packages/db scaffold',
+    command: 'bun run db:migrate'
   },
   {
     key: 'db-studio',
     name: 'db:studio',
-    category: 'Database',
-    description: 'Open Drizzle Studio',
+    category: 'Scaffold',
+    description: 'Open Drizzle Studio for the unused packages/db scaffold',
     command: 'bun run db:studio'
   },
   {
     key: 'db-local-direct',
     name: 'db:local:direct',
-    category: 'Database',
-    description: 'Start the local Turso database directly from the package',
+    category: 'Scaffold',
+    description: 'Start the unused packages/db Turso scaffold directly',
     command: 'bun --filter @serverbee/db db:local'
   },
   {
     key: 'db-push-direct',
     name: 'db:push:direct',
-    category: 'Database',
-    description: 'Push the Drizzle schema directly from the package',
+    category: 'Scaffold',
+    description: 'Push the unused packages/db Drizzle schema directly',
     command: 'bun --filter @serverbee/db db:push'
   },
   {
     key: 'db-generate-direct',
     name: 'db:generate:direct',
-    category: 'Database',
-    description: 'Generate Drizzle migrations directly from the package',
+    category: 'Scaffold',
+    description: 'Generate unused packages/db scaffold migrations directly',
     command: 'bun --filter @serverbee/db db:generate'
   },
   {
     key: 'db-migrate-direct',
     name: 'db:migrate:direct',
-    category: 'Database',
-    description: 'Run Drizzle migrations directly from the package',
+    category: 'Scaffold',
+    description: 'Run unused packages/db scaffold migrations directly',
     command: 'bun --filter @serverbee/db db:migrate'
   },
   {
     key: 'db-studio-direct',
     name: 'db:studio:direct',
-    category: 'Database',
-    description: 'Open Drizzle Studio directly from the package',
+    category: 'Scaffold',
+    description: 'Open Drizzle Studio for the unused packages/db scaffold directly',
     command: 'bun --filter @serverbee/db db:studio'
   },
   {

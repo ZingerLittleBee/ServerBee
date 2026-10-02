@@ -7,6 +7,22 @@ an upgrade can break them without a type error. Check Chrome, Safari and Firefox
 
 ## Setup
 
+The reproducible production preview and browser runner are documented in
+[`apps/docs/README.md`](../../apps/docs/README.md). Run its automated scenarios first:
+
+```bash
+cd apps/docs
+bun run build
+bun run preview
+# In a second terminal in apps/docs:
+bun x playwright install chromium
+BASE_URL=http://127.0.0.1:4000 bun run check:browser
+```
+
+The runner covers hydration, reloads, long-page restoration, and several fragment history paths. Continue with the
+remaining manual cases below on Chrome, Safari, and Firefox; passing Chromium does not establish the other engines.
+For iterative development, you can instead start:
+
 ```bash
 cd apps/docs && bun run dev
 ```

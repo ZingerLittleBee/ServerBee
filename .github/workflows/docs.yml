@@ -14,6 +14,11 @@ on:
       - 'apps/web/src/components/server/add-server-dialog.tsx'
       - 'Cargo.toml'
       - 'crates/common/src/constants.rs'
+      - 'crates/server/src/config.rs'
+      - 'crates/server/src/router/api/brand.rs'
+      - 'crates/server/src/router/api/setting.rs'
+      - 'crates/server/src/service/geoip.rs'
+      - 'crates/server/src/service/asn.rs'
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
@@ -23,6 +28,7 @@ on:
       - 'bun.lock'
       - 'package.json'
       - 'patches/**'
+      - 'tests/manual/docs-scroll-restoration.md'
   pull_request:
     branches: [main]
     paths:
@@ -36,6 +42,11 @@ on:
       - 'apps/web/src/components/server/add-server-dialog.tsx'
       - 'Cargo.toml'
       - 'crates/common/src/constants.rs'
+      - 'crates/server/src/config.rs'
+      - 'crates/server/src/router/api/brand.rs'
+      - 'crates/server/src/router/api/setting.rs'
+      - 'crates/server/src/service/geoip.rs'
+      - 'crates/server/src/service/asn.rs'
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
@@ -45,6 +56,7 @@ on:
       - 'bun.lock'
       - 'package.json'
       - 'patches/**'
+      - 'tests/manual/docs-scroll-restoration.md'
 
 concurrency:
   group: docs-${{ github.ref }}
@@ -52,12 +64,11 @@ concurrency:
 
 jobs:
   docs:
-    name: Build and route contracts
+    name: Build, route, and browser contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The route checks run against the Vite dev server, which runs on Node. On Node 26 it drops every response header
-      # the app sets, such as Content-Type and Location, so pin a release the checks pass on.
+      # Match the generated Vercel function runtime and the local production preview.
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -87,11 +98,20 @@ jobs:
         working-directory: apps/docs
         run: bun run build
 
-      - name: Smoke-test localized routes
+      - name: Install browser
+        working-directory: apps/docs
+        run: bun x playwright install --with-deps chromium
+
+      - name: Check production routes and browser navigation
         working-directory: apps/docs
         shell: bash
         run: |
-          bun run dev --host 127.0.0.1 > /tmp/serverbee-docs.log 2>&1 &
+          node scripts/start-production.ts > /tmp/serverbee-docs.log 2>&1 &
           docs_pid=$!
           trap 'kill "$docs_pid" 2>/dev/null || true' EXIT
-          bun run check:routes
+          SERVERBEE_DOCS_BASE_URL=http://127.0.0.1:4000 bun run check:routes
+          BASE_URL=http://127.0.0.1:4000 bun run check:browser
+
+      - name: Show preview log on failure
+        if: failure()
+        run: cat /tmp/serverbee-docs.log 2>/dev/null || true

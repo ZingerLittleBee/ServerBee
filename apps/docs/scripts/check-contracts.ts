@@ -27,6 +27,8 @@ const hslNotation = /^hsla?\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%(?:,\s*([\d.]+)(%
 const cssImport = /@import\s+([^;]+);/g
 const cssImportTarget = /^(["'])([^"']+)\1$/
 const packagePath = /^((?:@[^/]+\/)?[^/]+)\/(.+)$/
+const shellCodeBlock = /^```(?:bash|sh)\n([\s\S]*?)^```/gm
+const allocatorAssignment = /(?:MALLOC_ARENA_MAX|Environment=MALLOC_ARENA_MAX)=/
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -619,6 +621,35 @@ for (const copyText of landingParts.strings) {
   }
 }
 
+const [serverConfig, brandRouter, geoipService, asnService, settingsRouter] = await Promise.all(
+  [
+    'crates/server/src/config.rs',
+    'crates/server/src/router/api/brand.rs',
+    'crates/server/src/service/geoip.rs',
+    'crates/server/src/service/asn.rs',
+    'crates/server/src/router/api/setting.rs'
+  ].map((path) => text(join(repository, path)))
+)
+const databaseFilename = serverConfig.match(/fn default_db_path\(\)[^{]*\{\s*"([^"]+)"/)?.[1]
+const brandDirectory = brandRouter.match(/fn brand_dir\([\s\S]*?\.join\("([^"]+)"\)/)?.[1]
+const countryFilename = geoipService.match(/pub const DBIP_FILENAME[^=]*=\s*"([^"]+)"/)?.[1]
+const asnFilename = asnService.match(/pub const DBIP_ASN_FILENAME[^=]*=\s*"([^"]+)"/)?.[1]
+invariant(
+  databaseFilename && brandDirectory && countryFilename && asnFilename,
+  'Unable to resolve persistent asset paths'
+)
+const persistentAssets = [brandDirectory, countryFilename, asnFilename]
+const backupHandler = settingsRouter.split('pub async fn create_backup(')[1]?.split('pub async fn restore_backup(')[0]
+invariant(
+  backupHandler?.includes('VACUUM INTO') && backupHandler.includes('tokio::fs::read(&backup_path)'),
+  'The backup export implementation changed; review the documented database-only scope'
+)
+const linuxReleaseTargets = [...releaseWorkflow.matchAll(/target:\s*(\S+-unknown-linux-\S+)/g)].map((match) => match[1])
+invariant(
+  linuxReleaseTargets.length > 0 && linuxReleaseTargets.every((target) => target.endsWith('-musl')),
+  'Linux release linkage changed; review the allocator guidance'
+)
+
 for (const locale of locales) {
   const deployment = await text(join(contentRoot, locale, 'deployment.mdx'))
   invariant(
@@ -628,6 +659,71 @@ for (const locale of locales) {
   invariant(
     deployment.includes('http://127.0.0.1:9527/healthz'),
     `${locale}/deployment.mdx uses a fragile Docker health URL`
+  )
+  const inventoryAnchor = deployment.indexOf('[#persistent-data]')
+  invariant(inventoryAnchor >= 0, `${locale}/deployment.mdx has no persistent-data inventory`)
+  const inventory = firstMarkdownTable(deployment.slice(inventoryAnchor))
+  const separateAssetLabel = locale === 'en' ? 'No' : '否'
+  for (const asset of persistentAssets) {
+    const path = `{data_dir}/${asset}${asset === brandDirectory ? '/' : ''}`
+    const row = inventory.find((cells) => cells[1]?.includes(`\`${path}\``))
+    invariant(row?.[2] === separateAssetLabel, `${locale}/deployment.mdx omits the separate persistent asset ${path}`)
+  }
+  for (const configPath of ['geoip.mmdb_path', 'asn.mmdb_path', '/opt/serverbee/etc/']) {
+    invariant(
+      inventory.some((cells) => cells[1]?.includes(configPath) && cells[2] === separateAssetLabel),
+      `${locale}/deployment.mdx omits the separate configuration path ${configPath}`
+    )
+  }
+  const databaseRow = inventory.find((cells) => cells[1]?.includes(`{data_dir}/${databaseFilename}`))
+  invariant(
+    databaseRow?.[2] === (locale === 'en' ? 'Yes' : '是'),
+    `${locale}/deployment.mdx misstates database backup scope`
+  )
+  const prose = normalizedProse(deployment)
+  const exportScope = locale === 'en' ? /export\w* only (?:the )?database/i : /仅导出数据库/
+  const restoreScope = locale === 'en' ? /restore\w* only (?:the )?database/i : /仅恢复数据库/
+  invariant(
+    prose.includes('/api/settings/backup') && exportScope.test(prose),
+    `${locale}/deployment.mdx does not explain the database-only backup API`
+  )
+  invariant(
+    prose.includes('/api/settings/restore') && restoreScope.test(prose),
+    `${locale}/deployment.mdx does not explain the database-only restore API`
+  )
+  const shellExamples = [...deployment.matchAll(shellCodeBlock)].map((match) => match[1])
+  invariant(
+    shellExamples.some(
+      (code) =>
+        code.includes('/assets.tar.gz') &&
+        code.includes(`--exclude='./${databaseFilename}*'`) &&
+        code.includes('-C /opt/serverbee/data .') &&
+        code.includes('/config.tar.gz')
+    ),
+    `${locale}/deployment.mdx has no asset/configuration archive paired with its database backup`
+  )
+  invariant(
+    shellExamples.some(
+      (code) =>
+        code.includes('tar xzf "$SERVERBEE_RESTORE_DIR/assets.tar.gz"') &&
+        code.includes('tar xzf "$SERVERBEE_RESTORE_DIR/config.tar.gz"')
+    ),
+    `${locale}/deployment.mdx does not restore separate assets and configuration`
+  )
+  invariant(
+    !allocatorAssignment.test(deployment),
+    `${locale}/deployment.mdx sets a glibc allocator option in the standard musl deployment`
+  )
+  const resourceUsage = normalizedProse(await text(join(contentRoot, locale, 'resource-usage.mdx')))
+  const muslScope = locale === 'en' ? /musl.{0,100}(?:no effect|does not affect)/i : /musl.{0,60}(?:无效|不生效)/i
+  const historicalScope = locale === 'en' ? /historical/i : /历史/
+  invariant(
+    muslScope.test(resourceUsage) && resourceUsage.includes('glibc') && resourceUsage.includes('MALLOC_ARENA_MAX'),
+    `${locale}/resource-usage.mdx does not distinguish allocator/build scope`
+  )
+  invariant(
+    historicalScope.test(resourceUsage) && resourceUsage.includes('v0.9.3'),
+    `${locale}/resource-usage.mdx presents legacy observations without their historical version scope`
   )
 }
 
