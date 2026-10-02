@@ -67,11 +67,11 @@ interface Places {
   standIns: string
 }
 
-// The halves of the sidebar and, on a narrow screen, where the sidebar is a drawer, the drawer, with the buttons that
-// show and hide the sidebar: one in each of its halves and, where it is a drawer, one in the header and one in the
-// drawer.
+// The halves of the sidebar and, on a narrow screen, where the sidebar is a drawer, the drawer and the header, which
+// shows the sidebar's title link, with the buttons that show and hide the sidebar: one in each of its halves and,
+// where it is a drawer, one in the header and one in the drawer.
 const sidebar: Places = {
-  holders: '#nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]',
+  holders: '#nd-subnav, #nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]',
   standIns: '[aria-controls="nd-sidebar"], [aria-controls="nd-sidebar-mobile"]'
 }
 // The table of contents, beside the page on a wide screen and in a popover above it otherwise, with the button that
@@ -177,10 +177,10 @@ function targetOf(element: HTMLElement): Target {
 }
 
 /**
- * The same control in another of the parts holding it: in the docked sidebar for one of the drawer, and back, once the
- * window is widened or narrowed past the width where the sidebar becomes a drawer, beside the page for a link of the
- * table of contents' popover, and back, or in a part that mounted again while the dialog was open, as the docked
- * sidebar does once the window is narrowed and widened again, or after Back and Forward.
+ * The same control in another of the parts holding it: in the docked sidebar for one of the drawer or the header, and
+ * back, once the window is widened or narrowed past the width where the sidebar becomes a drawer, beside the page for a
+ * link of the table of contents' popover, and back, or in a part that mounted again while the dialog was open, as the
+ * docked sidebar does once the window is narrowed and widened again, or after Back and Forward.
  */
 function copiesOf(element: HTMLElement, { holders }: Places): HTMLElement[] {
   const controls = document.querySelectorAll<HTMLElement>(`:is(${holders}) ${element.localName}`)
