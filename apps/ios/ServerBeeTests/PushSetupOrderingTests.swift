@@ -151,9 +151,9 @@ final class PushSetupOrderingTests: XCTestCase {
     private func login(_ auth: AuthManager, server: String = "https://ordering.test", user: String = "alice") {
         auth.setServerUrl(server)
         auth.handleLoginResponse(MobileTokenResponse(
-            accessToken: "access-\(server)-\(user)", accessExpiresInSecs: 900,
-            refreshToken: "refresh-\(server)-\(user)", refreshExpiresInSecs: 3600,
-            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"), revocationToken: "proof-\(server)-\(user)"
+            accessToken: "access-\(UUID().uuidString)", accessExpiresInSecs: 900,
+            refreshToken: "refresh-\(UUID().uuidString)", refreshExpiresInSecs: 3600,
+            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"), revocationToken: "proof-\(UUID().uuidString)"
         ))
     }
     private func manager(_ auth: AuthManager, system: TestPushSystem, relay: TestPushRelay) -> PushNotificationManager {
@@ -339,6 +339,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let restored = AuthManager()
         await restored.initialize()
         XCTAssertTrue(restored.isAuthenticated)
+        XCTAssertEqual(restored.captureContext()?.pushScope, previous.captureContext()?.pushScope)
         let system = TestPushSystem()
         system.status = .notDetermined
         system.permissionHook = { system.status = .authorized }
@@ -394,6 +395,8 @@ extension PushSetupOrderingTests {
         let auth = AuthManager()
         login(auth)
         let originalGeneration = auth.authenticationGeneration
+        let originalScope = auth.captureContext()?.pushScope
+        XCTAssertNotNil(originalScope)
         let system = TestPushSystem()
         let relay = TestPushRelay()
         let manager = manager(auth, system: system, relay: relay)
@@ -416,6 +419,9 @@ extension PushSetupOrderingTests {
         auth.clearAuth()
         login(auth, server: server, user: user)
         XCTAssertNotEqual(auth.authenticationGeneration, originalGeneration)
+        let replacementScope = auth.captureContext()?.pushScope
+        XCTAssertNotNil(replacementScope)
+        XCTAssertNotEqual(replacementScope, originalScope)
         manager.configure(apiClient: APIClient(authManager: auth))
         OrderedSetupURLProtocol.fixture = replacement
         system.status = .notDetermined

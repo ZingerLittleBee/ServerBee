@@ -5,6 +5,7 @@ import XCTest
 private final class SetupHTTPFixture: @unchecked Sendable {
     private let lock = NSLock()
     private var setup = PushSetupTestData.response(enabled: false, revision: 0)
+    private var revision: Int64 = 0
     private var saveStatus = 200
     private var registerStatus = 200
     private var requests: [URLRequest] = []
@@ -17,8 +18,16 @@ private final class SetupHTTPFixture: @unchecked Sendable {
 
     func failSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 503 }
     func setRegistrationStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; registerStatus = value }
-    func confirm() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response(registered: true, revision: 2) }
-    func enable() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response() }
+    func confirm() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response(registered: true, revision: revision) }
+    func enable() {
+        lock.lock(); defer { lock.unlock() }
+        revision = 1
+        setup = PushSetupTestData.response(revision: revision)
+    }
+    func invalidateGrant() {
+        lock.lock(); defer { lock.unlock() }
+        setup = PushSetupTestData.response(registered: false, revision: revision)
+    }
     func registeredGrants() -> [String] { lock.lock(); defer { lock.unlock() }; return grantIDs }
     func snapshot() -> [URLRequest] { lock.lock(); defer { lock.unlock() }; return requests }
 
@@ -35,11 +44,25 @@ private final class SetupHTTPFixture: @unchecked Sendable {
         case ("/api/mobile/push/settings", "GET"): return (200, setup)
         case ("/api/mobile/push/settings", "PUT"):
             if saveStatus != 200 { return (saveStatus, Data(#"{"error":{"message":"fixture save rejected"}}"#.utf8)) }
-            setup = PushSetupTestData.response()
+            let body = PushSetupTestData.body(request)
+            guard let expected = body["expected_revision"] as? NSNumber, expected.int64Value == revision,
+                  let preferences = body["preferences"] as? [String: Any], let enabled = preferences["enabled"] as? Bool else {
+                return (409, Data(#"{"error":{"message":"fixture save revision or preferences invalid"}}"#.utf8))
+            }
+            revision = expected.int64Value + 1
+            setup = PushSetupTestData.response(enabled: enabled, revision: revision)
             return (200, setup)
         case ("/api/mobile/push/verified-register", "POST"):
             if let grant = PushSetupTestData.body(request)["grant_id"] as? String { grantIDs.append(grant) }
-            if registerStatus == 200 || registerStatus == -2 { setup = PushSetupTestData.response(registered: true, revision: 2) }
+            if registerStatus == 200 || registerStatus == -2 {
+                guard let expected = PushSetupTestData.body(request)["expected_revision"] as? NSNumber,
+                      expected.int64Value == revision else {
+                    registrationCallback?()
+                    return (409, Data(#"{"error":{"message":"fixture registration revision invalid"}}"#.utf8))
+                }
+                revision = expected.int64Value + 1
+                setup = PushSetupTestData.response(registered: true, revision: revision)
+            }
             registrationCallback?()
             return (registerStatus == -2 ? -1 : registerStatus, setup)
         default: return (200, Data(#"{"data":"ok"}"#.utf8))
@@ -311,6 +334,9 @@ final class NotificationSetupTests: XCTestCase {
         }
     }
 
+}
+
+extension NotificationSetupTests {
     func testLostRelayRenewalResponseCannotLeaveSetupConfirmed() async {
         let fixture = SetupHTTPFixture()
         fixture.enable()
@@ -327,22 +353,29 @@ final class NotificationSetupTests: XCTestCase {
         await fulfillment(of: [admitted], timeout: 3)
         await manager.waitForPendingRegistrations()
         XCTAssertEqual(manager.confirmed?.registered, true)
+        XCTAssertEqual(manager.confirmed?.revision, 2)
         relay.registerHook = { throw URLError(.networkConnectionLost) }
         await manager.retry()
         await manager.waitForPendingRegistrations()
         XCTAssertEqual(manager.confirmed?.registered, false)
+        XCTAssertEqual(manager.confirmed?.revision, 2)
         XCTAssertNotNil(manager.errorMessage)
         XCTAssertEqual(relay.attempts, 2)
         XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1"])
         relay.registerHook = nil
-        fixture.enable() // Server inspection finds the old rotated grant invalid.
+        fixture.invalidateGrant() // Server inspection invalidates admission without changing revision.
         let recovered = expectation(description: "unknown Relay outcome recovered")
         fixture.registered = { recovered.fulfill() }
         await manager.reconcile()
         await fulfillment(of: [recovered], timeout: 3)
         await manager.waitForPendingRegistrations()
         XCTAssertEqual(manager.confirmed?.registered, true)
+        XCTAssertEqual(manager.confirmed?.revision, 3)
         XCTAssertNil(manager.errorMessage)
+        let registrations = fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }
+        XCTAssertEqual(registrations.count, 2)
+        let expected = registrations.last.flatMap { PushSetupTestData.body($0)["expected_revision"] as? NSNumber }
+        XCTAssertEqual(expected?.int64Value, 2)
         await manager.unregister()
     }
 
