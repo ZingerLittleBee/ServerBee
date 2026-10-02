@@ -107,23 +107,41 @@ function openerOf(element: Element | null): Opener | null {
   return { controls, element, onScreen: isOnScreen(element) }
 }
 
+/** What tells a control from the others around it: its kind, link and name. */
+function identity(element: Element): string {
+  const { tagName, textContent } = element
+  return [tagName, element.getAttribute('href'), element.getAttribute('aria-label'), textContent].join('\n')
+}
+
 /**
- * The controls that stand in for one that cannot take focus: the same search button, or for a sidebar toggle or another
- * control of the sidebar, a sidebar toggle, in the other half of the sidebar or in the header.
+ * The same control in a sidebar that mounted again while the dialog was open, as the docked one does once the window
+ * is narrowed and widened again, or after Back and Forward.
+ */
+function copiesOf(element: HTMLElement): HTMLElement[] {
+  const sidebar = element.isConnected ? null : element.closest('#nd-sidebar, #nd-sidebar-mobile')
+  const controls = sidebar && document.getElementById(sidebar.id)?.querySelectorAll<HTMLElement>(element.tagName)
+  return [...(controls ?? [])].filter((control) => identity(control) === identity(element))
+}
+
+/**
+ * The controls that stand in for one that cannot take focus: the same search button or, for a sidebar toggle or
+ * another control of the sidebar, its copy in a sidebar that mounted again, or else a sidebar toggle, in the other half
+ * of the sidebar or in the header.
  */
 function twinsOf(element: HTMLElement): HTMLElement[] {
   if (element.matches(searchButtons)) {
     return [...document.querySelectorAll<HTMLElement>(searchButtons)]
   }
   return element.matches(sidebarToggles) || element.closest('#nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]')
-    ? [...document.querySelectorAll<HTMLElement>(sidebarToggles)]
+    ? [...copiesOf(element), ...document.querySelectorAll<HTMLElement>(sidebarToggles)]
     : []
 }
 
 /**
  * Focuses the element focused before the dialog opened or, if its popup closed meanwhile, the popup's control, and
  * returns whether one took focus. One that cannot take focus, as when the half of the sidebar holding it went off
- * screen or a resize hid it, stands for its search button or sidebar toggle wherever one is shown.
+ * screen or a resize hid it, stands for the same control in a sidebar that mounted again, or for its search button or
+ * sidebar toggle wherever one is shown.
  */
 function restoreFocus(opener: Opener | null): boolean {
   if (!opener) {
