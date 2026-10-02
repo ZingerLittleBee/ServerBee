@@ -3,3 +3,44 @@
 @import "fumadocs-ui/css/preset.css";
 @import "./landing.css";
 @import "./landing-mocks.css";
+
+/*
+ * The breadcrumb of the highlighted search result is muted text on the accent background, under 4.5:1 in both themes.
+ * The highlighted option is the one the listbox marks selected (components/search-dialog.tsx).
+ */
+[role="listbox"] [aria-selected="true"] > .text-fd-muted-foreground {
+  color: inherit;
+}
+
+/*
+ * fumadocs' light theme sets muted text (#737373) at 4.1-4.4:1 on its backgrounds and the focus ring (#a3a3a3) at
+ * 2.2-2.3:1, under the 4.5:1 that text needs and the 3:1 that a focus indicator needs. Its dark values pass.
+ */
+:root:not(.dark) {
+  --color-fd-muted-foreground: hsl(0, 0%, 39%);
+  --color-fd-ring: hsl(0, 0%, 45%);
+}
+
+/* fumadocs removes the outline of the mobile table of contents trigger and marks its focus with nothing else. */
+[data-toc-popover-trigger]:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: -2px;
+}
+
+/*
+ * fumadocs removes the outline of its buttons and code blocks and marks their focus with a ring, a box-shadow, which
+ * forced colors drop: draw an outline there instead, inside the control, where no scroll container clips it. The
+ * search result that Enter opens is marked only by its background, which forced colors replace, so it gets one too.
+ */
+@media (forced-colors: active) {
+  .focus-visible\:outline-none:focus-visible,
+  .outline-none:focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+
+  [role="option"][aria-selected="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

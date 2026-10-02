@@ -5,11 +5,7 @@ import type { ComponentProps } from 'react'
 import { LandingPage } from '@/components/landing'
 import { type LandingSeoCopy, landingSeo } from '@/components/landing/seo'
 import type { LandingLang } from '@/components/landing/translations'
-
-/** The canonical docs host. /en/ redirects to /en, so page URLs carry no trailing slash. */
-const SITE = 'https://docs.serverbee.app'
-
-const ogLocale: Record<LandingLang, string> = { en: 'en_US', zh: 'zh_CN' }
+import { languageLinks, ogLocale, SITE, shareImageAlt } from '@/lib/site'
 
 /**
  * Latin Archivo sets the hero heading, subtitle and buttons. The stylesheet's @font-face uses this same URL, so the
@@ -54,20 +50,14 @@ function landingHead(lang: LandingLang, seo: LandingSeoCopy | undefined) {
       { property: 'og:image:width', content: '1200' },
       { property: 'og:image:height', content: '630' },
       { property: 'og:image:type', content: 'image/png' },
-      { property: 'og:image:alt', content: seo.imageAlt },
+      { property: 'og:image:alt', content: shareImageAlt[lang] },
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: seo.title },
       { name: 'twitter:description', content: seo.description },
       { name: 'twitter:image', content: image },
-      { name: 'twitter:image:alt', content: seo.imageAlt }
+      { name: 'twitter:image:alt', content: shareImageAlt[lang] }
     ],
-    links: [
-      { rel: 'canonical', href: url },
-      { rel: 'alternate', hrefLang: 'en', href: `${SITE}/en` },
-      { rel: 'alternate', hrefLang: 'zh-Hans', href: `${SITE}/zh` },
-      { rel: 'alternate', hrefLang: 'x-default', href: `${SITE}/en` },
-      ...fontPreloads
-    ]
+    links: [...languageLinks((code) => `${SITE}/${code}`, lang), ...fontPreloads]
   }
 }
 

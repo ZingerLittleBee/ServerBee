@@ -62,5 +62,9 @@
     "typescript": "^5",
     "ultracite": "7.2.5"
   },
-  "packageManager": "bun@1.3.4"
+  "packageManager": "bun@1.3.4",
+  "patchedDependencies": {
+    "@orama/orama@3.1.18": "patches/@orama%2Forama@3.1.18.patch",
+    "fumadocs-ui@16.6.16": "patches/fumadocs-ui@16.6.16.patch"
+  }
 }

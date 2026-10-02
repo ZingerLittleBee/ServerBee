@@ -1,9 +1,14 @@
 import { readdir, readFile, realpath } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { getTableOfContents } from 'fumadocs-core/content/toc'
+import { remarkGfm } from 'fumadocs-core/mdx-plugins/remark-gfm'
+import { defaultTranslations, type Translations } from 'fumadocs-ui/i18n'
+
 import { docsPages, landingCopy } from '../src/components/landing/translations'
+import { searchDialogText, uiTranslations } from '../src/lib/ui-translations'
 
 const docsApp = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const repository = resolve(docsApp, '../..')
@@ -16,6 +21,12 @@ const iosVersionMention = /\biOS (\d+)/g
 const darkClassRoot = /:root\.dark(?![\w-])/g
 const darkMediaRoot = ':root:not(.light):not(.dark)'
 const darkMediaQuery = /^@media \(prefers-color-scheme: ?dark\)$/
+// remark, without a frontmatter plugin, reads a page's frontmatter as a heading.
+const frontmatter = /^---\n[\s\S]*?\n---\n/
+const hslNotation = /^hsla?\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%(?:,\s*([\d.]+)(%?))?\)$/
+const cssImport = /@import\s+([^;]+);/g
+const cssImportTarget = /^(["'])([^"']+)\1$/
+const packagePath = /^((?:@[^/]+\/)?[^/]+)\/(.+)$/
 
 function invariant(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -55,24 +66,13 @@ function firstMarkdownTable(markdown: string): string[][] {
   return []
 }
 
-function headingSlugs(markdown: string): Set<string> {
-  const counts = new Map<string, number>()
-  const slugs = new Set<string>()
-  for (const match of markdown.matchAll(/^#{1,6}\s+(.+)$/gm)) {
-    const heading = match[1]
-      .replace(/<[^>]+>/g, '')
-      .replace(/[`*_~]/g, '')
-      .trim()
-      .toLowerCase()
-    const base = heading
-      .replace(/[^\p{L}\p{N}\s-]/gu, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-    const count = counts.get(base) ?? 0
-    counts.set(base, count + 1)
-    slugs.add(count === 0 ? base : `${base}-${count}`)
-  }
-  return slugs
+/**
+ * The ids of a page's headings, computed as fumadocs-mdx computes them (remark-heading, after GFM): GitHub's slugs,
+ * numbered when repeated, or a custom `[#id]`. A `#` line in a code block is not a heading.
+ */
+async function headingIds(mdx: string): Promise<Set<string>> {
+  const toc = await getTableOfContents(mdx.replace(frontmatter, ''), [remarkGfm])
+  return new Set(toc.map((item) => item.url.slice(1)))
 }
 
 interface LandingDocsLink {
@@ -147,6 +147,8 @@ function withoutCssComments(css: string): string {
 interface CssBlock {
   body: string
   children: CssBlock[]
+  /** The body without the blocks nested in it. */
+  ownBody: string
   /** The selector list or at-rule prelude, whitespace collapsed. */
   prelude: string
 }
@@ -155,7 +157,7 @@ interface CssBlock {
 function cssBlocks(source: string): CssBlock[] {
   const css = withoutCssComments(source)
   const top: CssBlock[] = []
-  const open: { children: CssBlock[]; prelude: string; start: number }[] = []
+  const open: { children: CssBlock[]; ownBody: string; ownStart: number; prelude: string; start: number }[] = []
   let statementStart = 0
   let index = 0
   while (index < css.length) {
@@ -164,21 +166,34 @@ function cssBlocks(source: string): CssBlock[] {
     if (char === '"' || char === "'") {
       next = cssStringEnd(css, index)
     } else if (char === '{') {
+      const parent = open.at(-1)
+      if (parent) {
+        parent.ownBody += css.slice(parent.ownStart, statementStart)
+      }
       const prelude = css.slice(statementStart, index).replace(/\s+/g, ' ').trim()
-      open.push({ children: [], prelude, start: next })
+      open.push({ children: [], ownBody: '', ownStart: next, prelude, start: next })
       statementStart = next
     } else if (char === '}') {
       const block = open.pop()
-      invariant(block, 'Unbalanced braces in a landing stylesheet')
-      const parent = open.at(-1)?.children ?? top
-      parent.push({ body: css.slice(block.start, index), children: block.children, prelude: block.prelude })
+      invariant(block, 'Unbalanced braces in a stylesheet')
+      const parent = open.at(-1)
+      if (parent) {
+        parent.ownStart = next
+      }
+      const siblings = parent?.children ?? top
+      siblings.push({
+        body: css.slice(block.start, index),
+        children: block.children,
+        ownBody: block.ownBody + css.slice(block.ownStart, index),
+        prelude: block.prelude
+      })
       statementStart = next
     } else if (char === ';') {
       statementStart = next
     }
     index = next
   }
-  invariant(open.length === 0, 'Unclosed block in a landing stylesheet')
+  invariant(open.length === 0, 'Unclosed block in a stylesheet')
   return top
 }
 
@@ -198,6 +213,82 @@ function cssDeclarations(body: string): Map<string, string> {
     }
   }
   return declarations
+}
+
+/** Every block of a block tree, with the preludes of the blocks it is nested in. */
+function* nestedBlocks(blocks: CssBlock[], outer: string[] = []): Generator<[CssBlock, string[]]> {
+  for (const block of blocks) {
+    yield [block, outer]
+    yield* nestedBlocks(block.children, [...outer, block.prelude])
+  }
+}
+
+/** The file of a stylesheet that `from` imports by a relative path or a package's path. */
+async function importedStylesheet(path: string, from: string): Promise<string> {
+  if (path.startsWith('.')) {
+    return resolve(dirname(from), path)
+  }
+  const match = path.match(packagePath)
+  const directory = match ? await packageDirectory(match[1], dirname(from)) : undefined
+  invariant(match && directory, `${relative(repository, from)} imports ${path}, which apps/docs cannot resolve`)
+  return join(directory, match[2])
+}
+
+/**
+ * The blocks of a stylesheet and of the stylesheets it imports, in the order the cascade reads them. Tailwind's own
+ * stylesheet is left out: it sets no fumadocs colors.
+ */
+async function stylesheetBlocks(file: string): Promise<{ blocks: CssBlock[]; file: string }[]> {
+  const css = await text(file)
+  const sheets: { blocks: CssBlock[]; file: string }[] = []
+  for (const [statement, target] of withoutCssComments(css).matchAll(cssImport)) {
+    const path = target.trim().match(cssImportTarget)?.[2]
+    invariant(
+      path,
+      `${relative(repository, file)}: unexpected ${statement}: update stylesheetBlocks in apps/docs/scripts/check-contracts.ts`
+    )
+    if (path !== 'tailwindcss') {
+      sheets.push(...(await stylesheetBlocks(await importedStylesheet(path, file))))
+    }
+  }
+  sheets.push({ blocks: cssBlocks(css), file })
+  return sheets
+}
+
+/** An sRGB color, channels and alpha from 0 to 1. */
+type Rgba = [number, number, number, number]
+
+/** An hsl() or hsla() color, the notation fumadocs' themes use. */
+function hslColor(value: string | undefined): Rgba {
+  const match = value?.match(hslNotation)
+  invariant(match, `Unexpected color ${value ?? '<missing>'}: update hslColor in apps/docs/scripts/check-contracts.ts`)
+  const [hue, saturation, lightness] = [Number(match[1]), Number(match[2]) / 100, Number(match[3]) / 100]
+  const channel = (n: number) => {
+    const k = (n + hue / 30) % 12
+    return lightness - saturation * Math.min(lightness, 1 - lightness) * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+  }
+  const alpha = match[4] === undefined ? 1 : Number(match[4]) / (match[5] ? 100 : 1)
+  return [channel(0), channel(8), channel(4), alpha]
+}
+
+/** A color painted over the opaque `ground`. */
+function composite([red, green, blue, alpha]: Rgba, ground: Rgba): Rgba {
+  return [
+    red * alpha + ground[0] * (1 - alpha),
+    green * alpha + ground[1] * (1 - alpha),
+    blue * alpha + ground[2] * (1 - alpha),
+    1
+  ]
+}
+
+/** The WCAG 2 contrast ratio of two opaque colors. */
+function contrastRatio(first: Rgba, second: Rgba): number {
+  const luminance = ([red, green, blue]: Rgba) => {
+    const linear = (channel: number) => (channel <= 0.040_45 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+  }
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a)
+  return (lighter + 0.05) / (darker + 0.05)
 }
 
 const localePages = new Map<string, Set<string>>()
@@ -230,6 +321,8 @@ for (const locale of locales) {
 }
 
 const internalLinkPattern = /(?:\]\(|href=")\/(en|zh)\/docs\/([^\s)#"]+)(?:#([^\s)"]+))?/g
+// A link to a heading on its own page.
+const samePageLinkPattern = /(?:\]\(|href=")#([^\s)"]+)/g
 for (const locale of locales) {
   for (const page of pagesFor(locale)) {
     const source = await text(join(contentRoot, locale, `${page}.mdx`))
@@ -241,12 +334,18 @@ for (const locale of locales) {
       )
       if (encodedFragment) {
         const target = await text(join(contentRoot, targetLocale, `${targetPage}.mdx`))
-        const fragment = decodeURIComponent(encodedFragment).toLowerCase()
+        // A fragment names an id exactly, case included.
+        const fragment = decodeURIComponent(encodedFragment)
         invariant(
-          headingSlugs(target).has(fragment),
+          (await headingIds(target)).has(fragment),
           `${locale}/${page} links to missing heading ${targetLocale}/${targetPage}#${fragment}`
         )
       }
+    }
+    const ids = await headingIds(source)
+    for (const [, encodedFragment] of source.matchAll(samePageLinkPattern)) {
+      const fragment = decodeURIComponent(encodedFragment)
+      invariant(ids.has(fragment), `${locale}/${page} links to missing heading #${fragment}`)
     }
   }
 }
@@ -289,7 +388,7 @@ for (const link of landingParts.links) {
   if (link.hash) {
     const target = await text(join(contentRoot, link.lang, `${link.page}.mdx`))
     invariant(
-      headingSlugs(target).has(link.hash.toLowerCase()),
+      (await headingIds(target)).has(link.hash),
       `The landing links to missing heading ${link.lang}/${link.page}#${link.hash}: update ${landingTranslations}`
     )
   }
@@ -348,6 +447,90 @@ for (const file of ['landing.css', 'landing-mocks.css']) {
   for (const [key, fallback] of fallbackRules) {
     invariant(classRules.has(key), `${stylesheet}: "${fallback.prelude}" has no :root.dark rule with the same values`)
   }
+}
+
+// fumadocs' light theme put muted text and the focus ring under the contrast they need on its surfaces, 4.5:1 for text
+// and 3:1 for a focus indicator, and src/styles/app.css raises them. Every theme keeps them, with the colors that the
+// rules of app.css and of the stylesheets it imports set, and a rule that sets them for a theme this check does not
+// know fails it.
+const surfaces = ['background', 'card', 'secondary', 'muted', 'popover']
+const foregrounds = [
+  ['muted-foreground', 4.5],
+  ['ring', 3]
+] as const
+const checkedColors = new Set(
+  [...surfaces, ...foregrounds.map(([token]) => token)].map((token) => `--color-fd-${token}`)
+)
+// The rules that set them, weakest first, and the themes each sets them for. `@theme` colors are in a cascade layer,
+// under every other rule, and `.dark #nd-sidebar` sets the colors of the sidebar.
+const themeRules: [prelude: string, themes: string[]][] = [
+  ['@theme', ['light', 'dark', 'dark sidebar']],
+  ['.dark', ['dark', 'dark sidebar']],
+  [':root.dark', ['dark', 'dark sidebar']],
+  [':root:not(.dark)', ['light']],
+  ['.dark #nd-sidebar', ['dark sidebar']]
+]
+const colorRules: { colors: Map<string, string>; prelude: string }[] = []
+for (const { blocks, file } of await stylesheetBlocks(join(docsApp, 'src/styles/app.css'))) {
+  for (const [block, outer] of nestedBlocks(blocks)) {
+    const colors = new Map([...cssDeclarations(block.ownBody)].filter(([property]) => checkedColors.has(property)))
+    if (colors.size > 0) {
+      invariant(
+        outer.length === 0 && themeRules.some(([prelude]) => prelude === block.prelude),
+        `${relative(repository, file)}: "${[...outer, block.prelude].join(' { ')}" sets ${[...colors.keys()].join(', ')} ` +
+          'for a theme the contrast check does not know: update apps/docs/scripts/check-contracts.ts'
+      )
+      colorRules.push({ colors, prelude: block.prelude })
+    }
+  }
+}
+const themes = new Map<string, Map<string, string>>()
+for (const [prelude, names] of themeRules) {
+  for (const rule of colorRules.filter((candidate) => candidate.prelude === prelude)) {
+    for (const name of names) {
+      themes.set(name, new Map([...(themes.get(name) ?? []), ...rule.colors]))
+    }
+  }
+}
+for (const theme of new Set(themeRules.flatMap(([, names]) => names))) {
+  const color = (token: string) => {
+    const value = themes.get(theme)?.get(`--color-fd-${token}`)
+    invariant(
+      value,
+      `No rule sets the ${theme} --color-fd-${token}: update the contrast check in apps/docs/scripts/check-contracts.ts`
+    )
+    return hslColor(value)
+  }
+  for (const surface of surfaces) {
+    const ground = color(surface)
+    for (const [token, minimum] of foregrounds) {
+      const ratio = contrastRatio(composite(color(token), ground), ground)
+      invariant(
+        ratio >= minimum,
+        `The ${theme} --color-fd-${token} is ${ratio.toFixed(2)}:1 on --color-fd-${surface}, under ${minimum}:1: ` +
+          'update apps/docs/src/styles/app.css'
+      )
+    }
+  }
+}
+
+// fumadocs-ui falls back to its English text for a key a language leaves out, and some of that text appears only after
+// a click, such as the names of the sidebar triggers once the sidebar is open or collapsed, where no route check sees
+// it. Chinese translates every key, the keys patches/fumadocs-ui@16.6.16.patch adds among them.
+for (const [key, english] of Object.entries(defaultTranslations)) {
+  const chinese = uiTranslations.zh[key as keyof Translations]
+  invariant(
+    chinese && /\p{Script=Han}/u.test(chinese),
+    `apps/docs/src/lib/ui-translations.ts leaves fumadocs-ui's "${english}" (${key}) untranslated in zh`
+  )
+}
+// Chinese translates the search dialog's own text too, which appears only once the dialog is open.
+for (const [key, value] of Object.entries(searchDialogText.zh)) {
+  const chinese = typeof value === 'function' ? value(2) : value
+  invariant(
+    /\p{Script=Han}/u.test(chinese),
+    `apps/docs/src/lib/ui-translations.ts leaves the search dialog's ${key} untranslated in zh`
+  )
 }
 
 const constants = await text(join(repository, 'crates/common/src/constants.rs'))

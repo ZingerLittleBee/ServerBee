@@ -1,0 +1,483 @@
+diff --git a/dist/components/codeblock.js b/dist/components/codeblock.js
+index cd43329912d3125f4bdd411125d9be5f3ab9e469..10549d1b0d61619ad8e0b32332ac0d4d0bea0d7e 100644
+--- a/dist/components/codeblock.js
++++ b/dist/components/codeblock.js
+@@ -1,5 +1,6 @@
+ "use client";
+ import { cn } from "../utils/cn.js";
++import { useI18n } from "../contexts/i18n.js";
+ import { useCopyButton } from "../utils/use-copy-button.js";
+ import { buttonVariants } from "./ui/button.js";
+ import { mergeRefs } from "../utils/merge-refs.js";
+@@ -63,6 +64,7 @@ function CodeBlock({ ref, title, allowCopy = true, keepBackground = false, icon,
+ 	});
+ }
+ function CopyButton({ className, containerRef, ...props }) {
++	const { text } = useI18n();
+ 	const [checked, onClick] = useCopyButton(() => {
+ 		const pre = containerRef.current?.getElementsByTagName("pre").item(0);
+ 		if (!pre) return;
+@@ -79,7 +81,7 @@ function CopyButton({ className, containerRef, ...props }) {
+ 			className: "hover:text-fd-accent-foreground data-checked:text-fd-accent-foreground",
+ 			size: "icon-xs"
+ 		}), className),
+-		"aria-label": checked ? "Copied Text" : "Copy Text",
++		"aria-label": checked ? text.copiedText : text.copyText,
+ 		onClick,
+ 		...props,
+ 		children: checked ? /* @__PURE__ */ jsx(Check, {}) : /* @__PURE__ */ jsx(Clipboard, {})
+diff --git a/dist/components/dialog/search.js b/dist/components/dialog/search.js
+index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710ac968fd62 100644
+--- a/dist/components/dialog/search.js
++++ b/dist/components/dialog/search.js
+@@ -191,7 +191,7 @@ function SearchDialogContent({ children, ...props }) {
+ function SearchDialogList({ items = null, Empty = () => /* @__PURE__ */ jsx("div", {
+ 	className: "py-12 text-center text-sm text-fd-muted-foreground",
+ 	children: /* @__PURE__ */ jsx(I18nLabel, { label: "searchNoResult" })
+-}), Item = (props) => /* @__PURE__ */ jsx(SearchDialogListItem, { ...props }), ...props }) {
++}), Item = (props) => /* @__PURE__ */ jsx(SearchDialogListItem, { ...props }), role, id, ...props }) {
+ 	const ref = useRef(null);
+ 	const { onSelect } = useSearch();
+ 	const [active, setActive] = useState(() => items && items.length > 0 ? items[0].id : null);
+@@ -235,6 +235,8 @@ function SearchDialogList({ items = null, Empty = () => /* @__PURE__ */ jsx("div
+ 		"data-empty": items === null,
+ 		className: cn("overflow-hidden h-(--fd-animated-height) transition-[height]", props.className),
+ 		children: /* @__PURE__ */ jsx("div", {
++			role,
++			id,
+ 			className: cn("w-full flex flex-col overflow-y-auto max-h-[460px] p-1", !items && "hidden"),
+ 			children: /* @__PURE__ */ jsxs(ListContext, {
+ 				value: useMemo(() => ({
+diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
+index 78c7d59de854993ca206520fda17399432dce1ce..d872f69d48c9cc21e4f5595526cfa700e2571c08 100644
+--- a/dist/components/sidebar/base.js
++++ b/dist/components/sidebar/base.js
+@@ -1,7 +1,9 @@
+ "use client";
+ import { cn } from "../../utils/cn.js";
+ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible.js";
++import { useI18n } from "../../contexts/i18n.js";
+ import { createContext, use, useEffect, useMemo, useRef, useState } from "react";
++import { flushSync } from "react-dom";
+ import { usePathname } from "fumadocs-core/framework";
+ import { jsx, jsxs } from "react/jsx-runtime";
+ import Link from "fumadocs-core/link";
+@@ -18,7 +20,7 @@ function SidebarProvider({ defaultOpenLevel = 0, prefetch, children }) {
+ 	const [open, setOpen] = useState(false);
+ 	const [collapsed, setCollapsed] = useState(false);
+ 	const pathname = usePathname();
+-	const mode = useMediaQuery("(width < 768px)") ? "drawer" : "full";
++	const mode = useMediaQuery("(width < 48rem)") ? "drawer" : "full";
+ 	useOnChange(pathname, () => {
+ 		if (closeOnRedirect.current) setOpen(false);
+ 		closeOnRedirect.current = true;
+@@ -54,6 +56,46 @@ function useFolder() {
+ function useFolderDepth() {
+ 	return use(FolderContext)?.depth ?? 0;
+ }
++function focusTwin(element) {
++	const twin = element.matches("[data-search], [data-search-full]") ? "[data-search], [data-search-full]" : "[aria-controls=\"nd-sidebar\"]";
++	for (const candidate of document.querySelectorAll(`:is(${twin}):not([inert] *)`)) {
++		candidate.focus();
++		if (document.activeElement === candidate) {
++			pointerFocus.delete(candidate);
++			return;
++		}
++	}
++}
++function popupControl(element) {
++	for (let node = element; node; node = node.parentElement) {
++		const control = node.id && document.querySelector(`[aria-controls="${CSS.escape(node.id)}"][aria-expanded="true"]`);
++		if (control && !node.contains(control)) return control;
++	}
++	return null;
++}
++const pointerFocus = new WeakSet();
++let pointerInput = false;
++let windowFocus = null;
++if (typeof document !== "undefined") {
++	document.addEventListener("pointerdown", (e) => {
++		pointerInput = true;
++		const focused = document.activeElement;
++		if (focused && focused !== document.body && focused.contains(e.target)) pointerFocus.add(focused);
++	}, true);
++	document.addEventListener("keydown", (e) => {
++		if (e.key === "Tab" || (!e.metaKey && !e.ctrlKey && !e.altKey)) pointerInput = false;
++	}, true);
++	window.addEventListener("blur", (e) => {
++		if (e.target === window) windowFocus = document.activeElement;
++	});
++	document.addEventListener("focusin", (e) => {
++		const refocused = e.target === windowFocus;
++		windowFocus = null;
++		if (refocused) return;
++		if (pointerInput) pointerFocus.add(e.target);
++		else pointerFocus.delete(e.target);
++	}, true);
++}
+ function SidebarContent({ mode: allowedMode = "full", children }) {
+ 	const { collapsed, mode } = useSidebar();
+ 	const [hover, setHover] = useState(false);
+@@ -68,6 +110,20 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
+ 		if (!element) return true;
+ 		return !collapsed || e.pointerType === "touch" || element.getAnimations().length > 0;
+ 	}
++	function setHovered(value) {
++		const focused = document.activeElement;
++		const keyboard = focused && !pointerFocus.has(focused);
++		const control = focused && popupControl(focused);
++		const aside = ref.current;
++		if (!keyboard && !value && control && aside?.contains(control) && !aside.contains(focused)) {
++			control.focus();
++			control.click();
++		}
++		flushSync(() => setHover(value));
++		if (!keyboard) return;
++		if (focused.matches("[inert] *")) focusTwin(focused);
++		else if (control?.matches("[inert] *")) focusTwin(control);
++	}
+ 	return children({
+ 		ref,
+ 		collapsed,
+@@ -75,12 +131,12 @@ function SidebarContent({ mode: allowedMode = "full", children }) {
+ 		onPointerEnter(e) {
+ 			if (shouldIgnoreHover(e)) return;
+ 			window.clearTimeout(timerRef.current);
+-			setHover(true);
++			setHovered(true);
+ 		},
+ 		onPointerLeave(e) {
+ 			if (shouldIgnoreHover(e)) return;
+ 			window.clearTimeout(timerRef.current);
+-			timerRef.current = window.setTimeout(() => setHover(false), Math.min(e.clientX, document.body.clientWidth - e.clientX) > 100 ? 0 : 500);
++			timerRef.current = window.setTimeout(() => setHovered(false), Math.min(e.clientX, document.body.clientWidth - e.clientX) > 100 ? 0 : 500);
+ 		}
+ 	});
+ }
+@@ -198,9 +254,13 @@ function SidebarFolderContent(props) {
+ 	});
+ }
+ function SidebarTrigger({ children, ...props }) {
+-	const { setOpen } = useSidebar();
++	const { open, setOpen } = useSidebar();
++	const { text } = useI18n();
+ 	return /* @__PURE__ */ jsx("button", {
+-		"aria-label": "Open Sidebar",
++		type: "button",
++		"aria-label": open ? text.closeSidebar : text.openSidebar,
++		"aria-expanded": open,
++		"aria-controls": "nd-sidebar-mobile",
+ 		onClick: () => setOpen((prev) => !prev),
+ 		...props,
+ 		children
+@@ -208,12 +268,17 @@ function SidebarTrigger({ children, ...props }) {
+ }
+ function SidebarCollapseTrigger(props) {
+ 	const { collapsed, setCollapsed } = useSidebar();
++	const { text } = useI18n();
+ 	return /* @__PURE__ */ jsx("button", {
+ 		type: "button",
+-		"aria-label": "Collapse Sidebar",
++		"aria-label": collapsed ? text.expandSidebar : text.collapseSidebar,
++		"aria-controls": "nd-sidebar",
+ 		"data-collapsed": collapsed,
+-		onClick: () => {
+-			setCollapsed((prev) => !prev);
++		onClick: (e) => {
++			const button = e.currentTarget;
++			const keyboard = document.activeElement === button && !pointerFocus.has(button);
++			flushSync(() => setCollapsed((prev) => !prev));
++			if (keyboard && button.matches("[inert] *")) focusTwin(button);
+ 		},
+ 		...props,
+ 		children: props.children
+diff --git a/dist/contexts/i18n.d.ts b/dist/contexts/i18n.d.ts
+index 50c735388b049b2316f7fb957de7855a8fdbe0bc..8f2d365cacbbb96072bb7a898f6a19059505cd33 100644
+--- a/dist/contexts/i18n.d.ts
++++ b/dist/contexts/i18n.d.ts
+@@ -13,6 +13,25 @@ interface Translations {
+   previousPage: string;
+   chooseTheme: string;
+   editOnGithub: string;
++  openSearch: string;
++  openSidebar: string;
++  closeSidebar: string;
++  collapseSidebar: string;
++  expandSidebar: string;
++  toggleTheme: string;
++  toggleMenu: string;
++  /** The name of the home layout's header, Radix's default name for a navigation menu. */
++  mainNavigation: string;
++  copyText: string;
++  copiedText: string;
++  copyMarkdown: string;
++  openPageActions: string;
++  openInGitHub: string;
++  viewAsMarkdown: string;
++  /** `{app}` is replaced by the app's name. */
++  openInApp: string;
++  /** The prompt sent to an AI app; `{url}` is replaced by the page URL. */
++  askAboutPage: string;
+ }
+ interface LocaleItem {
+   name: string;
+diff --git a/dist/contexts/i18n.js b/dist/contexts/i18n.js
+index 2cde8dde4ef7a4e165f88179e7d98b67265b34d4..3b0d094db086a50b0bfc5f82a4e6b842624234b4 100644
+--- a/dist/contexts/i18n.js
++++ b/dist/contexts/i18n.js
+@@ -13,7 +13,23 @@ const defaultTranslations = {
+ 	nextPage: "Next Page",
+ 	previousPage: "Previous Page",
+ 	chooseTheme: "Theme",
+-	editOnGithub: "Edit on GitHub"
++	editOnGithub: "Edit on GitHub",
++	openSearch: "Open Search",
++	openSidebar: "Open Sidebar",
++	closeSidebar: "Close Sidebar",
++	collapseSidebar: "Collapse Sidebar",
++	expandSidebar: "Expand Sidebar",
++	toggleTheme: "Toggle Theme",
++	toggleMenu: "Toggle Menu",
++	mainNavigation: "Main",
++	copyText: "Copy Text",
++	copiedText: "Copied Text",
++	copyMarkdown: "Copy Markdown",
++	openPageActions: "Open",
++	openInGitHub: "Open in GitHub",
++	viewAsMarkdown: "View as Markdown",
++	openInApp: "Open in {app}",
++	askAboutPage: "Read {url}, I want to ask questions about it."
+ };
+ const I18nContext = createContext({ text: defaultTranslations });
+ function I18nLabel(props) {
+diff --git a/dist/layouts/docs/page/index.js b/dist/layouts/docs/page/index.js
+index 8590fe5f9069e232fc63ccee717244216ccaa0c9..1f77c3bf7fd5bbb2dbd2d120e10ba832f44d9573 100644
+--- a/dist/layouts/docs/page/index.js
++++ b/dist/layouts/docs/page/index.js
+@@ -38,6 +38,7 @@ function DocsPage({ breadcrumb: { enabled: breadcrumbEnabled = true, component:
+ 		] })] })),
+ 		/* @__PURE__ */ jsxs("article", {
+ 			id: "nd-page",
++			role: "main",
+ 			"data-full": full,
+ 			className: cn("flex flex-col w-full max-w-[900px] mx-auto [grid-area:main] px-4 py-6 gap-4 md:px-6 md:pt-8 xl:px-8 xl:pt-14", full ? "max-w-[1168px]" : "xl:layout:[--fd-toc-width:268px]", className),
+ 			children: [
+diff --git a/dist/layouts/docs/sidebar.js b/dist/layouts/docs/sidebar.js
+index 5601a88cfbc88240756b33994eeae99cbbe449d3..61c376f9285d71f4b156d4dc2c170bdf9c22275f 100644
+--- a/dist/layouts/docs/sidebar.js
++++ b/dist/layouts/docs/sidebar.js
+@@ -58,6 +58,7 @@ function SidebarContent({ ref: refProp, className, children, ...props }) {
+ 			ref: mergeRefs(ref, refProp, asideRef),
+ 			"data-collapsed": collapsed,
+ 			"data-hovered": collapsed && hovered,
++			inert: collapsed && !hovered,
+ 			className: cn("absolute flex flex-col w-full start-0 inset-y-0 items-end bg-fd-card text-sm border-e duration-250 *:w-(--fd-sidebar-width)", collapsed && ["inset-y-2 rounded-xl transition-transform border w-(--fd-sidebar-width)", hovered ? "shadow-lg translate-x-2 rtl:-translate-x-2" : "-translate-x-(--fd-sidebar-width) rtl:translate-x-full"], ref.current && ref.current.getAttribute("data-collapsed") === "true" !== collapsed && "transition-[width,inset-block,translate,background-color]", className),
+ 			...props,
+ 			...rest,
+@@ -66,6 +67,7 @@ function SidebarContent({ ref: refProp, className, children, ...props }) {
+ 	}), /* @__PURE__ */ jsxs("div", {
+ 		"data-sidebar-panel": "",
+ 		className: cn("fixed flex top-[calc(--spacing(4)+var(--fd-docs-row-3))] start-4 shadow-lg transition-opacity rounded-xl p-0.5 border bg-fd-muted text-fd-muted-foreground z-10", (!collapsed || hovered) && "pointer-events-none opacity-0"),
++		inert: !collapsed || hovered,
+ 		children: [/* @__PURE__ */ jsx(SidebarCollapseTrigger$1, {
+ 			className: cn(buttonVariants({
+ 				color: "ghost",
+diff --git a/dist/layouts/home/client.js b/dist/layouts/home/client.js
+index cdd3c964bae0b8217e42c18f4ef7f75886774cb3..6a402c4db0f66821401d771cb0d4d4e770b0b932 100644
+--- a/dist/layouts/home/client.js
++++ b/dist/layouts/home/client.js
+@@ -1,5 +1,6 @@
+ "use client";
+ import { cn } from "../../utils/cn.js";
++import { useI18n } from "../../contexts/i18n.js";
+ import { buttonVariants } from "../../components/ui/button.js";
+ import { useIsScrollTop } from "../../utils/use-is-scroll-top.js";
+ import { LinkItem } from "../../utils/link-item.js";
+@@ -29,6 +30,7 @@ const navItemVariants = cva("[&_svg]:size-4", {
+ 	defaultVariants: { variant: "main" }
+ });
+ function Header({ nav = {}, i18n = false, links, githubUrl, themeSwitch = {}, searchToggle = {} }) {
++	const { text } = useI18n();
+ 	const { navItems, menuItems } = useLinkItems({
+ 		links,
+ 		githubUrl
+@@ -71,7 +73,7 @@ function Header({ nav = {}, i18n = false, links, githubUrl, themeSwitch = {}, se
+ 				})), /* @__PURE__ */ jsx(NavigationMenuItem, {
+ 					asChild: true,
+ 					children: /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx(NavigationMenuTrigger, {
+-						"aria-label": "Toggle Menu",
++						"aria-label": text.toggleMenu,
+ 						className: cn(buttonVariants({
+ 							size: "icon",
+ 							color: "ghost",
+@@ -114,12 +116,14 @@ function isSecondary(item) {
+ 	return item.type === "icon";
+ }
+ function HeaderNavigationMenu({ transparentMode = "none", ...props }) {
++	const { text } = useI18n();
+ 	const [value, setValue] = useState("");
+ 	const isTop = useIsScrollTop({ enabled: transparentMode === "top" }) ?? true;
+ 	const isTransparent = transparentMode === "top" ? isTop : transparentMode === "always";
+ 	return /* @__PURE__ */ jsx(NavigationMenu, {
+ 		value,
+ 		onValueChange: setValue,
++		"aria-label": text.mainNavigation,
+ 		asChild: true,
+ 		children: /* @__PURE__ */ jsx("header", {
+ 			id: "nd-nav",
+diff --git a/dist/layouts/shared/page-actions.js b/dist/layouts/shared/page-actions.js
+index 15f4b75bab187ea333e39716fad6a8784c5ceda6..61ab80a2ba0c6cdbb9dd9760241f12bfc723f2c5 100644
+--- a/dist/layouts/shared/page-actions.js
++++ b/dist/layouts/shared/page-actions.js
+@@ -1,5 +1,6 @@
+ "use client";
+ import { cn } from "../../utils/cn.js";
++import { useI18n } from "../../contexts/i18n.js";
+ import { useCopyButton } from "../../utils/use-copy-button.js";
+ import { buttonVariants } from "../../components/ui/button.js";
+ import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover.js";
+@@ -12,6 +13,7 @@ const cache = /* @__PURE__ */ new Map();
+ * see https://fumadocs.dev/docs/integrations/llms#page-actions to customise.
+ */
+ function MarkdownCopyButton({ markdownUrl, ...props }) {
++	const { text } = useI18n();
+ 	const [isLoading, setLoading] = useState(false);
+ 	const [checked, onClick] = useCopyButton(async () => {
+ 		const cached = cache.get(markdownUrl);
+@@ -34,18 +36,21 @@ function MarkdownCopyButton({ markdownUrl, ...props }) {
+ 			size: "sm",
+ 			className: "gap-2 [&_svg]:size-3.5 [&_svg]:text-fd-muted-foreground"
+ 		}), props.className),
+-		children: [checked ? /* @__PURE__ */ jsx(Check, {}) : /* @__PURE__ */ jsx(Copy, {}), props.children ?? "Copy Markdown"]
++		children: [checked ? /* @__PURE__ */ jsx(Check, {}) : /* @__PURE__ */ jsx(Copy, {}), props.children ?? text.copyMarkdown]
+ 	});
+ }
+ /**
+ * see https://fumadocs.dev/docs/integrations/llms#page-actions to customise.
+ */
+ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
++	const { text } = useI18n();
+ 	const items = useMemo(() => {
+-		const q = `Read ${typeof window !== "undefined" ? window.location.href : "loading"}, I want to ask questions about it.`;
++		const href = typeof window !== "undefined" ? window.location.href : "loading";
++		const q = text.askAboutPage.replace("{url}", () => href);
++		const openIn = (app) => text.openInApp.replace("{app}", () => app);
+ 		return [
+ 			{
+-				title: "Open in GitHub",
++				title: text.openInGitHub,
+ 				href: githubUrl,
+ 				icon: /* @__PURE__ */ jsxs("svg", {
+ 					fill: "currentColor",
+@@ -55,12 +60,12 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+ 				})
+ 			},
+ 			{
+-				title: "View as Markdown",
++				title: text.viewAsMarkdown,
+ 				href: markdownUrl,
+ 				icon: /* @__PURE__ */ jsx(TextIcon, {})
+ 			},
+ 			{
+-				title: "Open in Scira AI",
++				title: openIn("Scira AI"),
+ 				href: `https://scira.ai/?${new URLSearchParams({ q })}`,
+ 				icon: /* @__PURE__ */ jsxs("svg", {
+ 					width: "910",
+@@ -121,7 +126,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+ 				})
+ 			},
+ 			{
+-				title: "Open in ChatGPT",
++				title: openIn("ChatGPT"),
+ 				href: `https://chatgpt.com/?${new URLSearchParams({
+ 					hints: "search",
+ 					q
+@@ -135,7 +140,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+ 				})
+ 			},
+ 			{
+-				title: "Open in Claude",
++				title: openIn("Claude"),
+ 				href: `https://claude.ai/new?${new URLSearchParams({ q })}`,
+ 				icon: /* @__PURE__ */ jsxs("svg", {
+ 					fill: "currentColor",
+@@ -146,7 +151,7 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+ 				})
+ 			},
+ 			{
+-				title: "Open in Cursor",
++				title: openIn("Cursor"),
+ 				icon: /* @__PURE__ */ jsxs("svg", {
+ 					fill: "currentColor",
+ 					role: "img",
+@@ -157,14 +162,18 @@ function ViewOptionsPopover({ markdownUrl, githubUrl, ...props }) {
+ 				href: `https://cursor.com/link/prompt?${new URLSearchParams({ text: q })}`
+ 			}
+ 		];
+-	}, [githubUrl, markdownUrl]);
++	}, [
++		githubUrl,
++		markdownUrl,
++		text
++	]);
+ 	return /* @__PURE__ */ jsxs(Popover, { children: [/* @__PURE__ */ jsxs(PopoverTrigger, {
+ 		...props,
+ 		className: cn(buttonVariants({
+ 			color: "secondary",
+ 			size: "sm"
+ 		}), "gap-2 data-[state=open]:bg-fd-accent data-[state=open]:text-fd-accent-foreground", props.className),
+-		children: [props.children ?? "Open", /* @__PURE__ */ jsx(ChevronDown, { className: "size-3.5 text-fd-muted-foreground" })]
++		children: [props.children ?? text.openPageActions, /* @__PURE__ */ jsx(ChevronDown, { className: "size-3.5 text-fd-muted-foreground" })]
+ 	}), /* @__PURE__ */ jsx(PopoverContent, {
+ 		className: "flex flex-col",
+ 		children: items.map((item) => /* @__PURE__ */ jsxs("a", {
+diff --git a/dist/layouts/shared/search-toggle.js b/dist/layouts/shared/search-toggle.js
+index 49931ecbe9ec2f167f861a2c3bd8c8622de8ad00..16f444258533504cf4068d1fda01deb420d467e6 100644
+--- a/dist/layouts/shared/search-toggle.js
++++ b/dist/layouts/shared/search-toggle.js
+@@ -8,6 +8,7 @@ import { Search } from "lucide-react";
+ //#region src/layouts/shared/search-toggle.tsx
+ function SearchToggle({ hideIfDisabled, size = "icon-sm", color = "ghost", ...props }) {
+ 	const { setOpenSearch, enabled } = useSearchContext();
++	const { text } = useI18n();
+ 	if (hideIfDisabled && !enabled) return null;
+ 	return /* @__PURE__ */ jsx("button", {
+ 		type: "button",
+@@ -16,7 +17,7 @@ function SearchToggle({ hideIfDisabled, size = "icon-sm", color = "ghost", ...pr
+ 			color
+ 		}), props.className),
+ 		"data-search": "",
+-		"aria-label": "Open Search",
++		"aria-label": text.openSearch,
+ 		onClick: () => {
+ 			setOpenSearch(true);
+ 		},
+diff --git a/dist/layouts/shared/theme-toggle.js b/dist/layouts/shared/theme-toggle.js
+index 3461d6fdca45b76d0deb5a63664b65b6dc3e76c7..420debea89925e36843770ce70f93e8ecaf76ab0 100644
+--- a/dist/layouts/shared/theme-toggle.js
++++ b/dist/layouts/shared/theme-toggle.js
+@@ -1,5 +1,6 @@
+ "use client";
+ import { cn } from "../../utils/cn.js";
++import { useI18n } from "../../contexts/i18n.js";
+ import { useEffect, useState } from "react";
+ import { jsx } from "react/jsx-runtime";
+ import { Airplay, Moon, Sun } from "lucide-react";
+@@ -17,6 +18,7 @@ const full = [
+ ];
+ function ThemeToggle({ className, mode = "light-dark", ...props }) {
+ 	const { setTheme, theme, resolvedTheme } = useTheme();
++	const { text } = useI18n();
+ 	const [mounted, setMounted] = useState(false);
+ 	useEffect(() => {
+ 		setMounted(true);
+@@ -26,7 +28,7 @@ function ThemeToggle({ className, mode = "light-dark", ...props }) {
+ 		const value = mounted ? resolvedTheme : null;
+ 		return /* @__PURE__ */ jsx("button", {
+ 			className: container,
+-			"aria-label": `Toggle Theme`,
++			"aria-label": text.toggleTheme,
+ 			onClick: () => setTheme(value === "light" ? "dark" : "light"),
+ 			"data-theme-toggle": "",
+ 			children: full.map(([key, Icon]) => {

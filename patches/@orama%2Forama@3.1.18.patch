@@ -1,0 +1,256 @@
+diff --git a/dist/browser/components/index.js b/dist/browser/components/index.js
+index ac364bc5c2fcc033abc886e1b8a677ea384f9c70..eed82d8c08f7bd621e49caa58e5c59c6bc7152c5 100644
+--- a/dist/browser/components/index.js
++++ b/dist/browser/components/index.js
+@@ -207,7 +207,7 @@ export function remove(implementation, index, prop, id, internalId, value, schem
+     }
+     return true;
+ }
+-export function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap) {
++export function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token = term) {
+     const documentIDs = Array.from(ids);
+     const avgFieldLength = index.avgFieldLength[prop];
+     const fieldLengths = index.fieldLengths[prop];
+@@ -222,12 +222,12 @@ export function calculateResultScores(index, prop, term, ids, docsCount, bm25Rel
+         if (whereFiltersIDs && !whereFiltersIDs.has(internalId)) {
+             continue;
+         }
+-        // Track keyword matches per property
++        // Track the search tokens each property matches. A token matching several words counts once.
+         if (!keywordMatchesMap.has(internalId)) {
+             keywordMatchesMap.set(internalId, new Map());
+         }
+         const propertyMatches = keywordMatchesMap.get(internalId);
+-        propertyMatches.set(prop, (propertyMatches.get(prop) || 0) + 1);
++        propertyMatches.set(prop, (propertyMatches.get(prop) ?? new Set()).add(token));
+         const tf = oramaFrequencies?.[internalId]?.[term] ?? 0;
+         const bm25 = BM25(tf, termOccurrences, docsCount, fieldLengths[internalId], avgFieldLength, bm25Relevance);
+         if (resultsMap.has(internalId)) {
+@@ -240,7 +240,7 @@ export function calculateResultScores(index, prop, term, ids, docsCount, bm25Rel
+ }
+ export function search(index, term, tokenizer, language, propertiesToSearch, exact, tolerance, boost, relevance, docsCount, whereFiltersIDs, threshold = 0) {
+     const tokens = tokenizer.tokenize(term, language);
+-    const keywordsCount = tokens.length || 1;
++    const keywordsCount = new Set(tokens).size || 1;
+     // Track keyword matches per document and property
+     const keywordMatchesMap = new Map();
+     // Track which tokens were found in the search
+@@ -278,7 +278,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+             for (let j = 0; j < termsFoundLength; j++) {
+                 const word = termsFound[j];
+                 const ids = searchResult[word];
+-                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap);
++                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token);
+             }
+         }
+     }
+@@ -312,7 +312,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+             if (!propertyMatches)
+                 return false;
+             // Check if any property has all keywords
+-            return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++            return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+         });
+         return fullMatches;
+     }
+@@ -322,7 +322,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+         if (!propertyMatches)
+             return false;
+         // Check if any property has all keywords
+-        return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++        return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+     });
+     // If we have full matches and threshold < 1, return full matches plus a percentage of partial matches
+     if (fullMatches.length > 0) {
+diff --git a/dist/commonjs/components/index.js b/dist/commonjs/components/index.js
+index a570c1df5d4bffbeb3af9f2e1604e58f1079fef6..d342f559b27955608d3c78f86bd514fceb8dc808 100644
+--- a/dist/commonjs/components/index.js
++++ b/dist/commonjs/components/index.js
+@@ -226,7 +226,7 @@ function remove(implementation, index, prop, id, internalId, value, schemaType,
+     }
+     return true;
+ }
+-function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap) {
++function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token = term) {
+     const documentIDs = Array.from(ids);
+     const avgFieldLength = index.avgFieldLength[prop];
+     const fieldLengths = index.fieldLengths[prop];
+@@ -241,12 +241,12 @@ function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance,
+         if (whereFiltersIDs && !whereFiltersIDs.has(internalId)) {
+             continue;
+         }
+-        // Track keyword matches per property
++        // Track the search tokens each property matches. A token matching several words counts once.
+         if (!keywordMatchesMap.has(internalId)) {
+             keywordMatchesMap.set(internalId, new Map());
+         }
+         const propertyMatches = keywordMatchesMap.get(internalId);
+-        propertyMatches.set(prop, (propertyMatches.get(prop) || 0) + 1);
++        propertyMatches.set(prop, (propertyMatches.get(prop) ?? new Set()).add(token));
+         const tf = oramaFrequencies?.[internalId]?.[term] ?? 0;
+         const bm25 = (0, algorithms_js_1.BM25)(tf, termOccurrences, docsCount, fieldLengths[internalId], avgFieldLength, bm25Relevance);
+         if (resultsMap.has(internalId)) {
+@@ -259,7 +259,7 @@ function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance,
+ }
+ function search(index, term, tokenizer, language, propertiesToSearch, exact, tolerance, boost, relevance, docsCount, whereFiltersIDs, threshold = 0) {
+     const tokens = tokenizer.tokenize(term, language);
+-    const keywordsCount = tokens.length || 1;
++    const keywordsCount = new Set(tokens).size || 1;
+     // Track keyword matches per document and property
+     const keywordMatchesMap = new Map();
+     // Track which tokens were found in the search
+@@ -297,7 +297,7 @@ function search(index, term, tokenizer, language, propertiesToSearch, exact, tol
+             for (let j = 0; j < termsFoundLength; j++) {
+                 const word = termsFound[j];
+                 const ids = searchResult[word];
+-                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap);
++                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token);
+             }
+         }
+     }
+@@ -331,7 +331,7 @@ function search(index, term, tokenizer, language, propertiesToSearch, exact, tol
+             if (!propertyMatches)
+                 return false;
+             // Check if any property has all keywords
+-            return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++            return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+         });
+         return fullMatches;
+     }
+@@ -341,7 +341,7 @@ function search(index, term, tokenizer, language, propertiesToSearch, exact, tol
+         if (!propertyMatches)
+             return false;
+         // Check if any property has all keywords
+-        return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++        return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+     });
+     // If we have full matches and threshold < 1, return full matches plus a percentage of partial matches
+     if (fullMatches.length > 0) {
+diff --git a/dist/deno/components/index.js b/dist/deno/components/index.js
+index ac364bc5c2fcc033abc886e1b8a677ea384f9c70..eed82d8c08f7bd621e49caa58e5c59c6bc7152c5 100644
+--- a/dist/deno/components/index.js
++++ b/dist/deno/components/index.js
+@@ -207,7 +207,7 @@ export function remove(implementation, index, prop, id, internalId, value, schem
+     }
+     return true;
+ }
+-export function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap) {
++export function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token = term) {
+     const documentIDs = Array.from(ids);
+     const avgFieldLength = index.avgFieldLength[prop];
+     const fieldLengths = index.fieldLengths[prop];
+@@ -222,12 +222,12 @@ export function calculateResultScores(index, prop, term, ids, docsCount, bm25Rel
+         if (whereFiltersIDs && !whereFiltersIDs.has(internalId)) {
+             continue;
+         }
+-        // Track keyword matches per property
++        // Track the search tokens each property matches. A token matching several words counts once.
+         if (!keywordMatchesMap.has(internalId)) {
+             keywordMatchesMap.set(internalId, new Map());
+         }
+         const propertyMatches = keywordMatchesMap.get(internalId);
+-        propertyMatches.set(prop, (propertyMatches.get(prop) || 0) + 1);
++        propertyMatches.set(prop, (propertyMatches.get(prop) ?? new Set()).add(token));
+         const tf = oramaFrequencies?.[internalId]?.[term] ?? 0;
+         const bm25 = BM25(tf, termOccurrences, docsCount, fieldLengths[internalId], avgFieldLength, bm25Relevance);
+         if (resultsMap.has(internalId)) {
+@@ -240,7 +240,7 @@ export function calculateResultScores(index, prop, term, ids, docsCount, bm25Rel
+ }
+ export function search(index, term, tokenizer, language, propertiesToSearch, exact, tolerance, boost, relevance, docsCount, whereFiltersIDs, threshold = 0) {
+     const tokens = tokenizer.tokenize(term, language);
+-    const keywordsCount = tokens.length || 1;
++    const keywordsCount = new Set(tokens).size || 1;
+     // Track keyword matches per document and property
+     const keywordMatchesMap = new Map();
+     // Track which tokens were found in the search
+@@ -278,7 +278,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+             for (let j = 0; j < termsFoundLength; j++) {
+                 const word = termsFound[j];
+                 const ids = searchResult[word];
+-                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap);
++                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token);
+             }
+         }
+     }
+@@ -312,7 +312,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+             if (!propertyMatches)
+                 return false;
+             // Check if any property has all keywords
+-            return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++            return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+         });
+         return fullMatches;
+     }
+@@ -322,7 +322,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+         if (!propertyMatches)
+             return false;
+         // Check if any property has all keywords
+-        return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++        return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+     });
+     // If we have full matches and threshold < 1, return full matches plus a percentage of partial matches
+     if (fullMatches.length > 0) {
+diff --git a/dist/esm/components/index.js b/dist/esm/components/index.js
+index ac364bc5c2fcc033abc886e1b8a677ea384f9c70..eed82d8c08f7bd621e49caa58e5c59c6bc7152c5 100644
+--- a/dist/esm/components/index.js
++++ b/dist/esm/components/index.js
+@@ -207,7 +207,7 @@ export function remove(implementation, index, prop, id, internalId, value, schem
+     }
+     return true;
+ }
+-export function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap) {
++export function calculateResultScores(index, prop, term, ids, docsCount, bm25Relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token = term) {
+     const documentIDs = Array.from(ids);
+     const avgFieldLength = index.avgFieldLength[prop];
+     const fieldLengths = index.fieldLengths[prop];
+@@ -222,12 +222,12 @@ export function calculateResultScores(index, prop, term, ids, docsCount, bm25Rel
+         if (whereFiltersIDs && !whereFiltersIDs.has(internalId)) {
+             continue;
+         }
+-        // Track keyword matches per property
++        // Track the search tokens each property matches. A token matching several words counts once.
+         if (!keywordMatchesMap.has(internalId)) {
+             keywordMatchesMap.set(internalId, new Map());
+         }
+         const propertyMatches = keywordMatchesMap.get(internalId);
+-        propertyMatches.set(prop, (propertyMatches.get(prop) || 0) + 1);
++        propertyMatches.set(prop, (propertyMatches.get(prop) ?? new Set()).add(token));
+         const tf = oramaFrequencies?.[internalId]?.[term] ?? 0;
+         const bm25 = BM25(tf, termOccurrences, docsCount, fieldLengths[internalId], avgFieldLength, bm25Relevance);
+         if (resultsMap.has(internalId)) {
+@@ -240,7 +240,7 @@ export function calculateResultScores(index, prop, term, ids, docsCount, bm25Rel
+ }
+ export function search(index, term, tokenizer, language, propertiesToSearch, exact, tolerance, boost, relevance, docsCount, whereFiltersIDs, threshold = 0) {
+     const tokens = tokenizer.tokenize(term, language);
+-    const keywordsCount = tokens.length || 1;
++    const keywordsCount = new Set(tokens).size || 1;
+     // Track keyword matches per document and property
+     const keywordMatchesMap = new Map();
+     // Track which tokens were found in the search
+@@ -278,7 +278,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+             for (let j = 0; j < termsFoundLength; j++) {
+                 const word = termsFound[j];
+                 const ids = searchResult[word];
+-                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap);
++                calculateResultScores(index, prop, word, ids, docsCount, relevance, resultsMap, boostPerProperty, whereFiltersIDs, keywordMatchesMap, token);
+             }
+         }
+     }
+@@ -312,7 +312,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+             if (!propertyMatches)
+                 return false;
+             // Check if any property has all keywords
+-            return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++            return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+         });
+         return fullMatches;
+     }
+@@ -322,7 +322,7 @@ export function search(index, term, tokenizer, language, propertiesToSearch, exa
+         if (!propertyMatches)
+             return false;
+         // Check if any property has all keywords
+-        return Array.from(propertyMatches.values()).some((matches) => matches === keywordsCount);
++        return Array.from(propertyMatches.values()).some((matches) => matches.size === keywordsCount);
+     });
+     // If we have full matches and threshold < 1, return full matches plus a percentage of partial matches
+     if (fullMatches.length > 0) {
