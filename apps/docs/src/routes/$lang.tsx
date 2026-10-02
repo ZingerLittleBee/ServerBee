@@ -39,10 +39,10 @@ export const Route = createFileRoute('/$lang')({
     throw redirect({ href: location.href.replace(firstSegment, `/${lang}`), statusCode: 308 })
   },
   // The title of a page without its own, in the language the 404 page takes from the path. An unknown language is a
-  // 404 here, and so is a path under a language that no route matches (globalNotFound).
+  // 404 here, and so is a path under a language that no route matches (_notFound).
   head: ({ match }) => {
     const lang = pathLanguage(match.pathname)
-    return match.status === 'notFound' || match.globalNotFound
+    return match.status === 'notFound' || match._notFound
       ? notFoundHead(lang)
       : { meta: [{ title: docsSiteName[lang] }] }
   },
