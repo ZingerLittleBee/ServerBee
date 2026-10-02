@@ -49,7 +49,7 @@ index 75e3069f041be930ab5d9d1d824fc97bcbe3fb60..408a66a2a8b81ada23d9cc6c3df9710a
  			children: /* @__PURE__ */ jsxs(ListContext, {
  				value: useMemo(() => ({
 diff --git a/dist/components/sidebar/base.js b/dist/components/sidebar/base.js
-index 78c7d59de854993ca206520fda17399432dce1ce..6ae89e0e560f5351a9f7976d00fa23526f0ec6f4 100644
+index 78c7d59de854993ca206520fda17399432dce1ce..089694ef65bef18aa4f9a37beb607c7d136ffebe 100644
 --- a/dist/components/sidebar/base.js
 +++ b/dist/components/sidebar/base.js
 @@ -1,7 +1,9 @@
@@ -145,7 +145,7 @@ index 78c7d59de854993ca206520fda17399432dce1ce..6ae89e0e560f5351a9f7976d00fa2352
  		}
  	});
  }
-@@ -198,9 +254,10 @@ function SidebarFolderContent(props) {
+@@ -198,9 +254,13 @@ function SidebarFolderContent(props) {
  	});
  }
  function SidebarTrigger({ children, ...props }) {
@@ -154,11 +154,14 @@ index 78c7d59de854993ca206520fda17399432dce1ce..6ae89e0e560f5351a9f7976d00fa2352
 +	const { text } = useI18n();
  	return /* @__PURE__ */ jsx("button", {
 -		"aria-label": "Open Sidebar",
++		type: "button",
 +		"aria-label": open ? text.closeSidebar : text.openSidebar,
++		"aria-expanded": open,
++		"aria-controls": "nd-sidebar-mobile",
  		onClick: () => setOpen((prev) => !prev),
  		...props,
  		children
-@@ -208,12 +265,17 @@ function SidebarTrigger({ children, ...props }) {
+@@ -208,12 +268,17 @@ function SidebarTrigger({ children, ...props }) {
  }
  function SidebarCollapseTrigger(props) {
  	const { collapsed, setCollapsed } = useSidebar();
