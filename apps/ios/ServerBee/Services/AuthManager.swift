@@ -236,7 +236,8 @@ private extension AuthManager {
         let generation = authenticationGeneration
         let accountId = user?.id
         let installationId = InstallationID.getOrCreate()
-        // Legacy sessions adopt this proof on their first Server rotation.
+        // A successful Server rotation retains the consumed secret's hash for
+        // deletion only, even if an older client discarded the login proof.
         // Persist it before networking, including when the response is lost.
         if KeychainService.loadString(for: KeychainService.revocationTokenKey) == nil {
             try KeychainService.saveString(refreshToken, for: KeychainService.revocationTokenKey)

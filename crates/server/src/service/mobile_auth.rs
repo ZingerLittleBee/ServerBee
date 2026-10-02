@@ -11,7 +11,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::config::MobileConfig;
-use crate::entity::{device_token, mobile_session, session, user};
+use crate::entity::{device_token, mobile_session, mobile_session_revocation_proof, session, user};
 use crate::error::AppError;
 use crate::service::auth::AuthService;
 
@@ -279,6 +279,19 @@ impl MobileAuthService {
             return Err(AppError::Unauthorized);
         }
 
+        // An older client may discard the login proof or an earlier refresh
+        // secret before upgrading. Retain each consumed secret's hash as a
+        // deletion-only proof for this session, atomically with its rotation.
+        // Neither ordinary authentication nor refresh consults this table.
+        // The FK removes these proofs when the original session is deleted.
+        mobile_session_revocation_proof::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            mobile_session_id: Set(current_session.id.clone()),
+            token_hash: Set(AuthService::hash_session_token(refresh_token)),
+        }
+        .insert(&txn)
+        .await?;
+
         // Keep the mobile session identity (and hence the registration FK),
         // but remove every old access credential before inserting its successor.
         session::Entity::delete_many()
@@ -332,28 +345,82 @@ impl MobileAuthService {
         revocation_token: &str,
     ) -> Result<(), AppError> {
         let hash = AuthService::hash_session_token(revocation_token);
-        let targets = || {
-            mobile_session::Entity::find()
-                .select_only()
-                .column(mobile_session::Column::Id)
-                .filter(mobile_session::Column::InstallationId.eq(installation_id))
-                .filter(mobile_session::Column::RevocationTokenHash.eq(&hash))
-                .into_query()
+        let credential_matches = || {
+            Condition::any()
+                .add(mobile_session::Column::RevocationTokenHash.eq(&hash))
+                .add(
+                    mobile_session::Column::Id.in_subquery(
+                        mobile_session_revocation_proof::Entity::find()
+                            .select_only()
+                            .column(mobile_session_revocation_proof::Column::MobileSessionId)
+                            .filter(mobile_session_revocation_proof::Column::TokenHash.eq(&hash))
+                            .into_query(),
+                    ),
+                )
         };
+        // Do expensive Argon2 verification outside the writer transaction, as
+        // refresh does. Recheck the exact original row/hash under the lock;
+        // a concurrent rotation is then accepted through its consumed proof.
+        let mut verified_current = None;
+        if mobile_session::Entity::find()
+            .filter(mobile_session::Column::InstallationId.eq(installation_id))
+            .filter(credential_matches())
+            .one(db)
+            .await?
+            .is_none()
+        {
+            let candidates = mobile_session::Entity::find()
+                .filter(mobile_session::Column::InstallationId.eq(installation_id))
+                .all(db)
+                .await?;
+            for candidate in candidates {
+                if Self::verify_refresh_token(revocation_token, &candidate.refresh_token_hash)? {
+                    verified_current = Some(candidate);
+                    break;
+                }
+            }
+        }
         let txn = db.begin().await?;
-        // Take SQLite's writer lock before evaluating the credential, ordering
-        // revocation with refresh, registration and every other revocation.
+        // Acquire SQLite's writer lock before authorizing from proof history
+        // or rechecking the current hash. The no-op write orders this decision
+        // with refresh's conditional consumption, including staged upgrades
+        // whose client has no matching stable login proof yet.
+        mobile_session::Entity::update_many()
+            .col_expr(
+                mobile_session::Column::Id,
+                Expr::col(mobile_session::Column::Id),
+            )
+            .filter(mobile_session::Column::InstallationId.eq(installation_id))
+            .exec(&txn)
+            .await?;
+        let mut target = mobile_session::Entity::find()
+            .filter(mobile_session::Column::InstallationId.eq(installation_id))
+            .filter(credential_matches())
+            .one(&txn)
+            .await?;
+        if target.is_none()
+            && let Some(verified) = verified_current
+        {
+            // Before consumption an upgraded client's secret can still be the
+            // current refresh token. Authorize only the exact verified row and
+            // hash, never another login on this installation. After consumption
+            // the locked lookup above sees the retained deletion-only proof.
+            target = mobile_session::Entity::find_by_id(&verified.id)
+                .filter(mobile_session::Column::InstallationId.eq(installation_id))
+                .filter(mobile_session::Column::RefreshTokenHash.eq(verified.refresh_token_hash))
+                .one(&txn)
+                .await?;
+        }
+        let target = target.ok_or(AppError::Unauthorized)?;
         device_token::Entity::delete_many()
-            .filter(device_token::Column::MobileSessionId.in_subquery(targets()))
+            .filter(device_token::Column::MobileSessionId.eq(&target.id))
             .exec(&txn)
             .await?;
         session::Entity::delete_many()
-            .filter(session::Column::MobileSessionId.in_subquery(targets()))
+            .filter(session::Column::MobileSessionId.eq(&target.id))
             .exec(&txn)
             .await?;
-        let revoked = mobile_session::Entity::delete_many()
-            .filter(mobile_session::Column::InstallationId.eq(installation_id))
-            .filter(mobile_session::Column::RevocationTokenHash.eq(&hash))
+        let revoked = mobile_session::Entity::delete_by_id(&target.id)
             .exec(&txn)
             .await?;
         if revoked.rows_affected != 1 {

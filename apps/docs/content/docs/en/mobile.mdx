@@ -111,10 +111,10 @@ To enable push notifications, configure APNs credentials in the web app:
 
 ## Security Considerations
 
-- **Token Rotation**: Refresh tokens are rotated on every use (single-use). Old refresh tokens cannot be reused.
+- **Token Rotation**: Refresh tokens are rotated on every use (single-use). Consumed refresh tokens cannot authenticate APIs or refresh again. Their retained hashes can only revoke the original session, supporting cleanup after a staged app upgrade or a lost rotation response.
 - **Fixed Expiry**: Access tokens have fixed 15-minute expiry (no sliding renewal) to limit exposure if stolen
 - **Secure Storage**: Tokens are stored in iOS Keychain with appropriate accessibility levels
-- **Session Expiry**: Expired access-token sessions are removed hourly. Paired-device refresh sessions are not deleted by that task: the device list hides them after expiry, refresh rotation replaces them, and logout or revoke deletes them.
+- **Session Expiry**: Expired access-token sessions are removed hourly. Paired-device refresh sessions are not deleted by that task: the device list hides them after expiry, refresh rotation preserves their identity and installation registration, and logout or revoke deletes them together with their retained revocation-proof hashes.
 
 ## Troubleshooting
 

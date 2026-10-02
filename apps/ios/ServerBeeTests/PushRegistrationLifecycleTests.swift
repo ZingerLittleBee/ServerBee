@@ -3,7 +3,7 @@ import XCTest
 @testable import ServerBee
 
 /// Holds URLSession requests at the external HTTP boundary.
-final class PushLifecycleURLProtocol: URLProtocol, @unchecked Sendable {
+final class PushLifecycleURLProtocol: URLProtocol {
     nonisolated(unsafe) static var handler: (@Sendable (PushLifecycleURLProtocol) -> Void)?
 
     override static func canInit(with request: URLRequest) -> Bool { true }

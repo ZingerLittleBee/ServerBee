@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import ServerBee
 
-final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable {
+final class AuthenticationURLProtocol: URLProtocol {
     nonisolated(unsafe) static var handler: (@Sendable (AuthenticationURLProtocol) -> Void)?
 
     override static func canInit(with request: URLRequest) -> Bool { true }

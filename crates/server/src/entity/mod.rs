@@ -18,6 +18,7 @@ pub mod ip_quality_snapshot;
 pub mod ip_risk_cache;
 pub mod maintenance;
 pub mod mobile_session;
+pub mod mobile_session_revocation_proof;
 pub mod network_probe_config;
 pub mod network_probe_record;
 pub mod network_probe_record_hourly;
