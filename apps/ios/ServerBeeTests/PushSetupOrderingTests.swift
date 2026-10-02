@@ -44,13 +44,15 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
         lock.unlock()
         if let reply { reply.request.respond(reply.data) }
     }
-    func takeHeld() -> (@Sendable () -> Void)? {
+    // The test takes and releases this non-Sendable request on MainActor; it is
+    // never captured by a transferable closure. The fixture handoff stays locked.
+    @MainActor
+    func takeHeld() -> (request: OrderedSetupURLProtocol, data: Data)? {
         lock.lock()
         let reply = held
         held = nil
         lock.unlock()
-        guard let reply else { return nil }
-        return { reply.request.respond(reply.data) }
+        return reply
     }
     func cancel() {
         lock.lock()
@@ -222,19 +224,23 @@ final class PushSetupOrderingTests: XCTestCase {
             // Releasing the GET below must not affect the active upload.
             let uploadEntered = expectation(description: "renewal HTTP response held")
             let oldReply = http.takeHeld()
+            XCTAssertNotNil(oldReply)
             http.holdNext("POST", path: "/api/mobile/push/verified-register", entered: uploadEntered)
             await manager.retry()
             await fulfillment(of: [uploadEntered], timeout: 3)
             XCTAssertEqual(manager.confirmed?.registered, false)
             if releaseBeforeUpload {
-                oldReply?()
+                if let oldReply { oldReply.request.respond(oldReply.data) }
                 await oldRead.value
                 XCTAssertEqual(manager.confirmed?.registered, false)
                 XCTAssertTrue(manager.isSaving)
             }
             http.release()
             await manager.waitForPendingRegistrations()
-            if !releaseBeforeUpload { oldReply?(); await oldRead.value }
+            if !releaseBeforeUpload {
+                if let oldReply { oldReply.request.respond(oldReply.data) }
+                await oldRead.value
+            }
             XCTAssertEqual(manager.confirmed?.revision, 3)
             XCTAssertEqual(manager.confirmed?.registered, true)
             XCTAssertNil(manager.errorMessage)
@@ -372,7 +378,9 @@ final class PushSetupOrderingTests: XCTestCase {
 extension PushSetupOrderingTests {
     func testOldRetryCannotContinuePermissionAfterLoginChangesDuringUploadOrRead() async {
         for phase in ["upload", "read"] {
-            for (server, user) in [("https://ordering.test", "bob"), ("https://replacement.test", "alice")] {
+            for (server, user) in [
+                ("https://ordering.test", "bob"), ("https://replacement.test", "alice"), ("https://ordering.test", "alice")
+            ] {
                 await replacementDuringRetry(phase: phase, server: server, user: user)
             }
         }
@@ -385,6 +393,7 @@ extension PushSetupOrderingTests {
         OrderedSetupURLProtocol.fixture = original
         let auth = AuthManager()
         login(auth)
+        let originalGeneration = auth.authenticationGeneration
         let system = TestPushSystem()
         let relay = TestPushRelay()
         let manager = manager(auth, system: system, relay: relay)
@@ -406,6 +415,7 @@ extension PushSetupOrderingTests {
         await fulfillment(of: phase == "read" ? [retryStarted, entered] : [retryStarted], timeout: 3)
         auth.clearAuth()
         login(auth, server: server, user: user)
+        XCTAssertNotEqual(auth.authenticationGeneration, originalGeneration)
         manager.configure(apiClient: APIClient(authManager: auth))
         OrderedSetupURLProtocol.fixture = replacement
         system.status = .notDetermined
