@@ -137,13 +137,15 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '校验', page: '/zh/docs/troubleshooting' },
   { locale: 'zh', query: '就地', page: '/zh/docs/custom-widgets', first: '就地' },
   { locale: 'zh', query: '就地址变了', page: '/zh/docs/configuration', same: '地址变了' },
-  // ICU takes the 就 of 就地 into the word before in 也可就地升级 (也, 可就, 地, 升级) and its 地 into the word after
-  // in 就地上报 (就, 地上, 报), which still read as 就地.
+  // ICU takes the 就 of 就地 into the word before in 也可就地升级 (也, 可就, 地, 升级) and its 地 into the 地上 (on the
+  // ground) of 就地上报 (就, 地上, 报) and 就地上线上报 (就, 地上, 线上, 报), which still read as 就地.
   { locale: 'zh', query: '也可就地升级', page: '/zh/docs/custom-widgets', first: '就地' },
   { locale: 'zh', query: '就地上报', page: '/zh/docs/custom-widgets', same: '就地 上报' },
-  // Unless the characters after its 地 make a word ending inside the next word ICU finds: 能否就地区分组 (能否, 就,
-  // 地区, 分组: can servers be grouped by region) does not read as 就地 and 区分.
+  { locale: 'zh', query: '就地上线上报', page: '/zh/docs/custom-widgets', same: '就地 上线 上报' },
+  // But a word of another meaning keeps its 地: 能否就地区分组 (能否, 就, 地区, 分组: can servers be grouped by region)
+  // and 就地区间延迟 (就, 地区, 间, 延迟: the latency between regions) do not read as 就地 and 区分 or 区间.
   { locale: 'zh', query: '能否就地区分组', page: '/zh/docs/monitoring', same: '地区分组' },
+  { locale: 'zh', query: '就地区间延迟', page: '/zh/docs/ping', same: '地区间延迟' },
   // English words inside Chinese prose match case-insensitively.
   { locale: 'zh', query: 'websocket', page: '/zh/docs/api-reference' },
   // Full-width Latin, which Chinese input methods can produce.

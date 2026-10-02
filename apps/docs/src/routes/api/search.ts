@@ -31,13 +31,17 @@ const fillerWords = new Set(
 )
 
 // Words that ICU splits into characters, one of them a filler word, kept whole where a text reads as them: the 和 (and)
-// of 校验和 (checksum) and the 就 (then) of 就地 (in place). ICU can join the first character to the word before, as
-// in 也可就地升级 (也, 可就, 地, 升级), or the last one to the characters after, as in 就地上报 (就, 地上, 报), where
-// those characters still make a word with what follows (上报) that ends where a word ICU finds ends, but not in
-// 就地址变了 (就, 地址, 变, 了: then the address changed), where 址 is left alone, or in 能否就地区分组 (能否, 就,
-// 地区, 分组: can servers be grouped by region), where 区分 would end inside 分组. Their pieces, less the filler word,
-// are tokens too, so that 校验 (validation) still finds a checksum.
+// of 校验和 (checksum) and the 就 (then) of 就地 (in place), also where ICU joins the first character to the word
+// before, as in 也可就地升级 (也, 可就, 地, 升级). Their pieces, less the filler word, are tokens too, so that 校验
+// (validation) still finds a checksum.
 const wholeWords = ['校验和', '就地']
+// Words ICU makes of the last character of a whole word and the character after, read as the whole word and the word
+// that character starts where it starts one: 地上 (on the ground) and 地下 (underground), which a query hardly means
+// after 就, as in 就地上报 (就, 地上, 报: report in place), 就地上报时 (就, 地上, 报时) and 就地下线 (就, 地下, 线: go
+// offline in place). Other words keep their 地, as in 就地址变了 (就, 地址, 变, 了: then the address changed),
+// 能否就地区分组 (能否, 就, 地区, 分组: can servers be grouped by region) and 就地区间延迟 (就, 地区, 间, 延迟: the
+// latency between regions), though 区分 and 区间 are words too.
+const wordsAfter = ['地上', '地下']
 // How many characters after a whole word ICU reads to find the word they start. It finds that word from the first few,
 // and reading all the text after each whole word took time growing with the square of a long query's length.
 const lookahead = 16
@@ -60,7 +64,7 @@ function* segments(text: string): Generator<Pick<Intl.SegmentData, 'isWordLike' 
 
 /**
  * The whole words a text reads as, in order: where ICU splits one and ends a segment with its last character, or joins
- * that character to characters that, taken from it, still start a word, one ending where a segment ends. Where ICU
+ * that character into one of the words after a whole word and the characters after it still start a word. Where ICU
  * keeps one in a segment, alone or in a longer word, the segment stays.
  */
 function wholeWordsIn(text: string): { index: number; word: string }[] {
@@ -71,7 +75,7 @@ function wholeWordsIn(text: string): { index: number; word: string }[] {
       ends ??= segmentEnds(text)
       const end = index + word.length
       const split = [...word.slice(1)].some((_, offset) => ends?.has(index + offset + 1))
-      if (split && (ends.has(end) || startsWordAt(text, end, ends))) {
+      if (split && (ends.has(end) || readsWordAfter(text, end, ends))) {
         found.push({ index, word })
       }
     }
@@ -91,12 +95,18 @@ function segmentEnds(text: string): Set<number> {
 }
 
 /**
- * Whether ICU, reading the text from a position on, finds a word of more than one character there, one ending where a
- * segment it finds in the whole text ends.
+ * Whether ICU joins the last character of a whole word, which ends at a position, into one of the words after a whole
+ * word, and the characters after the whole word still start a word of more than one character.
  */
-function startsWordAt(text: string, start: number, ends: Set<number>): boolean {
-  const [first] = icuSegments(text.slice(start, start + lookahead))
-  return Boolean(first?.isWordLike && first.segment.length > 1 && ends.has(start + first.segment.length))
+function readsWordAfter(text: string, end: number, ends: Set<number>): boolean {
+  const start = end - 1
+  const joined =
+    ends.has(start) && wordsAfter.some((word) => text.startsWith(word, start) && ends.has(start + word.length))
+  if (!joined) {
+    return false
+  }
+  const [first] = icuSegments(text.slice(end, end + lookahead))
+  return Boolean(first?.isWordLike && first.segment.length > 1)
 }
 
 /** The segments ICU finds in a text, a word starting at each word start. */
