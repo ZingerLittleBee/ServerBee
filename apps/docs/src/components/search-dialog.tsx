@@ -59,6 +59,9 @@ function ResultOption({ item, onActive, onClick, optionId }: ResultOptionProps) 
 // shown once it is collapsed, and the half off screen is inert. The header has one too, shown only while the sidebar is
 // not docked.
 const searchButtons = '[data-search], [data-search-full]'
+// The buttons that show and hide the sidebar: one in each of its halves and, on a narrow screen, where the sidebar is a
+// drawer, one in the header and one in the drawer.
+const sidebarToggles = '[aria-controls="nd-sidebar"], [aria-controls="nd-sidebar-mobile"]'
 
 /** What focus goes back to once the dialog closes. */
 interface Opener {
@@ -81,8 +84,9 @@ function isOnScreen(element: Element): boolean {
 
 /**
  * An element, with the control of each open popup holding it: the element naming the popup in aria-controls and
- * carrying aria-expanded=true. The sidebar toggles name the sidebar too, and carry no aria-expanded. Focus can be on a
- * popup itself, as on the page actions menu, whose items are links, which Radix does not focus when it opens.
+ * carrying aria-expanded=true. The toggles of the docked sidebar name it too, and carry no aria-expanded, while the
+ * drawer, which closes as a popup does, has its toggles for controls. Focus can be on a popup itself, as on the page
+ * actions menu, whose items are links, which Radix does not focus when it opens.
  */
 function openerOf(element: Element | null): Opener | null {
   if (!(element instanceof HTMLElement)) {
@@ -103,13 +107,16 @@ function openerOf(element: Element | null): Opener | null {
   return { controls, element, onScreen: isOnScreen(element) }
 }
 
-/** The controls that stand in for one that cannot take focus: the same control in the other half of the sidebar. */
+/**
+ * The controls that stand in for one that cannot take focus: the same search button, or for a sidebar toggle or another
+ * control of the sidebar, a sidebar toggle, in the other half of the sidebar or in the header.
+ */
 function twinsOf(element: HTMLElement): HTMLElement[] {
   if (element.matches(searchButtons)) {
     return [...document.querySelectorAll<HTMLElement>(searchButtons)]
   }
-  return element.closest('#nd-sidebar, [data-sidebar-panel]')
-    ? [...document.querySelectorAll<HTMLElement>('[aria-controls="nd-sidebar"]')]
+  return element.matches(sidebarToggles) || element.closest('#nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]')
+    ? [...document.querySelectorAll<HTMLElement>(sidebarToggles)]
     : []
 }
 
