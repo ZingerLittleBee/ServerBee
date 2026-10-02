@@ -124,13 +124,11 @@ function restoreFocus(opener: Opener | null): boolean {
   }
   for (const target of [opener.element, ...opener.controls]) {
     for (const candidate of [target, ...twinsOf(target)]) {
-      candidate.focus({ preventScroll: true })
+      // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
+      // page stays where the reader left it otherwise. The browser scrolls an element it focuses to the middle only of
+      // the scrollers it is out of view in, so the page behind the sticky sidebar or table of contents stays put.
+      candidate.focus({ preventScroll: !opener.onScreen || isOnScreen(candidate) })
       if (document.activeElement === candidate) {
-        // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
-        // page stays where the reader left it otherwise.
-        if (opener.onScreen && !isOnScreen(candidate)) {
-          candidate.scrollIntoView({ block: 'center' })
-        }
         return true
       }
     }
