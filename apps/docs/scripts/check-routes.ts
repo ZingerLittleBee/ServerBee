@@ -106,12 +106,13 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '如何安装', page: '/zh/docs/quick-start' },
   { locale: 'zh', query: '升级失败怎么办', page: '/zh/docs/deployment', every: ['升级', '失败'] },
   { locale: 'zh', query: '配置文件在哪里', page: '/zh/docs/configuration', every: ['配置', '文件'] },
-  // Words that no heading or paragraph holds together, here a heading and the paragraphs under it, with or without a
-  // space between them, or with a question word between them.
-  { locale: 'zh', query: '卸载 Agent', page: '/zh/docs/deployment' },
-  { locale: 'zh', query: '卸载agent', page: '/zh/docs/deployment' },
-  { locale: 'zh', query: 'Agent卸载', page: '/zh/docs/deployment' },
-  { locale: 'zh', query: '服务端怎么卸载', page: '/zh/docs/deployment' },
+  // Words that no heading or paragraph holds together: 卸载 (uninstall) and Agent, which the heading 卸载与清除 and the
+  // paragraphs under it hold, typed with or without a space between them, and 服务端 (server) and 卸载 with a question
+  // word between them. Of the sections holding one of them, those holding the rarer 卸载 score more and come first.
+  { locale: 'zh', query: '卸载 Agent', page: '/zh/docs/deployment', first: '卸载' },
+  { locale: 'zh', query: '卸载agent', page: '/zh/docs/deployment', first: '卸载' },
+  { locale: 'zh', query: 'Agent卸载', page: '/zh/docs/deployment', first: '卸载' },
+  { locale: 'zh', query: '服务端怎么卸载', page: '/zh/docs/deployment', first: '卸载' },
   // Sections holding two of these words come before those holding one, though a short one holding one scores more.
   { locale: 'zh', query: '告警 通知 邮件', page: '/zh/docs/alerts', ranked: true },
   // A word typed twice, in either case, counts once.
