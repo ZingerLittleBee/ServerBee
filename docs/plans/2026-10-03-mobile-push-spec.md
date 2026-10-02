@@ -1,20 +1,10 @@
 ## Problem Statement
 
-ServerBee users need timely iPhone notifications when monitored Servers raise
-or recover from alerts, security rules match, or scheduled tasks finish with
-problems. Browser and WebSocket updates are insufficient while the iOS app
-is backgrounded or not running.
+ServerBee users need timely iPhone notifications when monitored Servers raise or recover from alerts, security rules match, or scheduled tasks finish with problems. Browser and WebSocket updates are insufficient while the iOS app is backgrounded or not running.
 
-ServerBee already has partial APNs support, but its current lifecycle can
-lose device registration during authentication refresh. Sending also lacks
-category and recipient selection, per-device APNs environment handling,
-and correct notification-target identity. Existing code and local tests do
-not establish working background or terminated-app delivery.
+ServerBee already has partial APNs support, but its current lifecycle can lose device registration during authentication refresh. Sending also lacks category and recipient selection, per-device APNs environment handling, and correct notification-target identity. Existing code and local tests do not establish working background or terminated-app delivery.
 
-Users of the official iOS app must not need their own Apple Developer
-credentials or a separately signed app. Self-hosted Server operators must
-not receive the publisher's APNs private key. Notification content should
-remain private from the shared delivery infrastructure.
+Users of the official iOS app must not need their own Apple Developer credentials or a separately signed app. Self-hosted Server operators must not receive the publisher's APNs private key. Notification content should remain private from the shared delivery infrastructure.
 
 ## Solution
 
@@ -22,20 +12,9 @@ Deliver Server-originated mobile notifications through this pipeline:
 
 **ServerBee Server -> dedicated ServerBee Push Relay -> APNs -> iOS.**
 
-Users explicitly enable Mobile notification subscriptions by category in
-iOS Settings. The Server selects eligible recipients, encrypts each
-notification for its installation, and persists pending delivery for up
-to 30 minutes. The relay verifies App Attest registration, accepts only
-device-scoped delivery authorization, and forwards encrypted content using
-the official app's APNs credentials. An iOS Notification Service Extension
-decrypts the content before presentation.
+Users explicitly enable Mobile notification subscriptions by category in iOS Settings. The Server selects eligible recipients, encrypts each notification for its installation, and persists pending delivery for up to 30 minutes. The relay verifies App Attest registration, accepts only device-scoped delivery authorization, and forwards encrypted content using the official app's APNs credentials. An iOS Notification Service Extension decrypts the content before presentation.
 
-Alerts include trigger and recovery notifications. Security notifications
-follow existing security alert rules and are restricted to administrators.
-Scheduled tasks, including manually started runs, notify the appropriate
-owner once per completed run, with failures enabled by subscription and
-successful results separately opt-in. Notification taps open the relevant
-authenticated detail rather than an unrelated screen.
+Alerts include trigger and recovery notifications. Security notifications follow existing security alert rules and are restricted to administrators. Scheduled tasks, including manually started runs, notify the appropriate owner once per completed run, with failures enabled by subscription and successful results separately opt-in. Notification taps open the relevant authenticated detail rather than an unrelated screen.
 
 ## User Stories
 
