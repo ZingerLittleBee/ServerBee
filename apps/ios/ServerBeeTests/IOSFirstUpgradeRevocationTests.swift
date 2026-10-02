@@ -15,8 +15,9 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
     override func setUp() async throws { URLProtocol.registerClass(AuthenticationURLProtocol.self) }
 
     override func tearDown() async throws {
-        URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthenticationURLProtocol.handler = nil
+        AuthenticationURLProtocol.cancelPending()
+        URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthManager().clearAuth()
     }
 
@@ -61,7 +62,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
                                "Keep the captured original credential until cleanup succeeds")
                 request.respond(count == 1 ? 401 : 200)
                 if count == 2 { revoked.fulfill() }
-            case "/api/servers", "/api/mobile/push/unregister", "/api/mobile/push/register": request.respond(401)
+            case "/api/servers", "/api/mobile/push/unregister", "/api/mobile/push/verified-register": request.respond(401)
             default: XCTFail("Stale proof recovery must not enter bearer logout or ordinary authentication"); request.respond(401)
             }
         }
@@ -102,7 +103,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
         let proofs = log.snapshot().filter { $0.url?.path == "/api/mobile/auth/revoke" }
         XCTAssertEqual(proofs.compactMap { Self.body($0)["revocation_token"] as? String }, ["refresh-0", capturedSecret])
         if route != "push" { XCTAssertEqual(log.snapshot().last?.url?.path, "/api/mobile/auth/revoke") } else {
-            XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/register" }.count, 1)
+            XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }.count, 1)
         }
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "ios-first-upgrade.test" })
     }
@@ -263,7 +264,7 @@ private extension IOSFirstUpgradeRevocationTests {
     private func prepareUpgradedSession(
         _ replacements: Int, restore: Bool
     ) async throws -> UpgradedSessionFixture {
-        let manager = PushNotificationManager()
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         var auth = try await seedIOSFirstSession(replacements, manager: manager)
         let log = AuthenticationRequestLog()
         let registered = expectation(description: "registration restored after successful Server-upgrade rotation")
@@ -273,10 +274,12 @@ private extension IOSFirstUpgradeRevocationTests {
             if request.request.url?.path == "/api/mobile/auth/refresh" {
                 XCTAssertEqual(Self.body(request.request)["refresh_token"] as? String, "refresh-\(replacements)")
                 request.respond(200, data: Self.tokens(replacements + 1))
+            } else if request.request.url?.path == "/api/mobile/push/settings" {
+                request.respond(200, data: PushSetupTestData.response())
             } else {
-                XCTAssertEqual(request.request.url?.path, "/api/mobile/push/register")
+                XCTAssertEqual(request.request.url?.path, "/api/mobile/push/verified-register")
                 XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-\(replacements + 1)")
-                request.respond(200)
+                request.respond(200, data: PushSetupTestData.response(registered: true, revision: 2))
                 registered.fulfill()
             }
         }
@@ -289,9 +292,11 @@ private extension IOSFirstUpgradeRevocationTests {
         XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "refresh-0")
         let api = APIClient(authManager: auth)
         if restore { manager.configure(apiClient: api) }
+        await manager.reconcile()
         manager.didRegisterForRemoteNotifications(deviceToken: Data([1, 2]))
         await fulfillment(of: [registered], timeout: 3)
-        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/register" }.count, 1)
+        await manager.waitForPendingRegistrations()
+        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }.count, 1)
         return UpgradedSessionFixture(auth: auth, api: api, manager: manager)
     }
 

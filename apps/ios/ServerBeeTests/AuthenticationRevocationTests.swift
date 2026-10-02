@@ -7,18 +7,26 @@ final class AuthenticationURLProtocol: URLProtocol {
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() { Self.handler?(self) }
-    override func stopLoading() {}
+    private static let pending = PendingURLProtocolRequests()
+    override func startLoading() {
+        Self.pending.begin(self)
+        if let handler = Self.handler { handler(self) } else { loseResponse() }
+    }
+    override func stopLoading() { _ = Self.pending.finish(self) }
+    static func cancelPending() { pending.cancelAll() }
 
     func respond(_ status: Int, data: Data = Data(#"{"data":"ok"}"#.utf8)) {
-        guard let url = request.url,
+        guard Self.pending.finish(self), let url = request.url,
               let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    func loseResponse() { client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost)) }
+    func loseResponse() {
+        guard Self.pending.finish(self) else { return }
+        client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+    }
 }
 
 final class AuthenticationRequestLog: @unchecked Sendable {
@@ -75,8 +83,9 @@ final class AuthenticationRevocationTests: XCTestCase {
     override func setUp() async throws { URLProtocol.registerClass(AuthenticationURLProtocol.self) }
 
     override func tearDown() async throws {
-        URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthenticationURLProtocol.handler = nil
+        AuthenticationURLProtocol.cancelPending()
+        URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthManager().clearAuth()
     }
 
@@ -126,23 +135,25 @@ final class AuthenticationRevocationTests: XCTestCase {
             _ = log.append(request.request)
             switch request.request.url?.path {
             case "/api/mobile/auth/refresh": request.respond(200, data: bobResponse)
-            case "/api/mobile/push/register":
+            case "/api/mobile/push/settings": request.respond(200, data: PushSetupTestData.response())
+            case "/api/mobile/push/verified-register":
                 if request.request.value(forHTTPHeaderField: "Authorization") == "Bearer access-bob" {
                     request.respond(401)
                 } else {
                     XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer rotated-bob")
                     retried.fulfill()
-                    request.respond(200)
+                    request.respond(200, data: PushSetupTestData.response(registered: true, revision: 2))
                 }
             default: request.respond(200)
             }
         }
-        let manager = PushNotificationManager()
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
         manager.didRegisterForRemoteNotifications(deviceToken: Data([1, 2]))
         await fulfillment(of: [retried], timeout: 3)
         XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/auth/refresh" }.count, 1)
-        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/register" }.count, 2)
+        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }.count, 2)
         await gate.open()
         do {
             _ = try await oldRefresh.value
@@ -246,10 +257,10 @@ extension AuthenticationRevocationTests {
             if request.request.url?.path == "/api/mobile/auth/refresh" {
                 request.respond(200, data: payload)
             } else {
-                XCTAssertEqual(request.request.url?.path, "/api/mobile/push/register")
+                XCTAssertEqual(request.request.url?.path, "/api/mobile/push/verified-register")
                 XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer rotated-alice")
                 registered.fulfill()
-                request.respond(200)
+                request.respond(200, data: PushSetupTestData.response(registered: true, revision: 2))
             }
         }
         for _ in 0..<2 {
@@ -258,8 +269,11 @@ extension AuthenticationRevocationTests {
             XCTAssertTrue(auth.isCurrent(context))
             XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "refresh-alice")
         }
-        try await APIClient(authManager: auth).postVoid(
-            "/api/mobile/push/register", body: ["device_token": "still-registered"], context: context
+        let _: PushSetup = try await APIClient(authManager: auth).send(
+            "/api/mobile/push/verified-register", method: "POST", body: VerifiedPushRequest(
+                expectedRevision: 1, deviceToken: String(repeating: "a", count: 64), environment: "sandbox",
+                keyId: "fixture-key", grantId: "fixture-grant", grantToken: "fixture-secret"
+            ), context: context
         )
         await fulfillment(of: [registered], timeout: 3)
     }

@@ -17,7 +17,7 @@ struct PushPreferences: Codable, Sendable, Equatable {
 struct PushSetup: Decodable, Sendable {
     let revision: Int64
     let preferences: PushPreferences
-    let registered: Bool
+    var registered: Bool
     let grantExpiresAt: String?
     let relayUrl: String
     let deliveryAvailable: Bool

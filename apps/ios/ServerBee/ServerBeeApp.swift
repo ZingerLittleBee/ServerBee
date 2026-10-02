@@ -89,8 +89,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUser
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        if let pushManager { pushManager.didRegisterForRemoteNotifications(deviceToken: deviceToken) }
-        else { pendingToken = deviceToken }
+        if let pushManager { pushManager.didRegisterForRemoteNotifications(deviceToken: deviceToken) } else { pendingToken = deviceToken }
     }
 
     func application(

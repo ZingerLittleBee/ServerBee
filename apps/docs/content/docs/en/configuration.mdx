@@ -381,7 +381,7 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 |-----|------|---------|-------------|
 | `url` | string | `""` | Dedicated Push Relay HTTPS URL. Empty disables verified registration. No Apple signing keys belong on the Server. |
 
-Set `SERVERBEE_PUSH_RELAY__URL` to override this URL. An isolated local Server integration harness may use `http://127.0.0.1:<port>`; the iOS app requires HTTPS. Current support covers App Attest registration and confirmed subscription intent. Category delivery is still being implemented; see [Mobile](/en/docs/mobile).
+Set `SERVERBEE_PUSH_RELAY__URL` to override this URL. Configure the Relay with `APNS_ENVIRONMENTS=sandbox,production` for development and distribution installations on the same URL. Its `APP_ATTEST_BUNDLE_VERSIONS` allowlist validates signed version claims. An isolated local Server integration harness may use `http://127.0.0.1:<port>`; the iOS app requires HTTPS. Current support covers App Attest registration and confirmed subscription intent. Category delivery is still being implemented; see [Mobile](/en/docs/mobile).
 
 ### `[firewall]` -- Firewall Blocklist Guardrail
 

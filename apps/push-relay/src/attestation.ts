@@ -12,6 +12,7 @@ export const hash = (data: Uint8Array | string) => createHash('sha256').update(d
 export type Environment = 'sandbox' | 'production'
 export interface Trust {
   appId: string
+  bundleVersions?: readonly string[]
   environment: Environment
   rootPem: string
 }
@@ -85,6 +86,26 @@ function credential(certificates: Buffer[], rootPem: string): { cert: X509Certif
   }
 }
 
+function validateExtensions(value: unknown, trust: Trust, assertionFormat: boolean) {
+  requireValue(value instanceof Map, 'Invalid authenticator extensions')
+  const categoryKey = assertionFormat ? 'validationCategory' : 'apple_validation_category_01'
+  const versionKey = assertionFormat ? 'bundleVersion' : 'apple_bundle_version_01'
+  const encodedCategory = value.get(categoryKey)
+  // Apple's published attestation vector uses a four-byte little-endian UInt32.
+  const category =
+    encodedCategory instanceof Uint8Array && encodedCategory.length === 4
+      ? Buffer.from(encodedCategory).readUInt32LE()
+      : encodedCategory
+  requireValue(
+    typeof category === 'number' &&
+      Number.isInteger(category) &&
+      (trust.environment === 'sandbox' ? category === 3 : category === 2 || category === 4),
+    'App distribution mismatch'
+  )
+  const version = value.get(versionKey)
+  requireValue(typeof version === 'string' && trust.bundleVersions?.includes(version), 'Unapproved app version')
+}
+
 export function attest(encoded: string, keyId: string, clientData: Buffer, trust: Trust): string {
   const value = object(encoded)
   requireValue(value.fmt === 'apple-appattest', 'Wrong attestation format')
@@ -121,20 +142,7 @@ export function attest(encoded: string, keyId: string, clientData: Buffer, trust
   const hasExtensions = (data[32] & 0x80) !== 0
   requireValue(decoded.length === (hasExtensions ? 2 : 1), 'Invalid authenticator extensions')
   if (hasExtensions) {
-    const extensions = decoded[1]
-    requireValue(extensions instanceof Map, 'Invalid authenticator extensions')
-    const category = extensions.get('apple_validation_category_01')
-    if (category !== undefined) {
-      requireValue(
-        trust.environment === 'sandbox' ? category === 3 : category === 2 || category === 4,
-        'App distribution mismatch'
-      )
-    }
-    const version = extensions.get('apple_bundle_version_01')
-    requireValue(
-      version === undefined || (typeof version === 'string' && version.length > 0 && version.length <= 128),
-      'Invalid app version'
-    )
+    validateExtensions(decoded[1], trust, false)
   }
   const cose = decoded[0]
   requireValue(
@@ -159,7 +167,21 @@ export function assertion(
   const value = object(encoded)
   const data = bytes(value.authenticatorData)
   rp(data, trust)
-  requireValue(data.length === 37, 'Invalid assertion authenticator data')
+  // The entire authenticator data, including extensions, is signed below.
+  // biome-ignore lint/suspicious/noBitwiseOperators: WebAuthn extension presence is a wire bitmask.
+  const hasExtensions = (data[32] & 0x80) !== 0
+  // biome-ignore lint/suspicious/noBitwiseOperators: Assertions cannot carry attested credential data.
+  requireValue((data[32] & 0x40) === 0, 'Unexpected assertion credential data')
+  if (hasExtensions) {
+    const values: unknown[] = []
+    new Decoder({ mapsAsObjects: false, useRecords: false }).decodeMultiple(data.subarray(37), (value: unknown) => {
+      values.push(value)
+    })
+    requireValue(values.length === 1, 'Invalid assertion extension framing')
+    validateExtensions(values[0], trust, true)
+  } else {
+    requireValue(data.length === 37, 'Unexpected assertion trailing data')
+  }
   const next = data.readUInt32BE(33)
   requireValue(next > counter, 'Replayed assertion')
   // ES256 verifies the SHA256 nonce by hashing authenticatorData || clientDataHash.

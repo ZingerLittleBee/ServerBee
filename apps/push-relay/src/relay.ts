@@ -60,10 +60,20 @@ interface Grant {
 export class Relay {
   readonly db: Database
   private readonly trust: Trust
+  private readonly environments: readonly Environment[]
   private readonly clock: () => number
 
-  constructor(path: string, trust: Trust, clock: () => number = () => Math.floor(Date.now() / 1000)) {
+  constructor(
+    path: string,
+    trust: Trust & { environments?: readonly Environment[] },
+    clock: () => number = () => Math.floor(Date.now() / 1000)
+  ) {
     this.trust = trust
+    this.environments = trust.environments ?? [trust.environment]
+    requireValue(
+      this.environments.length > 0 && this.environments.every((value) => value === 'sandbox' || value === 'production'),
+      'Invalid admission environments'
+    )
     this.clock = clock
     this.db = new Database(path, { create: true, strict: true })
     this.db.exec(`PRAGMA journal_mode=WAL;
@@ -106,7 +116,10 @@ export class Relay {
     const grant = this.db
       .query<Grant, [string]>('SELECT * FROM grants WHERE token_hash=? AND revoked=0')
       .get(hash(secret).toString('hex'))
-    requireValue(grant && grant.expires_at > now, 'Expired or revoked grant')
+    requireValue(
+      grant && grant.expires_at > now && this.environments.includes(grant.environment),
+      'Expired, revoked or disabled grant'
+    )
     return Response.json(
       {
         grant_id: grant.grant_id,
@@ -121,7 +134,9 @@ export class Relay {
 
   private createChallenge(body: Record<string, unknown>, now: number): Response {
     requireValue(['attest', 'renew', 'revoke'].includes(String(body.action)), 'Invalid action')
-    requireValue(body.environment === this.trust.environment, 'Environment mismatch')
+    const environment = body.environment
+    requireValue(environment === 'sandbox' || environment === 'production', 'Invalid environment')
+    requireValue(this.environments.includes(environment), 'Environment mismatch')
     requireValue(typeof body.device_token === 'string' && tokenPattern.test(body.device_token), 'Invalid token')
     requireValue(typeof body.key_id === 'string' && keyPattern.test(body.key_id), 'Invalid key ID')
     requireValue(
@@ -151,7 +166,7 @@ export class Relay {
         String(body.action),
         keyId,
         deviceToken,
-        this.trust.environment,
+        environment,
         now + 300,
         grantScope
       ])
@@ -190,14 +205,18 @@ export class Relay {
       requireValue(challenge && challenge.expires_at > now, 'Expired or consumed challenge')
       requireValue(path === `/v1/${challenge.action}`, 'Challenge action mismatch')
       const clientData = Buffer.from(challenge.client_data)
+      // Select cryptographic expectations from the persisted one-time challenge,
+      // never from a proof body or from a caller's subsequent environment claim.
+      requireValue(this.environments.includes(challenge.environment), 'Environment disabled')
+      const trust = { ...this.trust, environment: challenge.environment }
       let publicKey: string | undefined
       let nextCounter: number | undefined
       if (challenge.action === 'attest') {
-        publicKey = attest(body.proof, challenge.key_id, clientData, this.trust)
+        publicKey = attest(body.proof, challenge.key_id, clientData, trust)
       } else {
         const key = this.db.query<Key, [string]>('SELECT * FROM keys WHERE key_id=?').get(challenge.key_id)
         requireValue(key && key.environment === challenge.environment, 'Unknown device key')
-        nextCounter = assertion(body.proof, key.public_key, key.counter, clientData, this.trust)
+        nextCounter = assertion(body.proof, key.public_key, key.counter, clientData, trust)
       }
       const token = randomBytes(32).toString('base64url')
       const grantId = randomUUID()

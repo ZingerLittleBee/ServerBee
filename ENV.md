@@ -213,3 +213,24 @@ Tunes the agent-side security event detectors (SSH login / brute force, port sca
 | `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `security.port_scan.window_seconds` | u32 | `30` | Sliding window length (seconds) for port-scan detection |
 | `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `security.port_scan.distinct_port_threshold` | u32 | `20` | Distinct destination ports hit by a single source IP within the window that triggers a `port_scan` event |
 | `SERVERBEE_SECURITY__DATA_DIR` | `security.data_dir` | string | `/var/lib/serverbee/security` | Directory for the persistent `first_seen` store used to mark `ssh_login` events as new (user, IP) combinations |
+
+## Push Relay
+
+These settings belong to the separate `apps/push-relay` process, not Server or
+Agent TOML configuration. Server uses `SERVERBEE_PUSH_RELAY__URL` to select its
+HTTPS endpoint. No Apple private keys are installed by notification setup.
+
+| Environment Variable | Default | Description |
+|----------------------|---------|-------------|
+| `RELAY_DATABASE` | required | Persistent SQLite admission state |
+| `APP_ATTEST_ROOT_CA` | required | Path to the audited Apple App Attest root PEM |
+| `APP_ATTEST_ROOT_SHA256` | required | Pinned colon-separated SHA256 root fingerprint |
+| `APP_ATTEST_APP_ID` | required | Official App ID prefix and bundle identifier |
+| `APP_ATTEST_BUNDLE_VERSIONS` | required | Comma-separated approved `CFBundleVersion` values for signed extensions |
+| `APNS_ENVIRONMENTS` | required unless singular alternative is set | Allowed admission environments; `sandbox,production` supports coexistence on one URL and database |
+| `APNS_ENVIRONMENT` | required unless plural setting is set | Single-environment alternative, `sandbox` or `production`; plural setting takes precedence |
+| `RELAY_PORT` | `8787` | Loopback listener port |
+
+Registration supports both environments but category delivery remains under
+implementation. See [Relay setup](apps/push-relay/README.md) for trust, signing and
+separate real-device acceptance requirements.

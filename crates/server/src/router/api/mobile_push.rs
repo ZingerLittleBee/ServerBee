@@ -93,6 +93,52 @@ fn response(row: Option<&registration::Model>, relay_url: &str) -> PushSetupResp
     }
 }
 
+async fn inspect_grant(url: &str, secret: &str) -> Result<RelayGrant, AppError> {
+    let url = url.trim_end_matches('/');
+    if !(url.starts_with("https://") || url.starts_with("http://127.0.0.1:")) {
+        return Err(AppError::BadRequest(
+            "Verified push relay is not configured".into(),
+        ));
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let res = client
+        .post(format!("{url}/v1/grants/inspect"))
+        .bearer_auth(secret)
+        .send()
+        .await
+        .map_err(|_| {
+            AppError::BadRequest("Relay verification is unavailable; retry setup".into())
+        })?;
+    if !res.status().is_success() {
+        return Err(AppError::Forbidden(
+            "Relay rejected the device grant".into(),
+        ));
+    }
+    let grant: RelayGrant = res
+        .json()
+        .await
+        .map_err(|_| AppError::BadRequest("Invalid relay response".into()))?;
+    Ok(grant)
+}
+
+async fn relay_confirmed(row: &registration::Model, url: &str) -> bool {
+    let Some(secret) = row.grant_token.as_deref() else {
+        return false;
+    };
+    let Ok(grant) = inspect_grant(url, secret).await else {
+        return false;
+    };
+    grant.expires_at > Utc::now().timestamp()
+        && Some(grant.grant_id.as_str()) == row.grant_id.as_deref()
+        && Some(grant.key_id.as_str()) == row.key_id.as_deref()
+        && Some(grant.device_token.as_str()) == row.device_token.as_deref()
+        && Some(grant.environment.as_str()) == row.environment.as_deref()
+}
+
 /// Installation identifiers never confer ownership. Login/session proof does.
 async fn owned_row(
     txn: &sea_orm::DatabaseTransaction,
@@ -132,7 +178,25 @@ pub async fn settings(
     let txn = state.db.begin().await?;
     let (session, mobile) = push_session(&txn, &token).await?;
     let row = owned_row(&txn, &mobile.installation_id, &session.user_id, &mobile.id).await?;
-    let result = response(row.as_ref(), &state.config.push_relay.url);
+    let snapshot = row;
+    txn.commit().await?;
+    // A locally unexpired grant can already be revoked by Relay rotation. Never
+    // report confirmation from the database alone, including after a restart.
+    let verified = if let Some(row) = snapshot.as_ref() {
+        response(Some(row), &state.config.push_relay.url).registered
+            && relay_confirmed(row, &state.config.push_relay.url).await
+    } else {
+        false
+    };
+    let txn = state.db.begin().await?;
+    let (session, mobile) = push_session(&txn, &token).await?;
+    let current = owned_row(&txn, &mobile.installation_id, &session.user_id, &mobile.id).await?;
+    let mut result = response(current.as_ref(), &state.config.push_relay.url);
+    result.registered &= verified
+        && current
+            .as_ref()
+            .zip(snapshot.as_ref())
+            .is_some_and(|(a, b)| a.revision == b.revision && a.grant_token == b.grant_token);
     txn.commit().await?;
     ok(result)
 }
@@ -187,14 +251,14 @@ pub async fn save_preferences(
         model.grant_id = Set(None);
         model.grant_expires_at = Set(None);
     }
-    let row = if exists {
-        model.update(&txn).await?
+    if exists {
+        model.update(&txn).await?;
     } else {
-        model.insert(&txn).await?
-    };
-    let result = response(Some(&row), &state.config.push_relay.url);
+        model.insert(&txn).await?;
+    }
     txn.commit().await?;
-    ok(result)
+    // Reconcile the actual grant and revalidate the session after network work.
+    settings(State(state), headers).await
 }
 
 #[utoipa::path(post, path = "/api/mobile/push/verified-register", tag = "mobile-auth", request_body = VerifiedPushRequest, responses((status = 200, body = PushSetupResponse), (status = 403, description = "Unverified or mismatched grant"), (status = 409, description = "Stale revision")), security(("bearer_token" = [])))]
@@ -224,33 +288,7 @@ pub async fn verified_register(
     }
     txn.commit().await?;
     let url = state.config.push_relay.url.trim_end_matches('/');
-    if !(url.starts_with("https://") || url.starts_with("http://127.0.0.1:")) {
-        return Err(AppError::BadRequest(
-            "Verified push relay is not configured".into(),
-        ));
-    }
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    let res = client
-        .post(format!("{url}/v1/grants/inspect"))
-        .bearer_auth(&body.grant_token)
-        .send()
-        .await
-        .map_err(|_| {
-            AppError::BadRequest("Relay verification is unavailable; retry setup".into())
-        })?;
-    if !res.status().is_success() {
-        return Err(AppError::Forbidden(
-            "Relay rejected the device grant".into(),
-        ));
-    }
-    let grant: RelayGrant = res
-        .json()
-        .await
-        .map_err(|_| AppError::BadRequest("Invalid relay response".into()))?;
+    let grant = inspect_grant(url, &body.grant_token).await?;
     let expires = DateTime::from_timestamp(grant.expires_at, 0)
         .filter(|e| *e > Utc::now())
         .ok_or_else(|| AppError::Forbidden("Expired relay grant".into()))?;

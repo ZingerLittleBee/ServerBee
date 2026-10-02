@@ -92,11 +92,13 @@ refresh_ttl = 2592000 # 刷新令牌有效期（秒），默认 30 天
 
 Server 负责账户、会话授权和接收者选择。Relay 可见 APNs 令牌、来源 IP、时间、请求大小、环境、授权标识及加密内容，不应收到内容密钥或明文通知。申请权限前会向用户显示此说明。
 
+Server 注册状态会核对 Relay grant。即使保存的到期时间尚未到达，已撤销或无法核对的授权也不会显示为已确认。Relay 续期成功但 Server 保存失败时，应用会在 Keychain 保留待确认的 grant，并在回到前台或重启后重试确认。App Attest key 仅属于一次配对登录，替换登录使用独立 key。
+
 ### Server 与 Relay 配置
 
 通过 `[push_relay].url` 或 `SERVERBEE_PUSH_RELAY__URL` 指定独立 HTTPS Relay。无需通知组或旧 APNs 渠道。新注册独立于旧设备令牌存储，不会进入旧直连 APNs 群发。现有外部渠道继续使用自己的配置。
 
-Relay 运维需要 Bun、OpenSSL 3 和持久化 SQLite。使用 `APP_ATTEST_ROOT_CA` 与 `APP_ATTEST_ROOT_SHA256` 固定 App Attest 信任根，`APP_ATTEST_APP_ID` 指定应用身份，`APNS_ENVIRONMENT` 指定环境（开发为 `sandbox`，分发为 `production`）。`RELAY_DATABASE` 与 `RELAY_PORT` 指定状态文件与本地监听端口。Relay 仅绑定 loopback，需配置 TLS 反向代理与准入限制，challenge 和断言计数在重启后保留。没有公开发送端点或跳过验证的路径。
+Relay 运维需要 Bun、OpenSSL 3 和持久化 SQLite。使用 `APP_ATTEST_ROOT_CA` 与 `APP_ATTEST_ROOT_SHA256` 固定 App Attest 信任根，`APP_ATTEST_APP_ID` 指定应用身份，`APP_ATTEST_BUNDLE_VERSIONS` 列出允许的 `CFBundleVersion`，`APNS_ENVIRONMENTS=sandbox,production` 可在同一 Relay URL 和数据库接纳开发与分发设备。单一环境部署仍可使用 `APNS_ENVIRONMENT`。`RELAY_DATABASE` 与 `RELAY_PORT` 指定状态文件与本地监听端口。Relay 仅绑定 loopback，需配置 TLS 反向代理与准入限制，challenge 和断言计数在重启后保留。没有公开发送端点或跳过验证的路径。
 
 APNs 传输仍待后续实现。发布者专用签名输入为 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_PRIVATE_KEY` 和 `APNS_TOPIC`，这些凭证不得进入应用、Server 或仓库。隔离配置、签名检查与真机验收见仓库 `apps/push-relay/README.md`。测试不得指向 Heeler 的 Relay。
 

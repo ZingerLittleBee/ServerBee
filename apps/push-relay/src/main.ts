@@ -1,7 +1,7 @@
 import { X509Certificate } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { serve } from 'bun'
-import { requireValue } from './attestation'
+import { type Environment, requireValue } from './attestation'
 import { Relay } from './relay'
 
 function required(name: string): string {
@@ -13,12 +13,27 @@ function required(name: string): string {
 const rootPem = readFileSync(required('APP_ATTEST_ROOT_CA'), 'utf8')
 const root = new X509Certificate(rootPem)
 requireValue(root.fingerprint256 === required('APP_ATTEST_ROOT_SHA256'), 'App Attest trust anchor pin mismatch')
-const environment = required('APNS_ENVIRONMENT')
-requireValue(environment === 'sandbox' || environment === 'production', 'Invalid APNS_ENVIRONMENT')
+const configuredEnvironments = process.env.APNS_ENVIRONMENTS ?? required('APNS_ENVIRONMENT')
+const environments: Environment[] = configuredEnvironments.split(',').map((raw) => {
+  const value = raw.trim()
+  requireValue(value === 'sandbox' || value === 'production', 'Invalid APNS_ENVIRONMENTS')
+  return value
+})
+const environment = environments[0]
+requireValue(environment === 'sandbox' || environment === 'production', 'Invalid default environment')
+const bundleVersions = required('APP_ATTEST_BUNDLE_VERSIONS')
+  .split(',')
+  .map((version) => version.trim())
+requireValue(
+  bundleVersions.every((version) => version.length > 0 && version.length <= 128),
+  'Invalid app versions'
+)
 const relay = new Relay(required('RELAY_DATABASE'), {
   appId: required('APP_ATTEST_APP_ID'),
   rootPem,
-  environment
+  environment,
+  environments,
+  bundleVersions
 })
 
 serve({

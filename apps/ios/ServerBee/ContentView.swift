@@ -99,7 +99,8 @@ struct ContentView: View {
             handleDeepLink(link)
             pushRouter.pendingDeepLink = nil
         }
-        .task {
+        .task { [weak authManager, weak serversViewModel, weak alertsViewModel, weak securityFeed, weak upgradeJobs] in
+            guard let auth = authManager, let alerts = alertsViewModel else { return }
             pushManager.configure(apiClient: apiClient)
             await pushManager.reconcile()
 
@@ -122,8 +123,8 @@ struct ContentView: View {
                     router.dispatch(message)
                 }
             }
-            if let serverUrl = authManager.serverUrl,
-               let token = authManager.getAccessToken() {
+            if let serverUrl = auth.serverUrl,
+               let token = auth.getAccessToken() {
                 await wsClient.connect(serverUrl: serverUrl, accessToken: token)
             }
 
@@ -141,7 +142,7 @@ struct ContentView: View {
 
             // Prime the Alerts tab badge on cold start; afterwards alert_event
             // frames keep it current without visiting the tab.
-            await alertsViewModel.fetchEvents(apiClient: apiClient)
+            await alerts.fetchEvents(apiClient: apiClient)
         }
         .onChange(of: scenePhase) { _, new in
             if new == .active {

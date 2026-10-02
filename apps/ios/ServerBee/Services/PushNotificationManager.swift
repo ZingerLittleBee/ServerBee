@@ -42,6 +42,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
 
     private let system: any PushSystemBoundary
     private let relay: any PushRelayBoundary
+    private let storage: any PushSetupStorage
     private var apiClient: APIClient?
     private var context: MobileAuthenticationContext?
     private var acceptingRegistrations = false
@@ -49,9 +50,13 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     private var grants: [UUID: (grant: RelayGrant, url: String)] = [:]
     private var uploadedToken: String?
 
-    init(system: any PushSystemBoundary = NativePushSystem(), relay: any PushRelayBoundary = AppAttestPushRelay()) {
+    init(
+        system: any PushSystemBoundary = NativePushSystem(), relay: any PushRelayBoundary = AppAttestPushRelay(),
+        storage: any PushSetupStorage = KeychainPushSetupStorage()
+    ) {
         self.system = system
         self.relay = relay
+        self.storage = storage
         super.init()
     }
 
@@ -74,13 +79,17 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         guard let apiClient, let captured = context, apiClient.isCurrent(captured) else { return }
         do {
             let status = await system.authorization()
-            let setup: PushSetup = try await apiClient.get("/api/mobile/push/settings", context: captured)
+            var setup: PushSetup = try await apiClient.get("/api/mobile/push/settings", context: captured)
             guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
             authorizationStatus = status
             permissionGranted = status == .authorized || status == .provisional || status == .ephemeral
+            let pending = pendingGrant(captured, url: setup.relayUrl)
+            if pending != nil { setup.registered = false }
             confirmed = setup
             verificationUnavailable = !relay.supported
-            errorMessage = nil
+            if pending != nil {
+                errorMessage = String(localized: "Notification setup failed. Retry to confirm registration.")
+            } else { errorMessage = nil }
             if setup.preferences.enabled && permissionGranted && relay.supported {
                 system.register()
                 let remaining = setup.grantExpiresAt.flatMap { ISO8601DateFormatter.shared.date(from: $0) }?.timeIntervalSinceNow ?? 0
@@ -102,15 +111,23 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             )
             guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
             self.confirmed = setup
-            errorMessage = nil
+            if pendingGrant(captured, url: setup.relayUrl) != nil, preferences.enabled {
+                self.confirmed?.registered = false
+            } else { errorMessage = nil }
             if preferences.enabled {
                 verificationUnavailable = !relay.supported
                 if relay.supported && !confirmed.preferences.enabled { await requestPermission() }
-            } else if let binding = grants.removeValue(forKey: captured.generation) {
-                // Server opt-out is already durable even if Relay cleanup fails.
-                do { try await relay.revoke(binding.grant, relayUrl: binding.url) }
-                catch { report(error, captured: captured) }
+            } else {
+                let pending = pendingGrant(captured, url: setup.relayUrl)
+                clearPending(captured)
+                let binding = grants.removeValue(forKey: captured.generation)
+                if let grant = binding?.grant ?? pending {
+                    do { try await relay.revoke(grant, relayUrl: binding?.url ?? setup.relayUrl) } catch {
+                        report(error, captured: captured)
+                    }
+                }
             }
+
         } catch { report(error, captured: captured) }
     }
 
@@ -123,8 +140,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             permissionGranted = granted
             authorizationStatus = await system.authorization()
             guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
-            if granted { system.register() }
-            else { errorMessage = String(localized: "Notification permission is disabled. Open system settings to enable it.") }
+            if granted { system.register() } else { errorMessage = String(localized: "Notification permission is disabled. Open system settings to enable it.") }
             if granted, let deviceToken { uploadToken(deviceToken) }
         } catch { report(error, captured: captured) }
     }
@@ -162,6 +178,10 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         if !renew && token == uploadedToken && setup.registered { return }
         guard !uploads.values.contains(where: { $0.generation == captured.generation }) else { return }
         let id = UUID()
+        // A lost Relay response can hide a committed rotation. Treat the attempt
+        // as unconfirmed until Server accepts the new grant or reconciliation
+        // actually inspects the still-current grant.
+        confirmed?.registered = false
         isSaving = true
         let upload = Task { @MainActor in
             defer {
@@ -172,7 +192,19 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 }
             }
             do {
-                let grant = try await self.relay.register(token: token, relayUrl: setup.relayUrl)
+                let grant: RelayGrant
+                if let pending = self.pendingGrant(captured, url: setup.relayUrl),
+                   pending.deviceToken == token, pending.expiresAt > Int64(Date().timeIntervalSince1970) {
+                    grant = pending
+                } else {
+                    grant = try await self.relay.register(token: token, relayUrl: setup.relayUrl, scope: captured.pushScope) {
+                        guard apiClient.isCurrent(captured), self.context?.generation == captured.generation else {
+                            throw AuthError.staleIdentity
+                        }
+                    }
+                    try self.storage.save(JSONEncoder.snakeCase.encode(PendingPushGrant(grant: grant, url: setup.relayUrl)),
+                                          key: self.pendingKey(captured))
+                }
                 // Keep the original identity's grant available to logout even
                 // if the Server response or a subsequent identity check fails.
                 self.grants[captured.generation] = (grant, setup.relayUrl)
@@ -183,13 +215,31 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                                               keyId: grant.keyId, grantId: grant.grantId, grantToken: grant.grantToken), context: captured
                 )
                 guard apiClient.isCurrent(captured), self.context?.generation == captured.generation else { throw AuthError.staleIdentity }
+                guard result.registered else { throw PushSetupError.unavailable }
+                self.clearPending(captured)
                 self.confirmed = result
                 self.uploadedToken = token
                 self.errorMessage = nil
-            } catch { self.report(error, captured: captured) }
+            } catch {
+                if self.context?.generation == captured.generation { self.confirmed?.registered = false }
+                if case APIError.httpError(let status, _) = error, status == 403 { self.clearPending(captured) }
+                self.report(error, captured: captured)
+            }
         }
         uploads[id] = (captured.generation, upload)
     }
+
+    private func pendingKey(_ context: MobileAuthenticationContext) -> String {
+        "serverbee_pending_push_" + context.pushScope
+    }
+
+    private func pendingGrant(_ context: MobileAuthenticationContext, url: String) -> RelayGrant? {
+        guard let data = storage.load(pendingKey(context)),
+              let pending = try? JSONDecoder.snakeCase.decode(PendingPushGrant.self, from: data), pending.url == url else { return nil }
+        return pending.grant
+    }
+
+    private func clearPending(_ context: MobileAuthenticationContext) { storage.delete(pendingKey(context)) }
 
     private func report(_ error: Error, captured: MobileAuthenticationContext) {
         guard let apiClient, apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
@@ -205,11 +255,15 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         let pending = uploads.values.filter { $0.generation == capturedContext?.generation }.map { $0.task }
         for upload in pending { await upload.value }
         if let capturedClient, let capturedContext {
-            do { try await capturedClient.postCleanup("/api/mobile/push/unregister", context: capturedContext) }
-            catch { AppLog.push.error("Push unregister failed; session revocation follows") }
-            if let binding = grants.removeValue(forKey: capturedContext.generation) {
-                do { try await relay.revoke(binding.grant, relayUrl: binding.url) }
-                catch { AppLog.push.error("Relay revocation failed; Server session revocation still stops delivery") }
+            do { try await capturedClient.postCleanup("/api/mobile/push/unregister", context: capturedContext) } catch { AppLog.push.error("Push unregister failed; session revocation follows") }
+            let binding = grants.removeValue(forKey: capturedContext.generation)
+            let pending = storage.load(pendingKey(capturedContext))
+                .flatMap { try? JSONDecoder.snakeCase.decode(PendingPushGrant.self, from: $0) }
+            clearPending(capturedContext)
+            if let grant = binding?.grant ?? pending?.grant, let url = binding?.url ?? pending?.url {
+                do { try await relay.revoke(grant, relayUrl: url) } catch {
+                    AppLog.push.error("Relay revocation failed; Server session revocation still stops delivery")
+                }
             }
         }
         if context?.generation == capturedContext?.generation {
@@ -234,4 +288,10 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         }
         return nil
     }
+}
+
+private struct PendingPushGrant: Codable {
+    let grant: RelayGrant
+    let url: String
+    enum CodingKeys: String, CodingKey { case grant, url }
 }

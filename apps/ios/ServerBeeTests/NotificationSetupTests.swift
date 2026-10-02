@@ -8,6 +8,7 @@ private final class SetupHTTPFixture: @unchecked Sendable {
     private var saveStatus = 200
     private var registerStatus = 200
     private var requests: [URLRequest] = []
+    private var grantIDs: [String] = []
     private var registrationCallback: (@Sendable () -> Void)?
     var registered: (@Sendable () -> Void)? {
         get { lock.lock(); defer { lock.unlock() }; return registrationCallback }
@@ -16,7 +17,9 @@ private final class SetupHTTPFixture: @unchecked Sendable {
 
     func failSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 503 }
     func setRegistrationStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; registerStatus = value }
+    func confirm() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response(registered: true, revision: 2) }
     func enable() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response() }
+    func registeredGrants() -> [String] { lock.lock(); defer { lock.unlock() }; return grantIDs }
     func snapshot() -> [URLRequest] { lock.lock(); defer { lock.unlock() }; return requests }
 
     func handle(_ request: URLRequest) -> (Int, Data) {
@@ -24,15 +27,21 @@ private final class SetupHTTPFixture: @unchecked Sendable {
         defer { lock.unlock() }
         requests.append(request)
         switch (request.url?.path, request.httpMethod) {
+        case ("/api/mobile/auth/refresh", "POST"):
+            return (200, Data("""
+            {"data":{"access_token":"restored-access","access_expires_in_secs":900,"refresh_token":"restored-refresh",
+            "refresh_expires_in_secs":3600,"token_type":"Bearer","user":{"id":"alice","username":"alice","role":"member"}}}
+            """.utf8))
         case ("/api/mobile/push/settings", "GET"): return (200, setup)
         case ("/api/mobile/push/settings", "PUT"):
             if saveStatus != 200 { return (saveStatus, Data(#"{"error":{"message":"fixture save rejected"}}"#.utf8)) }
             setup = PushSetupTestData.response()
             return (200, setup)
         case ("/api/mobile/push/verified-register", "POST"):
-            if registerStatus == 200 { setup = PushSetupTestData.response(registered: true, revision: 2) }
+            if let grant = PushSetupTestData.body(request)["grant_id"] as? String { grantIDs.append(grant) }
+            if registerStatus == 200 || registerStatus == -2 { setup = PushSetupTestData.response(registered: true, revision: 2) }
             registrationCallback?()
-            return (registerStatus, setup)
+            return (registerStatus == -2 ? -1 : registerStatus, setup)
         default: return (200, Data(#"{"data":"ok"}"#.utf8))
         }
     }
@@ -42,14 +51,32 @@ private final class SetupURLProtocol: URLProtocol {
     nonisolated(unsafe) static var fixture: SetupHTTPFixture?
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func stopLoading() {}
+    private static let pending = PendingURLProtocolRequests()
+    override func stopLoading() { _ = Self.pending.finish(self) }
+    static func cancelPending() { pending.cancelAll() }
     override func startLoading() {
-        guard let fixture = Self.fixture, let url = request.url else { return }
+        Self.pending.begin(self)
+        guard let fixture = Self.fixture, let url = request.url else {
+            fail(URLError(.cancelled))
+            return
+        }
         let (status, data) = fixture.handle(request)
-        guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil) else { return }
+        if status == -1 {
+            fail(URLError(.networkConnectionLost))
+            return
+        }
+        guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil) else {
+            fail(URLError(.badServerResponse))
+            return
+        }
+        guard Self.pending.finish(self) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
+    }
+    private func fail(_ error: Error) {
+        guard Self.pending.finish(self) else { return }
+        client?.urlProtocol(self, didFailWithError: error)
     }
 }
 
@@ -57,8 +84,9 @@ private final class SetupURLProtocol: URLProtocol {
 final class NotificationSetupTests: XCTestCase {
     override func setUp() async throws { URLProtocol.registerClass(SetupURLProtocol.self) }
     override func tearDown() async throws {
-        URLProtocol.unregisterClass(SetupURLProtocol.self)
         SetupURLProtocol.fixture = nil
+        SetupURLProtocol.cancelPending()
+        URLProtocol.unregisterClass(SetupURLProtocol.self)
         AuthManager().clearAuth()
     }
 
@@ -77,7 +105,7 @@ final class NotificationSetupTests: XCTestCase {
         login(auth)
         let system = TestPushSystem()
         let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: system, relay: relay)
+        let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         await manager.reconcile()
@@ -94,7 +122,7 @@ final class NotificationSetupTests: XCTestCase {
         let auth = AuthManager()
         login(auth)
         let system = TestPushSystem()
-        let manager = PushNotificationManager(system: system, relay: TestPushRelay())
+        let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         var preferences = PushPreferences()
@@ -123,7 +151,7 @@ final class NotificationSetupTests: XCTestCase {
         let auth = AuthManager()
         login(auth)
         let system = TestPushSystem()
-        let manager = PushNotificationManager(system: system, relay: TestPushRelay())
+        let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         var preferences = PushPreferences()
@@ -143,7 +171,7 @@ final class NotificationSetupTests: XCTestCase {
         let system = TestPushSystem()
         let relay = TestPushRelay()
         relay.supported = false
-        let manager = PushNotificationManager(system: system, relay: relay)
+        let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         var preferences = PushPreferences()
@@ -164,7 +192,7 @@ final class NotificationSetupTests: XCTestCase {
         let auth = AuthManager()
         login(auth)
         let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay)
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
         // Delegate token arrived before stores/authentication were installed.
         manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
         await Task.yield()
@@ -183,7 +211,7 @@ final class NotificationSetupTests: XCTestCase {
         await manager.reconcile()
         await fulfillment(of: [recovered], timeout: 3)
         await manager.unregister()
-        XCTAssertEqual(relay.attempts, 2)
+        XCTAssertEqual(relay.attempts, 1, "Retry saves the already verified pending grant without another rotation")
     }
 
     func testPermissionCompletionAfterAccountSwitchCannotRegisterReplacement() async {
@@ -192,11 +220,12 @@ final class NotificationSetupTests: XCTestCase {
         let auth = AuthManager()
         login(auth)
         let system = TestPushSystem()
-        let manager = PushNotificationManager(system: system, relay: TestPushRelay())
+        let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let suspended = expectation(description: "permission request suspended")
         var continuation: CheckedContinuation<Void, Never>?
+        defer { continuation?.resume() }
         system.permissionHook = {
             await withCheckedContinuation { continuation = $0; suspended.fulfill() }
         }
@@ -208,9 +237,113 @@ final class NotificationSetupTests: XCTestCase {
         login(auth, user: "bob")
         manager.configure(apiClient: APIClient(authManager: auth))
         continuation?.resume()
+        continuation = nil
         await saving.value
         XCTAssertEqual(system.registrations, 0)
         XCTAssertNil(manager.confirmed)
         XCTAssertEqual(auth.user?.id, "bob")
     }
+    func testRotatedGrantSaveFailureStaysUnconfirmedThroughForegroundAndRestart() async throws {
+        for failure in [503, -1, -2] {
+            let fixture = SetupHTTPFixture()
+            fixture.enable()
+            SetupURLProtocol.fixture = fixture
+            let auth = AuthManager()
+            login(auth)
+            let storage = MemoryPushSetupStorage()
+            let relay = TestPushRelay()
+            let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: storage)
+            manager.configure(apiClient: APIClient(authManager: auth))
+            await manager.reconcile()
+            let admitted = expectation(description: "initial Server confirmation")
+            fixture.registered = { admitted.fulfill() }
+            manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
+            await fulfillment(of: [admitted], timeout: 3)
+            await manager.waitForPendingRegistrations()
+            XCTAssertEqual(manager.confirmed?.registered, true)
+            XCTAssertEqual(relay.attempts, 1)
+            fixture.setRegistrationStatus(failure)
+            let failed = expectation(description: "rotated grant save failed")
+            fixture.registered = { failed.fulfill() }
+            await manager.retry()
+            await fulfillment(of: [failed], timeout: 3)
+            await manager.waitForPendingRegistrations()
+            XCTAssertEqual(relay.attempts, 2)
+            XCTAssertEqual(manager.confirmed?.registered, false)
+            XCTAssertNotNil(manager.errorMessage)
+            // Even a stale Server response claiming a long-lived old grant must
+            // not erase the pending rotation or produce Setup confirmed.
+            fixture.confirm()
+            let foreground = expectation(description: "foreground resubmits pending grant")
+            fixture.registered = { foreground.fulfill() }
+            await manager.reconcile()
+            await fulfillment(of: [foreground], timeout: 3)
+            await manager.waitForPendingRegistrations()
+            XCTAssertEqual(manager.confirmed?.registered, false)
+            XCTAssertNotNil(manager.errorMessage)
+            XCTAssertEqual(relay.attempts, 2, "Pending grant is reused instead of rotating again")
+            // Restore both authentication and setup coordinator from persistence.
+            let restoredAuth = AuthManager()
+            await restoredAuth.initialize()
+            XCTAssertTrue(restoredAuth.isAuthenticated)
+            XCTAssertEqual(restoredAuth.captureContext()?.pushScope, auth.captureContext()?.pushScope)
+            let restarted = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: storage)
+            restarted.configure(apiClient: APIClient(authManager: restoredAuth))
+            await restarted.reconcile()
+            XCTAssertEqual(restarted.confirmed?.registered, false)
+            XCTAssertNotNil(restarted.errorMessage)
+            let recovered = expectation(description: "restart confirms the pending grant")
+            fixture.registered = { recovered.fulfill() }
+            fixture.setRegistrationStatus(200)
+            restarted.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
+            await fulfillment(of: [recovered], timeout: 3)
+            await restarted.waitForPendingRegistrations()
+            XCTAssertEqual(restarted.confirmed?.registered, true)
+            XCTAssertNil(restarted.errorMessage)
+            XCTAssertEqual(relay.attempts, 2)
+            XCTAssertTrue(storage.values.isEmpty)
+            let saved = fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }
+            XCTAssertEqual(saved.count, 4)
+            XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1", "fixture-grant-2", "fixture-grant-2", "fixture-grant-2"])
+            // End all work before changing the global fixture for the next case.
+            await restarted.unregister()
+            auth.clearAuth()
+        }
+    }
+
+    func testLostRelayRenewalResponseCannotLeaveSetupConfirmed() async {
+        let fixture = SetupHTTPFixture()
+        fixture.enable()
+        SetupURLProtocol.fixture = fixture
+        let auth = AuthManager()
+        login(auth)
+        let relay = TestPushRelay()
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        let admitted = expectation(description: "initial registration confirmed")
+        fixture.registered = { admitted.fulfill() }
+        manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
+        await fulfillment(of: [admitted], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        XCTAssertEqual(manager.confirmed?.registered, true)
+        relay.registerHook = { throw URLError(.networkConnectionLost) }
+        await manager.retry()
+        await manager.waitForPendingRegistrations()
+        XCTAssertEqual(manager.confirmed?.registered, false)
+        XCTAssertNotNil(manager.errorMessage)
+        XCTAssertEqual(relay.attempts, 2)
+        XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1"])
+        relay.registerHook = nil
+        fixture.enable() // Server inspection finds the old rotated grant invalid.
+        let recovered = expectation(description: "unknown Relay outcome recovered")
+        fixture.registered = { recovered.fulfill() }
+        await manager.reconcile()
+        await fulfillment(of: [recovered], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        XCTAssertEqual(manager.confirmed?.registered, true)
+        XCTAssertNil(manager.errorMessage)
+        await manager.unregister()
+    }
+
 }

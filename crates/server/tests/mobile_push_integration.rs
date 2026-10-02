@@ -668,3 +668,223 @@ async fn verified_setup_revalidates_logout_after_delayed_relay_inspection() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn rotated_relay_grant_save_failure_remains_unconfirmed_after_restart() {
+    use axum::{Router, routing::post};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (_, initial, tmp) = setup_http().await;
+    let rotated = Arc::new(AtomicBool::new(false));
+    let relay_rotation = rotated.clone();
+    let relay = Router::new().route("/v1/grants/inspect", post(move |headers: HeaderMap| {
+        let rotated = relay_rotation.clone();
+        async move {
+            let is_new = rotated.load(Ordering::SeqCst);
+            let expected = if is_new { "Bearer renewed-fixture" } else { "Bearer verified-fixture" };
+            let status = if headers.get("authorization").and_then(|value| value.to_str().ok()) == Some(expected) {
+                axum::http::StatusCode::OK
+            } else { axum::http::StatusCode::FORBIDDEN };
+            (status, Json(serde_json::json!({
+                "grant_id":"fixture-grant", "key_id":"fixture-key", "device_token":"a".repeat(64),
+                "environment":"sandbox", "expires_at":Utc::now().timestamp()+86400
+            })))
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = initial.config.clone();
+    config.push_relay.url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        axum::serve(listener, relay).await.unwrap();
+    });
+    let state = AppState::new(initial.db.clone(), config.clone())
+        .await
+        .unwrap();
+    let base = serve_setup_state(state).await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "rotation-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    assert_eq!(
+        preferences_http(&client, &base, access, 0, intent(false, true))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        setup_http_request(&client, &base, access, 1, "verified-fixture")
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        status_http(&client, &base, access).await["registered"],
+        true
+    );
+    // The external Relay rotates, then a stale Server revision rejects the save.
+    rotated.store(true, Ordering::SeqCst);
+    assert_eq!(
+        setup_http_request(&client, &base, access, 1, "renewed-fixture")
+            .await
+            .status(),
+        409
+    );
+    let failed = status_http(&client, &base, access).await;
+    assert_eq!(failed["registered"], false);
+    assert_eq!(failed["revision"], 2);
+    assert_eq!(failed["preferences"]["enabled"], true);
+    let db = Database::connect(format!(
+        "sqlite://{}/test.db?mode=rwc",
+        tmp.path().display()
+    ))
+    .await
+    .unwrap();
+    let restarted = AppState::new(db, config).await.unwrap();
+    let base = serve_setup_state(restarted).await;
+    assert_eq!(
+        status_http(&client, &base, access).await["registered"],
+        false
+    );
+    // Recovery reuses the rotated grant with the freshly confirmed revision.
+    assert_eq!(
+        setup_http_request(&client, &base, access, 2, "renewed-fixture")
+            .await
+            .status(),
+        200
+    );
+    let recovered = status_http(&client, &base, access).await;
+    assert_eq!(recovered["registered"], true);
+    assert_eq!(recovered["revision"], 3);
+}
+
+async fn serve_setup_state(state: Arc<AppState>) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = serverbee_server::router::create_router(state);
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+    base
+}
+
+#[tokio::test]
+async fn one_server_and_relay_url_keep_sandbox_and_production_bindings_independent() {
+    use axum::{Router, routing::post};
+    let (_, initial, _tmp) = setup_http().await;
+    let relay = Router::new().route("/v1/grants/inspect", post(|headers: HeaderMap| async move {
+        let secret = headers.get("authorization").and_then(|value| value.to_str().ok());
+        let environment = match secret {
+            Some("Bearer sandbox-fixture") => "sandbox",
+            Some("Bearer production-fixture") => "production",
+            _ => return (axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({}))),
+        };
+        (axum::http::StatusCode::OK, Json(serde_json::json!({
+            "grant_id":format!("{environment}-grant"), "key_id":format!("{environment}-key"),
+            "device_token":if environment == "sandbox" {"a".repeat(64)} else {"b".repeat(64)},
+            "environment":environment, "expires_at":Utc::now().timestamp()+86400
+        })))
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut config = initial.config.clone();
+    config.push_relay.url = format!("http://{}", listener.local_addr().unwrap());
+    let relay_url = config.push_relay.url.clone();
+    tokio::spawn(async move {
+        axum::serve(listener, relay).await.unwrap();
+    });
+    let state = AppState::new(initial.db.clone(), config).await.unwrap();
+    let base = serve_setup_state(state.clone()).await;
+    let client = reqwest::Client::new();
+    let sandbox = login_http(&client, &base, "admin", "sandbox-install").await;
+    let production = login_http(&client, &base, "admin", "production-install").await;
+    let dev = sandbox["access_token"].as_str().unwrap();
+    let prod = production["access_token"].as_str().unwrap();
+    for access in [dev, prod] {
+        assert_eq!(
+            preferences_http(&client, &base, access, 0, intent(true, true))
+                .await
+                .status(),
+            200
+        );
+        assert_eq!(
+            status_http(&client, &base, access).await["relay_url"],
+            relay_url
+        );
+    }
+    let registration = |environment: &str| {
+        serde_json::json!({
+            "expected_revision":1, "device_token":if environment == "sandbox" {"a".repeat(64)} else {"b".repeat(64)},
+            "environment":environment, "key_id":format!("{environment}-key"), "grant_id":format!("{environment}-grant"),
+            "grant_token":format!("{environment}-fixture")
+        })
+    };
+    let mut wrong = registration("sandbox");
+    wrong["grant_token"] = serde_json::json!("production-fixture");
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/verified-register"))
+            .bearer_auth(dev)
+            .json(&wrong)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    for (access, environment) in [(dev, "sandbox"), (prod, "production")] {
+        assert_eq!(
+            client
+                .post(format!("{base}/api/mobile/push/verified-register"))
+                .bearer_auth(access)
+                .json(&registration(environment))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        assert_eq!(
+            status_http(&client, &base, access).await["registered"],
+            true
+        );
+    }
+    let rows = serverbee_server::entity::mobile_push_registration::Entity::find()
+        .all(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    for (installation, environment) in [
+        ("sandbox-install", "sandbox"),
+        ("production-install", "production"),
+    ] {
+        let row = rows
+            .iter()
+            .find(|row| row.installation_id == installation)
+            .unwrap();
+        assert_eq!(row.environment.as_deref(), Some(environment));
+        assert_eq!(
+            row.key_id.as_deref(),
+            Some(format!("{environment}-key").as_str())
+        );
+        assert_eq!(row.revision, 2);
+    }
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(dev)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(status_http(&client, &base, prod).await["registered"], true);
+    let rows = serverbee_server::entity::mobile_push_registration::Entity::find()
+        .all(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].environment.as_deref(), Some("production"));
+}

@@ -23,10 +23,11 @@ final class TestPushRelay: PushRelayBoundary {
     var attempts = 0
     var revocations = 0
     var registerHook: (() async throws -> Void)?
-    func register(token: String, relayUrl: String) async throws -> RelayGrant {
+    func register(token: String, relayUrl: String, scope: String, validate: @MainActor () throws -> Void) async throws -> RelayGrant {
         attempts += 1
         try await registerHook?()
-        return RelayGrant(grantId: "fixture-grant", grantToken: "fixture-secret", keyId: "fixture-key", deviceToken: token, environment: "sandbox", expiresAt: 2_000_000_000)
+        try validate()
+        return RelayGrant(grantId: "fixture-grant-\(attempts)", grantToken: "fixture-secret-\(attempts)", keyId: "fixture-key", deviceToken: token, environment: "sandbox", expiresAt: 2_000_000_000)
     }
     func revoke(_ grant: RelayGrant, relayUrl: String) async throws { revocations += 1 }
 }
@@ -35,7 +36,52 @@ enum PushSetupTestData {
     static func response(enabled: Bool = true, registered: Bool = false, revision: Int64 = 1) -> Data {
         Data("""
         {"data":{"revision":\(revision),"preferences":{"enabled":\(enabled),"alerts":true,"security":false,"task_failure":true,"task_success":false},
-        "registered":\(registered),"grant_expires_at":null,"relay_url":"https://relay.test","delivery_available":false}}
+        "registered":\(registered),"grant_expires_at":\(registered ? "\"2033-05-18T03:33:20Z\"" : "null"),"relay_url":"https://relay.test","delivery_available":false}}
         """.utf8)
+    }
+    static func body(_ request: URLRequest) -> [String: Any] {
+        var data = request.httpBody ?? Data()
+        if data.isEmpty, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+        }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+}
+
+@MainActor
+final class MemoryPushSetupStorage: PushSetupStorage {
+    var values: [String: Data] = [:]
+    func load(_ key: String) -> Data? { values[key] }
+    func save(_ data: Data, key: String) throws { values[key] = data }
+    func delete(_ key: String) { values[key] = nil }
+}
+
+/// Track only external HTTP requests so teardown cancels any held request and
+/// late responses cannot resume an already cancelled URLSession operation.
+final class PendingURLProtocolRequests: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requests: [ObjectIdentifier: URLProtocol] = [:]
+    func begin(_ request: URLProtocol) {
+        lock.lock(); defer { lock.unlock() }
+        requests[ObjectIdentifier(request)] = request
+    }
+    func finish(_ request: URLProtocol) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return requests.removeValue(forKey: ObjectIdentifier(request)) != nil
+    }
+    func cancelAll() {
+        lock.lock()
+        let pending = Array(requests.values)
+        requests.removeAll()
+        lock.unlock()
+        for request in pending { request.client?.urlProtocol(request, didFailWithError: URLError(.cancelled)) }
     }
 }

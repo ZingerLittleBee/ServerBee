@@ -21,7 +21,9 @@ Required environment variables:
 | `APP_ATTEST_ROOT_CA` | Path to Apple's App Attest root certificate PEM |
 | `APP_ATTEST_ROOT_SHA256` | Audited colon-separated SHA256 certificate fingerprint |
 | `APP_ATTEST_APP_ID` | App ID prefix plus `.` plus the official bundle identifier |
-| `APNS_ENVIRONMENT` | `sandbox` for development, `production` for distribution |
+| `APP_ATTEST_BUNDLE_VERSIONS` | Comma-separated approved `CFBundleVersion` values for signed extension claims |
+| `APNS_ENVIRONMENTS` | Allowed environments; `sandbox,production` admits both on one URL/database |
+| `APNS_ENVIRONMENT` | Single-environment alternative when `APNS_ENVIRONMENTS` is absent |
 | `RELAY_PORT` | Optional loopback listener port, default `8787` |
 
 Obtain and verify the App Attest root from Apple's published trust material.
@@ -136,3 +138,44 @@ Apple credentials, signing, or a physical device cannot be compensated for by a
 successful build, Simulator run or fixture test.
 
 Protocol reference: [Apple App Attest server validation](https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server).
+
+### Renewal recovery and login isolation
+
+A Relay renewal immediately invalidates that key's earlier grants. Server settings
+inspect the current grant instead of inferring validity from its saved expiry. If
+Relay inspection fails, setup is unconfirmed, while subscription intent remains
+saved. The iOS client persists a newly obtained grant in Keychain until Server
+confirmation; foreground, connectivity and restart recovery reuse that grant with
+a fresh Server revision instead of rotating it again. No pending grant appears as
+confirmed before the authenticated Server response succeeds.
+
+App Attest key storage is scoped to deployment, installation and paired login,
+including replacement logins for the same account. The login scope is a local
+hash of the captured deletion proof and is never sent to Relay. Identity checks
+also run after challenge/native-proof completion, before sending the mutation.
+Native `invalidKey` errors discard that login's key and marker; transient network
+or Apple `serverUnavailable` errors retain the key for retry.
+
+Current assertions may include a signed CBOR extension dictionary following the
+37-byte header. Validate the complete authenticator data signature, extension flag
+and exact CBOR framing, distribution category and approved bundle version. Legacy
+assertions without extensions remain supported. Apple's attestation validation
+vector represents the category as a four-byte little-endian UInt32; assertion
+extension names follow the current validation guide (`validationCategory` and
+`bundleVersion`). Distribution is restricted to development for sandbox and
+TestFlight/App Store for production. Keep the version allowlist current when
+admitting a newly published build.
+
+### Sandbox and production on one deployment
+
+Set `APNS_ENVIRONMENTS=sandbox,production` to admit both kinds of installation on
+one HTTPS Relay URL and one SQLite database. A single-environment deployment may
+still use `APNS_ENVIRONMENT`; the plural setting takes precedence. Existing
+Server and iOS API paths remain the same. The challenge endpoint validates the
+requested environment against the configured set and persists it with the
+challenge; proof validation uses that saved environment for AAGUID/distribution
+checks. Assertions must use the previously attested key's environment. Grants
+retain their device/environment scope; renewal or revocation of a sandbox key
+cannot affect a production key. Grant inspection locates the opaque bearer in
+that shared database and returns its verified environment for Server comparison.
+This enables admission only, not APNs delivery.

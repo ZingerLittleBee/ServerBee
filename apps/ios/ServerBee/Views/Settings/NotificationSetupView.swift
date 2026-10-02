@@ -10,7 +10,10 @@ struct NotificationSetupView: View {
     var body: some View {
         Form {
             Section {
-                Text("Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, environment, grant identifiers and encrypted content. It cannot read notification content or content keys.")
+                Text(LocalizedStringKey(
+                    "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
+                    "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
+                ))
                 Text("This build supports verified setup. Category delivery is still being implemented.")
                     .foregroundStyle(.secondary)
             } header: { Text("Mobile notification privacy") }

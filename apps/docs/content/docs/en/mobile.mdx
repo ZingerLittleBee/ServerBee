@@ -92,11 +92,13 @@ The screen reports system permission and Server registration independently. Fail
 
 The Server owns account/session authorization and recipient selection. The Relay sees APNs tokens, source IPs, timing, request sizes, environment, grant identifiers and encrypted content. It must never receive content keys or plaintext notification content. Users see this explanation before requesting permission.
 
+Server registration status includes Relay grant inspection. A revoked or unreachable grant is unconfirmed even when its saved expiry is in the future. If Relay renewal succeeds but the Server save fails, the app keeps the pending grant in Keychain and retries confirmation after foreground entry or restart. App Attest keys belong to one paired login; a replacement login receives a separate key.
+
 ### Server and Relay Configuration
 
 Set `[push_relay].url` or `SERVERBEE_PUSH_RELAY__URL` to the dedicated HTTPS Relay. No notification group or legacy APNs channel is required. New registrations are stored separately from legacy tokens and never enter legacy direct-APNs fan-out. Existing external channels continue to use their own configuration.
 
-Relay operators use Bun and OpenSSL 3, persistent SQLite, an App Attest root certificate pinned with `APP_ATTEST_ROOT_CA` and `APP_ATTEST_ROOT_SHA256`, the app identity in `APP_ATTEST_APP_ID`, and `APNS_ENVIRONMENT` (`sandbox` for development, `production` for distribution). `RELAY_DATABASE` and `RELAY_PORT` select local state and listener. The Relay binds loopback and requires a TLS reverse proxy with admission limits. Challenge and assertion counters persist across restarts. There is no public send endpoint or unverified fallback.
+Relay operators use Bun and OpenSSL 3, persistent SQLite, an App Attest root certificate pinned with `APP_ATTEST_ROOT_CA` and `APP_ATTEST_ROOT_SHA256`, the app identity in `APP_ATTEST_APP_ID`, approved `CFBundleVersion` values in `APP_ATTEST_BUNDLE_VERSIONS`, and `APNS_ENVIRONMENTS=sandbox,production` to admit development and distribution devices on one Relay URL and database. A single-environment deployment can use `APNS_ENVIRONMENT`. `RELAY_DATABASE` and `RELAY_PORT` select local state and listener. The Relay binds loopback and requires a TLS reverse proxy with admission limits. Challenge and assertion counters persist across restarts. There is no public send endpoint or unverified fallback.
 
 APNs transport is a later implementation gate. Its publisher-only signing inputs are `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY` and `APNS_TOPIC`; these credentials must remain outside the app, Server and repository. See the repository's `apps/push-relay/README.md` for isolated configuration, signing checks and live acceptance. Do not point tests at Heeler's Relay.
 

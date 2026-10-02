@@ -8,7 +8,9 @@ final class PushLifecycleURLProtocol: URLProtocol {
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    private static let pending = PendingURLProtocolRequests()
     override func startLoading() {
+        Self.pending.begin(self)
         if request.url?.path == "/api/mobile/push/settings", request.httpMethod == "GET" {
             respond(200, data: PushSetupTestData.response())
             return
@@ -17,12 +19,15 @@ final class PushLifecycleURLProtocol: URLProtocol {
             respond(404)
             return
         }
-        Self.handler?(self)
+        if let handler = Self.handler { handler(self) } else {
+            if Self.pending.finish(self) { client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
+        }
     }
-    override func stopLoading() {}
+    override func stopLoading() { _ = Self.pending.finish(self) }
+    static func cancelPending() { pending.cancelAll() }
 
     func respond(_ status: Int, data: Data = Data(#"{"data":"ok"}"#.utf8)) {
-        guard let url = request.url,
+        guard Self.pending.finish(self), let url = request.url,
               let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         let result = request.url?.path == "/api/mobile/push/verified-register" && status == 200 && data == Data(#"{"data":"ok"}"#.utf8)
@@ -68,8 +73,9 @@ final class PushRegistrationLifecycleTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
         PushLifecycleURLProtocol.handler = nil
+        PushLifecycleURLProtocol.cancelPending()
+        URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
         AuthManager().clearAuth()
     }
 
@@ -99,7 +105,7 @@ final class PushRegistrationLifecycleTests: XCTestCase {
     private func assertStaleUpload(server: String, user: String, status: Int) async {
         let auth = AuthManager()
         signIn(auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay())
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let started = expectation(description: "original upload started")
@@ -166,7 +172,7 @@ extension PushRegistrationLifecycleTests {
     func testUploadRetriesRefreshOnlyWithinCapturedLogin() async {
         let auth = AuthManager()
         signIn(auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay())
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let retried = expectation(description: "upload retried with rotated credential")
@@ -208,7 +214,7 @@ extension PushRegistrationLifecycleTests {
     func testRefreshCompletionAfterLogoutCannotRestorePreviousAccount() async {
         let auth = AuthManager()
         signIn(auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay())
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let refreshing = expectation(description: "refresh held in flight")
@@ -242,7 +248,7 @@ extension PushRegistrationLifecycleTests {
         let auth = AuthManager()
         signIn(auth)
         let api = APIClient(authManager: auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay())
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: api)
         await manager.reconcile()
         let uploadStarted = expectation(description: "upload held in flight")
@@ -294,7 +300,7 @@ extension PushRegistrationLifecycleTests {
         let auth = AuthManager()
         signIn(auth)
         let api = APIClient(authManager: auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay())
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: api)
         await manager.reconcile()
         let unregistering = expectation(description: "unregister held in flight")
@@ -335,7 +341,7 @@ extension PushRegistrationLifecycleTests {
         let auth = AuthManager()
         signIn(auth)
         let api = APIClient(authManager: auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay())
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: api)
         await manager.reconcile()
         let log = PushRequestLog()

@@ -18,7 +18,7 @@ export class AppleFixture {
   readonly point: Buffer
   readonly privateKey: string
 
-  constructor() {
+  constructor(authority?: AppleFixture) {
     this.openssl([
       'req',
       '-x509',
@@ -74,6 +74,11 @@ export class AppleFixture {
       '-extfile',
       'ca.ext'
     ])
+    if (authority) {
+      for (const file of ['root.key', 'root.pem', 'intermediate.key', 'intermediate.pem']) {
+        writeFileSync(join(this.directory, file), readFileSync(join(authority.directory, file)))
+      }
+    }
     this.openssl([
       'req',
       '-new',
@@ -101,7 +106,7 @@ export class AppleFixture {
   }
 
   trust(environment: Environment = 'sandbox') {
-    return { appId, rootPem: this.rootPem, environment }
+    return { appId, rootPem: this.rootPem, environment, bundleVersions: ['1.0'] }
   }
   close() {
     rmSync(this.directory, { recursive: true, force: true })
@@ -120,11 +125,12 @@ export class AppleFixture {
       wrongCredential?: boolean
       wrongCose?: boolean
       expired?: boolean
+      extensions?: Map<string, unknown>
     } = {}
   ): string {
     const data = Buffer.alloc(87)
     hash(options.wrongApp ? 'wrong.app' : appId).copy(data)
-    data[32] = 0x41
+    data[32] = options.extensions ? 0xc1 : 0x41
     Buffer.from(options.environment === 'production' ? 'appattest\0\0\0\0\0\0\0' : 'appattestdevelop').copy(data, 37)
     data.writeUInt16BE(32, 53)
     Buffer.from(this.keyId, 'base64').copy(data, 55)
@@ -140,7 +146,7 @@ export class AppleFixture {
         [-3, this.point.subarray(33)]
       ])
     )
-    const authData = Buffer.concat([data, cose])
+    const authData = Buffer.concat([data, cose, ...(options.extensions ? [encoder.encode(options.extensions)] : [])])
     const nonce = hash(Buffer.concat([authData, hash(clientData)]))
     if (options.wrongNonce) {
       nonce[0] = (nonce[0] + 1) % 256
@@ -221,14 +227,32 @@ commonName = supplied
       .toString('base64')
   }
 
-  assertion(clientData: Buffer, counter: number, wrongSignature = false): string {
-    const authenticatorData = Buffer.alloc(37)
-    hash(appId).copy(authenticatorData)
-    authenticatorData[32] = 1
-    authenticatorData.writeUInt32BE(counter, 33)
+  assertion(
+    clientData: Buffer,
+    counter: number,
+    wrongSignature = false,
+    options: {
+      extensions?: Map<string, unknown>
+      trailing?: Buffer
+      omitExtensionFlag?: boolean
+      tamperExtensions?: boolean
+    } = {}
+  ): string {
+    const header = Buffer.alloc(37)
+    hash(appId).copy(header)
+    header[32] = options.extensions && !options.omitExtensionFlag ? 0x81 : 1
+    header.writeUInt32BE(counter, 33)
+    const authenticatorData = Buffer.concat([
+      header,
+      ...(options.extensions ? [encoder.encode(options.extensions)] : []),
+      options.trailing ?? Buffer.alloc(0)
+    ])
     const signature = sign('sha256', Buffer.concat([authenticatorData, hash(clientData)]), this.privateKey)
     if (wrongSignature) {
       signature[0] = (signature[0] + 1) % 256
+    }
+    if (options.tamperExtensions) {
+      authenticatorData[authenticatorData.length - 1] = ((authenticatorData.at(-1) ?? 0) + 1) % 256
     }
     return encoder.encode({ signature, authenticatorData }).toString('base64')
   }
