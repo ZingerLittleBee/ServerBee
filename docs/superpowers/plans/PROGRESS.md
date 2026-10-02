@@ -1,5 +1,9 @@
 # ServerBee 实现进度
 
+<!-- agent-navigation: historical -->
+
+> Historical snapshot. For current behavior, start with [source navigation](../../agents/navigation.md), [CONTEXT.md](../../../CONTEXT.md), and the accepted [ADRs](../../adr/). This record may describe superseded authentication, enrollment, capability, or routing behavior.
+
 > 最后更新: 2026-03-29
 
 ## 总览

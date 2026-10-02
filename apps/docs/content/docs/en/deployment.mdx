@@ -111,7 +111,6 @@ services:
       - ./config/server.toml:/etc/serverbee/server.toml:ro
     environment:
       - SERVERBEE_AUTH__SECURE_COOKIE=true
-      - MALLOC_ARENA_MAX=2
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
       interval: 30s
@@ -197,7 +196,6 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/serverbee-server
-Environment=MALLOC_ARENA_MAX=2
 Restart=always
 RestartSec=5
 User=serverbee
@@ -429,58 +427,86 @@ When using HTTPS, keep `auth.secure_cookie = true` in your server configuration.
 
 ## Backup and Restore
 
-### What to Back Up
+### What to Back Up [#persistent-data]
 
-ServerBee stores all data in a single SQLite database file and the configuration files:
+SQLite stores monitoring records, users, settings, and uploaded widget packages. Several assets are separate files. A database download alone does not restore the complete installation:
 
-| Item | Location | Description |
-|------|----------|-------------|
-| Database | `{data_dir}/serverbee.db` | All monitoring data, users, alerts, and settings |
-| WAL file | `{data_dir}/serverbee.db-wal` | Write-ahead log (include if backing up while running) |
-| SHM file | `{data_dir}/serverbee.db-shm` | Shared memory file (include if backing up while running) |
-| Server config | `/opt/serverbee/etc/server.toml` | Server configuration (install-script default) |
-| Agent configs | `/opt/serverbee/etc/agent.toml` | Agent configuration (on each monitored server) |
-| GeoIP database | Varies | MaxMind MMDB file (if used) |
+| Item | Location | Included in database backup | Description |
+|------|----------|-----------------------------|-------------|
+| Database | `{data_dir}/serverbee.db` | Yes | Default `database.path`; includes database-backed settings and widget packages |
+| Brand assets | `{data_dir}/brand/` | No | Uploaded logo and favicon; the database stores their URLs, not the image bytes |
+| Downloaded GeoIP Country database | `{data_dir}/dbip-country-lite.mmdb` | No | DB-IP Lite Country database, if downloaded |
+| Downloaded ASN database | `{data_dir}/dbip-asn-lite.mmdb` | No | DB-IP Lite ASN database, if downloaded |
+| Custom MMDB files | `geoip.mmdb_path`, `asn.mmdb_path` | No | Preserve these configured files separately if they are outside `data_dir` |
+| Server configuration | `/opt/serverbee/etc/` | No | Installer configuration and release policy; also preserve external environment files and secrets |
+| Agent configuration and state | `/opt/serverbee/etc/agent.toml`, configured `state_dir` and `security.data_dir` | No | Back up on each Agent host, including its run token; the Server backup does not copy remote files |
+
+`serverbee.db-wal` may contain changes not yet in the main database. Use SQLite `.backup` or the backup API for a running server, rather than copying its database and sidecars independently. A stopped full-directory snapshot preserves any remaining `serverbee.db-wal` and `serverbee.db-shm` files together.
 
 ### Backup Strategy
 
-The install-script default data directory is `/opt/serverbee/data` (database at `/opt/serverbee/data/serverbee.db`). For a custom hand-written systemd deployment, substitute the `data_dir` you configured. The commands below require the `sqlite3` CLI and an existing protected destination: install `sqlite3`, then run `sudo install -d -m 0700 /backups` before scheduling them.
+The following examples use the installer defaults: `/opt/serverbee/data/serverbee.db` and `/opt/serverbee/etc/`. Substitute your actual data directory, database filename, configuration directory, and any external MMDB paths. For Docker, the example assumes the Compose layout above (`/data`, `config/server.toml`, and `docker-compose.yml`).
 
-**Option 0: Built-in admin backup API**
-
-The admin-only endpoint uses SQLite `VACUUM INTO` and downloads a consistent database. Store an admin-scoped API key in the environment, not in shell history:
+Run host filesystem commands as root, install the `sqlite3` CLI, and keep backup sets private. Create one timestamped directory for the database and its matching assets:
 
 ```bash
-SERVERBEE_BACKUP_FILE="/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).db"
+set -e
+umask 077
+SERVERBEE_BACKUP_DIR="/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$SERVERBEE_BACKUP_DIR"
+```
+
+**Option 0: Built-in admin backup API, database only**
+
+The admin-only `/api/settings/backup` endpoint uses SQLite `VACUUM INTO` and exports only the database. It does not include brand images, MMDB files, configuration, or Agent state. Store an admin-scoped API key in the environment:
+
+```bash
 curl --fail --request POST \
   --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
-  --output "$SERVERBEE_BACKUP_FILE" \
+  --output "$SERVERBEE_BACKUP_DIR/serverbee.db" \
   https://monitor.example.com/api/settings/backup
-sqlite3 "$SERVERBEE_BACKUP_FILE" 'PRAGMA integrity_check;'
+test "$(sqlite3 "$SERVERBEE_BACKUP_DIR/serverbee.db" 'PRAGMA integrity_check;')" = ok
 ```
 
-Copy verified backups off the ServerBee host. A backup on the same disk is not disaster recovery.
+If downloading from another host, collect the asset and configuration archives on the Server host and copy them into the same backup set.
 
-**Option 1: SQLite backup command (recommended for running server)**
+**Option 1: SQLite backup command, database only**
 
 ```bash
-sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +%Y%m%d).db'"
+sqlite3 /opt/serverbee/data/serverbee.db ".backup '$SERVERBEE_BACKUP_DIR/serverbee.db'"
+test "$(sqlite3 "$SERVERBEE_BACKUP_DIR/serverbee.db" 'PRAGMA integrity_check;')" = ok
 ```
 
-This creates a consistent point-in-time backup without stopping the server.
-
-**Option 2: File copy (requires stopping the server)**
+For either database-only option, complete the backup set with the following archives. `assets.tar.gz` saves the data directory except the live database and its sidecars, so it includes `brand/` and both downloaded MMDB files when present. `config.tar.gz` saves the installer configuration directory:
 
 ```bash
+tar czf "$SERVERBEE_BACKUP_DIR/assets.tar.gz" \
+  --exclude='./serverbee.db*' -C /opt/serverbee/data .
+tar czf "$SERVERBEE_BACKUP_DIR/config.tar.gz" -C /opt/serverbee etc
+```
+
+Keep branding, MMDB downloads, and configuration unchanged while collecting this set. Separate online copies are not an atomic snapshot; use a stopped snapshot below when those files are changing. Add any external `geoip.mmdb_path`, `asn.mmdb_path`, environment files, and secrets to the backup set with their original paths recorded. Copy verified backup sets off the ServerBee host.
+
+**Option 2: Complete host snapshot, requires stopping the server**
+
+```bash
+set -e
 sudo systemctl stop serverbee-server
-cp /opt/serverbee/data/serverbee.db /backups/serverbee-$(date +%Y%m%d).db
+tar czf "$SERVERBEE_BACKUP_DIR/data.tar.gz" -C /opt/serverbee/data .
+tar czf "$SERVERBEE_BACKUP_DIR/config.tar.gz" -C /opt/serverbee etc
 sudo systemctl start serverbee-server
 ```
 
-**Option 3: Docker volume backup**
+The data archive includes the database, any remaining WAL/SHM files, brand assets, and downloaded MMDB files. Save external files separately as described above. If an archive command fails, resolve it before restarting and treating the set as complete.
+
+**Option 3: Complete Docker volume and configuration snapshot**
 
 ```bash
-docker compose stop
+set -e
+umask 077
+SERVERBEE_BACKUP_DIR="$PWD/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$SERVERBEE_BACKUP_DIR"
+docker compose stop serverbee-server
 
 SERVERBEE_DATA_VOLUME="$(
   docker inspect serverbee-server \
@@ -488,58 +514,60 @@ SERVERBEE_DATA_VOLUME="$(
 )"
 test -n "$SERVERBEE_DATA_VOLUME"
 
-mkdir -p backups
 docker run --rm \
   --mount "type=volume,src=${SERVERBEE_DATA_VOLUME},dst=/data,readonly" \
-  --mount "type=bind,src=$(pwd)/backups,dst=/backups" \
-  alpine \
-  tar czf /backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /data .
+  --mount "type=bind,src=${SERVERBEE_BACKUP_DIR},dst=/backups" \
+  alpine tar czf /backups/data.tar.gz -C /data .
+tar czf "$SERVERBEE_BACKUP_DIR/config.tar.gz" config docker-compose.yml
 
-docker compose start
+docker compose start serverbee-server
 ```
 
-Do not assume the Docker volume is literally named `serverbee-data`. Compose usually prefixes the volume with its project name; referring to the wrong name creates a new empty volume, so the command appears to succeed while backing up no production data. The command above reads the actual volume mounted at `/data` from the existing container.
+This snapshots everything in the actual `/data` volume, including brand and downloaded MMDB assets, and archives the separately mounted configuration. Also preserve any Compose `.env` file, external secrets, and MMDB bind mounts. Do not assume the volume is literally named `serverbee-data`: Compose usually adds a project prefix, and a wrong name can silently create an empty volume.
 
 ### Restore
 
-To restore from a backup:
-
-1. Stop the server
-2. Replace the database file with the backup
-3. Start the server (migrations will run automatically if needed)
+Restore the database and the matching assets/configuration before starting the Server. The example below uses a database-only backup completed with `assets.tar.gz` and `config.tar.gz`; it assumes the installer layout and a backup already checked with `PRAGMA integrity_check`:
 
 ```bash
+set -e
+umask 077
+SERVERBEE_RESTORE_DIR="/backups/serverbee-20260314T020000Z"
+test "$(sqlite3 "$SERVERBEE_RESTORE_DIR/serverbee.db" 'PRAGMA integrity_check;')" = ok
+test -f "$SERVERBEE_RESTORE_DIR/assets.tar.gz"
+test -f "$SERVERBEE_RESTORE_DIR/config.tar.gz"
 sudo systemctl stop serverbee-server
-cp /backups/serverbee-20260314.db /opt/serverbee/data/serverbee.db
-# Custom hardened deploys that run as a dedicated user: also re-apply ownership, e.g.
-# sudo chown serverbee:serverbee /opt/serverbee/data/serverbee.db
+
+# Preserve the current state before replacing it.
+SERVERBEE_BEFORE_RESTORE="/backups/before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$SERVERBEE_BEFORE_RESTORE"
+mv /opt/serverbee/data /opt/serverbee/etc "$SERVERBEE_BEFORE_RESTORE/"
+
+# Restore into an empty directory, without the previous database WAL/SHM.
+mkdir -p /opt/serverbee/data
+cp "$SERVERBEE_RESTORE_DIR/serverbee.db" /opt/serverbee/data/serverbee.db
+tar xzf "$SERVERBEE_RESTORE_DIR/assets.tar.gz" -C /opt/serverbee/data
+tar xzf "$SERVERBEE_RESTORE_DIR/config.tar.gz" -C /opt/serverbee
+
+# Restore external MMDB/environment files and service ownership before starting.
+# For a dedicated service user: chown -R serverbee:serverbee /opt/serverbee/data
 sudo systemctl start serverbee-server
 ```
 
-The admin-only restore API accepts a raw SQLite file, keeps the previous database as `.pre-restore`, and requires a server restart. Verify the backup first and take a current backup before replacing anything:
+For a stopped host snapshot, extract `data.tar.gz` into the empty data directory instead of copying `serverbee.db` and extracting `assets.tar.gz`. Restore the matching `config.tar.gz` and external files in either case. Review restored configuration before startup; old environment variables or secret-store values can override the restored TOML.
 
-```bash
-sqlite3 /backups/serverbee-20260314.db 'PRAGMA integrity_check;'
-curl --fail --request POST \
-  --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
-  --header 'Content-Type: application/octet-stream' \
-  --data-binary @/backups/serverbee-20260314.db \
-  https://monitor.example.com/api/settings/restore
-sudo serverbee restart server
-```
-
-For Docker, restore into a new volume using the [disaster-recovery runbook](#restore-a-docker-backup-into-a-new-volume) rather than overwriting the failed volume.
+The admin-only `/api/settings/restore` endpoint accepts a raw SQLite file, keeps the previous database as `.pre-restore`, and requires a restart. It restores only the database, leaving file assets and configuration untouched. It is not a complete installation restore; use the stopped procedure above or the [Docker recovery runbook](#restore-a-docker-backup-into-a-new-volume) when those files must also be restored.
 
 ### Automated Backups
 
-Set up a cron job for daily backups:
+This cron entry schedules **database-only** backups. Install `sqlite3` and create the destination with `sudo install -d -m 0700 /backups` first:
 
 ```bash
 # /etc/cron.d/serverbee-backup
-0 2 * * * root sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
+0 2 * * * root umask 077; sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
 ```
 
-This runs at 2:00 AM daily and deletes backups older than 30 days.
+It runs at 2:00 AM and deletes database backups older than 30 days. Schedule the matching asset/configuration archives too, especially after branding, MMDB, or configuration changes; verify and copy complete sets off-host.
 
 ## Health Checks
 
@@ -579,7 +607,7 @@ ServerBee is designed for lightweight VPS instances:
 
 Database size depends on server count, enabled writers, sampling intervals, and retention settings. Use [Storage & Sizing](/en/docs/storage-sizing) for the measured 30-day baseline, feature multipliers, and WAL headroom instead of combining rough estimates from different retention windows.
 
-For glibc-based Server deployments, set `MALLOC_ARENA_MAX=2` in the service environment to match the measured 140–170 MB production range. See [Resource Usage](/en/docs/resource-usage) for scope and measurement details.
+Official Linux release binaries and Docker images use musl; `MALLOC_ARENA_MAX` does not affect those builds. Measure the version and workload you deploy rather than sizing from the historical glibc notes. See [Resource Usage](/en/docs/resource-usage).
 
 ## Security Checklist
 
@@ -598,7 +626,7 @@ Before exposing ServerBee to the internet:
 
 ## Upgrading
 
-ServerBee runs database migrations automatically on startup, so no manual migration step is needed after an upgrade. Back up the database before upgrading.
+ServerBee runs database migrations automatically on startup, so no manual migration step is needed after an upgrade. Back up the complete data directory, configuration, and external assets before upgrading.
 
 **Docker:**
 
@@ -723,6 +751,8 @@ sudo cp -a /opt/serverbee/data \
   "/backups/serverbee-failed-migration-$(date -u +%Y%m%dT%H%M%SZ)"
 ```
 
+Preserve the matching configuration, external MMDB files, environment files, and secrets alongside the failed data snapshot. They may explain the failure and are required for a complete restore.
+
 ### Step 4: Inspect the Database State
 
 Run checks against an extracted copy of the failed snapshot, not the only production volume:
@@ -779,12 +809,18 @@ docker volume create "$SERVERBEE_RECOVERY_VOLUME"
 
 docker run --rm \
   --mount "type=volume,src=${SERVERBEE_RECOVERY_VOLUME},dst=/data" \
-  --mount "type=bind,src=$(pwd)/backups,dst=/backups,readonly" \
+  --mount "type=bind,src=$(pwd)/backups/serverbee-20260314T020000Z,dst=/backups,readonly" \
   alpine \
-  tar xzf /backups/serverbee-20260314T020000Z.tar.gz -C /data
+  tar xzf /backups/data.tar.gz -C /data
 
 echo "$SERVERBEE_RECOVERY_VOLUME"
+
+# Inspect the matching Compose/configuration archive before restoring it.
+mkdir -p recovered-config
+tar xzf backups/serverbee-20260314T020000Z/config.tar.gz -C recovered-config
 ```
+
+Review `recovered-config/config/server.toml` and `recovered-config/docker-compose.yml`, restore them to the deployment project, and reapply the matching external MMDB mounts, environment files, and secrets. The data archive restores `brand/` and downloaded MMDB files; it cannot restore files outside `/data`.
 
 Then point the existing `serverbee-data` logical Compose volume at the newly created volume:
 
@@ -812,15 +848,16 @@ Consider recovery complete only when all of the following are true:
 - The container remains running and its health check passes.
 - `PRAGMA integrity_check` returns `ok`.
 - You can sign in and read existing servers, alerts, and historical records.
+- Previously configured logos, favicons, and GeoIP/ASN databases are available.
 - Database lock, foreign key, and missing table or column errors do not continue.
 
 ### Prevention
 
-- Create and verify a database backup before every upgrade; the current upgrade command does not create one automatically.
+- Create and verify a complete data/configuration backup before every upgrade; the current upgrade command does not create one automatically.
 - Copy backups off the Docker host so one disk failure cannot damage both the production volume and its local backups.
 - Keep SQLite deployments at one Server instance; do not share one writable database file among multiple containers.
 - Check available disk space before upgrading, and use an explicit image version tag so the migration source is identifiable.
-- Keep both the pre-upgrade image and database backup. Database rollback depends on the backup, not just the old image.
+- Keep the pre-upgrade image and its matching database, asset, and configuration backups. Database rollback depends on the backup, not just the old image.
 - Wait for the migration success log and health check after an upgrade; a successful `docker compose up -d` return is not sufficient evidence.
 
 <Cards>

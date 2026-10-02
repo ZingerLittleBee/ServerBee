@@ -35,7 +35,7 @@
     "build:web": "bun --filter @serverbee/web build",
     "typecheck": "bun --filter @serverbee/ui check-types && bun --filter @serverbee/web typecheck && bun --filter @serverbee/docs types:check",
     "check-types": "bun run typecheck",
-    "dev:web": "turbo -F web dev",
+    "dev:web": "bun --filter @serverbee/web dev",
     "test": "bun --filter @serverbee/web test",
     "test:watch": "bun --filter @serverbee/web test:watch",
     "db:push": "turbo -F @serverbee/db db:push",
@@ -44,8 +44,11 @@
     "db:migrate": "turbo -F @serverbee/db db:migrate",
     "db:local": "turbo -F @serverbee/db db:local",
     "check": "ultracite check",
+    "check:agent-navigation": "bun scripts/check-agent-navigation.ts",
+    "check:integration-targets": "bun scripts/check-integration-targets.ts",
     "lint": "bun run check",
     "fix": "ultracite fix",
+    "test:tooling": "bun test scripts",
     "prepare": "lefthook install"
   },
   "dependencies": {

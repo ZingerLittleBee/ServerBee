@@ -10,6 +10,9 @@ COMMAND_TARGETS := \
 	build-web \
 	typecheck \
 	check-types \
+	check-agent-navigation \
+	check-integration-targets \
+	test-tooling \
 	lint \
 	check \
 	fix \
@@ -28,6 +31,9 @@ COMMAND_TARGETS := \
 	docs-start \
 	docs-preview \
 	docs-typecheck \
+	docs-check-contracts \
+	docs-check-routes \
+	docs-check-browser \
 	docs-lint \
 	docs-format \
 	db-pull \

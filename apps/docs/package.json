@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite dev --port=4000",
     "build": "vite build",
-    "start": "node .output/server/index.mjs",
-    "preview": "vite preview",
+    "start": "node scripts/start-production.ts",
+    "preview": "node scripts/start-production.ts",
     "types:check": "fumadocs-mdx && tsc --noEmit",
     "check:contracts": "bun scripts/check-contracts.ts",
-    "check:routes": "bun scripts/check-routes.ts",
+    "check:routes": "node scripts/check-routes.ts",
+    "check:browser": "node scripts/check-browser.ts",
     "postinstall": "fumadocs-mdx",
     "lint": "biome check",
     "format": "biome format --write"
@@ -41,6 +42,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
     "nitro": "^3.0.1-alpha.2",
+    "playwright": "1.62.1",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite-tsconfig-paths": "^6.1.1"

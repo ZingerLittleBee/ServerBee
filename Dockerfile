@@ -1,3 +1,7 @@
+# Source-build image for local or custom deployments. Official GHCR images use
+# release.yml's cargo-zigbuild artifacts via Dockerfile.server instead.
+# For production memory investigations, see tests/manual/server-memory-soak.md.
+
 # Stage 1: Build frontend
 FROM oven/bun:latest AS web-builder
 WORKDIR /app/web

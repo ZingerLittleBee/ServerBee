@@ -1,77 +1,63 @@
 ---
 title: Resource Usage
-description: Measured runtime CPU, memory, disk, and network footprint for the ServerBee Agent and Server.
+description: Historical CPU, memory, disk, and network observations for the ServerBee Agent and Server.
 icon: Gauge
 ---
 
-This page records the measured runtime resource footprint of the ServerBee **Agent** and **Server**, covering CPU, memory, disk, and network. For detailed disk (database) growth capacity planning, see [Storage & Capacity Planning](/en/docs/storage-sizing).
+This page preserves historical resource observations for the ServerBee **Agent** and **Server**. They are not benchmarks of the current release. For database growth estimates, see [Storage & Capacity Planning](/en/docs/storage-sizing).
 
 <Callout type="info">
-These values are measured, not estimated. Unless noted otherwise, they were taken on 2026-05-19 using v0.9.3. Usage varies with the collection interval, number of connected Agents, whether GPU/temperature collection is enabled, and dashboard query load — the figures here are stable order-of-magnitude references.
+Source: the measurement notes originally recorded on this page for v0.9.3, dated 2026-05-19 unless noted otherwise. Raw benchmark logs and exact binary linkage were not archived with those notes. Memory/CPU readings are historical observations; the Agent network figure is a protocol-based estimate. Measure your deployed version, allocator, Agent count, enabled collectors, and query load before setting resource limits.
 </Callout>
 
 ## Agent
 
-The Agent is a lightweight probe with negligible CPU cost and a steady-state memory footprint in the tens of MB.
+The original notes describe a 4-core AMD EPYC 7B13 / 8 GB / Ubuntu 24.04 (KVM) host, Agent v0.9.3, a 3-second collection interval, temperature collection enabled, and reporting to a remote Server over an HTTPS WebSocket.
 
-| Resource | Cold start (~90s) | Steady state (8h uptime) | Notes |
-|----------|-------------------|--------------------------|-------|
-| Memory (systemd cgroup, real private memory) | ~4.3 MB, peak ~5.1 MB | **~27 MB, peak ~28 MB** | Most accurate memory figure |
-| Memory (`ps` RSS, includes shared library mappings) | ~10 MB | **~34 MB** | Overestimate, includes shared libs |
-| CPU | ~0.7% (single core) | ~0.5% (single core) | Stable, includes the per-3s collection spike |
-| Threads | 10 | 9–10 | tokio runtime |
-| Binary size | ~11 MB | — | linux-amd64 release |
-| Network | One `SystemReport` JSON per collection interval (3s default) plus periodic ping/pong; on the order of ≤ 1–2 KB/s | — | Scales with interval and enabled metrics |
+| Resource | Cold start (~90s) | After 8h | Scope |
+|----------|-------------------|----------|-------|
+| Memory (systemd cgroup) | ~4.3 MB, peak ~5.1 MB | ~27 MB, peak ~28 MB | Cgroup accounting; a different scope from process RSS |
+| Memory (`ps` RSS) | ~10 MB | ~34 MB | Process resident memory, including shared mappings |
+| CPU | ~0.7% (single core) | ~0.5% (single core) | Observed collection workload |
+| Threads | 10 | 9–10 | Observed tokio runtime |
+| Binary size | ~11 MB | — | Historical linux-amd64 binary |
+| Network | Estimated ≤ 1–2 KB/s | — | One `SystemReport` JSON per 3-second interval plus ping/pong; varies with metrics |
 
-Measurement environment: 4-core AMD EPYC 7B13 / 8 GB / Ubuntu 24.04 (KVM), Agent v0.9.3, 3s collection interval, temperature collection enabled, reporting to a remote Server over an HTTPS WebSocket.
-
-<Callout type="warn">
-Memory rose from ~5 MB at cold start to ~27 MB over 8 hours (at 8h the current value ≈ the peak, so it **appears to be near a plateau, pending 24h confirmation**). Same root cause as the Server: the Agent is also Rust + tokio, and glibc's default multi-arena allocator hoards freed memory inside the process instead of returning it to the OS (sysinfo produces many small allocations every 3s). This is not a code-level leak. If steady-state memory needs to be reduced further, set `MALLOC_ARENA_MAX=2` on the Agent's systemd service.
-</Callout>
-
-For comparison: among comparable resident monitoring agents, Netdata often reaches tens to hundreds of MB, Telegraf ~30–50 MB, and node_exporter ~15–20 MB. The ServerBee Agent's steady-state ~27 MB memory + &lt;1% CPU keeps it firmly in the lightweight tier.
+Memory increased during the eight-hour observation. Those readings alone do not establish a long-term plateau or distinguish allocator retention from a leak. The recorded host OS does not establish which libc the binary used.
 
 ## Server
 
-Server memory is driven mainly by the number of connected Agents, dashboard/API query load, and the data retention policy.
+### Historical Railway observation
 
-### Production reference (Railway, real workload)
+The original page recorded roughly 140–170 MB with a small number of Agents and `MALLOC_ARENA_MAX=2` present in the environment. It also reported 800 MB–1 GB after 2–3 days in another run. The notes do not capture exact build linkage, Agent count, query load, or a controlled comparison. These are historical readings, not evidence that the environment variable caused the difference or a memory target for the current release.
 
-A production instance with a small number of connected Agents, after setting `MALLOC_ARENA_MAX=2` (suppresses glibc multi-arena memory retention):
+### Historical self-hosted idle observation
 
-| Resource | Measured | Notes |
+The v0.9.3 notes describe a near-idle Server on the same VPS with no active Agent connections:
+
+| Resource | Observed | Scope |
 |----------|----------|-------|
-| Memory | Steady ~140–170 MB, flat over time with no sustained climb | Healthy level |
+| Memory (systemd cgroup) | ~15 MB, peak ~23.8 MB | Historical idle observation, not a loaded-server requirement |
+| Threads | 7 | Observed tokio runtime |
+| CPU | Near zero | Idle workload |
+| Binary size | ~47 MB | Historical linux-amd64 binary with the frontend SPA embedded |
 
-<Callout type="warn">
-Without `MALLOC_ARENA_MAX=2` (or switching to jemalloc), glibc's default multi-arena allocator hoards freed memory inside the process instead of returning it to the OS, and long-running RSS climbs continuously (observed climbing to ~800 MB–1 GB over 2–3 days). This is not a code-level memory leak, but setting this environment variable is recommended when deploying the Server.
-</Callout>
+### Allocator and build scope
 
-<Callout type="warn">
-`MALLOC_ARENA_MAX` only affects glibc. The official Linux release binaries and Docker images are static musl builds, where it has no effect. `v1.0.0-beta.1` release binaries were linked against an allocator that never reused memory freed on another thread, so the Server grew about 20 MB per day even while idle. Upgrade to `v1.0.0-beta.2` or later.
-</Callout>
+`MALLOC_ARENA_MAX` applies to glibc's allocator. Official Linux release binaries and Docker images use musl, where this variable has no effect. The standard deployment examples therefore do not set it. For a custom glibc build, assess allocator behavior against that build's measurements rather than applying the old Railway numbers.
 
-### Self-hosted idle reference
-
-A near-idle Server instance (no active Agent connections) on the same VPS:
-
-| Resource | Measured | Notes |
-|----------|----------|-------|
-| Memory (systemd cgroup) | ~15 MB, peak ~23.8 MB | Idle lower-bound reference |
-| Threads | 7 | tokio runtime |
-| CPU | Near zero at idle | Rises with Agent count and query load |
-| Binary size | ~47 MB | linux-amd64 release, embeds the frontend SPA |
+A separate release-toolchain regression affected `v1.0.0-beta.1`: the recorded idle Server grew about 20 MB per day because of cross-thread free behavior in Zig 0.16's bundled allocator. The release workflow now pins Zig 0.15.2; the correction shipped in `v1.0.0-beta.2`. Its cause, observation scope, and reproduction procedure are recorded in the [release memory soak runbook](https://github.com/ZingerLittleBee/ServerBee/blob/main/tests/manual/server-memory-soak.md). This is a distinct observation from the v0.9.3 figures above. Use a current release and investigate sustained growth on the actual deployed build.
 
 ### Disk
 
-Server disk usage comes from the SQLite database and grows with the number of servers, enabled features, and retention policy. For the full 30-day capacity formulas and scenario catalog, see [Storage & Capacity Planning](/en/docs/storage-sizing). In production, reserve an extra 10%–20% on top of the base database size as a buffer for WAL and burst writes.
+Server disk use includes SQLite, uploaded brand images, downloaded GeoIP/ASN MMDB files, and configuration. Database growth depends on Agent count, enabled features, and retention. See [Storage & Capacity Planning](/en/docs/storage-sizing) for database estimates and [Backup and Restore](/en/docs/deployment#persistent-data) for files outside SQLite. Reserve space for WAL, bursts, and complete backup sets in addition to the base database.
 
 ## Caveats
 
-- The Railway memory figure assumes `MALLOC_ARENA_MAX=2` is set; it does not apply otherwise.
-- The self-hosted Server figures were taken near-idle and **do not** represent usage under many Agents or heavy query load — treat them as a lower bound only.
-- Agent network usage is an order-of-magnitude estimate based on protocol behavior; actual values vary with the collection interval and enabled metrics.
-- All values are order-of-magnitude references for capacity planning and anomaly detection (watch the **trend**, not the absolute value: steady = healthy, continuously climbing without recovery = investigate).
+- The historical idle Server readings do not describe many Agents or heavy query load.
+- Cgroup memory and process RSS measure different scopes; compare like with like.
+- Agent network usage is an estimate, not a captured traffic benchmark.
+- A steady eight-hour reading does not prove long-term stability. Investigate unexplained growth with workload and allocator context.
 
 ## Related Docs
 

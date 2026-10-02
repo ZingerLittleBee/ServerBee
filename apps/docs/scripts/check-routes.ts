@@ -242,6 +242,19 @@ function expect(condition: unknown, message: string): asserts condition {
 
 await waitUntilReady()
 
+// Consume each response before the next request to verify closed-connection handling. Bun 1.3.4 reused the
+// preview's Connection: close socket here, so Node rejected the second request with 503 before routing it.
+const sequentialResponses = [
+  { path: '/en/docs/nope', status: 404 },
+  { path: '/en/docs/x%25y', status: 404 },
+  { path: '/en/docs/quick-start', status: 200 }
+] as const
+for (const { path, status } of sequentialResponses) {
+  const response = await fetch(`${baseUrl}${path}`, { redirect: 'manual' })
+  await response.text()
+  expect(response.status === status, `Sequential GET ${path} returned ${response.status} instead of ${status}`)
+}
+
 for (const route of routes) {
   const response = await fetch(`${baseUrl}${route.path}`, { redirect: 'manual' })
   if (response.status !== 200) {
@@ -579,5 +592,5 @@ expect(
 )
 
 console.log(
-  `PASS: ${routes.length} localized documentation routes, ${searches.length + misses.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages, localized 404 pages, ${sitemapUrls.length} sitemap URLs`
+  `PASS: ${sequentialResponses.length} sequential responses, ${routes.length} localized documentation routes, ${searches.length + misses.length} search queries, ${markdownExports.length} Markdown exports, llms.txt in both languages, localized 404 pages, ${sitemapUrls.length} sitemap URLs`
 )

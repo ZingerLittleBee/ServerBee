@@ -111,7 +111,6 @@ services:
       - ./config/server.toml:/etc/serverbee/server.toml:ro
     environment:
       - SERVERBEE_AUTH__SECURE_COOKIE=true
-      - MALLOC_ARENA_MAX=2
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
       interval: 30s
@@ -197,7 +196,6 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/serverbee-server
-Environment=MALLOC_ARENA_MAX=2
 Restart=always
 RestartSec=5
 User=serverbee
@@ -429,72 +427,86 @@ ServerBee 自身不处理 TLS 终止。所有 HTTPS/WSS 加密都由前置的反
 
 ## 备份与恢复
 
-### 备份哪些内容
+### 备份哪些内容 [#persistent-data]
 
-ServerBee 把所有数据都存储在单个 SQLite 数据库文件和配置文件中：
+SQLite 保存监控记录、用户、设置和上传的组件包。部分资产存放在独立文件中，仅下载数据库不能恢复完整安装：
 
-| 项目 | 位置 | 说明 |
-|------|------|------|
-| 数据库 | `{data_dir}/serverbee.db` | 所有监控数据、用户、告警和设置 |
-| WAL 文件 | `{data_dir}/serverbee.db-wal` | 预写日志（运行时备份需一并包含） |
-| SHM 文件 | `{data_dir}/serverbee.db-shm` | 共享内存文件（运行时备份需一并包含） |
-| 服务端配置 | `/opt/serverbee/etc/server.toml` | 服务端配置（安装脚本默认路径） |
-| Agent 配置 | `/opt/serverbee/etc/agent.toml` | Agent 配置（位于每台被监控的服务器上） |
-| GeoIP 数据库 | 视情况而定 | MaxMind MMDB 文件（如启用） |
+| 项目 | 位置 | 数据库备份是否包含 | 说明 |
+|------|------|--------------------|------|
+| 数据库 | `{data_dir}/serverbee.db` | 是 | 默认 `database.path`；包含数据库中的设置和组件包 |
+| 品牌资产 | `{data_dir}/brand/` | 否 | 上传的 Logo 和 favicon；数据库只保存访问 URL，不保存图片内容 |
+| 下载的 GeoIP 国家数据库 | `{data_dir}/dbip-country-lite.mmdb` | 否 | 已下载的 DB-IP Lite Country 数据库 |
+| 下载的 ASN 数据库 | `{data_dir}/dbip-asn-lite.mmdb` | 否 | 已下载的 DB-IP Lite ASN 数据库 |
+| 自定义 MMDB 文件 | `geoip.mmdb_path`、`asn.mmdb_path` | 否 | 配置路径位于 `data_dir` 之外时，需单独保存 |
+| 服务端配置 | `/opt/serverbee/etc/` | 否 | 安装器配置和版本通道策略；还需保存外部环境文件和密钥 |
+| Agent 配置与状态 | `/opt/serverbee/etc/agent.toml`、配置的 `state_dir` 和 `security.data_dir` | 否 | 在每台 Agent 主机上单独备份，包括运行令牌；Server 备份不会复制远程文件 |
+
+`serverbee.db-wal` 可能包含尚未写入主数据库的变更。运行中的服务端应使用 SQLite `.backup` 或备份 API，不要分别复制数据库和 sidecar 文件。停机后的完整目录快照会一并保留剩余的 `serverbee.db-wal` 和 `serverbee.db-shm`。
 
 ### 备份策略
 
-安装脚本默认的数据目录是 `/opt/serverbee/data`（数据库为 `/opt/serverbee/data/serverbee.db`）。若你是手写 systemd unit 的自定义部署，请替换为你配置的 `data_dir`。下方命令要求系统已安装 `sqlite3` CLI，并提前创建受保护的目标目录：先安装 `sqlite3`，再执行 `sudo install -d -m 0700 /backups`。
+下方示例使用安装器默认路径：`/opt/serverbee/data/serverbee.db` 和 `/opt/serverbee/etc/`。请按实际部署替换数据目录、数据库文件名、配置目录及外部 MMDB 路径。Docker 示例采用上文的 Compose 布局（`/data`、`config/server.toml` 和 `docker-compose.yml`）。
 
-**方式零：内置管理员备份 API**
-
-管理员专用端点使用 SQLite `VACUUM INTO` 下载一致数据库。把管理员 API key 放在环境变量里，不要写进 shell 历史：
+主机文件操作以 root 身份执行，需安装 `sqlite3` CLI，并限制备份目录的访问权限。先创建一个带时间戳的目录，保存数据库及配套资产：
 
 ```bash
-SERVERBEE_BACKUP_FILE="/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).db"
+set -e
+umask 077
+SERVERBEE_BACKUP_DIR="/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$SERVERBEE_BACKUP_DIR"
+```
+
+**方式零：内置管理员备份 API，仅数据库**
+
+管理员专用 `/api/settings/backup` 端点使用 SQLite `VACUUM INTO`，仅导出数据库，不包含品牌图片、MMDB 文件、配置或 Agent 状态。把管理员 API key 放在环境变量中：
+
+```bash
 curl --fail --request POST \
   --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
-  --output "$SERVERBEE_BACKUP_FILE" \
+  --output "$SERVERBEE_BACKUP_DIR/serverbee.db" \
   https://monitor.example.com/api/settings/backup
-sqlite3 "$SERVERBEE_BACKUP_FILE" 'PRAGMA integrity_check;'
+test "$(sqlite3 "$SERVERBEE_BACKUP_DIR/serverbee.db" 'PRAGMA integrity_check;')" = ok
 ```
 
-把已验证备份复制到 ServerBee 主机之外。同一块磁盘上的备份不构成灾难恢复。
+若在另一台主机上下载数据库，请在 Server 主机上生成资产和配置归档，再复制到同一份备份目录中。
 
-**方式一：SQLite 备份命令（推荐，适用于运行中的服务端）**
+**方式一：SQLite 备份命令，仅数据库**
 
 ```bash
-sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +%Y%m%d).db'"
+sqlite3 /opt/serverbee/data/serverbee.db ".backup '$SERVERBEE_BACKUP_DIR/serverbee.db'"
+test "$(sqlite3 "$SERVERBEE_BACKUP_DIR/serverbee.db" 'PRAGMA integrity_check;')" = ok
 ```
 
-无需停机即可生成一致的时间点备份。
-
-**方式二：文件复制（需要停止服务端）**
+以上两种数据库备份还需配套以下归档。`assets.tar.gz` 保存数据目录中除当前数据库及其 sidecar 之外的文件，包含已存在的 `brand/` 和两种下载的 MMDB 文件；`config.tar.gz` 保存安装器配置目录：
 
 ```bash
+tar czf "$SERVERBEE_BACKUP_DIR/assets.tar.gz" \
+  --exclude='./serverbee.db*' -C /opt/serverbee/data .
+tar czf "$SERVERBEE_BACKUP_DIR/config.tar.gz" -C /opt/serverbee etc
+```
+
+收集这一组文件时，请保持品牌资产、MMDB 下载和配置不变。分别在线复制不构成原子快照；这些文件正在变化时，请使用下方的停机快照。还需把外部 `geoip.mmdb_path`、`asn.mmdb_path`、环境文件及密钥加入备份，并记录原始路径。验证后将完整备份复制到 ServerBee 主机之外。
+
+**方式二：完整主机快照，需要停止服务端**
+
+```bash
+set -e
 sudo systemctl stop serverbee-server
-cp /opt/serverbee/data/serverbee.db /backups/serverbee-$(date +%Y%m%d).db
+tar czf "$SERVERBEE_BACKUP_DIR/data.tar.gz" -C /opt/serverbee/data .
+tar czf "$SERVERBEE_BACKUP_DIR/config.tar.gz" -C /opt/serverbee etc
 sudo systemctl start serverbee-server
 ```
 
-管理员专用恢复 API 接受原始 SQLite 文件，会把原数据库保留为 `.pre-restore`，并要求重启 Server。替换前先验证备份，并先为当前状态再做一份备份：
+数据归档包含数据库、剩余 WAL/SHM 文件、品牌资产和下载的 MMDB。外部文件仍需按上文单独保存。归档命令失败时，先解决问题，再重启并确认备份完整。
+
+**方式三：完整 Docker volume 与配置快照**
 
 ```bash
-sqlite3 /backups/serverbee-20260314.db 'PRAGMA integrity_check;'
-curl --fail --request POST \
-  --header "X-API-Key: ${SERVERBEE_ADMIN_API_KEY}" \
-  --header 'Content-Type: application/octet-stream' \
-  --data-binary @/backups/serverbee-20260314.db \
-  https://monitor.example.com/api/settings/restore
-sudo serverbee restart server
-```
-
-Docker 部署请按[恢复到新 volume 的灾难恢复流程](#从-docker-备份恢复到新-volume)操作，不要覆盖故障 volume。
-
-**方式三：Docker volume 备份**
-
-```bash
-docker compose stop
+set -e
+umask 077
+SERVERBEE_BACKUP_DIR="$PWD/backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$SERVERBEE_BACKUP_DIR"
+docker compose stop serverbee-server
 
 SERVERBEE_DATA_VOLUME="$(
   docker inspect serverbee-server \
@@ -502,44 +514,60 @@ SERVERBEE_DATA_VOLUME="$(
 )"
 test -n "$SERVERBEE_DATA_VOLUME"
 
-mkdir -p backups
 docker run --rm \
   --mount "type=volume,src=${SERVERBEE_DATA_VOLUME},dst=/data,readonly" \
-  --mount "type=bind,src=$(pwd)/backups,dst=/backups" \
-  alpine \
-  tar czf /backups/serverbee-$(date -u +%Y%m%dT%H%M%SZ).tar.gz -C /data .
+  --mount "type=bind,src=${SERVERBEE_BACKUP_DIR},dst=/backups" \
+  alpine tar czf /backups/data.tar.gz -C /data .
+tar czf "$SERVERBEE_BACKUP_DIR/config.tar.gz" config docker-compose.yml
 
-docker compose start
+docker compose start serverbee-server
 ```
 
-不要假设 Docker volume 的实际名称一定是 `serverbee-data`。Compose 通常会添加项目名前缀；如果备份命令引用了错误的名称，Docker 会创建一个新的空 volume，命令表面成功但备份中没有生产数据。上面的命令从现有容器读取挂载到 `/data` 的真实 volume 名称。
+这会保存实际 `/data` volume 中的全部文件，包括品牌及下载的 MMDB 资产，并另行归档挂载的配置。Compose `.env` 文件、外部密钥及 MMDB bind mount 也需保存。不要假设 volume 的实际名称一定是 `serverbee-data`：Compose 通常会添加项目名前缀，引用错误名称可能创建一个空 volume。
 
 ### 恢复
 
-从备份恢复：
-
-1. 停止服务端
-2. 用备份替换数据库文件
-3. 启动服务端（如有需要，迁移会自动运行）
+启动 Server 前，先恢复数据库及对应的资产和配置。下方示例适用于配齐 `assets.tar.gz` 和 `config.tar.gz` 的数据库备份，使用安装器布局，并要求事先通过 `PRAGMA integrity_check`：
 
 ```bash
+set -e
+umask 077
+SERVERBEE_RESTORE_DIR="/backups/serverbee-20260314T020000Z"
+test "$(sqlite3 "$SERVERBEE_RESTORE_DIR/serverbee.db" 'PRAGMA integrity_check;')" = ok
+test -f "$SERVERBEE_RESTORE_DIR/assets.tar.gz"
+test -f "$SERVERBEE_RESTORE_DIR/config.tar.gz"
 sudo systemctl stop serverbee-server
-cp /backups/serverbee-20260314.db /opt/serverbee/data/serverbee.db
-# 以独立用户运行的自定义加固部署：还需重新设置属主，例如
-# sudo chown serverbee:serverbee /opt/serverbee/data/serverbee.db
+
+# Preserve the current state before replacing it.
+SERVERBEE_BEFORE_RESTORE="/backups/before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$SERVERBEE_BEFORE_RESTORE"
+mv /opt/serverbee/data /opt/serverbee/etc "$SERVERBEE_BEFORE_RESTORE/"
+
+# Restore into an empty directory, without the previous database WAL/SHM.
+mkdir -p /opt/serverbee/data
+cp "$SERVERBEE_RESTORE_DIR/serverbee.db" /opt/serverbee/data/serverbee.db
+tar xzf "$SERVERBEE_RESTORE_DIR/assets.tar.gz" -C /opt/serverbee/data
+tar xzf "$SERVERBEE_RESTORE_DIR/config.tar.gz" -C /opt/serverbee
+
+# Restore external MMDB/environment files and service ownership before starting.
+# For a dedicated service user: chown -R serverbee:serverbee /opt/serverbee/data
 sudo systemctl start serverbee-server
 ```
 
+停机主机快照则将 `data.tar.gz` 解压到空的数据目录，替代复制 `serverbee.db` 和解压 `assets.tar.gz` 两步。两种方式都需恢复对应的 `config.tar.gz` 和外部文件。启动前检查恢复的配置，旧环境变量或密钥服务中的值可能覆盖恢复的 TOML。
+
+管理员专用 `/api/settings/restore` 端点接受原始 SQLite 文件，会把原数据库保留为 `.pre-restore`，并要求重启。它仅恢复数据库，不修改独立资产和配置，不能代替完整安装恢复。需要恢复这些文件时，请使用上方停机流程或 [Docker 恢复流程](#从-docker-备份恢复到新-volume)。
+
 ### 自动备份
 
-设置一个 cron 任务来执行每日备份：
+下方 cron 任务仅定时备份数据库。先安装 `sqlite3`，并执行 `sudo install -d -m 0700 /backups` 创建目录：
 
 ```bash
 # /etc/cron.d/serverbee-backup
-0 2 * * * root sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
+0 2 * * * root umask 077; sqlite3 /opt/serverbee/data/serverbee.db ".backup '/backups/serverbee-$(date +\%Y\%m\%d).db'" && find /backups -name 'serverbee-*.db' -mtime +30 -delete
 ```
 
-它会在每天凌晨 2:00 运行，并删除超过 30 天的备份。
+它会在每天凌晨 2:00 运行，删除超过 30 天的数据库备份。资产和配置也需安排配套归档，尤其在品牌、MMDB 或配置发生变更后；验证后将完整备份复制到主机之外。
 
 ## 健康检查
 
@@ -579,7 +607,7 @@ ServerBee 面向轻量级 VPS 实例设计：
 
 数据库大小取决于服务器数量、启用的数据写入功能、采样间隔和保留设置。请使用[存储与容量规划](/zh/docs/storage-sizing)中的实测 30 天基线、功能乘数和 WAL 预留建议，避免混用不同保留窗口的粗略估算。
 
-glibc 环境下部署 Server 时，在服务环境中设置 `MALLOC_ARENA_MAX=2`，才能与实测 140–170 MB 的生产范围保持一致。具体测量范围见[资源开销](/zh/docs/resource-usage)。
+官方 Linux release 二进制和 Docker 镜像使用 musl，`MALLOC_ARENA_MAX` 对这些构建无效。请测量实际部署版本和负载，不要按历史 glibc 记录决定容量。详见[资源开销](/zh/docs/resource-usage)。
 
 ## 安全检查清单
 
@@ -598,7 +626,7 @@ glibc 环境下部署 Server 时，在服务环境中设置 `MALLOC_ARENA_MAX=2`
 
 ## 升级指南
 
-ServerBee 在启动时会自动运行数据库迁移，升级后无需手动执行任何迁移步骤。升级前请先备份数据库。
+ServerBee 在启动时会自动运行数据库迁移，升级后无需手动执行任何迁移步骤。升级前请先备份完整的数据目录、配置和外部资产。
 
 **Docker：**
 
@@ -723,6 +751,8 @@ sudo cp -a /opt/serverbee/data \
   "/backups/serverbee-failed-migration-$(date -u +%Y%m%dT%H%M%SZ)"
 ```
 
+故障数据快照还需配套保存配置、外部 MMDB 文件、环境文件和密钥。这些文件可能解释故障原因，也是完整恢复所需的内容。
+
 ### 第四步：检查数据库状态
 
 在故障快照的副本上运行检查，不要直接修改唯一的生产 volume：
@@ -779,12 +809,18 @@ docker volume create "$SERVERBEE_RECOVERY_VOLUME"
 
 docker run --rm \
   --mount "type=volume,src=${SERVERBEE_RECOVERY_VOLUME},dst=/data" \
-  --mount "type=bind,src=$(pwd)/backups,dst=/backups,readonly" \
+  --mount "type=bind,src=$(pwd)/backups/serverbee-20260314T020000Z,dst=/backups,readonly" \
   alpine \
-  tar xzf /backups/serverbee-20260314T020000Z.tar.gz -C /data
+  tar xzf /backups/data.tar.gz -C /data
 
 echo "$SERVERBEE_RECOVERY_VOLUME"
+
+# Inspect the matching Compose/configuration archive before restoring it.
+mkdir -p recovered-config
+tar xzf backups/serverbee-20260314T020000Z/config.tar.gz -C recovered-config
 ```
+
+检查 `recovered-config/config/server.toml` 和 `recovered-config/docker-compose.yml`，恢复到部署项目，并重新配置对应的外部 MMDB 挂载、环境文件和密钥。数据归档会恢复 `brand/` 及下载的 MMDB 文件，无法恢复 `/data` 之外的文件。
 
 然后让 Compose 中现有的 `serverbee-data` 逻辑名称指向刚创建的 volume：
 
@@ -812,15 +848,16 @@ curl --fail http://127.0.0.1:9527/healthz
 - 容器保持运行且健康检查通过。
 - `PRAGMA integrity_check` 返回 `ok`。
 - 能登录并读取已有 Server、告警和历史记录。
+- 原先配置的 Logo、favicon 和 GeoIP/ASN 数据库均可用。
 - 没有持续出现数据库锁、外键或缺失表/列错误。
 
 ### 预防措施
 
-- 每次升级前创建并验证数据库备份；当前升级命令不会自动备份。
+- 每次升级前创建并验证完整的数据与配置备份；当前升级命令不会自动备份。
 - 将备份复制到 Docker 主机之外，避免主机磁盘故障同时损坏生产 volume 和本地备份。
 - SQLite 部署保持单个 Server 实例，不要让多个容器共享写入同一个数据库文件。
 - 升级前检查可用磁盘空间，并使用明确的镜像版本 tag，避免无法确认迁移来自哪个版本。
-- 保留升级前镜像和数据库备份。数据库回退依赖备份，不能只依赖旧镜像。
+- 保留升级前镜像及配套的数据库、资产和配置备份。数据库回退依赖备份，不能只依赖旧镜像。
 - 升级后等待迁移成功日志和健康检查，不要仅以 `docker compose up -d` 返回成功作为完成依据。
 
 <Cards>

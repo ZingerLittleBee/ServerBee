@@ -1,134 +1,32 @@
-# Release Documentation Updater
+# Release documentation updater
 
-Update version numbers, CHANGELOG.md, README.md, README.zh-CN.md, ENV.md, and Fumadocs based on the current branch's changes vs main.
+Update documentation affected by the requested branch or release. Use [source navigation](../../docs/agents/navigation.md) for current owners and [the docs contributor guide](../../apps/docs/README.md) for site checks. Version preparation and publication follow [the release runbook](../../docs/agents/beta-release-validation.md) through [the publish entry point](../../scripts/publish.sh).
 
-## Arguments
+## Scope the evidence
 
-The user MUST provide a version number (e.g., `v0.2.2` or `0.2.2`). If not provided, ask the user to specify one.
+1. Record the requested comparison base and current commit. For branch docs, use the merge-base with `main` unless a base was supplied. For release notes, compare with the previous release tag so already merged changes are included.
+2. Inspect the commit list and changed-file summary, then read the diff and source owners for affected feature areas.
+3. Read the relevant accepted ADR or issue when it explains a changed contract. Historical specs/plans provide background only when that specific change refers to them.
+4. List affected user workflows and document supported behavior from current source or verified evidence. Report test counts and runtime results only when measured for the candidate.
 
-## Process
+## Update affected documentation
 
-### Step 1: Determine and sync version
+- Write release notes under [CHANGELOG.md](../../CHANGELOG.md)'s `[Unreleased]` section, matching existing categories and avoiding duplicates.
+- Update [README.md](../../README.md) and [README.zh-CN.md](../../README.zh-CN.md) when feature highlights, installation, or config examples change.
+- For config changes, update [ENV.md](../../ENV.md), [English configuration](../../apps/docs/content/docs/en/configuration.mdx), and [Chinese configuration](../../apps/docs/content/docs/zh/configuration.mdx) together.
+- For user-facing changes, review the affected pages in [English content](../../apps/docs/content/docs/en/) and [Chinese content](../../apps/docs/content/docs/zh/). Add a page in both languages when needed and register it in the respective `meta.json`.
+- Keep capability ownership and other current contracts aligned with their source owners. Review feature pages affected by the diff rather than every historical design file.
 
-```
-1. Parse version from argument, strip leading 'v' if present (e.g., "v0.2.2" -> "0.2.2")
-2. Read current version from Cargo.toml [workspace.package] version field
-3. If the new version differs from Cargo.toml version:
-   - Update Cargo.toml [workspace.package] version to the new version
-   - Run `cargo check --workspace` to regenerate Cargo.lock
-   - Note: Do NOT add 'v' prefix — Cargo.toml uses bare semver (e.g., "0.2.2")
-4. If versions already match, skip this step
-```
+Complete this step when every affected workflow has matching bilingual docs and every factual claim has a current source or an identified verification result.
 
-### Step 2: Gather change context
+## Verify the draft
 
-Run these commands to understand what changed on this branch:
+Run the applicable contract, type, build, and route checks from the docs contributor guide, plus `bun run check:agent-navigation` when changing agent entry points. Inspect the diff for scope, stale paths, and generated files. Stage only current-task files when creating a local commit.
 
-```bash
-# Commit history since diverging from main
-git log --oneline main..HEAD
+## Prepare or publish a version
 
-# Full diff summary (files changed)
-git diff --stat main...HEAD
+Use the requested semantic version for the release preview; derive a target only when the publish entry point supports that case. Keep documentation-only drafting separate from a version cut.
 
-# Full diff for understanding changes
-git diff main...HEAD
-```
+Follow the runbook's **Release dry-run and authorization** section. `make publish` owns the dated CHANGELOG cut, workspace/web versions, both lockfiles, and release commit. `DRY_RUN=1` previews the cut; `PREPARE_ONLY=1` prepares locally without pushing or tagging. After preparation, check versioned documentation examples and rerun their contracts before authorized publication. Use this entry point instead of a separate hand-written version-update or release-commit sequence.
 
-Also read ALL files in these directories for feature context:
-- `docs/superpowers/specs/` — design specs (read each file's title and overview)
-- `docs/superpowers/plans/` — implementation plans (read each file's title)
-- `docs/superpowers/plans/PROGRESS.md` — current progress
-
-### Step 3: Analyze changes
-
-Categorize all changes into:
-- **Added** — new features, new capabilities
-- **Changed** — modified behavior, updated defaults
-- **Fixed** — bug fixes, corrections
-- **Testing** — new tests, updated test counts
-- **Documentation** — doc updates (don't list in CHANGELOG, these ARE the docs)
-
-### Step 4: Update CHANGELOG.md
-
-Read the existing `CHANGELOG.md` to understand the format and style.
-
-Add a new version section at the top (after the header, before the previous version). Follow the exact same format as existing entries:
-- Use `## [version] - YYYY-MM-DD` header with today's date
-- Group changes under `### Added`, `### Changed`, `### Fixed`, `### Testing` subsections
-- Each item starts with `- **Feature name** -- description`
-- Be specific about what was added/changed, referencing concrete metrics (test counts, endpoint counts, etc.)
-- Match the writing style and detail level of existing entries
-
-Do NOT duplicate entries that already exist in previous versions.
-
-### Step 5: Update README.md
-
-Read the existing `README.md`. Update the **Features** section to include any new user-facing features. Follow the existing bullet point format:
-- `- **Feature Name** -- Brief description`
-
-Also update:
-- Test counts in the development section if they changed
-- Configuration examples if new config options were added
-- Any other sections affected by the changes
-
-### Step 6: Update README.zh-CN.md
-
-Apply the same changes as README.md but in Chinese. Read the existing `README.zh-CN.md` to match its translation style. The Chinese README should be a mirror of the English one with all content translated.
-
-### Step 7: Update ENV.md (if applicable)
-
-If new environment variables were added or existing ones changed:
-
-1. Read `ENV.md` to understand its table format
-2. Add new env vars to the appropriate section (Server or Agent), maintaining alphabetical order within each section
-3. Each entry must include: Environment Variable, TOML Key, Type, Default, Description
-4. **Cross-check**: Ensure every env var in `ENV.md` also exists in `apps/docs/content/docs/{en,cn}/configuration.mdx` (and vice versa). If one is missing from the other, add it.
-
-### Step 8: Update Fumadocs (REQUIRED)
-
-**This step is NOT optional.** Always check and update the Fumadocs documentation site when the branch includes user-facing changes.
-
-1. List all MDX files: `ls apps/docs/content/docs/en/` and `ls apps/docs/content/docs/cn/`
-2. For each changed feature area, read the corresponding MDX files in BOTH `en/` and `cn/` directories
-3. Update or add content to reflect the changes. Both languages must be kept in sync.
-
-**Mandatory cross-check — go through each file and verify:**
-
-| MDX File | Check when... |
-|----------|---------------|
-| `configuration.mdx` | New env vars, config options, or retention settings added. Must match `ENV.md` |
-| `monitoring.mdx` | Monitoring features changed (new metrics, new pages, data flow changes) |
-| `alerts.mdx` | New alert rule types, threshold logic changes |
-| `architecture.mdx` | Database schema changes, new modules, protocol changes |
-| `ping.mdx` | Ping/probe feature changes |
-| `capabilities.mdx` | New capability toggles |
-| `server.mdx` | Server-side behavior changes |
-| `agent.mdx` | Agent-side behavior changes |
-| Other feature pages | If the feature has a dedicated page, update it |
-
-**For new major features**: If a feature is significant enough (e.g., an entire new subsystem), consider adding a dedicated MDX page. Add it to both `en/` and `cn/` directories, and register it in the corresponding `meta.json` files.
-
-### Step 9: Verify and commit
-
-```bash
-# Verify the changes look correct
-git diff --stat
-
-# Stage all changed files (version files + docs)
-git add Cargo.toml Cargo.lock CHANGELOG.md README.md README.zh-CN.md ENV.md apps/docs/
-git commit -m "release: v{version} — update version and documentation"
-```
-
-## Important Notes
-
-- Always read existing files BEFORE modifying them to match style
-- The CHANGELOG follows [Keep a Changelog](https://keepachangelog.com/) format
-- README features should be concise (one line each)
-- Chinese translations should be natural, not machine-translated
-- Don't add features to README/CHANGELOG that were already listed in previous versions
-- Today's date should be used for the CHANGELOG entry
-- If unsure whether a change is user-facing, err on the side of including it in CHANGELOG but NOT in README (README is for feature highlights only)
-- **Fumadocs is REQUIRED** — never skip the docs update. Both `en/` and `cn/` must be updated together
-- **ENV.md ↔ configuration.mdx consistency** — these two files must always be in sync. If one has an env var the other doesn't, add it
-- Per CLAUDE.md: "When adding/changing env vars, update `ENV.md` and `apps/docs/content/docs/{en,cn}/configuration.mdx` simultaneously"
+Use the user's existing authorization for external actions. VPS trials and distribution checks follow the runbook's applicable gates; a documentation update by itself does not authorize publishing.

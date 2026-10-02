@@ -4,19 +4,11 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - '**/*.md'
-      - '**/*.mdx'
       - 'LICENSE'
-      - 'docs/**'
-      - 'apps/ios/**'
   pull_request:
     branches: [main]
     paths-ignore:
-      - '**/*.md'
-      - '**/*.mdx'
       - 'LICENSE'
-      - 'docs/**'
-      - 'apps/ios/**'
 
 env:
   CARGO_TERM_COLOR: always
@@ -38,6 +30,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      # Run these without installing dependencies, including for documentation-only changes.
+      - name: Check agent navigation and integration coverage
+        run: |
+          bun scripts/check-agent-navigation.ts
+          bun scripts/check-integration-targets.ts
+          bun test scripts
 
       - name: Detect changed areas
         id: paths
@@ -64,9 +65,12 @@ jobs:
             run_all=1
           fi
 
+          # Navigation checks run for docs and iOS changes without enabling unrelated implementation gates.
+          gate_files=$(grep -vE '(\.mdx?$|^docs/|^apps/ios/|^LICENSE$)' <<<"${files:-}" || true)
+
           area() {
             local name=$1 pattern=$2 changed=false
-            if [[ -n "$run_all" ]] || grep -qE "$pattern" <<<"$files"; then
+            if [[ -n "$run_all" ]] || grep -qE "$pattern" <<<"$gate_files"; then
               changed=true
             fi
             echo "$name=$changed" | tee -a "$GITHUB_OUTPUT"
@@ -179,6 +183,7 @@ jobs:
               --test agent_file_ops
               --test agent_messages
               --test agent_registration_integration
+              --test agent_reply_binding
               --test agent_ws_dispatch
               --test api_key_admin_only
               --test browser_ws
