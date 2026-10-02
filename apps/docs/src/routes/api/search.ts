@@ -42,8 +42,10 @@ const wholeWords = ['校验和', '就地']
 // changed), 能否就地区分组 (能否, 就, 地区, 分组: can servers be grouped by region) and 就地区间延迟 (就, 地区, 间,
 // 延迟: the latency between regions), though 区分 and 区间 are words too. No docs word after 校验和 needs any.
 const wordsAfter = new Map([['就地', ['地上', '地下']]])
-// How many characters after a whole word ICU reads to find the word they start. It finds that word from the first few,
-// and reading all the text after each whole word took time growing with the square of a long query's length.
+// How much of the text after a whole word, in UTF-16 code units, ICU reads to find the word that text starts: reading
+// all of it for each whole word took time growing with the square of a long query's length. The word is the one reading
+// on would find, but for a run of more than 16 characters in which every two neighbors make a word, as in
+// 下限制作为了解决定…, whose first word ICU gives as 下限 or 下 by the run's length.
 const lookahead = 16
 // Where a word starts that ICU joins to the word before: after 都, 也, 并 or 为何, it takes the 不 (not) of 不可用
 // (unavailable) into the word before, and leaves 可用 (available).
@@ -96,7 +98,7 @@ function segmentEnds(text: string): Set<number> {
 
 /**
  * Whether ICU joins the last character of a whole word, which ends at a position, into one of the words after that
- * whole word, and the characters after it still start a word of more than one character.
+ * whole word, and, reading the next characters on their own, finds a word of more than one character at their start.
  */
 function readsWordAfter(text: string, word: string, end: number, ends: Set<number>): boolean {
   const start = end - 1
