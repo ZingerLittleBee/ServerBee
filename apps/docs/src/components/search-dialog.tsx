@@ -70,7 +70,7 @@ interface Places {
 // The halves of the sidebar and, on a narrow screen, where the sidebar is a drawer, the drawer and the header, which
 // shows the sidebar's title link. Its links to the page shown stand in for its controls, then the buttons that show
 // and hide it: one in each of its halves and, where it is a drawer, one in the header and one in the drawer. Space on
-// such a link scrolls the page, where on a toggle it hides the sidebar.
+// such a link scrolls, where on a toggle it shows or hides the sidebar.
 const sidebar: Places = {
   holders: '#nd-subnav, #nd-sidebar, #nd-sidebar-mobile, [data-sidebar-panel]',
   standIns: [
