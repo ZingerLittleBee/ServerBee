@@ -46,6 +46,10 @@ bun x playwright install chromium
 BASE_URL=http://127.0.0.1:4000 bun run check:browser
 ```
 
+The production preview, route checks, and browser checks execute on Node 24. Bun installs dependencies and dispatches
+these commands. Route checks start with two 404 responses followed by a normal SSR page, consuming each body before
+the next request. This covers Bun 1.3.4's reuse of the preview's `Connection: close` socket, which returned 503.
+
 The browser runner checks real navigation, scrolling before hydration in both locales, reloads, and Back/Forward
 through long pages, landing anchors, notes, and the docs table of contents. It exits nonzero on a failed scenario
 or an uncaught page error, and prints the number of scenarios actually executed. Documentation CI runs Chromium.

@@ -10,7 +10,7 @@
     "preview": "node scripts/start-production.ts",
     "types:check": "fumadocs-mdx && tsc --noEmit",
     "check:contracts": "bun scripts/check-contracts.ts",
-    "check:routes": "bun scripts/check-routes.ts",
+    "check:routes": "node scripts/check-routes.ts",
     "check:browser": "node scripts/check-browser.ts",
     "postinstall": "fumadocs-mdx",
     "lint": "biome check",
