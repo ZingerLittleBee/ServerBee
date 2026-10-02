@@ -1159,6 +1159,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/auth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mobile_revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/pair": {
         parameters: {
             query?: never;
@@ -2969,6 +2985,11 @@ export interface components {
             installation_id: string;
             refresh_token: string;
         };
+        /** @description A deletion-only proof for one installation's original mobile session. */
+        MobileRevokeRequest: {
+            installation_id: string;
+            revocation_token: string;
+        };
         /** @description Token pair returned after successful login or refresh. */
         MobileTokenResponse: {
             /** Format: int64 */
@@ -2977,6 +2998,8 @@ export interface components {
             /** Format: int64 */
             refresh_expires_in_secs: number;
             refresh_token: string;
+            /** @description Stable session-revocation credential, issued at login and retained by the client. */
+            revocation_token?: string | null;
             token_type: string;
             user: components["schemas"]["MobileUserResponse"];
         };
@@ -6944,6 +6967,42 @@ export interface operations {
             };
             /** @description Invalid or expired refresh token */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mobile_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Original mobile session revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid installation revocation credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing revocation credential */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

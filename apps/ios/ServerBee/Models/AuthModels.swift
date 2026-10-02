@@ -23,6 +23,7 @@ struct MobileTokenResponse: Codable, Sendable {
     let refreshExpiresInSecs: Int
     let tokenType: String
     let user: MobileUser
+    var revocationToken: String?
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
@@ -31,6 +32,7 @@ struct MobileTokenResponse: Codable, Sendable {
         case refreshExpiresInSecs = "refresh_expires_in_secs"
         case tokenType = "token_type"
         case user
+        case revocationToken = "revocation_token"
     }
 }
 
@@ -53,5 +55,15 @@ struct MobileRefreshRequest: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case refreshToken = "refresh_token"
         case installationId = "installation_id"
+    }
+}
+
+struct MobileRevokeRequest: Codable, Sendable {
+    let installationId: String
+    let revocationToken: String
+
+    enum CodingKeys: String, CodingKey {
+        case installationId = "installation_id"
+        case revocationToken = "revocation_token"
     }
 }

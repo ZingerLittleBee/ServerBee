@@ -128,17 +128,36 @@ actor APIClient {
         }
     }
 
+    /// A stable deletion-only proof survives committed rotations with lost
+    /// responses. It never authenticates requests or refreshes a replacement login.
+    func revokeSession(context: MobileAuthenticationContext) async throws {
+        if let credential = context.revocationToken {
+            let response = try await performCapturedRequest(
+                "/api/mobile/auth/revoke",
+                body: MobileRevokeRequest(installationId: context.installationId, revocationToken: credential),
+                context: context, token: nil
+            )
+            if (200...299).contains(response.statusCode) { return }
+            // Older Servers and not-yet-upgraded legacy sessions still support
+            // ordinary authenticated logout. Neither fallback grants old tokens API access.
+            guard response.statusCode == 404 || response.statusCode == 401 else {
+                throw APIError.httpError(statusCode: response.statusCode, data: Data())
+            }
+        }
+        try await postCleanup("/api/mobile/auth/logout", context: context)
+    }
+
     private func performCapturedRequest(
         _ path: String,
         body: (any Encodable & Sendable)?,
         context: MobileAuthenticationContext,
-        token: String
+        token: String?
     ) async throws -> HTTPURLResponse {
         guard let url = URL(string: "\(context.serverUrl)\(path)") else { throw APIError.noServerUrl }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body { request.httpBody = try JSONEncoder.snakeCase.encode(body) }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse else {

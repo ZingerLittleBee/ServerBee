@@ -8,7 +8,13 @@ final class PushLifecycleURLProtocol: URLProtocol, @unchecked Sendable {
 
     override static func canInit(with request: URLRequest) -> Bool { true }
     override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() { Self.handler?(self) }
+    override func startLoading() {
+        if request.url?.path == "/api/mobile/auth/revoke" {
+            respond(404)
+            return
+        }
+        Self.handler?(self)
+    }
     override func stopLoading() {}
 
     func respond(_ status: Int, data: Data = Data(#"{"data":"ok"}"#.utf8)) {

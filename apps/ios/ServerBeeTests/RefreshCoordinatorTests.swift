@@ -26,6 +26,7 @@ final class RefreshCoordinatorTests: XCTestCase {
     /// covered by `AuthViewModelPairTests` and friends.
     func testConcurrentCallersCoalesceOnSuccess() async throws {
         let coordinator = RefreshCoordinator()
+        let generation = UUID()
         actor Counter { var n = 0; func bump() -> Int { n += 1; return n } }
         let counter = Counter()
 
@@ -36,12 +37,12 @@ final class RefreshCoordinatorTests: XCTestCase {
             return "shared-token"
         }
 
-        async let t1 = coordinator.refresh(using: refreshFn)
-        async let t2 = coordinator.refresh(using: refreshFn)
-        async let t3 = coordinator.refresh(using: refreshFn)
+        async let t1 = coordinator.refresh(generation: generation, using: refreshFn)
+        async let t2 = coordinator.refresh(generation: generation, using: refreshFn)
+        async let t3 = coordinator.refresh(generation: generation, using: refreshFn)
         let results = try await [t1, t2, t3]
 
-        XCTAssertEqual(Set(results), ["shared-token"])
+        XCTAssertEqual(Set(results.map { $0.accessToken }), ["shared-token"])
         let invocations = await counter.n
         XCTAssertEqual(invocations, 1, "refreshFn should fire exactly once when callers coalesce")
     }
@@ -50,6 +51,7 @@ final class RefreshCoordinatorTests: XCTestCase {
     /// (rather than inheriting the leader's stale error).
     func testFirstWaiterRetriesOnTransientFailure() async throws {
         let coordinator = RefreshCoordinator()
+        let generation = UUID()
 
         actor Counter { var n = 0; func bump() -> Int { n += 1; return n } }
         let counter = Counter()
@@ -64,7 +66,7 @@ final class RefreshCoordinatorTests: XCTestCase {
 
         // First caller fails transiently.
         do {
-            _ = try await coordinator.refresh(using: refreshFn)
+            _ = try await coordinator.refresh(generation: generation, using: refreshFn)
             XCTFail("First call should fail")
         } catch let err as AuthError {
             if case .refreshNetworkFailure = err { /* ok */ } else {
@@ -73,8 +75,8 @@ final class RefreshCoordinatorTests: XCTestCase {
         }
 
         // Second caller (a new attempt) should succeed.
-        let token = try await coordinator.refresh(using: refreshFn)
-        XCTAssertEqual(token, "new")
+        let token = try await coordinator.refresh(generation: generation, using: refreshFn)
+        XCTAssertEqual(token.accessToken, "new")
     }
 
     /// Concurrent waiters: when the in-flight leader fails, second waiter
@@ -83,6 +85,7 @@ final class RefreshCoordinatorTests: XCTestCase {
     /// to every waiter.
     func testConcurrentWaiterRetriesIfLeaderFails() async throws {
         let coordinator = RefreshCoordinator()
+        let generation = UUID()
         actor Counter { var n = 0; func bump() -> Int { n += 1; return n } }
         let counter = Counter()
 
@@ -97,10 +100,10 @@ final class RefreshCoordinatorTests: XCTestCase {
         }
 
         // Launch leader + waiter concurrently.
-        async let leader = coordinator.refresh(using: refreshFn)
+        async let leader = coordinator.refresh(generation: generation, using: refreshFn)
         // Give the leader a tick to claim inFlight.
         try? await Task.sleep(nanoseconds: 5_000_000)
-        async let waiter = coordinator.refresh(using: refreshFn)
+        async let waiter = coordinator.refresh(generation: generation, using: refreshFn)
 
         // Leader fails.
         do {
@@ -112,6 +115,6 @@ final class RefreshCoordinatorTests: XCTestCase {
 
         // Waiter should NOT inherit leader's error; it gets a fresh attempt.
         let token = try await waiter
-        XCTAssertEqual(token, "second-attempt")
+        XCTAssertEqual(token.accessToken, "second-attempt")
     }
 }

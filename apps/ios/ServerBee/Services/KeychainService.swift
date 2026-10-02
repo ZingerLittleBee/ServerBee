@@ -19,6 +19,7 @@ enum KeychainService {
 
     static let accessTokenKey = "serverbee_access_token"
     static let refreshTokenKey = "serverbee_refresh_token"
+    static let revocationTokenKey = "serverbee_revocation_token"
     static let userKey = "serverbee_user"
     static let serverUrlKey = "serverbee_server_url"
     static let installationIdKey = "serverbee_installation_id"

@@ -41,6 +41,13 @@ pub struct MobileRefreshRequest {
     installation_id: String,
 }
 
+/// A deletion-only proof for one installation's original mobile session.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct MobileRevokeRequest {
+    installation_id: String,
+    revocation_token: String,
+}
+
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct MobilePairRedeemRequest {
     code: String,
@@ -76,6 +83,7 @@ pub fn public_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/mobile/auth/login", post(mobile_login))
         .route("/mobile/auth/refresh", post(mobile_refresh))
+        .route("/mobile/auth/revoke", post(mobile_revoke))
         .route("/mobile/auth/pair", post(mobile_pair_redeem))
 }
 
@@ -255,6 +263,35 @@ pub async fn mobile_logout(
 
     MobileAuthService::logout(&state.db, &mobile_session_id).await?;
 
+    ok("ok")
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/mobile/auth/revoke",
+    tag = "mobile-auth",
+    request_body = MobileRevokeRequest,
+    responses(
+        (status = 200, description = "Original mobile session revoked"),
+        (status = 401, description = "Invalid installation revocation credential"),
+        (status = 422, description = "Missing revocation credential"),
+    )
+)]
+pub async fn mobile_revoke(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<MobileRevokeRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    if body.installation_id.is_empty() || body.revocation_token.is_empty() {
+        return Err(AppError::Validation(
+            "installation_id and revocation_token are required".to_string(),
+        ));
+    }
+    MobileAuthService::revoke_with_credential(
+        &state.db,
+        &body.installation_id,
+        &body.revocation_token,
+    )
+    .await?;
     ok("ok")
 }
 

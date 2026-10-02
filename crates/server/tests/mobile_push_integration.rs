@@ -62,6 +62,7 @@ async fn seed_mobile_session(state: &AppState, id: &str, user_id: &str, installa
         id: Set(id.to_string()),
         user_id: Set(user_id.to_string()),
         refresh_token_hash: Set(format!("hash-{id}")),
+        revocation_token_hash: Set(None),
         installation_id: Set(installation_id.to_string()),
         device_name: Set("iPhone".to_string()),
         created_at: Set(now),

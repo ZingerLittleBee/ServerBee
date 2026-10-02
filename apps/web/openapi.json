@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.1"
+    "version": "1.0.0-beta.4"
   },
   "paths": {
     "/api/about": {
@@ -3610,6 +3610,35 @@
           },
           "401": {
             "description": "Invalid or expired refresh token"
+          }
+        }
+      }
+    },
+    "/api/mobile/auth/revoke": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "mobile_revoke",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Original mobile session revoked"
+          },
+          "401": {
+            "description": "Invalid installation revocation credential"
+          },
+          "422": {
+            "description": "Missing revocation credential"
           }
         }
       }
@@ -10754,6 +10783,22 @@
           }
         }
       },
+      "MobileRevokeRequest": {
+        "type": "object",
+        "description": "A deletion-only proof for one installation's original mobile session.",
+        "required": [
+          "installation_id",
+          "revocation_token"
+        ],
+        "properties": {
+          "installation_id": {
+            "type": "string"
+          },
+          "revocation_token": {
+            "type": "string"
+          }
+        }
+      },
       "MobileTokenResponse": {
         "type": "object",
         "description": "Token pair returned after successful login or refresh.",
@@ -10779,6 +10824,13 @@
           },
           "refresh_token": {
             "type": "string"
+          },
+          "revocation_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable session-revocation credential, issued at login and retained by the client."
           },
           "token_type": {
             "type": "string"

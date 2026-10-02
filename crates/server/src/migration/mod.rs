@@ -44,6 +44,7 @@ mod m20260621_000072_add_geo_manual;
 mod m20260702_000073_retention_time_indexes;
 mod m20260702_000074_hash_existing_session_tokens;
 mod m20260713_000075_agent_authority_lifecycle;
+mod m20261003_000076_mobile_session_revocation;
 
 pub struct Migrator;
 
@@ -94,6 +95,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260702_000073_retention_time_indexes::Migration),
             Box::new(m20260702_000074_hash_existing_session_tokens::Migration),
             Box::new(m20260713_000075_agent_authority_lifecycle::Migration),
+            Box::new(m20261003_000076_mobile_session_revocation::Migration),
         ]
     }
 }

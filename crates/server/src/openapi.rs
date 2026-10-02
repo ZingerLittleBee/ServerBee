@@ -209,6 +209,7 @@ impl Modify for SecurityAddon {
         // mobile-auth
         crate::router::api::mobile::mobile_login,
         crate::router::api::mobile::mobile_refresh,
+        crate::router::api::mobile::mobile_revoke,
         crate::router::api::mobile::mobile_logout,
         crate::router::api::mobile::list_devices,
         crate::router::api::mobile::revoke_device,
@@ -428,6 +429,7 @@ impl Modify for SecurityAddon {
             // mobile-auth
             crate::router::api::mobile::MobileLoginRequest,
             crate::router::api::mobile::MobileRefreshRequest,
+            crate::router::api::mobile::MobileRevokeRequest,
             crate::router::api::mobile::MobilePairRedeemRequest,
             crate::router::api::mobile::MobilePairCodeResponse,
             crate::router::api::mobile::MobileDeviceResponse,

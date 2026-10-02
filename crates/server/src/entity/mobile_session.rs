@@ -8,6 +8,7 @@ pub struct Model {
     #[sea_orm(indexed)]
     pub user_id: String,
     pub refresh_token_hash: String,
+    pub revocation_token_hash: Option<String>,
     pub installation_id: String,
     pub device_name: String,
     pub created_at: DateTimeUtc,

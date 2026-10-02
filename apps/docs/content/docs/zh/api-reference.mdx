@@ -86,6 +86,7 @@ curl https://your-server/api/auth/me \
 | GET | `/api/auth/oauth/{provider}/callback` | OAuth 回调 |
 | POST | `/api/mobile/auth/login` | 移动端登录 |
 | POST | `/api/mobile/auth/refresh` | 刷新移动端会话 |
+| POST | `/api/mobile/auth/revoke` | 使用安装范围内的仅撤销凭据删除原移动端会话 |
 | POST | `/api/mobile/auth/pair` | 兑换移动端配对码 |
 | POST | `/api/agent/register` | 使用 Agent 提议的 run token claim 已绑定的 enrollment offer |
 | GET | `/api/status/config` | 公开状态页配置 |
@@ -99,6 +100,8 @@ curl https://your-server/api/auth/me \
 | GET | `/api/settings/brand` | 公开品牌设置 |
 | GET | `/api/brand/logo` | 返回上传的 Logo |
 | GET | `/api/brand/favicon` | 返回上传的 Favicon |
+
+普通移动端刷新会保留安装注册，并使之前的 access 和 refresh 凭据失效。登录返回稳定的 `revocation_token`，客户端跨刷新保留它，登出时将它与 `installation_id` 发往 `/api/mobile/auth/revoke`。该凭据只能删除其原会话、认证凭据和注册，不能认证其他 API 或刷新会话。对于新增字段之前创建的会话，首次刷新会在同一事务内将之前的 refresh secret 绑定为仅撤销凭据。客户端在发送刷新请求前保存该秘密，因此即使已提交的刷新响应丢失，仍能清理原会话。尚未刷新的旧会话仍可使用带认证的登出接口。
 
 ## 已认证读取端点
 

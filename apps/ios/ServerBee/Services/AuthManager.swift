@@ -11,7 +11,11 @@ import SwiftUI
 final class AuthManager {
     // MARK: - Private
 
-    private let refreshCoordinator = RefreshCoordinator()
+    private let refreshCoordinator: RefreshCoordinator
+
+    init(refreshCoordinator: RefreshCoordinator = RefreshCoordinator()) {
+        self.refreshCoordinator = refreshCoordinator
+    }
     private(set) var authenticationGeneration = UUID()
 
     // MARK: - Published State
@@ -52,23 +56,26 @@ final class AuthManager {
         // Restore server URL
         serverUrl = KeychainService.loadString(for: KeychainService.serverUrlKey)
 
-        // Check for an existing access token and saved user
-        guard KeychainService.loadString(for: KeychainService.accessTokenKey) != nil,
-              (KeychainService.loadCodable(for: KeychainService.userKey) as MobileUser?) != nil
-        else {
+        // Capture restored identity before refresh can rotate Server state.
+        guard let accessToken = getAccessToken(), let serverUrl,
+              let savedUser: MobileUser = KeychainService.loadCodable(for: KeychainService.userKey),
+              let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) else { return }
+        let restored = MobileAuthenticationContext(
+            serverUrl: serverUrl, userId: savedUser.id, installationId: InstallationID.getOrCreate(),
+            generation: authenticationGeneration, accessToken: accessToken,
+            revocationToken: KeychainService.loadString(for: KeychainService.revocationTokenKey) ?? refreshToken
+        )
+        do {
+            let response = try await refreshTokens(refreshToken: refreshToken)
+            guard response.user.id == savedUser.id else { throw AuthError.staleIdentity }
+            persistTokens(response)
+        } catch AuthError.staleIdentity {
             return
-        }
-
-        // Try to validate the session by refreshing the tokens
-        if let refreshToken = KeychainService.loadString(for: KeychainService.refreshTokenKey) {
-            do {
-                let response = try await refreshTokens(refreshToken: refreshToken)
-                handleLoginResponse(response)
-            } catch AuthError.staleIdentity {
-                return
-            } catch {
-                clearAuth()
-            }
+        } catch {
+            // A committed rotation with a lost response can leave a registration
+            // alive. Revoke that original login before discarding its local proof.
+            try? await APIClient(authManager: self).revokeSession(context: restored)
+            if authenticationGeneration == restored.generation { clearAuth() }
         }
     }
 
@@ -82,13 +89,18 @@ final class AuthManager {
 
     // MARK: - Login Handling
 
-    /// Persist tokens & user from a successful login or refresh response.
+    /// Persist tokens & user from a successful fresh login response.
     func handleLoginResponse(_ response: MobileTokenResponse) {
         authenticationGeneration = UUID()
+        // A fresh login owns a fresh stable revocation credential.
+        KeychainService.delete(for: KeychainService.revocationTokenKey)
         persistTokens(response)
     }
 
     private func persistTokens(_ response: MobileTokenResponse) {
+        if let credential = response.revocationToken {
+            try? KeychainService.saveString(credential, for: KeychainService.revocationTokenKey)
+        }
         try? KeychainService.saveString(response.accessToken, for: KeychainService.accessTokenKey)
         try? KeychainService.saveString(response.refreshToken, for: KeychainService.refreshTokenKey)
         try? KeychainService.saveCodable(response.user, for: KeychainService.userKey)
@@ -126,6 +138,7 @@ final class AuthManager {
         authenticationGeneration = UUID()
         KeychainService.delete(for: KeychainService.accessTokenKey)
         KeychainService.delete(for: KeychainService.refreshTokenKey)
+        KeychainService.delete(for: KeychainService.revocationTokenKey)
         KeychainService.delete(for: KeychainService.userKey)
         user = nil
         isAuthenticated = false
@@ -138,11 +151,11 @@ final class AuthManager {
     func refreshAccessToken(context: MobileAuthenticationContext? = nil) async throws -> String {
         if let context, !isCurrent(context) { throw AuthError.staleIdentity }
         let generation = authenticationGeneration
-        let token = try await refreshCoordinator.refresh { [self] in
+        let result = try await refreshCoordinator.refresh(generation: generation) { [self] in
             try await refreshCurrentIdentity(generation: generation)
         }
-        guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
-        return token
+        guard authenticationGeneration == generation, result.generation == generation else { throw AuthError.staleIdentity }
+        return result.accessToken
     }
 
     private func refreshCurrentIdentity(generation: UUID) async throws -> String {
@@ -164,7 +177,9 @@ final class AuthManager {
         return MobileAuthenticationContext(
             serverUrl: serverUrl, userId: user.id,
             installationId: InstallationID.getOrCreate(),
-            generation: authenticationGeneration, accessToken: token
+            generation: authenticationGeneration, accessToken: token,
+            revocationToken: KeychainService.loadString(for: KeychainService.revocationTokenKey)
+                ?? KeychainService.loadString(for: KeychainService.refreshTokenKey)
         )
     }
 
@@ -217,6 +232,11 @@ private extension AuthManager {
         let generation = authenticationGeneration
         let accountId = user?.id
         let installationId = InstallationID.getOrCreate()
+        // Legacy sessions adopt this proof on their first Server rotation.
+        // Persist it before networking, including when the response is lost.
+        if KeychainService.loadString(for: KeychainService.revocationTokenKey) == nil {
+            try KeychainService.saveString(refreshToken, for: KeychainService.revocationTokenKey)
+        }
 
         guard let url = URL(string: "\(serverUrl)/api/mobile/auth/refresh") else {
             throw AuthError.noServerUrl
@@ -277,11 +297,16 @@ private extension AuthManager {
 
 // MARK: - Refresh Coordinator
 
+struct ScopedAccessToken: Sendable {
+    let generation: UUID
+    let accessToken: String
+}
+
 /// Serialises concurrent token-refresh attempts.
 ///
 /// Semantics:
-/// - At any moment at most one `refreshFn` is in flight (serialised by actor reentrancy).
-/// - While a refresh is in flight, additional callers `await` on the existing
+/// - For each login generation at most one `refreshFn` is in flight.
+/// - While a refresh is in flight, callers for the same login `await` on the existing
 ///   task so we don't hammer the refresh endpoint or burn a one-time-use
 ///   refresh token.
 /// - **On success:** every waiter receives the new access token.
@@ -290,30 +315,43 @@ private extension AuthManager {
 ///   fresh attempt at `refreshFn`. This lets a transient network failure for
 ///   the first caller not penalise queued callers — the next one retries.
 ///
-/// Internal so tests can drive `refresh(using:)` directly without going
+/// Internal so tests can drive `refresh(generation:using:)` directly without going
 /// through `AuthManager.refreshAccessToken()` — see RefreshCoordinatorTests.
 actor RefreshCoordinator {
-    private var inFlight: (id: UUID, task: Task<String, Error>)?
+    private var inFlight: [UUID: (id: UUID, task: Task<ScopedAccessToken, Error>)] = [:]
+    // A scheduler boundary permits deterministic tests of a completed task
+    // whose owner has not resumed to remove it. Production does not suspend here.
+    private let beforeCompletion: (@Sendable (ScopedAccessToken) async -> Void)?
 
-    func refresh(using refreshFn: @Sendable @escaping () async throws -> String) async throws -> String {
-        while let existing = inFlight {
+    init(beforeCompletion: (@Sendable (ScopedAccessToken) async -> Void)? = nil) {
+        self.beforeCompletion = beforeCompletion
+    }
+
+    func refresh(
+        generation: UUID,
+        using refreshFn: @Sendable @escaping () async throws -> String
+    ) async throws -> ScopedAccessToken {
+        while let existing = inFlight[generation] {
             do {
                 return try await existing.task.value
             } catch {
-                // Only clear the failed attempt we awaited, never a newer retry.
-                if inFlight?.id == existing.id { inFlight = nil }
+                if inFlight[generation]?.id == existing.id { inFlight[generation] = nil }
             }
         }
 
         let id = UUID()
-        let task = Task { try await refreshFn() }
-        inFlight = (id, task)
+        let task = Task {
+            let token = try await refreshFn()
+            return ScopedAccessToken(generation: generation, accessToken: token)
+        }
+        inFlight[generation] = (id, task)
         do {
-            let token = try await task.value
-            if inFlight?.id == id { inFlight = nil }
-            return token
+            let result = try await task.value
+            if let beforeCompletion { await beforeCompletion(result) }
+            if inFlight[generation]?.id == id { inFlight[generation] = nil }
+            return result
         } catch {
-            if inFlight?.id == id { inFlight = nil }
+            if inFlight[generation]?.id == id { inFlight[generation] = nil }
             throw error
         }
     }
@@ -358,4 +396,5 @@ struct MobileAuthenticationContext: Sendable {
     let installationId: String
     let generation: UUID
     let accessToken: String
+    let revocationToken: String?
 }

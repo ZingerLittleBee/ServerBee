@@ -37,9 +37,9 @@ final class SettingsViewModel {
         //    logout so we do not leak a stale device-token binding to this user.
         await pushManager.unregister(context: context)
 
-        // 3. Best-effort server-side logout (Bearer token provides identity).
+        // 3. Revoke the captured session even if its refresh response was lost.
         if let context {
-            try? await apiClient.postCleanup("/api/mobile/auth/logout", context: context)
+            try? await apiClient.revokeSession(context: context)
         }
         // An account/deployment change during an await belongs to another login.
         if authManager.authenticationGeneration == generation { authManager.clearAuth() }

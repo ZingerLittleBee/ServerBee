@@ -86,6 +86,7 @@ curl https://your-server/api/auth/me \
 | GET | `/api/auth/oauth/{provider}/callback` | OAuth callback |
 | POST | `/api/mobile/auth/login` | Mobile login |
 | POST | `/api/mobile/auth/refresh` | Refresh a mobile session |
+| POST | `/api/mobile/auth/revoke` | Revoke one original mobile session using an installation-scoped deletion-only proof |
 | POST | `/api/mobile/auth/pair` | Redeem a mobile pairing code |
 | POST | `/api/agent/register` | Claim a bound enrollment offer with an Agent-proposed run token |
 | GET | `/api/status/config` | Public status page configuration |
@@ -99,6 +100,8 @@ curl https://your-server/api/auth/me \
 | GET | `/api/settings/brand` | Public brand settings |
 | GET | `/api/brand/logo` | Serve uploaded logo |
 | GET | `/api/brand/favicon` | Serve uploaded favicon |
+
+Ordinary mobile refresh preserves the installation registration and invalidates the previous access and refresh credentials. Login returns a stable `revocation_token`; the client retains it across refreshes and sends it with `installation_id` to `/api/mobile/auth/revoke` when signing out. This proof can only delete its original session, credentials, and registration; it cannot authenticate other APIs or refresh a session. For sessions created before this field existed, the first refresh atomically binds the previous refresh secret as the deletion-only proof. The client saves that secret before sending the refresh, so cleanup remains possible if the committed response is lost. An unrefreshed legacy session can still use authenticated logout.
 
 ## Authenticated Read Endpoints
 
