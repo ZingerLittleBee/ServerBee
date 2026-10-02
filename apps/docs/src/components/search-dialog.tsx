@@ -155,10 +155,13 @@ function openerOf(element: Element | null): Opener | null {
   return { controls: controls.map(targetOf), element: targetOf(element), onScreen: isOnScreen(element) }
 }
 
-/** What tells a control from the others around it: its kind, link and name. */
+/**
+ * What tells a control from the others around it: its kind, link and name, which is its label or else its text. The
+ * drawer's language button shows the language beside the icon the docked sidebar's shows alone, under the same label.
+ */
 function identity(element: Element): string {
   const { tagName, textContent } = element
-  return [tagName, element.getAttribute('href'), element.getAttribute('aria-label'), textContent].join('\n')
+  return [tagName, element.getAttribute('href'), element.getAttribute('aria-label') ?? textContent].join('\n')
 }
 
 /** The parts of the page holding an element, or whose controls it stands in for. */
