@@ -49,6 +49,12 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     private var uploads: [UUID: (generation: UUID, task: Task<Void, Never>)] = [:]
     private var grants: [UUID: (grant: RelayGrant, url: String)] = [:]
     private var uploadedToken: String?
+    // One write/permission operation owns setup at a time. Reads must still own
+    // their request and epoch, as Relay inspection can change at the same revision.
+    private var setupEpoch = UUID()
+    private var latestRead: UUID?
+    private var activeWrite: UUID?
+    private var permissionRequest: UUID?
 
     init(
         system: any PushSystemBoundary = NativePushSystem(), relay: any PushRelayBoundary = AppAttestPushRelay(),
@@ -66,6 +72,9 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             confirmed = nil
             errorMessage = nil
             uploadedToken = nil
+            activeWrite = nil
+            permissionRequest = nil
+            invalidateReads()
             isSaving = false
         }
         self.apiClient = apiClient
@@ -76,11 +85,21 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     /// Read permission without prompting. Launch, foreground and connectivity
     /// recovery all use this path, and only reconcile confirmed opt-in intent.
     func reconcile() async {
-        guard let apiClient, let captured = context, apiClient.isCurrent(captured) else { return }
+        guard let captured = context else { return }
+        _ = await reconcileSetup(context: captured)
+    }
+
+    private func reconcileSetup(context captured: MobileAuthenticationContext) async -> Bool {
+        guard !isSaving, acceptingRegistrations, let apiClient, context?.generation == captured.generation,
+              apiClient.isCurrent(captured) else { return false }
+        let read = UUID()
+        let epoch = setupEpoch
+        latestRead = read
         do {
             let status = await system.authorization()
             var setup: PushSetup = try await apiClient.get("/api/mobile/push/settings", context: captured)
-            guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
+            guard ownsRead(read, epoch: epoch, captured: captured),
+                  setup.revision >= (confirmed?.revision ?? 0) else { return false }
             authorizationStatus = status
             permissionGranted = status == .authorized || status == .provisional || status == .ephemeral
             let pending = pendingGrant(captured, url: setup.relayUrl)
@@ -96,27 +115,38 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 let needsRenewal = !setup.registered || remaining < 3600
                 if let deviceToken, needsRenewal { uploadToken(deviceToken, renew: true) }
             }
-        } catch { report(error, captured: captured) }
+            return true
+        } catch {
+            if ownsRead(read, epoch: epoch, captured: captured) { report(error, captured: captured) }
+            return false
+        }
     }
 
     /// Save intent first. The view reflects only the returned Server state.
     func savePreferences(_ preferences: PushPreferences) async {
-        guard !isSaving, let apiClient, let captured = context, let confirmed else { return }
-        isSaving = true
-        defer { if context?.generation == captured.generation { isSaving = !uploads.isEmpty } }
+        guard !isSaving, acceptingRegistrations, let apiClient, let captured = context, let confirmed else { return }
+        let write = UUID()
+        beginWrite(write)
+        defer { finishWrite(write) }
         do {
             let setup: PushSetup = try await apiClient.send(
                 "/api/mobile/push/settings", method: "PUT",
                 body: PushPreferencesRequest(expectedRevision: confirmed.revision, preferences: preferences), context: captured
             )
-            guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
+            guard ownsWrite(write, captured: captured) else { return }
+            guard setup.revision >= (self.confirmed?.revision ?? 0) else { throw PushSetupError.unavailable }
             self.confirmed = setup
             if pendingGrant(captured, url: setup.relayUrl) != nil, preferences.enabled {
                 self.confirmed?.registered = false
             } else { errorMessage = nil }
-            if preferences.enabled {
+            // Permission and grant cleanup follow the confirmed PUT. Releasing
+            // this write first lets permission completion start its own upload.
+            finishWrite(write)
+            if setup.preferences.enabled {
                 verificationUnavailable = !relay.supported
-                if relay.supported && !confirmed.preferences.enabled { await requestPermission() }
+                if relay.supported && !confirmed.preferences.enabled {
+                    await requestPermission(context: captured)
+                } else if permissionGranted, let deviceToken { uploadToken(deviceToken) }
             } else {
                 let pending = pendingGrant(captured, url: setup.relayUrl)
                 clearPending(captured)
@@ -128,33 +158,29 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 }
             }
 
-        } catch { report(error, captured: captured) }
+        } catch { if ownsWrite(write, captured: captured) { report(error, captured: captured) } }
     }
 
     func requestPermission() async {
-        guard confirmed?.preferences.enabled == true, acceptingRegistrations,
-              let apiClient, let captured = context, apiClient.isCurrent(captured), relay.supported else { return }
-        do {
-            let granted = try await system.requestPermission()
-            guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
-            permissionGranted = granted
-            authorizationStatus = await system.authorization()
-            guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
-            if granted { system.register() } else { errorMessage = String(localized: "Notification permission is disabled. Open system settings to enable it.") }
-            if granted, let deviceToken { uploadToken(deviceToken) }
-        } catch { report(error, captured: captured) }
+        guard let captured = context else { return }
+        await requestPermission(context: captured)
     }
 
     func waitForPendingRegistrations() async {
-        let generation = context?.generation
-        let tasks = uploads.values.filter { $0.generation == generation }.map { $0.task }
-        for task in tasks { await task.value }
+        await waitForPendingRegistrations(generation: context?.generation)
     }
 
     func retry() async {
-        await waitForPendingRegistrations()
-        await reconcile()
-        if let deviceToken, confirmed?.preferences.enabled == true, permissionGranted, uploads.isEmpty { uploadToken(deviceToken, renew: true) }
+        guard let apiClient, let captured = context, apiClient.isCurrent(captured) else { return }
+        await waitForPendingRegistrations(generation: captured.generation)
+        guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
+        guard await reconcileSetup(context: captured), apiClient.isCurrent(captured), context?.generation == captured.generation,
+              confirmed?.preferences.enabled == true else { return }
+        // Only an explicit user retry can continue a saved opt-in that was
+        // interrupted before permission. Ordinary reconciliation never prompts.
+        if authorizationStatus == .notDetermined {
+            await requestPermission(context: captured)
+        } else if let deviceToken, permissionGranted, uploads.isEmpty { uploadToken(deviceToken, renew: true) }
     }
 
     nonisolated func didRegisterForRemoteNotifications(deviceToken data: Data) {
@@ -172,22 +198,22 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     }
 
     private func uploadToken(_ token: String, renew: Bool = false) {
-        guard acceptingRegistrations, permissionGranted, relay.supported, let apiClient, let captured = context,
+        guard !isSaving, acceptingRegistrations, permissionGranted, relay.supported, let apiClient, let captured = context,
               let setup = confirmed, setup.preferences.enabled, apiClient.isCurrent(captured) else { return }
         // An unchanged callback need not renew a still-valid registration.
         if !renew && token == uploadedToken && setup.registered { return }
         guard !uploads.values.contains(where: { $0.generation == captured.generation }) else { return }
         let id = UUID()
+        beginWrite(id)
         // A lost Relay response can hide a committed rotation. Treat the attempt
         // as unconfirmed until Server accepts the new grant or reconciliation
         // actually inspects the still-current grant.
         confirmed?.registered = false
-        isSaving = true
         let upload = Task { @MainActor in
             defer {
                 self.uploads[id] = nil
+                self.finishWrite(id)
                 if self.context?.generation == captured.generation {
-                    self.isSaving = false
                     if let latest = self.deviceToken, latest != token { self.uploadToken(latest) }
                 }
             }
@@ -214,14 +240,14 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                     body: VerifiedPushRequest(expectedRevision: setup.revision, deviceToken: token, environment: grant.environment,
                                               keyId: grant.keyId, grantId: grant.grantId, grantToken: grant.grantToken), context: captured
                 )
-                guard apiClient.isCurrent(captured), self.context?.generation == captured.generation else { throw AuthError.staleIdentity }
-                guard result.registered else { throw PushSetupError.unavailable }
+                guard self.ownsWrite(id, captured: captured) else { throw AuthError.staleIdentity }
+                guard result.registered, result.revision >= (self.confirmed?.revision ?? 0) else { throw PushSetupError.unavailable }
                 self.clearPending(captured)
                 self.confirmed = result
                 self.uploadedToken = token
                 self.errorMessage = nil
             } catch {
-                if self.context?.generation == captured.generation { self.confirmed?.registered = false }
+                if self.ownsWrite(id, captured: captured) { self.confirmed?.registered = false }
                 if case APIError.httpError(let status, _) = error, status == 403 { self.clearPending(captured) }
                 self.report(error, captured: captured)
             }
@@ -229,29 +255,14 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         uploads[id] = (captured.generation, upload)
     }
 
-    private func pendingKey(_ context: MobileAuthenticationContext) -> String {
-        "serverbee_pending_push_" + context.pushScope
-    }
-
-    private func pendingGrant(_ context: MobileAuthenticationContext, url: String) -> RelayGrant? {
-        guard let data = storage.load(pendingKey(context)),
-              let pending = try? JSONDecoder.snakeCase.decode(PendingPushGrant.self, from: data), pending.url == url else { return nil }
-        return pending.grant
-    }
-
-    private func clearPending(_ context: MobileAuthenticationContext) { storage.delete(pendingKey(context)) }
-
-    private func report(_ error: Error, captured: MobileAuthenticationContext) {
-        guard let apiClient, apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
-        if case AuthError.staleIdentity = error { return }
-        errorMessage = AccountSecurityViewModel.message(for: error, fallback: String(localized: "Notification setup failed. Retry to confirm registration."))
-    }
-
     func unregister() async { await unregister(context: context) }
 
     func unregister(context capturedContext: MobileAuthenticationContext?) async {
         let capturedClient = apiClient
-        if context?.generation == capturedContext?.generation { acceptingRegistrations = false }
+        if context?.generation == capturedContext?.generation {
+            acceptingRegistrations = false
+            invalidateReads()
+        }
         let pending = uploads.values.filter { $0.generation == capturedContext?.generation }.map { $0.task }
         for upload in pending { await upload.value }
         if let capturedClient, let capturedContext {
@@ -271,6 +282,9 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             confirmed = nil
             deviceToken = nil
             uploadedToken = nil
+            activeWrite = nil
+            permissionRequest = nil
+            invalidateReads()
             isSaving = false
         }
     }
@@ -287,6 +301,88 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             return .alertDetail(alertKey: ruleId)
         }
         return nil
+    }
+}
+
+private extension PushNotificationManager {
+    func requestPermission(context captured: MobileAuthenticationContext) async {
+        guard !isSaving, let setup = confirmed, setup.preferences.enabled, acceptingRegistrations,
+              let apiClient, context?.generation == captured.generation, apiClient.isCurrent(captured), relay.supported else { return }
+        let request = UUID()
+        permissionRequest = request
+        invalidateReads()
+        isSaving = true
+        defer { finishPermission(request) }
+        do {
+            let granted = try await system.requestPermission()
+            let status = await system.authorization()
+            guard acceptingRegistrations, permissionRequest == request, apiClient.isCurrent(captured),
+                  context?.generation == captured.generation, confirmed?.preferences.enabled == true,
+                  confirmed?.revision == setup.revision else { return }
+            permissionGranted = granted
+            authorizationStatus = status
+            finishPermission(request)
+            if granted { system.register() } else { errorMessage = String(localized: "Notification permission is disabled. Open system settings to enable it.") }
+            if granted, let deviceToken { uploadToken(deviceToken) }
+        } catch { report(error, captured: captured) }
+    }
+
+    func waitForPendingRegistrations(generation: UUID?) async {
+        let tasks = uploads.values.filter { $0.generation == generation }.map { $0.task }
+        for task in tasks { await task.value }
+    }
+
+    func invalidateReads() {
+        setupEpoch = UUID()
+        latestRead = nil
+    }
+
+    func ownsRead(_ read: UUID, epoch: UUID, captured: MobileAuthenticationContext) -> Bool {
+        acceptingRegistrations && !isSaving && latestRead == read && setupEpoch == epoch
+            && context?.generation == captured.generation && apiClient?.isCurrent(captured) == true
+    }
+
+    func ownsWrite(_ write: UUID, captured: MobileAuthenticationContext) -> Bool {
+        acceptingRegistrations && activeWrite == write && context?.generation == captured.generation
+            && apiClient?.isCurrent(captured) == true
+    }
+
+    func beginWrite(_ write: UUID) {
+        activeWrite = write
+        invalidateReads()
+        isSaving = true
+    }
+
+    func finishWrite(_ write: UUID) {
+        guard activeWrite == write else { return }
+        activeWrite = nil
+        invalidateReads()
+        isSaving = permissionRequest != nil
+    }
+
+    func finishPermission(_ request: UUID) {
+        guard permissionRequest == request else { return }
+        permissionRequest = nil
+        invalidateReads()
+        isSaving = activeWrite != nil
+    }
+
+    func pendingKey(_ context: MobileAuthenticationContext) -> String {
+        "serverbee_pending_push_" + context.pushScope
+    }
+
+    func pendingGrant(_ context: MobileAuthenticationContext, url: String) -> RelayGrant? {
+        guard let data = storage.load(pendingKey(context)),
+              let pending = try? JSONDecoder.snakeCase.decode(PendingPushGrant.self, from: data), pending.url == url else { return nil }
+        return pending.grant
+    }
+
+    func clearPending(_ context: MobileAuthenticationContext) { storage.delete(pendingKey(context)) }
+
+    func report(_ error: Error, captured: MobileAuthenticationContext) {
+        guard let apiClient, apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
+        if case AuthError.staleIdentity = error { return }
+        errorMessage = AccountSecurityViewModel.message(for: error, fallback: String(localized: "Notification setup failed. Retry to confirm registration."))
     }
 }
 
