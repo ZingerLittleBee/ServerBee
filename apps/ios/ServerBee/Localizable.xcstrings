@@ -17514,6 +17514,266 @@
           }
         }
       }
+    },
+    "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, environment, grant identifiers and encrypted content. It cannot read notification content or content keys.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接收者由你的 Server 选择。Push Relay 可见设备令牌、来源 IP、时间、请求大小、环境、授权标识及加密内容，无法读取通知正文或内容密钥。"
+          }
+        }
+      }
+    },
+    "This build supports verified setup. Category delivery is still being implemented.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本支持设备验证与注册，各类通知的投递仍在开发中。"
+          }
+        }
+      }
+    },
+    "Mobile notification privacy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动通知隐私"
+          }
+        }
+      }
+    },
+    "Subscriptions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅"
+          }
+        }
+      }
+    },
+    "Alerts and recoveries": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告警与恢复"
+          }
+        }
+      }
+    },
+    "Security rule matches": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全规则匹配"
+          }
+        }
+      }
+    },
+    "Final task failures": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务最终失败"
+          }
+        }
+      }
+    },
+    "Successful task runs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务成功"
+          }
+        }
+      }
+    },
+    "Save subscriptions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存订阅"
+          }
+        }
+      }
+    },
+    "Disable notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭通知"
+          }
+        }
+      }
+    },
+    "Enable notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用通知"
+          }
+        }
+      }
+    },
+    "Setup status": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置状态"
+          }
+        }
+      }
+    },
+    "System permission": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统权限"
+          }
+        }
+      }
+    },
+    "Server registration": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server 注册"
+          }
+        }
+      }
+    },
+    "Verified push is unavailable. Monitoring and login still work.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备验证推送不可用，监控与登录仍可正常使用。"
+          }
+        }
+      }
+    },
+    "Retry notification setup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试通知设置"
+          }
+        }
+      }
+    },
+    "Open notification settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统通知设置"
+          }
+        }
+      }
+    },
+    "Allowed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已允许"
+          }
+        }
+      }
+    },
+    "Not requested": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未申请"
+          }
+        }
+      }
+    },
+    "Setup confirmed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置已确认"
+          }
+        }
+      }
+    },
+    "Awaiting verification": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待验证"
+          }
+        }
+      }
+    },
+    "Notification permission is disabled. Open system settings to enable it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知权限已关闭，请前往系统设置启用。"
+          }
+        }
+      }
+    },
+    "APNs registration failed. Retry notification setup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "APNs 注册失败，请重试通知设置。"
+          }
+        }
+      }
+    },
+    "Notification setup failed. Retry to confirm registration.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知设置失败，请重试以确认注册。"
+          }
+        }
+      }
+    },
+    "Disabled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭"
+          }
+        }
+      }
+    },
+    "Notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -4,7 +4,7 @@ description: ServerBee 原生 iOS 配套应用，支持二维码配对、推送�
 icon: Smartphone
 ---
 
-ServerBee 提供原生 iOS 配套应用，把服务器监控带到你的手机：实时指标、告警推送通知，以及随时随地管理服务器。
+ServerBee 提供原生 iOS 配套应用，把服务器监控带到你的手机：实时指标、告警历史，以及随时随地管理服务器。目前可设置已验证通知注册，各类通知投递仍在开发中。
 
 ## 获取方式
 
@@ -16,12 +16,12 @@ xcodegen generate
 open ServerBee.xcodeproj
 ```
 
-在 Xcode 中选择自己的 Apple Development Team，再运行到 iPhone。推送通知还需要下文所述、与签名一致的 Apple Developer APNs 配置；仅完成本地构建并不等于具备生产 APNs 推送。
+从源码构建需要自己的 Apple Development Team。官方应用的设计由发布者运营的独立 Relay 保管 APNs 凭证，官方应用用户和自托管 Server 运维者无需持有发布者的密钥。本仓库尚未分发该签名应用，本地构建不能证明 App Attest 准入或 APNs 投递。
 
 ## 功能特性
 
 - **二维码配对** -- 扫描 Web 应用中的二维码即可即时认证，无需手动输入 Token
-- **推送通知** -- 当服务器离线或触发阈值时，直接在 iPhone 上接收 APNs（Apple 推送通知服务）告警
+- **已验证通知设置** -- 显式授权、订阅设置与 App Attest 设备验证，各类通知投递仍在开发中
 - **实时指标** -- 通过 WebSocket 传输的实时服务器状态、CPU、内存、磁盘和网络指标
 - **告警历史** -- 查看近期告警及其状态（触发/已解决）和详细信息
 - **安全认证** -- 基于 Bearer Token 的认证，支持自动刷新（15 分钟访问令牌，30 天刷新令牌）
@@ -30,7 +30,7 @@ open ServerBee.xcodeproj
 
 - iOS 17.0 或更高版本
 - 启用移动认证的 ServerBee 服务器实例（v0.8.0+）
-- 推送通知需要：在服务器上配置 APNs 认证密钥
+- 已验证通知设置需要：配置 HTTPS Push Relay，并使用正确签名、支持 App Attest 的实体设备
 
 ## 设备配对
 
@@ -80,34 +80,25 @@ refresh_ttl = 2592000 # 刷新令牌有效期（秒），默认 30 天
 
 该设备将立即登出，其所有令牌将被作废。
 
-## 推送通知（APNs）
+## 已验证通知设置
 
-### 服务器配置
+登录不会申请通知权限。打开 **设置 → 通知**，选择订阅后点击 **启用通知**。Server 确认保存的偏好后，iOS 才申请权限。安全通知仅限管理员，成功任务通知需单独选择。
 
-要启用推送通知，请在 Web 应用中配置 APNs 凭证：
+页面分别显示系统权限与 Server 注册状态。保存失败会保留上次确认的偏好并显示错误。**重试通知设置**可重试验证，**打开系统通知设置**可调整 iOS 权限。App Attest 不受支持或被拒绝时，推送不可用，但监控与登录继续可用。应用会在启动、回到前台和网络恢复时核对注册，不会因登录而弹出权限请求。
 
-1. 进入 **设置** → **通知**
-2. 添加类型为 **APNs** 的新通知渠道
-3. 上传你的 APNs 认证密钥（来自 Apple Developer Portal 的 .p8 文件）
-4. 输入你的 Team ID、Key ID 和 Bundle ID
-5. 使用 **测试** 按钮测试配置
+**设置已确认不代表各类通知投递可用。** 事件投递、加密通知展示和导航分别有实现与真机验收要求。此版本尚不提供测试通知操作。
 
-### APNs 必填字段
+### 隐私边界
 
-| 字段 | 说明 |
-|------|------|
-| Team ID | 你的 Apple Developer Team 标识符（10 位字符） |
-| Key ID | Apple Developer Portal 中 APNs 认证密钥的 Key ID |
-| Bundle ID | 你的 iOS 应用 Bundle 标识符（如 `com.example.serverbee`） |
-| Private Key | Apple Developer Portal 中 .p8 文件的内容 |
+Server 负责账户、会话授权和接收者选择。Relay 可见 APNs 令牌、来源 IP、时间、请求大小、环境、授权标识及加密内容，不应收到内容密钥或明文通知。申请权限前会向用户显示此说明。
 
-### 创建 APNs 密钥
+### Server 与 Relay 配置
 
-1. 访问 [Apple Developer Portal](https://developer.apple.com)
-2. 进入 **Certificates, Identifiers & Profiles** → **Keys**
-3. 创建启用 **Apple Push Notifications service (APNs)** 的新密钥
-4. 下载 .p8 文件（只能下载一次）
-5. 记录 Portal 上显示的 Key ID
+通过 `[push_relay].url` 或 `SERVERBEE_PUSH_RELAY__URL` 指定独立 HTTPS Relay。无需通知组或旧 APNs 渠道。新注册独立于旧设备令牌存储，不会进入旧直连 APNs 群发。现有外部渠道继续使用自己的配置。
+
+Relay 运维需要 Bun、OpenSSL 3 和持久化 SQLite。使用 `APP_ATTEST_ROOT_CA` 与 `APP_ATTEST_ROOT_SHA256` 固定 App Attest 信任根，`APP_ATTEST_APP_ID` 指定应用身份，`APNS_ENVIRONMENT` 指定环境（开发为 `sandbox`，分发为 `production`）。`RELAY_DATABASE` 与 `RELAY_PORT` 指定状态文件与本地监听端口。Relay 仅绑定 loopback，需配置 TLS 反向代理与准入限制，challenge 和断言计数在重启后保留。没有公开发送端点或跳过验证的路径。
+
+APNs 传输仍待后续实现。发布者专用签名输入为 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_PRIVATE_KEY` 和 `APNS_TOPIC`，这些凭证不得进入应用、Server 或仓库。隔离配置、签名检查与真机验收见仓库 `apps/push-relay/README.md`。测试不得指向 Heeler 的 Relay。
 
 ## 安全考量
 
@@ -124,12 +115,13 @@ refresh_ttl = 2592000 # 刷新令牌有效期（秒），默认 30 天
 - 检查二维码是否已过期（5 分钟超时）
 - 尝试从 Web 应用生成新的二维码
 
-### 未收到推送通知
+### 通知设置失败
 
-- 验证通知渠道中的 APNs 凭证是否正确
-- 确保 iOS 应用已授予通知权限
-- 确认设备仍在移动设备列表中，且未被撤销
-- 查看服务器日志中的 APNs 投递错误
+- 检查 Relay 地址及其 HTTPS 信任链。
+- 在设置 → 通知中查看权限、验证与保存错误。
+- 确认配对设备未被撤销，会话未过期。
+- App Attest 需要受支持的实体设备及匹配的签名能力，模拟器通过不代表设备验证成功。
+- 此版本仅支持设置，各类通知投递尚未可用。
 
 ### 认证失败
 

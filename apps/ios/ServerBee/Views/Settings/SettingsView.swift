@@ -137,6 +137,13 @@ private extension SettingsView {
             securitySection
             accessSection
             if isAdmin { adminSection }
+            Section {
+                NavigationLink {
+                    NotificationSetupView()
+                } label: {
+                    IconRowLabel(title: String(localized: "Notifications"), systemImage: "bell.badge", color: .orange)
+                }
+            }
             appSection
             logoutSection
         }

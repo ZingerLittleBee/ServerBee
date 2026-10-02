@@ -39,8 +39,10 @@ targets:
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Debug.entitlements
+          PUSH_APNS_ENVIRONMENT: sandbox
         Release:
           CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Release.entitlements
+          PUSH_APNS_ENVIRONMENT: production
     buildToolPlugins:
       - plugin: SwiftLintBuildToolPlugin
         package: SwiftLintPlugins

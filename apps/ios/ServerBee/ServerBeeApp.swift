@@ -32,19 +32,6 @@ struct ServerBeeApp: App {
 
                     await authManager.initialize()
                 }
-                // Ask for notification permission once the user is signed in,
-                // whether the session was restored at launch or just created
-                // by logging in, rather than on some later cold launch.
-                .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
-                    guard isAuthenticated else { return }
-                    #if DEBUG
-                    if UITestSupport.seed != nil { return }
-                    #endif
-                    // Capture the login before permission can suspend; the
-                    // authenticated ContentView may not have appeared yet.
-                    pushManager.configure(apiClient: APIClient(authManager: authManager))
-                    Task { await pushManager.requestPermission() }
-                }
         }
     }
 }
@@ -74,7 +61,13 @@ private struct RootView: View {
 // MARK: - AppDelegate
 
 final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
-    var pushManager: PushNotificationManager?
+    var pushManager: PushNotificationManager? {
+        didSet {
+            if let pendingToken { pushManager?.didRegisterForRemoteNotifications(deviceToken: pendingToken) }
+            pendingToken = nil
+        }
+    }
+    private var pendingToken: Data?
     var pushRouter: PushNotificationRouter?
 
     /// Cold-launch from a push tap. iOS does not invoke
@@ -96,7 +89,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUser
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        pushManager?.didRegisterForRemoteNotifications(deviceToken: deviceToken)
+        if let pushManager { pushManager.didRegisterForRemoteNotifications(deviceToken: deviceToken) }
+        else { pendingToken = deviceToken }
     }
 
     func application(

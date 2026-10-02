@@ -101,6 +101,7 @@ struct ContentView: View {
         }
         .task {
             pushManager.configure(apiClient: apiClient)
+            await pushManager.reconcile()
 
             await wsClient.setTokenRefresher { [weak authManager] in
                 await authManager?.accessTokenForReconnect()
@@ -142,8 +143,8 @@ struct ContentView: View {
             // frames keep it current without visiting the tab.
             await alertsViewModel.fetchEvents(apiClient: apiClient)
         }
-        .onChange(of: scenePhase) { old, new in
-            if old == .background && new == .active {
+        .onChange(of: scenePhase) { _, new in
+            if new == .active {
                 Task { await resyncLive() }
             }
         }
@@ -157,6 +158,7 @@ struct ContentView: View {
     /// Rebuild the live socket for a fresh `full_sync` (online state and
     /// metrics only arrive over the WebSocket, never from REST).
     private func resyncLive() async {
+        await pushManager.reconcile()
         await wsClient.reconnect(accessToken: authManager.getAccessToken())
     }
 

@@ -217,6 +217,9 @@ impl Modify for SecurityAddon {
         crate::router::api::mobile::mobile_pair_redeem,
         crate::router::api::mobile::push_register,
         crate::router::api::mobile::push_unregister,
+        crate::router::api::mobile_push::settings,
+        crate::router::api::mobile_push::save_preferences,
+        crate::router::api::mobile_push::verified_register,
         // files
         crate::router::api::file::list_files,
         crate::router::api::file::stat_file,
@@ -434,6 +437,10 @@ impl Modify for SecurityAddon {
             crate::router::api::mobile::MobilePairCodeResponse,
             crate::router::api::mobile::MobileDeviceResponse,
             crate::router::api::mobile::PushRegisterRequest,
+            crate::router::api::mobile_push::PushPreferences,
+            crate::router::api::mobile_push::PushPreferencesRequest,
+            crate::router::api::mobile_push::VerifiedPushRequest,
+            crate::router::api::mobile_push::PushSetupResponse,
             crate::service::mobile_auth::MobileTokenResponse,
             crate::service::mobile_auth::MobileUserResponse,
             // files

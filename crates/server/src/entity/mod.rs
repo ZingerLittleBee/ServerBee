@@ -51,3 +51,5 @@ pub mod unlock_service;
 pub mod uptime_daily;
 pub mod user;
 pub mod widget_module;
+
+pub mod mobile_push_registration;

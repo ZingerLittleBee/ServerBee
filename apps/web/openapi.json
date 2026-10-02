@@ -3711,6 +3711,70 @@
         ]
       }
     },
+    "/api/mobile/push/settings": {
+      "get": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSetupResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "save_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushPreferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSetupResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Category or installation forbidden"
+          },
+          "409": {
+            "description": "Stale revision"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/mobile/push/unregister": {
       "post": {
         "tags": [
@@ -3723,6 +3787,47 @@
           },
           "401": {
             "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/mobile/push/verified-register": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "verified_register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifiedPushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSetupResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Unverified or mismatched grant"
+          },
+          "409": {
+            "description": "Stale revision"
           }
         },
         "security": [
@@ -11964,6 +12069,51 @@
           }
         }
       },
+      "PushPreferences": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "alerts",
+          "security",
+          "task_failure",
+          "task_success"
+        ],
+        "properties": {
+          "alerts": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "security": {
+            "type": "boolean"
+          },
+          "task_failure": {
+            "type": "boolean"
+          },
+          "task_success": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PushPreferencesRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "preferences"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PushPreferences"
+          }
+        },
+        "additionalProperties": false
+      },
       "PushRegisterRequest": {
         "type": "object",
         "required": [
@@ -11973,6 +12123,42 @@
           "device_token": {
             "type": "string",
             "description": "The APNs device token obtained from the iOS device."
+          }
+        }
+      },
+      "PushSetupResponse": {
+        "type": "object",
+        "required": [
+          "revision",
+          "preferences",
+          "registered",
+          "relay_url",
+          "delivery_available"
+        ],
+        "properties": {
+          "delivery_available": {
+            "type": "boolean",
+            "description": "Setup ships before category delivery, which has its own acceptance gate."
+          },
+          "grant_expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PushPreferences"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "relay_url": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -15237,6 +15423,39 @@
             "type": "string"
           }
         }
+      },
+      "VerifiedPushRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "device_token",
+          "environment",
+          "key_id",
+          "grant_id",
+          "grant_token"
+        ],
+        "properties": {
+          "device_token": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "grant_id": {
+            "type": "string"
+          },
+          "grant_token": {
+            "type": "string"
+          },
+          "key_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "WidgetInput": {
         "type": "object",

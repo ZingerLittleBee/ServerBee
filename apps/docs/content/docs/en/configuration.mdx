@@ -375,6 +375,14 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 | `access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (default 15 minutes) |
 | `refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (default 30 days) |
 
+### `[push_relay]` -- Verified Mobile Setup
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `url` | string | `""` | Dedicated Push Relay HTTPS URL. Empty disables verified registration. No Apple signing keys belong on the Server. |
+
+Set `SERVERBEE_PUSH_RELAY__URL` to override this URL. An isolated local Server integration harness may use `http://127.0.0.1:<port>`; the iOS app requires HTTPS. Current support covers App Attest registration and confirmed subscription intent. Category delivery is still being implemented; see [Mobile](/en/docs/mobile).
+
 ### `[firewall]` -- Firewall Blocklist Guardrail
 
 | Key | Type | Default | Description |

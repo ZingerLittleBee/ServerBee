@@ -101,6 +101,7 @@ These variables are for local repo tooling and development workflows. They are n
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
+| `SERVERBEE_PUSH_RELAY__URL` | `push_relay.url` | String | `""` | Verified Push Relay HTTPS URL; empty disables verified registration |
 | `SERVERBEE_MOBILE__ACCESS_TTL` | `mobile.access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (15 min) |
 | `SERVERBEE_MOBILE__REFRESH_TTL` | `mobile.refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (30 days) |
 

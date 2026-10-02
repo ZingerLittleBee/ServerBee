@@ -1207,6 +1207,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/push/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["settings"];
+        put: operations["save_preferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/push/unregister": {
         parameters: {
             query?: never;
@@ -1217,6 +1233,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["push_unregister"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mobile/push/verified-register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verified_register"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3319,9 +3351,32 @@ export interface components {
             service_id: string;
             status: string;
         };
+        PushPreferences: {
+            alerts: boolean;
+            enabled: boolean;
+            security: boolean;
+            task_failure: boolean;
+            task_success: boolean;
+        };
+        PushPreferencesRequest: {
+            /** Format: int64 */
+            expected_revision: number;
+            preferences: components["schemas"]["PushPreferences"];
+        };
         PushRegisterRequest: {
             /** @description The APNs device token obtained from the iOS device. */
             device_token: string;
+        };
+        PushSetupResponse: {
+            /** @description Setup ships before category delivery, which has its own acceptance gate. */
+            delivery_available: boolean;
+            /** Format: date-time */
+            grant_expires_at?: string | null;
+            preferences: components["schemas"]["PushPreferences"];
+            registered: boolean;
+            relay_url: string;
+            /** Format: int64 */
+            revision: number;
         };
         RateLimitEntryDto: {
             /** @description True if `count >= max` and the window is still open. */
@@ -4271,6 +4326,15 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             username: string;
+        };
+        VerifiedPushRequest: {
+            device_token: string;
+            environment: string;
+            /** Format: int64 */
+            expected_revision: number;
+            grant_id: string;
+            grant_token: string;
+            key_id: string;
         };
         WidgetInput: {
             config_json: unknown;
@@ -7073,6 +7137,62 @@ export interface operations {
             };
         };
     };
+    settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSetupResponse"];
+                };
+            };
+        };
+    };
+    save_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushPreferencesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSetupResponse"];
+                };
+            };
+            /** @description Category or installation forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stale revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     push_unregister: {
         parameters: {
             query?: never;
@@ -7091,6 +7211,43 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    verified_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifiedPushRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSetupResponse"];
+                };
+            };
+            /** @description Unverified or mismatched grant */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stale revision */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

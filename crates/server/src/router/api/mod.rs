@@ -15,6 +15,7 @@ pub mod incident;
 pub mod ip_quality;
 pub mod maintenance_api;
 pub mod mobile;
+pub mod mobile_push;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
@@ -55,6 +56,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
             Router::new()
                 .merge(auth::protected_router())
                 .merge(mobile::protected_router())
+                .merge(mobile_push::router())
                 // Read-only routes accessible to all authenticated users
                 .merge(agent::read_router())
                 .merge(server::read_router())

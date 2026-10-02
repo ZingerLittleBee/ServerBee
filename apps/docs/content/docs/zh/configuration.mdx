@@ -375,6 +375,14 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `access_ttl` | i64 | `900` | 移动端 Access Token 有效期（秒），默认 15 分钟 |
 | `refresh_ttl` | i64 | `2592000` | 移动端 Refresh Token 有效期（秒），默认 30 天 |
 
+### `[push_relay]` —— 已验证移动通知设置
+
+| Key | 类型 | 默认值 | 说明 |
+|-----|------|--------|------|
+| `url` | string | `""` | 独立 Push Relay 的 HTTPS 地址。留空会关闭已验证注册。Server 不应保存 Apple 签名密钥。 |
+
+通过 `SERVERBEE_PUSH_RELAY__URL` 覆盖地址。隔离的本地 Server 集成测试可使用 `http://127.0.0.1:<port>`，iOS 应用要求 HTTPS。目前支持 App Attest 注册与 Server 确认的订阅意图，各类通知投递仍在开发中，详见[移动端](/zh/docs/mobile)。
+
 ### `[firewall]` —— 防火墙黑名单护栏
 
 | 键 | 类型 | 默认值 | 说明 |

@@ -58,6 +58,23 @@ actor APIClient {
         _ = try await authenticatedResponse(path, method: "POST", body: body, context: context)
     }
 
+    func get<T: Decodable & Sendable>(_ path: String, context: MobileAuthenticationContext) async throws -> T {
+        try await response(path, method: "GET", context: context)
+    }
+
+    func send<T: Decodable & Sendable>(
+        _ path: String, method: String, body: any Encodable & Sendable, context: MobileAuthenticationContext
+    ) async throws -> T {
+        try await response(path, method: method, body: body, context: context)
+    }
+
+    private func response<T: Decodable & Sendable>(
+        _ path: String, method: String, body: (any Encodable & Sendable)? = nil, context: MobileAuthenticationContext
+    ) async throws -> T {
+        let (data, _) = try await authenticatedResponse(path, method: method, body: body, context: context)
+        return try JSONDecoder.snakeCase.decode(ApiResponse<T>.self, from: data).data
+    }
+
     /// Cleanup may finish after a login change, but always targets the captured
     /// deployment and credential. Only the original active login may refresh.
     func postCleanup(_ path: String, context: MobileAuthenticationContext) async throws {

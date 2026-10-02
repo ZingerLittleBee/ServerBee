@@ -565,6 +565,17 @@ pub async fn push_unregister(
         .exec(&txn)
         .await?;
 
+    crate::entity::mobile_push_registration::Entity::delete_many()
+        .filter(
+            crate::entity::mobile_push_registration::Column::InstallationId
+                .eq(&mobile_session.installation_id),
+        )
+        .filter(crate::entity::mobile_push_registration::Column::UserId.eq(&session.user_id))
+        .filter(
+            crate::entity::mobile_push_registration::Column::MobileSessionId.eq(&mobile_session.id),
+        )
+        .exec(&txn)
+        .await?;
     txn.commit().await?;
     ok("ok")
 }
@@ -574,7 +585,7 @@ pub async fn push_unregister(
 /// Lock and revalidate mobile authorization in the same transaction as the
 /// registration mutation. A request admitted before refresh/logout must not
 /// write after that credential has been rotated or revoked.
-async fn push_session(
+pub(super) async fn push_session(
     txn: &DatabaseTransaction,
     token: &str,
 ) -> Result<
@@ -643,7 +654,7 @@ fn extract_user_agent(headers: &HeaderMap) -> String {
 }
 
 /// Extract Bearer token from Authorization header.
-fn extract_bearer(headers: &HeaderMap) -> Option<String> {
+pub(super) fn extract_bearer(headers: &HeaderMap) -> Option<String> {
     headers
         .get("authorization")?
         .to_str()
