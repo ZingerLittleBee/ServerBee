@@ -56,7 +56,8 @@ function ResultOption({ item, onActive, onClick, optionId }: ResultOptionProps) 
 }
 
 // fumadocs' search buttons. The docs sidebar has one in each of its halves, the docked sidebar and the floating panel
-// shown once it is collapsed, and the half off screen is inert. The header has one too, hidden beside the sidebar.
+// shown once it is collapsed, and the half off screen is inert. The header has one too, shown only while the sidebar is
+// not docked.
 const searchButtons = '[data-search], [data-search-full]'
 
 /** What focus goes back to once the dialog closes. */
@@ -102,28 +103,36 @@ function openerOf(element: Element | null): Opener | null {
   return { controls, element, onScreen: isOnScreen(element) }
 }
 
+/** The controls that stand in for one that cannot take focus: the same control in the other half of the sidebar. */
+function twinsOf(element: HTMLElement): HTMLElement[] {
+  if (element.matches(searchButtons)) {
+    return [...document.querySelectorAll<HTMLElement>(searchButtons)]
+  }
+  return element.closest('#nd-sidebar, [data-sidebar-panel]')
+    ? [...document.querySelectorAll<HTMLElement>('[aria-controls="nd-sidebar"]')]
+    : []
+}
+
 /**
- * Focuses the element focused before the dialog opened or, if the half of the sidebar holding it went off screen
- * meanwhile, its search button or sidebar toggle in the other half, or, if its popup closed, the popup's control or,
- * if that closed with an outer popup, the outer popup's, and returns whether one took focus.
+ * Focuses the element focused before the dialog opened or, if its popup closed meanwhile, the popup's control, and
+ * returns whether one took focus. One that cannot take focus, as when the half of the sidebar holding it went off
+ * screen or a resize hid it, stands for its search button or sidebar toggle wherever one is shown.
  */
 function restoreFocus(opener: Opener | null): boolean {
   if (!opener) {
     return false
   }
-  const { controls, element } = opener
-  const twins = element.matches(searchButtons) ? searchButtons : '[aria-controls="nd-sidebar"]'
-  // Of the twins, the first that takes focus: neither an inert one nor a hidden one does.
-  const candidates = element.matches('[inert] *') ? [...document.querySelectorAll<HTMLElement>(twins)] : [element]
-  for (const candidate of [...candidates, ...controls]) {
-    candidate.focus({ preventScroll: true })
-    if (document.activeElement === candidate) {
-      // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
-      // page stays where the reader left it otherwise.
-      if (opener.onScreen && !isOnScreen(candidate)) {
-        candidate.scrollIntoView({ block: 'nearest' })
+  for (const target of [opener.element, ...opener.controls]) {
+    for (const candidate of [target, ...twinsOf(target)]) {
+      candidate.focus({ preventScroll: true })
+      if (document.activeElement === candidate) {
+        // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
+        // page stays where the reader left it otherwise.
+        if (opener.onScreen && !isOnScreen(candidate)) {
+          candidate.scrollIntoView({ block: 'nearest' })
+        }
+        return true
       }
-      return true
     }
   }
   return false
