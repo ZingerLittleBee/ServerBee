@@ -1,5 +1,8 @@
 # Ubiquitous Language
 
+- **Mobile notification** — an alert transition, security rule match, or final task outcome delivered to a user's ServerBee mobile app. _Avoid_: live update, browser event.
+- **Mobile notification subscription** — a user's choice of notification categories for one ServerBee mobile installation. Subscribing does not grant access to otherwise restricted events or task results.
+
 - **Network quality detail (网络质量详情)** — the per-server view of probe results (latency/loss per target, anomalies, traceroute). Since ADR-0001 it lives in the server detail **Network tab**; there is no separate admin page.
 - **Network tab** — the server-detail tab hosting the network quality detail. Admin gets the full experience (chart, traceroute, target management, CSV export); the public status variant is the redacted summary (targets + anomalies only).
 - **Server detail tabs** — the top-level structure of the server detail page: Metrics (default, includes the cost/traffic/uptime overview blocks), Network, Traffic, Security, IP Quality. Tab and time range are URL-driven (`?tab=`, `?range=`); the `range` window is shared across tabs.
