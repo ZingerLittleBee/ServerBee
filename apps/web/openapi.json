@@ -2322,7 +2322,7 @@
           {
             "name": "cursor",
             "in": "query",
-            "description": "RFC3339 timestamp from a previous `next_cursor` response.",
+            "description": "Opaque cursor from a previous `next_cursor` response.",
             "required": false,
             "schema": {
               "type": [
@@ -7638,7 +7638,7 @@
           {
             "name": "from",
             "in": "query",
-            "description": "Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`).",
+            "description": "Inclusive start date as `YYYY-MM-DD` (default: start of a 30-day\ninclusive window ending at `to`, i.e. `to` minus 29 days).",
             "required": false,
             "schema": {
               "type": [

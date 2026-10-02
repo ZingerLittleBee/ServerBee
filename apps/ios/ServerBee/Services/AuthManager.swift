@@ -74,8 +74,7 @@ final class AuthManager {
         } catch {
             // A committed rotation with a lost response can leave a registration
             // alive. Revoke that original login before discarding its local proof.
-            try? await APIClient(authManager: self).revokeSession(context: restored)
-            if authenticationGeneration == restored.generation { clearAuth() }
+            await endSession(context: restored)
         }
     }
 
@@ -193,8 +192,11 @@ final class AuthManager {
         isCurrent(context) ? getAccessToken() : nil
     }
 
-    func clearAuth(ifCurrent context: MobileAuthenticationContext) {
-        if isCurrent(context) { clearAuth() }
+    /// Every production auth-expiry path retains the original proof until
+    /// its revocation attempt finishes, then clears only that login generation.
+    func endSession(context: MobileAuthenticationContext) async {
+        try? await APIClient(authManager: self).revokeSession(context: context)
+        if authenticationGeneration == context.generation { clearAuth() }
     }
 
     /// Token for a WebSocket reconnect. A transient refresh failure (offline,
@@ -202,9 +204,11 @@ final class AuthManager {
     /// retrying with backoff instead of giving up for good; only a session
     /// the server rejected, or one with no stored token, yields `nil`.
     func accessTokenForReconnect() async -> String? {
+        let context = captureContext()
         do {
             return try await refreshAccessToken()
         } catch AuthError.refreshUnauthorized {
+            if let context { await endSession(context: context) }
             return nil
         } catch AuthError.staleIdentity {
             return nil

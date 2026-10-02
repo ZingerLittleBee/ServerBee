@@ -21,7 +21,7 @@ final class AuthenticationURLProtocol: URLProtocol, @unchecked Sendable {
     func loseResponse() { client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost)) }
 }
 
-private final class AuthenticationRequestLog: @unchecked Sendable {
+final class AuthenticationRequestLog: @unchecked Sendable {
     private let lock = NSLock()
     private var requests: [URLRequest] = []
     private var held: AuthenticationURLProtocol?

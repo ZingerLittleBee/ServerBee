@@ -7,8 +7,8 @@ final class URLProtocolStub: URLProtocol {
     nonisolated(unsafe) static var stubError: Error?
     nonisolated(unsafe) static var stubResponseFactory: (@Sendable () async -> (status: Int, data: Data))?
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override static func canInit(with request: URLRequest) -> Bool { true }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         if let error = Self.stubError {
@@ -16,7 +16,7 @@ final class URLProtocolStub: URLProtocol {
             return
         }
         if let factory = Self.stubResponseFactory {
-            let url = request.url!
+            guard let url = request.url else { XCTFail("Stub request must have a URL"); return }
             let semaphore = DispatchSemaphore(value: 0)
             nonisolated(unsafe) var resolved: (status: Int, data: Data)?
             Task {
@@ -29,16 +29,17 @@ final class URLProtocolStub: URLProtocol {
             return
         }
         guard let (status, data) = Self.stubResponse else { return }
-        emit(url: request.url!, status: status, data: data)
+        guard let url = request.url else { XCTFail("Stub request must have a URL"); return }
+        emit(url: url, status: status, data: data)
     }
 
     private func emit(url: URL, status: Int, data: Data) {
-        let response = HTTPURLResponse(
+        guard let response = HTTPURLResponse(
             url: url,
             statusCode: status,
             httpVersion: "HTTP/1.1",
             headerFields: nil
-        )!
+        ) else { XCTFail("Stub response must be valid"); return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
@@ -125,8 +126,12 @@ final class RefreshErrorClassificationTests: XCTestCase {
         URLProtocolStub.stubResponse = (401, Data())
         let auth = AuthManager()
         auth.serverUrl = "https://stub.test"
-        auth.isAuthenticated = true
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        auth.handleLoginResponse(MobileTokenResponse(
+            accessToken: "access", accessExpiresInSecs: 900,
+            refreshToken: "rt", refreshExpiresInSecs: 3600,
+            tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "member"),
+            revocationToken: "revoke-alice"
+        ))
 
         let client = APIClient(authManager: auth)
         do {
@@ -142,8 +147,12 @@ final class RefreshErrorClassificationTests: XCTestCase {
         URLProtocolStub.stubResponse = (503, Data())
         let auth = AuthManager()
         auth.serverUrl = "https://stub.test"
-        auth.isAuthenticated = true
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        auth.handleLoginResponse(MobileTokenResponse(
+            accessToken: "access", accessExpiresInSecs: 900,
+            refreshToken: "rt", refreshExpiresInSecs: 3600,
+            tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "member"),
+            revocationToken: "revoke-alice"
+        ))
 
         let client = APIClient(authManager: auth)
         do {

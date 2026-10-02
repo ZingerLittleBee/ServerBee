@@ -6028,7 +6028,7 @@ export interface operations {
     list_blocks: {
         parameters: {
             query?: {
-                /** @description RFC3339 timestamp from a previous `next_cursor` response. */
+                /** @description Opaque cursor from a previous `next_cursor` response. */
                 cursor?: string | null;
                 origin?: string | null;
                 target_q?: string | null;
@@ -9707,7 +9707,10 @@ export interface operations {
     get_traffic_server_daily: {
         parameters: {
             query?: {
-                /** @description Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`). */
+                /**
+                 * @description Inclusive start date as `YYYY-MM-DD` (default: start of a 30-day
+                 *     inclusive window ending at `to`, i.e. `to` minus 29 days).
+                 */
                 from?: string | null;
                 /** @description Inclusive end date as `YYYY-MM-DD` (default: today). */
                 to?: string | null;

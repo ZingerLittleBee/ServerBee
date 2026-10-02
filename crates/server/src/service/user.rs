@@ -190,6 +190,10 @@ impl UserService {
             }
         }
 
+        // Revoke mobile sessions in FK order before removing the user's
+        // remaining credentials, all within this deletion transaction.
+        AuthService::revoke_user_mobile_sessions(&txn, id, None).await?;
+
         // Clean up sessions
         session::Entity::delete_many()
             .filter(session::Column::UserId.eq(id))

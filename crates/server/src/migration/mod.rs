@@ -235,8 +235,11 @@ mod tests {
         let db = Database::connect("sqlite::memory:")
             .await
             .expect("connect in-memory sqlite");
-        let migrations_before_authority = Migrator::migrations().len() as u32 - 1;
-        Migrator::up(&db, Some(migrations_before_authority))
+        let migrations_before_authority = Migrator::migrations()
+            .iter()
+            .position(|migration| migration.name() == "m20260713_000075_agent_authority_lifecycle")
+            .expect("authority migration must remain in the migration list");
+        Migrator::up(&db, Some(migrations_before_authority as u32))
             .await
             .expect("run legacy migrations");
         seed_user_and_server(&db, "legacy-server").await;

@@ -1013,8 +1013,8 @@ async fn expired_access_can_refresh_but_expired_mobile_session_cannot_register_o
 
 #[tokio::test]
 async fn password_and_user_revocation_stop_preserved_registration() {
-    use sea_orm::EntityTrait;
-    use serverbee_server::entity::device_token;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{device_token, mobile_session, session, user};
     for action in ["password-change", "password-reset", "user-delete"] {
         let (base, tmp) = start_test_server().await;
         let admin = http_client();
@@ -1061,6 +1061,53 @@ async fn password_and_user_revocation_stop_preserved_registration() {
                 .is_none(),
             "{action}"
         );
+        assert!(
+            mobile_session::Entity::find()
+                .filter(mobile_session::Column::UserId.eq(user_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none(),
+            "{action}"
+        );
+        assert_eq!(
+            revoke_mobile_with_proof(
+                &mobile,
+                &base,
+                INST_ID,
+                first["data"]["revocation_token"].as_str().unwrap()
+            )
+            .await
+            .status(),
+            401,
+            "{action}"
+        );
+        if action == "user-delete" {
+            assert!(
+                user::Entity::find_by_id(user_id)
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                session::Entity::find()
+                    .filter(session::Column::UserId.eq(user_id))
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(
+                admin
+                    .get(format!("{base}/api/auth/me"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            );
+        }
         assert_eq!(
             refresh_mobile(&mobile, &base, &rotated).await.status(),
             401,
@@ -1658,4 +1705,137 @@ async fn upgraded_legacy_refresh_preserves_registration_and_deletion_only_proof_
         200
     );
     assert_no_mobile_state_or_credentials(&client, &base, &db, &original, Some(&current)).await;
+}
+
+#[tokio::test]
+async fn deleting_user_revokes_all_mobile_devices_and_preserves_another_users_registration() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{device_token, mobile_session, session, user};
+    let (base, tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let _member = login_as_new_user(&admin, &base, "multi-device-member", "member").await;
+    let client = http_client();
+    let survivor: Value = mobile_login(&client, &base, "admin", "testpass", "admin-installation")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        register_mobile(&client, &base, &survivor).await.status(),
+        200
+    );
+    let first: Value = mobile_login(&client, &base, "multi-device-member", "memberpass", INST_ID)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let response = refresh_mobile(&client, &base, &first).await;
+    assert_eq!(response.status(), 200);
+    let rotated: Value = response.json().await.unwrap();
+    let second: Value = mobile_login(
+        &client,
+        &base,
+        "multi-device-member",
+        "memberpass",
+        "second-installation",
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(register_mobile(&client, &base, &second).await.status(), 200);
+    let member_id = first["data"]["user"]["id"].as_str().unwrap();
+    let db = registration_db(&tmp).await;
+    let survivor_registration = device_token::Entity::find()
+        .filter(device_token::Column::InstallationId.eq("admin-installation"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        admin
+            .delete(format!("{base}/api/users/{member_id}"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert!(
+        user::Entity::find_by_id(member_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        device_token::Entity::find()
+            .filter(device_token::Column::UserId.eq(member_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(member_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        session::Entity::find()
+            .filter(session::Column::UserId.eq(member_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    for (tokens, installation) in [
+        (&first, INST_ID),
+        (&rotated, INST_ID),
+        (&second, "second-installation"),
+    ] {
+        assert_eq!(register_mobile(&client, &base, tokens).await.status(), 401);
+        assert_eq!(client.post(format!("{base}/api/mobile/auth/refresh"))
+            .json(&json!({"installation_id": installation, "refresh_token": tokens["data"]["refresh_token"]}))
+            .send().await.unwrap().status(), 401);
+    }
+    for (tokens, installation) in [(&first, INST_ID), (&second, "second-installation")] {
+        assert_eq!(
+            revoke_mobile_with_proof(
+                &client,
+                &base,
+                installation,
+                tokens["data"]["revocation_token"].as_str().unwrap()
+            )
+            .await
+            .status(),
+            401
+        );
+    }
+    assert_eq!(
+        device_token::Entity::find_by_id(&survivor_registration.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        survivor_registration
+    );
+    assert_eq!(
+        register_mobile(&client, &base, &survivor).await.status(),
+        200
+    );
+    assert_eq!(
+        admin
+            .get(format!("{base}/api/auth/me"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
 }
