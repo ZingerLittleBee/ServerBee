@@ -106,6 +106,12 @@ const searches: SearchCheck[] = [
   { locale: 'zh', query: '如何安装', page: '/zh/docs/quick-start' },
   { locale: 'zh', query: '升级失败怎么办', page: '/zh/docs/deployment', every: ['升级', '失败'] },
   { locale: 'zh', query: '配置文件在哪里', page: '/zh/docs/configuration', every: ['配置', '文件'] },
+  // Nor do adverbs, 并 or 为何 (why) count among the words a query is about: no section has to hold a word they start,
+  // and 又 (again) no longer joins the 离 and 线 that ICU splits 离线 (offline) into.
+  { locale: 'zh', query: '为何离线', page: '/zh/docs/alerts', same: '离线' },
+  { locale: 'zh', query: '为何不可用', page: '/zh/docs/ip-quality', first: '不可用' },
+  { locale: 'zh', query: '并不可用', page: '/zh/docs/ip-quality', first: '不可用' },
+  { locale: 'zh', query: 'Agent 又离线了', page: '/zh/docs/monitoring', same: 'Agent 离线' },
   // Words that no heading or paragraph holds together: 卸载 (uninstall) and Agent, which the heading 卸载与清除 and the
   // paragraphs under it hold, typed with or without a space between them, and 服务端 (server) and 卸载 with a question
   // word between them. Of the sections holding one of them, those holding the rarer 卸载 score more and come first.

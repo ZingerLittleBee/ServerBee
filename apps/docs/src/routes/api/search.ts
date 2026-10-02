@@ -9,20 +9,24 @@ const wordSegmenter = new Intl.Segmenter('zh', { granularity: 'word' })
 // tokenizer splits them, and `toml` finds `server.toml` on the Chinese pages as it does on the English ones.
 const wordSeparators = /[^\p{L}\p{N}_'-]+/u
 const hanCharacter = /\p{Script=Han}/u
-// Words that phrase a question or join the words it is about, rather than say what it is about. A Chinese query needs
-// every word in one heading or paragraph, which rarely holds them, so 升级失败怎么办 and 配置文件在哪里 found nothing,
-// and the 和 of 防火墙和告警 kept most firewall sections out of what it found. 办 and 样 are what ICU leaves of 怎么办 and
-// 怎么样, and ICU keeps 参与, 以及, 及时 and 涉及 whole. 在 is not among them, as ICU splits 在线 into 在 and 线 (the 线 of
-// 离线) and dropping it cut the word in half. ICU also splits 已用, 调用 and 复用 into a character and 用 (use), and
-// 不可用 (unavailable) into 不可 and 用, so 用 is a filler word only where it follows neither a character alone that is
-// not a filler word nor a word ending in the 可 of 可用 (available), as in 可以用 Nginx 吗, 能用 Nginx 吗 and 用 Docker 部署.
+// Words that phrase a question, join the words it is about or qualify them, as adverbs do, rather than say what it is
+// about. A Chinese query needs every word in one heading or paragraph, which rarely holds them, so 升级失败怎么办 and
+// 配置文件在哪里 found nothing, and the 和 of 防火墙和告警 kept most firewall sections out of what it found. Adverbs and
+// 并 (and), which match the start of any word as a character alone does, also kept out the sections holding no word
+// they start, as the 并 of 并不可用 kept out the one holding 不可用, and joined the characters ICU splits the next word
+// into, as 又离线了 (offline again) looked for 又离线. 办 and 样 are what ICU leaves of 怎么办 and 怎么样, and ICU keeps
+// 参与, 以及, 及时, 涉及, 合并 and 再次 whole. 在 is not among them, as ICU splits 在线 into 在 and 线 (the 线 of 离线) and
+// dropping it cut the word in half. ICU also splits 已用, 调用 and 复用 into a character and 用 (use), and 不可用
+// (unavailable) into 不可 and 用, so 用 is a filler word only where it follows neither a character alone that is not a
+// filler word nor a word ending in the 可 of 可用 (available), as in 可以用 Nginx 吗, 能用 Nginx 吗 and 用 Docker 部署.
 const fillerWords = new Set(
   [
-    '如何 怎么 怎样 咋 什么 啥 为什么 哪 哪里 哪儿 哪些 哪个 多久 多少 何时 办 样', // question words
+    '如何 怎么 怎样 咋 什么 啥 为什么 为何 哪 哪里 哪儿 哪些 哪个 多久 多少 何时 办 样', // question words
     '是否 能否 能不能 可不可以 是不是 会不会', // yes-no questions
     '是 能 会 要 可以 请问', // the verbs a question is built with
+    '也 都 还 又 再 就 才', // adverbs
     '吗 呢 吧 啊 呀 的 了', // particles
-    '和 与 或 及 以及 或者 还是 并且 而且' // conjunctions
+    '和 与 或 及 并 以及 或者 还是 并且 而且' // conjunctions
   ].flatMap((words) => words.split(' '))
 )
 
