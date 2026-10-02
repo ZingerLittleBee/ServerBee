@@ -13,8 +13,9 @@ const hanCharacter = /\p{Script=Han}/u
 // every word in one heading or paragraph, which rarely holds them, so 升级失败怎么办 and 配置文件在哪里 found nothing,
 // and the 和 of 防火墙和告警 kept most firewall sections out of what it found. 办 and 样 are what ICU leaves of 怎么办 and
 // 怎么样, and ICU keeps 参与, 以及, 及时 and 涉及 whole. 在 is not among them, as ICU splits 在线 into 在 and 线 (the 线 of
-// 离线) and dropping it cut the word in half. ICU also splits 已用, 调用 and 复用 into a character and 用 (use), so 用 is
-// a filler word only where it does not follow a character alone, as in 可以用 Nginx 吗 and 用 Docker 部署.
+// 离线) and dropping it cut the word in half. ICU also splits 已用, 调用 and 复用 into a character and 用 (use), and
+// 不可用 (unavailable) into 不可 and 用, so 用 is a filler word only where it follows neither a character alone nor a
+// word ending in the 可 of 可用 (available), as in 可以用 Nginx 吗 and 用 Docker 部署.
 const fillerWords = new Set(
   [
     '如何 怎么 怎样 咋 什么 啥 为什么 哪 哪里 哪儿 哪些 哪个 多久 多少 何时 办 样', // question words
@@ -55,7 +56,7 @@ function* segmentWords(text: string): Generator<{ filler: boolean; word: string 
       previous = undefined
       continue
     }
-    const filler = fillerWords.has(segment) || (segment === '用' && !isCharacter(previous))
+    const filler = fillerWords.has(segment) || (segment === '用' && !isCharacter(previous) && !previous?.endsWith('可'))
     yield { filler, word: segment }
     previous = filler ? undefined : segment
   }

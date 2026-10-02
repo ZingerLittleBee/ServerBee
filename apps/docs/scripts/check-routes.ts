@@ -128,10 +128,11 @@ const searches: SearchCheck[] = [
   // not one of them twice.
   { locale: 'zh', query: 'toml', page: '/zh/docs/deployment' },
   { locale: 'zh', query: 'server.toml', page: '/zh/docs/configuration', every: ['server', 'toml'] },
-  // ICU leaves 用 (use) from 已用, 调用 and 复用, so 用 is a word right after a character alone and a filler word
-  // elsewhere: the first section found for 已用 holds 已用, the fallback searches 已用 with its 用, and 用 Docker 部署
-  // finds what Docker 部署 finds.
+  // ICU leaves 用 (use) from 已用, 调用 and 复用, and from 不可用 (unavailable) after 不可, so 用 is a word right after a
+  // character alone or a word ending in 可, and a filler word elsewhere: the first sections found for 已用 and 不可用
+  // hold them, the fallback searches 已用 with its 用, and 用 Docker 部署 finds what Docker 部署 finds.
   { locale: 'zh', query: '已用', page: '/zh/docs/alerts', first: '已用' },
+  { locale: 'zh', query: '不可用', page: '/zh/docs/ip-quality', first: '不可用' },
   { locale: 'zh', query: '已用 带宽', page: '/zh/docs/alerts' },
   { locale: 'zh', query: '用 Docker 部署', page: '/zh/docs/deployment', same: 'Docker 部署' }
 ]
