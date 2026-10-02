@@ -86,6 +86,8 @@ Signing in does not request notification permission. Open **Settings → Notific
 
 The notification page uses permissions confirmed by the Server, even if the cached login role is outdated. After an administrator is demoted, saving subscriptions or disabling notifications clears the unavailable security category. Failed saves do not replace the confirmed preferences.
 
+A failed subscription save remains visible after returning to the app, reconnecting or recovering registration. The page retains the unconfirmed choices until a successful save or a newer settings revision from the Server confirms the submitted permitted preferences. A successful registration alone does not confirm those choices.
+
 The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Unsupported or rejected App Attest leaves push unavailable while login and monitoring continue to work. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
 
 **Setup confirmation does not mean category delivery is operational.** Event delivery, encrypted notification rendering and navigation have separate implementation and real-device acceptance gates. This build does not provide a test-notification action yet.

@@ -33,10 +33,13 @@ final class TestPushRelay: PushRelayBoundary {
 }
 
 enum PushSetupTestData {
-    static func response(enabled: Bool = true, registered: Bool = false, revision: Int64 = 1) -> Data {
-        Data("""
-        {"data":{"revision":\(revision),"preferences":{"enabled":\(enabled),"alerts":true,"security":false,"task_failure":true,"task_success":false},
-        "security_allowed":false,"registered":\(registered),"grant_expires_at":\(registered ? "\"2033-05-18T03:33:20Z\"" : "null"),"relay_url":"https://relay.test","delivery_available":false}}
+    static func response(enabled: Bool = true, registered: Bool = false, revision: Int64 = 1, preferences: PushPreferences? = nil, securityAllowed: Bool = false) -> Data {
+        let selected = preferences ?? PushPreferences(enabled: enabled, alerts: true, security: false, taskFailure: true, taskSuccess: false)
+        return Data("""
+        {"data":{"revision":\(revision),"preferences":{"enabled":\(selected.enabled),"alerts":\(selected.alerts),"security":\(selected.security),
+        "task_failure":\(selected.taskFailure),"task_success":\(selected.taskSuccess)},
+        "security_allowed":\(securityAllowed),"registered":\(registered),"grant_expires_at":\(registered ? "\"2033-05-18T03:33:20Z\"" : "null"),
+        "relay_url":"https://relay.test","delivery_available":false}}
         """.utf8)
     }
     static func body(_ request: URLRequest) -> [String: Any] {

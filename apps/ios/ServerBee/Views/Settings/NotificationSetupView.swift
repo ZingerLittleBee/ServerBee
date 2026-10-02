@@ -69,7 +69,7 @@ struct NotificationSetupView: View {
 
     private func refreshDraft() {
         guard let confirmed = manager.confirmed else { return }
-        draft = confirmed.preferences
+        draft = manager.unconfirmedPreferences ?? confirmed.preferences
         if !confirmed.securityAllowed { draft.security = false }
     }
 

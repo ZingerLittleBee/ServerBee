@@ -7,6 +7,7 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
     private let lock = NSLock()
     private var setup: Data
     private var revision: Int64
+    private var preferences: PushPreferences
     private var requests: [URLRequest] = []
     private struct HeldRoute {
         let method: String
@@ -20,7 +21,9 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
 
     init(enabled: Bool = true, registered: Bool = false, revision: Int64 = 1) {
         self.revision = revision
-        setup = PushSetupTestData.response(enabled: enabled, registered: registered, revision: revision)
+        let initial = PushPreferences(enabled: enabled, alerts: true, security: false, taskFailure: true, taskSuccess: false)
+        preferences = initial
+        setup = PushSetupTestData.response(registered: registered, revision: revision, preferences: initial)
     }
 
     func holdNext(_ method: String, path: String, entered: XCTestExpectation) {
@@ -34,7 +37,7 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
     }
     func invalidateGrant() {
         lock.lock(); defer { lock.unlock() }
-        setup = PushSetupTestData.response(registered: false, revision: revision)
+        setup = PushSetupTestData.response(registered: false, revision: revision, preferences: preferences)
     }
     func snapshot() -> [URLRequest] { lock.lock(); defer { lock.unlock() }; return requests }
     func release() {
@@ -79,10 +82,18 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
             """#.utf8)
         } else if urlRequest.httpMethod == "PUT" {
             let body = PushSetupTestData.body(urlRequest)
-            let preferences = body["preferences"] as? [String: Any]
-            revision = (body["expected_revision"] as? NSNumber)?.int64Value ?? revision
-            revision += 1
-            setup = PushSetupTestData.response(enabled: preferences?["enabled"] as? Bool ?? false, revision: revision)
+            guard let submitted = body["preferences"] as? [String: Any],
+                  let enabled = submitted["enabled"] as? Bool, let alerts = submitted["alerts"] as? Bool,
+                  let security = submitted["security"] as? Bool, let taskFailure = submitted["task_failure"] as? Bool,
+                  let taskSuccess = submitted["task_success"] as? Bool,
+                  let expected = body["expected_revision"] as? NSNumber, expected.int64Value == revision else {
+                lock.unlock()
+                request.fail(URLError(.badServerResponse))
+                return
+            }
+            preferences = PushPreferences(enabled: enabled, alerts: alerts, security: security, taskFailure: taskFailure, taskSuccess: taskSuccess)
+            revision = expected.int64Value + 1
+            setup = PushSetupTestData.response(revision: revision, preferences: preferences)
             data = setup
             lost = loseSave
             loseSave = false
@@ -91,7 +102,7 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
             registrationEntered = nil
             revision = (PushSetupTestData.body(urlRequest)["expected_revision"] as? NSNumber)?.int64Value ?? revision
             revision += 1
-            setup = PushSetupTestData.response(registered: true, revision: revision)
+            setup = PushSetupTestData.response(registered: true, revision: revision, preferences: preferences)
             data = setup
         } else if path == "/api/mobile/push/unregister" {
             data = Data(#"{"data":"ok"}"#.utf8)

@@ -37,7 +37,8 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     private(set) var deviceToken: String?
     private(set) var confirmed: PushSetup?
     private(set) var isSaving = false
-    private(set) var errorMessage: String?
+    var errorMessage: String? { failedPreferences?.message ?? registrationErrorMessage }
+    var unconfirmedPreferences: PushPreferences? { failedPreferences?.preferences }
     private(set) var verificationUnavailable = false
 
     private let system: any PushSystemBoundary
@@ -49,6 +50,8 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     private var uploads: [UUID: (generation: UUID, task: Task<Void, Never>)] = [:]
     private var grants: [UUID: (grant: RelayGrant, url: String)] = [:]
     private var uploadedToken: String?
+    private var registrationErrorMessage: String?
+    private var failedPreferences: FailedPreferenceSave?
     // One write/permission operation owns setup at a time. Reads must still own
     // their request and epoch, as Relay inspection can change at the same revision.
     private var setupEpoch = UUID()
@@ -70,7 +73,8 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         let next = apiClient.captureContext()
         if context?.generation != next?.generation {
             confirmed = nil
-            errorMessage = nil
+            registrationErrorMessage = nil
+            failedPreferences = nil
             uploadedToken = nil
             activeWrite = nil
             permissionRequest = nil
@@ -105,10 +109,11 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             let pending = pendingGrant(captured, url: setup.relayUrl)
             if pending != nil { setup.registered = false }
             confirmed = setup
+            confirmPreferenceSave(setup, captured: captured)
             verificationUnavailable = !relay.supported
             if pending != nil {
-                errorMessage = String(localized: "Notification setup failed. Retry to confirm registration.")
-            } else { errorMessage = nil }
+                registrationErrorMessage = String(localized: "Notification setup failed. Retry to confirm registration.")
+            } else { registrationErrorMessage = nil }
             if setup.preferences.enabled && permissionGranted && relay.supported {
                 system.register()
                 let remaining = setup.grantExpiresAt.flatMap { ISO8601DateFormatter.shared.date(from: $0) }?.timeIntervalSinceNow ?? 0
@@ -140,9 +145,10 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             guard ownsWrite(write, captured: captured) else { return }
             guard setup.revision >= (self.confirmed?.revision ?? 0) else { throw PushSetupError.unavailable }
             self.confirmed = setup
+            failedPreferences = nil
             if pendingGrant(captured, url: setup.relayUrl) != nil, preferences.enabled {
                 self.confirmed?.registered = false
-            } else { errorMessage = nil }
+            } else { registrationErrorMessage = nil }
             // Permission and grant cleanup follow the confirmed PUT. Releasing
             // this write first lets permission completion start its own upload.
             finishWrite(write)
@@ -162,7 +168,14 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 }
             }
 
-        } catch { if ownsWrite(write, captured: captured) { report(error, captured: captured) } }
+        } catch {
+            guard ownsWrite(write, captured: captured) else { return }
+            if case AuthError.staleIdentity = error { return }
+            failedPreferences = FailedPreferenceSave(
+                generation: captured.generation, expectedRevision: confirmed.revision, preferences: permitted,
+                message: AccountSecurityViewModel.message(for: error, fallback: String(localized: "Notification setup failed. Retry to confirm registration."))
+            )
+        }
     }
 
     func requestPermission() async {
@@ -198,7 +211,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     }
 
     nonisolated func didFailToRegisterForRemoteNotifications(error: Error) {
-        Task { @MainActor in self.errorMessage = String(localized: "APNs registration failed. Retry notification setup.") }
+        Task { @MainActor in self.registrationErrorMessage = String(localized: "APNs registration failed. Retry notification setup.") }
     }
 
     private func uploadToken(_ token: String, renew: Bool = false) {
@@ -249,7 +262,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 self.clearPending(captured)
                 self.confirmed = result
                 self.uploadedToken = token
-                self.errorMessage = nil
+                self.registrationErrorMessage = nil
             } catch {
                 if self.ownsWrite(id, captured: captured) { self.confirmed?.registered = false }
                 if case APIError.httpError(let status, _) = error, status == 403 { self.clearPending(captured) }
@@ -326,7 +339,7 @@ private extension PushNotificationManager {
             permissionGranted = granted
             authorizationStatus = status
             finishPermission(request)
-            if granted { system.register() } else { errorMessage = String(localized: "Notification permission is disabled. Open system settings to enable it.") }
+            if granted { system.register() } else { registrationErrorMessage = String(localized: "Notification permission is disabled. Open system settings to enable it.") }
             if granted, let deviceToken { uploadToken(deviceToken) }
         } catch { report(error, captured: captured) }
     }
@@ -383,11 +396,27 @@ private extension PushNotificationManager {
 
     func clearPending(_ context: MobileAuthenticationContext) { storage.delete(pendingKey(context)) }
 
+    func confirmPreferenceSave(_ setup: PushSetup, captured: MobileAuthenticationContext) {
+        // Called only after an owned GET. A registration response cannot prove
+        // that a failed preference write saved its intended category choices.
+        guard let failed = failedPreferences, failed.generation == captured.generation,
+              setup.revision > failed.expectedRevision, setup.preferences == failed.preferences,
+              !failed.preferences.security || setup.securityAllowed else { return }
+        failedPreferences = nil
+    }
+
     func report(_ error: Error, captured: MobileAuthenticationContext) {
         guard let apiClient, apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
         if case AuthError.staleIdentity = error { return }
-        errorMessage = AccountSecurityViewModel.message(for: error, fallback: String(localized: "Notification setup failed. Retry to confirm registration."))
+        registrationErrorMessage = AccountSecurityViewModel.message(for: error, fallback: String(localized: "Notification setup failed. Retry to confirm registration."))
     }
+}
+
+private struct FailedPreferenceSave {
+    let generation: UUID
+    let expectedRevision: Int64
+    let preferences: PushPreferences
+    let message: String
 }
 
 private struct PendingPushGrant: Codable {
