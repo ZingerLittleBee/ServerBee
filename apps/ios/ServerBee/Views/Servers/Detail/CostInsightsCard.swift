@@ -167,7 +167,7 @@ private extension CostInsightsCard {
     }
 
     func advisoriesView(_ advisories: [CostAdvisory]) -> some View {
-        FlowChips(items: advisories) { advisory in
+        FlexibleWrap(items: advisories) { advisory in
             Chip(text: advisory.label, systemImage: "exclamationmark.triangle.fill", color: .warningAmber)
         }
     }

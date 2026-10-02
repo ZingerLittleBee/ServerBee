@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use serverbee_common::types::{DiskIo, GpuReport, SystemInfo};
 use sysinfo::{Networks, ProcessRefreshKind, ProcessesToUpdate, System};
 
-use super::{cpu, disk, disk_io, load, memory, network, process, temperature, virtualization};
+use super::{disk, disk_io, network, process, temperature, virtualization};
 
 /// One connection's window onto the host: raw gauges, cumulative counters,
 /// and windowed per-device I/O rates. Implementations own whatever handles
@@ -62,13 +62,18 @@ impl SysinfoSource {
     pub(crate) fn system_info(&self) -> SystemInfo {
         SystemInfo {
             protocol_version: 0,
-            cpu_name: cpu::name(&self.sys),
-            cpu_cores: cpu::cores(&self.sys),
-            cpu_arch: cpu::arch(),
+            cpu_name: self
+                .sys
+                .cpus()
+                .first()
+                .map(|cpu| cpu.brand().to_string())
+                .unwrap_or_default(),
+            cpu_cores: self.sys.cpus().len() as i32,
+            cpu_arch: std::env::consts::ARCH.to_string(),
             os: resolve_os(),
             kernel_version: System::kernel_version().unwrap_or_default(),
-            mem_total: memory::mem_total(&self.sys),
-            swap_total: memory::swap_total(&self.sys),
+            mem_total: self.sys.total_memory() as i64,
+            swap_total: self.sys.total_swap() as i64,
             disk_total: disk::total(),
             ipv4: None,
             ipv6: None,
@@ -143,15 +148,15 @@ impl MetricsSource for SysinfoSource {
     }
 
     fn cpu_usage(&self) -> f64 {
-        cpu::usage(&self.sys)
+        self.sys.global_cpu_usage() as f64
     }
 
     fn mem_used(&self) -> i64 {
-        memory::mem_used(&self.sys)
+        self.sys.used_memory() as i64
     }
 
     fn swap_used(&self) -> i64 {
-        memory::swap_used(&self.sys)
+        self.sys.used_swap() as i64
     }
 
     fn disk_used(&self) -> i64 {
@@ -163,7 +168,11 @@ impl MetricsSource for SysinfoSource {
     }
 
     fn load_averages(&self) -> (f64, f64, f64) {
-        (load::load1(), load::load5(), load::load15())
+        (
+            System::load_average().one,
+            System::load_average().five,
+            System::load_average().fifteen,
+        )
     }
 
     fn tcp_connections(&self) -> i32 {

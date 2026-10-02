@@ -197,7 +197,7 @@ struct DockerContainerDetailView: View {
 
     private var portsCard: some View {
         SectionCard(String(localized: "Ports"), systemImage: "point.3.connected.trianglepath.dotted") {
-            FlowChips(items: container.ports.map { $0.display.maskingIPs(privacyMode) }) { port in
+            FlexibleWrap(items: container.ports.map { $0.display.maskingIPs(privacyMode) }) { port in
                 Chip(text: port, color: .networkColor)
             }
         }

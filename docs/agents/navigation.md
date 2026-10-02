@@ -51,7 +51,7 @@ The [initial architecture design](../superpowers/specs/2026-03-12-serverbee-arch
 | API schemas | `bun --filter @serverbee/web generate:api-types`; [dump_openapi](../../crates/server/examples/dump_openapi.rs). Inspect generated diffs and run relevant client checks |
 | Agent navigation and tooling | `bun run check:agent-navigation`, `bun run check:integration-targets`, `bun run test:tooling`; [navigation checker](../../scripts/check-agent-navigation.ts), [integration-target guard](../../scripts/check-integration-targets.ts) |
 
-The Makefile dispatches through `scripts/make-menu.ts`. Rust owns Server data through SQLite/SeaORM. The `packages/db`, `api`, and `auth` packages are scaffold code; their Drizzle/Turso commands are not Server migrations or auth.
+The Makefile dispatches through `scripts/make-menu.ts`. Rust owns Server data through SQLite/SeaORM.
 
 ## Frontend debugging with production data
 

@@ -1,7 +1,6 @@
 pub mod detectors;
 pub mod http;
 pub mod rule_engine;
-pub mod ssrf;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

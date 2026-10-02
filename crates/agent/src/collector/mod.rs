@@ -1,9 +1,6 @@
-mod cpu;
 mod disk;
 mod disk_io;
 mod gpu;
-mod load;
-mod memory;
 mod network;
 mod process;
 mod source;

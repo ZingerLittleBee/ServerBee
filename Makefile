@@ -37,17 +37,6 @@ COMMAND_TARGETS := \
 	docs-lint \
 	docs-format \
 	db-pull \
-	db-local \
-	db-push \
-	db-generate \
-	db-migrate \
-	db-studio \
-	db-local-direct \
-	db-push-direct \
-	db-generate-direct \
-	db-migrate-direct \
-	db-studio-direct \
-	ui-typecheck \
 	cargo-build \
 	cargo-build-release \
 	cargo-check \
