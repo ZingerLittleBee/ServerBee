@@ -59,18 +59,47 @@ function ResultOption({ item, onActive, onClick, optionId }: ResultOptionProps) 
 // shown once it is collapsed, and the half off screen is inert. The header has one too, hidden beside the sidebar.
 const searchButtons = '[data-search], [data-search-full]'
 
+/** What focus goes back to once the dialog closes. */
+interface Opener {
+  /**
+   * The control of the popup holding the element, if any. A popover, a menu or the table of contents closes once focus
+   * moves into the dialog or a click lands outside it, and takes the element with it.
+   */
+  controller: HTMLElement | null
+  /** The element focused before the dialog opened. */
+  element: HTMLElement
+}
+
+/** An element, with the control that names a popup holding it as the popup it controls. */
+function openerOf(element: Element | null): Opener | null {
+  if (!(element instanceof HTMLElement)) {
+    return null
+  }
+  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    const controller = ancestor.id
+      ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(ancestor.id)}"]`)
+      : null
+    if (controller) {
+      return { controller, element }
+    }
+  }
+  return { controller: null, element }
+}
+
 /**
  * Focuses the element focused before the dialog opened or, if the half of the sidebar holding it went off screen
- * meanwhile, its search button or sidebar toggle in the other half, and returns whether one took focus.
+ * meanwhile, its search button or sidebar toggle in the other half, or, if its popup closed, the popup's control, and
+ * returns whether one took focus.
  */
-function restoreFocus(opener: Element | null): boolean {
-  if (!(opener instanceof HTMLElement)) {
+function restoreFocus(opener: Opener | null): boolean {
+  if (!opener) {
     return false
   }
-  const twins = opener.matches(searchButtons) ? searchButtons : '[aria-controls="nd-sidebar"]'
+  const { controller, element } = opener
+  const twins = element.matches(searchButtons) ? searchButtons : '[aria-controls="nd-sidebar"]'
   // Of the twins, the first that takes focus: neither an inert one nor a hidden one does.
-  const candidates = opener.matches('[inert] *') ? document.querySelectorAll<HTMLElement>(twins) : [opener]
-  for (const candidate of candidates) {
+  const candidates = element.matches('[inert] *') ? [...document.querySelectorAll<HTMLElement>(twins)] : [element]
+  for (const candidate of controller ? [...candidates, controller] : candidates) {
     candidate.focus({ preventScroll: true })
     if (document.activeElement === candidate) {
       return true
@@ -121,7 +150,7 @@ export default function DocsSearchDialog(props: SharedProps) {
   }, [query.isLoading])
   // fumadocs opens the dialog without a Radix trigger, the element Radix hands focus back to, so focus fell to the page
   // when the dialog closed. It goes back to the element focused before, unless a result was chosen, which navigates.
-  const opener = useRef<Element | null>(null)
+  const opener = useRef<Opener | null>(null)
 
   return (
     <SearchDialog
@@ -141,7 +170,7 @@ export default function DocsSearchDialog(props: SharedProps) {
           }
         }}
         onOpenAutoFocus={() => {
-          opener.current = document.activeElement
+          opener.current = openerOf(document.activeElement)
         }}
       >
         <SearchDialogHeader>
