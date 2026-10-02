@@ -129,7 +129,7 @@ function restoreFocus(opener: Opener | null): boolean {
         // The page can move while the dialog is open, as on Back. Focus that was on screen stays on screen, and the
         // page stays where the reader left it otherwise.
         if (opener.onScreen && !isOnScreen(candidate)) {
-          candidate.scrollIntoView({ block: 'nearest' })
+          candidate.scrollIntoView({ block: 'center' })
         }
         return true
       }
