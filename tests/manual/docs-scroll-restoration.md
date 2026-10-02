@@ -26,6 +26,12 @@ browser's developer tools so that there is time to scroll before the page become
 - [ ] Reload a scrolled page, plain and with a fragment (`/en#faq`): it keeps its position.
 - [ ] Open `/en#faq` and `/en/docs/quick-start#manage-the-agent`: each lands on its target.
 
+## Back to a long page
+
+- [ ] On `/en/docs/configuration`, scroll most of the way down, follow a sidebar link, then press Back: the same line is
+      at the top as when you left. Safari landed lower by the room that the code blocks and tables above make for their
+      horizontal scrollbars.
+
 ## Back and Forward to entries with a fragment
 
 For each entry point: follow it, scroll on by about a screen, leave through a link to another page, then press Back.
