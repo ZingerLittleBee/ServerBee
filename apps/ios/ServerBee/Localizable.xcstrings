@@ -1,6 +1,57 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Task run succeeded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run succeeded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行成功"
+          }
+        }
+      }
+    },
+    "All %lld targets succeeded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All %lld targets succeeded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部 %lld 个目标运行成功。"
+          }
+        }
+      }
+    },
+    "Successful runs stay silent unless enabled. Only your complete task runs can notify you.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Successful runs stay silent unless enabled. Only your complete task runs can notify you."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成功运行默认不通知。启用后，仅你的完整任务运行可以通知你。"
+          }
+        }
+      }
+    },
     "Task run failed": {
       "extractionState": "manual",
       "localizations": {
@@ -86,19 +137,19 @@
         }
       }
     },
-    "Encrypted tests and final task failures are supported. Other categories remain under development.": {
+    "Encrypted tests and final task outcomes are supported. Other categories remain under development.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Encrypted tests and final task failures are supported. Other categories remain under development."
+            "value": "Encrypted tests and final task outcomes are supported. Other categories remain under development."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "支持加密测试通知和任务最终失败通知，其他类别仍在开发中。"
+            "value": "支持加密测试通知和任务最终结果通知，其他类别仍在开发中。"
           }
         }
       }
@@ -17697,7 +17748,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务成功"
+            "value": "成功的任务运行"
           }
         }
       }

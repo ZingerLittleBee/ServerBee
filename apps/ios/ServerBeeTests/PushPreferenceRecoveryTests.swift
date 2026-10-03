@@ -401,6 +401,40 @@ extension PushPreferenceRecoveryTests {
 }
 
 extension PushPreferenceRecoveryTests {
+    func testSuccessOptInAndOptOutRequireConfirmationAndKeepRejectedDraftVisible() async throws {
+        let http = PreferenceRecoveryHTTP()
+        PreferenceRecoveryURLProtocol.fixture = http
+        let auth = AuthManager()
+        login(auth)
+        let system = TestPushSystem()
+        system.status = .denied
+        let manager = manager(auth, system: system)
+        await manager.reconcile()
+        XCTAssertEqual(manager.confirmed?.preferences.taskSuccess, false)
+        XCTAssertEqual(manager.confirmed?.tasksAllowed, true)
+        for success in [true, false] {
+            let original = try XCTUnwrap(manager.confirmed?.preferences)
+            var desired = original
+            desired.taskSuccess = success
+            http.rejectSave()
+            await manager.savePreferences(desired)
+            let failure = try XCTUnwrap(manager.errorMessage)
+            await manager.reconcile()
+            await manager.retry()
+            XCTAssertEqual(manager.confirmed?.preferences, original)
+            XCTAssertEqual(manager.unconfirmedPreferences?.taskSuccess, success)
+            XCTAssertEqual(manager.errorMessage, failure)
+            http.acceptSave()
+            await manager.savePreferences(desired)
+            XCTAssertEqual(manager.confirmed?.preferences, desired)
+            XCTAssertNil(manager.errorMessage)
+            XCTAssertNil(manager.unconfirmedPreferences)
+        }
+        XCTAssertEqual(http.savedPreferences().map(\.taskSuccess), [true, true, false, false])
+        XCTAssertEqual(system.permissionRequests, 0)
+        await manager.waitForPendingRegistrations()
+    }
+
     func testTaskSubscriptionsUseCurrentServerPermissionWhenSavingAfterDemotion() async throws {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http

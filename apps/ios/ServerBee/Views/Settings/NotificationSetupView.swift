@@ -13,7 +13,7 @@ struct NotificationSetupView: View {
                     "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
                     "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
                 ))
-                Text("Encrypted tests and final task failures are supported. Other categories remain under development.")
+                Text("Encrypted tests and final task outcomes are supported. Other categories remain under development.")
                     .foregroundStyle(.secondary)
             } header: { Text("Mobile notification privacy") }
 
@@ -25,6 +25,9 @@ struct NotificationSetupView: View {
                 if manager.confirmed?.tasksAllowed == true {
                     Toggle("Final task failures", isOn: $draft.taskFailure)
                         .disabled(manager.confirmed?.taskFailureAvailable != true)
+                    Toggle("Successful task runs", isOn: $draft.taskSuccess)
+                    Text("Successful runs stay silent unless enabled. Only your complete task runs can notify you.")
+                        .foregroundStyle(.secondary)
                 }
                 if manager.confirmed?.preferences.enabled == true {
                     Button("Save subscriptions") { Task { await manager.savePreferences(draft) } }
@@ -86,15 +89,14 @@ struct NotificationSetupView: View {
             refreshDraft()
         }
         .onChange(of: manager.confirmed?.securityAllowed) { _, _ in refreshDraft() }
+        .onChange(of: manager.confirmed?.tasksAllowed) { _, _ in refreshDraft() }
     }
 
     private func refreshDraft() {
         guard let confirmed = manager.confirmed else { return }
         draft = manager.unconfirmedPreferences ?? confirmed.preferences
         if !confirmed.securityAllowed { draft.security = false }
-        if confirmed.tasksAllowed != true { draft.taskFailure = false }
-        // Successful-run delivery has not shipped yet.
-        draft.taskSuccess = confirmed.preferences.taskSuccess && confirmed.tasksAllowed == true
+        if confirmed.tasksAllowed != true { draft.taskFailure = false; draft.taskSuccess = false }
     }
 
     private var permissionLabel: String {

@@ -13,6 +13,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 #[path = "../common/mod.rs"]
 mod common;
+mod success;
 
 async fn subscribe(client: &reqwest::Client, base: &str, access: &str, device: &str) {
     queued_register(client, base, access, device).await;
@@ -354,12 +355,15 @@ async fn task_preferences_require_current_admin_and_reject_failed_save() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automatic_runs_select_creator_and_only_exhausted_final_attempt_notifies() {
     use chrono::Timelike;
-    for final_code in [0, 9] {
+    for (final_code, success_enabled) in [(0, false), (0, true), (9, true)] {
         let (base, state, _tmp, _) = queued_setup().await;
         let client = reqwest::Client::new();
         let creator = login_http(&client, &base, "admin", "automatic-owner").await;
         let access = creator["access_token"].as_str().unwrap();
         subscribe(&client, &base, access, "device-a").await;
+        if success_enabled {
+            success::preferences(&client, &base, access, true, true).await;
+        }
         AuthService::create_user(&state.db, "other-admin", "testpass", "admin")
             .await
             .unwrap();
@@ -369,6 +373,14 @@ async fn automatic_runs_select_creator_and_only_exhausted_final_attempt_notifies
             &base,
             other["access_token"].as_str().unwrap(),
             "other-device",
+        )
+        .await;
+        success::preferences(
+            &client,
+            &base,
+            other["access_token"].as_str().unwrap(),
+            true,
+            true,
         )
         .await;
         let (target, mut sink, mut reader) = agent(&client, &base, access).await;
@@ -393,10 +405,23 @@ async fn automatic_runs_select_creator_and_only_exhausted_final_attempt_notifies
         assert!(!run.manual);
         assert_eq!(run.owner_id, creator["user"]["id"].as_str().unwrap());
         let queued = jobs(&state).await;
-        assert_eq!(queued.len(), usize::from(final_code != 0));
+        assert_eq!(
+            queued.len(),
+            usize::from(final_code != 0 || success_enabled)
+        );
         if let Some(job) = queued.first() {
+            assert_eq!(job.installation_id, "automatic-owner");
+            assert_eq!(job.event_id, run.run_id);
             let content = plaintext(&state, job).await;
-            assert_eq!(content["task_run"]["failed"], 1);
+            assert_eq!(
+                content["kind"],
+                if final_code == 0 {
+                    "task_success"
+                } else {
+                    "task_failure"
+                }
+            );
+            assert_eq!(content["task_run"]["failed"], usize::from(final_code != 0));
             assert_eq!(content["task_run"]["total"], 1);
             assert!(!content.to_string().contains("sensitive-"));
         }
@@ -435,6 +460,7 @@ async fn scheduler_deadline_counts_timeout_and_cancellation_never_completes() {
         let owner = login_http(&client, &base, "admin", "timeout-owner").await;
         let access = owner["access_token"].as_str().unwrap();
         subscribe(&client, &base, access, "device-a").await;
+        success::preferences(&client, &base, access, true, true).await;
         let (target, _sink, mut reader) = agent(&client, &base, access).await;
         let id = task(&client, &base, access, &[target], 0, "0 0 0 * * *").await;
         let started = std::time::Instant::now();

@@ -67,6 +67,7 @@ pub(crate) async fn eligible(
     job: &outbox::Model,
 ) -> Result<Option<registration::Model>, AppError> {
     let now = Utc::now();
+    let mut task_success = None;
     if let Some(run_id) = job.task_run_id.as_deref() {
         if job.event_id != run_id {
             return Ok(None);
@@ -78,6 +79,15 @@ pub(crate) async fn eligible(
             .one(txn)
             .await?;
         let Some(run) = run else { return Ok(None) };
+        let summary = run.summary_json.as_deref().and_then(|json| {
+            serde_json::from_str::<super::push_envelope::TaskRunSummary>(json).ok()
+        });
+        let Some(summary) = summary.filter(|summary| {
+            summary.task_id == run.task_id && summary.run_id == run.run_id && summary.total > 0
+        }) else {
+            return Ok(None);
+        };
+        task_success = Some(summary.is_success());
         if job.recipient_role != "admin"
             || task::Entity::find_by_id(&run.task_id)
                 .filter(task::Column::TaskType.eq("scheduled"))
@@ -96,7 +106,13 @@ pub(crate) async fn eligible(
             && r.mobile_session_id == job.mobile_session_id
             && r.revision == job.registration_revision
             && r.enabled
-            && (job.task_run_id.is_none() || r.task_failure)
+            && task_success.is_none_or(|success| {
+                if success {
+                    r.task_success
+                } else {
+                    r.task_failure
+                }
+            })
             && r.content_key.is_some()
             && r.grant_token.is_some()
             && r.grant_expires_at.is_some_and(|e| e > now)

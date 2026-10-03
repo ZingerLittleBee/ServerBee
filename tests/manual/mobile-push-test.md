@@ -220,7 +220,7 @@ the task owner and a third as another administrator. Manually run a scheduled
 task created by the other administrator and verify that only the initiator's
 installations receive the final summary. For an automatic run, only the creator
 should receive it. Hold one target while others fail; observe no summary before
-its final reply. Check retry-success silence, exhausted failure, command timeout,
+its final reply. Check default retry-success silence, opted-in final retry success, exhausted failure, command timeout,
 scheduler deadline, offline and capability-denial counts, including all-denied
 runs. Confirm that the banner contains no task name, command or output.
 
@@ -228,7 +228,7 @@ Record APNs provider acceptance, foreground/background/terminated presentation
 and exact-run authenticated navigation separately. Tap after deleting the task,
 revoking administrator access, switching accounts and during cold launch; verify
 safe fallback or rejection. Queued delivery must stop after current role or
-subscription revocation. Successful-run notification delivery belongs to #204.
+subscription revocation. Successful-run delivery is disabled by default. Enable **Successful task runs** only on one owner installation and confirm one final success summary for that installation, with no command or output. Disable **Final task failures** on it to verify the success option is independent. A mixed-target failure must follow only the failure subscription. Opt out while success is queued, or demote the owner before dispatch; neither may send. A failed save must retain the confirmed preference and display the unconfirmed choice and error. Run these cases after restart as well, preserving the original run identity and deadline.
 
 The task recovery cases inject a real SQLite INSERT failure after actual scheduler
 final attempts, preserve a separately committed drained summary, and restore the
@@ -243,7 +243,7 @@ time. Advancing only persisted expiry timestamps tests the clock boundary; no
 internal policy or scheduler boundary is substituted. A process interrupted
 before a drain proof commits remains incomplete, even if it already has results.
 
-For signed-device acceptance, deliver a task failure, wait more than 30 minutes,
+For signed-device acceptance, deliver both an opted-in task success and a task failure, wait more than 30 minutes,
 and tap it in both a warm and a terminated app. Verify the exact run opens with
 current Server authorization. Repeat after access revocation, task deletion and
 account replacement, checking fallback and isolation. Record these rows as NOT RUN

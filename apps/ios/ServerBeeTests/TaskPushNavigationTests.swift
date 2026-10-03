@@ -14,10 +14,13 @@ final class TaskPushNavigationTests: XCTestCase {
                                     generation: UUID(), accessToken: "fixture-access", revocationToken: "fixture-proof", refreshToken: "fixture-refresh")
     }
 
-    private func encrypted(_ context: MobileAuthenticationContext, invalid: Bool = false, age: Int64 = 0) throws -> (PushEnvelope, PushContentKey) {
+    private func encrypted(_ context: MobileAuthenticationContext, invalid: Bool = false, age: Int64 = 0,
+                           success: Bool = false, kind: String? = nil, total: Int = 4) throws -> (PushEnvelope, PushContentKey) {
         let now = Int64(Date().timeIntervalSince1970) - age
-        let summary = TaskRunPushSummary(taskId: taskId, runId: runId, total: 4, failed: invalid ? -1 : 1, timedOut: 1, offline: 1, denied: 1)
-        let content = PushContent(kind: "task_failure", deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
+        let summary = TaskRunPushSummary(taskId: taskId, runId: runId, total: total, failed: invalid ? -1 : (success ? 0 : 1),
+                                         timedOut: success ? 0 : 1, offline: success ? 0 : 1, denied: success ? 0 : 1)
+        let content = PushContent(kind: kind ?? (success ? "task_success" : "task_failure"),
+                                  deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
                                   eventId: runId, createdAt: now, expiresAt: now + 1800, taskRun: summary)
         let key = PushContentKey(keyId: "task-key", key: Data(repeating: 7, count: 32).base64EncodedString(), deploymentId: context.serverUrl,
                                  userId: context.userId, installationId: context.installationId, scope: context.pushScope)
@@ -111,6 +114,67 @@ final class TaskPushNavigationTests: XCTestCase {
 }
 
 extension TaskPushNavigationTests {
+    func testSuccessUsesActualExtensionAndEarlyAuthenticatedExactRunNavigation() throws {
+        let current = context()
+        let (envelope, key) = try encrypted(current, success: true)
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))
+        let input = UNMutableNotificationContent()
+        input.body = "untrusted-command-output"
+        input.userInfo = ["serverbee_envelope": object]
+        let service = NotificationService()
+        service.loadKey = { key }
+        var completions = 0
+        service.didReceive(UNNotificationRequest(identifier: "success", content: input, trigger: nil)) { rendered in
+            completions += 1
+            XCTAssertEqual(rendered.title, String(localized: "Task run succeeded"))
+            XCTAssertEqual(rendered.body, String(format: String(localized: "All %lld targets succeeded."), Int64(4)))
+            XCTAssertFalse(rendered.body.contains(input.body))
+            XCTAssertNotNil(rendered.userInfo["serverbee_envelope"])
+        }
+        service.serviceExtensionTimeWillExpire()
+        XCTAssertEqual(completions, 1)
+        let delegate = AppDelegate()
+        delegate.bufferNotification(userInfo: ["serverbee_envelope": object])
+        let router = PushNotificationRouter()
+        delegate.pushRouter = router
+        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
+        router.enqueue(envelope: envelope)
+        XCTAssertNil(router.consumeAccountTarget(context: context(user: "bob"), key: key))
+    }
+
+    func testSuccessRejectsFailureCountsEmptyTargetsAndKindMismatch() throws {
+        let current = context()
+        let candidates = [
+            try encrypted(current, kind: "task_success"),
+            try encrypted(current, success: true, kind: "task_failure"),
+            try encrypted(current, success: true, total: 0),
+            try encrypted(current, invalid: true, success: true)
+        ]
+        for (envelope, key) in candidates {
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
+            let router = PushNotificationRouter()
+            router.enqueue(envelope: envelope)
+            XCTAssertNil(router.consumeAccountTarget(context: current, key: key))
+            let input = UNMutableNotificationContent()
+            input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))]
+            let rendered = PushNotificationRenderer.render(input, key: key)
+            XCTAssertEqual(rendered.body, String(localized: "Open ServerBee to view this notification."))
+            XCTAssertTrue(rendered.userInfo.isEmpty)
+        }
+    }
+
+    func testLateSuccessTapKeepsRunButExpiredNewDeliveryRemainsGeneric() throws {
+        let current = context()
+        let (envelope, key) = try encrypted(current, age: 3600, success: true)
+        XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
+        let router = PushNotificationRouter()
+        router.enqueue(envelope: envelope)
+        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
+        let input = UNMutableNotificationContent()
+        input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))]
+        XCTAssertTrue(PushNotificationRenderer.render(input, key: key).userInfo.isEmpty)
+    }
+
     func testInFlightResultsCannotAppearAfterAccountReplacement() async throws {
         URLProtocol.registerClass(PushLifecycleURLProtocol.self)
         defer {

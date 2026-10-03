@@ -63,8 +63,9 @@ struct TaskRunPushSummary: Codable, Sendable, Equatable {
               total > 0, total <= 100_000,
               [failed, timedOut, offline, denied].allSatisfy({ $0 >= 0 && $0 <= total }) else { return false }
         let failures = failed + timedOut + offline + denied
-        return failures > 0 && failures <= total
+        return failures <= total
     }
+    var isSuccess: Bool { isValid && failed == 0 && timedOut == 0 && offline == 0 && denied == 0 }
 }
 
 struct PushContentKey: Codable, Sendable {
@@ -111,13 +112,14 @@ enum PushEnvelopeDecoder {
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
         guard content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
-              (!requireUnexpired || content.expiresAt > now), content.createdAt <= now + 60,
+              !requireUnexpired || content.expiresAt > now, content.createdAt <= now + 60,
               content.expiresAt - content.createdAt == 1800 else { throw PushEnvelopeError.invalid }
         switch content.kind {
         case "test":
             guard UUID(uuidString: content.eventId) != nil, content.taskRun == nil else { throw PushEnvelopeError.invalid }
-        case "task_failure":
+        case "task_failure", "task_success":
             guard let run = content.taskRun, run.isValid,
+                  run.isSuccess == (content.kind == "task_success"),
                   content.eventId == run.runId else { throw PushEnvelopeError.invalid }
         default: throw PushEnvelopeError.invalid
         }
@@ -176,9 +178,14 @@ enum PushNotificationRenderer {
               let targetData = try? JSONEncoder().encode(content),
               let target = try? JSONSerialization.jsonObject(with: targetData) else { return result }
         if let run = content.taskRun {
-            result.title = String(localized: "Task run failed")
-            result.body = String(format: String(localized: "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld."),
-                                 Int64(run.total), Int64(run.failed), Int64(run.timedOut), Int64(run.offline), Int64(run.denied))
+            if run.isSuccess {
+                result.title = String(localized: "Task run succeeded")
+                result.body = String(format: String(localized: "All %lld targets succeeded."), Int64(run.total))
+            } else {
+                result.title = String(localized: "Task run failed")
+                result.body = String(format: String(localized: "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld."),
+                                     Int64(run.total), Int64(run.failed), Int64(run.timedOut), Int64(run.offline), Int64(run.denied))
+            }
         } else {
             result.title = String(localized: "Test notification")
             result.body = String(localized: "Your encrypted ServerBee notification is ready.")

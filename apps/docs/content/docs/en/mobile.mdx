@@ -4,7 +4,7 @@ description: Native iOS app for ServerBee with QR pairing, push notifications, a
 icon: Smartphone
 ---
 
-ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup and final scheduled-task failure notifications are available. Alert and security delivery remain under development.
+ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup and final scheduled-task outcome notifications are available, with successes requiring opt-in. Alert and security delivery remain under development.
 
 ## Availability
 
@@ -21,7 +21,7 @@ Source builds require your Apple development team. The official-app design keeps
 ## Features
 
 - **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
-- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task-failure delivery for administrators
+- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task outcomes for administrator owners, with success opt-in
 - **Real-time Metrics** -- Live server status, CPU, memory, disk, and network metrics streamed via WebSocket
 - **Alert History** -- View recent alerts and their status (triggered/resolved) with detailed information
 - **Secure Authentication** -- Bearer token-based auth with automatic refresh (15-min access token, 30-day refresh token)
@@ -82,7 +82,7 @@ The device will be immediately logged out and all its tokens invalidated.
 
 ## Verified Notification Setup
 
-Signing in does not request notification permission. Open **Settings → Notifications**, choose subscriptions, then tap **Enable notifications**. The Server confirms the saved preferences before iOS asks for permission. Security and task subscriptions require an administrator. Successful-task delivery remains under development.
+Signing in does not request notification permission. Open **Settings → Notifications**, choose subscriptions, then tap **Enable notifications**. The Server confirms the saved preferences before iOS asks for permission. Security and task subscriptions require an administrator. Successful-task delivery is disabled by default; eligible task recipients can opt in.
 
 The notification page uses permissions confirmed by the Server, even if the cached login role is outdated. After an administrator is demoted, saving subscriptions or disabling notifications clears unavailable security and task categories. Failed saves do not replace the confirmed preferences.
 
@@ -90,7 +90,7 @@ A failed subscription save remains visible after returning to the app, reconnect
 
 The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Unsupported or rejected App Attest leaves push unavailable while login and monitoring continue to work. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
 
-**Setup confirmation does not mean category delivery is operational.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures use the same encrypted pipeline; alert, security and successful-task delivery remain under development.
+**Setup confirmation does not mean category delivery is operational.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures and opted-in successes use the same encrypted pipeline; alert and security delivery remain under development.
 
 Tests first enter a durable encrypted Server outbox. **Pending** means queued locally, **Retryable** means provider acceptance is unconfirmed and another attempt is scheduled, **Accepted** is an APNs provider receipt, **Permanent** stops retries, and **Expired** ends the test 30 minutes after its original creation. Retries and Server restarts never extend that deadline. The screen refreshes the current test status; retrying a lost response retains the same logical test identity. Delivery can be duplicated after an ambiguous network failure, so neither acceptance nor retry promises exactly-once display.
 
@@ -98,9 +98,15 @@ Before every attempt the Server checks the account, current role, mobile session
 
 ### Final Task Failures
 
-Enable **Final task failures** as an administrator. A manually started scheduled task notifies its initiator; an automatic run notifies its creator, independently of other subscribed administrators. Each eligible installation receives one logical summary after all targets finish their final attempts. Intermediate failures followed by retry success remain silent. Final failed exits, timeouts, offline targets and execution denials are counted separately, including runs with no executable targets. Interrupted or incomplete runs are never treated as successful. After all final attempts drain, the Server durably records their summary before queue admission. A failed admission or Server restart automatically retries that recorded summary with the original run identity and 30-minute delivery window, checking current access and subscriptions again. Intermediate retry rows are not a completion signal.
+Enable **Final task failures** as an administrator. A manually started scheduled task notifies its initiator; an automatic run notifies its creator, independently of other subscribed administrators. Each eligible installation receives one logical summary after all targets finish their final attempts. Intermediate failures stay silent; a successful final retry follows the success opt-in policy. Final failed exits, timeouts, offline targets and execution denials are counted separately, including runs with no executable targets. Interrupted or incomplete runs are never treated as successful. After all final attempts drain, the Server durably records their summary before queue admission. A failed admission or Server restart automatically retries that recorded summary with the original run identity and 30-minute delivery window, checking current access and subscriptions again. Intermediate retry rows are not a completion signal.
 
-Summaries contain counts and task/run identifiers, never task names, commands or command output. Tapping opens authenticated results filtered to that exact run, including when an already displayed notification is tapped after its delivery window. Expired new deliveries still render a generic fallback; a tap retains the authenticated target and checks current Server access. Deleted tasks, unavailable runs or lost access show a dismissible fallback; old account/deployment notifications cannot navigate. Current administrator access, ownership and subscription are checked again before queued delivery. No notification group is required. Successful-run notifications are not available yet.
+Summaries contain counts and task/run identifiers, never task names, commands or command output. Tapping opens authenticated results filtered to that exact run, including when an already displayed notification is tapped after its delivery window. Expired new deliveries still render a generic fallback; a tap retains the authenticated target and checks current Server access. Deleted tasks, unavailable runs or lost access show a dismissible fallback; old account/deployment notifications cannot navigate. Current administrator access, ownership and subscription are checked again before queued delivery. No notification group is required. Successful-run notifications require a separate opt-in.
+
+### Successful Task Runs
+
+**Successful task runs** is disabled by default and appears only when the Server confirms current task access. Enable it and save subscriptions to receive one encrypted summary for a complete run in which every target ultimately succeeded, including success after a retry. This choice is independent of **Final task failures**; a mixed or failed run follows only the failure subscription and never emits a duplicate success summary. Interrupted, cancelled or incomplete runs cannot produce a success summary.
+
+Successful summaries use the same initiator/creator ownership, per-installation eligibility, run identity, authenticated navigation and 30-minute window as failures. They contain only counts and identifiers, never task names, commands or output. Failed saves retain the previous confirmed preference and keep the unconfirmed choice and error visible. Opting out or losing administrator access cancels pending eligible success delivery when the queue rechecks access before sending; in-flight or accepted APNs requests cannot be retracted.
 
 ### Privacy Boundary
 
@@ -139,7 +145,7 @@ APNs transport uses publisher-only signing inputs `APNS_TEAM_ID`, `APNS_KEY_ID`,
 - App Attest requires a supported physical device and matching signing capabilities. Simulator success is not device verification.
 - Use the final HTTPS Server URL before registering a content key. Server requests reject redirects; failed setup can be retried at the configured endpoint.
 - Check signing for the app-private credential group and the app/extension shared content-key group. Decryption failures show generic text.
-- Enable **Final task failures** as an administrator. Alert, security and successful-task delivery remain under development.
+- Enable **Final task failures** as an administrator. Alert and security delivery remain under development.
 
 ### Authentication Failures
 

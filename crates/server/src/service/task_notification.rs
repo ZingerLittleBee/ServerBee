@@ -148,17 +148,20 @@ pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<()
     update.update(&txn).await?;
     let now = Utc::now().timestamp();
     // Keep the original 30-minute window even after admission failure/restart.
-    // Success delivery is a separate ticket; completed successes stay silent.
-    if created_at + 1800 <= now
-        || summary.failed + summary.timed_out + summary.offline + summary.denied == 0
-    {
+    if created_at + 1800 <= now {
         txn.commit().await?;
         return Ok(());
     }
+    let success = summary.is_success();
+    let preference = if success {
+        registration::Column::TaskSuccess
+    } else {
+        registration::Column::TaskFailure
+    };
     let registrations = registration::Entity::find()
         .filter(registration::Column::UserId.eq(&run.owner_id))
         .filter(registration::Column::Enabled.eq(true))
-        .filter(registration::Column::TaskFailure.eq(true))
+        .filter(preference.eq(true))
         .all(&txn)
         .await?;
     for row in registrations {
@@ -192,7 +195,12 @@ pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<()
             continue;
         };
         let content = PushContent {
-            kind: "task_failure".into(),
+            kind: if success {
+                "task_success"
+            } else {
+                "task_failure"
+            }
+            .into(),
             deployment_id: deployment.clone(),
             user_id: run.owner_id.clone(),
             installation_id: row.installation_id,

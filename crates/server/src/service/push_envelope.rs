@@ -47,6 +47,16 @@ pub struct TaskRunSummary {
     pub denied: usize,
 }
 
+impl TaskRunSummary {
+    pub(crate) fn is_success(&self) -> bool {
+        self.total > 0
+            && self.failed == 0
+            && self.timed_out == 0
+            && self.offline == 0
+            && self.denied == 0
+    }
+}
+
 pub fn identity(deployment: &str, user: &str, installation: &str) -> Result<String, AppError> {
     let canonical = serde_json::to_vec(&[deployment, user, installation])
         .map_err(|_| AppError::Internal("Push identity encoding failed".into()))?;
