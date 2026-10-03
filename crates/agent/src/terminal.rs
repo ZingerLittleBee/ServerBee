@@ -25,11 +25,22 @@ struct PtySession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
+/// A shell fixture and its actual top-level PTY child, scoped to one reporter.
+/// No process environment or production shell selection is changed.
+#[cfg(test)]
+#[derive(Clone)]
+pub(crate) struct TerminalTestShell {
+    pub executable: &'static str,
+    pub child_pid: Arc<std::sync::atomic::AtomicU32>,
+}
+
 /// Manages PTY terminal sessions on the agent.
 pub struct TerminalManager {
     sessions: HashMap<String, PtySession>,
     event_tx: mpsc::Sender<TerminalEvent>,
     capabilities: Arc<CapabilityAuthority>,
+    #[cfg(test)]
+    test_shell: Option<TerminalTestShell>,
 }
 
 impl TerminalManager {
@@ -41,7 +52,14 @@ impl TerminalManager {
             sessions: HashMap::new(),
             event_tx,
             capabilities,
+            #[cfg(test)]
+            test_shell: None,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_shell(&mut self, shell: TerminalTestShell) {
+        self.test_shell = Some(shell);
     }
 
     /// Open a new terminal session with the given dimensions.
@@ -105,8 +123,19 @@ impl TerminalManager {
 
         // Determine the user's shell
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        #[cfg(test)]
+        let shell = self
+            .test_shell
+            .as_ref()
+            .map_or(shell, |fixture| fixture.executable.to_string());
         let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
+        #[cfg(test)]
+        if self.test_shell.is_some() {
+            // Keep startup scripts out of the controlled fixture's child only.
+            cmd.env("ENV", "");
+            cmd.env("BASH_ENV", "");
+        }
 
         let child = match pair.slave.spawn_command(cmd) {
             Ok(c) => c,
@@ -175,6 +204,16 @@ impl TerminalManager {
                 child,
             },
         );
+
+        #[cfg(test)]
+        if let Some(fixture) = &self.test_shell
+            && let Some(session) = self.sessions.get(&session_id)
+        {
+            fixture.child_pid.store(
+                session.child.process_id().unwrap_or_default(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
+        }
 
         // Notify that session started
         let tx = self.event_tx.clone();

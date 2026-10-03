@@ -24,9 +24,10 @@ struct PushContent: Codable, Sendable, Equatable {
     let createdAt: Int64
     let expiresAt: Int64
     var taskRun: TaskRunPushSummary?
+    var alert: AlertPushTarget?
     enum CodingKeys: String, CodingKey {
         case taskRun = "task_run"
-        case kind
+        case kind, alert
         case deploymentId = "deployment_id"
         case userId = "user_id"
         case installationId = "installation_id"
@@ -68,6 +69,27 @@ struct TaskRunPushSummary: Codable, Sendable, Equatable {
     var isSuccess: Bool { isValid && failed == 0 && timedOut == 0 && offline == 0 && denied == 0 }
 }
 
+struct AlertPushTarget: Codable, Sendable, Equatable {
+    let alertKey: String
+    let status: String
+    let ruleName: String
+    let serverName: String
+    enum CodingKeys: String, CodingKey {
+        case alertKey = "alert_key"
+        case status
+        case ruleName = "rule_name"
+        case serverName = "server_name"
+    }
+    var isValid: Bool {
+        guard ["firing", "resolved"].contains(status), alertKey.hasPrefix("v1."), alertKey.count <= 4099 else { return false }
+        var encoded = String(alertKey.dropFirst(3)).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        guard let data = Data(base64Encoded: encoded), let parts = try? JSONDecoder().decode([String].self, from: data),
+              parts.count == 4, !parts[0].isEmpty, !parts[1].isEmpty, !parts[3].isEmpty else { return false }
+        return true
+    }
+}
+
 struct PushContentKey: Codable, Sendable {
     static let storageKey = "serverbee_active_push_content_key"
     let keyId: String
@@ -88,18 +110,14 @@ struct PushContentKey: Codable, Sendable {
 enum PushEnvelopeError: Error { case invalid }
 
 enum PushEnvelopeDecoder {
-    static func decrypt(_ envelope: PushEnvelope, key: PushContentKey, now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> PushContent {
-        try decode(envelope, key: key, now: now, requireUnexpired: true)
+    enum Purpose {
+        case delivery
+        case notificationTap
     }
 
-    /// A displayed notification may be tapped later. Delivery expiry does not
-    /// revoke its authenticated target; the Server still authorizes each read.
-    static func decryptForNavigation(_ envelope: PushEnvelope, key: PushContentKey,
-                                     now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> PushContent {
-        try decode(envelope, key: key, now: now, requireUnexpired: false)
-    }
-
-    private static func decode(_ envelope: PushEnvelope, key: PushContentKey, now: Int64, requireUnexpired: Bool) throws -> PushContent {
+    static func decrypt(
+        _ envelope: PushEnvelope, key: PushContentKey, now: Int64 = Int64(Date().timeIntervalSince1970), purpose: Purpose = .delivery
+    ) throws -> PushContent {
         guard envelope.version == 1, envelope.keyId == key.keyId, envelope.ciphertext.count <= 2760,
               let secret = Data(base64Encoded: key.key), secret.count == 32,
               let nonce = Data(base64Encoded: envelope.nonce), nonce.count == 12,
@@ -110,15 +128,23 @@ enum PushEnvelopeDecoder {
         let sealed = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: ciphertext.dropLast(16), tag: ciphertext.suffix(16))
         let bytes = try AES.GCM.open(sealed, using: SymmetricKey(data: secret), authenticating: aad)
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
+        let lifetime = content.expiresAt.subtractingReportingOverflow(content.createdAt)
+        let futureLimit = now.addingReportingOverflow(60)
+        let allowsCurrentTime = purpose == .notificationTap || content.expiresAt > now
+        // Delivery expires after 30 minutes. A displayed notification's tap
+        // authenticates the original target before a current Server lookup.
         guard content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
-              !requireUnexpired || content.expiresAt > now, content.createdAt <= now + 60,
-              content.expiresAt - content.createdAt == 1800 else { throw PushEnvelopeError.invalid }
+              UUID(uuidString: content.eventId) != nil, allowsCurrentTime,
+              !futureLimit.overflow, content.createdAt <= futureLimit.partialValue,
+              !lifetime.overflow, lifetime.partialValue == 1800 else { throw PushEnvelopeError.invalid }
         switch content.kind {
         case "test":
-            guard UUID(uuidString: content.eventId) != nil, content.taskRun == nil else { throw PushEnvelopeError.invalid }
+            guard content.taskRun == nil, content.alert == nil else { throw PushEnvelopeError.invalid }
+        case "alert":
+            guard content.taskRun == nil, content.alert?.isValid == true else { throw PushEnvelopeError.invalid }
         case "task_failure", "task_success":
-            guard let run = content.taskRun, run.isValid,
+            guard content.alert == nil, let run = content.taskRun, run.isValid,
                   run.isSuccess == (content.kind == "task_success"),
                   content.eventId == run.runId else { throw PushEnvelopeError.invalid }
         default: throw PushEnvelopeError.invalid
@@ -177,7 +203,10 @@ enum PushNotificationRenderer {
               let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key, now: now),
               let targetData = try? JSONEncoder().encode(content),
               let target = try? JSONSerialization.jsonObject(with: targetData) else { return result }
-        if let run = content.taskRun {
+        if let alert = content.alert {
+            result.title = alert.status == "resolved" ? String(localized: "Alert recovered") : String(localized: "Alert triggered")
+            result.body = String(format: String(localized: "%@ on %@"), alert.ruleName, alert.serverName)
+        } else if let run = content.taskRun {
             if run.isSuccess {
                 result.title = String(localized: "Task run succeeded")
                 result.body = String(format: String(localized: "All %lld targets succeeded."), Int64(run.total))

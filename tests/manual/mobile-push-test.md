@@ -248,3 +248,91 @@ and tap it in both a warm and a terminated app. Verify the exact run opens with
 current Server authorization. Repeat after access revocation, task deletion and
 account replacement, checking fallback and isolation. Record these rows as NOT RUN
 until separately observed; encrypted fixture navigation does not prove native taps.
+
+
+## Alert subscription acceptance (#201)
+
+Run the Server `mobile_push_integration` tests whose names start with `alert_`,
+plus `event_alerts_enqueue_general_category_but_security_matches_do_not`.
+They use HTTP-created rules, subscriptions and authenticated sessions, migrated
+SQLite, production evaluation, and the production outbox worker. Only the
+external Relay HTTP boundary is substituted. The shared fixed alert-envelope
+vector is checked by Rust and Swift; `AlertPushNavigationTests` uses the actual
+notification extension for live-time trigger/recovery rendering and the early
+delegate/router path for cold taps. Run iOS tests once in English and once with
+`-AppleLanguages (zh-Hans)` to observe both localized titles and bodies.
+
+On the isolated signed real device, enable **Alerts and recoveries**, then
+verify a trigger and recovery without a notification group in foreground,
+background and terminated states. Record provider acceptance, observed banner,
+and authenticated alert-detail navigation separately. Verify old-account and
+old-deployment taps cannot navigate; delete the rule or rearm the alert before
+tapping an old cycle and verify **Alert not found** / **Back to alerts**. Unsubscribe
+before dispatch and confirm that installation receives no later eligible send;
+a second subscribed installation must still receive its own event. Verify
+maintenance, disabled rules and repeat suppression against external-channel
+behavior. Genuine App Attest and APNs presentation remain separate live evidence.
+
+
+The rollback/restart tests inject a second-recipient INSERT failure and a deferred
+SQLite COMMIT failure for trigger, recovery and rearm. They verify all recipient
+jobs, state and cache roll back together, then reopen the database and successfully
+admit one logical event without changing its committed creation/expiry on retry.
+`alert_delivery_expiry_preserves_current_authenticated_detail_lookup` separately
+checks the production worker's expiry, current HTTP authorization and deleted-target
+response. Run these cases and both shared-category migration tests on the frozen SHA.
+
+For receiving, `AlertPushNavigationTests` covers cold taps after one hour and warm
+taps after seven days through the production renderer, delegate and router. It also
+checks normal delivery/NSE expiry, tampering, login/deployment/installation isolation,
+bounded ciphertext and current detail fetch with 403/404 fallback. On the signed
+isolated device, leave an already-presented alert for more than 30 minutes before
+warm and cold taps. Its exact detail must still resolve or show the safe fallback;
+an expired notification arriving for the first time must not render alert content.
+These are separate from provider acceptance and still require live device evidence.
+
+
+## One-shot event durability (#201 correction)
+
+Migration `m20261003_000084_alert_event_intents` is reserved for this ticket.
+`ws_ip_event_intents_recover_insert_and_commit_failures_on_startup` sends real
+IpChanged and SystemInfo frames, fails second-recipient INSERT or actual COMMIT,
+and reopens migrated file SQLite. The production startup evaluator must recover
+without another IP transition, retaining the original cycle, event time and
+30-minute deadline. A second event pending admission must respect once suppression.
+`ws_ip_event_replay_rechecks_installation_eligibility` disables an installation
+before replay. `ws_ip_intent_capture_failure_does_not_consume_source_update`
+verifies failed durable capture rolls back source addresses and closes the socket;
+reconnection with the same current SystemInfo IP recovers the unconsumed change.
+`ws_event_replay_does_not_restart_an_expired_mobile_deadline` checks mobile expiry
+independently of the existing best-effort external group. Captured intents contain
+only pending event metadata and are removed atomically with alert state/jobs.
+External group dispatch follows that successful commit and is not repeated by
+subsequent event-job retries or normal startup replay. Provider acceptance and
+real signed-device presentation remain separate evidence.
+
+### Capability source recovery
+
+- On an enrolled Agent, grant a high-risk temporary capability after enabling a `capability_grant_detected` rule. With intent INSERT or deferred COMMIT failing, confirm no admission Ack, alert state, outbox, or capability-change audit is committed. Remove the fault and reconnect/restart the Agent and Server without a second grant. The original journal event must be admitted once, preserve its original time and 30-minute mobile deadline, and reach each currently eligible installation and existing external group once.
+- Revoke the capability before the original event is acknowledged. Replay must report the current authority snapshot and never restore the revoked permission. Low-risk Granted, Expired and Revoked remain audited without new alerts. Once-mode suppression applies to distinct later grants. Replay after 30 minutes must skip mobile delivery without extending expiry; external channels retain their existing policy.
+- A Server advertises `capability_event_ack` in Welcome and acknowledges only frames carrying the original `occurred_at`; legacy frames keep their existing response behavior. Older Servers retain the existing fire-and-forget transition behavior, which consumes journal entries after an attempted send and discards older unsent entries on connect to avoid duplicate legacy alerts after a peer upgrade; modern source recovery requires both updated Agent and Server. The Agent retains original events across reconnect/restart, removes them only after Ack on its current owned socket, and discards prior-destination events when the confirmed deployment/enrolled Server changes. Existing grants at first journal initialization are not reconstructed as new grants. A new journal whose initial write fails remains pending while reporting and locally authorized commands continue. An existing readable journal is not rewritten during startup. An unreadable or corrupt existing journal still rejects startup without overwriting retained events; storage must be repaired before it can recover. Later write failures keep original events and observed times in memory, apply current local authority immediately, and retry persistence. Events that have never reached durable storage cannot survive process loss during that storage outage.
+
+- With a real Reporter and live PTY, block journal temporary-file creation, then revoke terminal while a source retry is pending. Also fail an owned Ack deletion before forcing reconnect. `reporter_dirty_journal_retry_reaps_revoked_pty_and_recovers_original_event` and `reporter_ack_write_failure_keeps_source_and_reaps_pty_before_reconnect` drive real grant-file ticks, WebSockets and shells that ignore HUP. These three fixtures select `/bin/sh` on their own Reporter instance without changing process-wide `SHELL`; the shell-published PID must match the actual top-level PTY child and be a live waitable child of the test process. The old PID must disappear and already be reaped by production; restoring storage must replay the same source UUID/time using current revoked authority. `reporter_startup_write_failure_preserves_duties_and_cancellation_reaps_pty` verifies initial write failure does not stop reporting or authorized terminal commands, and cancellation cleans the real child while the server socket remains open. Journal errors do not consume a source or abandon connection resources; runtime Drop invokes the same explicit shutdown on every exit path.
+
+
+## Combined alert and task integration checkpoint
+
+`task_outcomes::alerts_and_final_tasks_share_queue_without_crossing_subscription_gates`
+queues an alert and a real final scheduler outcome in the same migrated SQLite
+store. It verifies independent installation subscriptions, failure and success
+categories, original deadlines and single-recipient dispatch after an HTTP opt-out.
+It also represents an already queued task upgraded from the accepted task schema,
+where the newly added category column defaults to `test`; the retained task target
+must still require current ownership, role and outcome-specific preference.
+`shared_category_and_task_migrations_preserve_both_integration_orders` runs the
+actual category and task migrations in both orders and preserves ciphertext,
+revision, task targets and all existing preference columns.
+`TaskPushNavigationTests.testTaskCategoryRejectsMixedAlertTargetsForDeliveryAndLateTaps`
+rejects an authenticated task payload containing a second valid alert target.
+Run these checks on the final officially generated combined SHA. Source parsing
+and parent check results do not establish their execution or signed-device delivery.

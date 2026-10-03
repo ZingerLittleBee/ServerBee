@@ -10,6 +10,8 @@ final class AlertDetailViewModel {
     func fetchDetail(alertKey: String, apiClient: APIClient) async {
         isLoading = true
         defer { isLoading = false }
+        detail = nil
+        errorMessage = nil
         do {
             detail = try await apiClient.get("/api/alert-events/\(alertKey)")
         } catch {

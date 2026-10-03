@@ -5,12 +5,14 @@ on:
     branches: [main]
     paths:
       - 'apps/ios/**'
+      - 'tests/fixtures/push*-envelope-v1.json'
       - '!apps/ios/**/*.md'
       - '.github/workflows/ci-ios.yml'
   pull_request:
     branches: [main]
     paths:
       - 'apps/ios/**'
+      - 'tests/fixtures/push*-envelope-v1.json'
       - '!apps/ios/**/*.md'
       - '.github/workflows/ci-ios.yml'
 

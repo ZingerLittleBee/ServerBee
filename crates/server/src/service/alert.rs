@@ -256,6 +256,8 @@ pub struct TriggeredInfo {
 
 pub struct AlertStateManager {
     triggered: DashMap<(String, String, String), TriggeredInfo>,
+    // Keep post-commit cache publication ordered with general-alert admission.
+    pub(super) admission_lock: tokio::sync::Mutex<()>,
 }
 
 impl Default for AlertStateManager {
@@ -269,6 +271,7 @@ impl AlertStateManager {
     pub fn new() -> Self {
         Self {
             triggered: DashMap::new(),
+            admission_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -290,7 +293,10 @@ impl AlertStateManager {
             );
         }
 
-        Ok(Self { triggered })
+        Ok(Self {
+            triggered,
+            admission_lock: tokio::sync::Mutex::new(()),
+        })
     }
 
     pub fn is_triggered(&self, rule_id: &str, server_id: &str, event_key: &str) -> bool {
@@ -314,6 +320,115 @@ impl AlertStateManager {
                 event_key.to_string(),
             ))
             .map(|r| r.clone())
+    }
+
+    /// Commit the general alert dimension and its encrypted jobs together.
+    /// Failed admission leaves both durable state and the cache unconsumed.
+    async fn admit_alert_transition(
+        &self,
+        db: &DatabaseConnection,
+        rule: &alert_rule::Model,
+        server_id: &str,
+        server_name: &str,
+        resolved: bool,
+    ) -> Result<bool, AppError> {
+        let _admission = self.admission_lock.lock().await;
+        let txn = db.begin().await?;
+        // Take the SQLite writer lock before reading state or choosing a cycle.
+        // This also serializes separate evaluator owners sharing one database.
+        txn.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE alert_states SET updated_at=updated_at WHERE rule_id=? AND server_id=? AND event_key=''",
+            [rule.id.clone().into(), server_id.to_string().into()],
+        )).await?;
+        let existing = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq(&rule.id))
+            .filter(alert_state::Column::ServerId.eq(server_id))
+            .filter(alert_state::Column::EventKey.eq(""))
+            .one(&txn)
+            .await?;
+        let key = (rule.id.clone(), server_id.to_string(), String::new());
+        if resolved && existing.as_ref().is_none_or(|state| state.resolved) {
+            txn.commit().await?;
+            self.triggered.remove(&key);
+            return Ok(false);
+        }
+        let now = Utc::now();
+        let firing = existing.as_ref().filter(|state| !state.resolved);
+        let should_notify = resolved
+            || match rule.trigger_mode.as_str() {
+                "once" => firing.is_none(),
+                _ => {
+                    firing.is_none_or(|state| now - state.last_notified_at >= Duration::minutes(5))
+                }
+            };
+        let state = if let Some(previous) = existing {
+            let count = previous.count;
+            let rearm = previous.resolved;
+            let mut active: alert_state::ActiveModel = previous.into();
+            active.updated_at = Set(now);
+            if resolved {
+                active.resolved = Set(true);
+                active.resolved_at = Set(Some(now));
+            } else {
+                // Retain the evaluator's bookkeeping even on suppressed polls.
+                active.count = Set(if rearm { 1 } else { count.saturating_add(1) });
+                active.last_notified_at = Set(now);
+                if rearm {
+                    active.first_triggered_at = Set(now);
+                    active.resolved = Set(false);
+                    active.resolved_at = Set(None);
+                }
+            }
+            active.update(&txn).await?
+        } else {
+            alert_state::ActiveModel {
+                id: NotSet,
+                rule_id: Set(rule.id.clone()),
+                server_id: Set(server_id.to_string()),
+                event_key: Set(String::new()),
+                first_triggered_at: Set(now),
+                last_notified_at: Set(now),
+                count: Set(1),
+                resolved: Set(false),
+                resolved_at: Set(None),
+                updated_at: Set(now),
+            }
+            .insert(&txn)
+            .await?
+        };
+        if should_notify
+            && let Err(error) =
+                crate::service::mobile_alert_push::enqueue(&txn, rule, &state, server_name).await
+        {
+            txn.rollback().await?;
+            return Err(error);
+        }
+        txn.commit().await?;
+        self.publish_state(&state);
+        Ok(should_notify)
+    }
+
+    // Publish synchronously after commit. Durable eligibility never relies on
+    // this display cache, including after cancellation or process restart.
+    pub(super) fn publish_state(&self, state: &alert_state::Model) {
+        let key = (
+            state.rule_id.clone(),
+            state.server_id.clone(),
+            state.event_key.clone(),
+        );
+        if state.resolved {
+            self.triggered.remove(&key);
+        } else {
+            self.triggered.insert(
+                key,
+                TriggeredInfo {
+                    first_triggered_at: state.first_triggered_at,
+                    last_notified_at: state.last_notified_at,
+                    count: state.count as u32,
+                },
+            );
+        }
     }
 
     pub async fn mark_triggered(
@@ -432,6 +547,7 @@ impl AlertStateManager {
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct AlertEventResponse {
+    pub alert_key: String,
     pub rule_id: String,
     pub rule_name: String,
     pub server_id: String,
@@ -637,6 +753,7 @@ impl AlertService {
                 };
                 let resolved_at = s.resolved_at.map(|t| t.to_rfc3339());
                 AlertEventResponse {
+                    alert_key: alert_detail_key(&s),
                     rule_id: s.rule_id.clone(),
                     rule_name: rule_map
                         .get(&s.rule_id)
@@ -680,12 +797,25 @@ impl AlertService {
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
     ) -> Result<(), AppError> {
+        // Event-driven conditions cannot be re-polled. Replay captured intents
+        // before ordinary rules, including the first tick after Server restart.
+        crate::service::alert_event_intents::replay(db, config, state_manager).await?;
         let rules = alert_rule::Entity::find()
             .filter(alert_rule::Column::Enabled.eq(true))
             .all(db)
             .await?;
 
         for rule in rules {
+            // A failed event admission reserves the dimension/cycle. Do not
+            // overwrite it with a later periodic evaluation of a mixed rule.
+            if crate::entity::alert_event_intent::Entity::find()
+                .filter(crate::entity::alert_event_intent::Column::RuleId.eq(&rule.id))
+                .one(db)
+                .await?
+                .is_some()
+            {
+                continue;
+            }
             // Skip rules where ALL items are event-driven (e.g. ip_changed).
             // These are dispatched from WS handlers via check_event_rules().
             let items: Vec<AlertRuleItem> =
@@ -738,11 +868,10 @@ impl AlertService {
                     continue;
                 }
                 Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name).await?;
-            } else if state_manager.is_triggered(&rule.id, &srv.id, "") {
-                // Recovered
-                state_manager
-                    .mark_resolved(db, &rule.id, &srv.id, "")
-                    .await?;
+            } else if state_manager
+                .admit_alert_transition(db, rule, &srv.id, &srv.name, true)
+                .await?
+            {
                 tracing::info!("Alert '{}' resolved for server '{}'", rule.name, srv.name);
                 Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await;
             }
@@ -806,25 +935,24 @@ impl AlertService {
         server_id: &str,
         server_name: &str,
     ) -> Result<(), AppError> {
-        let should_notify = match rule.trigger_mode.as_str() {
-            "once" => !state_manager.is_triggered(&rule.id, server_id, ""),
-            _ => {
-                // "always" — but debounce 5 minutes
-                match state_manager.get_info(&rule.id, server_id, "") {
-                    Some(info) => {
-                        let elapsed = Utc::now() - info.last_notified_at;
-                        elapsed >= Duration::minutes(5)
-                    }
-                    None => true,
-                }
-            }
-        };
-
-        state_manager
-            .mark_triggered(db, &rule.id, server_id, "")
+        let should_notify = state_manager
+            .admit_alert_transition(db, rule, server_id, server_name, false)
             .await?;
+        if should_notify {
+            Self::notify_triggered(db, config, rule, server_id, server_name, Utc::now()).await;
+        }
+        Ok(())
+    }
 
-        if should_notify && let Some(ref group_id) = rule.notification_group_id {
+    pub(super) async fn notify_triggered(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        rule: &alert_rule::Model,
+        server_id: &str,
+        server_name: &str,
+        occurred_at: chrono::DateTime<Utc>,
+    ) {
+        if let Some(ref group_id) = rule.notification_group_id {
             let ctx = NotifyContext {
                 server_name: server_name.to_string(),
                 server_id: server_id.to_string(),
@@ -839,21 +967,19 @@ impl AlertService {
                         format!("Alert rule '{}' triggered ({cond})", rule.name)
                     }
                 },
-                time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                time: occurred_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
                 ..Default::default()
             };
             if let Err(e) = NotificationService::send_group(db, config, group_id, &ctx).await {
                 tracing::error!("Failed to send alert notification: {e}");
             }
         }
-
-        Ok(())
     }
 
     /// Send a recovery notification when an alert transitions back to normal.
     ///
     /// This branch is edge-triggered: `evaluate_rule` only reaches it on the
-    /// triggered→recovered transition (and `mark_resolved` clears the state),
+    /// committed triggered→recovered transition (atomic admission clears the state),
     /// so no debounce is needed. Notification failures are logged, never
     /// propagated, so a flaky channel cannot block alert-state bookkeeping.
     async fn handle_resolved(
@@ -897,48 +1023,32 @@ impl AlertService {
         server_id: &str,
         event_type: &str,
     ) -> Result<(), AppError> {
-        let rules = alert_rule::Entity::find()
-            .filter(alert_rule::Column::Enabled.eq(true))
-            .all(db)
+        let txn = db.begin().await?;
+        txn.execute_unprepared("UPDATE alert_states SET updated_at=updated_at WHERE 0")
             .await?;
-
-        for rule in &rules {
-            let items: Vec<AlertRuleItem> =
-                serde_json::from_str(&rule.rules_json).unwrap_or_default();
-
-            // Check if any item in this rule matches the event type
-            let has_matching_event = items.iter().any(|i| i.rule_type == event_type);
-            if !has_matching_event {
-                continue;
-            }
-
-            // Check if this rule covers the given server
-            if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
-                continue;
-            }
-
-            // Skip if server is in maintenance
-            if MaintenanceService::is_in_maintenance(db, server_id)
-                .await
-                .unwrap_or(false)
-            {
-                tracing::debug!("Skipping event alert for server {server_id}: in maintenance");
-                continue;
-            }
-
-            // Resolve server name for notification context
-            let server_name = server::Entity::find_by_id(server_id)
-                .one(db)
-                .await?
-                .map(|s| s.name)
-                .unwrap_or_else(|| "Unknown".to_string());
-
-            Self::handle_triggered(db, config, state_manager, rule, server_id, &server_name)
-                .await?;
-        }
+        crate::service::alert_event_intents::capture(&txn, server_id, event_type, Utc::now())
+            .await?;
+        txn.commit().await?;
+        // Durable capture succeeds independently of job admission. The periodic
+        // evaluator retries any failed job write without another source event.
+        crate::service::alert_event_intents::replay(db, config, state_manager).await?;
 
         Ok(())
     }
+}
+
+/// Versioned URL-safe identity binds the complete dimension and trigger cycle.
+/// An overwritten cycle must return unavailable rather than a newer alert.
+pub fn alert_detail_key(state: &alert_state::Model) -> String {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let canonical = serde_json::json!([
+        state.rule_id,
+        state.server_id,
+        state.event_key,
+        state.first_triggered_at.to_rfc3339()
+    ])
+    .to_string();
+    format!("v1.{}", URL_SAFE_NO_PAD.encode(canonical.as_bytes()))
 }
 
 // ── Helpers ──

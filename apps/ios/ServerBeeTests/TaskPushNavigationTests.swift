@@ -15,13 +15,19 @@ final class TaskPushNavigationTests: XCTestCase {
     }
 
     private func encrypted(_ context: MobileAuthenticationContext, invalid: Bool = false, age: Int64 = 0,
-                           success: Bool = false, kind: String? = nil, total: Int = 4) throws -> (PushEnvelope, PushContentKey) {
+                           success: Bool = false, kind: String? = nil, total: Int = 4, mixedTarget: Bool = false) throws -> (PushEnvelope, PushContentKey) {
         let now = Int64(Date().timeIntervalSince1970) - age
         let summary = TaskRunPushSummary(taskId: taskId, runId: runId, total: total, failed: invalid ? -1 : (success ? 0 : 1),
                                          timedOut: success ? 0 : 1, offline: success ? 0 : 1, denied: success ? 0 : 1)
+        let targetParts = ["rule-1", "server-1", "", "2026-10-03T00:00:00+00:00"]
+        let alertKey = "v1." + (try JSONEncoder().encode(targetParts)).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let alert = AlertPushTarget(alertKey: alertKey, status: "firing", ruleName: "Alert", serverName: "Server")
+        XCTAssertTrue(alert.isValid)
         let content = PushContent(kind: kind ?? (success ? "task_success" : "task_failure"),
                                   deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
-                                  eventId: runId, createdAt: now, expiresAt: now + 1800, taskRun: summary)
+                                  eventId: runId, createdAt: now, expiresAt: now + 1800, taskRun: summary,
+                                  alert: mixedTarget ? alert : nil)
         let key = PushContentKey(keyId: "task-key", key: Data(repeating: 7, count: 32).base64EncodedString(), deploymentId: context.serverUrl,
                                  userId: context.userId, installationId: context.installationId, scope: context.pushScope)
         let identity = try content.identity
@@ -30,6 +36,18 @@ final class TaskPushNavigationTests: XCTestCase {
         return (PushEnvelope(version: 1, keyId: key.keyId, identity: identity,
                              nonce: sealed.nonce.withUnsafeBytes { Data($0) }.base64EncodedString(),
                              ciphertext: (sealed.ciphertext + sealed.tag).base64EncodedString()), key)
+    }
+
+    func testTaskCategoryRejectsMixedAlertTargetsForDeliveryAndLateTaps() throws {
+        let current = context()
+        for success in [false, true] {
+            let (envelope, key) = try encrypted(current, age: 3600, success: success, mixedTarget: true)
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key, purpose: .notificationTap))
+            let router = PushNotificationRouter()
+            router.enqueue(envelope: envelope)
+            XCTAssertNil(router.consumeAccountTarget(context: current, key: key))
+        }
     }
 
     func testEarlyDelegateTapKeepsExactRunAndRejectsStaleAccountAndMalformedSummary() throws {
@@ -225,7 +243,7 @@ extension TaskPushNavigationTests {
         let current = context()
         let (envelope, key) = try encrypted(current, age: 3600)
         XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
-        XCTAssertEqual(try PushEnvelopeDecoder.decryptForNavigation(envelope, key: key).taskRun?.runId, runId)
+        XCTAssertEqual(try PushEnvelopeDecoder.decrypt(envelope, key: key, purpose: .notificationTap).taskRun?.runId, runId)
         let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))
         for cold in [true, false] {
             let delegate = AppDelegate()

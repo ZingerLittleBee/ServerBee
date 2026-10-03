@@ -3,7 +3,7 @@
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::SinkExt;
-use sea_orm::QueryOrder;
+use sea_orm::{DatabaseBackend, QueryOrder, Statement};
 use serde_json::{Value, json};
 use serverbee_common::constants::{CAP_DEFAULT, CAP_EXEC};
 use serverbee_server::entity::{
@@ -1043,4 +1043,143 @@ async fn scheduler_retries_failed_drain_proof_before_releasing_the_run() {
     assert_eq!(queued[0].created_at, finished.completed_at.unwrap());
     assert_eq!(plaintext(&state, &queued[0]).await["task_run"]["failed"], 1);
     disable(&client, &base, access, &id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn alerts_and_final_tasks_share_queue_without_crossing_subscription_gates() {
+    for success in [false, true] {
+        for cancel_alert in [false, true] {
+            let (base, state, _tmp, relay) = queued_setup().await;
+            let client = reqwest::Client::new();
+            let owner = login_http(&client, &base, "admin", "combined-alerts").await;
+            let task_owner = login_http(&client, &base, "admin", "combined-tasks").await;
+            let task_access = task_owner["access_token"].as_str().unwrap();
+            let access = owner["access_token"].as_str().unwrap();
+            subscribe(&client, &base, access, "device-a").await;
+            success::preferences(&client, &base, access, false, false).await;
+            subscribe(&client, &base, task_access, "device-b").await;
+            let confirmed = status_http(&client, &base, task_access).await;
+            let mut prefs = confirmed["preferences"].clone();
+            prefs["alerts"] = json!(false);
+            prefs["task_success"] = json!(true);
+            assert_eq!(
+                preferences_http(
+                    &client,
+                    &base,
+                    task_access,
+                    confirmed["revision"].as_i64().unwrap(),
+                    prefs
+                )
+                .await
+                .status(),
+                200
+            );
+            let (target, mut sink, mut reader) = agent(&client, &base, access).await;
+            let id = task(&client, &base, access, &[target], 0, "0 0 0 * * *").await;
+            run(&client, &base, access, &id).await;
+            let execution = exec(&mut reader).await;
+            reply(
+                &mut sink,
+                &execution,
+                if success { 0 } else { 1 },
+                "private-output",
+            )
+            .await;
+            let finished = completed(&state, &id).await;
+            let _ = alert_http_fixture(&client, &base, access, "once").await;
+            evaluate_alerts(&state).await;
+            let queued = jobs(&state).await;
+            assert_eq!(queued.len(), 2);
+            let task_job = queued.iter().find(|job| job.task_run_id.is_some()).unwrap();
+            let alert_job = queued.iter().find(|job| job.category == "alert").unwrap();
+            assert_eq!(task_job.event_id, finished.run_id);
+            assert_eq!(
+                task_job.category,
+                if success {
+                    "task_success"
+                } else {
+                    "task_failure"
+                }
+            );
+            assert!(alert_job.task_run_id.is_none());
+            assert!(plaintext(&state, task_job).await.get("alert").is_none());
+            assert!(plaintext(&state, alert_job).await.get("task_run").is_none());
+
+            let cancelled_access = if cancel_alert { access } else { task_access };
+            let confirmed = status_http(&client, &base, cancelled_access).await;
+            let mut prefs = confirmed["preferences"].clone();
+            prefs[if cancel_alert {
+                "alerts"
+            } else if success {
+                "task_success"
+            } else {
+                "task_failure"
+            }] = json!(false);
+            assert_eq!(
+                preferences_http(
+                    &client,
+                    &base,
+                    cancelled_access,
+                    confirmed["revision"].as_i64().unwrap(),
+                    prefs
+                )
+                .await
+                .status(),
+                200
+            );
+            if cancel_alert {
+                // A task queued on the accepted #203/#204 schema receives the
+                // shared column's default on upgrade. Its target still gates it.
+                state
+                    .db
+                    .execute(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        "UPDATE mobile_push_outbox SET category='test' WHERE event_id=?",
+                        [finished.run_id.clone().into()],
+                    ))
+                    .await
+                    .unwrap();
+            }
+            relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+            let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+            for _ in 0..200 {
+                if jobs(&state)
+                    .await
+                    .iter()
+                    .all(|job| !matches!(job.outcome.as_str(), "pending" | "retryable"))
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+            worker.abort();
+            let _ = worker.await;
+            let delivered = jobs(&state).await;
+            assert_eq!(delivered.len(), 2);
+            for job in &delivered {
+                let cancelled = if cancel_alert {
+                    job.task_run_id.is_none()
+                } else {
+                    job.task_run_id.is_some()
+                };
+                assert_eq!(
+                    job.outcome,
+                    if cancelled { "permanent" } else { "accepted" }
+                );
+                if cancelled {
+                    assert_eq!(job.reason, "Ineligible");
+                }
+                assert_eq!(
+                    job.created_at,
+                    queued
+                        .iter()
+                        .find(|original| original.event_id == job.event_id)
+                        .unwrap()
+                        .created_at
+                );
+                assert_eq!(job.expires_at - job.created_at, 1800);
+            }
+            assert_eq!(relay.requests().await.len(), 1);
+        }
+    }
 }

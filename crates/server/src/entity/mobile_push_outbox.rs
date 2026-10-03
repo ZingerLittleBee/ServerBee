@@ -14,6 +14,8 @@ pub struct Model {
     pub recipient_role: String,
     /// Scheduled-run target for late task ownership/access checks.
     pub task_run_id: Option<String>,
+
+    pub category: String,
     pub created_at: i64,
     pub expires_at: i64,
     pub envelope: Option<String>,

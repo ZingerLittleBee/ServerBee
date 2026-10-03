@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 
 use axum::Json;
@@ -382,7 +384,7 @@ async fn verified_setup_requires_explicit_intent_and_preserves_refresh_binding()
     let confirmed = status_http(&client, &base, access).await;
     assert_eq!(confirmed["registered"], true);
     assert_eq!(confirmed["revision"], 2);
-    assert_eq!(confirmed["delivery_available"], false);
+    assert_eq!(confirmed["delivery_available"], true);
     assert!(confirmed.get("grant_token").is_none());
     assert!(
         device_token::Entity::find()
@@ -560,7 +562,7 @@ async fn demoted_administrator_can_save_permitted_subscriptions_and_disable_setu
         assert_eq!(saved["revision"], 3);
         assert_eq!(saved["security_allowed"], false);
         assert_eq!(saved["registered"], enabled);
-        assert_eq!(saved["delivery_available"], false);
+        assert_eq!(saved["delivery_available"], true);
         assert_eq!(status_http(&client, &base, access).await, saved);
         let row = registration::Entity::find_by_id("demoted-install")
             .one(&state.db)
@@ -2442,3 +2444,1927 @@ async fn user_mutations_wait_for_outbox_writer_before_reading_revocation_guards(
 
 #[path = "mobile_push_tasks/mod.rs"]
 mod task_outcomes;
+
+// Alert subscriptions exercise real HTTP setup, migrated SQLite, production
+// evaluation and durable dispatch. Only the Relay network boundary is replaced.
+async fn alert_http_fixture(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+    mode: &str,
+) -> (String, String) {
+    let response = client.post(format!("{base}/api/servers")).bearer_auth(admin)
+        .json(&serde_json::json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"Private alert Server"}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let server = response.json::<serde_json::Value>().await.unwrap()["data"]["server_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    set_alert_expiration(client, base, admin, &server, true).await;
+    let response = client
+        .post(format!("{base}/api/alert-rules"))
+        .bearer_auth(admin)
+        .json(
+            &serde_json::json!({"name":"Private expiration rule","enabled":true,"trigger_mode":mode,
+            "cover_type":"include","server_ids":[&server],
+            "rules":[{"rule_type":"expiration","duration":7}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let rule = response.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (server, rule)
+}
+async fn set_alert_expiration(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+    server: &str,
+    firing: bool,
+) {
+    let response = client.put(format!("{base}/api/servers/{server}")).bearer_auth(admin)
+        .json(&serde_json::json!({"expired_at":(Utc::now()+ChronoDuration::days(if firing {1} else {90})).to_rfc3339()}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+}
+async fn evaluate_alerts(state: &AppState) {
+    serverbee_server::service::alert::AlertService::evaluate_all(
+        &state.db,
+        &state.config,
+        &state.agent_manager,
+        &state.alert_state_manager,
+    )
+    .await
+    .unwrap();
+}
+async fn alert_jobs(state: &AppState) -> Vec<serverbee_server::entity::mobile_push_outbox::Model> {
+    use serverbee_server::entity::mobile_push_outbox as outbox;
+    outbox::Entity::find()
+        .filter(outbox::Column::Category.eq("alert"))
+        .all(&state.db)
+        .await
+        .unwrap()
+}
+fn decrypt_alert_envelope(envelope: &serde_json::Value) -> serde_json::Value {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use ring::aead;
+    let key = STANDARD
+        .decode("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+        .unwrap();
+    let nonce: [u8; 12] = STANDARD
+        .decode(envelope["nonce"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let mut ciphertext = STANDARD
+        .decode(envelope["ciphertext"].as_str().unwrap())
+        .unwrap();
+    let aad = format!(
+        "ServerBee.Push.v1|{}|{}",
+        envelope["key_id"].as_str().unwrap(),
+        envelope["identity"].as_str().unwrap()
+    );
+    let key = aead::LessSafeKey::new(aead::UnboundKey::new(&aead::AES_256_GCM, &key).unwrap());
+    let bytes = key
+        .open_in_place(
+            aead::Nonce::assume_unique_for_key(nonce),
+            aead::Aad::from(aad.as_bytes()),
+            &mut ciphertext,
+        )
+        .unwrap();
+    serde_json::from_slice(bytes).unwrap()
+}
+async fn wait_alert_dispatch(state: &AppState) {
+    for _ in 0..100 {
+        if alert_jobs(state)
+            .await
+            .iter()
+            .all(|j| !matches!(j.outcome.as_str(), "pending" | "retryable"))
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("Alert jobs did not reach a terminal result");
+}
+
+#[tokio::test]
+async fn alert_subscriptions_fan_out_trigger_recovery_without_group_and_open_exact_cycle() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "alert-operator").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let member = login_http(&client, &base, "member", "alert-device-a").await;
+    let second = login_http(&client, &base, "member", "alert-device-b").await;
+    queued_register(
+        &client,
+        &base,
+        member["access_token"].as_str().unwrap(),
+        "device-a",
+    )
+    .await;
+    queued_register(
+        &client,
+        &base,
+        second["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    let unsubscribed = login_http(&client, &base, "member", "alert-unsubscribed").await;
+    let unsubscribed_access = unsubscribed["access_token"].as_str().unwrap();
+    queued_register(&client, &base, unsubscribed_access, "device-b").await;
+    let mut prefs = intent(false, true);
+    prefs["alerts"] = serde_json::json!(false);
+    assert_eq!(
+        preferences_http(&client, &base, unsubscribed_access, 2, prefs)
+            .await
+            .status(),
+        200
+    );
+    let (server, rule) = alert_http_fixture(&client, &base, admin, "once").await;
+    evaluate_alerts(&state).await;
+    evaluate_alerts(&state).await;
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(jobs.len(), 3, "Once mode suppresses repeated evaluations");
+    assert_eq!(
+        jobs[0].event_id, jobs[1].event_id,
+        "One logical transition per installation"
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_str(jobs[0].envelope.as_deref().unwrap()).unwrap();
+    let content = decrypt_alert_envelope(&envelope);
+    assert_eq!(content["kind"], "alert");
+    assert_eq!(content["alert"]["status"], "firing");
+    assert_eq!(
+        content["expires_at"].as_i64().unwrap() - content["created_at"].as_i64().unwrap(),
+        1800
+    );
+    let key = content["alert"]["alert_key"].as_str().unwrap().to_owned();
+    let detail = client
+        .get(format!("{base}/api/alert-events/{key}"))
+        .bearer_auth(member["access_token"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(detail.status(), 200);
+    let detail = detail.json::<serde_json::Value>().await.unwrap();
+    assert_eq!(detail["data"]["rule_id"], rule);
+    assert_eq!(detail["data"]["server_id"], server);
+    let list = client
+        .get(format!("{base}/api/alert-events"))
+        .bearer_auth(admin)
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(list["data"][0]["alert_key"], key);
+    for job in &jobs {
+        let ciphertext = job.envelope.as_ref().unwrap();
+        for forbidden in [
+            "Private alert Server",
+            "Private expiration rule",
+            "rule_id",
+            "server_id",
+            "deployment_id",
+            "content_key",
+        ] {
+            assert!(
+                !ciphertext.contains(forbidden),
+                "No plaintext notification data in queue envelope"
+            );
+        }
+    }
+    set_alert_expiration(&client, &base, admin, &server, false).await;
+    evaluate_alerts(&state).await;
+    evaluate_alerts(&state).await;
+    let recovery_jobs = alert_jobs(&state).await;
+    assert_eq!(recovery_jobs.len(), 6, "Recovery is edge-triggered");
+    let recovered = recovery_jobs
+        .iter()
+        .find(|j| j.event_id != jobs[0].event_id)
+        .unwrap();
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(recovered.envelope.as_deref().unwrap()).unwrap(),
+    );
+    assert_eq!(content["alert"]["status"], "resolved");
+    assert_eq!(content["alert"]["alert_key"], key);
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_alert_dispatch(&state).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), 6);
+    // Restart must not replay accepted logical transitions.
+    let restarted = AppState::new(state.db.clone(), state.config.clone())
+        .await
+        .unwrap();
+    evaluate_alerts(&restarted).await;
+    assert_eq!(alert_jobs(&restarted).await.len(), 6);
+    set_alert_expiration(&client, &base, admin, &server, true).await;
+    evaluate_alerts(&restarted).await;
+    assert_eq!(
+        client
+            .get(format!("{base}/api/alert-events/{key}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404,
+        "Old cycle cannot open the new cycle"
+    );
+    assert_eq!(
+        client
+            .delete(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/api/alert-events/{key}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+}
+
+#[tokio::test]
+async fn alert_subscription_disabled_maintenance_and_always_suppression_preserve_gates() {
+    let (base, state, _tmp, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "gates-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, rule) = alert_http_fixture(&client, &base, admin, "always").await;
+    let response = client
+        .put(format!("{base}/api/alert-rules/{rule}"))
+        .bearer_auth(admin)
+        .json(&serde_json::json!({"enabled":false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    evaluate_alerts(&state).await;
+    assert!(alert_jobs(&state).await.is_empty());
+    assert_eq!(
+        client
+            .put(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .json(&serde_json::json!({"enabled":true}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let response=client.post(format!("{base}/api/maintenances")).bearer_auth(admin).json(&serde_json::json!({"title":"Planned work",
+        "start_at":(Utc::now()-ChronoDuration::minutes(5)).to_rfc3339(),"end_at":(Utc::now()+ChronoDuration::minutes(5)).to_rfc3339(),
+        "server_ids_json": [&server],"is_public":false})).send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let maintenance = response.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    evaluate_alerts(&state).await;
+    assert!(alert_jobs(&state).await.is_empty());
+    assert_eq!(
+        client
+            .delete(format!("{base}/api/maintenances/{maintenance}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    evaluate_alerts(&state).await;
+    evaluate_alerts(&state).await;
+    assert_eq!(
+        alert_jobs(&state).await.len(),
+        1,
+        "Five-minute debounce remains active"
+    );
+    // Recovery deliberately retains the existing evaluator's maintenance behavior.
+    set_alert_expiration(&client, &base, admin, &server, false).await;
+    evaluate_alerts(&state).await;
+    assert_eq!(alert_jobs(&state).await.len(), 2);
+}
+
+#[tokio::test]
+async fn alert_unsubscribe_before_dispatch_stops_only_that_installation() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "unsubscribe-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let a = login_http(&client, &base, "member", "unsubscribe-a").await;
+    let b = login_http(&client, &base, "member", "unsubscribe-b").await;
+    let access = a["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    queued_register(
+        &client,
+        &base,
+        b["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    alert_http_fixture(&client, &base, admin, "once").await;
+    evaluate_alerts(&state).await;
+    let mut prefs = intent(false, true);
+    prefs["alerts"] = serde_json::json!(false);
+    assert_eq!(
+        preferences_http(&client, &base, access, 1, prefs.clone())
+            .await
+            .status(),
+        409,
+        "Failed save cannot replace confirmed subscription"
+    );
+    assert_eq!(
+        status_http(&client, &base, access).await["preferences"]["alerts"],
+        true
+    );
+    assert_eq!(
+        preferences_http(&client, &base, access, 2, prefs)
+            .await
+            .status(),
+        200
+    );
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_alert_dispatch(&state).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), 1);
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(
+        jobs.iter()
+            .find(|j| j.installation_id == "unsubscribe-a")
+            .unwrap()
+            .reason,
+        "Ineligible"
+    );
+    assert_eq!(
+        jobs.iter()
+            .find(|j| j.installation_id == "unsubscribe-b")
+            .unwrap()
+            .outcome,
+        "accepted"
+    );
+}
+
+#[tokio::test]
+async fn event_alerts_enqueue_general_category_but_security_matches_do_not() {
+    let (base, state, _tmp, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "event-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, _) = alert_http_fixture(&client, &base, admin, "once").await;
+    for kind in ["ip_changed", "ssh_brute_force_detected"] {
+        let created = client.post(format!("{base}/api/alert-rules")).bearer_auth(admin)
+            .json(&serde_json::json!({"name":kind,"enabled":true,"trigger_mode":"once", "cover_type":"all",
+                "rules":[{"rule_type":kind}]})).send().await.unwrap();
+        assert_eq!(created.status(), 200);
+        serverbee_server::service::alert::AlertService::check_event_rules(
+            &state.db,
+            &state.config,
+            &state.alert_state_manager,
+            &server,
+            kind,
+        )
+        .await
+        .unwrap();
+    }
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(
+        jobs.len(),
+        1,
+        "Security is never fanned out through general alert subscriptions"
+    );
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(jobs[0].envelope.as_deref().unwrap()).unwrap(),
+    );
+    assert_eq!(content["alert"]["rule_name"], "ip_changed");
+}
+
+#[tokio::test]
+async fn alert_detail_complete_identity_distinguishes_event_dimensions() {
+    use serverbee_common::security::{
+        DetectorSource, SecurityEventPayload, SecurityEventType, SecurityEvidence, Severity,
+    };
+    let (base, state, _tmp, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "dimension-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let (server, _) = alert_http_fixture(&client, &base, admin, "once").await;
+    let created = client
+        .post(format!("{base}/api/alert-rules"))
+        .bearer_auth(admin)
+        .json(
+            &serde_json::json!({"name":"Dimension rule","enabled":true,"cover_type":"all",
+            "rules":[{"rule_type":"ssh_brute_force_detected"}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 200);
+    let rule = created.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for ip in ["203.0.113.5", "203.0.113.6"] {
+        state
+            .security_service
+            .record_event(
+                &server,
+                SecurityEventPayload {
+                    event_type: SecurityEventType::SshBruteForce,
+                    severity: Severity::High,
+                    source_ip: ip.into(),
+                    source_port: None,
+                    username: None,
+                    started_at: Utc::now().timestamp() - 60,
+                    ended_at: Utc::now().timestamp(),
+                    first_seen: false,
+                    detector_source: DetectorSource::Journal,
+                    evidence: SecurityEvidence::SshBruteForce {
+                        failed_count: 47,
+                        distinct_users: 1,
+                        sample_users: vec!["root".into()],
+                        invalid_user_count: 0,
+                        window_seconds: 60,
+                        threshold: 10,
+                    },
+                },
+            )
+            .await
+            .unwrap();
+    }
+    let events = client
+        .get(format!("{base}/api/alert-events"))
+        .bearer_auth(admin)
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    let events: Vec<_> = events["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["rule_id"] == rule)
+        .collect();
+    assert_eq!(events.len(), 2);
+    assert_ne!(events[0]["alert_key"], events[1]["alert_key"]);
+    for event in events {
+        let key = event["alert_key"].as_str().unwrap();
+        let detail = client
+            .get(format!("{base}/api/alert-events/{key}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(detail.status(), 200);
+        assert_eq!(
+            detail.json::<serde_json::Value>().await.unwrap()["data"]["alert_key"],
+            key
+        );
+    }
+    assert_eq!(
+        client
+            .get(format!("{base}/api/alert-events/{rule}:{server}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404,
+        "Legacy keys must not select an arbitrary security dimension"
+    );
+}
+
+#[derive(Clone, Copy, Debug)]
+enum AlertAdmissionFault {
+    SecondInsert,
+    DeferredCommit,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum AlertRollbackPhase {
+    Trigger,
+    Recovery,
+    Rearm,
+}
+
+async fn fault_alert_admission(state: &AppState, fault: AlertAdmissionFault) {
+    match fault {
+        AlertAdmissionFault::SecondInsert => {
+            // Fail after the first installation's job was actually inserted.
+            state.db.execute_unprepared("CREATE TRIGGER fail_alert_admission
+                BEFORE INSERT ON mobile_push_outbox
+                WHEN NEW.category='alert' AND EXISTS
+                    (SELECT 1 FROM mobile_push_outbox WHERE event_id=NEW.event_id AND category='alert')
+                BEGIN SELECT RAISE(ABORT, 'injected second alert insert failure'); END")
+                .await.expect("install SQLite insertion fault");
+        }
+        AlertAdmissionFault::DeferredCommit => {
+            // Every write succeeds; the deferred FK fails the real COMMIT.
+            state
+                .db
+                .execute_unprepared(
+                    "PRAGMA foreign_keys=ON;
+                CREATE TABLE alert_commit_parent (id INTEGER PRIMARY KEY);
+                CREATE TABLE alert_commit_child (parent_id INTEGER NOT NULL
+                    REFERENCES alert_commit_parent(id) DEFERRABLE INITIALLY DEFERRED);
+                CREATE TRIGGER fail_alert_admission AFTER INSERT ON mobile_push_outbox
+                WHEN NEW.category='alert'
+                BEGIN INSERT INTO alert_commit_child(parent_id) VALUES (1); END",
+                )
+                .await
+                .expect("install SQLite commit fault");
+        }
+    }
+}
+
+async fn reopen_alert_state(state: &AppState, directory: &tempfile::TempDir) -> Arc<AppState> {
+    let mut options = ConnectOptions::new(format!(
+        "sqlite://{}/test.db?mode=rwc",
+        directory.path().display()
+    ));
+    options.max_connections(5).sqlx_logging(false);
+    let db = Database::connect(options)
+        .await
+        .expect("reopen real SQLite");
+    db.execute_unprepared("PRAGMA foreign_keys=ON")
+        .await
+        .expect("enable constraints");
+    AppState::new(db, state.config.clone())
+        .await
+        .expect("restore production alert cache")
+}
+
+async fn persisted_alert_cycle(
+    state: &AppState,
+    rule: &str,
+    server: &str,
+) -> Option<serverbee_server::entity::alert_state::Model> {
+    use serverbee_server::entity::alert_state;
+    alert_state::Entity::find()
+        .filter(alert_state::Column::RuleId.eq(rule))
+        .filter(alert_state::Column::ServerId.eq(server))
+        .filter(alert_state::Column::EventKey.eq(""))
+        .one(&state.db)
+        .await
+        .expect("read durable alert state")
+}
+
+async fn attach_alert_webhook(
+    client: &reqwest::Client,
+    base: &str,
+    access: &str,
+    rule: &str,
+) -> Arc<tokio::sync::Mutex<Vec<String>>> {
+    use axum::{Router, routing::post};
+    let received = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let sink = received.clone();
+    let app = Router::new().route(
+        "/",
+        post(move |body: String| {
+            let sink = sink.clone();
+            async move {
+                sink.lock().await.push(body);
+                "ok"
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let channel = client.post(format!("{base}/api/notifications")).bearer_auth(access)
+        .json(&serde_json::json!({"name":"Atomic alert webhook","notify_type":"webhook","enabled":true,
+            "config_json":{"url":url,"method":"POST","body_template":"{{event}}"}}))
+        .send().await.unwrap();
+    assert_eq!(channel.status(), 200);
+    let channel = channel.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let group = client
+        .post(format!("{base}/api/notification-groups"))
+        .bearer_auth(access)
+        .json(&serde_json::json!({"name":"Atomic alert group","notification_ids":[channel]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(group.status(), 200);
+    let group = group.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        client
+            .put(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"notification_group_id":group}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    received
+}
+
+async fn assert_alert_rollback(
+    state: &AppState,
+    rule: &str,
+    server: &str,
+    before: &Option<serverbee_server::entity::alert_state::Model>,
+    jobs_before: &[serverbee_server::entity::mobile_push_outbox::Model],
+) {
+    assert_eq!(
+        &persisted_alert_cycle(state, rule, server).await,
+        before,
+        "Failed transaction must not consume a transition or rearm"
+    );
+    assert_eq!(
+        alert_jobs(state).await,
+        jobs_before,
+        "First recipient and durable alert state must roll back with the failed recipient/commit"
+    );
+    assert_eq!(
+        state.alert_state_manager.is_triggered(rule, server, ""),
+        before.as_ref().is_some_and(|cycle| !cycle.resolved)
+    );
+    if let Some(cycle) = before.as_ref().filter(|cycle| !cycle.resolved) {
+        let cached = state
+            .alert_state_manager
+            .get_info(rule, server, "")
+            .expect("Firing cache survives failed recovery");
+        assert_eq!(cached.first_triggered_at, cycle.first_triggered_at);
+        assert_eq!(cached.last_notified_at, cycle.last_notified_at);
+        assert_eq!(cached.count, cycle.count as u32);
+    }
+}
+
+async fn exercise_alert_rollback_restart(phase: AlertRollbackPhase, fault: AlertAdmissionFault) {
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "rollback-a").await;
+    let member = login_http(&client, &base, "member", "rollback-b").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    queued_register(
+        &client,
+        &base,
+        member["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    let (server, rule) = alert_http_fixture(&client, &base, admin, "once").await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    match phase {
+        AlertRollbackPhase::Trigger => {}
+        AlertRollbackPhase::Recovery => {
+            evaluate_alerts(&state).await;
+            set_alert_expiration(&client, &base, admin, &server, false).await;
+        }
+        AlertRollbackPhase::Rearm => {
+            evaluate_alerts(&state).await;
+            set_alert_expiration(&client, &base, admin, &server, false).await;
+            evaluate_alerts(&state).await;
+            set_alert_expiration(&client, &base, admin, &server, true).await;
+        }
+    }
+    let before = persisted_alert_cycle(&state, &rule, &server).await;
+    let jobs_before = alert_jobs(&state).await;
+    let external_before = webhook.lock().await.len();
+    fault_alert_admission(&state, fault).await;
+    // Repeat in the same process: a failed attempt cannot consume the hot cache.
+    for _ in 0..2 {
+        evaluate_alerts(&state).await;
+        assert_alert_rollback(&state, &rule, &server, &before, &jobs_before).await;
+        assert_eq!(
+            webhook.lock().await.len(),
+            external_before,
+            "External dispatch follows committed admission"
+        );
+    }
+    assert!(
+        relay.requests().await.is_empty(),
+        "No network work on evaluation"
+    );
+    // The SQLite fault itself survives reopening. Verify rollback after a fresh
+    // production cache has loaded, before removing only the external fault.
+    let restarted = reopen_alert_state(&state, &directory).await;
+    evaluate_alerts(&restarted).await;
+    assert_alert_rollback(&restarted, &rule, &server, &before, &jobs_before).await;
+    restarted
+        .db
+        .execute_unprepared("DROP TRIGGER fail_alert_admission")
+        .await
+        .unwrap();
+    evaluate_alerts(&restarted).await;
+    let admitted_state = persisted_alert_cycle(&restarted, &rule, &server)
+        .await
+        .unwrap();
+    let admitted_jobs = alert_jobs(&restarted).await;
+    let new_jobs: Vec<_> = admitted_jobs
+        .iter()
+        .filter(|job| {
+            !jobs_before.iter().any(|old| {
+                old.event_id == job.event_id && old.installation_id == job.installation_id
+            })
+        })
+        .collect();
+    assert_eq!(
+        new_jobs.len(),
+        2,
+        "Exactly one successful logical admission for each installation"
+    );
+    assert_eq!(new_jobs[0].event_id, new_jobs[1].event_id);
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(new_jobs[0].envelope.as_deref().unwrap()).unwrap(),
+    );
+    let resolved = matches!(phase, AlertRollbackPhase::Recovery);
+    assert_eq!(
+        content["alert"]["status"],
+        if resolved { "resolved" } else { "firing" }
+    );
+    assert_eq!(
+        content["alert"]["alert_key"],
+        serverbee_server::service::alert::alert_detail_key(&admitted_state)
+    );
+    if let Some(before) = &before {
+        if resolved {
+            assert_eq!(admitted_state.first_triggered_at, before.first_triggered_at);
+        } else {
+            assert_ne!(admitted_state.first_triggered_at, before.first_triggered_at);
+        }
+    }
+    for job in &new_jobs {
+        assert_eq!(job.expires_at - job.created_at, 1800);
+        assert_eq!(content["event_id"], job.event_id);
+        assert_eq!(content["created_at"], job.created_at);
+        assert_eq!(content["expires_at"], job.expires_at);
+    }
+    assert_eq!(webhook.lock().await.len(), external_before + 1);
+    assert_eq!(
+        webhook.lock().await.last().unwrap(),
+        if resolved { "resolved" } else { "triggered" }
+    );
+    // A committed logical identity and its original deadline survive another
+    // database reopen, repeated evaluation and the real durable worker.
+    evaluate_alerts(&restarted).await;
+    assert_eq!(alert_jobs(&restarted).await, admitted_jobs);
+    let final_restart = reopen_alert_state(&restarted, &directory).await;
+    evaluate_alerts(&final_restart).await;
+    assert_eq!(alert_jobs(&final_restart).await, admitted_jobs);
+    assert_eq!(
+        webhook.lock().await.len(),
+        external_before + 1,
+        "No duplicate external transition after restart"
+    );
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(final_restart.clone());
+    wait_alert_dispatch(&final_restart).await;
+    worker.abort();
+    let _ = worker.await;
+    let requests = relay.requests().await;
+    assert_eq!(requests.len(), admitted_jobs.len());
+    for original in &admitted_jobs {
+        let receipt = outbox_job(
+            &final_restart,
+            &original.event_id,
+            &original.installation_id,
+        )
+        .await;
+        assert_eq!(receipt.outcome, "accepted");
+        assert_eq!(receipt.created_at, original.created_at);
+        assert_eq!(receipt.expires_at, original.expires_at);
+        assert!(
+            requests
+                .iter()
+                .any(|request| request["event_id"] == original.event_id
+                    && request["expires_at"] == original.expires_at)
+        );
+    }
+}
+
+#[tokio::test]
+async fn alert_trigger_admission_rolls_back_and_recovers_after_sqlite_restart() {
+    for fault in [
+        AlertAdmissionFault::SecondInsert,
+        AlertAdmissionFault::DeferredCommit,
+    ] {
+        exercise_alert_rollback_restart(AlertRollbackPhase::Trigger, fault).await;
+    }
+}
+
+#[tokio::test]
+async fn alert_recovery_admission_rolls_back_and_recovers_after_sqlite_restart() {
+    for fault in [
+        AlertAdmissionFault::SecondInsert,
+        AlertAdmissionFault::DeferredCommit,
+    ] {
+        exercise_alert_rollback_restart(AlertRollbackPhase::Recovery, fault).await;
+    }
+}
+
+#[tokio::test]
+async fn alert_rearm_admission_rolls_back_and_recovers_after_sqlite_restart() {
+    for fault in [
+        AlertAdmissionFault::SecondInsert,
+        AlertAdmissionFault::DeferredCommit,
+    ] {
+        exercise_alert_rollback_restart(AlertRollbackPhase::Rearm, fault).await;
+    }
+}
+
+#[tokio::test]
+async fn alert_delivery_expiry_preserves_current_authenticated_detail_lookup() {
+    use serverbee_server::entity::mobile_push_outbox as outbox;
+    let (base, state, _directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "late-tap-operator").await;
+    let member = login_http(&client, &base, "member", "late-tap-viewer").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let access = member["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    let (_server, rule) = alert_http_fixture(&client, &base, admin, "once").await;
+    evaluate_alerts(&state).await;
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].expires_at - jobs[0].created_at, 1800);
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(jobs[0].envelope.as_deref().unwrap()).unwrap(),
+    );
+    let target = content["alert"]["alert_key"].as_str().unwrap();
+    // Move only the persisted delivery clock to a past 30-minute window.
+    // Detail lookup has its own current authenticated HTTP policy, not this clock.
+    let created = Utc::now().timestamp() - 3600;
+    outbox::Entity::update_many()
+        .col_expr(
+            outbox::Column::CreatedAt,
+            sea_orm::sea_query::Expr::value(created),
+        )
+        .col_expr(
+            outbox::Column::ExpiresAt,
+            sea_orm::sea_query::Expr::value(created + 1800),
+        )
+        .exec(&state.db)
+        .await
+        .unwrap();
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_alert_dispatch(&state).await;
+    worker.abort();
+    let _ = worker.await;
+    let expired = alert_jobs(&state).await;
+    assert_eq!(expired[0].outcome, "expired");
+    assert_eq!(expired[0].expires_at, created + 1800);
+    assert!(relay.requests().await.is_empty());
+    let url = format!("{base}/api/alert-events/{target}");
+    let detail = client.get(&url).bearer_auth(access).send().await.unwrap();
+    assert_eq!(
+        detail.status(),
+        200,
+        "Delivery expiry cannot expire a current alert target"
+    );
+    assert_eq!(
+        detail.json::<serde_json::Value>().await.unwrap()["data"]["alert_key"],
+        target
+    );
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(&url)
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401,
+        "A prior notification never authorizes a revoked current session"
+    );
+    assert_eq!(
+        client
+            .delete(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(&url)
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404,
+        "An unavailable exact target never opens another alert"
+    );
+}
+
+async fn event_ws_fixture(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+) -> (
+    String,
+    String,
+    String,
+    common::AgentSink,
+    common::AgentReader,
+) {
+    let created = client.post(format!("{base}/api/servers")).bearer_auth(admin)
+        .json(&serde_json::json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"Event intent Server"}))
+        .send().await.unwrap().json::<serde_json::Value>().await.unwrap();
+    let server = created["data"]["server_id"].as_str().unwrap().to_owned();
+    let code = created["data"]["enrollment"]["code"].as_str().unwrap();
+    let token = format!("test-token-{}", uuid::Uuid::new_v4());
+    let registered = client
+        .post(format!("{base}/api/agent/register"))
+        .bearer_auth(code)
+        .json(&serde_json::json!({"proposed_run_token":token}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(registered.status(), 200);
+    let (mut sink, mut reader) = common::connect_agent(base, &token).await;
+    assert_eq!(
+        common::recv_agent_text(&mut reader).await["type"],
+        "welcome"
+    );
+    // Complete initial address population before enabling the event rule.
+    common::send_system_info(&mut sink, &mut reader, "event-baseline", None).await;
+    let response = client
+        .post(format!("{base}/api/alert-rules"))
+        .bearer_auth(admin)
+        .json(
+            &serde_json::json!({"name":"Once-only IP change","enabled":true,"trigger_mode":"once",
+            "cover_type":"include","server_ids":[server],"rules":[{"rule_type":"ip_changed"}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let rule = response.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (server, rule, token, sink, reader)
+}
+
+fn ip_event_frame(ip: &str, system_info: bool) -> serde_json::Value {
+    if system_info {
+        serde_json::json!({"type":"system_info","msg_id":"event-report","cpu_name":"Fixture CPU","cpu_cores":1,
+            "cpu_arch":"x86_64","os":"Linux","kernel_version":"fixture","mem_total":1024,"swap_total":0,"disk_total":1024,
+            "ipv4":ip,"ipv6":null,"virtualization":null,"agent_version":"0.1.0","protocol_version":1,"features":[]})
+    } else {
+        serde_json::json!({"type":"ip_changed","ipv4":ip,"ipv6":null,"interfaces":[]})
+    }
+}
+
+async fn send_ip_event(sink: &mut common::AgentSink, ip: &str, system_info: bool) {
+    use futures_util::SinkExt;
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        ip_event_frame(ip, system_info).to_string().into(),
+    ))
+    .await
+    .unwrap();
+}
+
+async fn event_ws_barrier(sink: &mut common::AgentSink, reader: &mut common::AgentReader) {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    // FIFO control frame proves the preceding production WS handler completed.
+    sink.send(Message::Ping(b"event-intent-barrier".to_vec().into()))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Message::Pong(payload) = reader.next().await.unwrap().unwrap()
+                && payload.as_ref() == b"event-intent-barrier"
+            {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("production WS event completed");
+}
+
+async fn event_intents(
+    state: &AppState,
+) -> Vec<serverbee_server::entity::alert_event_intent::Model> {
+    use sea_orm::QueryOrder;
+    use serverbee_server::entity::alert_event_intent as intent;
+    intent::Entity::find()
+        .order_by_asc(intent::Column::Id)
+        .all(&state.db)
+        .await
+        .unwrap()
+}
+
+async fn wait_event_replay(state: &AppState) {
+    for _ in 0..100 {
+        if event_intents(state).await.is_empty() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("Production evaluator did not replay the durable event");
+}
+
+async fn exercise_ws_event_restart(
+    system_info: bool,
+    fault: AlertAdmissionFault,
+    disable_second: bool,
+) {
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "event-owner-a").await;
+    let member = login_http(&client, &base, "member", "event-owner-b").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let other = member["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    queued_register(&client, &base, other, "device-b").await;
+    let (server, rule, _token, mut sink, mut reader) =
+        event_ws_fixture(&client, &base, admin).await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    fault_alert_admission(&state, fault).await;
+    send_ip_event(&mut sink, "203.0.113.8", system_info).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    let captured = event_intents(&state).await;
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].rule_id, rule);
+    assert_eq!(captured[0].server_id, server);
+    assert_eq!(captured[0].event_type, "ip_changed");
+    assert!(captured[0].should_notify);
+    assert_eq!(captured[0].first_triggered_at, captured[0].occurred_at);
+    assert!(
+        alert_jobs(&state).await.is_empty(),
+        "First recipient rolled back with failed admission"
+    );
+    assert!(
+        persisted_alert_cycle(&state, &rule, &server)
+            .await
+            .is_none()
+    );
+    assert!(!state.alert_state_manager.is_triggered(&rule, &server, ""));
+    assert!(webhook.lock().await.is_empty());
+    assert_eq!(
+        serverbee_server::entity::server::Entity::find_by_id(&server)
+            .one(&state.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .ipv4
+            .as_deref(),
+        Some("203.0.113.8")
+    );
+    // An unchanged report cannot manufacture another event. A different event
+    // while admission is pending uses the reserved once-cycle and is suppressed.
+    send_ip_event(&mut sink, "203.0.113.8", system_info).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    assert_eq!(event_intents(&state).await, captured);
+    send_ip_event(&mut sink, "203.0.113.9", system_info).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    let pending = event_intents(&state).await;
+    assert_eq!(pending.len(), 2);
+    assert_eq!(pending[0], captured[0]);
+    assert_eq!(
+        pending[1].first_triggered_at,
+        captured[0].first_triggered_at
+    );
+    assert!(!pending[1].should_notify);
+    let restarted = reopen_alert_state(&state, &directory).await;
+    // The real startup evaluator tick, not a manual event retry, sees the intent.
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        restarted.clone(),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(event_intents(&restarted).await, pending);
+    assert!(alert_jobs(&restarted).await.is_empty());
+    assert!(webhook.lock().await.is_empty());
+    if disable_second {
+        assert_eq!(
+            preferences_http(&client, &base, other, 2, intent(false, false))
+                .await
+                .status(),
+            200
+        );
+    }
+    restarted
+        .db
+        .execute_unprepared("DROP TRIGGER fail_alert_admission")
+        .await
+        .unwrap();
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        restarted.clone(),
+    ));
+    wait_event_replay(&restarted).await;
+    // Replay deletes intents before best-effort external dispatch. Wait for the
+    // loopback response rather than assuming deletion proves the external call.
+    for _ in 0..100 {
+        if webhook.lock().await.len() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+    let jobs = alert_jobs(&restarted).await;
+    assert_eq!(jobs.len(), if disable_second { 1 } else { 2 });
+    assert!(jobs.iter().all(|job| job.event_id == jobs[0].event_id));
+    for job in &jobs {
+        assert_eq!(job.created_at, captured[0].occurred_at.timestamp());
+        assert_eq!(job.expires_at, captured[0].occurred_at.timestamp() + 1800);
+        let content = decrypt_alert_envelope(
+            &serde_json::from_str(job.envelope.as_deref().unwrap()).unwrap(),
+        );
+        assert_eq!(content["event_id"], job.event_id);
+        assert_eq!(content["created_at"], job.created_at);
+        assert_eq!(content["expires_at"], job.expires_at);
+        let expected = persisted_alert_cycle(&restarted, &rule, &server)
+            .await
+            .unwrap();
+        assert_eq!(expected.first_triggered_at, captured[0].first_triggered_at);
+        assert_eq!(
+            content["alert"]["alert_key"],
+            serverbee_server::service::alert::alert_detail_key(&expected)
+        );
+        if disable_second {
+            assert_eq!(job.installation_id, "event-owner-a");
+        }
+    }
+    // Another owner and ordinary startup tick cannot replay external dispatch.
+    let final_restart = reopen_alert_state(&restarted, &directory).await;
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        final_restart.clone(),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(alert_jobs(&final_restart).await, jobs);
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(final_restart.clone());
+    wait_alert_dispatch(&final_restart).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), jobs.len());
+    for job in jobs {
+        let receipt = outbox_job(&final_restart, &job.event_id, &job.installation_id).await;
+        assert_eq!(receipt.outcome, "accepted");
+        assert_eq!(receipt.created_at, job.created_at);
+        assert_eq!(receipt.expires_at, job.expires_at);
+    }
+}
+
+#[tokio::test]
+async fn ws_ip_event_intents_recover_insert_and_commit_failures_on_startup() {
+    for system_info in [false, true] {
+        for fault in [
+            AlertAdmissionFault::SecondInsert,
+            AlertAdmissionFault::DeferredCommit,
+        ] {
+            exercise_ws_event_restart(system_info, fault, false).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn ws_ip_event_replay_rechecks_installation_eligibility() {
+    exercise_ws_event_restart(false, AlertAdmissionFault::SecondInsert, true).await;
+}
+
+#[tokio::test]
+async fn ws_ip_intent_capture_failure_does_not_consume_source_update() {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+    for (system_info, fail_commit) in [(false, false), (true, false), (false, true), (true, true)] {
+        let (base, state, directory, _relay) = queued_setup().await;
+        let client = reqwest::Client::new();
+        let login = login_http(&client, &base, "admin", "capture-owner").await;
+        let admin = login["access_token"].as_str().unwrap();
+        queued_register(&client, &base, admin, "device-a").await;
+        let (server, rule, token, mut sink, mut reader) =
+            event_ws_fixture(&client, &base, admin).await;
+        let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+        let fault_sql = if fail_commit {
+            "CREATE TABLE source_commit_parent (id INTEGER PRIMARY KEY);
+            CREATE TABLE source_commit_child (parent_id INTEGER REFERENCES source_commit_parent(id)
+                DEFERRABLE INITIALLY DEFERRED);
+            CREATE TRIGGER fail_event_capture AFTER INSERT ON alert_event_intents
+            BEGIN INSERT INTO source_commit_child(parent_id) VALUES (1); END"
+        } else {
+            "CREATE TRIGGER fail_event_capture BEFORE INSERT ON alert_event_intents
+            BEGIN SELECT RAISE(ABORT, 'injected capture failure'); END"
+        };
+        state.db.execute_unprepared(fault_sql).await.unwrap();
+        send_ip_event(&mut sink, "203.0.113.8", system_info).await;
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                match reader.next().await {
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(Message::Text(text))) => {
+                        let message: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        assert_ne!(
+                            message["msg_id"], "event-report",
+                            "Failed capture cannot Ack SystemInfo"
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("Failed capture closes the source socket for automatic reconnect");
+        assert_eq!(
+            serverbee_server::entity::server::Entity::find_by_id(&server)
+                .one(&state.db)
+                .await
+                .unwrap()
+                .unwrap()
+                .ipv4
+                .as_deref(),
+            Some("1.2.3.4")
+        );
+        assert!(event_intents(&state).await.is_empty());
+        assert!(alert_jobs(&state).await.is_empty());
+        assert!(webhook.lock().await.is_empty());
+        let restarted = reopen_alert_state(&state, &directory).await;
+        restarted
+            .db
+            .execute_unprepared("DROP TRIGGER fail_event_capture")
+            .await
+            .unwrap();
+        let restarted_base = serve_outbox_http(restarted.clone()).await;
+        let (mut sink, mut reader) = common::connect_agent(&restarted_base, &token).await;
+        assert_eq!(
+            common::recv_agent_text(&mut reader).await["type"],
+            "welcome"
+        );
+        // Agent reconnect sends the SAME current IP in its SystemInfo snapshot;
+        // it need not observe a second IP transition to recover the first one.
+        send_ip_event(&mut sink, "203.0.113.8", true).await;
+        event_ws_barrier(&mut sink, &mut reader).await;
+        assert_eq!(
+            serverbee_server::entity::server::Entity::find_by_id(&server)
+                .one(&restarted.db)
+                .await
+                .unwrap()
+                .unwrap()
+                .ipv4
+                .as_deref(),
+            Some("203.0.113.8")
+        );
+        assert!(event_intents(&restarted).await.is_empty());
+        assert_eq!(alert_jobs(&restarted).await.len(), 1);
+        assert_eq!(*webhook.lock().await, ["triggered"]);
+    }
+}
+
+#[tokio::test]
+async fn ws_event_replay_does_not_restart_an_expired_mobile_deadline() {
+    use serverbee_server::entity::alert_event_intent as pending;
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "expired-event-owner").await;
+    let admin = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    // The fault needs two recipients to fail after the first actual insertion.
+    let other = login_http(&client, &base, "member", "expired-event-other").await;
+    queued_register(
+        &client,
+        &base,
+        other["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    let (server, rule, _token, mut sink, mut reader) =
+        event_ws_fixture(&client, &base, admin).await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    fault_alert_admission(&state, AlertAdmissionFault::SecondInsert).await;
+    send_ip_event(&mut sink, "203.0.113.8", false).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    let original = event_intents(&state).await;
+    assert_eq!(original.len(), 1);
+    let old = Utc::now() - ChronoDuration::seconds(3600);
+    pending::Entity::update_many()
+        .col_expr(
+            pending::Column::OccurredAt,
+            sea_orm::sea_query::Expr::value(old),
+        )
+        .col_expr(
+            pending::Column::FirstTriggeredAt,
+            sea_orm::sea_query::Expr::value(old),
+        )
+        .exec(&state.db)
+        .await
+        .unwrap();
+    state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_alert_admission")
+        .await
+        .unwrap();
+    let restarted = reopen_alert_state(&state, &directory).await;
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        restarted.clone(),
+    ));
+    wait_event_replay(&restarted).await;
+    for _ in 0..100 {
+        if webhook.lock().await.len() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert!(
+        alert_jobs(&restarted).await.is_empty(),
+        "Expired event cannot gain a new mobile window"
+    );
+    let cycle = persisted_alert_cycle(&restarted, &rule, &server)
+        .await
+        .unwrap();
+    assert_eq!(cycle.first_triggered_at, old);
+    assert_eq!(cycle.last_notified_at, old);
+    assert!(relay.requests().await.is_empty());
+    assert_eq!(
+        *webhook.lock().await,
+        ["triggered"],
+        "Existing external channels retain their own semantics"
+    );
+}
+
+async fn capability_ws_fixture(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+) -> (
+    String,
+    String,
+    String,
+    common::AgentSink,
+    common::AgentReader,
+) {
+    let (server, rule, token, sink, reader) = event_ws_fixture(client, base, admin).await;
+    assert_eq!(
+        client
+            .put(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .json(&serde_json::json!({"rules":[{"rule_type":"capability_grant_detected"}]}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    (server, rule, token, sink, reader)
+}
+
+fn capability_source_frame(
+    at: chrono::DateTime<Utc>,
+    cap: &str,
+    action: &str,
+) -> serde_json::Value {
+    serde_json::json!({"type":"capabilities_changed","msg_id":uuid::Uuid::new_v4().to_string(),
+        "occurred_at":at,"capabilities":serverbee_common::constants::CAP_DEFAULT,"temporary":[],
+        "changes":[{"cap":cap,"action":action,"expires_at":at.timestamp()+3600,
+            "granted_by":"root","reason":"original source event"}]})
+}
+
+async fn receive_capability_ack(
+    sink: &mut common::AgentSink,
+    reader: &mut common::AgentReader,
+    expected_id: &str,
+) -> Result<(), String> {
+    use futures_util::{SinkExt, StreamExt};
+    use serverbee_common::protocol::ServerMessage;
+    use tokio_tungstenite::tungstenite::Message;
+    loop {
+        let message = reader
+            .next()
+            .await
+            .ok_or("Socket ended before capability Ack")?
+            .map_err(|error| error.to_string())?;
+        match message {
+            Message::Text(text) => {
+                // Decode the actual protocol so malformed control payloads are
+                // not silently treated as unrelated noise.
+                let parsed: ServerMessage =
+                    serde_json::from_str(&text).expect("valid Server control frame");
+                match parsed {
+                    ServerMessage::Ack { msg_id } => {
+                        assert_eq!(
+                            msg_id, expected_id,
+                            "Ack must belong to the current source event"
+                        );
+                        return Ok(());
+                    }
+                    ServerMessage::Ping => {
+                        sink.send(Message::Text(
+                            serde_json::json!({"type":"pong"}).to_string().into(),
+                        ))
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    }
+                    _ => {
+                        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        assert!(
+                            common::is_first_connect_noise(value["type"].as_str()),
+                            "Unexpected Server frame before capability Ack: {value}"
+                        );
+                    }
+                }
+            }
+            Message::Ping(payload) => {
+                sink.send(Message::Pong(payload))
+                    .await
+                    .map_err(|error| error.to_string())?;
+            }
+            Message::Pong(_) => {}
+            Message::Close(_) => return Err("Socket closed before capability Ack".into()),
+            other => panic!("Unexpected non-control frame before capability Ack: {other:?}"),
+        }
+    }
+}
+
+async fn capability_send_and_ack(
+    sink: &mut common::AgentSink,
+    reader: &mut common::AgentReader,
+    frame: &serde_json::Value,
+) {
+    use futures_util::SinkExt;
+    // One total deadline includes sending, any number of real desired-state
+    // frames, the exact matching Ack and completion of the handler's replay.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        sink.send(tokio_tungstenite::tungstenite::Message::Text(
+            frame.to_string().into(),
+        ))
+        .await
+        .unwrap();
+        receive_capability_ack(sink, reader, frame["msg_id"].as_str().unwrap())
+            .await
+            .expect("Current source must receive its owned Ack before socket close");
+        event_ws_barrier(sink, reader).await;
+    })
+    .await
+    .expect("Total capability Ack/replay deadline");
+}
+
+/// The external Agent boundary retains the original frame on disk and retries
+/// automatically after reconnect. Production reporter/source restart is covered
+/// separately by the Agent's real loopback reporter test, without helper retries.
+async fn retained_capability_source(
+    endpoint: tokio::sync::watch::Receiver<String>,
+    token: String,
+    path: std::path::PathBuf,
+    attempted: Arc<std::sync::atomic::AtomicUsize>,
+    attempted_endpoint: tokio::sync::watch::Sender<String>,
+) {
+    use futures_util::{SinkExt, StreamExt};
+    loop {
+        let base = endpoint.borrow().clone();
+        let request_url = format!("{}/api/agent/ws", base.replace("http://", "ws://"));
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let mut request = request_url.into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert("Authorization", format!("Bearer {token}").parse().unwrap());
+        if let Ok((mut ws, _)) = tokio_tungstenite::connect_async(request).await {
+            let welcome = ws.next().await.unwrap().unwrap();
+            if let tokio_tungstenite::tungstenite::Message::Text(text) = welcome {
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["capability_event_ack"],
+                    true
+                );
+            }
+            let frame: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            let (mut sink, mut reader) = ws.split();
+            let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                sink.send(tokio_tungstenite::tungstenite::Message::Text(
+                    frame.to_string().into(),
+                ))
+                .await
+                .unwrap();
+                attempted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                attempted_endpoint.send(base).unwrap();
+                receive_capability_ack(&mut sink, &mut reader, frame["msg_id"].as_str().unwrap())
+                    .await
+            })
+            .await;
+            if matches!(outcome, Ok(Ok(()))) {
+                std::fs::remove_file(&path).unwrap();
+                return;
+            }
+            // Failed capture closes the real source socket without an Ack;
+            // retain the SAME persisted frame for the next automatic attempt.
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+async fn exercise_capability_capture_restart(
+    fail_commit: bool,
+    expired: bool,
+    revoke_recipient: bool,
+) {
+    use serverbee_server::entity::{audit_log, capability_event_receipt as receipt};
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "capability-owner-a").await;
+    let other = login_http(&client, &base, "member", "capability-owner-b").await;
+    let admin = login["access_token"].as_str().unwrap();
+    let other_access = other["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    queued_register(&client, &base, other_access, "device-b").await;
+    let (server, rule, token, sink, reader) = capability_ws_fixture(&client, &base, admin).await;
+    drop(sink);
+    drop(reader);
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    let original = Utc::now() - ChronoDuration::seconds(if expired { 3600 } else { 120 });
+    let frame = capability_source_frame(original, "terminal", "granted");
+    let path = directory.path().join("retained-capability-source.json");
+    std::fs::write(&path, serde_json::to_vec(&frame).unwrap()).unwrap();
+    let sql = if fail_commit {
+        "CREATE TABLE capability_capture_parent(id INTEGER PRIMARY KEY);
+         CREATE TABLE capability_capture_child(parent_id INTEGER REFERENCES capability_capture_parent(id) DEFERRABLE INITIALLY DEFERRED);
+         CREATE TRIGGER fail_capability_capture AFTER INSERT ON alert_event_intents
+         BEGIN INSERT INTO capability_capture_child(parent_id) VALUES(1); END"
+    } else {
+        "CREATE TRIGGER fail_capability_capture BEFORE INSERT ON alert_event_intents
+         BEGIN SELECT RAISE(ABORT,'injected capability intent capture failure'); END"
+    };
+    state.db.execute_unprepared(sql).await.unwrap();
+    let (endpoint_tx, endpoint_rx) = tokio::sync::watch::channel(base.clone());
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (attempted_tx, mut attempted_rx) = tokio::sync::watch::channel(String::new());
+    let source = tokio::spawn(retained_capability_source(
+        endpoint_rx,
+        token.clone(),
+        path.clone(),
+        attempts.clone(),
+        attempted_tx,
+    ));
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while attempts.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("original source automatically reconnects after failed admission");
+    assert!(
+        path.exists(),
+        "No admission Ack consumed the original source"
+    );
+    assert!(event_intents(&state).await.is_empty());
+    assert!(alert_jobs(&state).await.is_empty());
+    assert!(
+        receipt::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq("capability_temporarily_granted"))
+            .all(&state.db)
+            .await
+            .unwrap()
+            .is_empty(),
+        "Audit rolled back with failed capture/commit"
+    );
+    assert!(webhook.lock().await.is_empty());
+    if revoke_recipient {
+        assert_eq!(
+            client
+                .post(format!("{base}/api/mobile/auth/logout"))
+                .bearer_auth(other_access)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+    }
+    let restarted = reopen_alert_state(&state, &directory).await;
+    let restarted_base = serve_outbox_http(restarted.clone()).await;
+    endpoint_tx.send(restarted_base.clone()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let current = attempted_rx.borrow().clone();
+            if current == restarted_base {
+                break;
+            }
+            attempted_rx.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("source reconnects to restarted owner before fault release");
+    restarted
+        .db
+        .execute_unprepared("DROP TRIGGER fail_capability_capture")
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), source)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        !path.exists(),
+        "Only owned durable admission Ack consumes the source"
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while persisted_alert_cycle(&restarted, &rule, &server)
+            .await
+            .is_none()
+            || !event_intents(&restarted).await.is_empty()
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let cycle = persisted_alert_cycle(&restarted, &rule, &server)
+        .await
+        .unwrap();
+    assert_eq!(cycle.first_triggered_at, original);
+    assert_eq!(cycle.last_notified_at, original);
+    let admitted = receipt::Entity::find().all(&restarted.db).await.unwrap();
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].msg_id, frame["msg_id"].as_str().unwrap());
+    assert_eq!(admitted[0].server_id, server);
+    assert_eq!(admitted[0].occurred_at, original);
+    assert_eq!(
+        serverbee_server::entity::server::Entity::find_by_id(&server)
+            .one(&restarted.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .capabilities as u32,
+        serverbee_common::constants::CAP_DEFAULT,
+        "Historical Granted metadata cannot restore a revoked capability snapshot"
+    );
+    let jobs = alert_jobs(&restarted).await;
+    assert_eq!(
+        jobs.len(),
+        if expired {
+            0
+        } else if revoke_recipient {
+            1
+        } else {
+            2
+        }
+    );
+    for job in &jobs {
+        assert_eq!(job.created_at, original.timestamp());
+        assert_eq!(job.expires_at, original.timestamp() + 1800);
+        assert_eq!(job.event_id, jobs[0].event_id);
+        let content = decrypt_alert_envelope(
+            &serde_json::from_str(job.envelope.as_deref().unwrap()).unwrap(),
+        );
+        assert_eq!(
+            content["alert"]["alert_key"],
+            serverbee_server::service::alert::alert_detail_key(&cycle)
+        );
+    }
+    // Simulate lost Ack/restart: same original identity, current authority snapshot
+    // may have changed. No second alert, audit, webhook, or renewed deadline.
+    let (mut sink, mut reader) = common::connect_agent(&restarted_base, &token).await;
+    common::recv_agent_text(&mut reader).await;
+    let mut replay = frame.clone();
+    replay["capabilities"] = serde_json::json!(serverbee_common::constants::CAP_DEFAULT);
+    capability_send_and_ack(&mut sink, &mut reader, &replay).await;
+    assert_eq!(alert_jobs(&restarted).await, jobs);
+    assert_eq!(
+        receipt::Entity::find()
+            .all(&restarted.db)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq("capability_temporarily_granted"))
+            .all(&restarted.db)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        *webhook.lock().await,
+        ["triggered"],
+        "External channels retain independent expiry and send once"
+    );
+    let final_restart = reopen_alert_state(&restarted, &directory).await;
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        final_restart.clone(),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(alert_jobs(&final_restart).await, jobs);
+    let final_base = serve_outbox_http(final_restart.clone()).await;
+    let (mut sink, mut reader) = common::connect_agent(&final_base, &token).await;
+    common::recv_agent_text(&mut reader).await;
+    capability_send_and_ack(&mut sink, &mut reader, &frame).await;
+    assert_eq!(alert_jobs(&final_restart).await, jobs);
+    assert_eq!(
+        receipt::Entity::find()
+            .all(&final_restart.db)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(final_restart.clone());
+    wait_alert_dispatch(&final_restart).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), jobs.len());
+}
+
+#[tokio::test]
+async fn ws_capability_capture_insert_and_commit_failure_automatically_replay_original_source() {
+    exercise_capability_capture_restart(false, false, false).await;
+    exercise_capability_capture_restart(true, false, false).await;
+}
+
+#[tokio::test]
+async fn ws_capability_capture_replay_preserves_expiry_and_current_recipient_ownership() {
+    exercise_capability_capture_restart(false, true, false).await;
+    exercise_capability_capture_restart(true, false, true).await;
+}
+
+#[tokio::test]
+async fn ws_capability_low_risk_revoked_expired_and_once_suppression_remain_distinct() {
+    let (base, state, _directory, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "capability-gates-owner").await;
+    let admin = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, rule, _token, mut sink, mut reader) =
+        capability_ws_fixture(&client, &base, admin).await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    for (cap, action) in [
+        ("ping", "granted"),
+        ("terminal", "expired"),
+        ("terminal", "revoked"),
+    ] {
+        capability_send_and_ack(
+            &mut sink,
+            &mut reader,
+            &capability_source_frame(Utc::now(), cap, action),
+        )
+        .await;
+        assert!(alert_jobs(&state).await.is_empty());
+        assert!(
+            persisted_alert_cycle(&state, &rule, &server)
+                .await
+                .is_none()
+        );
+    }
+    let first = capability_source_frame(Utc::now(), "terminal", "granted");
+    capability_send_and_ack(&mut sink, &mut reader, &first).await;
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(jobs.len(), 1);
+    capability_send_and_ack(
+        &mut sink,
+        &mut reader,
+        &capability_source_frame(Utc::now(), "exec", "granted"),
+    )
+    .await;
+    assert_eq!(
+        alert_jobs(&state).await,
+        jobs,
+        "A distinct new grant still honors once suppression"
+    );
+    assert_eq!(
+        persisted_alert_cycle(&state, &rule, &server)
+            .await
+            .unwrap()
+            .count,
+        2
+    );
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+}
+
+#[tokio::test]
+async fn ws_capability_replay_rejects_changed_identity_and_superseded_socket() {
+    use futures_util::{SinkExt, StreamExt};
+    use serverbee_server::entity::capability_event_receipt as receipt;
+    use tokio_tungstenite::tungstenite::Message;
+    let (base, state, _directory, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "capability-connection-owner").await;
+    let admin = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, rule, token, mut old_sink, mut old_reader) =
+        capability_ws_fixture(&client, &base, admin).await;
+    let (mut current_sink, mut current_reader) = common::connect_agent(&base, &token).await;
+    common::recv_agent_text(&mut current_reader).await;
+    let source = capability_source_frame(Utc::now(), "terminal", "granted");
+    let _ = old_sink
+        .send(Message::Text(source.to_string().into()))
+        .await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(Ok(message)) = old_reader.next().await {
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+            if let Message::Text(text) = message {
+                assert_ne!(
+                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["msg_id"],
+                    source["msg_id"]
+                );
+            }
+        }
+    })
+    .await
+    .expect("Superseded socket cannot acknowledge retained source");
+    assert!(
+        receipt::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        persisted_alert_cycle(&state, &rule, &server)
+            .await
+            .is_none()
+    );
+    capability_send_and_ack(&mut current_sink, &mut current_reader, &source).await;
+    let jobs = alert_jobs(&state).await;
+    let cycle = persisted_alert_cycle(&state, &rule, &server).await.unwrap();
+    let mut changed = source.clone();
+    changed["changes"][0]["cap"] = serde_json::json!("exec");
+    current_sink
+        .send(Message::Text(changed.to_string().into()))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(Ok(message)) = current_reader.next().await {
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+            if let Message::Text(text) = message {
+                assert_ne!(
+                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["msg_id"],
+                    source["msg_id"]
+                );
+            }
+        }
+    })
+    .await
+    .expect("Changed content cannot reuse an admitted source identity");
+    assert_eq!(alert_jobs(&state).await, jobs);
+    assert_eq!(
+        persisted_alert_cycle(&state, &rule, &server).await.unwrap(),
+        cycle
+    );
+    assert_eq!(
+        receipt::Entity::find().all(&state.db).await.unwrap().len(),
+        1
+    );
+}

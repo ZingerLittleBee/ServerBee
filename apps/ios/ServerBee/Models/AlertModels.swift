@@ -6,8 +6,8 @@ enum AlertStatus: String, Codable, Sendable {
 }
 
 /// One row of the alert-events list (`GET /api/alert-events`). Mirrors the
-/// server's `AlertEventResponse` exactly — the list DTO carries only the
-/// rule/server identity, a firing/resolved status, the relevant timestamp
+/// server's `AlertEventResponse`. The list carries a complete alert key,
+/// rule/server labels, a firing/resolved status, the relevant timestamp
 /// (`event_at`) and the trigger `count`. The richer fields (message, first/last
 /// timestamps, rule mode) live on the per-event detail DTO (`MobileAlertDetail`).
 struct MobileAlertEvent: Codable, Identifiable, Sendable {
@@ -20,11 +20,11 @@ struct MobileAlertEvent: Codable, Identifiable, Sendable {
     let eventAt: String
     let resolvedAt: String?
     let count: Int
+    var completeAlertKey: String?
 
-    /// Detail-endpoint key `rule_id:server_id` (the list DTO omits it; the
-    /// detail route is `/api/alert-events/{rule_id:server_id}`). Also drives
-    /// navigation from the list.
-    var alertKey: String { "\(ruleId):\(serverId)" }
+    /// Versioned key binds the event dimension and trigger cycle. Older
+    /// Servers fall back to the general-dimension composite key.
+    var alertKey: String { completeAlertKey ?? "\(ruleId):\(serverId)" }
 
     /// Composite ID: the same `alertKey` is reused across firing→resolved
     /// transitions, so disambiguate by status + `eventAt` to avoid duplicate
@@ -40,6 +40,7 @@ struct MobileAlertEvent: Codable, Identifiable, Sendable {
         case eventAt = "event_at"
         case resolvedAt = "resolved_at"
         case count
+        case completeAlertKey = "alert_key"
     }
 }
 

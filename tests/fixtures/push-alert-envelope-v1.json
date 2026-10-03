@@ -1,0 +1,25 @@
+{
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "content": {
+    "kind": "alert",
+    "deployment_id": "https://serverbee.test",
+    "user_id": "alice",
+    "installation_id": "test-install",
+    "event_id": "11111111-1111-4111-8111-111111111111",
+    "created_at": 2000000000,
+    "expires_at": 2000001800,
+    "alert": {
+      "alert_key": "v1.WyJydWxlLTEiLCJzZXJ2ZXItMSIsIjIwMy4wLjExMy43IiwiMjAzMy0wNS0xOFQwMzozMzoyMCswMDowMCJd",
+      "status": "firing",
+      "rule_name": "High CPU",
+      "server_name": "vps-a"
+    }
+  },
+  "envelope": {
+    "version": 1,
+    "key_id": "22222222-2222-4222-8222-222222222222",
+    "identity": "40e9ea0a395dec3bafe5e84afbbe2e726ac53aa273f168b4ac650b208fdef51f",
+    "nonce": "ICEiIyQlJicoKSor",
+    "ciphertext": "qRjNGQL8ODQ4HS6rs2zW1fItiezr7xqDCZgYTSDufDNX5pFw/lYP9TuOC+AubG2qh0/C+v9PWUPiQApuKcBVtLwE9yn3+4z17kjFBdIzShW0+19lw5LpcJAmpgggPuq5cSADP6Y36pKl8IYrgZO7dh7l0Cv1/JUvYcM2PsS2sxkR1UyvCsM3gFS+j1I/Di2L5vsaBOKp67sBOYweqP/zrquQXVu5lyjtlZXzjpYaK5ubg4y0ee/tWBOwh9aDSYzLl4FMJES29G9lLI2O3/+JraFAh2rk5Wi9YNNsLjMLIGhFNlSp615RqyouovW+jvxdnjrbxXBAf2nmdTMvUz0Mu4nDOGjgTxpZj3ZiNdS34oyD9fFQSSPuvEBqSWU3mTH70RuDdtmqowkEv8RgyE2oPM3VbtVa5raeoBf9OPI3P8eiz3IerAXwttvEe/GdLqkJWMsxGEvGPLP44WcXBC0fKRzwynrZb1zM7GQCQJkF3UoP0k8XGFs2jGcaLF8tEzEViMsrYWhEvmNf3Ka8UQ=="
+  }
+}

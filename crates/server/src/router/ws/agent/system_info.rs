@@ -4,7 +4,9 @@
 
 use std::sync::Arc;
 
-use crate::service::alert::AlertService;
+use crate::{entity::server, error::AppError, service::alert_event_intents};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, Set, TransactionTrait};
+
 use crate::service::audit::AuditService;
 use crate::service::geoip;
 use crate::service::server::ServerService;
@@ -89,9 +91,8 @@ impl IpChange {
 
 /// The single reaction to a detected IP change, shared by the `SystemInfo`
 /// and `IpChanged` paths: audit trail, alert event rules, browser broadcast.
-/// Persistence stays with the caller — `SystemInfo` persists the whole
-/// identity row via `update_system_info`, `IpChanged` updates just the IP
-/// columns — so this function must never write address columns itself.
+/// The caller atomically commits source addresses and durable alert intents
+/// before this best-effort audit, replay attempt and browser broadcast.
 async fn apply_ip_change(state: &Arc<AppState>, server_id: &str, change: IpChange) {
     if !change.changed() {
         return;
@@ -118,16 +119,12 @@ async fn apply_ip_change(state: &Arc<AppState>, server_id: &str, change: IpChang
         }
     }
 
-    if let Err(e) = AlertService::check_event_rules(
-        &state.db,
-        &state.config,
-        &state.alert_state_manager,
-        server_id,
-        "ip_changed",
-    )
-    .await
+    // The source transaction already captured every admitted event intent.
+    // Queue failures are retried automatically, without another IP change.
+    if let Err(error) =
+        alert_event_intents::replay(&state.db, &state.config, &state.alert_state_manager).await
     {
-        tracing::error!("Failed to check event rules for IP change: {e}");
+        tracing::error!("Failed to replay captured IP alert intents: {error}");
     }
 
     state
@@ -150,7 +147,7 @@ pub(super) async fn on_system_info(
     info: SystemInfo,
     agent_local_capabilities: Option<u32>,
     temporary: Vec<TemporaryGrant>,
-) {
+) -> bool {
     // Mirror the agent-reported temporary grants so the REST DTO and
     // browser broadcasts can render live countdowns. The agent host is
     // the only authority; this is a display cache.
@@ -181,34 +178,25 @@ pub(super) async fn on_system_info(
         .get_remote_addr(server_id)
         .map(|a| a.ip().to_string());
 
-    if let Ok(srv) = ServerService::get_server(&state.db, server_id).await {
-        apply_ip_change(
-            state,
-            server_id,
-            IpChange {
-                old_ipv4: srv.ipv4.clone(),
-                new_ipv4: info.ipv4.clone(),
-                old_ipv6: srv.ipv6.clone(),
-                new_ipv6: info.ipv6.clone(),
-                old_remote_addr: srv.last_remote_addr.clone(),
-                new_remote_addr: current_remote_addr.clone(),
-            },
-        )
-        .await;
-
-        // Always update last_remote_addr
-        if let Some(ref addr) = current_remote_addr
-            && let Err(e) = update_last_remote_addr(&state.db, server_id, addr).await
-        {
-            tracing::error!("Failed to update last_remote_addr for {server_id}: {e}");
-        }
-    }
-
-    if let Err(e) =
-        ServerService::update_system_info(&state.db, server_id, &info, region, country_code).await
+    let change = match persist_system_info(
+        state,
+        server_id,
+        &info,
+        region,
+        country_code,
+        current_remote_addr,
+    )
+    .await
     {
-        tracing::error!("Failed to update system info for {server_id}: {e}");
-    }
+        Ok(change) => change,
+        Err(error) => {
+            // No address update/Ack consumes a failed capture. Close this socket
+            // so the Agent reconnects with SystemInfo against the old baseline.
+            tracing::error!("System info and event-intent transaction failed: {error}");
+            return false;
+        }
+    };
+    apply_ip_change(state, server_id, change).await;
 
     let _ = ServerService::update_features(&state.db, server_id, &info.features).await;
     state
@@ -308,6 +296,7 @@ pub(super) async fn on_system_info(
             "connection desired-state reconcile was incomplete"
         );
     }
+    true
 }
 
 pub(super) async fn on_ip_changed(
@@ -315,7 +304,7 @@ pub(super) async fn on_ip_changed(
     server_id: &str,
     ipv4: Option<String>,
     ipv6: Option<String>,
-) {
+) -> bool {
     // Refresh the firewall guardrail's dynamic allow-list with the
     // agent's new external IP. Done first so that any later auto-block
     // evaluation in this scope sees the up-to-date value.
@@ -328,91 +317,115 @@ pub(super) async fn on_ip_changed(
         .note_agent_external_ip(server_id, fw_ip)
         .await;
 
-    match ServerService::get_server(&state.db, server_id).await {
-        Ok(srv) => {
-            let old_ipv4 = srv.ipv4.clone();
-            let old_ipv6 = srv.ipv6.clone();
-
-            if old_ipv4 != ipv4 || old_ipv6 != ipv6 {
-                // Update ipv4/ipv6 in DB
-                if let Err(e) = update_server_ips(&state.db, server_id, &ipv4, &ipv6).await {
-                    tracing::error!("Failed to update IPs for {server_id}: {e}");
-                }
-
-                // Re-run GeoIP lookup. Same private/loopback filter as
-                // the SystemInfo path; fall back to remote_addr when
-                // the agent only knows internal/bridge addresses.
-                let ip_to_lookup =
-                    resolve_public_ip(state, server_id, ipv4.as_deref(), ipv6.as_deref());
-                if let Some(ip) = ip_to_lookup {
-                    let geo = {
-                        let guard = state.geoip.read().unwrap();
-                        guard.as_ref().map(|g| g.lookup(ip))
-                    };
-                    if let Some(geo) = geo
-                        && let Err(e) =
-                            update_server_geo(&state.db, server_id, geo.region, geo.country_code)
-                                .await
-                    {
-                        tracing::error!("Failed to update GeoIP for {server_id}: {e}");
-                    }
-                }
-
-                apply_ip_change(
-                    state,
-                    server_id,
-                    IpChange {
-                        old_ipv4,
-                        new_ipv4: ipv4,
-                        old_ipv6,
-                        new_ipv6: ipv6,
-                        old_remote_addr: None,
-                        new_remote_addr: None,
-                    },
-                )
-                .await;
-            }
+    let change = match persist_ip_change(state, server_id, ipv4.clone(), ipv6.clone()).await {
+        Ok(change) => change,
+        Err(error) => {
+            tracing::error!("IP change and event-intent transaction failed: {error}");
+            return false;
         }
-        Err(e) => {
-            tracing::error!("Failed to load server {server_id} for IpChanged: {e}");
+    };
+    if let Some(change) = change {
+        // Re-run GeoIP only after addresses and intents have committed.
+        let ip = resolve_public_ip(state, server_id, ipv4.as_deref(), ipv6.as_deref());
+        let geo = ip.and_then(|ip| {
+            let guard = state.geoip.read().unwrap();
+            guard.as_ref().map(|g| g.lookup(ip))
+        });
+        if let Some(geo) = geo
+            && let Err(error) =
+                update_server_geo(&state.db, server_id, geo.region, geo.country_code).await
+        {
+            tracing::error!("Failed to update GeoIP for {server_id}: {error}");
         }
+        apply_ip_change(state, server_id, change).await;
     }
+    true
 }
 
-/// Update the `last_remote_addr` field on a server record.
-async fn update_last_remote_addr(
-    db: &sea_orm::DatabaseConnection,
+async fn source_transaction(
+    state: &AppState,
     server_id: &str,
-    addr: &str,
-) -> Result<(), crate::error::AppError> {
-    use crate::entity::server;
-    use sea_orm::{ActiveModelTrait, Set};
-
-    let model = ServerService::get_server(db, server_id).await?;
-    let mut active: server::ActiveModel = model.into();
-    active.last_remote_addr = Set(Some(addr.to_string()));
-    active.updated_at = Set(chrono::Utc::now());
-    active.update(db).await?;
-    Ok(())
+) -> Result<sea_orm::DatabaseTransaction, AppError> {
+    let txn = state.db.begin().await?;
+    txn.execute(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Sqlite,
+        "UPDATE servers SET updated_at=updated_at WHERE id=?",
+        [server_id.into()],
+    ))
+    .await?;
+    Ok(txn)
 }
 
-/// Update the `ipv4` and `ipv6` fields on a server record.
-async fn update_server_ips(
-    db: &sea_orm::DatabaseConnection,
+async fn source_server(
+    txn: &sea_orm::DatabaseTransaction,
     server_id: &str,
-    ipv4: &Option<String>,
-    ipv6: &Option<String>,
-) -> Result<(), crate::error::AppError> {
-    use crate::entity::server;
-    use sea_orm::{ActiveModelTrait, Set};
+) -> Result<server::Model, AppError> {
+    server::Entity::find_by_id(server_id)
+        .one(txn)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Server {server_id} not found")))
+}
 
-    let model = ServerService::get_server(db, server_id).await?;
-    let mut active: server::ActiveModel = model.into();
-    active.ipv4 = Set(ipv4.clone());
-    active.ipv6 = Set(ipv6.clone());
-    active.updated_at = Set(chrono::Utc::now());
-    active.update(db).await?;
-    Ok(())
+async fn persist_ip_change(
+    state: &AppState,
+    server_id: &str,
+    ipv4: Option<String>,
+    ipv6: Option<String>,
+) -> Result<Option<IpChange>, AppError> {
+    let txn = source_transaction(state, server_id).await?;
+    let srv = source_server(&txn, server_id).await?;
+    if srv.ipv4 == ipv4 && srv.ipv6 == ipv6 {
+        txn.commit().await?;
+        return Ok(None);
+    }
+    let change = IpChange {
+        old_ipv4: srv.ipv4.clone(),
+        new_ipv4: ipv4.clone(),
+        old_ipv6: srv.ipv6.clone(),
+        new_ipv6: ipv6.clone(),
+        old_remote_addr: None,
+        new_remote_addr: None,
+    };
+    let occurred_at = chrono::Utc::now();
+    alert_event_intents::capture(&txn, server_id, "ip_changed", occurred_at).await?;
+    let mut active: server::ActiveModel = srv.into();
+    active.ipv4 = Set(ipv4);
+    active.ipv6 = Set(ipv6);
+    active.updated_at = Set(occurred_at);
+    active.update(&txn).await?;
+    txn.commit().await?;
+    Ok(Some(change))
+}
+
+async fn persist_system_info(
+    state: &AppState,
+    server_id: &str,
+    info: &SystemInfo,
+    region: Option<String>,
+    country_code: Option<String>,
+    remote: Option<String>,
+) -> Result<IpChange, AppError> {
+    let txn = source_transaction(state, server_id).await?;
+    let srv = source_server(&txn, server_id).await?;
+    let change = IpChange {
+        old_ipv4: srv.ipv4.clone(),
+        new_ipv4: info.ipv4.clone(),
+        old_ipv6: srv.ipv6.clone(),
+        new_ipv6: info.ipv6.clone(),
+        old_remote_addr: srv.last_remote_addr.clone(),
+        new_remote_addr: remote.clone(),
+    };
+    if change.changed() {
+        alert_event_intents::capture(&txn, server_id, "ip_changed", chrono::Utc::now()).await?;
+    }
+    ServerService::update_system_info(&txn, server_id, info, region, country_code).await?;
+    if let Some(remote) = remote {
+        let mut active: server::ActiveModel = source_server(&txn, server_id).await?.into();
+        active.last_remote_addr = Set(Some(remote));
+        active.update(&txn).await?;
+    }
+    txn.commit().await?;
+    Ok(change)
 }
 
 /// Update the `region` and `country_code` GeoIP fields on a server record.

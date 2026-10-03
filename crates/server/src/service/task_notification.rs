@@ -173,6 +173,12 @@ pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<()
             registration_revision: row.revision,
             recipient_role: "admin".into(),
             task_run_id: Some(run_id.into()),
+            category: if success {
+                "task_success"
+            } else {
+                "task_failure"
+            }
+            .into(),
             created_at,
             expires_at: created_at + 1800,
             envelope: None,
@@ -208,6 +214,7 @@ pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<()
             created_at,
             expires_at: created_at + 1800,
             task_run: Some(summary.clone()),
+            alert: None,
         };
         let Ok(envelope) = encrypt(key_id, &secret, &content) else {
             tracing::warn!("Task notification content key unavailable");

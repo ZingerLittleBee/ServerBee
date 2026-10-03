@@ -106,13 +106,15 @@ pub(crate) async fn eligible(
             && r.mobile_session_id == job.mobile_session_id
             && r.revision == job.registration_revision
             && r.enabled
-            && task_success.is_none_or(|success| {
-                if success {
-                    r.task_success
-                } else {
-                    r.task_failure
-                }
-            })
+            && match (job.category.as_str(), task_success) {
+                ("test", None) => true,
+                ("alert", None) => r.alerts,
+                // Jobs queued before the category migration retain their task
+                // target and current outcome-specific subscription checks.
+                ("test" | "task_failure", Some(false)) => r.task_failure,
+                ("test" | "task_success", Some(true)) => r.task_success,
+                _ => false,
+            }
             && r.content_key.is_some()
             && r.grant_token.is_some()
             && r.grant_expires_at.is_some_and(|e| e > now)

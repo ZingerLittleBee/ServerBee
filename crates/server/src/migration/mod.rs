@@ -50,7 +50,9 @@ mod m20261003_000077_mobile_session_revocation_proofs;
 mod m20261003_000078_mobile_push_registration;
 mod m20261003_000079_mobile_push_content;
 mod m20261003_000080_mobile_push_outbox;
+mod m20261003_000081_mobile_alert_category;
 mod m20261003_000083_task_runs;
+mod m20261003_000084_alert_event_intents;
 
 pub struct Migrator;
 
@@ -106,7 +108,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20261003_000078_mobile_push_registration::Migration),
             Box::new(m20261003_000079_mobile_push_content::Migration),
             Box::new(m20261003_000080_mobile_push_outbox::Migration),
+            Box::new(m20261003_000081_mobile_alert_category::Migration),
             Box::new(m20261003_000083_task_runs::Migration),
+            Box::new(m20261003_000084_alert_event_intents::Migration),
         ]
     }
 }

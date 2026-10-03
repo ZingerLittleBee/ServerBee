@@ -13,7 +13,7 @@ struct NotificationSetupView: View {
                     "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
                     "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
                 ))
-                Text("Encrypted tests and final task outcomes are supported. Other categories remain under development.")
+                Text("Encrypted tests, alert transitions and final task outcomes are supported. Security delivery remains under development.")
                     .foregroundStyle(.secondary)
             } header: { Text("Mobile notification privacy") }
 
@@ -27,6 +27,10 @@ struct NotificationSetupView: View {
                         .disabled(manager.confirmed?.taskFailureAvailable != true)
                     Toggle("Successful task runs", isOn: $draft.taskSuccess)
                     Text("Successful runs stay silent unless enabled. Only your complete task runs can notify you.")
+                        .foregroundStyle(.secondary)
+                }
+                if manager.unconfirmedPreferences != nil {
+                    Text("Subscription changes are not saved. Retry to confirm them with the Server.")
                         .foregroundStyle(.secondary)
                 }
                 if manager.confirmed?.preferences.enabled == true {

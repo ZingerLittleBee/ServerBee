@@ -4,7 +4,7 @@ description: Native iOS app for ServerBee with QR pairing, push notifications, a
 icon: Smartphone
 ---
 
-ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup and final scheduled-task outcome notifications are available, with successes requiring opt-in. Alert and security delivery remain under development.
+ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup and final scheduled-task outcome notifications are available, with successes requiring opt-in. Encrypted alert triggers and recoveries are available through confirmed mobile subscriptions. Security delivery remains under development.
 
 ## Availability
 
@@ -21,7 +21,7 @@ Source builds require your Apple development team. The official-app design keeps
 ## Features
 
 - **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
-- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task outcomes for administrator owners, with success opt-in
+- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task outcomes for administrator owners, with success opt-in; encrypted alert triggers and recoveries without a notification group
 - **Real-time Metrics** -- Live server status, CPU, memory, disk, and network metrics streamed via WebSocket
 - **Alert History** -- View recent alerts and their status (triggered/resolved) with detailed information
 - **Secure Authentication** -- Bearer token-based auth with automatic refresh (15-min access token, 30-day refresh token)
@@ -90,11 +90,19 @@ A failed subscription save remains visible after returning to the app, reconnect
 
 The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Unsupported or rejected App Attest leaves push unavailable while login and monitoring continue to work. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
 
-**Setup confirmation does not mean category delivery is operational.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures and opted-in successes use the same encrypted pipeline; alert and security delivery remain under development.
+**Enable Alerts and recoveries to receive alert transitions.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures and opted-in successes use the same encrypted pipeline. Security delivery remains under development.
 
 Tests first enter a durable encrypted Server outbox. **Pending** means queued locally, **Retryable** means provider acceptance is unconfirmed and another attempt is scheduled, **Accepted** is an APNs provider receipt, **Permanent** stops retries, and **Expired** ends the test 30 minutes after its original creation. Retries and Server restarts never extend that deadline. The screen refreshes the current test status; retrying a lost response retains the same logical test identity. Delivery can be duplicated after an ambiguous network failure, so neither acceptance nor retry promises exactly-once display.
 
 Before every attempt the Server checks the account, current role, mobile session, subscription, grant expiry and registration revision. Disabling delivery, logout, device/account revocation, session expiry or a registration replacement stops later eligible attempts. Already in-flight or accepted APNs notifications cannot be retracted. Queue records contain ciphertext, not another plaintext notification history. Terminal ciphertext is erased; secret-free delivery receipts remain to prevent duplicate enqueueing from restarting the expiry window.
+
+### Alert Triggers and Recoveries
+
+The Server queues encrypted notifications for each currently eligible subscribed installation, independently of external notification groups. Enabled rules retain their existing coverage, maintenance, trigger-mode and suppression behavior. Recovery follows the existing evaluator's transition behavior, including during maintenance. Unsubscribing before dispatch stops later eligible sends for that installation. External channels retain their own groups; migrated installations stay excluded from legacy APNs delivery.
+
+Taps wait for authentication restoration and validate the current deployment, account and installation. The alert target includes the rule, Server, event dimension and trigger cycle. A deleted alert or overwritten cycle shows **Alert not found** with **Back to alerts**, rather than opening a newer cycle. The extension localizes trigger/recovery text in English or Simplified Chinese; decryption failure shows generic text without a navigation target.
+
+Queued delivery and extension presentation expire 30 minutes after creation. Tapping a notification already shown in Notification Center after that deadline still authenticates its exact target and requests current Server detail. Expiry does not authorize access: a changed login is rejected, and a deleted or unavailable alert uses the same safe fallback.
 
 ### Final Task Failures
 
@@ -145,7 +153,7 @@ APNs transport uses publisher-only signing inputs `APNS_TEAM_ID`, `APNS_KEY_ID`,
 - App Attest requires a supported physical device and matching signing capabilities. Simulator success is not device verification.
 - Use the final HTTPS Server URL before registering a content key. Server requests reject redirects; failed setup can be retried at the configured endpoint.
 - Check signing for the app-private credential group and the app/extension shared content-key group. Decryption failures show generic text.
-- Enable **Final task failures** as an administrator. Alert and security delivery remain under development.
+- Enable **Alerts and recoveries**, or **Final task failures** and optional **Successful task runs** as an administrator. Security delivery remains under development.
 
 ### Authentication Failures
 
