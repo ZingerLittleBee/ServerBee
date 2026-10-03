@@ -59,6 +59,9 @@ pub struct PushSetupResponse {
     pub preferences: PushPreferences,
     /// Whether the current account role permits security subscriptions.
     pub security_allowed: bool,
+    /// Task routes require the current administrator role.
+    pub tasks_allowed: bool,
+    pub task_failure_available: bool,
     pub registered: bool,
     pub grant_expires_at: Option<DateTime<Utc>>,
     pub relay_url: String,
@@ -100,6 +103,8 @@ fn response(
             task_success: row.is_some_and(|r| r.task_success),
         },
         security_allowed,
+        tasks_allowed: security_allowed,
+        task_failure_available: true,
         registered: row.is_some_and(|r| {
             r.enabled
                 && r.grant_token.is_some()
@@ -249,6 +254,11 @@ pub async fn save_preferences(
     if body.preferences.security && owner.role != "admin" {
         return Err(AppError::Forbidden(
             "Security notifications require an administrator".into(),
+        ));
+    }
+    if (body.preferences.task_failure || body.preferences.task_success) && owner.role != "admin" {
+        return Err(AppError::Forbidden(
+            "Task notifications require an administrator".into(),
         ));
     }
     let exists = row.is_some();
@@ -529,6 +539,7 @@ pub async fn test_notification(
         event_id: event_id.clone(),
         created_at: now,
         expires_at: now + 1800,
+        task_run: None,
     };
     let envelope = serde_json::to_string(&encrypt(key_id, &secret, &content)?)
         .map_err(|_| AppError::Internal("Push encryption failed".into()))?;
@@ -541,6 +552,7 @@ pub async fn test_notification(
         mobile_session_id: Set(mobile.id),
         registration_revision: Set(row.revision),
         recipient_role: Set(owner.role),
+        task_run_id: Set(None),
         created_at: Set(now),
         expires_at: Set(now + 1800),
         envelope: Set(Some(envelope)),

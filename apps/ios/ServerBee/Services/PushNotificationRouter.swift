@@ -20,7 +20,8 @@ final class PushNotificationRouter {
         pendingEnvelope = nil
         guard let key, key.scope == context.pushScope, key.deploymentId == context.serverUrl,
               key.userId == context.userId, key.installationId == context.installationId,
-              (try? PushEnvelopeDecoder.decrypt(envelope, key: key)) != nil else { return nil }
+              let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key) else { return nil }
+        if let run = content.taskRun { return .taskRun(taskId: run.taskId, runId: run.runId) }
         return .account
     }
 

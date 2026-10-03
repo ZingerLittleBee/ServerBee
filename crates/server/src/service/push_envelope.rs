@@ -31,6 +31,20 @@ pub struct PushContent {
     pub event_id: String,
     pub created_at: i64,
     pub expires_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_run: Option<TaskRunSummary>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskRunSummary {
+    pub task_id: String,
+    pub run_id: String,
+    pub total: usize,
+    pub failed: usize,
+    pub timed_out: usize,
+    pub offline: usize,
+    pub denied: usize,
 }
 
 pub fn identity(deployment: &str, user: &str, installation: &str) -> Result<String, AppError> {

@@ -4,7 +4,7 @@ description: Native iOS app for ServerBee with QR pairing, push notifications, a
 icon: Smartphone
 ---
 
-ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup is available; category delivery is still being implemented.
+ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup and final scheduled-task failure notifications are available. Alert and security delivery remain under development.
 
 ## Availability
 
@@ -21,7 +21,7 @@ Source builds require your Apple development team. The official-app design keeps
 ## Features
 
 - **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
-- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; category delivery remains under development
+- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task-failure delivery for administrators
 - **Real-time Metrics** -- Live server status, CPU, memory, disk, and network metrics streamed via WebSocket
 - **Alert History** -- View recent alerts and their status (triggered/resolved) with detailed information
 - **Secure Authentication** -- Bearer token-based auth with automatic refresh (15-min access token, 30-day refresh token)
@@ -82,19 +82,25 @@ The device will be immediately logged out and all its tokens invalidated.
 
 ## Verified Notification Setup
 
-Signing in does not request notification permission. Open **Settings → Notifications**, choose subscriptions, then tap **Enable notifications**. The Server confirms the saved preferences before iOS asks for permission. Security subscriptions require an administrator; successful task outcomes are separately opt-in.
+Signing in does not request notification permission. Open **Settings → Notifications**, choose subscriptions, then tap **Enable notifications**. The Server confirms the saved preferences before iOS asks for permission. Security and task subscriptions require an administrator. Successful-task delivery remains under development.
 
-The notification page uses permissions confirmed by the Server, even if the cached login role is outdated. After an administrator is demoted, saving subscriptions or disabling notifications clears the unavailable security category. Failed saves do not replace the confirmed preferences.
+The notification page uses permissions confirmed by the Server, even if the cached login role is outdated. After an administrator is demoted, saving subscriptions or disabling notifications clears unavailable security and task categories. Failed saves do not replace the confirmed preferences.
 
 A failed subscription save remains visible after returning to the app, reconnecting or recovering registration. The page retains the unconfirmed choices until a successful save or a newer settings revision from the Server confirms the submitted permitted preferences. A successful registration alone does not confirm those choices.
 
 The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Unsupported or rejected App Attest leaves push unavailable while login and monitoring continue to work. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
 
-**Setup confirmation does not mean category delivery is operational.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Category event delivery is a separate implementation stage.
+**Setup confirmation does not mean category delivery is operational.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures use the same encrypted pipeline; alert, security and successful-task delivery remain under development.
 
 Tests first enter a durable encrypted Server outbox. **Pending** means queued locally, **Retryable** means provider acceptance is unconfirmed and another attempt is scheduled, **Accepted** is an APNs provider receipt, **Permanent** stops retries, and **Expired** ends the test 30 minutes after its original creation. Retries and Server restarts never extend that deadline. The screen refreshes the current test status; retrying a lost response retains the same logical test identity. Delivery can be duplicated after an ambiguous network failure, so neither acceptance nor retry promises exactly-once display.
 
 Before every attempt the Server checks the account, current role, mobile session, subscription, grant expiry and registration revision. Disabling delivery, logout, device/account revocation, session expiry or a registration replacement stops later eligible attempts. Already in-flight or accepted APNs notifications cannot be retracted. Queue records contain ciphertext, not another plaintext notification history. Terminal ciphertext is erased; secret-free delivery receipts remain to prevent duplicate enqueueing from restarting the expiry window.
+
+### Final Task Failures
+
+Enable **Final task failures** as an administrator. A manually started scheduled task notifies its initiator; an automatic run notifies its creator, independently of other subscribed administrators. Each eligible installation receives one logical summary after all targets finish their final attempts. Intermediate failures followed by retry success remain silent. Final failed exits, timeouts, offline targets and execution denials are counted separately, including runs with no executable targets. Interrupted or incomplete runs are never treated as successful.
+
+Summaries contain counts and task/run identifiers, never task names, commands or command output. Tapping opens authenticated results filtered to that exact run. Deleted tasks, unavailable runs or lost access show a dismissible fallback; old account/deployment notifications cannot navigate. Current administrator access, ownership and subscription are checked again before queued delivery. No notification group is required. Successful-run notifications are not available yet.
 
 ### Privacy Boundary
 
@@ -133,7 +139,7 @@ APNs transport uses publisher-only signing inputs `APNS_TEAM_ID`, `APNS_KEY_ID`,
 - App Attest requires a supported physical device and matching signing capabilities. Simulator success is not device verification.
 - Use the final HTTPS Server URL before registering a content key. Server requests reject redirects; failed setup can be retried at the configured endpoint.
 - Check signing for the app-private credential group and the app/extension shared content-key group. Decryption failures show generic text.
-- Category delivery is not yet operational; use the current-installation test action.
+- Enable **Final task failures** as an administrator. Alert, security and successful-task delivery remain under development.
 
 ### Authentication Failures
 

@@ -121,6 +121,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         // login metadata and hidden draft categories after an administrator demotion.
         var permitted = preferences
         if !confirmed.securityAllowed { permitted.security = false }
+        if confirmed.tasksAllowed != true { permitted.taskFailure = false; permitted.taskSuccess = false }
         let write = UUID()
         beginWrite(write)
         defer { finishWrite(write) }
@@ -399,7 +400,8 @@ private extension PushNotificationManager {
         // that a failed preference write saved its intended category choices.
         guard let failed = failedPreferences, failed.generation == captured.generation,
               setup.revision > failed.expectedRevision, setup.preferences == failed.preferences,
-              !failed.preferences.security || setup.securityAllowed else { return }
+              !failed.preferences.security || setup.securityAllowed,
+              !(failed.preferences.taskFailure || failed.preferences.taskSuccess) || setup.tasksAllowed == true else { return }
         failedPreferences = nil
     }
 

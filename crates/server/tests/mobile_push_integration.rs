@@ -313,7 +313,7 @@ async fn login_http(
 }
 
 fn intent(security: bool, enabled: bool) -> serde_json::Value {
-    serde_json::json!({"enabled":enabled, "alerts":true, "security":security, "task_failure":true, "task_success":false})
+    serde_json::json!({"enabled":enabled, "alerts":true, "security":security, "task_failure":false, "task_success":false})
 }
 async fn preferences_http(
     client: &reqwest::Client,
@@ -551,7 +551,8 @@ async fn demoted_administrator_can_save_permitted_subscriptions_and_disable_setu
 
         let mut permitted = intent(false, enabled);
         permitted["alerts"] = serde_json::json!(false);
-        permitted["task_success"] = serde_json::json!(true);
+        permitted["task_failure"] = serde_json::json!(false);
+        permitted["task_success"] = serde_json::json!(false);
         let saved = preferences_http(&client, &base, access, 2, permitted.clone()).await;
         assert_eq!(saved.status(), 200);
         let saved = saved.json::<serde_json::Value>().await.unwrap()["data"].clone();
@@ -571,8 +572,8 @@ async fn demoted_administrator_can_save_permitted_subscriptions_and_disable_setu
         assert_eq!(row.enabled, enabled);
         assert!(!row.security);
         assert!(!row.alerts);
-        assert!(row.task_failure);
-        assert!(row.task_success);
+        assert!(!row.task_failure);
+        assert!(!row.task_success);
         assert_eq!(row.grant_token.is_some(), enabled);
         assert_eq!(row.grant_id.is_some(), enabled);
         assert_eq!(row.grant_expires_at.is_some(), enabled);
@@ -2438,3 +2439,6 @@ async fn user_mutations_wait_for_outbox_writer_before_reading_revocation_guards(
         assert!(relay.requests().await.is_empty(), "{operation}");
     }
 }
+
+#[path = "mobile_push_tasks/mod.rs"]
+mod task_outcomes;

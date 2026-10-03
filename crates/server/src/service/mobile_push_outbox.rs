@@ -50,11 +50,32 @@ pub fn start(state: Arc<AppState>) -> JoinHandle<()> {
     })
 }
 
-async fn eligible(
+pub(crate) async fn eligible(
     txn: &sea_orm::DatabaseTransaction,
     job: &outbox::Model,
 ) -> Result<Option<registration::Model>, AppError> {
     let now = Utc::now();
+    if let Some(run_id) = job.task_run_id.as_deref() {
+        if job.event_id != run_id {
+            return Ok(None);
+        }
+        use crate::entity::{task, task_run};
+        let run = task_run::Entity::find_by_id(run_id)
+            .filter(task_run::Column::OwnerId.eq(&job.user_id))
+            .filter(task_run::Column::Status.eq("completed"))
+            .one(txn)
+            .await?;
+        let Some(run) = run else { return Ok(None) };
+        if job.recipient_role != "admin"
+            || task::Entity::find_by_id(&run.task_id)
+                .filter(task::Column::TaskType.eq("scheduled"))
+                .one(txn)
+                .await?
+                .is_none()
+        {
+            return Ok(None);
+        }
+    }
     let row = registration::Entity::find_by_id(&job.installation_id)
         .one(txn)
         .await?;
@@ -63,6 +84,7 @@ async fn eligible(
             && r.mobile_session_id == job.mobile_session_id
             && r.revision == job.registration_revision
             && r.enabled
+            && (job.task_run_id.is_none() || r.task_failure)
             && r.content_key.is_some()
             && r.grant_token.is_some()
             && r.grant_expires_at.is_some_and(|e| e > now)

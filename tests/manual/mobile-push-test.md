@@ -199,3 +199,33 @@ lost accepted replies, old saved metadata, restart, definite 404, conflicting la
 admission and previous-account completions. `user_mutations_wait_for_outbox_writer_before_reading_revocation_guards`
 holds a real SQLite outbox writer while authenticated user DELETE/password/role
 operations start; each must wait successfully and prevent later eligible sends.
+
+## Scheduled-task failure summaries (#203)
+
+Automated Server coverage runs through the real scheduler, HTTP sessions,
+subscriptions, Agent WebSocket reply path and migrated SQLite:
+
+```sh
+cargo test -p serverbee-server --test mobile_push_integration task_outcomes
+cargo test -p serverbee-server --lib service::task_scheduler
+```
+
+The iOS XCTest bundle includes `TaskPushNavigationTests` for authenticated
+exact-run taps, early delegate buffering, count-only rendering, stale account
+responses and deleted/forbidden targets. These fixtures substitute Agent command
+execution, Apple and network boundaries; they do not establish native delivery.
+
+With a signed app and isolated configured Relay, subscribe two installations as
+the task owner and a third as another administrator. Manually run a scheduled
+task created by the other administrator and verify that only the initiator's
+installations receive the final summary. For an automatic run, only the creator
+should receive it. Hold one target while others fail; observe no summary before
+its final reply. Check retry-success silence, exhausted failure, command timeout,
+scheduler deadline, offline and capability-denial counts, including all-denied
+runs. Confirm that the banner contains no task name, command or output.
+
+Record APNs provider acceptance, foreground/background/terminated presentation
+and exact-run authenticated navigation separately. Tap after deleting the task,
+revoking administrator access, switching accounts and during cold launch; verify
+safe fallback or rejection. Queued delivery must stop after current role or
+subscription revocation. Successful-run notification delivery belongs to #204.

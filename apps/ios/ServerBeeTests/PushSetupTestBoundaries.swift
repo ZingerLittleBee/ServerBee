@@ -33,12 +33,13 @@ final class TestPushRelay: PushRelayBoundary {
 }
 
 enum PushSetupTestData {
-    static func response(enabled: Bool = true, registered: Bool = false, revision: Int64 = 1, preferences: PushPreferences? = nil, securityAllowed: Bool = false) -> Data {
+    static func response(enabled: Bool = true, registered: Bool = false, revision: Int64 = 1, preferences: PushPreferences? = nil, securityAllowed: Bool = false, tasksAllowed: Bool = true) -> Data {
         let selected = preferences ?? PushPreferences(enabled: enabled, alerts: true, security: false, taskFailure: true, taskSuccess: false)
         return Data("""
         {"data":{"revision":\(revision),"preferences":{"enabled":\(selected.enabled),"alerts":\(selected.alerts),"security":\(selected.security),
         "task_failure":\(selected.taskFailure),"task_success":\(selected.taskSuccess)},
-        "security_allowed":\(securityAllowed),"registered":\(registered),"grant_expires_at":\(registered ? "\"2033-05-18T03:33:20Z\"" : "null"),
+        "tasks_allowed":\(tasksAllowed),"task_failure_available":true,"security_allowed":\(securityAllowed),"registered":\(registered),
+        "grant_expires_at":\(registered ? "\"2033-05-18T03:33:20Z\"" : "null"),
         "relay_url":"https://relay.test","delivery_available":false}}
         """.utf8)
     }

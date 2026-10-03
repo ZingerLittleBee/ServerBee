@@ -3411,6 +3411,9 @@ export interface components {
             revision: number;
             /** @description Whether the current account role permits security subscriptions. */
             security_allowed: boolean;
+            task_failure_available: boolean;
+            /** @description Task routes require the current administrator role. */
+            tasks_allowed: boolean;
             /** @description Only the current-installation tracer bullet is enabled in this release. */
             test_available: boolean;
         };
@@ -9854,7 +9857,10 @@ export interface operations {
     };
     get_task_results: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Restrict results to one exact scheduled run. */
+                run_id?: string | null;
+            };
             header?: never;
             path: {
                 /** @description Task ID */

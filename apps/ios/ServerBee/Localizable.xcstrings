@@ -1,6 +1,108 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Task run failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行失败"
+          }
+        }
+      }
+    },
+    "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标：%lld。失败：%lld。超时：%lld。离线：%lld。拒绝执行：%lld。"
+          }
+        }
+      }
+    },
+    "Task run unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行不可用"
+          }
+        }
+      }
+    },
+    "The task may have been deleted or your access may have changed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task may have been deleted or your access may have changed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务可能已删除，或你的访问权限已变更。"
+          }
+        }
+      }
+    },
+    "Task run results": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run results"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次任务结果"
+          }
+        }
+      }
+    },
+    "Encrypted tests and final task failures are supported. Other categories remain under development.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encrypted tests and final task failures are supported. Other categories remain under development."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持加密测试通知和任务最终失败通知，其他类别仍在开发中。"
+          }
+        }
+      }
+    },
     "": {},
     "%@ burned this cycle": {
       "extractionState": "manual",

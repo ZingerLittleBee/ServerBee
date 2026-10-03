@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var selectedTab: Int = ContentView.serversTabTag
     @State private var serversPath: [ServerNavigationTarget] = []
     @State private var alertsPath: [ServerDeepLink] = []
+    @State private var taskRunTarget: TaskRunTarget?
 
     private let authManager: AuthManager
 
@@ -58,7 +59,7 @@ struct ContentView: View {
                     AlertsListView()
                         .navigationDestination(for: ServerDeepLink.self) { link in
                             switch link {
-                            case .account:
+                            case .account, .taskRun:
                                 EmptyView()
                             case .alertDetail(let key):
                                 AlertDetailView(alertKey: key)
@@ -96,6 +97,14 @@ struct ContentView: View {
             OfflineBannerView(isConnected: networkMonitor.isConnected)
                 .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)
         }
+        .sheet(item: $taskRunTarget) { target in
+            NavigationStack {
+                TaskRunResultsView(target: target, authManager: authManager)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { taskRunTarget = nil } } }
+            }
+            .environment(\.apiClient, apiClient)
+        }
+        .onChange(of: authManager.captureContext()?.pushScope) { _, _ in taskRunTarget = nil }
         .onChange(of: pushRouter.pendingEnvelope?.ciphertext) { _, _ in consumePushAccountTarget() }
         .onChange(of: pushRouter.pendingDeepLink) { _, newValue in
             guard let link = newValue else { return }
@@ -202,6 +211,9 @@ struct ContentView: View {
     }
 
     private func handleDeepLink(_ link: ServerDeepLink) {
+        if case let .taskRun(taskId, runId) = link {
+            taskRunTarget = TaskRunTarget(taskId: taskId, runId: runId)
+        } else { taskRunTarget = nil }
         ContentView.applyDeepLink(
             link,
             selectedTab: &selectedTab,
@@ -220,7 +232,7 @@ struct ContentView: View {
         alertsPath: inout [ServerDeepLink]
     ) {
         switch link {
-        case .account:
+        case .account, .taskRun:
             selectedTab = ContentView.settingsTabTag
             serversPath = []
             alertsPath = []

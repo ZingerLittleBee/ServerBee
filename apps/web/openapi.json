@@ -7592,6 +7592,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Restrict results to one exact scheduled run.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -12212,6 +12224,8 @@
           "revision",
           "preferences",
           "security_allowed",
+          "tasks_allowed",
+          "task_failure_available",
           "registered",
           "relay_url",
           "delivery_available",
@@ -12245,6 +12259,13 @@
           "security_allowed": {
             "type": "boolean",
             "description": "Whether the current account role permits security subscriptions."
+          },
+          "task_failure_available": {
+            "type": "boolean"
+          },
+          "tasks_allowed": {
+            "type": "boolean",
+            "description": "Task routes require the current administrator role."
           },
           "test_available": {
             "type": "boolean",

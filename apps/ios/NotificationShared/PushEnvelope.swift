@@ -23,7 +23,9 @@ struct PushContent: Codable, Sendable, Equatable {
     let eventId: String
     let createdAt: Int64
     let expiresAt: Int64
+    var taskRun: TaskRunPushSummary?
     enum CodingKeys: String, CodingKey {
+        case taskRun = "task_run"
         case kind
         case deploymentId = "deployment_id"
         case userId = "user_id"
@@ -39,6 +41,29 @@ struct PushContent: Codable, Sendable, Equatable {
             let data = try encoder.encode([deploymentId, userId, installationId])
             return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         }
+    }
+}
+
+struct TaskRunPushSummary: Codable, Sendable, Equatable {
+    let taskId: String
+    let runId: String
+    let total: Int
+    let failed: Int
+    let timedOut: Int
+    let offline: Int
+    let denied: Int
+    enum CodingKeys: String, CodingKey {
+        case total, failed, offline, denied
+        case taskId = "task_id"
+        case runId = "run_id"
+        case timedOut = "timed_out"
+    }
+    var isValid: Bool {
+        guard UUID(uuidString: taskId) != nil, UUID(uuidString: runId) != nil,
+              total > 0, total <= 100_000,
+              [failed, timedOut, offline, denied].allSatisfy({ $0 >= 0 && $0 <= total }) else { return false }
+        let failures = failed + timedOut + offline + denied
+        return failures > 0 && failures <= total
     }
 }
 
@@ -73,11 +98,18 @@ enum PushEnvelopeDecoder {
         let sealed = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: ciphertext.dropLast(16), tag: ciphertext.suffix(16))
         let bytes = try AES.GCM.open(sealed, using: SymmetricKey(data: secret), authenticating: aad)
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
-        guard content.kind == "test", content.deploymentId == key.deploymentId, content.userId == key.userId,
+        guard content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
-              UUID(uuidString: content.eventId) != nil,
               content.expiresAt > now, content.createdAt <= now + 60,
               content.expiresAt - content.createdAt == 1800 else { throw PushEnvelopeError.invalid }
+        switch content.kind {
+        case "test":
+            guard UUID(uuidString: content.eventId) != nil, content.taskRun == nil else { throw PushEnvelopeError.invalid }
+        case "task_failure":
+            guard let run = content.taskRun, run.isValid,
+                  content.eventId == run.runId else { throw PushEnvelopeError.invalid }
+        default: throw PushEnvelopeError.invalid
+        }
         return content
     }
 }
@@ -132,8 +164,14 @@ enum PushNotificationRenderer {
               let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key, now: now),
               let targetData = try? JSONEncoder().encode(content),
               let target = try? JSONSerialization.jsonObject(with: targetData) else { return result }
-        result.title = String(localized: "Test notification")
-        result.body = String(localized: "Your encrypted ServerBee notification is ready.")
+        if let run = content.taskRun {
+            result.title = String(localized: "Task run failed")
+            result.body = String(format: String(localized: "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld."),
+                                 Int64(run.total), Int64(run.failed), Int64(run.timedOut), Int64(run.offline), Int64(run.denied))
+        } else {
+            result.title = String(localized: "Test notification")
+            result.body = String(localized: "Your encrypted ServerBee notification is ready.")
+        }
         result.userInfo = ["serverbee_target": target, "serverbee_key_id": key.keyId, "serverbee_envelope": object]
         return result
     }

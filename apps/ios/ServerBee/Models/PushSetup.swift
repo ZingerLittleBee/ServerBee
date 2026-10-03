@@ -22,6 +22,8 @@ struct PushSetup: Decodable, Sendable {
     let grantExpiresAt: String?
     let relayUrl: String
     let deliveryAvailable: Bool
+    var tasksAllowed: Bool?
+    var taskFailureAvailable: Bool?
 
     enum CodingKeys: String, CodingKey {
         case revision, preferences, registered
@@ -29,6 +31,8 @@ struct PushSetup: Decodable, Sendable {
         case grantExpiresAt = "grant_expires_at"
         case relayUrl = "relay_url"
         case deliveryAvailable = "delivery_available"
+        case tasksAllowed = "tasks_allowed"
+        case taskFailureAvailable = "task_failure_available"
     }
 }
 

@@ -1,6 +1,40 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Task run failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行失败"
+          }
+        }
+      }
+    },
+    "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标：%lld。失败：%lld。超时：%lld。离线：%lld。拒绝执行：%lld。"
+          }
+        }
+      }
+    },
     "ServerBee": {
       "localizations": {
         "en": {

@@ -9,6 +9,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
     private var revision: Int64 = 2
     private var registered = true
     private var securityAllowed = false
+    private var tasksAllowed = true
     private var saveStatus = 200
     private var registerStatus = 200
     private var loseSaveReply = false
@@ -19,6 +20,8 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
 
     init(security: Bool = false) { preferences.security = security; securityAllowed = security }
     func demote() { lock.lock(); defer { lock.unlock() }; securityAllowed = false }
+
+    func revokeTaskAccess() { lock.lock(); defer { lock.unlock() }; tasksAllowed = false }
 
     func rejectSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 503 }
     func acceptSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 200 }
@@ -80,7 +83,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
                 throw URLError(.unsupportedURL)
             }
             let data = status == 200
-                ? PushSetupTestData.response(registered: registered, revision: revision, preferences: preferences, securityAllowed: securityAllowed)
+                ? PushSetupTestData.response(registered: registered, revision: revision, preferences: preferences, securityAllowed: securityAllowed, tasksAllowed: tasksAllowed)
                 : Data(#"{"error":{"message":"Fixture write rejected"}}"#.utf8)
             if request.request.httpMethod == "GET", let entered = nextRead {
                 held = (request, data)
@@ -365,6 +368,29 @@ extension PushPreferenceRecoveryTests {
         XCTAssertEqual(manager.confirmed?.preferences, original)
         XCTAssertEqual(relay.attempts, 1, "Registration recovery reuses its pending grant")
         XCTAssertEqual(system.permissionRequests, 0)
+        await manager.waitForPendingRegistrations()
+    }
+}
+
+extension PushPreferenceRecoveryTests {
+    func testTaskSubscriptionsUseCurrentServerPermissionWhenSavingAfterDemotion() async throws {
+        let http = PreferenceRecoveryHTTP()
+        PreferenceRecoveryURLProtocol.fixture = http
+        let auth = AuthManager()
+        login(auth)
+        let manager = manager(auth, system: TestPushSystem())
+        await manager.reconcile()
+        var draft = try XCTUnwrap(manager.confirmed?.preferences)
+        draft.taskFailure = true
+        draft.taskSuccess = true
+        http.revokeTaskAccess()
+        await manager.reconcile()
+        XCTAssertEqual(manager.confirmed?.tasksAllowed, false)
+        await manager.savePreferences(draft)
+        XCTAssertEqual(manager.confirmed?.preferences.taskFailure, false)
+        XCTAssertEqual(manager.confirmed?.preferences.taskSuccess, false)
+        XCTAssertEqual(http.savedPreferences().last?.taskFailure, false)
+        XCTAssertEqual(http.savedPreferences().last?.taskSuccess, false)
         await manager.waitForPendingRegistrations()
     }
 }

@@ -13,7 +13,7 @@ struct NotificationSetupView: View {
                     "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
                     "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
                 ))
-                Text("This build supports encrypted test notifications. Category delivery is still being implemented.")
+                Text("Encrypted tests and final task failures are supported. Other categories remain under development.")
                     .foregroundStyle(.secondary)
             } header: { Text("Mobile notification privacy") }
 
@@ -22,8 +22,10 @@ struct NotificationSetupView: View {
                 if manager.confirmed?.securityAllowed == true {
                     Toggle("Security rule matches", isOn: $draft.security)
                 }
-                Toggle("Final task failures", isOn: $draft.taskFailure)
-                Toggle("Successful task runs", isOn: $draft.taskSuccess)
+                if manager.confirmed?.tasksAllowed == true {
+                    Toggle("Final task failures", isOn: $draft.taskFailure)
+                        .disabled(manager.confirmed?.taskFailureAvailable != true)
+                }
                 if manager.confirmed?.preferences.enabled == true {
                     Button("Save subscriptions") { Task { await manager.savePreferences(draft) } }
                     Button("Disable notifications", role: .destructive) {
@@ -90,6 +92,9 @@ struct NotificationSetupView: View {
         guard let confirmed = manager.confirmed else { return }
         draft = manager.unconfirmedPreferences ?? confirmed.preferences
         if !confirmed.securityAllowed { draft.security = false }
+        if confirmed.tasksAllowed != true { draft.taskFailure = false }
+        // Successful-run delivery has not shipped yet.
+        draft.taskSuccess = confirmed.preferences.taskSuccess && confirmed.tasksAllowed == true
     }
 
     private var permissionLabel: String {

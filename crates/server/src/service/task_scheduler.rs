@@ -14,7 +14,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::entity::{server, task, task_result};
+use crate::entity::{server, task, task_result, task_run};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentRequestError;
 use crate::service::audit::AuditService;
@@ -690,6 +690,14 @@ pub async fn run_now(
 /// Restore enabled scheduled tasks from the database, then start the scheduler.
 pub async fn restore_and_start(state: Arc<AppState>) {
     let _lifecycle_guard = state.task_scheduler.lifecycle_lock.lock().await;
+    if let Err(error) = task_run::Entity::update_many()
+        .filter(task_run::Column::Status.eq("running"))
+        .col_expr(task_run::Column::Status, Expr::value("incomplete"))
+        .exec(&state.db)
+        .await
+    {
+        tracing::error!("Failed to mark interrupted task runs: {error}");
+    }
     let tasks = task::Entity::find()
         .filter(task::Column::TaskType.eq("scheduled"))
         .filter(task::Column::Enabled.eq(true))
@@ -781,8 +789,32 @@ async fn execute_scheduled_task(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Task {task_id} not found")))?;
 
-    let server_ids: Vec<String> = serde_json::from_str(&task_model.server_ids_json)
+    let mut server_ids: Vec<String> = serde_json::from_str(&task_model.server_ids_json)
         .map_err(|error| AppError::Internal(format!("Invalid task server_ids_json: {error}")))?;
+    server_ids.sort();
+    server_ids.dedup();
+    // Snapshot the selected recipient and target set before execution. A manual
+    // run without authenticated actor evidence never falls back to the creator.
+    let owner_id = if skip_retry {
+        audit_context
+            .as_ref()
+            .map(|context| context.user_id.clone())
+            .unwrap_or_default()
+    } else {
+        task_model.created_by.clone()
+    };
+    task_run::ActiveModel {
+        run_id: Set(run_id.clone()),
+        task_id: Set(task_id.to_string()),
+        owner_id: Set(owner_id),
+        manual: Set(skip_retry),
+        targets_json: Set(serde_json::to_string(&server_ids)
+            .map_err(|_| AppError::Internal("Invalid task targets".into()))?),
+        status: Set("running".into()),
+        completed_at: Set(None),
+    }
+    .insert(&state.db)
+    .await?;
     let timeout_secs = task_model.timeout.unwrap_or(300).max(1) as u64;
     let retry_count = if skip_retry {
         0
@@ -894,18 +926,31 @@ async fn execute_scheduled_task(
         });
     }
 
+    let completion_state = state.clone();
     tokio::spawn(async move {
-        let _active_run_guard = active_run_guard;
+        let run_guard = active_run_guard;
+        let mut complete = true;
         while let Some(result) = join_set.join_next().await {
             match result {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
+                    complete = false;
                     tracing::error!("Failed to persist scheduled task result: {error}");
                 }
                 Err(error) => {
+                    complete = false;
                     tracing::error!("Scheduled task executor failed to join: {error}");
                 }
             }
+        }
+        if let Err(error) = super::task_notification::finish_run(
+            &completion_state,
+            &run_guard.run_id,
+            complete && !token.is_cancelled(),
+        )
+        .await
+        {
+            tracing::error!("Failed to finalize scheduled task run: {error}");
         }
     });
 
@@ -969,7 +1014,13 @@ async fn execute_for_server(
                     server_id,
                     attempt,
                     started_at,
-                    result.exit_code,
+                    if result.exit_code == -1
+                        && result.output == format!("Command timed out after {timeout_secs}s")
+                    {
+                        -4
+                    } else {
+                        result.exit_code
+                    },
                     &result.output,
                 )
                 .await?;
@@ -1003,7 +1054,20 @@ async fn execute_for_server(
                 )
                 .await?;
             }
-            _ => {
+            Err(AgentRequestError::Disconnected) => {
+                write_result(
+                    &state.db,
+                    task_id,
+                    run_id,
+                    server_id,
+                    attempt,
+                    started_at,
+                    -3,
+                    "Agent disconnected",
+                )
+                .await?;
+            }
+            Err(AgentRequestError::Timeout(_)) => {
                 write_result(
                     &state.db,
                     task_id,
@@ -1013,6 +1077,19 @@ async fn execute_for_server(
                     started_at,
                     -4,
                     &format!("No response within {timeout_secs}s"),
+                )
+                .await?;
+            }
+            Ok(_) => {
+                write_result(
+                    &state.db,
+                    task_id,
+                    run_id,
+                    server_id,
+                    attempt,
+                    started_at,
+                    -1,
+                    "Unexpected Agent response",
                 )
                 .await?;
             }

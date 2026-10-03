@@ -49,3 +49,5 @@ pub mod user;
 pub mod widget_module;
 
 pub mod mobile_push_outbox;
+
+pub(crate) mod task_notification;
