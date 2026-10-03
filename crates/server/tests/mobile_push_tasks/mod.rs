@@ -1,5 +1,6 @@
 //! Real HTTP, scheduler, Agent WS, subscriptions and migrated SQLite. Only
 //! Agent execution and Apple/Relay HTTP are external boundary substitutes.
+use super::common;
 use super::*;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::SinkExt;
@@ -11,8 +12,6 @@ use serverbee_server::entity::{
 };
 use tokio_tungstenite::tungstenite::Message;
 
-#[path = "../common/mod.rs"]
-mod common;
 mod success;
 
 async fn subscribe(client: &reqwest::Client, base: &str, access: &str, device: &str) {
