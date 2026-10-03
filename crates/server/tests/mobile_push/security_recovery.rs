@@ -245,10 +245,10 @@ impl OnceOnlyFixture {
                 .unwrap()
                 .unwrap();
             assert_eq!(mode.try_get::<String>("", "journal_mode").unwrap(), "wal");
-            for (pragma, value) in [
-                ("synchronous", 1_i64),
-                ("foreign_keys", 1),
-                ("busy_timeout", 5000),
+            for (pragma, column, value) in [
+                ("synchronous", "synchronous", 1_i64),
+                ("foreign_keys", "foreign_keys", 1),
+                ("busy_timeout", "timeout", 5000),
             ] {
                 let row = connection
                     .query_one(sea_orm::Statement::from_string(
@@ -258,7 +258,7 @@ impl OnceOnlyFixture {
                     .await
                     .unwrap()
                     .unwrap();
-                assert_eq!(row.try_get::<i64>("", pragma).unwrap(), value);
+                assert_eq!(row.try_get::<i64>("", column).unwrap(), value);
             }
         }
         for connection in connections {
