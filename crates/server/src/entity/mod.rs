@@ -53,3 +53,5 @@ pub mod user;
 pub mod widget_module;
 
 pub mod mobile_push_registration;
+
+pub mod mobile_push_outbox;

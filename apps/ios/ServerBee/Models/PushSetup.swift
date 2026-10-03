@@ -81,9 +81,13 @@ struct VerifiedPushRequest: Encodable, Sendable {
     }
 }
 
-struct TestPushRequest: Encodable, Sendable {
+struct TestPushRequest: Codable, Sendable {
+    let eventId: String
     let expectedRevision: Int64
-    enum CodingKeys: String, CodingKey { case expectedRevision = "expected_revision" }
+    enum CodingKeys: String, CodingKey {
+        case eventId = "event_id"
+        case expectedRevision = "expected_revision"
+    }
 }
 
 struct TestPushResponse: Decodable, Sendable {
@@ -91,8 +95,26 @@ struct TestPushResponse: Decodable, Sendable {
     let outcome: String
     let reason: String
     let presentation: String
+    var isPending: Bool { outcome == "pending" || outcome == "retryable" }
+
+    var statusMessage: String {
+        switch outcome {
+        case "accepted": String(localized: "APNs accepted the notification. Device presentation has not been observed.")
+        case "pending": String(localized: "Encrypted test queued on the Server. Provider acceptance is pending.")
+        case "retryable": String(localized: "Delivery will retry for up to 30 minutes from creation. Provider acceptance is unconfirmed.")
+        case "expired": String(localized: "The test expired after 30 minutes. Send a new test to try again.")
+        default: String(localized: "Delivery stopped. Retry notification setup before sending a new test.")
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case outcome, reason, presentation
         case eventId = "event_id"
     }
+}
+
+struct SavedTestPush: Codable, Sendable {
+    let scope: String
+    let request: TestPushRequest
+    enum CodingKeys: String, CodingKey { case scope, request }
 }

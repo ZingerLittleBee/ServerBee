@@ -32,7 +32,8 @@ final class TestPushActionTests: XCTestCase {
                 registered.fulfill()
                 request.respond(200)
             case "/api/mobile/push/test":
-                XCTAssertEqual(Set(body.keys), ["expected_revision"])
+                XCTAssertEqual(Set(body.keys), ["expected_revision", "event_id"])
+                XCTAssertNotNil(UUID(uuidString: body["event_id"] as? String ?? ""))
                 XCTAssertEqual((body["expected_revision"] as? NSNumber)?.int64Value, 2)
                 XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-access")
                 sent.fulfill()
@@ -52,6 +53,65 @@ final class TestPushActionTests: XCTestCase {
         XCTAssertEqual(manager.testResult?.outcome, "accepted")
         XCTAssertEqual(manager.testResult?.presentation, "unobserved")
         XCTAssertFalse(manager.isTesting)
+    }
+
+    func testLostResponseReusesIdentityAndPendingStatusSurvivesManagerRestart() async throws {
+        let auth = AuthManager()
+        auth.setServerUrl("https://serverbee.test")
+        auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
+                                                    refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+        let storage = MemoryPushSetupStorage()
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
+        let api = APIClient(authManager: auth)
+        let posts = AuthenticationRequestLog()
+        let reads = AuthenticationRequestLog()
+        PushLifecycleURLProtocol.handler = { request in
+            let path = request.request.url?.path ?? ""
+            if path == "/api/mobile/push/test" {
+                let count = posts.append(request.request)
+                if count == 1 { request.respond(503); return }
+                let event = PushSetupTestData.body(request.request)["event_id"] as? String ?? ""
+                request.respond(200, data: Data("{\"data\":{\"event_id\":\"\(event)\",\"outcome\":\"pending\",\"reason\":\"Queued\",\"presentation\":\"unobserved\"}}".utf8))
+            } else if path.hasPrefix("/api/mobile/push/test/") {
+                let count = reads.append(request.request)
+                let outcome = ["retryable", "accepted", "permanent", "expired"][min(count - 1, 3)]
+                let event = request.request.url?.lastPathComponent ?? ""
+                request.respond(200, data: Data("{\"data\":{\"event_id\":\"\(event)\",\"outcome\":\"\(outcome)\",\"reason\":\"Fixture\",\"presentation\":\"unobserved\"}}".utf8))
+            } else { request.respond(200) }
+        }
+        manager.configure(apiClient: api)
+        await manager.reconcile()
+        manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 0xaa, count: 32))
+        // Wait for the real manager's asynchronous HTTP registration boundary.
+        for _ in 0..<100 {
+            if manager.confirmed?.registered == true { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(manager.confirmed?.registered == true)
+        await manager.sendTestNotification()
+        XCTAssertNil(manager.testResult)
+        await manager.sendTestNotification()
+        XCTAssertEqual(manager.testResult?.outcome, "pending")
+        XCTAssertTrue(manager.testResult?.isPending == true)
+        let requests = posts.snapshot()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(PushSetupTestData.body(requests[0])["event_id"] as? String,
+                       PushSetupTestData.body(requests[1])["event_id"] as? String)
+        let restored = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
+        restored.configure(apiClient: api)
+        await restored.refreshTestStatus()
+        XCTAssertEqual(restored.testResult?.outcome, "retryable")
+        XCTAssertTrue(restored.testResult?.isPending == true)
+        XCTAssertEqual(restored.testResult?.presentation, "unobserved")
+        await restored.refreshTestStatus()
+        XCTAssertEqual(restored.testResult?.outcome, "accepted")
+        XCTAssertFalse(restored.testResult?.isPending == true)
+        await restored.refreshTestStatus()
+        XCTAssertEqual(restored.testResult?.outcome, "permanent")
+        await restored.refreshTestStatus()
+        XCTAssertEqual(restored.testResult?.outcome, "expired")
+        XCTAssertFalse(restored.testResult?.isPending == true)
     }
 
     func testHttpSetupNeverTransmitsContentKey() async {
@@ -93,8 +153,7 @@ final class TestPushActionTests: XCTestCase {
         PushLifecycleURLProtocol.handler = { request in
             if request.request.url?.path == "/api/mobile/push/verified-register" {
                 let count = log.append(request.request)
-                if count == 1 { rejected.fulfill(); request.respond(308) }
-                else { retried.fulfill(); request.respond(200) }
+                if count == 1 { rejected.fulfill(); request.respond(308) } else { retried.fulfill(); request.respond(200) }
             } else { request.respond(200) }
         }
         manager.configure(apiClient: APIClient(authManager: auth))

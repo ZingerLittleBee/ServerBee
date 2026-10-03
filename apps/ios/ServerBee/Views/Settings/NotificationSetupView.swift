@@ -45,10 +45,12 @@ struct NotificationSetupView: View {
                 Button("Send test notification") { Task { await manager.sendTestNotification() } }
                     .disabled(manager.isSaving || manager.isTesting || manager.confirmed?.registered != true)
                 if manager.isTesting { ProgressView() }
+                Button("Refresh test status") { Task { await manager.refreshTestStatus() } }
+                    .disabled(manager.isTesting)
                 if let result = manager.testResult {
-                    Text(result.outcome == "accepted"
-                         ? "APNs accepted the notification. Device presentation has not been observed."
-                         : "The provider did not accept the notification. Retry setup or try again.")
+                    Text(result.statusMessage)
+                        .foregroundStyle(.secondary)
+                    Text("Delivery status does not guarantee device presentation or exactly-once display.")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -72,6 +74,11 @@ struct NotificationSetupView: View {
         .task {
             await manager.reconcile()
             refreshDraft()
+            await manager.refreshTestStatus()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(2)) } catch { break }
+                if manager.testResult?.isPending == true { await manager.refreshTestStatus() }
+            }
         }
         .onChange(of: manager.confirmed?.revision) { _, _ in
             refreshDraft()

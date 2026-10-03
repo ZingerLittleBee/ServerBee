@@ -1,7 +1,7 @@
 # Encrypted current-installation notification verification
 
-This checklist covers #199 only. Alert/security/task event selection and durable
-outbox retries belong to later tickets. Never use Heeler's Relay, production
+This checklist covers #199 encrypted delivery and #200 durable test retries.
+Alert/security/task event selection belongs to later tickets. Never use Heeler's Relay, production
 credentials, a user's existing Simulator, or a live account for fixtures.
 
 ## Local stitched path
@@ -68,7 +68,7 @@ does not establish the stitched path.
 
 The trace test uses real Server HTTP login, mobile sessions, revisioned
 subscriptions, migrated SQLite, content registration, recipient derivation and
-Rust encryption. It starts the real Bun Relay handler/database and obtains a
+Rust encryption, durable outbox admission and production delivery workers. It starts the real Bun Relay handler/database and obtains a
 grant through actual certificate/nonce/key verification. Only Apple's attestation
 material and outbound APNs HTTP/2 provider are fixtures. The real APNs transport
 constructs the payload, headers and cached ES256 JWT. The captured provider payload
@@ -161,4 +161,31 @@ verdict, and device presentation/navigation.
 Mark every unrun live row as NOT RUN. A fixture, Simulator build, APNs receipt or
 successful HTTP operation cannot stand in for observed background/terminated
 presentation or tap navigation. Lost network responses may hide accepted sends;
-this synchronous test endpoint does not promise exactly-once presentation.
+durable retries do not promise exactly-once presentation.
+
+
+## Durable outbox behavior checks (#200)
+
+The `mobile_push_integration` suite runs duplicate HTTP enqueueing, a migrated
+SQLite reopen followed by production worker startup, original-creation expiry,
+retryable outages and rate limits, permanent provider errors, and revision-safe
+late terminal responses. Queue admission returns `pending`; status is read from
+`GET /api/mobile/push/test/{event_id}` under the current installation/session.
+The stitched Server trace must run before iOS: it waits for the durable worker's
+actual Relay/APNs fixture receipt before exporting the payload. The two named
+Swift stitched tests above must still execute with zero skips.
+
+Revocation tests change subscriptions, logout, device revocation, account deletion,
+password reset and roles through real HTTP; only persisted expiry time is advanced
+for the session/queue clock boundaries. Multiple-device and slow-network tests
+exercise independent worker outcomes, 15-second network timeout and responsive
+HTTP admission. Four workers and 30-second durable leases bound concurrent sends;
+a restart may wait for an abandoned lease, never renew message expiry. Backoff
+starts at 2 seconds and doubles up to 256 seconds. Terminal ciphertext is erased;
+secret-free receipts remain as duplicate-admission tombstones.
+
+Physical-device rows remain NOT RUN until separately observed. Add an isolated
+Relay outage/restart exercise: verify pending/retryable status, restore the Relay
+inside the 30-minute window, then record the provider receipt and actual phone
+presentation separately. Repeat after disable/revocation and past expiry; already
+in-flight or accepted notifications are not retractable.

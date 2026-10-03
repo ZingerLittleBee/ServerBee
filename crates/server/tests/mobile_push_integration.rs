@@ -845,6 +845,7 @@ async fn rotated_relay_grant_save_failure_remains_unconfirmed_after_restart() {
 async fn serve_setup_state(state: Arc<AppState>) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
+    let _worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
     let app = serverbee_server::router::create_router(state);
     tokio::spawn(async move {
         axum::serve(
@@ -1032,19 +1033,82 @@ fn content_registration(grant: &serde_json::Value, revision: i64) -> serde_json:
         "key_id":grant["key_id"], "grant_id":grant["grant_id"], "grant_token":grant["grant_token"],
         "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"})
 }
+async fn enqueue_test(
+    client: &reqwest::Client,
+    base: &str,
+    access: &str,
+    revision: i64,
+    event: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/push/test"))
+        .bearer_auth(access)
+        .json(&serde_json::json!({"expected_revision":revision,"event_id":event}))
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn wait_test(
+    client: &reqwest::Client,
+    base: &str,
+    access: &str,
+    event: &str,
+    expected: &str,
+) -> serde_json::Value {
+    for _ in 0..400 {
+        let response = client
+            .get(format!("{base}/api/mobile/push/test/{event}"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let data = response.json::<serde_json::Value>().await.unwrap()["data"].clone();
+        if data["outcome"] == expected {
+            return data;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!("Delivery did not reach {expected}");
+}
+
+// Preserve the #199 tracer bullet through durable admission + production worker.
 async fn post_test(
     client: &reqwest::Client,
     base: &str,
     access: &str,
     revision: i64,
 ) -> reqwest::Response {
-    client
-        .post(format!("{base}/api/mobile/push/test"))
-        .bearer_auth(access)
-        .json(&serde_json::json!({"expected_revision":revision}))
-        .send()
-        .await
-        .unwrap()
+    let event = uuid::Uuid::new_v4().to_string();
+    let queued = enqueue_test(client, base, access, revision, &event).await;
+    if queued.status() != 200 {
+        return queued;
+    }
+    assert_eq!(
+        queued.json::<serde_json::Value>().await.unwrap()["data"]["outcome"],
+        "pending"
+    );
+    for _ in 0..500 {
+        let reply = client
+            .get(format!("{base}/api/mobile/push/test/{event}"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reply.status(), 200);
+        let data = reply.json::<serde_json::Value>().await.unwrap();
+        if data["data"]["outcome"] != "pending" {
+            return client
+                .get(format!("{base}/api/mobile/push/test/{event}"))
+                .bearer_auth(access)
+                .send()
+                .await
+                .unwrap();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("Production outbox worker did not deliver test");
 }
 
 #[tokio::test]
@@ -1651,4 +1715,648 @@ async fn expired_mobile_session_cannot_send_a_registered_encrypted_test() {
         .unwrap();
     assert_eq!(post_test(&client, &base, access, 2).await.status(), 401);
     assert!(!relay.path("provider-request.json").exists());
+}
+
+/// Substitute only the external Relay HTTP boundary. Internal policy, SQLite,
+/// authentication, subscription writes, encryption and worker ownership are real.
+struct OutboxRelay {
+    url: String,
+    status: Arc<std::sync::atomic::AtomicU16>,
+    delay_ms: Arc<std::sync::atomic::AtomicU64>,
+    requests: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+}
+impl OutboxRelay {
+    async fn start() -> Self {
+        use axum::{Router, http::StatusCode, routing::post};
+        let status = Arc::new(std::sync::atomic::AtomicU16::new(503));
+        let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        let delay_ms = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let send_delay = delay_ms.clone();
+        let send_status = status.clone();
+        let send_requests = requests.clone();
+        let app = Router::new()
+            .route("/v1/grants/inspect", post(|headers: HeaderMap| async move {
+                let secret = headers.get("authorization").unwrap().to_str().unwrap();
+                let token = if secret.ends_with("device-b") { "b" } else { "a" };
+                Json(serde_json::json!({"grant_id":secret.trim_start_matches("Bearer "),"key_id":"fixture-key",
+                    "device_token":token.repeat(64),"environment":"sandbox","expires_at":Utc::now().timestamp()+3600}))
+            }))
+            .route("/v1/send", post(move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
+                let status = send_status.clone(); let requests = send_requests.clone(); let delay = send_delay.clone();
+                async move {
+                    let grant = headers.get("authorization").unwrap().to_str().unwrap();
+                    let code = if grant.ends_with("device-b") { 200 } else { status.load(std::sync::atomic::Ordering::SeqCst) };
+                    requests.lock().await.push(body);
+                    if !grant.ends_with("device-b") { tokio::time::sleep(std::time::Duration::from_millis(delay.load(std::sync::atomic::Ordering::SeqCst))).await; }
+                    let outcome = if code == 200 { "accepted" } else { "retryable" };
+                    (StatusCode::from_u16(code).unwrap(), Json(serde_json::json!({"outcome":outcome,"reason":"Accepted","device_invalid":false})))
+                }
+            }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        Self {
+            url,
+            status,
+            delay_ms,
+            requests,
+        }
+    }
+    async fn requests(&self) -> Vec<serde_json::Value> {
+        self.requests.lock().await.clone()
+    }
+}
+
+async fn queued_setup() -> (String, Arc<AppState>, tempfile::TempDir, OutboxRelay) {
+    let (_, initial, tmp) = setup_http().await;
+    let relay = OutboxRelay::start().await;
+    let mut config = initial.config.clone();
+    config.push_relay.url = relay.url.clone();
+    let state = AppState::new(initial.db.clone(), config).await.unwrap();
+    let base = serve_outbox_http(state.clone()).await;
+    (base, state, tmp, relay)
+}
+
+async fn serve_outbox_http(state: Arc<AppState>) -> String {
+    // Deliberately start HTTP first. Production's same startup entry point is
+    // owned by each test so it can stop/reopen a Server while work is pending.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = serverbee_server::router::create_router(state.clone());
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap()
+    });
+    base
+}
+
+async fn queued_register(client: &reqwest::Client, base: &str, access: &str, device: &str) {
+    assert_eq!(
+        preferences_http(client, base, access, 0, intent(false, true))
+            .await
+            .status(),
+        200
+    );
+    let grant = serde_json::json!({"device_token":if device=="device-b" { "b".repeat(64) } else { "a".repeat(64) },
+        "environment":"sandbox","key_id":"fixture-key","grant_id":device,"grant_token":device});
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/verified-register"))
+            .bearer_auth(access)
+            .json(&content_registration(&grant, 1))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+}
+
+async fn outbox_job(
+    state: &AppState,
+    event: &str,
+    installation: &str,
+) -> serverbee_server::entity::mobile_push_outbox::Model {
+    serverbee_server::entity::mobile_push_outbox::Entity::find_by_id((
+        event.to_owned(),
+        installation.to_owned(),
+    ))
+    .one(&state.db)
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+#[tokio::test]
+async fn durable_outbox_deduplicates_retries_and_resumes_after_database_reopen() {
+    let (base, state, tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "durable-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    let event = uuid::Uuid::new_v4().to_string();
+    let first = enqueue_test(&client, &base, access, 2, &event)
+        .await
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(first["data"]["outcome"], "pending");
+    assert_eq!(first["data"]["presentation"], "unobserved");
+    assert!(relay.requests().await.is_empty());
+    // Concurrent retransmission exercises the actual transaction and uniqueness.
+    let (a, b) = tokio::join!(
+        enqueue_test(&client, &base, access, 2, &event),
+        enqueue_test(&client, &base, access, 2, &event)
+    );
+    assert_eq!(a.status(), 200);
+    assert_eq!(b.status(), 200);
+    let original = outbox_job(&state, &event, "durable-install").await;
+    assert_eq!(original.expires_at - original.created_at, 1800);
+    for forbidden in [
+        "content_key",
+        "deployment_id",
+        "https://serverbee.test",
+        "durable-install",
+        "grant_token",
+    ] {
+        assert!(!original.envelope.as_deref().unwrap().contains(forbidden));
+    }
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_test(&client, &base, access, &event, "retryable").await;
+    worker.abort();
+    let _ = worker.await;
+    let before = relay.requests().await.len();
+    assert_eq!(before, 1);
+    // Reopen migrated SQLite and start the same entry point as production.
+    let db = Database::connect(format!(
+        "sqlite://{}/test.db?mode=rwc",
+        tmp.path().display()
+    ))
+    .await
+    .unwrap();
+    let restarted = AppState::new(db, state.config.clone()).await.unwrap();
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let base = serve_outbox_http(restarted.clone()).await;
+    let worker = serverbee_server::service::mobile_push_outbox::start(restarted.clone());
+    wait_test(&client, &base, access, &event, "accepted").await;
+    worker.abort();
+    let _ = worker.await;
+    let final_job = outbox_job(&restarted, &event, "durable-install").await;
+    assert_eq!(final_job.created_at, original.created_at);
+    assert_eq!(final_job.expires_at, original.expires_at);
+    assert!(final_job.envelope.is_none());
+    assert_eq!(relay.requests().await.len(), 2);
+    for request in relay.requests().await {
+        assert_eq!(request["event_id"], event);
+        assert_eq!(request["expires_at"], original.expires_at);
+    }
+    assert_eq!(
+        enqueue_test(&client, &base, access, 2, &event)
+            .await
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["data"]["outcome"],
+        "accepted"
+    );
+    assert_eq!(
+        enqueue_test(&client, &base, access, 3, &event)
+            .await
+            .status(),
+        409
+    );
+    let other = login_http(&client, &base, "admin", "other-install").await;
+    assert_eq!(
+        client
+            .get(format!("{base}/api/mobile/push/test/{event}"))
+            .bearer_auth(other["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+}
+
+#[tokio::test]
+async fn outbox_expiry_uses_original_creation_and_never_sends_stale_ciphertext() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "expiry-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    let event = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        enqueue_test(&client, &base, access, 2, &event)
+            .await
+            .status(),
+        200
+    );
+    // Advance the persisted clock boundary only, without substituting policy.
+    state
+        .db
+        .execute(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "UPDATE mobile_push_outbox SET created_at=?,expires_at=? WHERE event_id=?",
+            [
+                (Utc::now().timestamp() - 1801).into(),
+                (Utc::now().timestamp() - 1).into(),
+                event.clone().into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        wait_test(&client, &base, access, &event, "expired").await["reason"],
+        "Expired"
+    );
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    for _ in 0..100 {
+        if outbox_job(&state, &event, "expiry-install")
+            .await
+            .envelope
+            .is_none()
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(
+        outbox_job(&state, &event, "expiry-install")
+            .await
+            .envelope
+            .is_none()
+    );
+    worker.abort();
+    let _ = worker.await;
+    assert!(relay.requests().await.is_empty());
+}
+
+#[tokio::test]
+async fn queued_delivery_revalidates_disable_logout_revocation_expiry_role_password_and_user() {
+    for action in [
+        "disable",
+        "logout",
+        "device",
+        "expiry",
+        "role",
+        "password",
+        "user",
+        "replacement",
+        "grant_expiry",
+    ] {
+        let (base, state, _tmp, relay) = queued_setup().await;
+        let client = reqwest::Client::new();
+        let login = login_http(
+            &client,
+            &base,
+            if action == "role" { "admin" } else { "member" },
+            "revoked-install",
+        )
+        .await;
+        let access = login["access_token"].as_str().unwrap();
+        AuthService::create_user(&state.db, "queue-operator", "testpass", "admin")
+            .await
+            .unwrap();
+        let operator = login_http(&client, &base, "queue-operator", "operator-install").await;
+        let admin = operator["access_token"].as_str().unwrap();
+        queued_register(&client, &base, access, "device-a").await;
+        let event = uuid::Uuid::new_v4().to_string();
+        assert_eq!(
+            enqueue_test(&client, &base, access, 2, &event)
+                .await
+                .status(),
+            200
+        );
+        let initial_worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+        wait_test(&client, &base, access, &event, "retryable").await;
+        initial_worker.abort();
+        let _ = initial_worker.await;
+        let user_id = login["user"]["id"].as_str().unwrap();
+        let mobile = mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(user_id))
+            .filter(mobile_session::Column::InstallationId.eq("revoked-install"))
+            .one(&state.db)
+            .await
+            .unwrap()
+            .unwrap();
+        match action {
+            "disable" => assert_eq!(
+                preferences_http(&client, &base, access, 2, intent(false, false))
+                    .await
+                    .status(),
+                200
+            ),
+            "logout" => assert_eq!(
+                client
+                    .post(format!("{base}/api/mobile/auth/logout"))
+                    .bearer_auth(access)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            ),
+            "device" => assert_eq!(
+                client
+                    .delete(format!("{base}/api/mobile/auth/devices/{}", mobile.id))
+                    .bearer_auth(access)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            ),
+            "expiry" => {
+                mobile_session::Entity::update_many()
+                    .col_expr(
+                        mobile_session::Column::ExpiresAt,
+                        sea_orm::sea_query::Expr::value(Utc::now() - ChronoDuration::seconds(1)),
+                    )
+                    .filter(mobile_session::Column::Id.eq(mobile.id))
+                    .exec(&state.db)
+                    .await
+                    .unwrap();
+            }
+            "role" | "password" => {
+                let body = if action == "role" {
+                    serde_json::json!({"role":"member"})
+                } else {
+                    serde_json::json!({"password":"replacement-testpass"})
+                };
+                assert_eq!(
+                    client
+                        .put(format!("{base}/api/users/{user_id}"))
+                        .bearer_auth(admin)
+                        .json(&body)
+                        .send()
+                        .await
+                        .unwrap()
+                        .status(),
+                    200
+                );
+            }
+            "user" => assert_eq!(
+                client
+                    .delete(format!("{base}/api/users/{user_id}"))
+                    .bearer_auth(admin)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            ),
+            "grant_expiry" => {
+                use serverbee_server::entity::mobile_push_registration as registration;
+                registration::Entity::update_many()
+                    .col_expr(
+                        registration::Column::GrantExpiresAt,
+                        sea_orm::sea_query::Expr::value(Utc::now() - ChronoDuration::seconds(1)),
+                    )
+                    .filter(registration::Column::InstallationId.eq("revoked-install"))
+                    .exec(&state.db)
+                    .await
+                    .unwrap();
+            }
+            "replacement" => {
+                let grant = serde_json::json!({"device_token":"b".repeat(64),"environment":"sandbox","key_id":"fixture-key","grant_id":"device-b","grant_token":"device-b"});
+                assert_eq!(
+                    client
+                        .post(format!("{base}/api/mobile/push/verified-register"))
+                        .bearer_auth(access)
+                        .json(&content_registration(&grant, 2))
+                        .send()
+                        .await
+                        .unwrap()
+                        .status(),
+                    200
+                );
+            }
+            _ => unreachable!(),
+        }
+        let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+        for _ in 0..250 {
+            if outbox_job(&state, &event, "revoked-install").await.outcome == "permanent" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let job = outbox_job(&state, &event, "revoked-install").await;
+        assert_eq!(job.outcome, "permanent", "{action}");
+        assert_eq!(job.reason, "Ineligible");
+        assert!(job.envelope.is_none());
+        worker.abort();
+        let _ = worker.await;
+        assert_eq!(relay.requests().await.len(), 1, "{action}");
+    }
+}
+
+#[tokio::test]
+async fn retrying_device_does_not_block_independent_installation_and_rate_limit_recovers() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let a = login_http(&client, &base, "member", "device-a-install").await;
+    let b = login_http(&client, &base, "member", "device-b-install").await;
+    let aa = a["access_token"].as_str().unwrap();
+    let ba = b["access_token"].as_str().unwrap();
+    queued_register(&client, &base, aa, "device-a").await;
+    queued_register(&client, &base, ba, "device-b").await;
+    let event = uuid::Uuid::new_v4().to_string();
+    relay.status.store(429, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        enqueue_test(&client, &base, aa, 2, &event).await.status(),
+        200
+    );
+    assert_eq!(
+        enqueue_test(&client, &base, ba, 2, &event).await.status(),
+        200
+    );
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_test(&client, &base, aa, &event, "retryable").await;
+    wait_test(&client, &base, ba, &event, "accepted").await;
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    wait_test(&client, &base, aa, &event, "accepted").await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(
+        outbox_job(&state, &event, "device-a-install")
+            .await
+            .attempts,
+        2
+    );
+    assert_eq!(
+        outbox_job(&state, &event, "device-b-install")
+            .await
+            .attempts,
+        1
+    );
+    assert_eq!(relay.requests().await.len(), 3);
+}
+
+#[tokio::test]
+async fn bounded_network_timeout_keeps_http_admission_and_other_device_responsive() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let a = login_http(&client, &base, "member", "slow-install").await;
+    let aa = a["access_token"].as_str().unwrap();
+    let b = login_http(&client, &base, "member", "fast-install").await;
+    let ba = b["access_token"].as_str().unwrap();
+    queued_register(&client, &base, aa, "device-a").await;
+    queued_register(&client, &base, ba, "device-b").await;
+    relay
+        .delay_ms
+        .store(20_000, std::sync::atomic::Ordering::SeqCst);
+    let slow = uuid::Uuid::new_v4().to_string();
+    let fast = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        enqueue_test(&client, &base, aa, 2, &slow).await.status(),
+        200
+    );
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    for _ in 0..100 {
+        if !relay.requests().await.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(relay.requests().await.len(), 1);
+    let started = std::time::Instant::now();
+    assert_eq!(
+        enqueue_test(&client, &base, ba, 2, &fast).await.status(),
+        200
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    wait_test(&client, &base, ba, &fast, "accepted").await;
+    assert_eq!(
+        outbox_job(&state, &slow, "slow-install").await.outcome,
+        "pending"
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        loop {
+            if outbox_job(&state, &slow, "slow-install").await.outcome == "retryable" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap();
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(
+        outbox_job(&state, &slow, "slow-install").await.reason,
+        "RelayUnavailable"
+    );
+}
+
+#[tokio::test]
+async fn revoked_actual_relay_grant_stops_queued_delivery_without_erasing_device_registration() {
+    let relay = DeliveryRelayFixture::start().await;
+    let (_, initial, _tmp) = setup_http().await;
+    let mut config = initial.config.clone();
+    config.push_relay.url = relay.ready["url"].as_str().unwrap().to_owned();
+    let state = AppState::new(initial.db.clone(), config).await.unwrap();
+    let base = serve_outbox_http(state.clone()).await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "revoked-grant-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    assert_eq!(
+        preferences_http(&client, &base, access, 0, intent(false, true))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/verified-register"))
+            .bearer_auth(access)
+            .json(&content_registration(&relay.ready["grant"], 1))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let event = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        enqueue_test(&client, &base, access, 2, &event)
+            .await
+            .status(),
+        200
+    );
+    // Real assertion-driven renewal revokes the old grant at Relay admission.
+    assert_eq!(
+        client
+            .post(format!(
+                "{}/fixture/renew",
+                relay.ready["url"].as_str().unwrap()
+            ))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_test(&client, &base, access, &event, "permanent").await;
+    worker.abort();
+    let _ = worker.await;
+    assert!(!relay.path("provider-request.json").exists());
+    let row = serverbee_server::entity::mobile_push_registration::Entity::find_by_id(
+        "revoked-grant-install",
+    )
+    .one(&state.db)
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(row.revision, 2);
+    assert!(row.grant_token.is_some());
+    assert_eq!(
+        status_http(&client, &base, access).await["registered"],
+        false
+    );
+}
+
+#[tokio::test]
+async fn abandoned_inflight_lease_recovers_after_restart_without_renewing_event_expiry() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "crash-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    relay
+        .delay_ms
+        .store(20_000, std::sync::atomic::Ordering::SeqCst);
+    let event = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        enqueue_test(&client, &base, access, 2, &event)
+            .await
+            .status(),
+        200
+    );
+    let original = outbox_job(&state, &event, "crash-install").await;
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    for _ in 0..100 {
+        if !relay.requests().await.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(relay.requests().await.len(), 1);
+    worker.abort();
+    let _ = worker.await;
+    let abandoned = outbox_job(&state, &event, "crash-install").await;
+    assert!(abandoned.lease_id.is_some());
+    assert_eq!(abandoned.attempts, 1);
+    relay.delay_ms.store(0, std::sync::atomic::Ordering::SeqCst);
+    let restarted = AppState::new(state.db.clone(), state.config.clone())
+        .await
+        .unwrap();
+    let worker = serverbee_server::service::mobile_push_outbox::start(restarted.clone());
+    // No fixture edits to lease policy: wait for the real 30-second durable lease.
+    tokio::time::timeout(std::time::Duration::from_secs(40), async {
+        loop {
+            if outbox_job(&restarted, &event, "crash-install")
+                .await
+                .outcome
+                == "accepted"
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap();
+    worker.abort();
+    let _ = worker.await;
+    let delivered = outbox_job(&restarted, &event, "crash-install").await;
+    assert_eq!(delivered.created_at, original.created_at);
+    assert_eq!(delivered.expires_at, original.expires_at);
+    assert_eq!(delivered.attempts, 2);
+    assert_eq!(relay.requests().await.len(), 2);
 }

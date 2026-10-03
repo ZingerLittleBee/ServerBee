@@ -17909,6 +17909,102 @@
           }
         }
       }
+    },
+    "Encrypted test queued on the Server. Provider acceptance is pending.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encrypted test queued on the Server. Provider acceptance is pending."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加密测试通知已在 Server 排队，等待提供商接受。"
+          }
+        }
+      }
+    },
+    "Delivery will retry for up to 30 minutes from creation. Provider acceptance is unconfirmed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery will retry for up to 30 minutes from creation. Provider acceptance is unconfirmed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送将在创建后 30 分钟内重试，尚未确认提供商接受。"
+          }
+        }
+      }
+    },
+    "The test expired after 30 minutes. Send a new test to try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The test expired after 30 minutes. Send a new test to try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试通知已在 30 分钟后过期，请发送新的测试通知。"
+          }
+        }
+      }
+    },
+    "Delivery stopped. Retry notification setup before sending a new test.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery stopped. Retry notification setup before sending a new test."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送已停止，请重试通知设置后再发送新的测试通知。"
+          }
+        }
+      }
+    },
+    "Refresh test status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh test status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新测试状态"
+          }
+        }
+      }
+    },
+    "Delivery status does not guarantee device presentation or exactly-once display.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery status does not guarantee device presentation or exactly-once display."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送状态不保证设备展示，也不保证只展示一次。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

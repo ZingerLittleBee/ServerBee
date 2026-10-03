@@ -1239,6 +1239,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/push/test/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["test_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/push/unregister": {
         parameters: {
             query?: never;
@@ -3962,8 +3978,10 @@ export interface components {
             granted_at: number;
         };
         /** @enum {string} */
-        TestPushOutcome: "accepted" | "retryable" | "permanent" | "expired";
+        TestPushOutcome: "pending" | "accepted" | "retryable" | "permanent" | "expired";
         TestPushRequest: {
+            /** @description Client-generated UUID retained when retrying the same logical test. */
+            event_id: string;
             /** Format: int64 */
             expected_revision: number;
         };
@@ -7259,6 +7277,35 @@ export interface operations {
             };
             /** @description Stale revision */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Logical test UUID */
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestPushResponse"];
+                };
+            };
+            /** @description Test unavailable for this login */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

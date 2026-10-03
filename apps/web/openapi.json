@@ -3816,6 +3816,45 @@
         ]
       }
     },
+    "/api/mobile/push/test/{event_id}": {
+      "get": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "test_status",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Logical test UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestPushResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Test unavailable for this login"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/mobile/push/unregister": {
       "post": {
         "tags": [
@@ -14059,6 +14098,7 @@
       "TestPushOutcome": {
         "type": "string",
         "enum": [
+          "pending",
           "accepted",
           "retryable",
           "permanent",
@@ -14068,9 +14108,14 @@
       "TestPushRequest": {
         "type": "object",
         "required": [
+          "event_id",
           "expected_revision"
         ],
         "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Client-generated UUID retained when retrying the same logical test."
+          },
           "expected_revision": {
             "type": "integer",
             "format": "int64"

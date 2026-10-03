@@ -47,3 +47,5 @@ pub mod upgrade_tracker;
 pub mod uptime;
 pub mod user;
 pub mod widget_module;
+
+pub mod mobile_push_outbox;

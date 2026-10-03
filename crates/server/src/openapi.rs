@@ -221,6 +221,7 @@ impl Modify for SecurityAddon {
         crate::router::api::mobile_push::save_preferences,
         crate::router::api::mobile_push::verified_register,
         crate::router::api::mobile_push::test_notification,
+        crate::router::api::mobile_push::test_status,
         // files
         crate::router::api::file::list_files,
         crate::router::api::file::stat_file,
