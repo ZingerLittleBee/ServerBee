@@ -35,7 +35,8 @@ final class NotificationServiceTests: XCTestCase {
                                               installationId: key.installationId, scope: key.scope)
         XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: identityMismatch, now: expected.createdAt))
         XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: expected.expiresAt))
-        XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: expected.expiresAt), purpose: .notificationTap)
+        XCTAssertEqual(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: expected.expiresAt, purpose: .notificationTap), expected)
+        XCTAssertEqual(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: expected.expiresAt + 60, purpose: .notificationTap), expected)
         let input = UNMutableNotificationContent()
         input.title = "Sensitive plaintext must not survive"
         input.userInfo = ["server_id": "victim", "serverbee_envelope": ["version": 2]]
@@ -77,7 +78,7 @@ final class NotificationServiceTests: XCTestCase {
         XCTAssertEqual(target["security_event_id"] as? String, content.eventId)
         XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: content.expiresAt))
         XCTAssertTrue(PushNotificationRenderer.render(input, key: key, now: content.expiresAt).userInfo.isEmpty)
-        XCTAssertEqual(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: content.expiresAt + 60), content, purpose: .notificationTap)
+        XCTAssertEqual(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: content.expiresAt + 60, purpose: .notificationTap), content)
         let tampered = PushEnvelope(version: 1, keyId: envelope.keyId, identity: envelope.identity, nonce: envelope.nonce,
                                     ciphertext: "AAAA" + envelope.ciphertext.dropFirst(4))
         input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(tampered))]
@@ -96,7 +97,7 @@ final class NotificationServiceTests: XCTestCase {
             PushEnvelope(version: 1, keyId: envelope.keyId, identity: envelope.identity, nonce: envelope.nonce, ciphertext: String(repeating: "A", count: 2800))
         ]
         for candidate in invalid {
-            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(candidate, key: key, now: now), purpose: .notificationTap)
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(candidate, key: key, now: now, purpose: .notificationTap))
         }
         let wrongKeys = [
             PushContentKey(keyId: key.keyId, key: Data(repeating: 0, count: 32).base64EncodedString(), deploymentId: key.deploymentId,
@@ -109,7 +110,7 @@ final class NotificationServiceTests: XCTestCase {
                            userId: key.userId, installationId: "other-installation", scope: key.scope)
         ]
         for wrong in wrongKeys {
-            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: wrong, now: now), purpose: .notificationTap)
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: wrong, now: now, purpose: .notificationTap))
         }
     }
 

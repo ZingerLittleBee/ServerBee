@@ -216,9 +216,15 @@ mod combined_category_tests {
                 .position(|migration| migration.name() == "m20261003_000080_mobile_push_outbox")
                 .expect("accepted base")
                 + 1;
-            Migrator::up(&db, Some(u32::try_from(steps).expect("migration count")))
-                .await
-                .expect("migrate accepted base");
+            Migrator::up(
+                &db,
+                Some(
+                    <u32 as std::convert::TryFrom<usize>>::try_from(steps)
+                        .expect("migration count"),
+                ),
+            )
+            .await
+            .expect("migrate accepted base");
             let owner = crate::service::auth::AuthService::create_user(
                 &db,
                 "category-owner",

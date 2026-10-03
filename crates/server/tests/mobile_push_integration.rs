@@ -10,7 +10,8 @@ use axum::http::HeaderMap;
 use axum::http::header::AUTHORIZATION;
 use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectOptions, ConnectionTrait, Database, EntityTrait,
+    QueryFilter, Set,
 };
 use sea_orm_migration::MigratorTrait;
 
