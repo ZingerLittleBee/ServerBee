@@ -12,20 +12,23 @@ private struct EncryptedAlertFixture {
 
 @MainActor
 final class AlertPushNavigationTests: XCTestCase {
-    private func context(user: String = "alice", server: String = "https://serverbee.test") -> MobileAuthenticationContext {
-        MobileAuthenticationContext(serverUrl: server, userId: user, installationId: "alert-install", generation: UUID(),
+    private func context(user: String = "alice", server: String = "https://serverbee.test", installation: String = "alert-install") -> MobileAuthenticationContext {
+        MobileAuthenticationContext(serverUrl: server, userId: user, installationId: installation, generation: UUID(),
                                     accessToken: "fixture-access", revocationToken: "fixture-proof", refreshToken: "fixture-refresh")
     }
 
-    private func encrypted(status: String = "firing", alertKey: String? = nil) throws -> EncryptedAlertFixture {
-        let current = context()
-        let now = Int64(Date().timeIntervalSince1970)
+    private func encrypted(
+        status: String = "firing", alertKey: String? = nil, createdAt: Int64? = nil, lifetime: Int64 = 1800,
+        authentication: MobileAuthenticationContext? = nil
+    ) throws -> EncryptedAlertFixture {
+        let current = authentication ?? context()
+        let now = createdAt ?? Int64(Date().timeIntervalSince1970)
         let parts = ["rule-1", "server-1", "203.0.113.7", "2033-05-18T03:33:20+00:00"]
         let encoded = try JSONEncoder().encode(parts).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         let target = alertKey ?? "v1.\(encoded)"
         let content = PushContent(kind: "alert", deploymentId: current.serverUrl, userId: current.userId,
-                                  installationId: current.installationId, eventId: UUID().uuidString.lowercased(), createdAt: now, expiresAt: now + 1800,
+                                  installationId: current.installationId, eventId: UUID().uuidString.lowercased(), createdAt: now, expiresAt: now + lifetime,
                                   alert: AlertPushTarget(alertKey: target, status: status, ruleName: "High CPU", serverName: "vps-a"))
         let key = PushContentKey(keyId: UUID().uuidString.lowercased(), key: Data(repeating: 7, count: 32).base64EncodedString(),
                                  deploymentId: current.serverUrl, userId: current.userId, installationId: current.installationId, scope: current.pushScope)
@@ -120,4 +123,151 @@ final class AlertPushNavigationTests: XCTestCase {
         XCTAssertEqual(rendered.title, String(localized: "Alert triggered"))
         XCTAssertNotNil(rendered.userInfo["serverbee_target"])
     }
+
+    func testLateColdAlertTapRetainsExactIdentityAfterWiring() throws {
+        for status in ["firing", "resolved"] {
+            let created = Int64(Date().timeIntervalSince1970) - 3600
+            let fixture = try encrypted(status: status, createdAt: created)
+            let input = UNMutableNotificationContent()
+            input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture.envelope))]
+            let presented = PushNotificationRenderer.render(input, key: fixture.key, now: created)
+            XCTAssertNotNil(presented.userInfo["serverbee_target"])
+            let delegate = AppDelegate()
+            delegate.bufferNotification(userInfo: presented.userInfo)
+            let router = PushNotificationRouter()
+            delegate.pushRouter = router
+            let link = try XCTUnwrap(router.consumeAccountTarget(context: context(), key: fixture.key))
+            XCTAssertEqual(link, .alertDetail(alertKey: fixture.target))
+            var tab = 0
+            var servers: [ServerNavigationTarget] = [.detailById("old")]
+            var alerts: [ServerDeepLink] = []
+            ContentView.applyDeepLink(link, selectedTab: &tab, serversPath: &servers, alertsPath: &alerts)
+            XCTAssertEqual(tab, 1)
+            XCTAssertEqual(alerts, [.alertDetail(alertKey: fixture.target)])
+            XCTAssertTrue(servers.isEmpty)
+            XCTAssertNil(router.consumeAccountTarget(context: context(), key: fixture.key))
+        }
+    }
+
+    func testLateWarmAlertTapRetainsExactIdentity() throws {
+        for status in ["firing", "resolved"] {
+            let created = Int64(Date().timeIntervalSince1970) - 7 * 86400
+            let fixture = try encrypted(status: status, createdAt: created)
+            let input = UNMutableNotificationContent()
+            input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture.envelope))]
+            let presented = PushNotificationRenderer.render(input, key: fixture.key, now: created)
+            let router = PushNotificationRouter()
+            let delegate = AppDelegate()
+            delegate.pushRouter = router
+            delegate.bufferNotification(userInfo: presented.userInfo)
+            XCTAssertEqual(router.consumeAccountTarget(context: context(), key: fixture.key), .alertDetail(alertKey: fixture.target))
+            XCTAssertNil(router.pendingEnvelope)
+        }
+    }
+
+    func testDeliveryExpiryRemainsStrictAndLateTapAuthenticatesContent() throws {
+        let created = Int64(Date().timeIntervalSince1970) - 3600
+        let fixture = try encrypted(createdAt: created)
+        for received in [created + 1800, created + 3600] {
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(fixture.envelope, key: fixture.key, now: received))
+            XCTAssertEqual(try PushEnvelopeDecoder.decrypt(fixture.envelope, key: fixture.key, now: received, purpose: .notificationTap).alert?.alertKey,
+                           fixture.target)
+            let input = UNMutableNotificationContent()
+            input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture.envelope))]
+            let rejected = PushNotificationRenderer.render(input, key: fixture.key, now: received)
+            XCTAssertEqual(rejected.body, String(localized: "Open ServerBee to view this notification."))
+            XCTAssertTrue(rejected.userInfo.isEmpty)
+        }
+        let input = UNMutableNotificationContent()
+        input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture.envelope))]
+        let service = NotificationService()
+        service.loadKey = { fixture.key }
+        var completions = 0
+        service.didReceive(UNNotificationRequest(identifier: "expired-alert", content: input, trigger: nil)) { rendered in
+            completions += 1
+            XCTAssertTrue(rendered.userInfo.isEmpty)
+        }
+        service.serviceExtensionTimeWillExpire()
+        XCTAssertEqual(completions, 1)
+        let router = PushNotificationRouter()
+        for replacement in [context(user: "bob"), context(server: "https://other.test"), context(installation: "other-install"),
+                            MobileAuthenticationContext(serverUrl: fixture.key.deploymentId, userId: fixture.key.userId,
+                                                        installationId: fixture.key.installationId, generation: UUID(), accessToken: "new",
+                                                        revocationToken: "other-login", refreshToken: "new")] {
+            router.enqueue(envelope: fixture.envelope)
+            XCTAssertNil(router.consumeAccountTarget(context: replacement, key: fixture.key))
+        }
+        router.enqueue(envelope: fixture.envelope)
+        XCTAssertNil(router.consumeAccountTarget(context: context(), key: nil))
+        let envelope = fixture.envelope
+        var ciphertext = try XCTUnwrap(Data(base64Encoded: envelope.ciphertext))
+        ciphertext[0] ^= 1
+        let tampered = PushEnvelope(version: envelope.version, keyId: envelope.keyId, identity: envelope.identity,
+                                    nonce: envelope.nonce, ciphertext: ciphertext.base64EncodedString())
+        router.enqueue(envelope: tampered)
+        XCTAssertNil(router.consumeAccountTarget(context: context(), key: fixture.key))
+        for lifetime in [1799, 1801] {
+            let malformed = try encrypted(createdAt: created, lifetime: Int64(lifetime))
+            router.enqueue(envelope: malformed.envelope)
+            XCTAssertNil(router.consumeAccountTarget(context: context(), key: malformed.key))
+        }
+        let oversized = PushEnvelope(version: envelope.version, keyId: envelope.keyId, identity: envelope.identity,
+                                     nonce: envelope.nonce, ciphertext: String(repeating: "A", count: 2761))
+        router.enqueue(envelope: oversized)
+        XCTAssertNil(router.consumeAccountTarget(context: context(), key: fixture.key))
+    }
+
+    func testLateAlertTapFetchesCurrentDetailAndClearsUnavailableTargets() async throws {
+        URLProtocol.registerClass(PushLifecycleURLProtocol.self)
+        let auth = AuthManager()
+        defer {
+            PushLifecycleURLProtocol.handler = nil
+            PushLifecycleURLProtocol.cancelPending()
+            URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
+            auth.clearAuth()
+        }
+        auth.setServerUrl("https://serverbee.test")
+        auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
+                                                    refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+        let current = try XCTUnwrap(auth.captureContext())
+        let fixture = try encrypted(createdAt: Int64(Date().timeIntervalSince1970) - 3600, authentication: current)
+        let router = PushNotificationRouter()
+        router.enqueue(envelope: fixture.envelope)
+        guard case let .alertDetail(target) = try XCTUnwrap(router.consumeAccountTarget(context: current, key: fixture.key)) else {
+            XCTFail("Late tap must enter current authenticated detail lookup")
+            return
+        }
+        let data = try JSONSerialization.data(withJSONObject: ["data": [
+            "alert_key": target, "rule_id": "rule-1", "rule_name": "Current rule", "server_id": "server-1", "server_name": "Current Server",
+            "status": "resolved", "message": "Current authorized state", "trigger_count": 1,
+            "first_triggered_at": "2033-05-18T03:33:20Z", "rule_enabled": true, "rule_trigger_mode": "once"
+        ]])
+        let viewModel = AlertDetailViewModel()
+        let api = APIClient(authManager: auth)
+        // Substitute only HTTP responses. Navigation does not trust the push's
+        // display text as detail, and current Server denial/deletion clears it.
+        for status in [200, 404, 200, 403] {
+            let requested = expectation(description: "Current authenticated alert lookup: \(status)")
+            PushLifecycleURLProtocol.handler = { request in
+                XCTAssertEqual(request.request.url?.absoluteString, "https://serverbee.test/api/alert-events/\(target)")
+                XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-access")
+                requested.fulfill()
+                request.respond(status, data: data)
+            }
+            await viewModel.fetchDetail(alertKey: target, apiClient: api)
+            await fulfillment(of: [requested], timeout: 3)
+            XCTAssertFalse(viewModel.isLoading)
+            if status == 200 {
+                XCTAssertEqual(viewModel.detail?.alertKey, target)
+                XCTAssertEqual(viewModel.detail?.ruleName, "Current rule")
+                XCTAssertEqual(viewModel.detail?.status, .resolved)
+                XCTAssertNil(viewModel.errorMessage)
+            } else {
+                XCTAssertNil(viewModel.detail)
+                XCTAssertEqual(viewModel.errorMessage, String(localized: "Alert not found"))
+            }
+        }
+    }
+
 }

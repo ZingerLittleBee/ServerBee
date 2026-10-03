@@ -102,6 +102,8 @@ The Server queues encrypted notifications for each currently eligible subscribed
 
 Taps wait for authentication restoration and validate the current deployment, account and installation. The alert target includes the rule, Server, event dimension and trigger cycle. A deleted alert or overwritten cycle shows **Alert not found** with **Back to alerts**, rather than opening a newer cycle. The extension localizes trigger/recovery text in English or Simplified Chinese; decryption failure shows generic text without a navigation target.
 
+Queued delivery and extension presentation expire 30 minutes after creation. Tapping a notification already shown in Notification Center after that deadline still authenticates its exact target and requests current Server detail. Expiry does not authorize access: a changed login is rejected, and a deleted or unavailable alert uses the same safe fallback.
+
 ### Privacy Boundary
 
 The Server owns account/session authorization and recipient selection. The Relay sees APNs tokens, source IPs, timing, request sizes, environment, grant identifiers and encrypted content. It must never receive content keys or plaintext notification content. Users see this explanation before requesting permission.

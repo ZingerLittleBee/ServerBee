@@ -2950,3 +2950,439 @@ async fn alert_detail_complete_identity_distinguishes_event_dimensions() {
         "Legacy keys must not select an arbitrary security dimension"
     );
 }
+
+#[derive(Clone, Copy, Debug)]
+enum AlertAdmissionFault {
+    SecondInsert,
+    DeferredCommit,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum AlertRollbackPhase {
+    Trigger,
+    Recovery,
+    Rearm,
+}
+
+async fn fault_alert_admission(state: &AppState, fault: AlertAdmissionFault) {
+    match fault {
+        AlertAdmissionFault::SecondInsert => {
+            // Fail after the first installation's job was actually inserted.
+            state.db.execute_unprepared("CREATE TRIGGER fail_alert_admission
+                BEFORE INSERT ON mobile_push_outbox
+                WHEN NEW.category='alert' AND EXISTS
+                    (SELECT 1 FROM mobile_push_outbox WHERE event_id=NEW.event_id AND category='alert')
+                BEGIN SELECT RAISE(ABORT, 'injected second alert insert failure'); END")
+                .await.expect("install SQLite insertion fault");
+        }
+        AlertAdmissionFault::DeferredCommit => {
+            // Every write succeeds; the deferred FK fails the real COMMIT.
+            state
+                .db
+                .execute_unprepared(
+                    "PRAGMA foreign_keys=ON;
+                CREATE TABLE alert_commit_parent (id INTEGER PRIMARY KEY);
+                CREATE TABLE alert_commit_child (parent_id INTEGER NOT NULL
+                    REFERENCES alert_commit_parent(id) DEFERRABLE INITIALLY DEFERRED);
+                CREATE TRIGGER fail_alert_admission AFTER INSERT ON mobile_push_outbox
+                WHEN NEW.category='alert'
+                BEGIN INSERT INTO alert_commit_child(parent_id) VALUES (1); END",
+                )
+                .await
+                .expect("install SQLite commit fault");
+        }
+    }
+}
+
+async fn reopen_alert_state(state: &AppState, directory: &tempfile::TempDir) -> Arc<AppState> {
+    let mut options = ConnectOptions::new(format!(
+        "sqlite://{}/test.db?mode=rwc",
+        directory.path().display()
+    ));
+    options.max_connections(5).sqlx_logging(false);
+    let db = Database::connect(options)
+        .await
+        .expect("reopen real SQLite");
+    db.execute_unprepared("PRAGMA foreign_keys=ON")
+        .await
+        .expect("enable constraints");
+    AppState::new(db, state.config.clone())
+        .await
+        .expect("restore production alert cache")
+}
+
+async fn persisted_alert_cycle(
+    state: &AppState,
+    rule: &str,
+    server: &str,
+) -> Option<serverbee_server::entity::alert_state::Model> {
+    use serverbee_server::entity::alert_state;
+    alert_state::Entity::find()
+        .filter(alert_state::Column::RuleId.eq(rule))
+        .filter(alert_state::Column::ServerId.eq(server))
+        .filter(alert_state::Column::EventKey.eq(""))
+        .one(&state.db)
+        .await
+        .expect("read durable alert state")
+}
+
+async fn attach_alert_webhook(
+    client: &reqwest::Client,
+    base: &str,
+    access: &str,
+    rule: &str,
+) -> Arc<tokio::sync::Mutex<Vec<String>>> {
+    use axum::{Router, routing::post};
+    let received = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let sink = received.clone();
+    let app = Router::new().route(
+        "/",
+        post(move |body: String| {
+            let sink = sink.clone();
+            async move {
+                sink.lock().await.push(body);
+                "ok"
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let channel = client.post(format!("{base}/api/notifications")).bearer_auth(access)
+        .json(&serde_json::json!({"name":"Atomic alert webhook","notify_type":"webhook","enabled":true,
+            "config_json":{"url":url,"method":"POST","body_template":"{{event}}"}}))
+        .send().await.unwrap();
+    assert_eq!(channel.status(), 200);
+    let channel = channel.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let group = client
+        .post(format!("{base}/api/notification-groups"))
+        .bearer_auth(access)
+        .json(&serde_json::json!({"name":"Atomic alert group","notification_ids":[channel]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(group.status(), 200);
+    let group = group.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        client
+            .put(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"notification_group_id":group}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    received
+}
+
+async fn assert_alert_rollback(
+    state: &AppState,
+    rule: &str,
+    server: &str,
+    before: &Option<serverbee_server::entity::alert_state::Model>,
+    jobs_before: &[serverbee_server::entity::mobile_push_outbox::Model],
+) {
+    assert_eq!(
+        &persisted_alert_cycle(state, rule, server).await,
+        before,
+        "Failed transaction must not consume a transition or rearm"
+    );
+    assert_eq!(
+        alert_jobs(state).await,
+        jobs_before,
+        "First recipient and durable alert state must roll back with the failed recipient/commit"
+    );
+    assert_eq!(
+        state.alert_state_manager.is_triggered(rule, server, ""),
+        before.as_ref().is_some_and(|cycle| !cycle.resolved)
+    );
+    if let Some(cycle) = before.as_ref().filter(|cycle| !cycle.resolved) {
+        let cached = state
+            .alert_state_manager
+            .get_info(rule, server, "")
+            .expect("Firing cache survives failed recovery");
+        assert_eq!(cached.first_triggered_at, cycle.first_triggered_at);
+        assert_eq!(cached.last_notified_at, cycle.last_notified_at);
+        assert_eq!(cached.count, cycle.count as u32);
+    }
+}
+
+async fn exercise_alert_rollback_restart(phase: AlertRollbackPhase, fault: AlertAdmissionFault) {
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "rollback-a").await;
+    let member = login_http(&client, &base, "member", "rollback-b").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    queued_register(
+        &client,
+        &base,
+        member["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    let (server, rule) = alert_http_fixture(&client, &base, admin, "once").await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    match phase {
+        AlertRollbackPhase::Trigger => {}
+        AlertRollbackPhase::Recovery => {
+            evaluate_alerts(&state).await;
+            set_alert_expiration(&client, &base, admin, &server, false).await;
+        }
+        AlertRollbackPhase::Rearm => {
+            evaluate_alerts(&state).await;
+            set_alert_expiration(&client, &base, admin, &server, false).await;
+            evaluate_alerts(&state).await;
+            set_alert_expiration(&client, &base, admin, &server, true).await;
+        }
+    }
+    let before = persisted_alert_cycle(&state, &rule, &server).await;
+    let jobs_before = alert_jobs(&state).await;
+    let external_before = webhook.lock().await.len();
+    fault_alert_admission(&state, fault).await;
+    // Repeat in the same process: a failed attempt cannot consume the hot cache.
+    for _ in 0..2 {
+        evaluate_alerts(&state).await;
+        assert_alert_rollback(&state, &rule, &server, &before, &jobs_before).await;
+        assert_eq!(
+            webhook.lock().await.len(),
+            external_before,
+            "External dispatch follows committed admission"
+        );
+    }
+    assert!(
+        relay.requests().await.is_empty(),
+        "No network work on evaluation"
+    );
+    // The SQLite fault itself survives reopening. Verify rollback after a fresh
+    // production cache has loaded, before removing only the external fault.
+    let restarted = reopen_alert_state(&state, &directory).await;
+    evaluate_alerts(&restarted).await;
+    assert_alert_rollback(&restarted, &rule, &server, &before, &jobs_before).await;
+    restarted
+        .db
+        .execute_unprepared("DROP TRIGGER fail_alert_admission")
+        .await
+        .unwrap();
+    evaluate_alerts(&restarted).await;
+    let admitted_state = persisted_alert_cycle(&restarted, &rule, &server)
+        .await
+        .unwrap();
+    let admitted_jobs = alert_jobs(&restarted).await;
+    let new_jobs: Vec<_> = admitted_jobs
+        .iter()
+        .filter(|job| {
+            !jobs_before.iter().any(|old| {
+                old.event_id == job.event_id && old.installation_id == job.installation_id
+            })
+        })
+        .collect();
+    assert_eq!(
+        new_jobs.len(),
+        2,
+        "Exactly one successful logical admission for each installation"
+    );
+    assert_eq!(new_jobs[0].event_id, new_jobs[1].event_id);
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(new_jobs[0].envelope.as_deref().unwrap()).unwrap(),
+    );
+    let resolved = matches!(phase, AlertRollbackPhase::Recovery);
+    assert_eq!(
+        content["alert"]["status"],
+        if resolved { "resolved" } else { "firing" }
+    );
+    assert_eq!(
+        content["alert"]["alert_key"],
+        serverbee_server::service::alert::alert_detail_key(&admitted_state)
+    );
+    if let Some(before) = &before {
+        if resolved {
+            assert_eq!(admitted_state.first_triggered_at, before.first_triggered_at);
+        } else {
+            assert_ne!(admitted_state.first_triggered_at, before.first_triggered_at);
+        }
+    }
+    for job in &new_jobs {
+        assert_eq!(job.expires_at - job.created_at, 1800);
+        assert_eq!(content["event_id"], job.event_id);
+        assert_eq!(content["created_at"], job.created_at);
+        assert_eq!(content["expires_at"], job.expires_at);
+    }
+    assert_eq!(webhook.lock().await.len(), external_before + 1);
+    assert_eq!(
+        webhook.lock().await.last().unwrap(),
+        if resolved { "resolved" } else { "triggered" }
+    );
+    // A committed logical identity and its original deadline survive another
+    // database reopen, repeated evaluation and the real durable worker.
+    evaluate_alerts(&restarted).await;
+    assert_eq!(alert_jobs(&restarted).await, admitted_jobs);
+    let final_restart = reopen_alert_state(&restarted, &directory).await;
+    evaluate_alerts(&final_restart).await;
+    assert_eq!(alert_jobs(&final_restart).await, admitted_jobs);
+    assert_eq!(
+        webhook.lock().await.len(),
+        external_before + 1,
+        "No duplicate external transition after restart"
+    );
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(final_restart.clone());
+    wait_alert_dispatch(&final_restart).await;
+    worker.abort();
+    let _ = worker.await;
+    let requests = relay.requests().await;
+    assert_eq!(requests.len(), admitted_jobs.len());
+    for original in &admitted_jobs {
+        let receipt = outbox_job(
+            &final_restart,
+            &original.event_id,
+            &original.installation_id,
+        )
+        .await;
+        assert_eq!(receipt.outcome, "accepted");
+        assert_eq!(receipt.created_at, original.created_at);
+        assert_eq!(receipt.expires_at, original.expires_at);
+        assert!(
+            requests
+                .iter()
+                .any(|request| request["event_id"] == original.event_id
+                    && request["expires_at"] == original.expires_at)
+        );
+    }
+}
+
+#[tokio::test]
+async fn alert_trigger_admission_rolls_back_and_recovers_after_sqlite_restart() {
+    for fault in [
+        AlertAdmissionFault::SecondInsert,
+        AlertAdmissionFault::DeferredCommit,
+    ] {
+        exercise_alert_rollback_restart(AlertRollbackPhase::Trigger, fault).await;
+    }
+}
+
+#[tokio::test]
+async fn alert_recovery_admission_rolls_back_and_recovers_after_sqlite_restart() {
+    for fault in [
+        AlertAdmissionFault::SecondInsert,
+        AlertAdmissionFault::DeferredCommit,
+    ] {
+        exercise_alert_rollback_restart(AlertRollbackPhase::Recovery, fault).await;
+    }
+}
+
+#[tokio::test]
+async fn alert_rearm_admission_rolls_back_and_recovers_after_sqlite_restart() {
+    for fault in [
+        AlertAdmissionFault::SecondInsert,
+        AlertAdmissionFault::DeferredCommit,
+    ] {
+        exercise_alert_rollback_restart(AlertRollbackPhase::Rearm, fault).await;
+    }
+}
+
+#[tokio::test]
+async fn alert_delivery_expiry_preserves_current_authenticated_detail_lookup() {
+    use serverbee_server::entity::mobile_push_outbox as outbox;
+    let (base, state, _directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "late-tap-operator").await;
+    let member = login_http(&client, &base, "member", "late-tap-viewer").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let access = member["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    let (_server, rule) = alert_http_fixture(&client, &base, admin, "once").await;
+    evaluate_alerts(&state).await;
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].expires_at - jobs[0].created_at, 1800);
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(jobs[0].envelope.as_deref().unwrap()).unwrap(),
+    );
+    let target = content["alert"]["alert_key"].as_str().unwrap();
+    // Move only the persisted delivery clock to a past 30-minute window.
+    // Detail lookup has its own current authenticated HTTP policy, not this clock.
+    let created = Utc::now().timestamp() - 3600;
+    outbox::Entity::update_many()
+        .col_expr(
+            outbox::Column::CreatedAt,
+            sea_orm::sea_query::Expr::value(created),
+        )
+        .col_expr(
+            outbox::Column::ExpiresAt,
+            sea_orm::sea_query::Expr::value(created + 1800),
+        )
+        .exec(&state.db)
+        .await
+        .unwrap();
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_alert_dispatch(&state).await;
+    worker.abort();
+    let _ = worker.await;
+    let expired = alert_jobs(&state).await;
+    assert_eq!(expired[0].outcome, "expired");
+    assert_eq!(expired[0].expires_at, created + 1800);
+    assert!(relay.requests().await.is_empty());
+    let url = format!("{base}/api/alert-events/{target}");
+    let detail = client.get(&url).bearer_auth(access).send().await.unwrap();
+    assert_eq!(
+        detail.status(),
+        200,
+        "Delivery expiry cannot expire a current alert target"
+    );
+    assert_eq!(
+        detail.json::<serde_json::Value>().await.unwrap()["data"]["alert_key"],
+        target
+    );
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(&url)
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401,
+        "A prior notification never authorizes a revoked current session"
+    );
+    assert_eq!(
+        client
+            .delete(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(&url)
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404,
+        "An unavailable exact target never opens another alert"
+    );
+}

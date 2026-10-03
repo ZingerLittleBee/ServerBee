@@ -1,10 +1,7 @@
 //! Alert admission reuses rule transitions; only ciphertext enters the durable queue.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    TransactionTrait,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -21,11 +18,10 @@ use crate::{
 };
 
 pub(super) async fn enqueue(
-    db: &DatabaseConnection,
+    txn: &DatabaseTransaction,
     rule: &alert_rule::Model,
-    server_id: &str,
+    state: &alert_state::Model,
     server_name: &str,
-    resolved: bool,
 ) -> Result<(), AppError> {
     let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json)
         .map_err(|_| AppError::Internal("Invalid persisted alert rule".into()))?;
@@ -37,36 +33,18 @@ pub(super) async fn enqueue(
     {
         return Ok(());
     }
-    let txn = db.begin().await?;
-    // Serialize snapshots and queue admission with subscription/revocation writes.
-    txn.execute_unprepared(
-        "UPDATE mobile_push_registrations SET revision=revision WHERE enabled=1 AND alerts=1",
-    )
-    .await?;
-    let Some(state) = alert_state::Entity::find()
-        .filter(alert_state::Column::RuleId.eq(&rule.id))
-        .filter(alert_state::Column::ServerId.eq(server_id))
-        .filter(alert_state::Column::EventKey.eq(""))
-        .filter(alert_state::Column::Resolved.eq(resolved))
-        .one(&txn)
-        .await?
-    else {
-        txn.commit().await?;
-        return Ok(());
-    };
-    let occurred = if resolved {
+    let occurred = if state.resolved {
         state.resolved_at.unwrap_or(state.updated_at)
     } else {
         state.last_notified_at
     };
     let created_at = occurred.timestamp();
     if created_at + 1800 <= Utc::now().timestamp() {
-        txn.commit().await?;
         return Ok(());
     }
-    let alert_key = alert_detail_key(&state);
-    let status = if resolved { "resolved" } else { "firing" };
-    let repeat = if !resolved && rule.trigger_mode != "once" {
+    let alert_key = alert_detail_key(state);
+    let status = if state.resolved { "resolved" } else { "firing" };
+    let repeat = if !state.resolved && rule.trigger_mode != "once" {
         occurred.to_rfc3339()
     } else {
         String::new()
@@ -80,10 +58,10 @@ pub(super) async fn enqueue(
     let rows = registration::Entity::find()
         .filter(registration::Column::Enabled.eq(true))
         .filter(registration::Column::Alerts.eq(true))
-        .all(&txn)
+        .all(txn)
         .await?;
     for row in rows {
-        let Some(owner) = user::Entity::find_by_id(&row.user_id).one(&txn).await? else {
+        let Some(owner) = user::Entity::find_by_id(&row.user_id).one(txn).await? else {
             continue;
         };
         let mut job = outbox::Model {
@@ -104,11 +82,11 @@ pub(super) async fn enqueue(
             lease_id: None,
             lease_until: 0,
         };
-        if eligible(&txn, &job).await?.is_none() {
+        if eligible(txn, &job).await?.is_none() {
             continue;
         }
         if outbox::Entity::find_by_id((event_id.clone(), row.installation_id.clone()))
-            .one(&txn)
+            .one(txn)
             .await?
             .is_some()
         {
@@ -150,8 +128,7 @@ pub(super) async fn enqueue(
                 .map_err(|_| AppError::Internal("Push envelope encoding failed".into()))?,
         );
         let active: outbox::ActiveModel = job.into();
-        active.insert(&txn).await?;
+        active.insert(txn).await?;
     }
-    txn.commit().await?;
     Ok(())
 }

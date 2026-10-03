@@ -256,6 +256,8 @@ pub struct TriggeredInfo {
 
 pub struct AlertStateManager {
     triggered: DashMap<(String, String, String), TriggeredInfo>,
+    // Keep post-commit cache publication ordered with general-alert admission.
+    admission_lock: tokio::sync::Mutex<()>,
 }
 
 impl Default for AlertStateManager {
@@ -269,6 +271,7 @@ impl AlertStateManager {
     pub fn new() -> Self {
         Self {
             triggered: DashMap::new(),
+            admission_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -290,7 +293,10 @@ impl AlertStateManager {
             );
         }
 
-        Ok(Self { triggered })
+        Ok(Self {
+            triggered,
+            admission_lock: tokio::sync::Mutex::new(()),
+        })
     }
 
     pub fn is_triggered(&self, rule_id: &str, server_id: &str, event_key: &str) -> bool {
@@ -314,6 +320,106 @@ impl AlertStateManager {
                 event_key.to_string(),
             ))
             .map(|r| r.clone())
+    }
+
+    /// Commit the general alert dimension and its encrypted jobs together.
+    /// Failed admission leaves both durable state and the cache unconsumed.
+    async fn admit_alert_transition(
+        &self,
+        db: &DatabaseConnection,
+        rule: &alert_rule::Model,
+        server_id: &str,
+        server_name: &str,
+        resolved: bool,
+    ) -> Result<bool, AppError> {
+        let _admission = self.admission_lock.lock().await;
+        let txn = db.begin().await?;
+        // Take the SQLite writer lock before reading state or choosing a cycle.
+        // This also serializes separate evaluator owners sharing one database.
+        txn.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE alert_states SET updated_at=updated_at WHERE rule_id=? AND server_id=? AND event_key=''",
+            [rule.id.clone().into(), server_id.to_string().into()],
+        )).await?;
+        let existing = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq(&rule.id))
+            .filter(alert_state::Column::ServerId.eq(server_id))
+            .filter(alert_state::Column::EventKey.eq(""))
+            .one(&txn)
+            .await?;
+        let key = (rule.id.clone(), server_id.to_string(), String::new());
+        if resolved && existing.as_ref().is_none_or(|state| state.resolved) {
+            txn.commit().await?;
+            self.triggered.remove(&key);
+            return Ok(false);
+        }
+        let now = Utc::now();
+        let firing = existing.as_ref().filter(|state| !state.resolved);
+        let should_notify = resolved
+            || match rule.trigger_mode.as_str() {
+                "once" => firing.is_none(),
+                _ => {
+                    firing.is_none_or(|state| now - state.last_notified_at >= Duration::minutes(5))
+                }
+            };
+        let state = if let Some(previous) = existing {
+            let count = previous.count;
+            let rearm = previous.resolved;
+            let mut active: alert_state::ActiveModel = previous.into();
+            active.updated_at = Set(now);
+            if resolved {
+                active.resolved = Set(true);
+                active.resolved_at = Set(Some(now));
+            } else {
+                // Retain the evaluator's bookkeeping even on suppressed polls.
+                active.count = Set(if rearm { 1 } else { count.saturating_add(1) });
+                active.last_notified_at = Set(now);
+                if rearm {
+                    active.first_triggered_at = Set(now);
+                    active.resolved = Set(false);
+                    active.resolved_at = Set(None);
+                }
+            }
+            active.update(&txn).await?
+        } else {
+            alert_state::ActiveModel {
+                id: NotSet,
+                rule_id: Set(rule.id.clone()),
+                server_id: Set(server_id.to_string()),
+                event_key: Set(String::new()),
+                first_triggered_at: Set(now),
+                last_notified_at: Set(now),
+                count: Set(1),
+                resolved: Set(false),
+                resolved_at: Set(None),
+                updated_at: Set(now),
+            }
+            .insert(&txn)
+            .await?
+        };
+        if should_notify
+            && let Err(error) =
+                crate::service::mobile_alert_push::enqueue(&txn, rule, &state, server_name).await
+        {
+            txn.rollback().await?;
+            return Err(error);
+        }
+        txn.commit().await?;
+        // No await between durable commit and publication. Cancellation/crashes
+        // are recovered from the persisted state, never from cache eligibility.
+        if state.resolved {
+            self.triggered.remove(&key);
+        } else {
+            self.triggered.insert(
+                key,
+                TriggeredInfo {
+                    first_triggered_at: state.first_triggered_at,
+                    last_notified_at: state.last_notified_at,
+                    count: state.count as u32,
+                },
+            );
+        }
+        Ok(should_notify)
     }
 
     pub async fn mark_triggered(
@@ -740,11 +846,10 @@ impl AlertService {
                     continue;
                 }
                 Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name).await?;
-            } else if state_manager.is_triggered(&rule.id, &srv.id, "") {
-                // Recovered
-                state_manager
-                    .mark_resolved(db, &rule.id, &srv.id, "")
-                    .await?;
+            } else if state_manager
+                .admit_alert_transition(db, rule, &srv.id, &srv.name, true)
+                .await?
+            {
                 tracing::info!("Alert '{}' resolved for server '{}'", rule.name, srv.name);
                 Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await;
             }
@@ -808,31 +913,9 @@ impl AlertService {
         server_id: &str,
         server_name: &str,
     ) -> Result<(), AppError> {
-        let should_notify = match rule.trigger_mode.as_str() {
-            "once" => !state_manager.is_triggered(&rule.id, server_id, ""),
-            _ => {
-                // "always" — but debounce 5 minutes
-                match state_manager.get_info(&rule.id, server_id, "") {
-                    Some(info) => {
-                        let elapsed = Utc::now() - info.last_notified_at;
-                        elapsed >= Duration::minutes(5)
-                    }
-                    None => true,
-                }
-            }
-        };
-
-        state_manager
-            .mark_triggered(db, &rule.id, server_id, "")
+        let should_notify = state_manager
+            .admit_alert_transition(db, rule, server_id, server_name, false)
             .await?;
-
-        if should_notify
-            && let Err(error) =
-                crate::service::mobile_alert_push::enqueue(db, rule, server_id, server_name, false)
-                    .await
-        {
-            tracing::warn!("Could not enqueue mobile alert: {error}");
-        }
         if should_notify && let Some(ref group_id) = rule.notification_group_id {
             let ctx = NotifyContext {
                 server_name: server_name.to_string(),
@@ -862,7 +945,7 @@ impl AlertService {
     /// Send a recovery notification when an alert transitions back to normal.
     ///
     /// This branch is edge-triggered: `evaluate_rule` only reaches it on the
-    /// triggered→recovered transition (and `mark_resolved` clears the state),
+    /// committed triggered→recovered transition (atomic admission clears the state),
     /// so no debounce is needed. Notification failures are logged, never
     /// propagated, so a flaky channel cannot block alert-state bookkeeping.
     async fn handle_resolved(
@@ -872,11 +955,6 @@ impl AlertService {
         server_id: &str,
         server_name: &str,
     ) {
-        if let Err(error) =
-            crate::service::mobile_alert_push::enqueue(db, rule, server_id, server_name, true).await
-        {
-            tracing::warn!("Could not enqueue mobile recovery: {error}");
-        }
         let Some(ref group_id) = rule.notification_group_id else {
             return;
         };
@@ -960,9 +1038,12 @@ impl AlertService {
 pub fn alert_detail_key(state: &alert_state::Model) -> String {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     let canonical = serde_json::json!([
-        state.rule_id, state.server_id, state.event_key,
+        state.rule_id,
+        state.server_id,
+        state.event_key,
         state.first_triggered_at.to_rfc3339()
-    ]).to_string();
+    ])
+    .to_string();
     format!("v1.{}", URL_SAFE_NO_PAD.encode(canonical.as_bytes()))
 }
 

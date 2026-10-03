@@ -84,7 +84,14 @@ struct PushContentKey: Codable, Sendable {
 enum PushEnvelopeError: Error { case invalid }
 
 enum PushEnvelopeDecoder {
-    static func decrypt(_ envelope: PushEnvelope, key: PushContentKey, now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> PushContent {
+    enum Purpose {
+        case delivery
+        case notificationTap
+    }
+
+    static func decrypt(
+        _ envelope: PushEnvelope, key: PushContentKey, now: Int64 = Int64(Date().timeIntervalSince1970), purpose: Purpose = .delivery
+    ) throws -> PushContent {
         guard envelope.version == 1, envelope.keyId == key.keyId, envelope.ciphertext.count <= 2760,
               let secret = Data(base64Encoded: key.key), secret.count == 32,
               let nonce = Data(base64Encoded: envelope.nonce), nonce.count == 12,
@@ -96,11 +103,15 @@ enum PushEnvelopeDecoder {
         let bytes = try AES.GCM.open(sealed, using: SymmetricKey(data: secret), authenticating: aad)
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
         let validKind = (content.kind == "test" && content.alert == nil) || (content.kind == "alert" && content.alert?.isValid == true)
+        let lifetime = content.expiresAt.subtractingReportingOverflow(content.createdAt)
+        let allowsCurrentTime = purpose == .notificationTap || content.expiresAt > now
+        // Delivery expires after 30 minutes. Tapping an already-presented
+        // notification still authenticates its target for current Server lookup.
         guard validKind, content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
               UUID(uuidString: content.eventId) != nil,
-              content.expiresAt > now, content.createdAt <= now + 60,
-              content.expiresAt - content.createdAt == 1800 else { throw PushEnvelopeError.invalid }
+              allowsCurrentTime, content.createdAt <= now + 60,
+              !lifetime.overflow, lifetime.partialValue == 1800 else { throw PushEnvelopeError.invalid }
         return content
     }
 }

@@ -35,7 +35,8 @@ mod tests {
             .iter()
             .position(|migration| migration.name() == "m20261003_000080_mobile_push_outbox")
             .expect("accepted base migration");
-        let steps = u32::try_from(base_index + 1).expect("migration count");
+        let steps = <u32 as std::convert::TryFrom<usize>>::try_from(base_index + 1)
+            .expect("migration count");
         Migrator::up(&db, Some(steps))
             .await
             .expect("migrate through accepted outbox base");

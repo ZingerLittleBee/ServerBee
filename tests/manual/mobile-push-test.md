@@ -223,3 +223,21 @@ before dispatch and confirm that installation receives no later eligible send;
 a second subscribed installation must still receive its own event. Verify
 maintenance, disabled rules and repeat suppression against external-channel
 behavior. Genuine App Attest and APNs presentation remain separate live evidence.
+
+
+The rollback/restart tests inject a second-recipient INSERT failure and a deferred
+SQLite COMMIT failure for trigger, recovery and rearm. They verify all recipient
+jobs, state and cache roll back together, then reopen the database and successfully
+admit one logical event without changing its committed creation/expiry on retry.
+`alert_delivery_expiry_preserves_current_authenticated_detail_lookup` separately
+checks the production worker's expiry, current HTTP authorization and deleted-target
+response. Run these cases and both shared-category migration tests on the frozen SHA.
+
+For receiving, `AlertPushNavigationTests` covers cold taps after one hour and warm
+taps after seven days through the production renderer, delegate and router. It also
+checks normal delivery/NSE expiry, tampering, login/deployment/installation isolation,
+bounded ciphertext and current detail fetch with 403/404 fallback. On the signed
+isolated device, leave an already-presented alert for more than 30 minutes before
+warm and cold taps. Its exact detail must still resolve or show the safe fallback;
+an expired notification arriving for the first time must not render alert content.
+These are separate from provider acceptance and still require live device evidence.
