@@ -63,7 +63,9 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
                 let submitted = try JSONDecoder.snakeCase.decode(PushPreferences.self, from: encoded)
                 attempts.append(submitted)
                 status = expected.int64Value == revision ? saveStatus : 409
-                if status == 200, (submitted.security && !securityAllowed || (submitted.taskFailure || submitted.taskSuccess) && !tasksAllowed) { status = 403 }
+                let forbiddenSecurity = submitted.security && !securityAllowed
+                let forbiddenTasks = (submitted.taskFailure || submitted.taskSuccess) && !tasksAllowed
+                if status == 200, forbiddenSecurity || forbiddenTasks { status = 403 }
                 if status == 200 {
                     preferences = submitted
                     revision = expected.int64Value + 1
@@ -194,37 +196,60 @@ final class PushPreferenceRecoveryTests: XCTestCase {
     }
 
     func testLostSaveResponseClearsOnlyAfterNewerReadConfirmsPermittedPreferences() async throws {
-        for enabled in [true, false] {
-            let http = PreferenceRecoveryHTTP()
-            PreferenceRecoveryURLProtocol.fixture = http
-            let auth = AuthManager()
-            login(auth)
-            let system = TestPushSystem()
-            system.status = .denied
-            let manager = manager(auth, system: system)
-            await manager.reconcile()
-            let original = try XCTUnwrap(manager.confirmed?.preferences)
-            var draft = original
-            draft.enabled = enabled
-            draft.alerts = false
-            draft.security = true // A hidden stale category is normalized before the real PUT.
-            var permitted = draft
-            permitted.security = false
-            http.loseCommittedSaveReply()
-            await manager.savePreferences(draft)
-            XCTAssertNotNil(manager.errorMessage)
-            XCTAssertEqual(manager.unconfirmedPreferences, permitted)
-            XCTAssertEqual(manager.confirmed?.preferences, original)
-            XCTAssertEqual(manager.confirmed?.revision, 2)
-            await manager.reconcile()
-            XCTAssertNil(manager.errorMessage)
-            XCTAssertNil(manager.unconfirmedPreferences)
-            XCTAssertEqual(manager.confirmed?.preferences, permitted)
-            XCTAssertEqual(manager.confirmed?.revision, 3)
-            XCTAssertEqual(http.savedPreferences(), [permitted])
-            XCTAssertEqual(system.permissionRequests, 0)
-            await manager.waitForPendingRegistrations()
-            auth.clearAuth()
+        for currentAdmin in [true, false] {
+            for enabled in [true, false] {
+                let http = PreferenceRecoveryHTTP()
+                if !currentAdmin { http.demote() }
+                PreferenceRecoveryURLProtocol.fixture = http
+                let auth = AuthManager()
+                login(auth)
+                let system = TestPushSystem()
+                system.status = .denied
+                let relay = TestPushRelay()
+                let manager = manager(auth, system: system, relay: relay)
+                await manager.reconcile()
+                // Category visibility follows the actual Server role, not cached login metadata.
+                XCTAssertEqual(auth.user?.role, "member")
+                XCTAssertEqual(manager.confirmed?.securityAllowed, currentAdmin)
+                XCTAssertEqual(manager.confirmed?.tasksAllowed, currentAdmin)
+                let original = try XCTUnwrap(manager.confirmed?.preferences)
+                var draft = original
+                draft.enabled = enabled
+                draft.alerts = false
+                draft.security = true
+                draft.taskFailure = true
+                draft.taskSuccess = true
+                var permitted = draft
+                if !currentAdmin {
+                    permitted.security = false
+                    permitted.taskFailure = false
+                    permitted.taskSuccess = false
+                }
+                http.loseCommittedSaveReply()
+                await manager.savePreferences(draft)
+                XCTAssertNotNil(manager.errorMessage)
+                XCTAssertEqual(manager.unconfirmedPreferences, permitted)
+                XCTAssertEqual(manager.confirmed?.preferences, original)
+                XCTAssertEqual(manager.confirmed?.revision, 2)
+                XCTAssertEqual(manager.confirmed?.registered, true)
+                XCTAssertEqual(http.savedPreferences(), [permitted])
+                XCTAssertEqual(system.permissionRequests, 0)
+                XCTAssertEqual(relay.attempts, 0)
+                await manager.reconcile()
+                XCTAssertNil(manager.errorMessage)
+                XCTAssertNil(manager.unconfirmedPreferences)
+                XCTAssertEqual(manager.confirmed?.preferences, permitted)
+                XCTAssertEqual(manager.confirmed?.revision, 3)
+                XCTAssertEqual(manager.confirmed?.securityAllowed, currentAdmin)
+                XCTAssertEqual(manager.confirmed?.tasksAllowed, currentAdmin)
+                XCTAssertEqual(manager.confirmed?.registered, enabled)
+                XCTAssertEqual(http.savedPreferences(), [permitted], "Recovery reads must not resubmit the committed intent")
+                await manager.waitForPendingRegistrations()
+                XCTAssertEqual(system.permissionRequests, 0)
+                XCTAssertEqual(relay.attempts, 0)
+                XCTAssertEqual(relay.revocations, 0)
+                auth.clearAuth()
+            }
         }
     }
 
