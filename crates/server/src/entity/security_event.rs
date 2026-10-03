@@ -17,6 +17,9 @@ pub struct Model {
     pub detector_source: String,
     pub evidence: String, // JSON-encoded
     pub created_at: DateTimeUtc,
+    // Internal recovery markers, never included in the public event DTO.
+    pub admission_payload: Option<String>,
+    pub push_intent: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

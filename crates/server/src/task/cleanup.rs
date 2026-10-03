@@ -163,6 +163,8 @@ async fn cleanup_security_events(db: &DatabaseConnection, retention_days: u32) {
     let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
     match security_event::Entity::delete_many()
         .filter(security_event::Column::CreatedAt.lt(cutoff))
+        .filter(security_event::Column::AdmissionPayload.is_null())
+        .filter(security_event::Column::PushIntent.is_null())
         .exec(db)
         .await
     {
@@ -280,6 +282,7 @@ mod tests {
             detector_source: Set("agent".to_string()),
             evidence: Set("{}".to_string()),
             created_at: Set(created_at),
+            ..Default::default()
         }
         .insert(db)
         .await
@@ -489,6 +492,56 @@ mod tests {
         let remaining = security_event::Entity::find().all(&db).await.unwrap();
         assert_eq!(remaining.len(), 1, "only the old security event should be deleted");
         assert_eq!(remaining[0].id, recent_id, "the recent event should be retained");
+    }
+
+    #[tokio::test]
+    async fn cleanup_security_events_retains_original_pending_admission_and_push_intent() {
+        let (db, _tmp) = setup_test_db().await;
+        let admission = insert_security_event(&db, 40).await;
+        let push = insert_security_event(&db, 40).await;
+        security_event::Entity::update_many()
+            .col_expr(
+                security_event::Column::AdmissionPayload,
+                sea_orm::sea_query::Expr::value("original-payload"),
+            )
+            .filter(security_event::Column::Id.eq(&admission))
+            .exec(&db)
+            .await
+            .unwrap();
+        security_event::Entity::update_many()
+            .col_expr(
+                security_event::Column::PushIntent,
+                sea_orm::sea_query::Expr::value("[]"),
+            )
+            .filter(security_event::Column::Id.eq(&push))
+            .exec(&db)
+            .await
+            .unwrap();
+        cleanup_security_events(&db, 30).await;
+        assert_eq!(
+            security_event::Entity::find().all(&db).await.unwrap().len(),
+            2
+        );
+        security_event::Entity::update_many()
+            .col_expr(
+                security_event::Column::AdmissionPayload,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .col_expr(
+                security_event::Column::PushIntent,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .exec(&db)
+            .await
+            .unwrap();
+        cleanup_security_events(&db, 30).await;
+        assert!(
+            security_event::Entity::find()
+                .all(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     // --- run_cleanup_tick (full per-tick orchestration) ---

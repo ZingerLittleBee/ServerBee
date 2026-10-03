@@ -132,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Own delivery workers separately from event evaluation and HTTP requests.
     let push_worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    let security_recovery = state.security_service.start_recovery();
 
     // Build router
     let app = create_router(state);
@@ -181,6 +182,8 @@ async fn main() -> anyhow::Result<()> {
 
     push_worker.abort();
     let _ = push_worker.await;
+    security_recovery.abort();
+    let _ = security_recovery.await;
     tracing::info!("Server stopped");
     Ok(())
 }

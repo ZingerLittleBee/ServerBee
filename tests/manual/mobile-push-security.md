@@ -9,9 +9,12 @@ the Server/app/Relay revisions and APNs environment with each observation.
 - Server: `cargo test -p serverbee-server --test mobile_push_integration security_push`
   uses real HTTP mobile login, confirmed subscriptions, rule writes, migrated
   SQLite, a registered Agent WebSocket and security event evaluation. Only the
-  external Relay boundary is substituted. A real SQLite trigger failure verifies
-  admission rollback, unchanged cooldown/cache, no partial fan-out or browser
-  publication, and successful retry after database reopen. Existing `mobile_push_integration`
+  external Relay/Apple and configured webhook boundaries are fixtures. Real
+  SQLite faults cover raw writes, rule/intent commit and a second recipient's
+  outbox INSERT. Once-only WS cases verify raw/browser/firewall/external
+  preservation, suppression rollback before durable intent, atomic fan-out,
+  original UUID/facts/deadline, current recipient checks and automatic recovery
+  after faults and database reopen, without another detection or service call. Existing `mobile_push_integration`
   cases retain registration ownership, revocation and retry coverage.
 - Native: run `EncryptedPushNavigationTests`, `SecurityNotificationDetailTests`
   and `NotificationServiceTests` in `ServerBeeTests`. These verify encryption,
@@ -34,6 +37,10 @@ the Server/app/Relay revisions and APNs environment with each observation.
    exclusions, CIDR/bare-IP exclusions, Server coverage, maintenance and cooldown.
    Routine raw detections must stay silent. Multiple matching rules produce one
    logical security event per eligible installation, without an alert duplicate.
+   Inject a storage fault before push queue insertion, then recover or restart
+   without another detection. The original history, browser updates and existing
+   external/firewall effects must remain, and recovery must retain the original
+   event UUID and deadline without repeating suppression or external effects.
 3. Observe foreground, background and terminated-app delivery on development
    and distribution devices. Record provider acceptance separately from banner
    presentation. Foreground WebSocket updates must not add a second banner.

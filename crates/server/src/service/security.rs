@@ -3,6 +3,7 @@
 
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use ipnet::IpNet;
@@ -37,6 +38,7 @@ pub struct SecurityService {
     pub config: Arc<AppConfig>,
     pub firewall: Arc<FirewallService>,
     pub agent_manager: Arc<AgentManager>,
+    admission_lock: tokio::sync::Mutex<()>,
 }
 
 impl SecurityService {
@@ -55,6 +57,7 @@ impl SecurityService {
             config,
             firewall,
             agent_manager,
+            admission_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -71,12 +74,13 @@ impl SecurityService {
 
         let evidence_json = serde_json::to_string(&payload.evidence)
             .map_err(|e| AppError::BadRequest(format!("invalid security_event evidence: {e}")))?;
+        let admission_payload = serde_json::to_string(&payload)
+            .map_err(|_| AppError::BadRequest("invalid security event".into()))?;
 
         let event_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
-        let txn = self.db.begin().await?;
-        security_event::ActiveModel {
+        let event = security_event::ActiveModel {
             id: Set(event_id.clone()),
             server_id: Set(server_id.to_string()),
             event_type: Set(event_type_to_str(payload.event_type).to_string()),
@@ -90,19 +94,23 @@ impl SecurityService {
             detector_source: Set(detector_source_to_str(payload.detector_source).to_string()),
             evidence: Set(evidence_json),
             created_at: Set(now),
-        }
-        .insert(&txn)
-        .await?;
-
-        // Persist raw evidence, sliding suppression and encrypted deliveries as
-        // one admission. No cache or externally visible side effect precedes commit.
-        let matched = self
-            .evaluate_rules(&txn, server_id, &payload, &event_id, now.timestamp())
-            .await?;
-        txn.commit().await?;
-        for admitted in &matched {
-            self.alert_state_manager
-                .publish_committed_security_match(&admitted.state);
+            admission_payload: Set(Some(admission_payload)),
+            push_intent: Set(None),
+        };
+        // The once-only WS caller retains this original UUID/time/payload until
+        // storage accepts it. Never log an intent-write error and consume the
+        // detection. Raw facts and their replay marker are one independent write.
+        loop {
+            if event.clone().insert(&self.db).await.is_ok()
+                || security_event::Entity::find_by_id(&event_id)
+                    .one(&self.db)
+                    .await
+                    .is_ok_and(|row| row.is_some())
+            {
+                break;
+            }
+            tracing::warn!("Security event storage unavailable; retaining original detection");
+            tokio::time::sleep(Duration::from_millis(250)).await;
         }
 
         // send() only fails when no subscribers exist — normal at startup.
@@ -114,14 +122,164 @@ impl SecurityService {
                 event: payload.clone(),
             }));
 
-        if let Err(e) = self
-            .dispatch_rule_effects(server_id, &payload, &event_id, &matched)
-            .await
-        {
-            tracing::error!(server_id, error = %e, "security alert evaluation failed");
+        if self.recover_pending().await.is_err() {
+            // Raw history/browser publication stay independent of push faults.
+            // The persisted marker is retried by the production recovery owner.
+            tracing::warn!("Security admission deferred; original event remains durable");
         }
 
         Ok(event_id)
+    }
+
+    /// Production startup owner, also used by file-SQLite restart tests. Pending
+    /// records are original events, not another detection or a new delivery window.
+    pub fn start_recovery(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let service = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if service.recover_pending().await.is_err() {
+                    tracing::warn!("Security admission recovery remains pending");
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        })
+    }
+
+    async fn recover_pending(&self) -> Result<(), AppError> {
+        // Preserve original event ordering for sliding cooldown. The SQLite
+        // writer lock and durable markers also fence overlapping Server owners.
+        let _guard = self.admission_lock.lock().await;
+        let pending = security_event::Entity::find()
+            .filter(security_event::Column::AdmissionPayload.is_not_null())
+            .order_by_asc(security_event::Column::CreatedAt)
+            .order_by_asc(security_event::Column::Id)
+            .limit(64)
+            .all(&self.db)
+            .await?;
+        let mut error = None;
+        for event in pending {
+            if let Err(e) = self.admit_original_event(&event.id).await {
+                error = Some(e);
+                // Keep unresolved rule decisions in original event order.
+                break;
+            }
+        }
+        // Poll these independently: even many broken push intents must never
+        // starve raw events' rule decisions, firewall or external channels.
+        let intents = security_event::Entity::find()
+            .filter(security_event::Column::PushIntent.is_not_null())
+            .order_by_asc(security_event::Column::CreatedAt)
+            .order_by_asc(security_event::Column::Id)
+            .limit(64)
+            .all(&self.db)
+            .await?;
+        for event in intents {
+            if let Err(e) = self.materialize_push_intent(&event.id).await {
+                error = Some(e);
+            }
+        }
+        error.map_or(Ok(()), Err)
+    }
+
+    async fn lock_event(
+        &self,
+        txn: &DatabaseTransaction,
+        event_id: &str,
+    ) -> Result<Option<security_event::Model>, AppError> {
+        txn.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE security_event SET push_intent=push_intent WHERE id=?",
+            [event_id.into()],
+        ))
+        .await?;
+        Ok(security_event::Entity::find_by_id(event_id)
+            .one(txn)
+            .await?)
+    }
+
+    async fn admit_original_event(&self, event_id: &str) -> Result<(), AppError> {
+        let txn = self.db.begin().await?;
+        let Some(event) = self.lock_event(&txn, event_id).await? else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        let Some(ref original) = event.admission_payload else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        let payload: SecurityEventPayload = serde_json::from_str(original)
+            .map_err(|_| AppError::Internal("Invalid stored security admission".into()))?;
+        let matched = self
+            .evaluate_rules(&txn, &event.server_id, &payload, event.created_at)
+            .await?;
+        let recipients = if matched.iter().any(|m| m.should_notify) {
+            super::mobile_push_outbox::prepare_security(
+                &txn,
+                event_id,
+                event.created_at.timestamp(),
+            )
+            .await?
+        } else {
+            Vec::new()
+        };
+        let intent =
+            if recipients.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(&recipients).map_err(|_| {
+                    AppError::Internal("Security push intent encoding failed".into())
+                })?)
+            };
+        let server_id = event.server_id.clone();
+        let mut model: security_event::ActiveModel = event.into();
+        model.admission_payload = Set(None);
+        model.push_intent = Set(intent);
+        model.update(&txn).await?;
+        // The exact recipient/session/revision/deadline intent and suppression
+        // decision become durable together. No outbox INSERT is in this phase.
+        txn.commit().await?;
+        for admitted in &matched {
+            self.alert_state_manager
+                .publish_committed_security_match(&admitted.state);
+        }
+        if let Err(e) = self
+            .dispatch_rule_effects(&server_id, &payload, event_id, &matched)
+            .await
+        {
+            tracing::error!(server_id, error = %e, "security rule effects failed");
+        }
+        Ok(())
+    }
+
+    async fn materialize_push_intent(&self, event_id: &str) -> Result<(), AppError> {
+        let txn = self.db.begin().await?;
+        let Some(event) = self.lock_event(&txn, event_id).await? else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        let Some(ref intent) = event.push_intent else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        let recipients: Vec<super::mobile_push_outbox::SecurityPushRecipient> =
+            serde_json::from_str(intent)
+                .map_err(|_| AppError::Internal("Invalid stored security push intent".into()))?;
+        super::mobile_push_outbox::enqueue_security(
+            &txn,
+            &event.server_id,
+            &event.id,
+            &event.event_type,
+            event.created_at.timestamp(),
+            recipients,
+        )
+        .await?;
+        let mut model: security_event::ActiveModel = event.into();
+        model.push_intent = Set(None);
+        model.update(&txn).await?;
+        // All fan-out jobs and consuming the intent commit together; an INSERT
+        // failure leaves no partial jobs and retains the original recovery marker.
+        txn.commit().await?;
+        Ok(())
     }
 
     async fn evaluate_rules(
@@ -129,8 +287,7 @@ impl SecurityService {
         txn: &DatabaseTransaction,
         server_id: &str,
         payload: &SecurityEventPayload,
-        event_id: &str,
-        created_at: i64,
+        now: DateTime<Utc>,
     ) -> Result<Vec<MatchedSecurityRule>, AppError> {
         if MaintenanceService::is_in_maintenance(txn, server_id).await? {
             return Ok(Vec::new());
@@ -141,7 +298,6 @@ impl SecurityService {
             .all(txn)
             .await?;
         let mut matched = Vec::new();
-        let mut mobile_enqueued = false;
         for rule in rules {
             if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
                 continue;
@@ -164,8 +320,7 @@ impl SecurityService {
                 continue;
             }
             let event_key = payload.source_ip.as_str();
-            let now = Utc::now();
-            // The raw insert already holds SQLite's writer lock. Admission reads
+            // The event lock already holds SQLite's writer lock. Admission reads
             // authoritative state here, independently of a stale in-memory cache.
             let previous = alert_state::Entity::find()
                 .filter(alert_state::Column::RuleId.eq(&rule.id))
@@ -206,17 +361,6 @@ impl SecurityService {
                 .insert(txn)
                 .await?
             };
-            if should_notify && !mobile_enqueued {
-                super::mobile_push_outbox::enqueue_security(
-                    txn,
-                    server_id,
-                    event_id,
-                    event_type_to_str(payload.event_type),
-                    created_at,
-                )
-                .await?;
-                mobile_enqueued = true;
-            }
             matched.push(MatchedSecurityRule {
                 rule,
                 state,
