@@ -19,6 +19,12 @@ private final class DeliveredNotificationArchive: NSObject, NSSecureCoding {
 
 @MainActor
 final class CombinedPushTraceTests: XCTestCase {
+    func testNativeAuthorizationQueryCompletesOnMainActor() async {
+        let status = await NativePushSystem().authorization()
+        let knownStatuses: [UNAuthorizationStatus] = [.notDetermined, .denied, .authorized, .provisional, .ephemeral]
+        XCTAssertTrue(knownStatuses.contains(status))
+    }
+
     private func delivered(_ request: UNNotificationRequest) throws -> UNNotification {
         let archive = NSKeyedArchiver(requiringSecureCoding: true)
         archive.setClassName(NSStringFromClass(UNNotification.self), for: DeliveredNotificationArchive.self)
@@ -114,9 +120,10 @@ final class CombinedPushTraceTests: XCTestCase {
     }
 
     private func pendingNotificationIdentifiers(_ center: UNUserNotificationCenter) async -> [String] {
-        // Keep non-Sendable notification requests inside the system callback.
+        // Older SDK callbacks must not inherit MainActor when the system calls
+        // them from its notification-service queue.
         await withCheckedContinuation { continuation in
-            center.getPendingNotificationRequests { requests in
+            center.getPendingNotificationRequests { @Sendable requests in
                 continuation.resume(returning: requests.map(\.identifier).sorted())
             }
         }

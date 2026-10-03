@@ -14,10 +14,10 @@ protocol PushSystemBoundary {
 @MainActor
 struct NativePushSystem: PushSystemBoundary {
     func authorization() async -> UNAuthorizationStatus {
-        // Older SDKs do not mark UNNotificationSettings as Sendable. Extract
-        // the value inside the callback so only the status crosses isolation.
+        // Older SDKs lack Sendable annotations on both settings and callback.
+        // Keep the callback nonisolated and send only the extracted status.
         await withCheckedContinuation { continuation in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
+            UNUserNotificationCenter.current().getNotificationSettings { @Sendable settings in
                 continuation.resume(returning: settings.authorizationStatus)
             }
         }
