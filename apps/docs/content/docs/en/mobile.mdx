@@ -127,8 +127,8 @@ APNs transport uses publisher-only signing inputs `APNS_TEAM_ID`, `APNS_KEY_ID`,
 - Check Settings → Notifications for permission, verification and save errors.
 - Confirm the paired device has not been revoked and the session has not expired.
 - App Attest requires a supported physical device and matching signing capabilities. Simulator success is not device verification.
-- Use HTTPS for the Server connection before registering a content key.
-- Check signing for the app and extension shared Keychain group. Decryption failures show generic text.
+- Use the final HTTPS Server URL before registering a content key. Server requests reject redirects; failed setup can be retried at the configured endpoint.
+- Check signing for the app-private credential group and the app/extension shared content-key group. Decryption failures show generic text.
 - Category delivery is not yet operational; use the current-installation test action.
 
 ### Authentication Failures

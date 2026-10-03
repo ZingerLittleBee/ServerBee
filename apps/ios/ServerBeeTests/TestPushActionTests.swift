@@ -77,4 +77,70 @@ final class TestPushActionTests: XCTestCase {
         XCTAssertNotNil(manager.errorMessage)
         XCTAssertNil(manager.contentKey())
     }
+
+    func testRejectedRedirectKeepsContentKeyAndGrantForExplicitSetupRetry() async throws {
+        let auth = AuthManager()
+        auth.setServerUrl("https://serverbee.test")
+        auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
+                                                    refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+        let storage = MemoryPushSetupStorage()
+        let relay = TestPushRelay()
+        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: storage)
+        let log = AuthenticationRequestLog()
+        let rejected = expectation(description: "registration redirect rejected")
+        let retried = expectation(description: "explicit setup retry registers at original endpoint")
+        PushLifecycleURLProtocol.handler = { request in
+            if request.request.url?.path == "/api/mobile/push/verified-register" {
+                let count = log.append(request.request)
+                if count == 1 { rejected.fulfill(); request.respond(308) }
+                else { retried.fulfill(); request.respond(200) }
+            } else { request.respond(200) }
+        }
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 0xaa, count: 32))
+        await fulfillment(of: [rejected], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        XCTAssertFalse(manager.confirmed?.registered == true)
+        XCTAssertNotNil(manager.errorMessage)
+        let content = try XCTUnwrap(storage.load(PushContentKey.storageKey))
+        await manager.retry()
+        await fulfillment(of: [retried], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        XCTAssertTrue(manager.confirmed?.registered == true)
+        XCTAssertEqual(storage.load(PushContentKey.storageKey), content)
+        XCTAssertEqual(relay.attempts, 1)
+        let requests = log.snapshot()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertTrue(requests.allSatisfy { $0.url?.absoluteString == "https://serverbee.test/api/mobile/push/verified-register" })
+        XCTAssertEqual(PushSetupTestData.body(requests[0])["content_key"] as? String,
+                       PushSetupTestData.body(requests[1])["content_key"] as? String)
+        XCTAssertEqual(PushSetupTestData.body(requests[0])["grant_token"] as? String,
+                       PushSetupTestData.body(requests[1])["grant_token"] as? String)
+    }
+
+    func testDirectRegistrationCallerCannotBypassHttpsRequirement() async throws {
+        let auth = AuthManager()
+        auth.setServerUrl("http://serverbee.test")
+        auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
+                                                    refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+        let context = try XCTUnwrap(auth.captureContext())
+        let forbidden = expectation(description: "no content-bearing HTTP request")
+        forbidden.isInverted = true
+        PushLifecycleURLProtocol.handler = { request in forbidden.fulfill(); request.respond(200) }
+        do {
+            let _: PushSetup = try await APIClient(authManager: auth).send(
+                "/api/mobile/push/verified-register", method: "POST",
+                body: VerifiedPushRequest(expectedRevision: 1, deviceToken: String(repeating: "a", count: 64), environment: "sandbox",
+                                          keyId: "fixture-key", grantId: "fixture-grant", grantToken: "fixture-secret",
+                                          contentKeyId: UUID().uuidString, contentKey: Data(repeating: 0x41, count: 32).base64EncodedString(),
+                                          deploymentId: context.serverUrl), context: context
+            )
+            XCTFail("Direct registration over HTTP must fail before sending")
+        } catch PushSetupError.insecureServer { }
+        await fulfillment(of: [forbidden], timeout: 0.2)
+        XCTAssertTrue(auth.isCurrent(context))
+    }
 }

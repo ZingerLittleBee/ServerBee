@@ -266,7 +266,7 @@ private extension AuthManager {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await ServerHTTPTransport.data(for: request)
         } catch {
             guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
             throw AuthError.refreshNetworkFailure(error)

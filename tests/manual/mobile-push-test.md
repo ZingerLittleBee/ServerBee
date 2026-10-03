@@ -19,6 +19,7 @@ bun --filter @serverbee/push-relay test
 bun --filter @serverbee/docs check:contracts
 bun run check:agent-navigation
 bun run check:integration-targets
+python3 tests/check-push-secret-boundaries.py
 ```
 
 The official API generator must run in its own serialized Cargo checkpoint:
@@ -103,7 +104,29 @@ Inspect the effective signed entitlements, not just `project.yml`. Debug must
 pair development App Attest with sandbox APNs; distribution must pair production
 attestation with production APNs. Genuine admission fails closed on unsupported
 or failed App Attest, without a fallback device grant. HTTPS is required for the
-app's Server connection before transmitting the content key.
+app's Server connection before transmitting the content key. Server API and
+refresh requests reject every redirect, including same-origin redirects; configure
+the final Server URL rather than relying on a reverse-proxy redirect.
+
+The native secret-boundary script compiles only the production Foundation
+transport and a synthetic macOS client. A temporary HTTPS origin returns 307/308
+redirects to HTTP, a different HTTPS authority and the same origin. The client
+uses test-only localhost certificate trust; production retains system TLS trust.
+The script requires the original endpoint to receive each secret-bearing request
+and every redirect target to receive zero connections. Its entitlement checks
+inspect source configuration only. A sandbox denial of local socket binding is a
+blocked runtime check, not a passing redirect test.
+
+`PushKeychainIsolationTests` uses real Security.framework queries in the app-hosted
+Simulator tests: access, refresh, revocation and Relay credentials stay in the
+explicit app-private group; only the content-key record uses the shared group.
+Refresh preserves that content key and paired-login scope; logout deletes it.
+Debug and Release put the private group first, and the extension has only the
+shared group. Missing or unexpanded group configuration fails closed. Simulator
+queries establish Simulator storage behavior only. Physical isolation still
+requires inspecting both effective signed entitlement sets and probing that the
+actual extension cannot read the app-private credential service. Record static
+configuration, Simulator queries and signed-device evidence separately.
 
 ## Physical-device smoke record
 

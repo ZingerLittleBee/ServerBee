@@ -85,17 +85,16 @@ enum PushEnvelopeDecoder {
 /// Shared only with the app and its Notification Service Extension. Keys are
 /// device-only, not synchronized, and available after the first device unlock.
 enum SharedPushKeychain {
-    private static func query() -> [String: Any] {
-        var value: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-                                   kSecAttrService as String: "com.serverbee.mobile.push",
-                                   kSecAttrAccount as String: PushContentKey.storageKey]
-        if let group = Bundle.main.object(forInfoDictionaryKey: "PushKeychainAccessGroup") as? String {
-            value[kSecAttrAccessGroup as String] = group
-        }
-        return value
+    private static func query() -> [String: Any]? {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "PushKeychainAccessGroup") as? String,
+              !group.isEmpty, !group.contains("$(") else { return nil }
+        return [kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: "com.serverbee.mobile.push",
+                kSecAttrAccount as String: PushContentKey.storageKey,
+                kSecAttrAccessGroup as String: group]
     }
     static func load() -> Data? {
-        var value = query()
+        guard var value = query() else { return nil }
         value[kSecReturnData as String] = true
         value[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
@@ -103,7 +102,7 @@ enum SharedPushKeychain {
         return result as? Data
     }
     static func save(_ data: Data) throws {
-        let value = query()
+        guard let value = query() else { throw PushEnvelopeError.invalid }
         let updates: [String: Any] = [kSecValueData as String: data,
                                      kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
         let status = SecItemUpdate(value as CFDictionary, updates as CFDictionary)
@@ -113,7 +112,10 @@ enum SharedPushKeychain {
             guard SecItemAdd(added as CFDictionary, nil) == errSecSuccess else { throw PushEnvelopeError.invalid }
         } else if status != errSecSuccess { throw PushEnvelopeError.invalid }
     }
-    static func delete() { SecItemDelete(query() as CFDictionary) }
+    static func delete() {
+        guard let value = query() else { return }
+        SecItemDelete(value as CFDictionary)
+    }
 }
 
 /// The extension and boundary tests use the same render entry point. Only a

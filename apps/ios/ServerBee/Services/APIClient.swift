@@ -207,12 +207,17 @@ actor APIClient {
         token: String?
     ) async throws -> (Data, HTTPURLResponse) {
         guard let url = URL(string: "\(context.serverUrl)\(path)") else { throw APIError.noServerUrl }
+        // Enforce this at the transport entry, so every registration caller and
+        // its post-refresh retry has the same secure content-key boundary.
+        if path == "/api/mobile/push/verified-register", url.scheme != "https" {
+            throw PushSetupError.insecureServer
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body { request.httpBody = try JSONEncoder.snakeCase.encode(body) }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await ServerHTTPTransport.data(for: request)
         guard let response = response as? HTTPURLResponse else {
             throw APIError.httpError(statusCode: -1, data: data)
         }

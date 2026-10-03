@@ -1259,7 +1259,7 @@ async fn encrypted_test_uses_real_relay_admission_transport_and_legacy_migration
     );
     // Even a historical leftover restored to SQLite cannot enter the real
     // legacy selector. Legitimate other installations remain available.
-    push_register(
+    let restored_other = push_register(
         State(state.clone()),
         bearer(other["access_token"].as_str().unwrap()),
         Json(PushRegisterRequest {
@@ -1268,6 +1268,7 @@ async fn encrypted_test_uses_real_relay_admission_transport_and_legacy_migration
     )
     .await
     .unwrap();
+    assert_eq!(restored_other.0.data, "ok");
     let migrated_session = mobile_session::Entity::find()
         .filter(mobile_session::Column::InstallationId.eq("migrating-install"))
         .filter(mobile_session::Column::UserId.eq(owner["user"]["id"].as_str().unwrap()))

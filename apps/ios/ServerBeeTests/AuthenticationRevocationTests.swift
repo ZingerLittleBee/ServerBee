@@ -246,6 +246,30 @@ final class AuthenticationRevocationTests: XCTestCase {
 }
 
 extension AuthenticationRevocationTests {
+    func testRedirectedRefreshAndRevocationPreserveOriginalCredentialsForRetry() async throws {
+        let auth = AuthManager()
+        signIn(auth, user: "alice")
+        let context = try XCTUnwrap(auth.captureContext())
+        let log = AuthenticationRequestLog()
+        AuthenticationURLProtocol.handler = { request in
+            _ = log.append(request.request)
+            request.respond(307)
+        }
+        do {
+            _ = try await auth.refreshAccessToken(context: context)
+            XCTFail("A redirect cannot complete refresh")
+        } catch AuthError.refreshNetworkFailure { } catch { XCTFail("Unexpected refresh error: \(error)") }
+        do {
+            try await APIClient(authManager: auth).revokeSession(context: context)
+            XCTFail("A redirect cannot complete revocation")
+        } catch APIError.httpError(let status, _) { XCTAssertEqual(status, 307) }
+        XCTAssertTrue(auth.isCurrent(context))
+        XCTAssertEqual(auth.getAccessToken(), "access-alice")
+        XCTAssertEqual(KeychainService.loadString(for: KeychainService.refreshTokenKey), "refresh-alice")
+        XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "revocation-alice")
+        XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, ["/api/mobile/auth/refresh", "/api/mobile/auth/revoke"])
+    }
+
     func testLegacyOrdinaryRefreshKeepsCapturedRegistrationAndOriginalProof() async throws {
         let auth = AuthManager()
         signIn(auth, user: "alice")
@@ -272,7 +296,10 @@ extension AuthenticationRevocationTests {
         let _: PushSetup = try await APIClient(authManager: auth).send(
             "/api/mobile/push/verified-register", method: "POST", body: VerifiedPushRequest(
                 expectedRevision: 1, deviceToken: String(repeating: "a", count: 64), environment: "sandbox",
-                keyId: "fixture-key", grantId: "fixture-grant", grantToken: "fixture-secret"
+                keyId: "fixture-key", grantId: "fixture-grant", grantToken: "fixture-secret",
+                contentKeyId: "11111111-1111-4111-8111-111111111111",
+                contentKey: Data(repeating: 0x41, count: 32).base64EncodedString(),
+                deploymentId: context.serverUrl
             ), context: context
         )
         await fulfillment(of: [registered], timeout: 3)
