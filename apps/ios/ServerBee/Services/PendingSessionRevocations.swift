@@ -19,7 +19,7 @@ protocol SessionRevocationStorage {
 
 @MainActor
 struct PrivateSessionRevocationStorage: SessionRevocationStorage {
-    static let key = "serverbee_pending_session_revocations_v1"
+    nonisolated static let key = "serverbee_pending_session_revocations_v1"
     func read() throws -> [PendingSessionRevocation] {
         guard let bytes = try KeychainService.readThrowing(for: Self.key) else { return [] }
         return try JSONDecoder().decode([PendingSessionRevocation].self, from: bytes)
