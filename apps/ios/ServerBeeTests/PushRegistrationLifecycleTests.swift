@@ -272,7 +272,7 @@ extension PushRegistrationLifecycleTests {
         await fulfillment(of: [uploadStarted], timeout: 3)
         let settings = SettingsViewModel()
         let logout = Task { @MainActor in
-            await settings.logout(authManager: auth, apiClient: api, pushManager: manager) {
+            await settings.logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:)) {
                 closeStarted.fulfill()
             }
         }
@@ -320,7 +320,7 @@ extension PushRegistrationLifecycleTests {
         }
         let settings = SettingsViewModel()
         let logout = Task { @MainActor in
-            await settings.logout(authManager: auth, apiClient: api, pushManager: manager, closeWebSocket: {})
+            await settings.logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {})
         }
         await fulfillment(of: [unregistering], timeout: 3)
         auth.clearAuth()
@@ -351,7 +351,7 @@ extension PushRegistrationLifecycleTests {
             XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
             request.respond(200)
         }
-        await SettingsViewModel().logout(authManager: auth, apiClient: api, pushManager: manager) {
+        await SettingsViewModel().logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:)) {
             auth.clearAuth()
             self.signIn(auth, server: "https://replacement.test", user: "bob")
             manager.configure(apiClient: api)

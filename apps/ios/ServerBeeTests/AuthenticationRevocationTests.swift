@@ -227,7 +227,7 @@ final class AuthenticationRevocationTests: XCTestCase {
         await fulfillment(of: [refreshStarted], timeout: 3)
         let settings = SettingsViewModel()
         let logout = Task {
-            await settings.logout(authManager: auth, apiClient: api, pushManager: manager, closeWebSocket: {})
+            await settings.logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {})
         }
         await fulfillment(of: [cleanupStarted], timeout: 3)
         let pending = log.takeHeld()

@@ -1,4 +1,3 @@
-import UserNotifications
 import XCTest
 @testable import ServerBee
 
@@ -19,7 +18,7 @@ final class SettingsViewModelTests: XCTestCase {
         await sut.logout(
             authManager: authManager,
             apiClient: apiClient,
-            pushManager: pushManager,
+            unregisterPush: pushManager.unregister(context:),
             closeWebSocket: { await recorder.recordWebSocketClose() }
         )
 
@@ -48,7 +47,7 @@ final class SettingsViewModelTests: XCTestCase {
         await sut.logout(
             authManager: authManager,
             apiClient: apiClient,
-            pushManager: pushManager,
+            unregisterPush: pushManager.unregister(context:),
             closeWebSocket: {}
         )
 
@@ -76,7 +75,7 @@ final class SettingsViewModelTests: XCTestCase {
         await sut.logout(
             authManager: authManager,
             apiClient: apiClient,
-            pushManager: pushManager,
+            unregisterPush: pushManager.unregister(context:),
             closeWebSocket: {
                 captureAuth()
                 await recorder.recordWebSocketClose()
@@ -105,7 +104,7 @@ final class SettingsViewModelTests: XCTestCase {
         await sut.logout(
             authManager: authManager,
             apiClient: apiClient,
-            pushManager: pushManager,
+            unregisterPush: pushManager.unregister(context:),
             closeWebSocket: { await recorder.recordWebSocketClose() }
         )
 
@@ -121,11 +120,9 @@ final class SettingsViewModelTests: XCTestCase {
 // MARK: - Test doubles
 
 @MainActor
-final class SpyPushNotificationManager: PushNotificationManaging {
+final class SpyPushNotificationManager {
     let backingAuthManager: AuthManager
     let shouldThrow: Bool
-    var permissionGranted = false
-    var deviceToken: String?
 
     private(set) var unregisterCalled = false
     private(set) var authenticatedSnapshotAtUnregister: Bool?
@@ -135,16 +132,10 @@ final class SpyPushNotificationManager: PushNotificationManaging {
         self.shouldThrow = shouldThrow
     }
 
-    func configure(apiClient: APIClient) {}
-    func requestPermission() async {}
-    nonisolated func didRegisterForRemoteNotifications(deviceToken data: Data) {}
-    nonisolated func didFailToRegisterForRemoteNotifications(error: Error) {}
-    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink? { nil }
-
-    func unregister() async {
+    func unregister(context: MobileAuthenticationContext?) async {
         unregisterCalled = true
         authenticatedSnapshotAtUnregister = backingAuthManager.isAuthenticated
-        // PushNotificationManaging.unregister() must swallow network errors,
+        // The unregister callback must swallow network errors,
         // so even in "shouldThrow" mode we do not propagate — we just record.
     }
 }
@@ -177,19 +168,12 @@ final class LogoutRecorder {
 }
 
 @MainActor
-final class OrderRecordingPushManager: PushNotificationManaging {
-    var permissionGranted = false
-    var deviceToken: String?
+final class OrderRecordingPushManager {
     let recorder: LogoutRecorder
 
     init(recorder: LogoutRecorder) { self.recorder = recorder }
 
-    func configure(apiClient: APIClient) {}
-    func requestPermission() async {}
-    nonisolated func didRegisterForRemoteNotifications(deviceToken data: Data) {}
-    nonisolated func didFailToRegisterForRemoteNotifications(error: Error) {}
-    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink? { nil }
-    func unregister() async {
+    func unregister(context: MobileAuthenticationContext?) async {
         await recorder.recordUnregister()
     }
 }

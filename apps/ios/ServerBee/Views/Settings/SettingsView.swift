@@ -293,7 +293,7 @@ private extension SettingsView {
                         await viewModel.logout(
                             authManager: authManager,
                             apiClient: apiClient,
-                            pushManager: pushManager,
+                            unregisterPush: pushManager.unregister(context:),
                             closeWebSocket: { await wsClient.close() }
                         )
                     }

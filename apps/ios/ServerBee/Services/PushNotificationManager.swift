@@ -3,36 +3,9 @@ import Foundation
 import UIKit
 import UserNotifications
 
-/// Protocol abstraction so tests can inject a spy.
-@MainActor
-protocol PushNotificationManaging: AnyObject {
-    var permissionGranted: Bool { get }
-    var deviceToken: String? { get }
-
-    func configure(apiClient: APIClient)
-    func requestPermission() async
-
-    nonisolated func didRegisterForRemoteNotifications(deviceToken data: Data)
-    nonisolated func didFailToRegisterForRemoteNotifications(error: Error)
-
-    /// Parse a push payload and return a deep link (or nil if not actionable).
-    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink?
-
-    /// Unregister the device token from the server. Must NOT throw — failures
-    /// are logged. Local auth must still clear even if the server call fails.
-    func unregister() async
-    func unregister(context: MobileAuthenticationContext?) async
-}
-
-extension PushNotificationManaging {
-    func unregister(context: MobileAuthenticationContext?) async {
-        await unregister()
-    }
-}
-
 @MainActor
 @Observable
-final class PushNotificationManager: NSObject, PushNotificationManaging {
+final class PushNotificationManager: NSObject {
     private(set) var permissionGranted = false
     private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     private(set) var deviceToken: String?
@@ -295,10 +268,6 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             isSaving = false
         }
     }
-
-    /// Notification callbacks are parsed by AppDelegate even before this
-    /// manager exists; authenticated target checks happen when stores are ready.
-    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink? { nil }
 }
 
 extension PushNotificationManager {

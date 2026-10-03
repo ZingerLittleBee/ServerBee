@@ -15,12 +15,13 @@ final class SettingsViewModel {
     /// 2. Unregisters the device push token (best-effort; failure is logged but
     ///    does not block logout — the next register call rebinds the token to
     ///    the new user).
+    /// The unregister callback receives the identity captured before any await.
     /// 3. Tells the server to revoke this mobile session.
     /// 4. Clears local auth state last so the UI returns to LoginView.
     func logout(
         authManager: AuthManager,
         apiClient: APIClient,
-        pushManager: any PushNotificationManaging,
+        unregisterPush: @MainActor (MobileAuthenticationContext?) async -> Void,
         closeWebSocket: @MainActor () async -> Void
     ) async {
         let context = authManager.captureContext()
@@ -35,7 +36,7 @@ final class SettingsViewModel {
         // 2. Unregister push device token. Must happen BEFORE clearAuth so the
         //    bearer token is still valid for the request, and BEFORE the server
         //    logout so we do not leak a stale device-token binding to this user.
-        await pushManager.unregister(context: context)
+        await unregisterPush(context)
 
         // 3. Revoke the captured session even if its refresh response was lost.
         if let context {

@@ -91,7 +91,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
                 await manager.unregister() // Drain the actual upload before checking auth cleanup.
             } else {
                 await SettingsViewModel().logout(
-                    authManager: auth, apiClient: api, pushManager: manager, closeWebSocket: {}
+                    authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {}
                 )
             }
         }
@@ -148,7 +148,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
         let refresh = Task { try await auth.refreshAccessToken() }
         await fulfillment(of: [started], timeout: 3)
         let logout = Task {
-            await SettingsViewModel().logout(authManager: auth, apiClient: api, pushManager: manager, closeWebSocket: {})
+            await SettingsViewModel().logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {})
         }
         await fulfillment(of: [unregister], timeout: 3)
         if committed {
