@@ -208,7 +208,7 @@ actor APIClient {
         body: (any Encodable & Sendable)? = nil,
         context capturedContext: MobileAuthenticationContext
     ) async throws -> (Data, HTTPURLResponse) {
-        if (path == "/api/mobile/push/settings" && method == "PUT") || path == "/api/mobile/push/verified-register" {
+        if (path == "/api/mobile/push/settings" && method == "PUT") || path == "/api/mobile/push/encrypted-register" {
             try await authManager.requireDeletionRecovery(context: capturedContext)
         }
         let context = try await currentContext(matching: capturedContext)
@@ -251,7 +251,7 @@ actor APIClient {
         guard let url = URL(string: "\(context.serverUrl)\(path)") else { throw APIError.noServerUrl }
         // Enforce this at the transport entry, so every registration caller and
         // its post-refresh retry has the same secure content-key boundary.
-        if path == "/api/mobile/push/verified-register", url.scheme != "https" {
+        if path == "/api/mobile/push/encrypted-register", url.scheme != "https" {
             throw PushSetupError.insecureServer
         }
         var request = URLRequest(url: url)

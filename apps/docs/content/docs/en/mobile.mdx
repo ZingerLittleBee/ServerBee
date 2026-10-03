@@ -16,12 +16,12 @@ xcodegen generate
 open ServerBee.xcodeproj
 ```
 
-Source builds require your Apple development team. The official-app design keeps APNs credentials at a dedicated publisher-operated Relay; official-app users and self-hosted Server operators do not need the publisher's keys. This repository does not yet distribute that signed app. A local build does not prove App Attest admission or APNs delivery.
+Source builds require your Apple development team. The official-app design keeps APNs credentials at a dedicated publisher-operated Relay; official-app users and self-hosted Server operators do not need the publisher's keys. This repository does not yet distribute that signed app. A local build does not prove live APNs delivery.
 
 ## Features
 
 - **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
-- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task outcomes for administrator owners, with success opt-in; encrypted alert triggers and recoveries without a notification group; administrator security-rule matches
+- **Verified Notification Setup** -- Explicit permission and subscription setup with authenticated registration; final task outcomes for administrator owners, with success opt-in; encrypted alert triggers and recoveries without a notification group; administrator security-rule matches
 - **Real-time Metrics** -- Live server status, CPU, memory, disk, and network metrics streamed via WebSocket
 - **Alert History** -- View recent alerts and their status (triggered/resolved) with detailed information
 - **Secure Authentication** -- Bearer token-based auth with automatic refresh (15-min access token, 30-day refresh token)
@@ -30,7 +30,7 @@ Source builds require your Apple development team. The official-app design keeps
 
 - iOS 17.0 or later
 - A ServerBee server instance (v0.8.0+) with mobile auth enabled
-- For verified notification setup: a configured HTTPS Push Relay and a correctly signed, App Attest-capable physical device
+- For verified notification setup: a configured HTTPS Push Relay and a correctly signed, correctly signed physical device
 
 ## Pairing Your Device
 
@@ -88,13 +88,13 @@ The notification page uses permissions confirmed by the Server, even if the cach
 
 A failed subscription save remains visible after returning to the app, reconnecting or recovering registration. The page retains the unconfirmed choices until a successful save or a newer settings revision from the Server confirms the submitted permitted preferences. A successful registration alone does not confirm those choices.
 
-The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Unsupported or rejected App Attest leaves push unavailable while login and monitoring continue to work. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
+The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
 
-**Enable Alerts and recoveries to receive alert transitions.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Foreground APNs delivery uses one system banner while WebSocket updates only update app state. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures and opted-in successes use the same encrypted pipeline. Administrators can also enable security-rule notifications.
+**Enable Alerts and recoveries to receive alert transitions.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the public Relay forwards its ciphertext to APNs, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Foreground APNs delivery uses one system banner while WebSocket updates only update app state. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures and opted-in successes use the same encrypted pipeline. Administrators can also enable security-rule notifications.
 
 Tests first enter a durable encrypted Server outbox. **Pending** means queued locally, **Retryable** means provider acceptance is unconfirmed and another attempt is scheduled, **Accepted** is an APNs provider receipt, **Permanent** stops retries, and **Expired** ends the test 30 minutes after its original creation. Retries and Server restarts never extend that deadline. The screen refreshes the current test status; retrying a lost response retains the same logical test identity. Delivery can be duplicated after an ambiguous network failure, so neither acceptance nor retry promises exactly-once display.
 
-Before every attempt the Server checks the account, current role, mobile session, subscription, grant expiry and registration revision. Disabling delivery, logout, device/account revocation, session expiry or a registration replacement stops later eligible attempts. Already in-flight or accepted APNs notifications cannot be retracted. Queue records contain ciphertext, not another plaintext notification history. Terminal ciphertext is erased; secret-free delivery receipts remain to prevent duplicate enqueueing from restarting the expiry window.
+Before every attempt the Server checks the account, current role, mobile session, subscription and registration revision. Disabling delivery, logout, device/account revocation, session expiry or a registration replacement stops later eligible attempts. Already in-flight or accepted APNs notifications cannot be retracted. Queue records contain ciphertext, not another plaintext notification history. Terminal ciphertext is erased; secret-free delivery receipts remain to prevent duplicate enqueueing from restarting the expiry window.
 
 ### Targeted Test API
 
@@ -126,21 +126,21 @@ Administrators can enable **Security rule matches** and save the Server-confirme
 
 An authorized Agent WebSocket transfers each original detection to a Server-owned recovery queue without waiting for storage retries inside its message or lifecycle lock. Before the first successful raw write, this retention is in memory and cannot survive process death. Connection replacement or closure does not discard accepted work, but authority transfer/revocation or capability removal cancels raw writes and unresolved rule admissions that are no longer authorized. The Server persists the original security event, authority binding, maintenance decision at the original event time, and recovery marker, then commits the rule cooldown together with a durable recipient intent. Maintenance lookup failures preserve raw history and browser updates while leaving rule admission unresolved; recovery never treats a failed lookup as permission. Once stored, the maintenance decision survives delayed recovery and restart across a window beginning or ending. Originals sharing a rule deduplication key are admitted in original time order across memory retention, missing maintenance snapshots and database reopen; an unresolved older event holds only that key, while other ready keys and installations continue. Rule cooldown remains monotonic in persistent storage. Only then does it encrypt and queue all eligible installations in one transaction. A queue write failure preserves raw history, browser updates, firewall actions and external notifications, leaves no partial fan-out, and retries the original intent automatically after recovery or a Server restart. Recipient ownership, session and registration revision are fixed by the intent and rechecked before queueing; replacement registrations cannot inherit an older intent. Security notifications expire 30 minutes after the event is recorded. Before each attempt, the Server rechecks the current administrator role, security subscription and mobile session. A queued notification stops after a role downgrade or subscription change. Multiple devices are evaluated independently. Retries after an ambiguous network failure can still lead to duplicate device presentation.
 
-The Notification Service Extension localizes the admitted event type. Tapping opens the corresponding Server security feed and event detail after verifying the deployment/account, current administrator role and resource identities. A deleted, unavailable or unauthorized target shows a dismissible unavailable screen; an old account or deployment payload cannot navigate. Local tests do not establish genuine App Attest admission or foreground/background/terminated APNs delivery.
+The Notification Service Extension localizes the admitted event type. Tapping opens the corresponding Server security feed and event detail after verifying the deployment/account, current administrator role and resource identities. A deleted, unavailable or unauthorized target shows a dismissible unavailable screen; an old account or deployment payload cannot navigate. Local tests do not establish foreground/background/terminated APNs delivery.
 
 ### Privacy Boundary
 
-The Server owns account/session authorization and recipient selection. The Relay sees APNs tokens, source IPs, timing, request sizes, environment, grant identifiers and encrypted content. It must never receive content keys or plaintext notification content. Users see this explanation before requesting permission.
+The Server owns account/session authorization and recipient selection. The Relay sees APNs tokens, source IPs, timing, request sizes, environment, event/delivery metadata and encrypted content. It must never receive content keys or plaintext notification content. Users see this explanation before requesting permission.
 
-Server registration status includes Relay grant inspection. A revoked or unreachable grant is unconfirmed even when its saved expiry is in the future. If Relay renewal succeeds but the Server save fails, the app keeps the pending grant in Keychain and retries confirmation after foreground entry or restart. App Attest keys belong to one paired login; a replacement login receives a separate key.
+Registration is confirmed by the authenticated Server with account, installation, session and revision checks. The app never contacts Relay. Each paired login has an independently scoped shared content key; account replacement and logout remove the old key. Pending registration retries cannot overwrite a replacement account.
+
+The Worker is public and stateless. A known valid device token can be abused for junk or replayed notifications; generic fallback text may appear when decryption fails. Requests or an attacker's own token can consume quota without another person's token. Encryption protects business content, not admission. Hard request/resource bounds and best-effort isolate-local rate limits reduce exposure but cannot guarantee a global budget or prevent all abuse.
 
 ### Server and Relay Configuration
 
 Set `[push_relay].url` or `SERVERBEE_PUSH_RELAY__URL` to the dedicated HTTPS Relay. No notification group or legacy APNs channel is required. Verified migration removes this account's old token and permanently excludes that installation/account from legacy direct-APNs fan-out, even after disabling or unregistering. Other installations retain their legacy channels. Existing external channels continue to use their own configuration.
 
-Relay operators use Bun and OpenSSL 3, persistent SQLite, an App Attest root certificate pinned with `APP_ATTEST_ROOT_CA` and `APP_ATTEST_ROOT_SHA256`, the app identity in `APP_ATTEST_APP_ID`, approved `CFBundleVersion` values in `APP_ATTEST_BUNDLE_VERSIONS`, and `APNS_ENVIRONMENTS=sandbox,production` to admit development and distribution devices on one Relay URL and database. A single-environment deployment can use `APNS_ENVIRONMENT`. `RELAY_DATABASE` and `RELAY_PORT` select local state and listener. The Relay binds loopback and requires a TLS reverse proxy with admission limits. Challenge and assertion counters persist across restarts. There is no public send endpoint or unverified fallback.
-
-APNs transport uses publisher-only signing inputs `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY` and `APNS_TOPIC`. `APNS_PRIVATE_KEY` is the path to a private PEM file, and `APNS_TOPIC` is the app bundle identifier. These credentials must remain outside the app, Server and repository. See the repository's `apps/push-relay/README.md` for isolated configuration, signing checks and live acceptance. Do not point tests at Heeler's Relay.
+The Cloudflare Worker uses WebCrypto JWT signing and platform fetch with a fixed topic and APNs host/environment allowlist. Worker bindings are `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_TOPIC`, `APNS_ENVIRONMENTS` and the `APNS_PRIVATE_KEY` secret containing PKCS#8 PEM text. They belong exclusively to Relay. No App Attest, challenge/grant service, Relay database, Bun/OpenSSL production runtime or self-managed HTTP/2 pool is required. Do not point tests at Heeler's Relay.
 
 For the isolated signing/deployment runbook, troubleshooting by layer, and the genuine-device acceptance record, see [Push Relay Operations](/en/docs/push-relay). No live device acceptance is established by a successful local check.
 
@@ -164,7 +164,7 @@ For the isolated signing/deployment runbook, troubleshooting by layer, and the g
 - Check the configured Relay URL and its HTTPS trust chain.
 - Check Settings → Notifications for permission, verification and save errors.
 - Confirm the paired device has not been revoked and the session has not expired.
-- App Attest requires a supported physical device and matching signing capabilities. Simulator success is not device verification.
+- Match sandbox/production APNs environment to the signed app, and verify the embedded Notification Service Extension. Simulator success is not live APNs evidence.
 - Use the final HTTPS Server URL before registering a content key. Server requests reject redirects; failed setup can be retried at the configured endpoint.
 - Check signing for the app-private credential group and the app/extension shared content-key group. Decryption failures show generic text.
 - Enable **Alerts and recoveries**, or **Final task failures** and optional **Successful task runs** as an administrator. Administrator security-rule notifications use the same verified encrypted delivery path.
@@ -188,7 +188,7 @@ For the isolated signing/deployment runbook, troubleshooting by layer, and the g
 
 Before changing verified notification settings, the app confirms a deletion-only capability for that exact mobile session. When an established session signs out offline, its normal credentials are cleared only after its deletion capability is saved in the app-private Keychain. Pending cleanup retries on launch, foreground/network recovery, and before login or pairing; it never uses a replacement account's credentials. An acknowledgement for an already-absent original session does not delete another login using the same installation.
 
-An upgraded installation without a confirmed capability must connect once before secure sign-out can complete. Storage errors or a full pending-cleanup list also block destructive credential clearing or replacement login. The app reports these cases rather than losing the original session's cleanup proof. Existing push content keys, pending grants and test identities keep their original scope across migration and proof bootstrap. Server-side sign-out cannot retract notifications already in flight or accepted by APNs.
+An upgraded installation without a confirmed capability must connect once before secure sign-out can complete. Storage errors or a full pending-cleanup list also block destructive credential clearing or replacement login. The app reports these cases rather than losing the original session's cleanup proof. Existing push content keys and test identities keep their original scope across migration and proof bootstrap. Server-side sign-out cannot retract notifications already in flight or accepted by APNs.
 
 ### WebSocket Connection
 

@@ -5,7 +5,7 @@ credentials, a user's existing Simulator, or a live account for fixtures.
 
 ## Local stitched path
 
-Prerequisites: installed repository Bun dependencies, OpenSSL 3, Rust toolchain,
+Prerequisites: installed repository Bun dependencies, Rust toolchain,
 Xcode, XcodeGen and a dedicated iOS Simulator. The assigned dispatcher serializes
 Cargo/Xcode commands. The task agent may run the lightweight Bun checks.
 
@@ -67,22 +67,22 @@ does not establish the stitched path.
 
 The trace test uses real Server HTTP login, mobile sessions, revisioned
 subscriptions, migrated SQLite, content registration, recipient derivation and
-Rust encryption, durable outbox admission and production delivery workers. It starts the real Bun Relay handler/database and obtains a
-grant through actual certificate/nonce/key verification. Only Apple's attestation
-material and outbound APNs HTTP/2 provider are fixtures. The real APNs transport
-constructs the payload, headers and cached ES256 JWT. The captured provider payload
-then crosses the actual Swift extension `didReceive` boundary, with only the
-shared Keychain read substituted. The app consumes the same ciphertext through
-the early AppDelegate buffer and authenticated router. Rust and Swift additionally
-consume one fixed interoperability vector. No internal policy or SQLite service
-is replaced. These tests do not prove Apple's genuine App Attest, HTTP/2 provider
-acceptance, native notification presentation or a human tap.
+Rust encryption, durable outbox admission and production delivery workers. It
+starts the real stateless Relay request handler using synthetic APNs credentials;
+only outbound APNs fetch is mocked. The production transport constructs payload,
+headers and ES256 JWT. The captured payload then crosses the actual Swift NSE
+`didReceive` boundary with only the shared Keychain read substituted. The app
+consumes the same ciphertext through the early delegate buffer and authenticated
+router. Rust and Swift additionally consume fixed interoperability vectors.
+Workers-runtime tests separately exercise actual workerd request boundaries.
+These tests do not prove live APNs acceptance, presentation or a human tap.
 
-The separate late-response test renews the real Relay grant through a signed
-assertion, replaces the APNs token/content-key ID over authenticated Server HTTP,
-then releases an old terminal provider response. Current registration must remain
-usable; a terminal verdict for the current revision must invalidate only that
-revision. Configuration/payload errors and transient failures retain registration.
+The late-response test replaces the APNs token/content-key ID over authenticated
+Server HTTP, then releases an old terminal provider response. The replacement
+registration remains usable; a terminal verdict for the current revision may
+invalidate only that revision. Payload/configuration and transient errors retain
+registration. There is no Relay grant rotation or attestation fixture.
+
 The migration trace registers a real legacy token before verified setup and
 checks the selector used by legacy APNs, later legacy re-entry, disable and
 unregister, while retaining other users/installations. A held first legacy provider request additionally proves that a later cached
@@ -92,20 +92,21 @@ service tests remain relevant for external-channel behavior.
 
 ## Isolated signing and Relay readiness
 
-Use a separate Relay database, TLS hostname, topic and publisher-owned signing
-key. Configure the names in `apps/push-relay/README.md`; never install Apple keys
-on a self-hosted Server or commit them. Protect the private key file and SQLite
-directory. Audit the Apple root pin and approved app versions independently.
-Confirm the app topic matches the signed application's bundle ID. Both app and
-extension must share the signed Keychain group and provisioning team; confirm the
-extension is embedded in the app and contains English and zh-Hans resources.
-Inspect the effective signed entitlements, not just `project.yml`. Debug must
-pair development App Attest with sandbox APNs; distribution must pair production
-attestation with production APNs. Genuine admission fails closed on unsupported
-or failed App Attest, without a fallback device grant. HTTPS is required for the
-app's Server connection before transmitting the content key. Server API and
-refresh requests reject every redirect, including same-origin redirects; configure
-the final Server URL rather than relying on a reverse-proxy redirect.
+Use a separate Worker, TLS hostname, fixed topic and publisher-owned signing
+key. Configure the Worker variables and `APNS_PRIVATE_KEY` secret described in
+`apps/push-relay/README.md`; never install Apple keys on the Server or commit them.
+Confirm the topic matches the signed app's bundle ID. Both app and extension must
+share the signed Keychain group and provisioning team; the embedded extension
+must include English and zh-Hans resources. Inspect effective signed entitlements,
+not only `project.yml`. Debug uses sandbox APNs; distribution uses production.
+No App Attest or Relay database is required. HTTPS is required before the app
+transmits its content key to the authenticated Server. Server API and refresh
+requests reject all redirects, including same-origin redirects; use final URLs.
+
+The public endpoint accepts resource/quota abuse and known-token junk/replay
+notifications. The fixed generic fallback may be shown when NSE fails or times
+out. Preserve bounded streaming reads, limits, deadlines and concurrency; rate
+maps are isolate-local best-effort protections, not a global cost guarantee.
 
 The native secret-boundary script compiles only the production Foundation
 transport and a synthetic macOS client. A temporary HTTPS origin returns 307/308
@@ -117,7 +118,7 @@ inspect source configuration only. A sandbox denial of local socket binding is a
 blocked runtime check, not a passing redirect test.
 
 `PushKeychainIsolationTests` uses real Security.framework queries in the app-hosted
-Simulator tests: access, refresh, revocation and Relay credentials stay in the
+Simulator tests: access, refresh and revocation credentials stay in the
 explicit app-private group; only the content-key record uses the shared group.
 Refresh preserves that content key and paired-login scope; logout deletes it.
 Debug and Release put the private group first, and the extension has only the
@@ -131,12 +132,12 @@ configuration, Simulator queries and signed-device evidence separately.
 
 Record candidate SHA, signed app/extension versions and entitlements, Relay
 revision/configuration names (no values or tokens), environment, timestamps and
-observed language. Keep three evidence columns: genuine admission, provider
+observed language. Keep three evidence columns: Server registration, provider
 verdict, and device presentation/navigation.
 
 1. Before opt-in, sign in and foreground/reconnect. Confirm no permission prompt.
 2. Read the privacy disclosure, enable a category, allow system notifications
-   and confirm genuine App Attest admission and Server registration.
+   and confirm authenticated Server registration.
 3. Send a test with a second installation signed in. Only the initiating
    installation should receive it. Record APNs acceptance separately.
 4. Observe one foreground system banner with no WebSocket banner. Repeat while
@@ -270,7 +271,7 @@ tapping an old cycle and verify **Alert not found** / **Back to alerts**. Unsubs
 before dispatch and confirm that installation receives no later eligible send;
 a second subscribed installation must still receive its own event. Verify
 maintenance, disabled rules and repeat suppression against external-channel
-behavior. Genuine App Attest and APNs presentation remain separate live evidence.
+behavior. Live APNs and signed-device presentation remain separate live evidence.
 
 
 The rollback/restart tests inject a second-recipient INSERT failure and a deferred

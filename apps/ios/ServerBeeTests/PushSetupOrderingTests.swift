@@ -35,7 +35,7 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         registrationEntered = entered
     }
-    func invalidateGrant() {
+    func invalidateRegistration() {
         lock.lock(); defer { lock.unlock() }
         setup = PushSetupTestData.response(registered: false, revision: revision, preferences: preferences)
     }
@@ -97,7 +97,7 @@ private final class OrderedSetupHTTP: @unchecked Sendable {
             data = setup
             lost = loseSave
             loseSave = false
-        } else if path == "/api/mobile/push/verified-register" {
+        } else if path == "/api/mobile/push/encrypted-register" {
             registered = registrationEntered
             registrationEntered = nil
             revision = (PushSetupTestData.body(urlRequest)["expected_revision"] as? NSNumber)?.int64Value ?? revision
@@ -168,8 +168,8 @@ final class PushSetupOrderingTests: XCTestCase {
             tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"), revocationToken: "proof-\(UUID().uuidString)",
             mobileSessionId: UUID().uuidString))
     }
-    private func manager(_ auth: AuthManager, system: TestPushSystem, relay: TestPushRelay) -> PushNotificationManager {
-        let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
+    private func manager(_ auth: AuthManager, system: TestPushSystem) -> PushNotificationManager {
+        let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         return manager
     }
@@ -190,8 +190,7 @@ final class PushSetupOrderingTests: XCTestCase {
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
-        let relay = TestPushRelay()
-        let manager = manager(auth, system: system, relay: relay)
+        let manager = manager(auth, system: system)
         await manager.reconcile()
         await registerToken(manager)
         XCTAssertEqual(manager.confirmed?.registered, true)
@@ -204,7 +203,6 @@ final class PushSetupOrderingTests: XCTestCase {
         await manager.savePreferences(preferences)
         XCTAssertEqual(manager.confirmed?.revision, 3)
         XCTAssertEqual(manager.confirmed?.preferences.enabled, false)
-        XCTAssertEqual(relay.revocations, 1)
         let registrations = system.registrations
         http.release()
         await oldRead.value
@@ -213,8 +211,7 @@ final class PushSetupOrderingTests: XCTestCase {
         XCTAssertEqual(manager.confirmed?.preferences.enabled, false)
         XCTAssertEqual(manager.confirmed?.registered, false)
         XCTAssertEqual(system.registrations, registrations)
-        XCTAssertEqual(relay.attempts, 1)
-        XCTAssertEqual(http.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }.count, 1)
+        XCTAssertEqual(http.snapshot().filter { $0.url?.path == "/api/mobile/push/encrypted-register" }.count, 1)
     }
 
     func testHeldGetCannotConfirmAnOverlappingUploadOrReplaceItsNewRevision() async {
@@ -226,20 +223,19 @@ final class PushSetupOrderingTests: XCTestCase {
             auth.clearAuth()
             login(auth)
             let system = TestPushSystem()
-            let relay = TestPushRelay()
-            let manager = manager(auth, system: system, relay: relay)
+            let manager = manager(auth, system: system)
             await manager.reconcile()
             await registerToken(manager)
-            let readEntered = expectation(description: "old GET captured before renewal")
+            let readEntered = expectation(description: "old GET captured before registration retry")
             http.holdNext("GET", path: "/api/mobile/push/settings", entered: readEntered)
             let oldRead = Task { await manager.reconcile() }
             await fulfillment(of: [readEntered], timeout: 3)
             // Capture the GET reply separately, then hold the registration reply.
             // Releasing the GET below must not affect the active upload.
-            let uploadEntered = expectation(description: "renewal HTTP response held")
+            let uploadEntered = expectation(description: "registration HTTP response held")
             let oldReply = http.takeHeld()
             XCTAssertNotNil(oldReply)
-            http.holdNext("POST", path: "/api/mobile/push/verified-register", entered: uploadEntered)
+            http.holdNext("POST", path: "/api/mobile/push/encrypted-register", entered: uploadEntered)
             await manager.retry()
             await fulfillment(of: [uploadEntered], timeout: 3)
             XCTAssertEqual(manager.confirmed?.registered, false)
@@ -258,13 +254,12 @@ final class PushSetupOrderingTests: XCTestCase {
             XCTAssertEqual(manager.confirmed?.revision, 3)
             XCTAssertEqual(manager.confirmed?.registered, true)
             XCTAssertNil(manager.errorMessage)
-            XCTAssertEqual(relay.attempts, 2)
             await manager.unregister()
             auth.clearAuth()
         }
     }
 
-    func testNewestGetWinsWhenGrantInspectionChangesAtTheSameRevision() async {
+    func testNewestGetWinsWhenRegistrationAvailabilityChangesAtTheSameRevision() async {
         let http = OrderedSetupHTTP(registered: true, revision: 2)
         defer { http.cancel() }
         OrderedSetupURLProtocol.fixture = http
@@ -272,13 +267,13 @@ final class PushSetupOrderingTests: XCTestCase {
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
-        let manager = manager(auth, system: system, relay: TestPushRelay())
+        let manager = manager(auth, system: system)
         await manager.reconcile()
-        let entered = expectation(description: "old confirmed grant GET held")
+        let entered = expectation(description: "old confirmed registration GET held")
         http.holdNext("GET", path: "/api/mobile/push/settings", entered: entered)
         let oldRead = Task { await manager.reconcile() }
         await fulfillment(of: [entered], timeout: 3)
-        http.invalidateGrant()
+        http.invalidateRegistration()
         await manager.reconcile()
         XCTAssertEqual(manager.confirmed?.registered, false)
         http.release()
@@ -294,8 +289,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
-        let relay = TestPushRelay()
-        let manager = manager(auth, system: TestPushSystem(), relay: relay)
+        let manager = manager(auth, system: TestPushSystem())
         await manager.reconcile()
         let entered = expectation(description: "disable PUT committed but reply held")
         http.holdNext("PUT", path: "/api/mobile/push/settings", entered: entered)
@@ -305,7 +299,6 @@ final class PushSetupOrderingTests: XCTestCase {
         await manager.reconcile()
         await registerToken(manager, expectUpload: false)
         XCTAssertEqual(http.snapshot().count, requests)
-        XCTAssertEqual(relay.attempts, 0)
         XCTAssertTrue(manager.isSaving)
         http.release()
         await saving.value
@@ -313,7 +306,6 @@ final class PushSetupOrderingTests: XCTestCase {
         XCTAssertEqual(manager.confirmed?.revision, 2)
         XCTAssertEqual(manager.confirmed?.preferences.enabled, false)
         XCTAssertEqual(manager.confirmed?.registered, false)
-        XCTAssertEqual(relay.attempts, 0)
     }
 
     func testExplicitRetryRequestsPermissionAfterCommittedEnableResponseLoss() async {
@@ -325,8 +317,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let system = TestPushSystem()
         system.status = .notDetermined
         system.permissionHook = { system.status = .authorized }
-        let relay = TestPushRelay()
-        let manager = manager(auth, system: system, relay: relay)
+        let manager = manager(auth, system: system)
         await manager.reconcile()
         var preferences = PushPreferences()
         preferences.enabled = true
@@ -344,7 +335,6 @@ final class PushSetupOrderingTests: XCTestCase {
         await registerToken(manager)
         XCTAssertEqual(manager.confirmed?.registered, true)
         XCTAssertNil(manager.errorMessage)
-        XCTAssertEqual(relay.attempts, 1)
         await manager.unregister()
     }
 
@@ -360,7 +350,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let system = TestPushSystem()
         system.status = .notDetermined
         system.permissionHook = { system.status = .authorized }
-        let manager = manager(restored, system: system, relay: TestPushRelay())
+        let manager = manager(restored, system: system)
         await manager.reconcile()
         await manager.reconcile()
         XCTAssertEqual(manager.confirmed?.preferences.enabled, true)
@@ -382,13 +372,11 @@ final class PushSetupOrderingTests: XCTestCase {
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
-        let relay = TestPushRelay()
-        let manager = manager(auth, system: system, relay: relay)
+        let manager = manager(auth, system: system)
         await manager.reconcile()
         await manager.retry()
         XCTAssertEqual(system.permissionRequests, 0)
         XCTAssertEqual(system.registrations, 0)
-        XCTAssertEqual(relay.attempts, 0)
         XCTAssertFalse(manager.permissionGranted)
     }
 
@@ -417,13 +405,12 @@ extension PushSetupOrderingTests {
         let originalScope = auth.captureContext()?.pushScope
         XCTAssertNotNil(originalScope)
         let system = TestPushSystem()
-        let relay = TestPushRelay()
-        let manager = manager(auth, system: system, relay: relay)
+        let manager = manager(auth, system: system)
         if phase == "read" { system.status = .notDetermined }
         await manager.reconcile()
         let entered = expectation(description: "original \(phase) held before replacing login")
         if phase == "upload" {
-            original.holdNext("POST", path: "/api/mobile/push/verified-register", entered: entered)
+            original.holdNext("POST", path: "/api/mobile/push/encrypted-register", entered: entered)
             manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
             await fulfillment(of: [entered], timeout: 3)
         } else {
@@ -453,7 +440,6 @@ extension PushSetupOrderingTests {
         XCTAssertEqual(replacement.snapshot().count, requests, "Old Retry must not even reconcile the replacement login")
         XCTAssertTrue(replacement.snapshot().allSatisfy { $0.httpMethod == "GET" && $0.url?.host == URL(string: server)?.host })
         XCTAssertEqual(system.permissionRequests, 0)
-        XCTAssertEqual(relay.attempts, phase == "upload" ? 1 : 0)
         XCTAssertEqual(manager.confirmed?.revision, 1)
         XCTAssertEqual(manager.confirmed?.preferences.enabled, true)
         XCTAssertEqual(manager.confirmed?.registered, false)

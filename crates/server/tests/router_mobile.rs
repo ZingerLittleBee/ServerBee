@@ -2827,9 +2827,9 @@ async fn revoke_original_session(
         .unwrap()
 }
 
-/// Exercise the verified setup ownership table. Legacy /push/register uses a
+/// Exercise the encrypted setup ownership table. Legacy /push/register uses a
 /// different ownership policy and cannot establish this logout regression.
-async fn save_verified_push_settings(
+async fn save_encrypted_push_settings(
     client: &reqwest::Client,
     base: &str,
     tokens: &Value,
@@ -2850,7 +2850,7 @@ async fn save_verified_push_settings(
 }
 
 #[tokio::test]
-async fn durable_logout_absence_ack_releases_verified_ownership_and_preserves_new_login() {
+async fn durable_logout_absence_ack_releases_encrypted_ownership_and_preserves_new_login() {
     use chrono::{Duration, Utc};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
     use serverbee_server::entity::{mobile_push_registration, mobile_session, session};
@@ -2862,7 +2862,7 @@ async fn durable_logout_absence_ack_releases_verified_ownership_and_preserves_ne
         let original = mobile_admin_token(&client, &base, INST_ID).await;
         let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
         assert!(uuid::Uuid::parse_str(original_id).is_ok());
-        assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+        assert_eq!(save_encrypted_push_settings(&client, &base, &original).await.status(), 200);
         let proof = proposed_revocation_proof(19);
         let response = refresh_with_proposal(&client, &base, &original, INST_ID, &proof).await;
         assert_eq!(response.status(), 200);
@@ -2888,7 +2888,7 @@ async fn durable_logout_absence_ack_releases_verified_ownership_and_preserves_ne
                 .send().await.unwrap().json().await.unwrap();
             assert!(visible["data"].as_array().unwrap().iter().all(|row| row["id"] != original_id));
         }
-        assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 403);
+        assert_eq!(save_encrypted_push_settings(&client, &base, &replacement).await.status(), 403);
         let hash = AuthService::hash_session_token(&proof);
         for (installation, candidate, expected) in [
             ("wrong-installation", proof.as_str(), original_id),
@@ -2917,7 +2917,7 @@ async fn durable_logout_absence_ack_releases_verified_ownership_and_preserves_ne
         assert!(mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().is_none());
         assert!(session::Entity::find().filter(session::Column::MobileSessionId.eq(original_id)).one(&db).await.unwrap().is_none());
         assert!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().is_none());
-        assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+        assert_eq!(save_encrypted_push_settings(&client, &base, &replacement).await.status(), 200);
         let replacement_ownership = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
         assert_eq!(replacement_ownership.mobile_session_id, replacement_id);
         // Absence ACK is deliberately non-authenticating: the only statement
@@ -2948,7 +2948,7 @@ async fn durable_logout_failed_deletion_rolls_back_verified_ownership() {
     let original = mobile_admin_token(&client, &base, INST_ID).await;
     let id = original["data"]["mobile_session_id"].as_str().unwrap();
     let proof = original["data"]["revocation_token"].as_str().unwrap();
-    assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+    assert_eq!(save_encrypted_push_settings(&client, &base, &original).await.status(), 200);
     let replacement = mobile_admin_token(&client, &base, INST_ID).await;
     let db = registration_db(&tmp).await;
     let before = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
@@ -2956,13 +2956,13 @@ async fn durable_logout_failed_deletion_rolls_back_verified_ownership() {
     assert_eq!(revoke_original_session(&client, &base, INST_ID, proof, id).await.status(), 500);
     assert!(mobile_session::Entity::find_by_id(id).one(&db).await.unwrap().is_some());
     assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), before);
-    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 403);
+    assert_eq!(save_encrypted_push_settings(&client, &base, &replacement).await.status(), 403);
     assert_eq!(client.get(format!("{base}/api/auth/me")).bearer_auth(original["data"]["access_token"].as_str().unwrap()).send().await.unwrap().status(), 200);
     db.execute_unprepared("DROP TRIGGER fail_logout_delete").await.unwrap();
     let deleted = revoke_original_session(&client, &base, INST_ID, proof, id).await;
     assert_eq!(deleted.status(), 200);
     assert_eq!(deleted.json::<Value>().await.unwrap()["data"], "ok");
-    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+    assert_eq!(save_encrypted_push_settings(&client, &base, &replacement).await.status(), 200);
     // Omitted expected ID retains legacy strict credential semantics.
     assert_eq!(revoke_mobile_with_proof(&client, &base, INST_ID, proof).await.status(), 401);
 }
@@ -2978,11 +2978,11 @@ async fn durable_logout_absent_original_never_deletes_replacement_with_reused_pr
     let original = mobile_admin_token(&client, &base, INST_ID).await;
     let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
     let proof = original["data"]["revocation_token"].as_str().unwrap();
-    assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+    assert_eq!(save_encrypted_push_settings(&client, &base, &original).await.status(), 200);
     assert_eq!(revoke_original_session(&client, &base, INST_ID, proof, original_id).await.status(), 200);
     let replacement = mobile_admin_token(&client, &base, INST_ID).await;
     let replacement_id = replacement["data"]["mobile_session_id"].as_str().unwrap();
-    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+    assert_eq!(save_encrypted_push_settings(&client, &base, &replacement).await.status(), 200);
     let db = registration_db(&tmp).await;
     let ownership = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
     // Deliberate proof reuse must not influence an original-ID absence ACK.

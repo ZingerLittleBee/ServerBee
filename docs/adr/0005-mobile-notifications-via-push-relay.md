@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-03). The approved requirements in #196 and implementation tickets #197–#205 authorize this decision. Local implementation and automated boundary evidence remain separate from pending genuine App Attest and APNs device acceptance.
+Accepted and revised (2026-10-03). The initial unreleased design used App Attest and stateful delivery grants. The approved simplification replaces that Relay admission layer with a public, stateless Cloudflare Worker. The approved requirements in #196 and implementation tickets #197–#205 retain Server account ownership, encryption, delivery reliability and native behavior. Live APNs and signed-device acceptance remain separate pending evidence.
 
 ## Decision
 
@@ -43,16 +43,29 @@ Pending deliveries are persisted on the Server and retried within a
 flooding the device after an outage. APNs acceptance is a provider receipt,
 not proof that a device displayed a notification.
 
-The official relay verifies App Attest before issuing an installation-bound
-delivery grant. ServerBee does not copy Heeler's public, unauthenticated
-push admission. Authorization is scoped to the registered device and APNs
-environment; neither device attestation nor a delivery grant replaces the
-Server's user/session/role checks.
+The Relay is one public `POST /v1/send` Cloudflare Workers endpoint. It accepts
+an APNs token/environment, event identity, expiry and the existing AES-256-GCM
+envelope. WebCrypto signs APNs JWTs and platform fetch manages connections.
+Fixed APNs hosts, operator-owned topic/environment allowlist, generic fallback
+text, bounded streaming reads, parsing, timeouts and concurrency limit exposure.
+Source/target rate limits have hard bounded maps and an isolate-wide cap. They
+are best effort, reset with isolates, and do not promise global quota enforcement.
 
-Official relay registration fails closed when App Attest is unsupported or
-verification fails. The app exposes retryable push status while monitoring
-and authentication remain available. Development testing uses an isolated
-relay configuration rather than bypassing production admission.
+There is no App Attest, signed-build/distribution policy, challenge, delivery
+grant issuance/inspection/renewal/revocation, Relay database or replacement
+authorization service. This deliberate tradeoff accepts resource/cost abuse and
+generic-notification harassment: an attacker knowing a valid device token can
+submit junk or replay ciphertext; consuming Relay quota does not require knowing
+someone else's token. The NSE may leave the fixed generic alert visible if
+content is invalid or processing expires. AEAD prevents decrypting or forging
+business content without the per-installation key, not public endpoint abuse.
+
+Content keys are registered only through authenticated HTTPS Server requests.
+The Server keeps user/installation/mobile-session ownership, role and revision
+checks, durable ciphertext/retry and original expiry. The app keeps Keychain
+isolation, logout/account-switch key cleanup and authenticated tap navigation.
+Exact-target mobile-session revocation and offline logout cleanup remain because
+they protect account access independently of the removed Relay grant registry.
 
 Users explicitly enable categories in iOS Settings before the system
 notification permission prompt. Foreground delivery uses the system banner
@@ -61,9 +74,9 @@ security, or task-run detail only when deployment and user identity match
 the current login. The first release retains the app's single-Server login
 model.
 
-Heeler provides a reference for the relay and iOS lifecycle, but its SSH-based
-device registration and unauthenticated relay endpoint are not ServerBee's
-user ownership or delivery authorization model.
+Heeler provides the public stateless transport reference. ServerBee retains its
+own authenticated HTTPS mobile-registration and account-ownership model; no SSH
+registration or new public credential issuer is introduced.
 
 ## Considered Options
 

@@ -1,353 +1,173 @@
-# ServerBee Push Relay admission
+# ServerBee public push Relay (Cloudflare Workers)
 
-This package implements verified device registration, renewal, grant inspection, revocation and encrypted delivery. The Server selects test, alert, rule-admitted security and final task events and owns their durable 30-minute outbox. APNs acceptance does not establish device presentation. The bilingual [English](../docs/content/docs/en/push-relay.mdx) and [Chinese](../docs/content/docs/zh/push-relay.mdx) operations runbooks cover isolated configuration, signing, troubleshooting and genuine-device records.
+The Relay has one public endpoint: `POST /v1/send`. It validates an opaque
+Server→phone AES-256-GCM envelope, signs an APNs provider JWT with WebCrypto,
+and forwards it using Workers `fetch`. No runtime packages, Bun runtime,
+Node HTTP/2 transport, OpenSSL, containers, accounts, database, device grants,
+App Attest, admission/version policy, queue or retry scheduler are required.
+The Server owns authenticated registration, durable delivery and retries.
+The iOS extension owns decryption. Provider acceptance does not prove presentation.
 
-## Isolated configuration
+## Quick setup
 
-Use Bun (the repository package manager) and OpenSSL 3 on the Relay host. Install
-with `bun install --frozen-lockfile` from the repository root, then run
-`bun --filter @serverbee/push-relay start`. Keep this instance, topic and database
-separate from Heeler. Never point fixtures or development clients at a production
-Relay. No deployment or credential installation is part of this ticket.
+Prerequisites: Node 24, the repository's Bun package-manager version, a Cloudflare
+Workers account, an APNs `.p8` signing key and the correct app bundle ID/topic.
+From the repository root:
 
-Relay environment variables:
+```sh
+bun install --frozen-lockfile
+bun --filter @serverbee/push-relay typecheck
+bun --filter @serverbee/push-relay test
+bun --filter @serverbee/push-relay build   # dry-run only; no deployment
+```
 
-| Name | Meaning |
-| --- | --- |
-| `RELAY_DATABASE` | Persistent SQLite file, with a private directory and backups |
-| `RELAY_TRUSTED_PROXY_IPS` | Required comma-separated exact proxy socket IPs, such as `127.0.0.1`; no implicit loopback trust, CIDRs or hostnames |
-| `APP_ATTEST_ROOT_CA` | Path to Apple's App Attest root certificate PEM |
-| `APP_ATTEST_ROOT_SHA256` | Audited colon-separated SHA256 certificate fingerprint |
-| `APP_ATTEST_APP_ID` | App ID prefix plus `.` plus the official bundle identifier |
-| `APP_ATTEST_BUNDLE_VERSIONS` | Required comma-separated approved `CFBundleVersion` values for signed extension claims |
-| `APP_ATTEST_REQUIRE_EXTENSIONS` | Optional: exact lowercase `true` or `false`; omitted means `false` (compatibility). Any other value fails startup. `true` requires signed extensions to issue or renew grants |
-| `APNS_ENVIRONMENTS` | Allowed environments; `sandbox,production` admits both on one URL/database |
-| `APNS_ENVIRONMENT` | Single-environment alternative when `APNS_ENVIRONMENTS` is absent |
-| `APNS_TEAM_ID` | Publisher Apple team identifier |
-| `APNS_KEY_ID` | Publisher APNs signing key identifier |
-| `APNS_PRIVATE_KEY` | Path to publisher-only P-256 signing key PEM, readable only by the Relay process |
-| `APNS_TOPIC` | Official app bundle identifier (not the extension bundle identifier) |
-| `RELAY_PORT` | Optional loopback listener port, default `8787` |
+Edit `apps/push-relay/wrangler.jsonc` with your Worker name and `APNS_TOPIC`.
+`APNS_ENVIRONMENTS` is an optional comma-separated allowlist: `sandbox`,
+`production`, or `sandbox,production` (the default). Empty, duplicate or unknown
+values fail closed. It does not infer app authenticity or distribution channel.
 
-Obtain and verify the App Attest root from Apple's published trust material.
-Pin the fingerprint through a separate trusted review, not from an incoming
-request or an untrusted certificate chain. The configured root is the only
-trusted CA; the operating system TLS trust store does not admit devices. A
-changed pin must be an intentional operator action. Test fixtures supply an
-isolated test CA directly to the handler constructor; the executable exposes no
-skip-verification flag or alternate admission path.
+Set these Worker secrets through your own authorized Cloudflare account:
 
-The listener binds `127.0.0.1` and requires `RELAY_TRUSTED_PROXY_IPS` at startup.
-Existing deployments must add this setting and the proxy header together. A listed
-native socket peer must **overwrite** `X-ServerBee-Client-IP` with exactly one bare
-client IP. Missing, malformed or observable comma-separated values return HTTP 400
-before admission. The Relay normalizes IPv6 spellings and IPv4-mapped IPv6 addresses
-so equivalent addresses share a quota. Unlisted peers use their native socket IP;
-`Forwarded`, `X-Forwarded-For` and `X-Real-IP` never select the Relay quota key.
-Bun 1.3.4 retains only the last repeated custom wire header before the handler;
-the backend cannot prove header uniqueness. The trusted proxy must discard all
-caller-supplied instances and set its own value, as in the example below.
+```sh
+cd apps/push-relay
+bunx wrangler secret put APNS_TEAM_ID
+bunx wrangler secret put APNS_KEY_ID
+bunx wrangler secret put APNS_PRIVATE_KEY   # paste the complete PKCS#8 .p8 PEM contents
+bun run deploy
+```
 
-The handler still caps streamed bodies at 32 KiB, pending challenges at 10,000 and
-requests at 30 per client IP per minute, including invalid routes and methods.
-Clients sharing a public NAT IP still share that IP's quota. Keep source-IP rate
-limits, body bounds, connection/read/write timeouts and bounded concurrency at the
-TLS edge. Grant inspection and proof responses have `Cache-Control: no-store`.
-Do not log bodies, bearer grants, attestations or receipts. SQLite stores hashes
-of grant bearer tokens, not their plaintext. Persist the database through restarts
-so counters cannot reset.
+Team and key IDs must each be 10 uppercase letters/digits. They may also be
+ordinary Wrangler variables; the private key must remain a secret. The topic comes only
+from deployment configuration, never a request. Keep the `.p8` outside the repo;
+do not paste it into logs or tracked files. `APNS_PRIVATE_KEY` is PEM contents,
+not a filesystem path. For `bun run dev`, put these same values in an ignored
+`.dev.vars` file. Do not expose the local development server publicly: only
+Cloudflare ingress makes `CF-Connecting-IP` trustworthy. Set the resulting HTTPS
+Worker origin as the Server's Relay URL. No SQLite volume or migration is needed.
+This repository does not deploy or configure an account automatically.
 
-### TLS proxy client identity
+## Wire contract
 
-For Nginx receiving clients directly, set `RELAY_TRUSTED_PROXY_IPS=127.0.0.1` in the
-Relay runtime environment and use this example inside Nginx's `http` context
-(replace the hostname and certificate paths):
+Use `Content-Type: application/json`. The exact request fields are:
 
-```nginx
-limit_req_zone $binary_remote_addr zone=relay_rate:10m rate=30r/m;
-limit_conn_zone $binary_remote_addr zone=relay_client:10m;
-limit_conn_zone $server_name zone=relay_total:1m;
-
-server {
-    listen 443 ssl;
-    server_name relay.example.com;
-    ssl_certificate /etc/nginx/tls/relay.fullchain.pem;
-    ssl_certificate_key /etc/nginx/tls/relay.key;
-    client_max_body_size 32k;
-    client_header_timeout 10s;
-    client_body_timeout 10s;
-    keepalive_timeout 15s;
-    send_timeout 10s;
-    limit_req zone=relay_rate burst=10 nodelay;
-    limit_req_status 429;
-    limit_conn relay_client 5;
-    limit_conn relay_total 100;
-    limit_conn_status 429;
-
-    location / {
-        proxy_pass http://127.0.0.1:8787;
-        proxy_set_header X-ServerBee-Client-IP $remote_addr;
-        proxy_set_header X-Forwarded-For "";
-        proxy_set_header Forwarded "";
-        proxy_request_buffering on;
-        proxy_connect_timeout 3s;
-        proxy_send_timeout 10s;
-        proxy_read_timeout 15s;
-    }
+```json
+{
+  "device_token": "<64 lowercase hexadecimal characters>",
+  "environment": "sandbox",
+  "event_id": "11111111-1111-4111-8111-111111111111",
+  "expires_at": 2000001800,
+  "envelope": {
+    "version": 1,
+    "key_id": "22222222-2222-4222-8222-222222222222",
+    "identity": "<64 lowercase hexadecimal characters>",
+    "nonce": "<canonical standard base64 encoding of 12 bytes>",
+    "ciphertext": "<canonical standard base64 ciphertext plus GCM tag>"
+  }
 }
 ```
 
-`proxy_set_header` replaces any client-supplied value; never copy an incoming
-`$http_x_serverbee_client_ip` or append a forwarding chain. This example assumes
-`$remote_addr` is the actual client peer. If another load balancer/CDN is present,
-configure its exact trusted peer chain at Nginx before deriving that address;
-never trust arbitrary forwarded headers or an entire public network. Restrict
-Relay access to the proxy and trusted local processes: an IP allowlist cannot
-distinguish processes sharing the proxy host. The Nginx timeouts bound idle gaps,
-not total request duration; retain an edge total-request deadline where available.
-See [Nginx header handling](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)
-and [connection limits](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html).
+There is no Authorization header or issuance/inspection/renewal/revocation API.
+Unknown top-level and envelope fields are rejected. UUIDs are lowercase;
+`expires_at` is a positive integer Unix timestamp at most 30 minutes ahead.
+Already-expired valid requests return `expired` without contacting APNs.
+Ciphertext must decode to 16–2070 bytes (maximum 2760 base64 characters).
+The unchanged envelope is placed in `serverbee_envelope`; the only plaintext
+alert is `ServerBee` / `Open ServerBee to view this notification.`, with
+`mutable-content: 1` and `sound: default`. A caller cannot set alert text,
+APNs hosts, topic, push type, priority, collapse ID or arbitrary headers.
 
-Configure the self-hosted Server with `SERVERBEE_PUSH_RELAY__URL` or
-`[push_relay].url`. Use HTTPS with a trusted certificate. Only the Server's local
-HTTP integration harness permits a loopback HTTP Relay. Apple signing credentials
-must never be installed on a self-hosted Server.
+APNs destinations are fixed to `api.sandbox.push.apple.com` and
+`api.push.apple.com`. Redirects are not followed. The validated event UUID is
+`apns-id`, and expiry is `apns-expiration`. The JWT uses ES256/P-256 and is cached
+for 50 minutes with single-flight signing and clock-rollback refresh.
 
-APNs transport consumes publisher-only `APNS_TEAM_ID`, `APNS_KEY_ID`,
-`APNS_PRIVATE_KEY` (a file path) and `APNS_TOPIC`. Keep keys outside the
-repository and every self-hosted Server. HTTP/2 connections target the grant
-environment, with alert push type, priority 10, the fixed configured topic and
-the event expiry. ES256 JWTs are reused for up to 50 minutes. Provider requests
-time out after ten seconds and both payloads and responses have 4 KiB bounds.
+All responses carry `Cache-Control: no-store` and this shape:
 
-## Signing and environment
+```json
+{"outcome":"accepted","reason":"Accepted","device_invalid":false}
+```
 
-The app requires APNs and App Attest capabilities in its provisioning profile.
-The project pairs Debug `aps-environment=development` with App Attest
-`development` and the API's `sandbox` value. Release uses `production` for both
-entitlements and the API. Check the **signed artifact's** effective entitlements
-before live validation; build settings alone do not establish valid Apple
-provisioning. TestFlight/App Store builds use production attestation and APNs.
-Separate development and production instances/databases are an optional operational isolation choice. A single URL/database explicitly configured with `APNS_ENVIRONMENTS=sandbox,production` also supports both while retaining per-key/grant environment scope.
+- `200 accepted`: APNs returned 200 with an empty body
+- `200 permanent` with `Unregistered` and `device_invalid: true`: only the exact
+  APNs `410` + `Unregistered` pair; the Server must still fence by registration
+  revision before invalidating a device
+- Other APNs 4xx/redirect/configuration/payload failures: `permanent` and false;
+  `BadDeviceToken` becomes `DeviceOrEnvironmentMismatch`
+- APNs 429/5xx: `retryable` / `ProviderUnavailable`; network, timeout, oversized,
+  malformed or contradictory provider responses: `retryable` / `NetworkUnavailable`
+- `200 expired`: the event expired before forwarding
+- Validation errors: 400/413/415 `permanent`; upload timeout: 408 `retryable`;
+  throttling: 429 `retryable`; concurrency saturation: 503 `retryable`
+- Missing or invalid deployment configuration: 503 `permanent` /
+  `RelayNotConfigured`; an invalid signing key returns the same verdict with 200
+- Removed routes: 404; wrong method on `/v1/send`: 405
 
-The official workflow keeps publisher credentials at the Relay. Official-app
-users need neither a personal Apple developer account nor their own APNs key.
-Source builds still require an appropriate signing identity; the repository does
-not currently publish a downloadable official signed artifact.
+Treat a `retryable` response as backoff advice subject to the original event
+expiry. Retrying uses the same event ID; the Relay does not queue or deduplicate.
+A notification accepted by APNs may never appear on the device.
 
-## Protocol
+## Public-endpoint risk and bounded resource use
 
-All endpoints use POST. JSON responses here are direct objects, whereas the
-Server API wraps responses in `data`.
+This is intentionally a public, unauthenticated forwarder. A valid device token
+is not proof of ownership or consent. Someone who obtains one can send encrypted
+garbage, repeat events or trigger the generic fallback alert and consume provider
+quota. Arbitrary invalid requests, or sends to an attacker’s own valid token,
+can consume Worker/request quota without knowing any victim’s token. The Relay cannot prove the origin, distinguish legitimate Server instances,
+revoke callers, prevent distributed abuse, or promise a global rate limit.
+Encryption hides content but does not authorize delivery. Accept those risks
+before publishing the Worker. Cloudflare zone/WAF controls and account spending
+alerts may help operations, but are not replaced by this code.
 
-1. `/v1/challenges` accepts `action` (`attest`, `renew`, `revoke`), `key_id`,
-   `device_token` and `environment`. Revocation also requires `grant_id`.
-   It returns `challenge_id` and base64 `client_data`. Hash the decoded bytes
-   unchanged with SHA256 for App Attest. Those one-time bytes include the action,
-   key, device token, environment, optional grant and random nonce. Challenges
-   expire in five minutes and are consumed even by rejected verification attempts.
-2. `/v1/attest` accepts `challenge_id` and base64 `proof`. The proof is Apple's
-   attestation object. Validate CBOR, the certificate path and validity, the
-   Apple nonce extension, app identity, environment, credential/public/COSE key
-   binding and zero counter. A known key cannot be re-attested to reset its counter.
-3. `/v1/renew` accepts an assertion proof over a fresh renewal challenge. Validate
-   its signature, RP ID and strictly increasing persistent counter. Renewal can
-   update the APNs token and rotates all earlier grants for that attested key.
-4. Successful admission/renewal returns `grant_id`, `grant_token`, `key_id`,
-   `device_token`, `environment` and Unix `expires_at`. Grants last 24 hours.
-   The app passes the grant only to its captured authenticated Server context.
-5. `/v1/grants/inspect` requires the bearer grant. It returns the exact registered
-   scope and expiry, without the bearer token. The Server compares all scope
-   fields before storing a registration, then revalidates session/revision under
-   the database writer lock. No inspection accepts a revoked or expired grant.
-6. `/v1/revoke` requires a signed assertion over a challenge containing that
-   specific `grant_id`. It revokes only the matching key/device/environment/grant,
-   so delayed cleanup cannot revoke a replacement grant. Server logout/session
-   revocation independently removes its registration even if Relay cleanup fails.
+Built-in guardrails, held only in each isolate's volatile memory:
 
-Server subscription APIs:
+- 8 KiB streamed request cap checked before full read/JSON parsing, including
+  chunked uploads and dishonest Content-Length; a 5-second whole-upload deadline
+- Strict schema, canonical base64 and decoded-size checks; 4096-byte APNs payload
+- 10-second APNs deadline spanning signing, headers and body; provider body cap
+  4096 bytes (zero on success); abort/cancel on timeout, client abort or overflow
+- At most 32 in-flight uploads/deliveries and no unbounded waiting queue
+- Fixed-minute limits: 120 requests/IP, 60 sends/environment+device token,
+  600 requests/isolate; Retry-After on throttling/saturation
+- Each IP/target map has a hard 4096-entry cap. When all slots are live, new keys
+  are rejected rather than evicting active limits or growing the map
+- Only Cloudflare's `CF-Connecting-IP` is considered; absent/invalid values share
+  the `unknown` bucket. `X-Forwarded-For` and `X-Real-IP` are ignored
 
-- `GET /api/mobile/push/settings`: current mobile login's confirmed intent,
-  revision, registration/expiry and Relay URL; no grant bearer or APNs token.
-- `PUT /api/mobile/push/settings`: `expected_revision` and all category booleans
-  inside `preferences`. Security requires an administrator. Disable clears the
-  Server grant immediately. Re-enable requires fresh proof.
-- `POST /api/mobile/push/verified-register`: `expected_revision`, `device_token`,
-  `environment`, `key_id`, `grant_id`, `grant_token`, `content_key_id`,
-  `content_key` (32 bytes, standard base64), `deployment_id` (captured Server URL). Requires explicit enabled
-  intent and a valid grant inspected through the configured Relay.
-- `POST /api/mobile/push/test`: `expected_revision` and client-retained UUID `event_id`. Recipient and content are Server-derived. It durably queues ciphertext and returns `event_id`, `outcome`, `reason` and `presentation=unobserved`. Retrying a lost response uses that same identity/revision; `GET /api/mobile/push/test/{event_id}` reads only the current login/installation receipt. A fresh deliberate test uses a new identity. Retry/restart preserves the original 30-minute deadline, and ambiguous transport does not guarantee exactly-once presentation.
-- `POST /api/mobile/push/unregister`: cleanup remains scoped to user, installation
-  and mobile session. Database foreign keys cascade logout/device/account removal.
+Multiple isolates/regions, isolate restarts and fixed-window boundaries can bypass
+or multiply these best-effort limits; callers can also exhaust slots and deny
+service to legitimate users. Counters and JWT cache are ephemeral, not durable
+state. No tokens, payloads, keys or raw upstream errors are logged by the Worker;
+observability is disabled by default. Avoid adding sensitive request logging.
 
-A registration tied to another still-active login cannot be adopted just by
-presenting the installation identifier, even for the same username. Revoke that
-old paired session before re-enabling on a new login. Routine access-token refresh
-retains the mobile session and registration.
+## Verification and the Server's encrypted test notification
 
-## Verification
+`bun --filter @serverbee/push-relay test` runs Vitest inside actual workerd using
+Cloudflare's official Workers Vitest pool, including real WebCrypto, stream cancellation,
+upload/provider deadlines, map hard caps, schema validation, per-IP/target/global
+limits, concurrency and mocked APNs fetch. `build` uses Wrangler's production
+bundle dry-run without `nodejs_compat`. CI runs both as well as type checking. The pool, Wrangler and Miniflare versions
+are pinned to the last stable Miniflare 4-compatible release set, avoiding the
+Miniflare 5 alpha currently used by newer tooling.
 
-Tests also require Node 24 for native loopback client sockets; the real Relay and
-proxy still run on Bun. Run `bun --filter @serverbee/push-relay test` and `bun --filter
-@serverbee/push-relay typecheck`. Relay tests use real handlers, migrated local
-SQLite and certificate/assertion fixtures signed by an isolated test CA. OpenSSL
-performs actual path and validity validation. Those generated Apple-format
-fixtures are **not genuine Apple device proof**.
+`tests/serve-delivery-fixture.ts` starts this production Worker bundle in
+Miniflare/workerd for the Rust stitched tests, replacing only the APNs network.
+Its `ready.json` contains `{url, device_token, environment}`. Test provider controls
+stay in `provider.json`, and captured `{token, environment, headers, payload}` stay
+in `provider-request.json` and `provider-requests.jsonl`. These contain only
+isolated test data and are never production logging. The shared AES fixture is
+`tests/fixtures/push-envelope-v1.json` at the repository root.
 
-Server checks use `cargo test -p serverbee-server --test mobile_push_integration
---test router_mobile`. They exercise real HTTP/authentication and migrated SQLite;
-only the external Relay response is replaced. iOS system-boundary tests replace
-permission/token, App Attest and HTTP services, retaining the real manager and
-authentication generation checks.
+After the app registers through the authenticated Server endpoint
+`POST /api/mobile/push/encrypted-register`, a test send targets that installation:
 
-Live acceptance requires an isolated configured Relay and correctly provisioned
-physical device. Record genuine App Attest admission, wrong-environment rejection,
-renewal and revocation separately. For the current encrypted test path,
-record APNs provider acceptance, observed foreground/background/terminated
-presentation and authenticated tap navigation as three distinct layers. Missing
-Apple credentials, signing, or a physical device cannot be compensated for by a
-successful build, Simulator run or fixture test.
+```sh
+curl -X POST "$SERVER/api/mobile/push/test" \
+  -H "Authorization: Bearer $MOBILE_ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"expected_revision":2,"event_id":"11111111-1111-4111-8111-111111111111"}'
+```
 
-Protocol reference: [Apple App Attest server validation](https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server).
-
-### Renewal recovery and login isolation
-
-A successful Relay renewal immediately invalidates that key's earlier grants.
-Server settings inspect the current grant instead of inferring validity from its
-saved expiry. If Relay inspection fails, setup is unconfirmed, while subscription intent remains
-saved. The iOS client persists a newly obtained grant in Keychain until Server
-confirmation; foreground, connectivity and restart recovery reuse that grant with
-a fresh Server revision instead of rotating it again. No pending grant appears as
-confirmed before the authenticated Server response succeeds.
-
-App Attest key storage is scoped to deployment, installation and paired login,
-including replacement logins for the same account. The login scope is a local
-hash of the captured deletion proof and is never sent to Relay. Identity checks
-also run after challenge/native-proof completion, before sending the mutation.
-Native `invalidKey` errors discard that login's key and marker; transient network
-or Apple `serverUnavailable` errors retain the key for retry.
-
-### App Attest evidence modes
-
-Apple adds signed launch-category and bundle-version extensions to attestations
-and assertions in [iOS 27 and later](https://developer.apple.com/videos/play/wwdc2026/201/).
-ServerBee supports iOS 17+, so `APP_ATTEST_REQUIRE_EXTENSIONS` defaults to `false`:
-valid legacy proofs without extensions remain accepted. Compatibility mode cannot
-guarantee a hard build-version or finer distribution-category allowlist for those
-proofs; the development/production environment check still applies.
-
-Set `APP_ATTEST_REQUIRE_EXTENSIONS=true` only when new push grants and renewals
-must carry signed extensions. Older no-extension proofs then cannot obtain or
-renew push access; login and monitoring remain available. Enabling strict mode or
-changing the version allowlist does not retroactively revoke unexpired grants. A rejected renewal changes neither the
-existing grant nor its stored counter. Existing grants remain valid until expiry
-or revocation; grants last 24 hours. Deletion-only revocation still accepts a
-cryptographically verified, correctly scoped legacy assertion without extensions, so users can remove old access.
-
-In both modes, present extensions always enforce the distribution category and
-`APP_ATTEST_BUNDLE_VERSIONS`, including on revocation. Assertions with extensions
-carry a signed CBOR dictionary after the 37-byte header. Validate the complete
-authenticator data signature, extension flag and exact CBOR framing. Apple's
-attestation validation vector represents the category as a four-byte little-endian
-UInt32; assertion extension names follow the current validation guide
-(`validationCategory` and `bundleVersion`). Signed categories are restricted to
-development for sandbox and TestFlight/App Store for production. Keep the version
-allowlist current when admitting a newly published build. Neither mode relaxes
-certificate, nonce, app/key binding, signature, challenge or replay checks.
-
-### Sandbox and production on one deployment
-
-Set `APNS_ENVIRONMENTS=sandbox,production` to admit both kinds of installation on
-one HTTPS Relay URL and one SQLite database. A single-environment deployment may
-still use `APNS_ENVIRONMENT`; the plural setting takes precedence. Existing
-Server and iOS API paths remain the same. The challenge endpoint validates the
-requested environment against the configured set and persists it with the
-challenge; proof validation uses that saved environment for AAGUID/distribution
-checks. Assertions must use the previously attested key's environment. Grants
-retain their device/environment scope; renewal or revocation of a sandbox key
-cannot affect a production key. Grant inspection locates the opaque bearer in
-that shared database and returns its verified environment for Server comparison.
-APNs delivery also uses each grant's saved environment.
-
-
-## Encryption and legacy migration
-
-The official app creates a fresh random AES-256 content key per paired login,
-registers it only over its authenticated HTTPS Server connection, and shares its
-device-only Keychain record with `com.serverbee.mobile.notifications`. Both targets
-need `$(AppIdentifierPrefix)com.serverbee.mobile.push` in their effective
-`keychain-access-groups` entitlement and `PushKeychainAccessGroup` plist value.
-Changing accounts, disabling notifications or logging out removes that key. A
-failed Server confirmation keeps the same key for recovery of a committed setup.
-The extension uses generic localized text if the key is unavailable (including
-before the first unlock after reboot), the envelope is invalid or it has expired.
-The app validates ciphertext again before navigating to the current account. New delivery/extension rendering enforces the original deadline; already-presented authentic taps remain valid afterward, subject to current Server authorization and cryptographic/identity/target checks.
-
-Version 1 uses AES-256-GCM, a fresh 12-byte nonce and a 16-byte appended tag.
-The base64 ciphertext encrypts a bounded JSON `PushContent` (maximum 2048 bytes).
-`identity` is the lowercase SHA256 of UTF-8 compact JSON
-`[deployment_id,user_id,installation_id]`, with unescaped slashes. AAD is UTF-8
-`ServerBee.Push.v1|<content_key_id>|<identity>`. Identity fields, event ID, creation,
-expiry and kind are inside authenticated ciphertext; neither account IDs nor
-Server addresses are sent in plaintext. Unknown versions and identity mismatch
-fail closed. `tests/fixtures/push-envelope-v1.json` is a fixed non-secret vector
-shared by Rust encryption and Swift decryption tests. Content keys never appear in
-Relay grants or requests. Generic APNs fallback text contains no event detail.
-
-`POST /v1/send` requires a live bearer grant and accepts only `event_id`,
-`expires_at` (no more than 30 minutes ahead) and `envelope`. It derives token and
-environment from persistent admission, including a second check after reading the
-bounded body. It rejects a caller-selected device, plaintext and content-key fields.
-APNs 410 `Unregistered` is the sole terminal device verdict; configuration,
-payload and `BadDeviceToken` environment ambiguity do not erase registration.
-The Server invalidates a terminal grant only if installation, account, session,
-content-key ID, grant and revision still match the sending snapshot.
-
-Verified setup atomically removes that account's legacy token for the installation
-and records a durable migration marker. Later legacy registration is rejected,
-even after disabling, unregistering or revoking the modern login. The legacy
-selector also excludes marked rows restored from an older database snapshot.
-Other accounts/installations and existing external-channel groups keep their
-legacy behavior. Migrating does not add an APNs channel or notification group.
-
-See [combined lifecycle verification](../../tests/manual/mobile-push-integration.md) for final cross-category evidence and [the isolated delivery checklist](../../tests/manual/mobile-push-test.md) for
-the stitched Server/Relay/extension commands and separate real-device acceptance.
-Protocol references: [APNs requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns),
-[APNs errors](https://developer.apple.com/documentation/usernotifications/handling-error-responses-from-apns),
-and [notification content modification](https://developer.apple.com/documentation/usernotifications/modifying-content-in-newly-delivered-notifications).
-
-## APNs connection lifecycle
-
-Each transport reuses one accepting HTTP/2 connection per APNs environment.
-At most one additional connection per environment may drain existing requests;
-further rotation closes the older draining connection. Every request has its own
-10-second deadline. A timeout retires its connection while allowing other live
-streams to finish, so a stalled connection cannot trap later retries. Shutdown
-closes owned sessions and sockets and settles outstanding deliveries as retryable.
-
-Missing or malformed response status and observable premature closure are retryable
-transport failures, never permanent notification failures. Duplicate status fields,
-pseudoheaders in trailers, and nonempty success bodies are also rejected. The
-Server keeps their encrypted outbox entries eligible for retry. A valid APNs
-response determines the provider verdict; APNs acceptance still does not establish device presentation.
-
-Bun 1.3.4 closes an HTTP/2 session immediately when it receives GOAWAY, including
-unfinished streams. The Relay cannot gracefully drain those runtime-closed
-streams: they are retryable, and the next send reconnects. Runtimes that preserve
-in-flight streams can finish them within the same bounded deadline. The local
-HTTP/2 tests exercise both outcomes, completed responses before GOAWAY, connection
-reuse, independent stream deadlines and physical socket cleanup without contacting
-live APNs.
-
-In tested Bun 1.3.4 and 1.4.2, public HTTP/2 events do not distinguish an empty
-`:status: 200` response
-terminated by `RST_STREAM(NO_ERROR)` from a clean response end. The Relay cannot
-promise to identify that otherwise indistinguishable case. It does reject any
-nonempty 200 body, consistent with Apple's [documented empty success response](https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CommunicatingwithAPNs.html).
-This runtime limitation does not affect the missing-status disconnect regression.
-
-On SIGINT/SIGTERM, the Relay rejects new work, closes APNs sessions, stops HTTP
-connections, and waits for the actual request-handler promises before closing
-SQLite. Bun's `server.stop(true)` alone does not establish handler completion.
-If a handler remains stuck for five seconds, the process exits with failure
-without explicitly closing SQLite beneath that handler.
+`expected_revision` guards against stale setup/token/key changes and `event_id`
+identifies the exact test event. Genuine APNs acceptance, iOS extension decryption,
+notification presentation and tap navigation still require separate real-device
+checks; passing local mocks or Simulator tests cannot establish those outcomes.

@@ -75,7 +75,7 @@ final class PreferenceRecoveryHTTP: @unchecked Sendable {
                     lost = loseSaveReply
                     loseSaveReply = false
                 }
-            } else if path == "/api/mobile/push/verified-register", request.request.httpMethod == "POST" {
+            } else if path == "/api/mobile/push/encrypted-register", request.request.httpMethod == "POST" {
                 registrationRequests.append(request.request)
                 observed = registration
                 registration = nil
@@ -156,8 +156,8 @@ final class PushPreferenceRecoveryTests: XCTestCase {
             revocationToken: "proof-\(UUID().uuidString)",
             mobileSessionId: UUID().uuidString))
     }
-    func manager(_ auth: AuthManager, system: TestPushSystem, relay: TestPushRelay? = nil) -> PushNotificationManager {
-        let manager = PushNotificationManager(system: system, relay: relay ?? TestPushRelay(), storage: MemoryPushSetupStorage())
+    func manager(_ auth: AuthManager, system: TestPushSystem) -> PushNotificationManager {
+        let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         return manager
     }
@@ -211,8 +211,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
                 login(auth)
                 let system = TestPushSystem()
                 system.status = .denied
-                let relay = TestPushRelay()
-                let manager = manager(auth, system: system, relay: relay)
+                let manager = manager(auth, system: system)
                 await manager.reconcile()
                 // Category visibility follows the actual Server role, not cached login metadata.
                 XCTAssertEqual(auth.user?.role, "member")
@@ -240,7 +239,6 @@ final class PushPreferenceRecoveryTests: XCTestCase {
                 XCTAssertEqual(manager.confirmed?.registered, true)
                 XCTAssertEqual(http.savedPreferences(), [permitted])
                 XCTAssertEqual(system.permissionRequests, 0)
-                XCTAssertEqual(relay.attempts, 0)
                 await manager.reconcile()
                 XCTAssertNil(manager.errorMessage)
                 XCTAssertNil(manager.unconfirmedPreferences)
@@ -251,9 +249,8 @@ final class PushPreferenceRecoveryTests: XCTestCase {
                 XCTAssertEqual(manager.confirmed?.registered, enabled)
                 XCTAssertEqual(http.savedPreferences(), [permitted], "Recovery reads must not resubmit the committed intent")
                 await manager.waitForPendingRegistrations()
+                XCTAssertTrue(http.registrationAttempts().isEmpty)
                 XCTAssertEqual(system.permissionRequests, 0)
-                XCTAssertEqual(relay.attempts, 0)
-                XCTAssertEqual(relay.revocations, 0)
                 auth.clearAuth()
             }
         }
@@ -371,8 +368,7 @@ extension PushPreferenceRecoveryTests {
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
-        let relay = TestPushRelay()
-        let manager = manager(auth, system: system, relay: relay)
+        let manager = manager(auth, system: system)
         await manager.reconcile()
         let original = try XCTUnwrap(manager.confirmed?.preferences)
         var desired = original
@@ -404,7 +400,9 @@ extension PushPreferenceRecoveryTests {
         XCTAssertEqual(manager.errorMessage, failure)
         XCTAssertEqual(manager.unconfirmedPreferences, desired)
         XCTAssertEqual(manager.confirmed?.preferences, original)
-        XCTAssertEqual(relay.attempts, 1, "Registration recovery reuses its pending grant")
+        XCTAssertEqual(http.registrationAttempts().count, 2)
+        let keys = http.registrationAttempts().map { PushSetupTestData.body($0)["content_key"] as? String }
+        XCTAssertEqual(keys.first, keys.last)
         XCTAssertEqual(system.permissionRequests, 0)
         await manager.waitForPendingRegistrations()
     }

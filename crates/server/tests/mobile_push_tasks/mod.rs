@@ -196,7 +196,7 @@ async fn manual_summary_waits_for_all_targets_selects_initiator_and_filters_run(
     let owner = login_http(&client, &base, "initiator", "owner-a").await;
     let second = login_http(&client, &base, "initiator", "owner-b").await;
     let owner_access = owner["access_token"].as_str().unwrap();
-    subscribe(&client, &base, creator_access, "creator-grant").await;
+    subscribe(&client, &base, creator_access, "creator-device").await;
     subscribe(&client, &base, owner_access, "device-a").await;
     subscribe(
         &client,

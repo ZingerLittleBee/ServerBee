@@ -216,29 +216,36 @@ Tunes the agent-side security event detectors (SSH login / brute force, port sca
 
 ## Push Relay
 
-These settings belong to the separate `apps/push-relay` process, not Server or
-Agent TOML configuration. Server uses `SERVERBEE_PUSH_RELAY__URL` to select its
-HTTPS endpoint. No Apple private keys are installed by notification setup.
+The public, stateless `apps/push-relay` Cloudflare Worker holds the publisher's
+APNs credentials. Server uses `SERVERBEE_PUSH_RELAY__URL` to select its final
+HTTPS endpoint. The iOS app registers its token and content key only with its
+authenticated HTTPS Server; it does not contact Relay or receive Apple keys.
 
-| Environment Variable | Default | Description |
-|----------------------|---------|-------------|
-| `RELAY_DATABASE` | required | Persistent SQLite admission state |
-| `RELAY_TRUSTED_PROXY_IPS` | required; no implicit trust | Comma-separated exact proxy peer IPs (for example `127.0.0.1`); trusted peers must overwrite `X-ServerBee-Client-IP` with one client IP. No CIDRs or hostnames. |
-| `APP_ATTEST_ROOT_CA` | required | Path to the audited Apple App Attest root PEM |
-| `APP_ATTEST_ROOT_SHA256` | required | Pinned colon-separated SHA256 root fingerprint |
-| `APP_ATTEST_APP_ID` | required | Official App ID prefix and bundle identifier |
-| `APP_ATTEST_BUNDLE_VERSIONS` | required | Comma-separated approved `CFBundleVersion` values; enforced whenever signed extensions are present |
-| `APP_ATTEST_REQUIRE_EXTENSIONS` | `false` | Exact lowercase `true` or `false`; omission selects compatibility mode. Other values fail startup. `true` requires signed extensions to issue or renew grants |
-| `APNS_ENVIRONMENTS` | required unless singular alternative is set | Allowed admission environments; `sandbox,production` supports coexistence on one URL and database |
-| `APNS_ENVIRONMENT` | required unless plural setting is set | Single-environment alternative, `sandbox` or `production`; plural setting takes precedence |
-| `APNS_TEAM_ID` | required | Publisher Apple team identifier, Relay only |
-| `APNS_KEY_ID` | required | Publisher APNs signing key identifier, Relay only |
-| `APNS_PRIVATE_KEY` | required | Path to publisher-only APNs P-256 PEM file, Relay only |
-| `APNS_TOPIC` | required | Official app bundle identifier, Relay only |
-| `RELAY_PORT` | `8787` | Loopback listener port |
+| Worker binding | Storage | Description |
+|----------------|---------|-------------|
+| `APNS_TEAM_ID` | Worker variable | Publisher Apple team identifier |
+| `APNS_KEY_ID` | Worker variable | Publisher APNs signing key identifier |
+| `APNS_PRIVATE_KEY` | Worker secret | PKCS#8 P-256 PEM contents, never a file path or repository value |
+| `APNS_TOPIC` | Worker variable | Fixed official app bundle identifier, not the extension identifier |
+| `APNS_ENVIRONMENTS` | Optional Worker variable | Allowed `sandbox`, `production`, or `sandbox,production`; defaults to both |
 
-Apple supplies signed launch-category and bundle-version extensions on [iOS 27 and later](https://developer.apple.com/videos/play/wwdc2026/201/); ServerBee supports iOS 17+. Default compatibility mode accepts valid legacy proofs without extensions, so it cannot guarantee a hard version or finer distribution-category allowlist for those proofs. Development/production environment and all cryptographic checks remain enforced. Both modes validate present extensions against the category and `APP_ATTEST_BUNDLE_VERSIONS` allowlists. Strict mode excludes no-extension proofs from new grants and renewals, while login/monitoring remain available. Enabling strict mode or changing the version allowlist does not retroactively revoke unexpired grants: a failed renewal changes neither the existing grant nor its stored counter. Existing grants remain valid until expiry or revocation (grants last 24 hours). Deletion-only revocation still accepts a cryptographically verified, correctly scoped legacy assertion without extensions; present extensions remain checked.
+Configure these in the isolated Worker's Wrangler configuration and secrets,
+never in Server TOML or the iOS app. No Relay database, App Attest roots,
+version/distribution allowlist, grant service, reverse-proxy trust list or
+self-managed HTTP/2 pool is required. Cloudflare owns inbound HTTPS and outbound
+connections; WebCrypto signs APNs provider JWTs.
 
-The loopback executable refuses to start without `RELAY_TRUSTED_PROXY_IPS`. Existing deployments must add this setting and configure the proxy header together. Only listed native socket peers may supply the fixed header; missing, malformed or observable comma-list values return HTTP 400. Bun may hide repeated raw custom fields, so the proxy must overwrite them; the backend cannot establish wire-level uniqueness. Other peers use their native IP and all other forwarding headers are ignored. Normalized client IPs retain the 30-request/minute handler limit without pooling all proxy clients. The edge must still enforce 32 KiB bodies, source-IP limits, connection/read/write timeouts and bounded concurrency; see the Nginx example in [Relay setup](apps/push-relay/README.md).
+Anyone can call `POST /v1/send`. Knowing a valid device token permits junk
+ciphertext or replay attempts and may trigger a generic notification. Attackers
+can consume requests/quota without knowing another person's token. Encryption
+protects content, not Relay admission. Bounded streaming reads, strict schemas,
+fixed APNs endpoints/topic/fallback, deadlines, concurrent-request caps and
+bounded per-source/per-target maps reduce resource exposure. Isolate-local
+limits reset and are not a global quota or complete denial-of-service defense.
 
-Registration, encrypted test, alert, security-rule and final task delivery support both environments through the durable 30-minute outbox. Task successes require explicit opt-in. See [Relay setup](apps/push-relay/README.md) for configuration ownership and the bilingual [operations runbook](apps/docs/content/docs/en/push-relay.mdx) for signing, privacy, troubleshooting and separate genuine-device acceptance.
+The Server retains its encrypted durable outbox, original 30-minute expiry,
+recipient/session/revision checks and categorized subscriptions. APNs acceptance
+is not proof of phone presentation. See [Relay setup](apps/push-relay/README.md)
+and the bilingual [operations runbook](apps/docs/content/docs/en/push-relay.mdx).
+Deployment, credential provisioning and signed-device acceptance remain separate
+operator actions; local tests do not establish live APNs delivery.

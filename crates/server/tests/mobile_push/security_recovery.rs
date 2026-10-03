@@ -640,7 +640,7 @@ async fn security_once_only_ws_recovery_rechecks_current_recipient_bindings() {
         "role",
         "logout",
         "session_expiry",
-        "grant",
+        "registration",
         "revision",
         "owner",
     ] {
@@ -694,11 +694,11 @@ async fn security_once_only_ws_recovery_rechecks_current_recipient_bindings() {
                     .await
                     .unwrap();
             }
-            "grant" => {
+            "registration" => {
                 mobile_push_registration::Entity::update_many()
                     .col_expr(
-                        mobile_push_registration::Column::GrantExpiresAt,
-                        sea_orm::sea_query::Expr::value(Utc::now() - ChronoDuration::seconds(1)),
+                        mobile_push_registration::Column::DeviceToken,
+                        sea_orm::sea_query::Expr::value(Option::<String>::None),
                     )
                     .filter(mobile_push_registration::Column::InstallationId.eq("security-a"))
                     .exec(&f.state.db)

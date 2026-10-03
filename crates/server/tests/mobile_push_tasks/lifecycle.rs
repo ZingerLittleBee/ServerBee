@@ -40,14 +40,14 @@ async fn register_categories(
             .status(),
         200
     );
-    let grant = json!({"device_token":if device == "device-b" { "b".repeat(64) } else { "a".repeat(64) },
-        "environment":"sandbox", "key_id":"fixture-key", "grant_id":device, "grant_token":device});
-    let mut request = content_registration(&grant, 1);
+    let target = json!({"device_token":if device == "device-b" { "b".repeat(64) } else { "a".repeat(64) },
+        "environment":"sandbox"});
+    let mut request = content_registration(&target, 1);
     request["content_key"] = json!(STANDARD.encode([byte; 32]));
     request["content_key_id"] = json!(uuid::Uuid::new_v4().to_string());
     assert_eq!(
         client
-            .post(format!("{base}/api/mobile/push/verified-register"))
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
             .bearer_auth(access)
             .json(&request)
             .send()
@@ -66,7 +66,9 @@ fn transport_content(delivery: &RecordedDelivery, snapshots: &[registration::Mod
     let row = snapshots
         .iter()
         .find(|row| {
-            delivery.authorization == format!("Bearer {}", row.grant_token.as_deref().unwrap())
+            delivery.body["device_token"] == row.device_token.as_deref().unwrap()
+                && delivery.body["environment"] == row.environment.as_deref().unwrap()
+                && delivery.body["envelope"]["key_id"] == row.content_key_id.as_deref().unwrap()
         })
         .unwrap();
     let envelope = &delivery.body["envelope"];
@@ -258,8 +260,8 @@ async fn refresh_and_legacy_migration_preserve_all_categories_per_installation()
     for (access, device, byte, admin) in [
         (a_access, "device-a", 1, true),
         (b_access, "device-b", 2, true),
-        (member_access, "member-grant", 3, false),
-        (other_access, "other-grant", 4, true),
+        (member_access, "member-device", 3, false),
+        (other_access, "other-device", 4, true),
     ] {
         register_categories(&client, &base, access, device, byte, admin).await;
     }

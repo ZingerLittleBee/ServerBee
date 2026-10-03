@@ -266,40 +266,12 @@ async fn push_unregister_rejects_cross_user_delete() {
     );
 }
 
-// Verified setup uses the real HTTP router, authentication and migrated SQLite.
-// Only the external Relay verification response is substituted.
+// Setup uses the real HTTP router, authentication and migrated SQLite, with
+// an unreachable Relay to prove registration/status do not depend on transport.
 async fn setup_http() -> (String, Arc<AppState>, tempfile::TempDir) {
-    use axum::{Router, routing::post};
-    let relay = Router::new().route(
-        "/v1/grants/inspect",
-        post(|headers: HeaderMap| async move {
-            let secret = headers
-                .get("authorization")
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default();
-            let (status, token, expires) = match secret {
-                "Bearer verified-fixture" => (200, "a".repeat(64), Utc::now().timestamp() + 3600),
-                "Bearer mismatched-fixture" => (200, "b".repeat(64), Utc::now().timestamp() + 3600),
-                "Bearer expired-fixture" => (200, "a".repeat(64), Utc::now().timestamp() - 1),
-                _ => (403, "a".repeat(64), 0),
-            };
-            (
-                axum::http::StatusCode::from_u16(status).unwrap(),
-                Json(serde_json::json!({
-                    "grant_id": "fixture-grant", "key_id": "fixture-key", "device_token": token,
-                    "environment": "sandbox", "expires_at": expires
-                })),
-            )
-        }),
-    );
-    let relay_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let relay_url = format!("http://{}", relay_listener.local_addr().unwrap());
-    tokio::spawn(async move {
-        axum::serve(relay_listener, relay).await.unwrap();
-    });
     let (initial, tmp) = test_state().await;
     let mut config = initial.config.clone();
-    config.push_relay.url = relay_url;
+    config.push_relay.url = "http://127.0.0.1:1".into();
     let state = AppState::new(initial.db.clone(), config).await.unwrap();
     AuthService::create_user(&state.db, "admin", "testpass", "admin")
         .await
@@ -357,12 +329,19 @@ async fn setup_http_request(
     base: &str,
     access: &str,
     revision: i64,
-    grant: &str,
 ) -> reqwest::Response {
-    client.post(format!("{base}/api/mobile/push/verified-register")).bearer_auth(access).json(&serde_json::json!({
-        "expected_revision":revision, "device_token":"a".repeat(64), "environment":"sandbox", "key_id":"fixture-key", "grant_id":"fixture-grant", "grant_token":grant, "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"
-    })).send().await.unwrap()
+    client
+        .post(format!("{base}/api/mobile/push/encrypted-register"))
+        .bearer_auth(access)
+        .json(&content_registration(
+            &serde_json::json!({"device_token":"a".repeat(64), "environment":"sandbox"}),
+            revision,
+        ))
+        .send()
+        .await
+        .unwrap()
 }
+
 async fn status_http(client: &reqwest::Client, base: &str, access: &str) -> serde_json::Value {
     let res = client
         .get(format!("{base}/api/mobile/push/settings"))
@@ -375,18 +354,155 @@ async fn status_http(client: &reqwest::Client, base: &str, access: &str) -> serd
 }
 
 #[tokio::test]
-async fn verified_setup_requires_explicit_intent_and_preserves_refresh_binding() {
+async fn encrypted_push_migrations_extend_main_schema_without_relay_credentials() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = production_wal_db(&directory.path().join("upgrade.db"), 1).await;
+    let main_steps = Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name().starts_with("m20261003_000076"))
+        .expect("mobile revocation starts after main migrations");
+    Migrator::up(&db, Some(main_steps as u32)).await.unwrap();
+    assert!(
+        db.query_one(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            "SELECT name FROM sqlite_master WHERE name='mobile_push_registrations'"
+        ))
+        .await
+        .unwrap()
+        .is_none()
+    );
+    Migrator::up(&db, None).await.unwrap();
+    let columns = db
+        .query_all(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            "PRAGMA table_info(mobile_push_registrations)",
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "name").unwrap())
+        .collect::<Vec<_>>();
+    for field in [
+        "device_token",
+        "environment",
+        "content_key_id",
+        "content_key",
+        "deployment_id",
+    ] {
+        assert!(
+            columns.iter().any(|column| column == field),
+            "missing {field}"
+        );
+    }
+    for field in ["key_id", "grant_id", "grant_token", "grant_expires_at"] {
+        assert!(
+            !columns.iter().any(|column| column == field),
+            "obsolete {field}"
+        );
+    }
+    // Applying the full chain again is a no-op on an upgraded database.
+    Migrator::up(&db, None).await.unwrap();
+}
+
+#[tokio::test]
+async fn empty_or_invalid_relay_configuration_does_not_register_or_admit_new_tests() {
+    let (base, initial, _tmp) = setup_http().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "unconfigured-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    assert_eq!(
+        preferences_http(&client, &base, access, 0, intent(false, true))
+            .await
+            .status(),
+        200
+    );
+    for url in [
+        "",
+        "https://",
+        "http://remote.test",
+        "http://127.0.0.1:invalid",
+    ] {
+        let mut config = initial.config.clone();
+        config.push_relay.url = url.into();
+        let state = AppState::new(initial.db.clone(), config).await.unwrap();
+        let unavailable_base = serve_outbox_http(state).await;
+        let status = status_http(&client, &unavailable_base, access).await;
+        assert_eq!(status["registered"], false);
+        assert_eq!(status["delivery_available"], false);
+        assert_eq!(status["test_available"], false);
+        assert_eq!(
+            setup_http_request(&client, &unavailable_base, access, 1)
+                .await
+                .status(),
+            400
+        );
+        assert_eq!(
+            status_http(&client, &unavailable_base, access).await["revision"],
+            1
+        );
+    }
+    assert_eq!(
+        setup_http_request(&client, &base, access, 1).await.status(),
+        200
+    );
+    let mut config = initial.config.clone();
+    config.push_relay.url.clear();
+    let disabled = AppState::new(initial.db.clone(), config).await.unwrap();
+    let disabled_base = serve_outbox_http(disabled).await;
+    let status = status_http(&client, &disabled_base, access).await;
+    assert_eq!(
+        status["registered"], true,
+        "local registration remains stored"
+    );
+    assert_eq!(status["delivery_available"], false);
+    assert_eq!(status["test_available"], false);
+    assert_eq!(
+        enqueue_test(
+            &client,
+            &disabled_base,
+            access,
+            2,
+            &uuid::Uuid::new_v4().to_string()
+        )
+        .await
+        .status(),
+        403
+    );
+    assert!(
+        serverbee_server::entity::mobile_push_outbox::Entity::find()
+            .all(&initial.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let restored = status_http(&client, &base, access).await;
+    assert_eq!(restored["registered"], true);
+    assert_eq!(restored["delivery_available"], true);
+    assert_eq!(restored["test_available"], true);
+    assert_eq!(
+        restored["revision"], 2,
+        "restoring configuration does not rewrite registration"
+    );
+    let event = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        enqueue_test(&client, &base, access, 2, &event)
+            .await
+            .status(),
+        200
+    );
+}
+
+#[tokio::test]
+async fn encrypted_setup_requires_explicit_intent_and_preserves_refresh_binding() {
     let (base, state, _tmp) = setup_http().await;
     let client = reqwest::Client::new();
-    let login = login_http(&client, &base, "admin", "verified-install").await;
+    let login = login_http(&client, &base, "admin", "encrypted-install").await;
     let access = login["access_token"].as_str().unwrap();
     let initial = status_http(&client, &base, access).await;
     assert_eq!(initial["preferences"]["enabled"], false);
     assert_eq!(initial["registered"], false);
     assert_eq!(
-        setup_http_request(&client, &base, access, 0, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 0).await.status(),
         403
     );
     assert_eq!(
@@ -396,16 +512,15 @@ async fn verified_setup_requires_explicit_intent_and_preserves_refresh_binding()
         200
     );
     assert_eq!(
-        setup_http_request(&client, &base, access, 1, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 1).await.status(),
         200
     );
     let confirmed = status_http(&client, &base, access).await;
     assert_eq!(confirmed["registered"], true);
     assert_eq!(confirmed["revision"], 2);
     assert_eq!(confirmed["delivery_available"], true);
-    assert!(confirmed.get("grant_token").is_none());
+    assert!(confirmed.get("grant_expires_at").is_none());
+    assert!(confirmed.get("relay_url").is_none());
     assert!(
         device_token::Entity::find()
             .all(&state.db)
@@ -417,7 +532,7 @@ async fn verified_setup_requires_explicit_intent_and_preserves_refresh_binding()
     let refresh = client
         .post(format!("{base}/api/mobile/auth/refresh"))
         .json(&serde_json::json!({
-            "installation_id":"verified-install", "refresh_token":login["refresh_token"]
+            "installation_id":"encrypted-install", "refresh_token":login["refresh_token"]
         }))
         .send()
         .await
@@ -445,7 +560,7 @@ async fn verified_setup_requires_explicit_intent_and_preserves_refresh_binding()
 }
 
 #[tokio::test]
-async fn verified_setup_rejects_bad_grants_and_stale_saves_without_false_confirmation() {
+async fn encrypted_setup_rejects_invalid_registration_and_stale_saves() {
     let (base, _, _tmp) = setup_http().await;
     let client = reqwest::Client::new();
     let login = login_http(&client, &base, "member", "member-install").await;
@@ -463,31 +578,64 @@ async fn verified_setup_rejects_bad_grants_and_stale_saves_without_false_confirm
             .status(),
         200
     );
-    for grant in [
-        "unverified-fixture",
-        "mismatched-fixture",
-        "expired-fixture",
+    for (field, invalid) in [
+        ("device_token", "invalid"),
+        (
+            "device_token",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ),
+        ("environment", "development"),
+        ("content_key_id", "not-a-uuid"),
+        ("content_key_id", "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"),
+        ("content_key_id", "22222222222242228222222222222222"),
+        ("content_key", "AA=="),
+        ("deployment_id", "https://"),
     ] {
+        let mut registration = content_registration(
+            &serde_json::json!({"device_token":"a".repeat(64), "environment":"sandbox"}),
+            1,
+        );
+        registration[field] = serde_json::json!(invalid);
         assert_eq!(
-            setup_http_request(&client, &base, access, 1, grant)
+            client
+                .post(format!("{base}/api/mobile/push/encrypted-register"))
+                .bearer_auth(access)
+                .json(&registration)
+                .send()
                 .await
+                .unwrap()
                 .status(),
-            403
+            422,
+            "{field}"
         );
         let status = status_http(&client, &base, access).await;
         assert_eq!(status["registered"], false);
         assert_eq!(status["revision"], 1);
     }
+    for field in ["installation_id", "user_id", "grant_token"] {
+        let mut registration = content_registration(
+            &serde_json::json!({"device_token":"a".repeat(64), "environment":"sandbox"}),
+            1,
+        );
+        registration[field] = serde_json::json!("not-an-ownership-credential");
+        assert_eq!(
+            client
+                .post(format!("{base}/api/mobile/push/encrypted-register"))
+                .bearer_auth(access)
+                .json(&registration)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            422,
+        );
+    }
     assert_eq!(
-        setup_http_request(&client, &base, access, 0, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 0).await.status(),
         409
     );
     assert_eq!(
-        setup_http_request(&client, &base, access, 1, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 1).await.status(),
         200
     );
     assert_eq!(
@@ -507,9 +655,7 @@ async fn verified_setup_rejects_bad_grants_and_stale_saves_without_false_confirm
         false
     );
     assert_eq!(
-        setup_http_request(&client, &base, access, 3, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 3).await.status(),
         403
     );
 }
@@ -535,9 +681,7 @@ async fn demoted_administrator_can_save_permitted_subscriptions_and_disable_setu
             200
         );
         assert_eq!(
-            setup_http_request(&client, &base, access, 1, "verified-fixture")
-                .await
-                .status(),
+            setup_http_request(&client, &base, access, 1).await.status(),
             200
         );
         let before = status_http(&client, &base, access).await;
@@ -596,14 +740,14 @@ async fn demoted_administrator_can_save_permitted_subscriptions_and_disable_setu
         assert!(!row.alerts);
         assert!(!row.task_failure);
         assert!(!row.task_success);
-        assert_eq!(row.grant_token.is_some(), enabled);
-        assert_eq!(row.grant_id.is_some(), enabled);
-        assert_eq!(row.grant_expires_at.is_some(), enabled);
+        assert_eq!(row.device_token.is_some(), enabled);
+        assert_eq!(row.content_key.is_some(), enabled);
+        assert_eq!(row.is_registered(), enabled);
     }
 }
 
 #[tokio::test]
-async fn verified_setup_rejects_forged_installation_and_scopes_cleanup() {
+async fn encrypted_setup_rejects_forged_installation_and_scopes_cleanup() {
     let (base, _, _tmp) = setup_http().await;
     let client = reqwest::Client::new();
     let owner = login_http(&client, &base, "admin", "shared-install").await;
@@ -615,9 +759,7 @@ async fn verified_setup_rejects_forged_installation_and_scopes_cleanup() {
         200
     );
     assert_eq!(
-        setup_http_request(&client, &base, access, 1, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 1).await.status(),
         200
     );
     let attacker = login_http(&client, &base, "member", "shared-install").await;
@@ -629,7 +771,7 @@ async fn verified_setup_rejects_forged_installation_and_scopes_cleanup() {
         403
     );
     assert_eq!(
-        setup_http_request(&client, &base, attacker, 2, "verified-fixture")
+        setup_http_request(&client, &base, attacker, 2)
             .await
             .status(),
         403
@@ -648,7 +790,7 @@ async fn verified_setup_rejects_forged_installation_and_scopes_cleanup() {
 }
 
 #[tokio::test]
-async fn verified_setup_survives_database_reopen_and_device_revocation_cascades() {
+async fn encrypted_setup_survives_database_reopen_and_device_revocation_cascades() {
     let (base, state, tmp) = setup_http().await;
     let client = reqwest::Client::new();
     let login = login_http(&client, &base, "admin", "persisted-install").await;
@@ -660,9 +802,7 @@ async fn verified_setup_survives_database_reopen_and_device_revocation_cascades(
         200
     );
     assert_eq!(
-        setup_http_request(&client, &base, access, 1, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 1).await.status(),
         200
     );
     let reopened = Database::connect(format!(
@@ -699,77 +839,26 @@ async fn verified_setup_survives_database_reopen_and_device_revocation_cascades(
 }
 
 #[tokio::test]
-async fn verified_setup_revalidates_logout_after_delayed_relay_inspection() {
-    use axum::{Router, routing::post};
+async fn encrypted_setup_serializes_registration_with_logout() {
     let (base, state, _tmp) = setup_http().await;
     let client = reqwest::Client::new();
-    let login = login_http(&client, &base, "member", "delayed-install").await;
-    let access = login["access_token"].as_str().unwrap().to_owned();
+    let login = login_http(&client, &base, "member", "racing-install").await;
+    let access = login["access_token"].as_str().unwrap();
     assert_eq!(
-        preferences_http(&client, &base, &access, 0, intent(false, true))
+        preferences_http(&client, &base, access, 0, intent(false, true))
             .await
             .status(),
         200
     );
-    let started = Arc::new(tokio::sync::Notify::new());
-    let release = Arc::new(tokio::sync::Notify::new());
-    let relay_started = started.clone();
-    let relay_release = release.clone();
-    let relay = Router::new().route("/v1/grants/inspect", post(move || {
-        let started = relay_started.clone();
-        let release = relay_release.clone();
-        async move {
-            started.notify_one();
-            release.notified().await;
-            Json(serde_json::json!({"grant_id":"fixture-grant", "key_id":"fixture-key", "device_token":"a".repeat(64), "environment":"sandbox", "expires_at":Utc::now().timestamp()+3600}))
-        }
-    }));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut config = state.config.clone();
-    config.push_relay.url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move {
-        axum::serve(listener, relay).await.unwrap();
-    });
-    let delayed_state = AppState::new(state.db.clone(), config).await.unwrap();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let delayed_base = format!("http://{}", listener.local_addr().unwrap());
-    let app = serverbee_server::router::create_router(delayed_state);
-    tokio::spawn(async move {
-        axum::serve(
-            listener,
-            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-        )
-        .await
-        .unwrap();
-    });
-    let registering_client = client.clone();
-    let registering_access = access.clone();
-    let request = tokio::spawn(async move {
-        setup_http_request(
-            &registering_client,
-            &delayed_base,
-            &registering_access,
-            1,
-            "held-fixture",
-        )
-        .await
-    });
-    tokio::time::timeout(std::time::Duration::from_secs(5), started.notified())
-        .await
-        .unwrap();
-    let logout = client
-        .post(format!("{base}/api/mobile/auth/logout"))
-        .bearer_auth(&access)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(logout.status(), 200);
-    release.notify_one();
-    let response = tokio::time::timeout(std::time::Duration::from_secs(5), request)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(response.status(), 401);
+    let (registration, logout) = tokio::join!(
+        setup_http_request(&client, &base, access, 1),
+        client
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(access)
+            .send(),
+    );
+    assert!(matches!(registration.status().as_u16(), 200 | 401));
+    assert_eq!(logout.unwrap().status(), 200);
     assert!(
         serverbee_server::entity::mobile_push_registration::Entity::find()
             .all(&state.db)
@@ -777,39 +866,15 @@ async fn verified_setup_revalidates_logout_after_delayed_relay_inspection() {
             .unwrap()
             .is_empty()
     );
+    assert_eq!(
+        setup_http_request(&client, &base, access, 1).await.status(),
+        401
+    );
 }
 
 #[tokio::test]
-async fn rotated_relay_grant_save_failure_remains_unconfirmed_after_restart() {
-    use axum::{Router, routing::post};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    let (_, initial, tmp) = setup_http().await;
-    let rotated = Arc::new(AtomicBool::new(false));
-    let relay_rotation = rotated.clone();
-    let relay = Router::new().route("/v1/grants/inspect", post(move |headers: HeaderMap| {
-        let rotated = relay_rotation.clone();
-        async move {
-            let is_new = rotated.load(Ordering::SeqCst);
-            let expected = if is_new { "Bearer renewed-fixture" } else { "Bearer verified-fixture" };
-            let status = if headers.get("authorization").and_then(|value| value.to_str().ok()) == Some(expected) {
-                axum::http::StatusCode::OK
-            } else { axum::http::StatusCode::FORBIDDEN };
-            (status, Json(serde_json::json!({
-                "grant_id":"fixture-grant", "key_id":"fixture-key", "device_token":"a".repeat(64),
-                "environment":"sandbox", "expires_at":Utc::now().timestamp()+86400
-            })))
-        }
-    }));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut config = initial.config.clone();
-    config.push_relay.url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move {
-        axum::serve(listener, relay).await.unwrap();
-    });
-    let state = AppState::new(initial.db.clone(), config.clone())
-        .await
-        .unwrap();
-    let base = serve_setup_state(state).await;
+async fn failed_token_rotation_preserves_previous_registration_after_restart() {
+    let (base, state, tmp) = setup_http().await;
     let client = reqwest::Client::new();
     let login = login_http(&client, &base, "member", "rotation-install").await;
     let access = login["access_token"].as_str().unwrap();
@@ -820,49 +885,68 @@ async fn rotated_relay_grant_save_failure_remains_unconfirmed_after_restart() {
         200
     );
     assert_eq!(
-        setup_http_request(&client, &base, access, 1, "verified-fixture")
-            .await
-            .status(),
+        setup_http_request(&client, &base, access, 1).await.status(),
         200
     );
-    assert_eq!(
-        status_http(&client, &base, access).await["registered"],
-        true
+    let mut replacement = content_registration(
+        &serde_json::json!({"device_token":"b".repeat(64), "environment":"production"}),
+        1,
     );
-    // The external Relay rotates, then a stale Server revision rejects the save.
-    rotated.store(true, Ordering::SeqCst);
     assert_eq!(
-        setup_http_request(&client, &base, access, 1, "renewed-fixture")
+        client
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
+            .bearer_auth(access)
+            .json(&replacement)
+            .send()
             .await
+            .unwrap()
             .status(),
         409
     );
-    let failed = status_http(&client, &base, access).await;
-    assert_eq!(failed["registered"], false);
-    assert_eq!(failed["revision"], 2);
-    assert_eq!(failed["preferences"]["enabled"], true);
-    let db = Database::connect(format!(
-        "sqlite://{}/test.db?mode=rwc",
-        tmp.path().display()
-    ))
-    .await
-    .unwrap();
-    let restarted = AppState::new(db, config).await.unwrap();
-    let base = serve_setup_state(restarted).await;
+    replacement["expected_revision"] = serde_json::json!(2);
+    state.db.execute_unprepared("CREATE TRIGGER fail_registration BEFORE UPDATE ON mobile_push_registrations WHEN NEW.device_token != OLD.device_token BEGIN SELECT RAISE(ABORT, 'registration fault'); END").await.unwrap();
     assert_eq!(
-        status_http(&client, &base, access).await["registered"],
-        false
-    );
-    // Recovery reuses the rotated grant with the freshly confirmed revision.
-    assert_eq!(
-        setup_http_request(&client, &base, access, 2, "renewed-fixture")
+        client
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
+            .bearer_auth(access)
+            .json(&replacement)
+            .send()
             .await
+            .unwrap()
+            .status(),
+        500
+    );
+    state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_registration")
+        .await
+        .unwrap();
+    let db = production_wal_db(&tmp.path().join("test.db"), 5).await;
+    let restarted = AppState::new(db, state.config.clone()).await.unwrap();
+    let row =
+        serverbee_server::entity::mobile_push_registration::Entity::find_by_id("rotation-install")
+            .one(&restarted.db)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(row.device_token, Some("a".repeat(64)));
+    assert_eq!(row.environment.as_deref(), Some("sandbox"));
+    let base = serve_setup_state(restarted).await;
+    let preserved = status_http(&client, &base, access).await;
+    assert_eq!(preserved["registered"], true);
+    assert_eq!(preserved["revision"], 2);
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
+            .bearer_auth(access)
+            .json(&replacement)
+            .send()
+            .await
+            .unwrap()
             .status(),
         200
     );
-    let recovered = status_http(&client, &base, access).await;
-    assert_eq!(recovered["registered"], true);
-    assert_eq!(recovered["revision"], 3);
+    assert_eq!(status_http(&client, &base, access).await["revision"], 3);
 }
 
 async fn serve_setup_state(state: Arc<AppState>) -> String {
@@ -883,30 +967,7 @@ async fn serve_setup_state(state: Arc<AppState>) -> String {
 
 #[tokio::test]
 async fn one_server_and_relay_url_keep_sandbox_and_production_bindings_independent() {
-    use axum::{Router, routing::post};
-    let (_, initial, _tmp) = setup_http().await;
-    let relay = Router::new().route("/v1/grants/inspect", post(|headers: HeaderMap| async move {
-        let secret = headers.get("authorization").and_then(|value| value.to_str().ok());
-        let environment = match secret {
-            Some("Bearer sandbox-fixture") => "sandbox",
-            Some("Bearer production-fixture") => "production",
-            _ => return (axum::http::StatusCode::FORBIDDEN, Json(serde_json::json!({}))),
-        };
-        (axum::http::StatusCode::OK, Json(serde_json::json!({
-            "grant_id":format!("{environment}-grant"), "key_id":format!("{environment}-key"),
-            "device_token":if environment == "sandbox" {"a".repeat(64)} else {"b".repeat(64)},
-            "environment":environment, "expires_at":Utc::now().timestamp()+86400
-        })))
-    }));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let mut config = initial.config.clone();
-    config.push_relay.url = format!("http://{}", listener.local_addr().unwrap());
-    let relay_url = config.push_relay.url.clone();
-    tokio::spawn(async move {
-        axum::serve(listener, relay).await.unwrap();
-    });
-    let state = AppState::new(initial.db.clone(), config).await.unwrap();
-    let base = serve_setup_state(state.clone()).await;
+    let (base, state, _tmp) = setup_http().await;
     let client = reqwest::Client::new();
     let sandbox = login_http(&client, &base, "admin", "sandbox-install").await;
     let production = login_http(&client, &base, "admin", "production-install").await;
@@ -919,35 +980,23 @@ async fn one_server_and_relay_url_keep_sandbox_and_production_bindings_independe
                 .status(),
             200
         );
-        assert_eq!(
-            status_http(&client, &base, access).await["relay_url"],
-            relay_url
+        assert!(
+            status_http(&client, &base, access)
+                .await
+                .get("relay_url")
+                .is_none()
         );
     }
     let registration = |environment: &str| {
         serde_json::json!({
             "expected_revision":1, "device_token":if environment == "sandbox" {"a".repeat(64)} else {"b".repeat(64)},
-            "environment":environment, "key_id":format!("{environment}-key"), "grant_id":format!("{environment}-grant"),
-            "grant_token":format!("{environment}-fixture"), "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"
+            "environment":environment, "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"
         })
     };
-    let mut wrong = registration("sandbox");
-    wrong["grant_token"] = serde_json::json!("production-fixture");
-    assert_eq!(
-        client
-            .post(format!("{base}/api/mobile/push/verified-register"))
-            .bearer_auth(dev)
-            .json(&wrong)
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        403
-    );
     for (access, environment) in [(dev, "sandbox"), (prod, "production")] {
         assert_eq!(
             client
-                .post(format!("{base}/api/mobile/push/verified-register"))
+                .post(format!("{base}/api/mobile/push/encrypted-register"))
                 .bearer_auth(access)
                 .json(&registration(environment))
                 .send()
@@ -976,8 +1025,8 @@ async fn one_server_and_relay_url_keep_sandbox_and_production_bindings_independe
             .unwrap();
         assert_eq!(row.environment.as_deref(), Some(environment));
         assert_eq!(
-            row.key_id.as_deref(),
-            Some(format!("{environment}-key").as_str())
+            row.device_token,
+            Some(if environment == "sandbox" { "a" } else { "b" }.repeat(64))
         );
         assert_eq!(row.revision, 2);
     }
@@ -1051,9 +1100,8 @@ impl DeliveryRelayFixture {
     }
 }
 
-fn content_registration(grant: &serde_json::Value, revision: i64) -> serde_json::Value {
-    serde_json::json!({"expected_revision":revision, "device_token":grant["device_token"], "environment":grant["environment"],
-        "key_id":grant["key_id"], "grant_id":grant["grant_id"], "grant_token":grant["grant_token"],
+fn content_registration(target: &serde_json::Value, revision: i64) -> serde_json::Value {
+    serde_json::json!({"expected_revision":revision, "device_token":target["device_token"], "environment":target["environment"],
         "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"})
 }
 async fn enqueue_test(
@@ -1149,7 +1197,7 @@ async fn encrypted_test_uses_real_relay_admission_transport_and_legacy_migration
     let owner_other = login_http(&client, &base, "admin", "other-owner-install").await;
     let access = owner["access_token"].as_str().unwrap();
     // Seed through actual legacy HTTP registration, including another owner
-    // and another installation of the same user, before verified migration.
+    // and another installation of the same user, before encrypted migration.
     for (login, token) in [
         (&owner, "a".repeat(64)),
         (&other, "c".repeat(64)),
@@ -1181,10 +1229,10 @@ async fn encrypted_test_uses_real_relay_admission_transport_and_legacy_migration
             .status(),
         200
     );
-    let registration = content_registration(&relay.ready["grant"], 1);
+    let registration = content_registration(&relay.ready, 1);
     assert_eq!(
         client
-            .post(format!("{base}/api/mobile/push/verified-register"))
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
             .bearer_auth(access)
             .json(&registration)
             .send()
@@ -1258,7 +1306,7 @@ async fn encrypted_test_uses_real_relay_admission_transport_and_legacy_migration
     assert_eq!(payload["aps"]["mutable-content"], 1);
     assert_eq!(provider["headers"]["apns-id"], sent["event_id"]);
     // Export only isolated fixture material for the actual Swift extension and
-    // app tap tests. Nothing uses a live grant, Apple key or production service.
+    // app tap tests. Nothing uses a live device token, Apple key or production service.
     if let Some(trace) = std::env::var_os("SERVERBEE_PUSH_TRACE_DIR") {
         std::fs::create_dir_all(&trace).unwrap();
         std::fs::write(std::path::Path::new(&trace).join("trace.json"), serde_json::to_vec_pretty(&serde_json::json!({
@@ -1292,6 +1340,25 @@ async fn encrypted_test_uses_real_relay_admission_transport_and_legacy_migration
         status_http(&client, &base, access).await["registered"],
         true
     );
+    for (status, reason) in [
+        (400, "Unregistered"),
+        (410, "BadDeviceToken"),
+        (400, "DeviceTokenNotForTopic"),
+    ] {
+        relay.control(serde_json::json!({"status":status,"reason":reason}));
+        assert_eq!(
+            post_test(&client, &base, access, 2)
+                .await
+                .json::<serde_json::Value>()
+                .await
+                .unwrap()["data"]["outcome"],
+            "permanent"
+        );
+        assert_eq!(
+            status_http(&client, &base, access).await["registered"],
+            true
+        );
+    }
     relay.control(serde_json::json!({"status":503}));
     assert_eq!(
         post_test(&client, &base, access, 2)
@@ -1436,9 +1503,9 @@ async fn late_terminal_apns_response_cannot_invalidate_replacement_token_or_key(
     );
     assert_eq!(
         client
-            .post(format!("{base}/api/mobile/push/verified-register"))
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
             .bearer_auth(&access)
-            .json(&content_registration(&relay.ready["grant"], 1))
+            .json(&content_registration(&relay.ready, 1))
             .send()
             .await
             .unwrap()
@@ -1460,19 +1527,14 @@ async fn late_terminal_apns_response_cannot_invalidate_replacement_token_or_key(
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     assert!(relay.path("provider-started.json").exists());
-    let grant: serde_json::Value = client
-        .post(format!("{relay_url}/fixture/renew"))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    let mut replacement = content_registration(&grant, 2);
+    let mut replacement = content_registration(
+        &serde_json::json!({"device_token":"b".repeat(64), "environment":"production"}),
+        2,
+    );
     replacement["content_key_id"] = serde_json::json!("33333333-3333-4333-8333-333333333333");
     assert_eq!(
         client
-            .post(format!("{base}/api/mobile/push/verified-register"))
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
             .bearer_auth(&access)
             .json(&replacement)
             .send()
@@ -1539,7 +1601,7 @@ impl serverbee_server::service::apns::LegacyApnsTransport for HeldLegacyApple {
 }
 
 #[tokio::test]
-async fn legacy_dispatch_rechecks_cached_later_recipient_after_verified_migration() {
+async fn legacy_dispatch_rechecks_cached_later_recipient_after_encrypted_migration() {
     use serverbee_server::service::apns::{ApnsConfig, ApnsService};
     let (base, state, _tmp) = setup_http().await;
     let client = reqwest::Client::new();
@@ -1658,7 +1720,7 @@ async fn legacy_dispatch_rechecks_cached_later_recipient_after_verified_migratio
         200
     );
     assert_eq!(
-        setup_http_request(&client, &base, migrating_access, 1, "verified-fixture")
+        setup_http_request(&client, &base, migrating_access, 1)
             .await
             .status(),
         200
@@ -1672,7 +1734,7 @@ async fn legacy_dispatch_rechecks_cached_later_recipient_after_verified_migratio
         200
     );
     assert_eq!(
-        setup_http_request(&client, &base, first_access, 1, "verified-fixture")
+        setup_http_request(&client, &base, first_access, 1)
             .await
             .status(),
         200
@@ -1715,9 +1777,9 @@ async fn expired_mobile_session_cannot_send_a_registered_encrypted_test() {
     );
     assert_eq!(
         client
-            .post(format!("{base}/api/mobile/push/verified-register"))
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
             .bearer_auth(access)
-            .json(&content_registration(&relay.ready["grant"], 1))
+            .json(&content_registration(&relay.ready, 1))
             .send()
             .await
             .unwrap()
@@ -1744,7 +1806,6 @@ async fn expired_mobile_session_cannot_send_a_registered_encrypted_test() {
 /// authentication, subscription writes, encryption and worker ownership are real.
 #[derive(Clone)]
 struct RecordedDelivery {
-    authorization: String,
     body: serde_json::Value,
 }
 
@@ -1764,21 +1825,16 @@ impl OutboxRelay {
         let send_status = status.clone();
         let send_requests = requests.clone();
         let app = Router::new()
-            .route("/v1/grants/inspect", post(|headers: HeaderMap| async move {
-                let secret = headers.get("authorization").unwrap().to_str().unwrap();
-                let token = if secret.ends_with("device-b") { "b" } else { "a" };
-                Json(serde_json::json!({"grant_id":secret.trim_start_matches("Bearer "),"key_id":"fixture-key",
-                    "device_token":token.repeat(64),"environment":"sandbox","expires_at":Utc::now().timestamp()+3600}))
-            }))
             .route("/v1/send", post(move |headers: HeaderMap, Json(body): Json<serde_json::Value>| {
                 let status = send_status.clone(); let requests = send_requests.clone(); let delay = send_delay.clone();
                 async move {
-                    let grant = headers.get("authorization").unwrap().to_str().unwrap();
-                    let code = if grant.ends_with("device-b") { 200 } else { status.load(std::sync::atomic::Ordering::SeqCst) };
-                    requests.lock().await.push(RecordedDelivery { authorization: grant.to_owned(), body });
-                    if !grant.ends_with("device-b") { tokio::time::sleep(std::time::Duration::from_millis(delay.load(std::sync::atomic::Ordering::SeqCst))).await; }
+                    assert!(headers.get("authorization").is_none(), "stateless Relay requests have no bearer grant");
+                    let independent = body["device_token"] == "b".repeat(64);
+                    let code = if independent { 200 } else { status.load(std::sync::atomic::Ordering::SeqCst) };
+                    requests.lock().await.push(RecordedDelivery { body });
+                    if !independent { tokio::time::sleep(std::time::Duration::from_millis(delay.load(std::sync::atomic::Ordering::SeqCst))).await; }
                     let outcome = if code == 200 { "accepted" } else { "retryable" };
-                    let reason = if code == 202 { "NetworkUnavailable" } else { "Accepted" };
+                    let reason = match code { 202 => "NetworkUnavailable", 408 => "RequestTimeout", _ => "Accepted" };
                     (StatusCode::from_u16(code).unwrap(), Json(serde_json::json!({"outcome":outcome,"reason":reason,"device_invalid":false})))
                 }
             }));
@@ -1839,13 +1895,13 @@ async fn queued_register(client: &reqwest::Client, base: &str, access: &str, dev
             .status(),
         200
     );
-    let grant = serde_json::json!({"device_token":if device=="device-b" { "b".repeat(64) } else { "a".repeat(64) },
-        "environment":"sandbox","key_id":"fixture-key","grant_id":device,"grant_token":device});
+    let target = serde_json::json!({"device_token":if device=="device-b" { "b".repeat(64) } else { "a".repeat(64) },
+        "environment":"sandbox"});
     assert_eq!(
         client
-            .post(format!("{base}/api/mobile/push/verified-register"))
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
             .bearer_auth(access)
-            .json(&content_registration(&grant, 1))
+            .json(&content_registration(&target, 1))
             .send()
             .await
             .unwrap()
@@ -1929,8 +1985,16 @@ async fn durable_outbox_deduplicates_retries_and_resumes_after_database_reopen()
     assert!(final_job.envelope.is_none());
     assert_eq!(relay.requests().await.len(), 2);
     for request in relay.requests().await {
+        assert_eq!(request.as_object().unwrap().len(), 5);
+        assert_eq!(request["device_token"], "a".repeat(64));
+        assert_eq!(request["environment"], "sandbox");
         assert_eq!(request["event_id"], event);
         assert_eq!(request["expires_at"], original.expires_at);
+        assert_eq!(
+            request["envelope"],
+            serde_json::from_str::<serde_json::Value>(original.envelope.as_deref().unwrap())
+                .unwrap()
+        );
     }
     assert_eq!(
         enqueue_test(&client, &base, access, 2, &event)
@@ -1961,39 +2025,56 @@ async fn durable_outbox_deduplicates_retries_and_resumes_after_database_reopen()
 
 #[tokio::test]
 async fn retryable_provider_reply_preserves_ciphertext_for_later_delivery() {
-    let (base, state, _tmp, relay) = queued_setup().await;
-    let client = reqwest::Client::new();
-    let login = login_http(&client, &base, "member", "transport-retry-install").await;
-    let access = login["access_token"].as_str().unwrap();
-    queued_register(&client, &base, access, "device-a").await;
-    let event = uuid::Uuid::new_v4().to_string();
-    assert_eq!(enqueue_test(&client, &base, access, 2, &event).await.status(), 200);
-    let original = outbox_job(&state, &event, "transport-retry-install").await;
-    assert!(original.envelope.is_some());
-    // A successful Relay HTTP response can still report a transient APNs
-    // disconnect. Exercise the parsed verdict, not the non-2xx fallback.
-    relay.status.store(202, std::sync::atomic::Ordering::SeqCst);
-    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
-    wait_test(&client, &base, access, &event, "retryable").await;
-    worker.abort();
-    let _ = worker.await;
-    let retry = outbox_job(&state, &event, "transport-retry-install").await;
-    assert_eq!(retry.reason, "NetworkUnavailable");
-    assert_eq!(retry.envelope, original.envelope);
-    assert_eq!(retry.expires_at, original.expires_at);
-    assert_eq!(retry.attempts, 1);
-    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
-    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
-    wait_test(&client, &base, access, &event, "accepted").await;
-    worker.abort();
-    let _ = worker.await;
-    let accepted = outbox_job(&state, &event, "transport-retry-install").await;
-    assert_eq!(accepted.attempts, 2);
-    assert!(accepted.envelope.is_none());
-    assert_eq!(relay.requests().await.len(), 2);
-    for request in relay.requests().await {
-        assert_eq!(request["event_id"], event);
-        assert_eq!(request["expires_at"], original.expires_at);
+    for (http_status, expected_reason) in [(202, "NetworkUnavailable"), (408, "RequestTimeout")] {
+        let (base, state, _tmp, relay) = queued_setup().await;
+        let client = reqwest::Client::new();
+        let login = login_http(&client, &base, "member", "transport-retry-install").await;
+        let access = login["access_token"].as_str().unwrap();
+        queued_register(&client, &base, access, "device-a").await;
+        let event = uuid::Uuid::new_v4().to_string();
+        assert_eq!(
+            enqueue_test(&client, &base, access, 2, &event)
+                .await
+                .status(),
+            200
+        );
+        let original = outbox_job(&state, &event, "transport-retry-install").await;
+        assert!(original.envelope.is_some());
+        // Both a parsed provider verdict and a Workers request-body timeout must
+        // preserve the original encrypted work for a later successful attempt.
+        relay
+            .status
+            .store(http_status, std::sync::atomic::Ordering::SeqCst);
+        let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+        wait_test(&client, &base, access, &event, "retryable").await;
+        worker.abort();
+        let _ = worker.await;
+        let retry = outbox_job(&state, &event, "transport-retry-install").await;
+        assert_eq!(retry.reason, expected_reason);
+        assert_eq!(retry.envelope, original.envelope);
+        assert_eq!(retry.expires_at, original.expires_at);
+        assert_eq!(retry.attempts, 1);
+        relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+        let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+        wait_test(&client, &base, access, &event, "accepted").await;
+        worker.abort();
+        let _ = worker.await;
+        let accepted = outbox_job(&state, &event, "transport-retry-install").await;
+        assert_eq!(accepted.attempts, 2);
+        assert!(accepted.envelope.is_none());
+        assert_eq!(relay.requests().await.len(), 2);
+        for request in relay.requests().await {
+            assert_eq!(request.as_object().unwrap().len(), 5);
+            assert_eq!(request["device_token"], "a".repeat(64));
+            assert_eq!(request["environment"], "sandbox");
+            assert_eq!(request["event_id"], event);
+            assert_eq!(request["expires_at"], original.expires_at);
+            assert_eq!(
+                request["envelope"],
+                serde_json::from_str::<serde_json::Value>(original.envelope.as_deref().unwrap())
+                    .unwrap()
+            );
+        }
     }
 }
 
@@ -2062,7 +2143,7 @@ async fn queued_delivery_revalidates_disable_logout_revocation_expiry_role_passw
         "password",
         "user",
         "replacement",
-        "grant_expiry",
+        "missing_device_token",
     ] {
         let (base, state, _tmp, relay) = queued_setup().await;
         let client = reqwest::Client::new();
@@ -2170,12 +2251,12 @@ async fn queued_delivery_revalidates_disable_logout_revocation_expiry_role_passw
                     body["error"]["code"], body["error"]["message"]
                 );
             }
-            "grant_expiry" => {
+            "missing_device_token" => {
                 use serverbee_server::entity::mobile_push_registration as registration;
                 registration::Entity::update_many()
                     .col_expr(
-                        registration::Column::GrantExpiresAt,
-                        sea_orm::sea_query::Expr::value(Utc::now() - ChronoDuration::seconds(1)),
+                        registration::Column::DeviceToken,
+                        sea_orm::sea_query::Expr::value(Option::<String>::None),
                     )
                     .filter(registration::Column::InstallationId.eq("revoked-install"))
                     .exec(&state.db)
@@ -2183,12 +2264,13 @@ async fn queued_delivery_revalidates_disable_logout_revocation_expiry_role_passw
                     .unwrap();
             }
             "replacement" => {
-                let grant = serde_json::json!({"device_token":"b".repeat(64),"environment":"sandbox","key_id":"fixture-key","grant_id":"device-b","grant_token":"device-b"});
+                let target =
+                    serde_json::json!({"device_token":"b".repeat(64),"environment":"sandbox"});
                 assert_eq!(
                     client
-                        .post(format!("{base}/api/mobile/push/verified-register"))
+                        .post(format!("{base}/api/mobile/push/encrypted-register"))
                         .bearer_auth(access)
-                        .json(&content_registration(&grant, 2))
+                        .json(&content_registration(&target, 2))
                         .send()
                         .await
                         .unwrap()
@@ -2314,71 +2396,54 @@ async fn bounded_network_timeout_keeps_http_admission_and_other_device_responsiv
 }
 
 #[tokio::test]
-async fn revoked_actual_relay_grant_stops_queued_delivery_without_erasing_device_registration() {
-    let relay = DeliveryRelayFixture::start().await;
-    let (_, initial, _tmp) = setup_http().await;
-    let mut config = initial.config.clone();
-    config.push_relay.url = relay.ready["url"].as_str().unwrap().to_owned();
-    let state = AppState::new(initial.db.clone(), config).await.unwrap();
-    let base = serve_outbox_http(state.clone()).await;
-    let client = reqwest::Client::new();
-    let login = login_http(&client, &base, "member", "revoked-grant-install").await;
-    let access = login["access_token"].as_str().unwrap();
-    assert_eq!(
-        preferences_http(&client, &base, access, 0, intent(false, true))
-            .await
-            .status(),
-        200
-    );
-    assert_eq!(
-        client
-            .post(format!("{base}/api/mobile/push/verified-register"))
-            .bearer_auth(access)
-            .json(&content_registration(&relay.ready["grant"], 1))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        200
-    );
-    let event = uuid::Uuid::new_v4().to_string();
-    assert_eq!(
-        enqueue_test(&client, &base, access, 2, &event)
-            .await
-            .status(),
-        200
-    );
-    // Real assertion-driven renewal revokes the old grant at Relay admission.
-    assert_eq!(
-        client
-            .post(format!(
-                "{}/fixture/renew",
-                relay.ready["url"].as_str().unwrap()
-            ))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        200
-    );
-    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
-    wait_test(&client, &base, access, &event, "permanent").await;
-    worker.abort();
-    let _ = worker.await;
-    assert!(!relay.path("provider-request.json").exists());
-    let row = serverbee_server::entity::mobile_push_registration::Entity::find_by_id(
-        "revoked-grant-install",
-    )
-    .one(&state.db)
-    .await
-    .unwrap()
-    .unwrap();
-    assert_eq!(row.revision, 2);
-    assert!(row.grant_token.is_some());
-    assert_eq!(
-        status_http(&client, &base, access).await["registered"],
-        false
-    );
+async fn incomplete_registration_blocks_status_admission_and_queued_delivery() {
+    for (column, value) in [
+        ("device_token", None),
+        ("device_token", Some("invalid")),
+        ("environment", None),
+        ("content_key_id", Some("invalid")),
+        ("content_key", Some("AA==")),
+        ("deployment_id", Some("https://")),
+    ] {
+        let (base, state, _tmp, relay) = queued_setup().await;
+        let client = reqwest::Client::new();
+        let login = login_http(&client, &base, "member", "incomplete-install").await;
+        let access = login["access_token"].as_str().unwrap();
+        queued_register(&client, &base, access, "device-a").await;
+        let event = uuid::Uuid::new_v4().to_string();
+        assert_eq!(
+            enqueue_test(&client, &base, access, 2, &event)
+                .await
+                .status(),
+            200
+        );
+        state.db.execute(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            format!("UPDATE mobile_push_registrations SET {column}=? WHERE installation_id='incomplete-install'"),
+            [value.map(str::to_owned).into()],
+        )).await.unwrap();
+        let status = status_http(&client, &base, access).await;
+        assert_eq!(status["registered"], false, "{column}");
+        assert_eq!(status["test_available"], false, "{column}");
+        assert_eq!(
+            enqueue_test(&client, &base, access, 2, &uuid::Uuid::new_v4().to_string())
+                .await
+                .status(),
+            403
+        );
+        let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+        let terminal = wait_test(&client, &base, access, &event, "permanent").await;
+        worker.abort();
+        let _ = worker.await;
+        assert_eq!(terminal["reason"], "Ineligible");
+        assert!(
+            outbox_job(&state, &event, "incomplete-install")
+                .await
+                .envelope
+                .is_none()
+        );
+        assert!(relay.requests().await.is_empty());
+    }
 }
 
 #[tokio::test]

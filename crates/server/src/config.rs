@@ -841,9 +841,65 @@ mod tests {
     }
 }
 
-/// The Server holds device-scoped grants, never Apple signing credentials.
+/// The Server sends device targets and encrypted envelopes, never Apple signing credentials.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct PushRelayConfig {
     #[serde(default)]
     pub url: String,
+}
+
+impl PushRelayConfig {
+    /// A configured base URL permits delivery; reachability is handled by the
+    /// durable outbox. Plain HTTP is reserved for loopback integration fixtures.
+    pub fn is_configured(&self) -> bool {
+        self.url == self.url.trim()
+            && url::Url::parse(&self.url).is_ok_and(|url| {
+                url.host_str().is_some()
+                    && url.username().is_empty()
+                    && url.password().is_none()
+                    && url.query().is_none()
+                    && url.fragment().is_none()
+                    && (url.scheme() == "https"
+                        || (url.scheme() == "http"
+                            && url.host_str() == Some("127.0.0.1")
+                            && url.port().is_some()))
+            })
+    }
+}
+
+#[cfg(test)]
+mod push_relay_config_tests {
+    use super::PushRelayConfig;
+
+    #[test]
+    fn only_valid_https_or_loopback_fixture_base_urls_enable_relay() {
+        assert!(!PushRelayConfig::default().is_configured());
+        for value in [
+            "https://push.serverbee.test",
+            "https://push.serverbee.test/prefix/",
+            "http://127.0.0.1:12345",
+        ] {
+            assert!(
+                PushRelayConfig { url: value.into() }.is_configured(),
+                "{value}"
+            );
+        }
+        for value in [
+            "",
+            "https://",
+            "https:///",
+            "http://push.serverbee.test",
+            "http://127.0.0.1.evil.test:12345",
+            "http://127.0.0.1:invalid",
+            "https://user:secret@push.serverbee.test",
+            "https://push.serverbee.test?key=secret",
+            "https://push.serverbee.test#fragment",
+            " https://push.serverbee.test",
+        ] {
+            assert!(
+                !PushRelayConfig { url: value.into() }.is_configured(),
+                "{value}"
+            );
+        }
+    }
 }

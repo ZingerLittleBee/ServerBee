@@ -22,7 +22,7 @@ use crate::{
 const SEND_TIMEOUT: u64 = 15;
 const LEASE_SECONDS: i64 = 30;
 
-/// Immutable recipient identity, without keys, grants or delivery credentials.
+/// Immutable recipient identity, without keys or delivery credentials.
 #[derive(Serialize, Deserialize)]
 pub struct SecurityPushRecipient {
     installation_id: String,
@@ -92,7 +92,7 @@ pub async fn prepare_security(
 }
 
 /// Materialize the original intent atomically across all recipients. Recheck
-/// current ownership/session/revision/role/subscription/grant before encryption;
+/// current ownership/session/revision/role/subscription/registration before encryption;
 /// a replaced registration cannot inherit an older recipient's intent.
 pub async fn enqueue_security(
     txn: &sea_orm::DatabaseTransaction,
@@ -234,7 +234,7 @@ pub(crate) async fn eligible(
         r.user_id == job.user_id
             && r.mobile_session_id == job.mobile_session_id
             && r.revision == job.registration_revision
-            && r.enabled
+            && r.is_registered()
             && match (job.category.as_str(), task_success) {
                 ("test", None) => true,
                 ("alert", None) => r.alerts,
@@ -245,9 +245,6 @@ pub(crate) async fn eligible(
                 ("security", None) => r.security && job.recipient_role == "admin",
                 _ => false,
             }
-            && r.content_key.is_some()
-            && r.grant_token.is_some()
-            && r.grant_expires_at.is_some_and(|e| e > now)
     }) else {
         return Ok(None);
     };
@@ -341,10 +338,10 @@ async fn deliver_next(state: &AppState) -> Result<(), AppError> {
     };
     if delivery.device_invalid && delivery.reason == "Unregistered" && outcome == "permanent" {
         // CAS all sending identity fields: late terminal responses cannot erase
-        // a new token, key or renewed grant, even while this send is outstanding.
+        // a new token, environment, key or login while this send is outstanding.
         txn.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
-            "UPDATE mobile_push_registrations SET grant_token=NULL, revision=revision+1 WHERE installation_id=? AND user_id=? AND mobile_session_id=? AND revision=? AND content_key_id=? AND grant_token=?",
-            [row.installation_id.into(), row.user_id.into(), row.mobile_session_id.into(), row.revision.into(), row.content_key_id.into(), row.grant_token.into()])).await?;
+            "UPDATE mobile_push_registrations SET device_token=NULL, revision=revision+1 WHERE installation_id=? AND user_id=? AND mobile_session_id=? AND revision=? AND device_token=? AND environment=? AND content_key_id=? AND content_key=? AND deployment_id=?",
+            [row.installation_id.into(), row.user_id.into(), row.mobile_session_id.into(), row.revision.into(), row.device_token.into(), row.environment.into(), row.content_key_id.into(), row.content_key.into(), row.deployment_id.into()])).await?;
     }
     let backoff = (2_i64.pow((job.attempts + 1).min(8) as u32)).min(300);
     txn.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
@@ -361,7 +358,7 @@ async fn send(state: &AppState, job: &outbox::Model, row: &registration::Model) 
         device_invalid: false,
     };
     let url = state.config.push_relay.url.trim_end_matches('/');
-    if !(url.starts_with("https://") || url.starts_with("http://127.0.0.1:")) {
+    if !state.config.push_relay.is_configured() {
         return retry();
     }
     let Some(envelope) = job
@@ -382,8 +379,8 @@ async fn send(state: &AppState, job: &outbox::Model, row: &registration::Model) 
     else {
         return retry();
     };
-    let result = client.post(format!("{url}/v1/send")).bearer_auth(row.grant_token.as_deref().unwrap_or_default())
-        .json(&serde_json::json!({"event_id":job.event_id,"expires_at":job.expires_at,"envelope":envelope})).send().await;
+    let result = client.post(format!("{url}/v1/send"))
+        .json(&serde_json::json!({"device_token":row.device_token,"environment":row.environment,"event_id":job.event_id,"expires_at":job.expires_at,"envelope":envelope})).send().await;
     match result {
         Ok(reply) if reply.status().is_success() => {
             match reply.json::<RelayDelivery>().await {
@@ -407,6 +404,7 @@ async fn send(state: &AppState, job: &outbox::Model, row: &registration::Model) 
                         | "Shutdown"
                         | "ProviderUnavailable"
                         | "NetworkUnavailable"
+                        | "RequestTimeout"
                         | "DeviceOrEnvironmentMismatch"
                         | "ProviderConfigurationOrPayload"
                         | "PayloadTooLarge" => verdict.reason,
@@ -423,6 +421,13 @@ async fn send(state: &AppState, job: &outbox::Model, row: &registration::Model) 
                 _ => retry(),
             }
         }
+        // Workers may time out while receiving the request body. This is a
+        // transient HTTP failure, so retain the original ciphertext and TTL.
+        Ok(reply) if reply.status().as_u16() == 408 => RelayDelivery {
+            outcome: "retryable".into(),
+            reason: "RequestTimeout".into(),
+            device_invalid: false,
+        },
         Ok(reply) if reply.status().as_u16() == 503 => match reply.json::<RelayDelivery>().await {
             Ok(verdict)
                 if verdict.outcome == "permanent" && verdict.reason == "RelayNotConfigured" =>
@@ -438,7 +443,7 @@ async fn send(state: &AppState, job: &outbox::Model, row: &registration::Model) 
         Ok(reply) if reply.status().is_client_error() && reply.status().as_u16() != 429 => {
             RelayDelivery {
                 outcome: "permanent".into(),
-                reason: "RelayAuthorizationOrPayload".into(),
+                reason: "RelayPayloadRejected".into(),
                 device_invalid: false,
             }
         }

@@ -27,7 +27,7 @@ the Server/app/Relay revisions and APNs environment with each observation.
   cold/warm callback routing (including already-presented notifications tapped
   after 30 minutes), expired extension presentation, current-key rejection of old
   account/deployment/installation/login envelopes and current-role/target validation, substituting
-  authenticated HTTP/system boundaries. They do not establish real App Attest,
+  authenticated HTTP/system boundaries. They do not establish live APNs provider acceptance,
   APNs receipt, device presentation or observed navigation.
 - Run the shared Rust/Swift security envelope vector and English/zh-Hans
   localization checks. Regenerate the ignored Xcode project with `xcodegen generate`.
@@ -35,7 +35,7 @@ the Server/app/Relay revisions and APNs environment with each observation.
 ## Real-device observations (pending)
 
 1. Enable **Security rule matches** as an administrator. Confirm the saved
-   preference, genuine App Attest grant and independent permission status.
+   preference, authenticated Server registration and independent permission status.
    A member must have no security subscription control and Server saves must
    reject that category even if the cached role is stale.
 2. With no notification group, admit SSH new-IP login, brute-force and port-scan

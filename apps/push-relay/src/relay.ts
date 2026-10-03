@@ -1,338 +1,223 @@
-import { Database } from 'bun:sqlite'
-import { randomBytes, randomUUID } from 'node:crypto'
-import type { ApnsTransport } from './apns'
-import { assertion, attest, type Environment, hash, requireValue, type Trust } from './attestation'
+import { type ApnsConfig, type ApnsFetch, ApnsTransport, type SendRequest, verdict } from './apns'
+import { BodyError, cancelBody, deadline, readBytes } from './body'
+import { cloudflareClientIp, WindowLimiter } from './limits'
 
-const tokenPattern = /^[a-f0-9]{64}$/
-const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
-const identityPattern = /^[a-f0-9]{64}$/
-const noncePattern = /^[A-Za-z0-9+/]{16}$/
-const ciphertextPattern = /^[A-Za-z0-9+/]+={0,2}$/
-const keyPattern = /^[A-Za-z0-9+/]{43}=$/
+export interface Env {
+  APNS_ENVIRONMENTS?: string
+  APNS_KEY_ID: string
+  APNS_PRIVATE_KEY: string
+  APNS_TEAM_ID: string
+  APNS_TOPIC: string
+}
+const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
+const hex64 = /^[a-f0-9]{64}$/
+const base64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+const keyIdPattern = /^[A-Z0-9]{10}$/
+const topicPattern = /^[A-Za-z0-9.-]{1,255}$/
+const lengthPattern = /^\d+$/
+const MAX_REQUEST_BYTES = 8192
+export const LIMITS = { ip: 120, target: 60, isolate: 600, entries: 4096, concurrency: 32 } as const
 
-class BodyTooLarge extends Error {}
-
-async function readBody(request: Request): Promise<Record<string, unknown>> {
-  const reader = request.body?.getReader()
-  requireValue(reader, 'Missing body')
-  const chunks: Uint8Array[] = []
-  let size = 0
-  for (;;) {
-    const { value, done } = await reader.read()
-    if (done) {
-      break
-    }
-    size += value.byteLength
-    if (size > 32_768) {
-      await reader.cancel()
-      throw new BodyTooLarge()
-    }
-    chunks.push(value)
+function object(value: unknown, keys: string[]): value is Record<string, unknown> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key))
+  )
+}
+function canonicalBase64(value: unknown, min: number, max: number): boolean {
+  if (typeof value !== 'string' || value.length > Math.ceil(max / 3) * 4 || !base64.test(value)) {
+    return false
   }
-  const body: unknown = JSON.parse(Buffer.concat(chunks).toString())
-  requireValue(body && typeof body === 'object' && !Array.isArray(body), 'Invalid request body')
-  return body as Record<string, unknown>
+  const decoded = atob(value)
+  return decoded.length >= min && decoded.length <= max && btoa(decoded) === value
 }
-
-interface Challenge {
-  action: string
-  client_data: string
-  device_token: string
-  environment: Environment
-  expires_at: number
-  grant_id: string | null
-  id: string
-  key_id: string
-}
-interface Key {
-  counter: number
-  environment: Environment
-  key_id: string
-  public_key: string
-}
-interface Grant {
-  device_token: string
-  environment: Environment
-  expires_at: number
-  grant_id: string
-  key_id: string
-  revoked: number
-  token_hash: string
-}
-
-/** Admission and delivery share persistent, device-scoped grants. */
-export class Relay {
-  readonly db: Database
-  private readonly trust: Trust
-  private readonly environments: readonly Environment[]
-  private readonly apns?: ApnsTransport
-  private readonly clock: () => number
-
-  constructor(
-    path: string,
-    trust: Trust & { environments?: readonly Environment[] },
-    clock: () => number = () => Math.floor(Date.now() / 1000),
-    apns?: ApnsTransport
+export function validate(value: unknown, now: number): SendRequest | undefined {
+  if (!object(value, ['device_token', 'environment', 'event_id', 'expires_at', 'envelope'])) {
+    return undefined
+  }
+  if (
+    typeof value.device_token !== 'string' ||
+    !hex64.test(value.device_token) ||
+    (value.environment !== 'sandbox' && value.environment !== 'production') ||
+    typeof value.event_id !== 'string' ||
+    !uuid.test(value.event_id) ||
+    typeof value.expires_at !== 'number' ||
+    !Number.isSafeInteger(value.expires_at) ||
+    value.expires_at <= 0 ||
+    value.expires_at > now + 1800
   ) {
-    this.apns = apns
-    this.trust = trust
-    this.environments = trust.environments ?? [trust.environment]
-    requireValue(
-      this.environments.length > 0 && this.environments.every((value) => value === 'sandbox' || value === 'production'),
-      'Invalid admission environments'
-    )
-    this.clock = clock
-    this.db = new Database(path, { create: true, strict: true })
-    this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS challenges (
-        id TEXT PRIMARY KEY, client_data TEXT NOT NULL, action TEXT NOT NULL,
-        key_id TEXT NOT NULL, device_token TEXT NOT NULL, environment TEXT NOT NULL,
-        expires_at INTEGER NOT NULL, grant_id TEXT
-      );
-      CREATE TABLE IF NOT EXISTS keys (
-        key_id TEXT PRIMARY KEY, public_key TEXT NOT NULL, environment TEXT NOT NULL,
-        counter INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS grants (
-        grant_id TEXT PRIMARY KEY, key_id TEXT NOT NULL, device_token TEXT NOT NULL,
-        environment TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, expires_at INTEGER NOT NULL,
-        revoked INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS request_limits (source TEXT PRIMARY KEY, window INTEGER NOT NULL, count INTEGER NOT NULL);`)
+    return undefined
   }
-
-  private limited(source: string, now: number) {
-    return this.db.transaction(() => {
-      this.db.run('DELETE FROM request_limits WHERE window < ?', [now - 60])
-      this.db.run(
-        `INSERT INTO request_limits VALUES (?, ?, 1)
-        ON CONFLICT(source) DO UPDATE SET count=count+1`,
-        [source, now]
-      )
-      const row = this.db
-        .query<{ count: number }, [string]>('SELECT count FROM request_limits WHERE source=?')
-        .get(source)
-      return !row || row.count > 30
-    })()
+  const envelope = value.envelope
+  if (
+    !object(envelope, ['version', 'key_id', 'identity', 'nonce', 'ciphertext']) ||
+    envelope.version !== 1 ||
+    typeof envelope.key_id !== 'string' ||
+    !uuid.test(envelope.key_id) ||
+    typeof envelope.identity !== 'string' ||
+    !hex64.test(envelope.identity) ||
+    !canonicalBase64(envelope.nonce, 12, 12) ||
+    !canonicalBase64(envelope.ciphertext, 16, 2070)
+  ) {
+    return undefined
   }
+  return value as unknown as SendRequest
+}
 
-  private grant(request: Request, now: number): Grant {
-    const authorization = request.headers.get('authorization')
-    const secret = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null
-    requireValue(secret && secret.length < 256, 'Missing grant')
-    const grant = this.db
-      .query<Grant, [string]>('SELECT * FROM grants WHERE token_hash=? AND revoked=0')
-      .get(hash(secret).toString('hex'))
-    requireValue(
-      grant && grant.expires_at > now && this.environments.includes(grant.environment),
-      'Expired, revoked or disabled grant'
-    )
-    return grant
+function allowedEnvironments(env: Env): string[] | undefined {
+  const raw = env.APNS_ENVIRONMENTS ?? 'sandbox,production'
+  if (typeof raw !== 'string' || raw.length > 64) {
+    return undefined
   }
-
-  private inspect(request: Request, now: number): Response {
-    const grant = this.grant(request, now)
-    return Response.json(
-      {
-        grant_id: grant.grant_id,
-        key_id: grant.key_id,
-        device_token: grant.device_token,
-        environment: grant.environment,
-        expires_at: grant.expires_at
-      },
-      { headers: { 'Cache-Control': 'no-store' } }
-    )
+  const values = raw.split(',').map((value) => value.trim())
+  return values.length >= 1 &&
+    values.length <= 2 &&
+    values.every((value) => value === 'sandbox' || value === 'production') &&
+    new Set(values).size === values.length
+    ? values
+    : undefined
+}
+function configuration(env: Env): ApnsConfig | undefined {
+  if (
+    !(keyIdPattern.test(env.APNS_TEAM_ID ?? '') && keyIdPattern.test(env.APNS_KEY_ID ?? '')) ||
+    typeof env.APNS_PRIVATE_KEY !== 'string' ||
+    env.APNS_PRIVATE_KEY.length > 4096 ||
+    typeof env.APNS_TOPIC !== 'string' ||
+    !topicPattern.test(env.APNS_TOPIC)
+  ) {
+    return undefined
   }
+  return { teamId: env.APNS_TEAM_ID, keyId: env.APNS_KEY_ID, privateKey: env.APNS_PRIVATE_KEY, topic: env.APNS_TOPIC }
+}
+function json(status: number, outcome: Parameters<typeof verdict>[0], reason: string, headers = {}): Response {
+  return Response.json(verdict(outcome, reason), { status, headers: { 'Cache-Control': 'no-store', ...headers } })
+}
 
-  private createChallenge(body: Record<string, unknown>, now: number): Response {
-    requireValue(['attest', 'renew', 'revoke'].includes(String(body.action)), 'Invalid action')
-    const environment = body.environment
-    requireValue(environment === 'sandbox' || environment === 'production', 'Invalid environment')
-    requireValue(this.environments.includes(environment), 'Environment mismatch')
-    requireValue(typeof body.device_token === 'string' && tokenPattern.test(body.device_token), 'Invalid token')
-    requireValue(typeof body.key_id === 'string' && keyPattern.test(body.key_id), 'Invalid key ID')
-    requireValue(
-      body.action !== 'revoke' || (typeof body.grant_id === 'string' && body.grant_id.length <= 64),
-      'Missing grant scope'
+async function readRequest(
+  request: Request,
+  now: () => number,
+  environments: string[],
+  timeoutMs: number
+): Promise<SendRequest | Response> {
+  let parsed: unknown
+  try {
+    const bytes = await deadline(timeoutMs, request.signal, (signal) =>
+      readBytes(request.body, MAX_REQUEST_BYTES, signal)
     )
-    const keyId = body.key_id
-    const deviceToken = body.device_token
-    const grantScope = body.action === 'revoke' ? String(body.grant_id) : null
-    const id = randomUUID()
-    const clientData = JSON.stringify({
-      nonce: randomBytes(32).toString('base64'),
-      challenge_id: id,
-      action: body.action,
-      key_id: keyId,
-      device_token: deviceToken,
-      environment: body.environment,
-      grant_id: grantScope
-    })
-    this.db.transaction(() => {
-      this.db.run('DELETE FROM challenges WHERE expires_at <= ?', [now])
-      const pending = this.db.query<{ count: number }, []>('SELECT COUNT(*) AS count FROM challenges').get()
-      requireValue(pending && pending.count < 10_000, 'Too many pending challenges')
-      this.db.run('INSERT INTO challenges VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-        id,
-        clientData,
-        String(body.action),
-        keyId,
-        deviceToken,
-        environment,
-        now + 300,
-        grantScope
-      ])
-    })()
-    return Response.json(
-      { challenge_id: id, client_data: Buffer.from(clientData).toString('base64') },
-      { headers: { 'Cache-Control': 'no-store' } }
-    )
-  }
-
-  private async deliver(request: Request, now: number): Promise<Response> {
-    const grant = this.grant(request, now)
-    const body = await readBody(request)
-    requireValue(
-      Object.keys(body).every((key) => ['event_id', 'expires_at', 'envelope'].includes(key)),
-      'Invalid delivery fields'
-    )
-    requireValue(typeof body.event_id === 'string' && uuidPattern.test(body.event_id), 'Invalid event ID')
-    requireValue(
-      typeof body.expires_at === 'number' && Number.isInteger(body.expires_at) && body.expires_at <= now + 1800,
-      'Invalid expiry'
-    )
-    const envelope = body.envelope as Record<string, unknown> | undefined
-    requireValue(
-      envelope && Object.keys(envelope).sort().join(',') === 'ciphertext,identity,key_id,nonce,version',
-      'Invalid envelope'
-    )
-    requireValue(
-      envelope.version === 1 && typeof envelope.key_id === 'string' && uuidPattern.test(envelope.key_id),
-      'Unsupported envelope'
-    )
-    requireValue(typeof envelope.identity === 'string' && identityPattern.test(envelope.identity), 'Invalid binding')
-    requireValue(typeof envelope.nonce === 'string' && noncePattern.test(envelope.nonce), 'Invalid nonce')
-    requireValue(
-      typeof envelope.ciphertext === 'string' &&
-        envelope.ciphertext.length <= 2760 &&
-        ciphertextPattern.test(envelope.ciphertext) &&
-        Buffer.from(envelope.ciphertext, 'base64').length >= 16,
-      'Invalid ciphertext'
-    )
-    // Revalidate after streamed body reads: rotation/revocation may happen
-    // during an upload. The caller cannot select a token or environment.
-    const current = this.grant(request, this.clock())
-    requireValue(current.grant_id === grant.grant_id, 'Changed grant')
-    if (!this.apns) {
-      return Response.json(
-        { outcome: 'permanent', reason: 'RelayNotConfigured', device_invalid: false },
-        { status: 503 }
-      )
+    parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes))
+  } catch (error) {
+    if (error instanceof BodyError && error.kind === 'too_large') {
+      return json(413, 'permanent', 'RequestTooLarge')
     }
-    return Response.json(
-      await this.apns.send(current.device_token, current.environment, body.event_id, body.expires_at, envelope),
-      { headers: { 'Cache-Control': 'no-store' } }
-    )
-  }
-
-  async handle(request: Request, source: string): Promise<Response> {
-    const now = this.clock()
-    if (this.limited(source, now)) {
-      return Response.json({ error: 'Rate limited' }, { status: 429 })
+    if (error instanceof BodyError && error.kind === 'timeout') {
+      return json(408, 'retryable', 'RequestTimeout')
     }
-    try {
-      const path = new URL(request.url).pathname
+    return json(400, 'permanent', 'InvalidRequest')
+  }
+  const body = validate(parsed, Math.floor(now() / 1000))
+  if (!body) {
+    return json(400, 'permanent', 'InvalidRequest')
+  }
+  if (!environments.includes(body.environment)) {
+    return json(400, 'permanent', 'EnvironmentDisabled')
+  }
+  if (body.expires_at <= Math.floor(now() / 1000)) {
+    return json(200, 'expired', 'Expired')
+  }
+  return body
+}
+
+function requestHeadersError(request: Request): Response | undefined {
+  if (
+    request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json' ||
+    (request.headers.has('content-encoding') && request.headers.get('content-encoding') !== 'identity')
+  ) {
+    return json(415, 'permanent', 'UnsupportedMediaType')
+  }
+  const length = request.headers.get('content-length')
+  if (length && (!lengthPattern.test(length) || Number(length) > MAX_REQUEST_BYTES)) {
+    return json(413, 'permanent', 'RequestTooLarge')
+  }
+  return undefined
+}
+
+/** Test seams are local imports only, never bindings or client-selectable options. */
+export function createRelay(
+  options: {
+    network?: ApnsFetch
+    now?: () => number
+    clientIp?: (request: Request) => string
+    bodyTimeoutMs?: number
+    apnsTimeoutMs?: number
+  } = {}
+) {
+  const now = options.now ?? Date.now
+  const clientIp = options.clientIp ?? cloudflareClientIp
+  const ips = new WindowLimiter(LIMITS.entries)
+  const targets = new WindowLimiter(LIMITS.entries)
+  const global = new WindowLimiter(1)
+  let active = 0
+  let transport: { config: ApnsConfig; apns: ApnsTransport } | undefined
+  function sender(config: ApnsConfig): ApnsTransport {
+    if (
+      !transport ||
+      Object.keys(config).some((key) => config[key as keyof ApnsConfig] !== transport?.config[key as keyof ApnsConfig])
+    ) {
+      transport = {
+        config,
+        apns: new ApnsTransport(config, options.network, () => Math.floor(now() / 1000), options.apnsTimeoutMs)
+      }
+    }
+    return transport.apns
+  }
+  return {
+    async fetch(request: Request, env: Env): Promise<Response> {
+      const reject = (status: number, outcome: Parameters<typeof verdict>[0], reason: string, headers = {}) => {
+        cancelBody(request.body)
+        return json(status, outcome, reason, headers)
+      }
+      if (new URL(request.url).pathname !== '/v1/send') {
+        return reject(404, 'permanent', 'NotFound')
+      }
       if (request.method !== 'POST') {
-        return new Response(null, { status: 404 })
+        return reject(405, 'permanent', 'MethodNotAllowed', { Allow: 'POST' })
       }
-      if (path === '/v1/grants/inspect') {
-        return this.inspect(request, now)
+      if (active >= LIMITS.concurrency) {
+        return reject(503, 'retryable', 'RelayBusy', { 'Retry-After': '1' })
       }
-      if (path === '/v1/send') {
-        return await this.deliver(request, now)
+      if (!(global.allow('isolate', LIMITS.isolate, now()) && ips.allow(clientIp(request), LIMITS.ip, now()))) {
+        return reject(429, 'retryable', 'RateLimited', { 'Retry-After': '60' })
       }
-      if (!['/v1/challenges', '/v1/attest', '/v1/renew', '/v1/revoke'].includes(path)) {
-        return new Response(null, { status: 404 })
+      const config = configuration(env)
+      const environments = allowedEnvironments(env)
+      if (!(config && environments)) {
+        return reject(503, 'permanent', 'RelayNotConfigured')
       }
-      const body = await readBody(request)
-      if (path === '/v1/challenges') {
-        return this.createChallenge(body, now)
+      const headerError = requestHeadersError(request)
+      if (headerError) {
+        cancelBody(request.body)
+        return headerError
       }
-      requireValue(typeof body.challenge_id === 'string' && typeof body.proof === 'string', 'Missing proof')
-      // Consume even invalid attempts; synchronous transactions serialize replay.
-      const challenge = this.db
-        .query<Challenge, [string]>('DELETE FROM challenges WHERE id=? RETURNING *')
-        .get(body.challenge_id)
-      requireValue(challenge && challenge.expires_at > now, 'Expired or consumed challenge')
-      requireValue(path === `/v1/${challenge.action}`, 'Challenge action mismatch')
-      const clientData = Buffer.from(challenge.client_data)
-      // Select cryptographic expectations from the persisted one-time challenge,
-      // never from a proof body or from a caller's subsequent environment claim.
-      requireValue(this.environments.includes(challenge.environment), 'Environment disabled')
-      const trust = { ...this.trust, environment: challenge.environment }
-      let publicKey: string | undefined
-      let nextCounter: number | undefined
-      if (challenge.action === 'attest') {
-        publicKey = attest(body.proof, challenge.key_id, clientData, trust)
-      } else {
-        const key = this.db.query<Key, [string]>('SELECT * FROM keys WHERE key_id=?').get(challenge.key_id)
-        requireValue(key && key.environment === challenge.environment, 'Unknown device key')
-        // Revocation only removes a scoped grant; legacy authenticated proofs
-        // must still work after an operator enables strict issuance evidence.
-        const assertionTrust = challenge.action === 'revoke' ? { ...trust, requireExtensions: false } : trust
-        nextCounter = assertion(body.proof, key.public_key, key.counter, clientData, assertionTrust)
-      }
-      const token = randomBytes(32).toString('base64url')
-      const grantId = randomUUID()
-      this.db.transaction(() => {
-        if (publicKey) {
-          // A key cannot be re-attested or reset to counter zero.
-          this.db.run('INSERT INTO keys VALUES (?, ?, ?, 0)', [challenge.key_id, publicKey, challenge.environment])
-        } else {
-          const result = this.db.run('UPDATE keys SET counter=? WHERE key_id=? AND counter < ?', [
-            nextCounter ?? 0,
-            challenge.key_id,
-            nextCounter ?? 0
-          ])
-          requireValue(result.changes === 1, 'Replayed assertion')
+      active += 1
+      try {
+        const body = await readRequest(request, now, environments, options.bodyTimeoutMs ?? 5000)
+        if (body instanceof Response) {
+          return body
         }
-        if (challenge.action === 'revoke') {
-          this.db.run(
-            'UPDATE grants SET revoked=1 WHERE grant_id=? AND key_id=? AND device_token=? AND environment=?',
-            [challenge.grant_id, challenge.key_id, challenge.device_token, challenge.environment]
-          )
-        } else {
-          // Rotation invalidates all earlier grants of this device key.
-          this.db.run('UPDATE grants SET revoked=1 WHERE key_id=?', [challenge.key_id])
-          this.db.run('INSERT INTO grants VALUES (?, ?, ?, ?, ?, ?, 0)', [
-            grantId,
-            challenge.key_id,
-            challenge.device_token,
-            challenge.environment,
-            hash(token).toString('hex'),
-            now + 86_400
-          ])
+        if (!targets.allow(`${body.environment}:${body.device_token}`, LIMITS.target, now())) {
+          return json(429, 'retryable', 'RateLimited', { 'Retry-After': '60' })
         }
-      })()
-      return Response.json(
-        challenge.action === 'revoke'
-          ? { revoked: true }
-          : {
-              grant_id: grantId,
-              grant_token: token,
-              key_id: challenge.key_id,
-              device_token: challenge.device_token,
-              environment: challenge.environment,
-              expires_at: now + 86_400
-            },
-        { headers: { 'Cache-Control': 'no-store' } }
-      )
-    } catch (error) {
-      if (error instanceof BodyTooLarge) {
-        return new Response(null, { status: 413 })
+        return Response.json(await sender(config).send(body, request.signal), {
+          headers: { 'Cache-Control': 'no-store' }
+        })
+      } finally {
+        active -= 1
       }
-      // Do not log request bodies, tokens, assertions or certificate receipts.
-      return Response.json({ error: 'Device verification rejected' }, { status: 403 })
     }
   }
 }
+
+export default createRelay()

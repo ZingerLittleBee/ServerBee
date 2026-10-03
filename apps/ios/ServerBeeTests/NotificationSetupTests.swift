@@ -11,7 +11,6 @@ private final class SetupHTTPFixture: @unchecked Sendable {
     private var saveStatus = 200
     private var registerStatus = 200
     private var requests: [URLRequest] = []
-    private var grantIDs: [String] = []
     private var registrationCallback: (@Sendable () -> Void)?
     var registered: (@Sendable () -> Void)? {
         get { lock.lock(); defer { lock.unlock() }; return registrationCallback }
@@ -19,20 +18,14 @@ private final class SetupHTTPFixture: @unchecked Sendable {
     }
 
     func failSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 503 }
+    func loseCommittedSaveReply() { lock.lock(); defer { lock.unlock() }; saveStatus = -2 }
     func setRegistrationStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; registerStatus = value }
-    func confirm() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response(registered: true, revision: revision, preferences: selectedPreferences) }
     func enable() {
         lock.lock(); defer { lock.unlock() }
         revision = 1
         setup = PushSetupTestData.response(revision: revision)
     }
-    func invalidateGrant() {
-        lock.lock(); defer { lock.unlock() }
-        setup = PushSetupTestData.response(registered: false, revision: revision)
-    }
-    func registeredGrants() -> [String] { lock.lock(); defer { lock.unlock() }; return grantIDs }
     func snapshot() -> [URLRequest] { lock.lock(); defer { lock.unlock() }; return requests }
-
     func handle(_ request: URLRequest) -> (Int, Data) {
         lock.lock()
         defer { lock.unlock() }
@@ -45,7 +38,7 @@ private final class SetupHTTPFixture: @unchecked Sendable {
             """.utf8))
         case ("/api/mobile/push/settings", "GET"): return (200, setup)
         case ("/api/mobile/push/settings", "PUT"):
-            if saveStatus != 200 { return (saveStatus, Data(#"{"error":{"message":"fixture save rejected"}}"#.utf8)) }
+            if saveStatus != 200 && saveStatus != -2 { return (saveStatus, Data(#"{"error":{"message":"fixture save rejected"}}"#.utf8)) }
             let body = PushSetupTestData.body(request)
             guard let expected = body["expected_revision"] as? NSNumber, expected.int64Value == revision,
                   let preferences = body["preferences"] as? [String: Any], let enabled = preferences["enabled"] as? Bool else {
@@ -58,9 +51,8 @@ private final class SetupHTTPFixture: @unchecked Sendable {
             revision = expected.int64Value + 1
             selectedPreferences = selected
             setup = PushSetupTestData.response(enabled: enabled, revision: revision, preferences: selected)
-            return (200, setup)
-        case ("/api/mobile/push/verified-register", "POST"):
-            if let grant = PushSetupTestData.body(request)["grant_id"] as? String { grantIDs.append(grant) }
+            return (saveStatus == -2 ? -1 : 200, setup)
+        case ("/api/mobile/push/encrypted-register", "POST"):
             if registerStatus == 200 || registerStatus == -2 {
                 guard let expected = PushSetupTestData.body(request)["expected_revision"] as? NSNumber,
                       expected.int64Value == revision else {
@@ -136,15 +128,14 @@ final class NotificationSetupTests: XCTestCase {
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
-        let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         await manager.reconcile()
         XCTAssertEqual(system.permissionRequests, 0)
         XCTAssertEqual(system.registrations, 0)
-        XCTAssertEqual(relay.attempts, 0)
         XCTAssertEqual(manager.confirmed?.preferences.enabled, false)
+        XCTAssertTrue(registrations(fixture).isEmpty)
         XCTAssertTrue(fixture.snapshot().allSatisfy { $0.httpMethod == "GET" })
     }
 
@@ -155,7 +146,7 @@ final class NotificationSetupTests: XCTestCase {
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
-        let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         var preferences = PushPreferences()
@@ -172,7 +163,7 @@ final class NotificationSetupTests: XCTestCase {
         XCTAssertEqual(manager.confirmed?.registered, true)
         XCTAssertEqual(manager.confirmed?.deliveryAvailable, false)
         await manager.unregister()
-        let register = fixture.snapshot().first { $0.url?.path == "/api/mobile/push/verified-register" }
+        let register = fixture.snapshot().first { $0.url?.path == "/api/mobile/push/encrypted-register" }
         XCTAssertEqual(register?.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
         XCTAssertTrue(fixture.snapshot().allSatisfy { $0.url?.host == "alice.test" })
     }
@@ -185,7 +176,7 @@ final class NotificationSetupTests: XCTestCase {
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
-        let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         var preferences = PushPreferences()
@@ -197,28 +188,6 @@ final class NotificationSetupTests: XCTestCase {
         XCTAssertEqual(system.permissionRequests, 0)
     }
 
-    func testUnsupportedAttestationPreservesLoginAndReportsUnavailable() async {
-        let fixture = SetupHTTPFixture()
-        SetupURLProtocol.fixture = fixture
-        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
-        auth.clearAuth()
-        login(auth)
-        let system = TestPushSystem()
-        let relay = TestPushRelay()
-        relay.supported = false
-        let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
-        manager.configure(apiClient: APIClient(authManager: auth))
-        await manager.reconcile()
-        var preferences = PushPreferences()
-        preferences.enabled = true
-        await manager.savePreferences(preferences)
-        XCTAssertTrue(manager.verificationUnavailable)
-        XCTAssertEqual(manager.confirmed?.registered, false)
-        XCTAssertTrue(auth.isAuthenticated)
-        XCTAssertEqual(system.permissionRequests, 0)
-        XCTAssertEqual(relay.attempts, 0)
-    }
-
     func testEarlyCallbackWaitsForConfirmedIntentAndRecoveryRetriesFailedUpload() async {
         let fixture = SetupHTTPFixture()
         fixture.enable()
@@ -227,12 +196,11 @@ final class NotificationSetupTests: XCTestCase {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
-        let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         // Delegate token arrived before stores/authentication were installed.
         manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
         await Task.yield()
-        XCTAssertEqual(relay.attempts, 0)
+        XCTAssertTrue(registrations(fixture).isEmpty)
         manager.configure(apiClient: APIClient(authManager: auth))
         let failed = expectation(description: "first registration rejected")
         fixture.registered = { failed.fulfill() }
@@ -247,7 +215,7 @@ final class NotificationSetupTests: XCTestCase {
         await manager.reconcile()
         await fulfillment(of: [recovered], timeout: 3)
         await manager.unregister()
-        XCTAssertEqual(relay.attempts, 1, "Retry saves the already verified pending grant without another rotation")
+        XCTAssertEqual(registrations(fixture).count, 2)
     }
 
     func testPermissionCompletionAfterAccountSwitchCannotRegisterReplacement() async {
@@ -257,7 +225,7 @@ final class NotificationSetupTests: XCTestCase {
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
-        let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let suspended = expectation(description: "permission request suspended")
@@ -280,170 +248,6 @@ final class NotificationSetupTests: XCTestCase {
         XCTAssertNil(manager.confirmed)
         XCTAssertEqual(auth.user?.id, "bob")
     }
-
-}
-
-extension NotificationSetupTests {
-    func testRotatedGrantSaveFailureStaysUnconfirmedThroughForegroundAndRestart() async throws {
-        for failure in [503, -1, -2] {
-            let fixture = SetupHTTPFixture()
-            fixture.enable()
-            SetupURLProtocol.fixture = fixture
-            let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
-            auth.clearAuth()
-            login(auth)
-            let storage = MemoryPushSetupStorage()
-            let relay = TestPushRelay()
-            let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: storage)
-            manager.configure(apiClient: APIClient(authManager: auth))
-            await manager.reconcile()
-            let admitted = expectation(description: "initial Server confirmation")
-            fixture.registered = { admitted.fulfill() }
-            manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
-            await fulfillment(of: [admitted], timeout: 3)
-            await manager.waitForPendingRegistrations()
-            XCTAssertEqual(manager.confirmed?.registered, true)
-            XCTAssertEqual(relay.attempts, 1)
-            let originalContext = try XCTUnwrap(auth.captureContext())
-            let originalKeyData = try XCTUnwrap(storage.load(PushContentKey.storageKey))
-            let originalKey = try JSONDecoder().decode(PushContentKey.self, from: originalKeyData)
-            fixture.setRegistrationStatus(failure)
-            let failed = expectation(description: "rotated grant save failed")
-            fixture.registered = { failed.fulfill() }
-            await manager.retry()
-            await fulfillment(of: [failed], timeout: 3)
-            await manager.waitForPendingRegistrations()
-            XCTAssertEqual(relay.attempts, 2)
-            XCTAssertEqual(manager.confirmed?.registered, false)
-            XCTAssertNotNil(manager.errorMessage)
-            // Observe the grant record written by registration without deriving
-            // its private storage key or calling the coordinator's helpers.
-            let pendingRecords = storage.values.filter { $0.key != PushContentKey.storageKey }
-            XCTAssertEqual(pendingRecords.count, 1)
-            let pending = try XCTUnwrap(pendingRecords.first)
-            XCTAssertEqual(storage.load(pending.key), pending.value)
-            XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
-            // Even a stale Server response claiming a long-lived old grant must
-            // not erase the pending rotation or produce Setup confirmed.
-            fixture.confirm()
-            let foreground = expectation(description: "foreground resubmits pending grant")
-            fixture.registered = { foreground.fulfill() }
-            await manager.reconcile()
-            await fulfillment(of: [foreground], timeout: 3)
-            await manager.waitForPendingRegistrations()
-            XCTAssertEqual(manager.confirmed?.registered, false)
-            XCTAssertNotNil(manager.errorMessage)
-            XCTAssertEqual(relay.attempts, 2, "Pending grant is reused instead of rotating again")
-            XCTAssertEqual(storage.load(pending.key), pending.value)
-            XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
-            // Restore both authentication and setup coordinator from persistence.
-            let restoredAuth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
-            await restoredAuth.initialize()
-            XCTAssertTrue(restoredAuth.isAuthenticated)
-            XCTAssertEqual(restoredAuth.captureContext()?.pushScope, auth.captureContext()?.pushScope)
-            let restarted = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: storage)
-            restarted.configure(apiClient: APIClient(authManager: restoredAuth))
-            await restarted.reconcile()
-            XCTAssertEqual(restarted.confirmed?.registered, false)
-            XCTAssertNotNil(restarted.errorMessage)
-            XCTAssertEqual(storage.load(pending.key), pending.value)
-            XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
-            let recovered = expectation(description: "restart confirms the pending grant")
-            fixture.registered = { recovered.fulfill() }
-            fixture.setRegistrationStatus(200)
-            restarted.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
-            await fulfillment(of: [recovered], timeout: 3)
-            await restarted.waitForPendingRegistrations()
-            XCTAssertEqual(restarted.confirmed?.registered, true)
-            XCTAssertNil(restarted.errorMessage)
-            XCTAssertEqual(relay.attempts, 2)
-            XCTAssertNil(storage.load(pending.key), "Successful recovery removes only the current pending grant")
-            XCTAssertEqual(storage.values, [PushContentKey.storageKey: originalKeyData])
-            try assertRecoveredRegistration(restarted, fixture: fixture, failure: failure, originalKey: originalKey, originalContext: originalContext)
-            // End all work before changing the global fixture for the next case.
-            await restarted.unregister()
-            XCTAssertTrue(storage.values.isEmpty, "Public unregister removes both the grant and content key")
-            XCTAssertNil(restarted.contentKey())
-            XCTAssertEqual(relay.revocations, 1)
-            XCTAssertTrue(restoredAuth.isAuthenticated)
-            let cleanup = fixture.snapshot().last
-            XCTAssertEqual(cleanup?.url?.path, "/api/mobile/push/unregister")
-            XCTAssertEqual(cleanup?.value(forHTTPHeaderField: "Authorization"), "Bearer restored-access")
-            auth.clearAuth()
-        }
-    }
-
-    private func assertRecoveredRegistration(
-        _ restarted: PushNotificationManager, fixture: SetupHTTPFixture, failure: Int,
-        originalKey: PushContentKey, originalContext: MobileAuthenticationContext
-    ) throws {
-        let recoveredKey = try XCTUnwrap(restarted.contentKey())
-        XCTAssertEqual(recoveredKey.keyId, originalKey.keyId)
-        XCTAssertEqual(recoveredKey.key, originalKey.key)
-        XCTAssertEqual(recoveredKey.scope, originalContext.pushScope)
-        XCTAssertEqual(recoveredKey.deploymentId, originalContext.serverUrl)
-        XCTAssertEqual(recoveredKey.userId, originalContext.userId)
-        XCTAssertEqual(recoveredKey.installationId, originalContext.installationId)
-        let saved = fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }
-        XCTAssertEqual(saved.count, 4)
-        XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1", "fixture-grant-2", "fixture-grant-2", "fixture-grant-2"])
-        let revisions = saved.map { (PushSetupTestData.body($0)["expected_revision"] as? NSNumber)?.int64Value }
-        XCTAssertEqual(revisions, failure == -2 ? [1, 2, 3, 4] : [1, 2, 2, 2])
-        XCTAssertEqual(restarted.confirmed?.revision, failure == -2 ? 5 : 3)
-        for request in saved {
-            let body = PushSetupTestData.body(request)
-            XCTAssertEqual(body["content_key_id"] as? String, originalKey.keyId)
-            XCTAssertEqual(body["content_key"] as? String, originalKey.key)
-            XCTAssertEqual(body["deployment_id"] as? String, originalKey.deploymentId)
-            XCTAssertEqual(request.url?.host, "alice.test")
-        }
-    }
-}
-
-extension NotificationSetupTests {
-    func testLostRelayRenewalResponseCannotLeaveSetupConfirmed() async {
-        let fixture = SetupHTTPFixture()
-        fixture.enable()
-        SetupURLProtocol.fixture = fixture
-        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
-        auth.clearAuth()
-        login(auth)
-        let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
-        manager.configure(apiClient: APIClient(authManager: auth))
-        await manager.reconcile()
-        let admitted = expectation(description: "initial registration confirmed")
-        fixture.registered = { admitted.fulfill() }
-        manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
-        await fulfillment(of: [admitted], timeout: 3)
-        await manager.waitForPendingRegistrations()
-        XCTAssertEqual(manager.confirmed?.registered, true)
-        XCTAssertEqual(manager.confirmed?.revision, 2)
-        relay.registerHook = { throw URLError(.networkConnectionLost) }
-        await manager.retry()
-        await manager.waitForPendingRegistrations()
-        XCTAssertEqual(manager.confirmed?.registered, false)
-        XCTAssertEqual(manager.confirmed?.revision, 2)
-        XCTAssertNotNil(manager.errorMessage)
-        XCTAssertEqual(relay.attempts, 2)
-        XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1"])
-        relay.registerHook = nil
-        fixture.invalidateGrant() // Server inspection invalidates admission without changing revision.
-        let recovered = expectation(description: "unknown Relay outcome recovered")
-        fixture.registered = { recovered.fulfill() }
-        await manager.reconcile()
-        await fulfillment(of: [recovered], timeout: 3)
-        await manager.waitForPendingRegistrations()
-        XCTAssertEqual(manager.confirmed?.registered, true)
-        XCTAssertEqual(manager.confirmed?.revision, 3)
-        XCTAssertNil(manager.errorMessage)
-        let registrations = fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }
-        XCTAssertEqual(registrations.count, 2)
-        let expected = registrations.last.flatMap { PushSetupTestData.body($0)["expected_revision"] as? NSNumber }
-        XCTAssertEqual(expected?.int64Value, 2)
-        await manager.unregister()
-    }
-
 }
 
 extension NotificationSetupTests {
@@ -455,9 +259,8 @@ extension NotificationSetupTests {
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
-        let relay = TestPushRelay()
         let storage = MemoryPushSetupStorage()
-        let manager = PushNotificationManager(system: system, relay: relay, storage: storage)
+        let manager = PushNotificationManager(system: system, storage: storage)
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let selected = PushPreferences(enabled: true, alerts: true, security: true, taskFailure: true, taskSuccess: true)
@@ -465,7 +268,6 @@ extension NotificationSetupTests {
         XCTAssertEqual(manager.confirmed?.preferences, selected)
         XCTAssertFalse(manager.permissionGranted)
         XCTAssertEqual(system.permissionRequests, 1)
-        XCTAssertEqual(relay.attempts, 0)
         // System settings changed outside the app. Foreground reconciliation
         // recovers registration without requesting permission a second time.
         system.status = .authorized
@@ -487,7 +289,6 @@ extension NotificationSetupTests {
         XCTAssertEqual(manager.contentKey()?.keyId, key.keyId)
         XCTAssertEqual(manager.contentKey()?.key, key.key)
         XCTAssertEqual(auth.captureContext()?.pushScope, context.pushScope)
-        XCTAssertEqual(relay.attempts, 1)
         XCTAssertEqual(system.permissionRequests, 1)
         auth.clearAuth()
         login(auth, user: "bob")
@@ -498,5 +299,202 @@ extension NotificationSetupTests {
         XCTAssertEqual(auth.user?.id, "bob")
         XCTAssertFalse(fixture.snapshot().contains { $0.url?.host == "bob.test" })
         fixture.registered = nil
+    }
+}
+
+extension NotificationSetupTests {
+    func testRegistrationOnlySendsTokenAndInstallationContentKeyToAuthenticatedServer() async throws {
+        let fixture = SetupHTTPFixture()
+        fixture.enable()
+        SetupURLProtocol.fixture = fixture
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
+        auth.clearAuth()
+        login(auth)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage(), environment: "sandbox")
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        await register(manager, fixture: fixture)
+        let requests = registrations(fixture)
+        let request = try XCTUnwrap(requests.first)
+        let body = PushSetupTestData.body(request)
+        XCTAssertEqual(Set(body.keys), Set(["expected_revision", "device_token", "environment", "content_key_id", "content_key", "deployment_id"]))
+        XCTAssertEqual(body["device_token"] as? String, String(repeating: "0a", count: 32))
+        XCTAssertEqual(body["environment"] as? String, "sandbox")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
+        XCTAssertTrue(fixture.snapshot().allSatisfy { $0.url?.host == "alice.test" })
+        let key = try XCTUnwrap(manager.contentKey())
+        XCTAssertEqual(Data(base64Encoded: key.key)?.count, 32)
+        XCTAssertNotNil(UUID(uuidString: key.keyId))
+        XCTAssertEqual(body["content_key_id"] as? String, key.keyId)
+        XCTAssertEqual(body["content_key"] as? String, key.key)
+        XCTAssertEqual(body["deployment_id"] as? String, "https://alice.test")
+        XCTAssertEqual(key.scope, auth.captureContext()?.pushScope)
+        XCTAssertEqual(key.userId, "alice")
+        XCTAssertEqual(key.installationId, auth.captureContext()?.installationId)
+        XCTAssertTrue(manager.confirmed?.registered == true)
+    }
+
+    func testRejectedAndLostRegistrationRepliesReuseContentKeyAfterRestart() async throws {
+        for failure in [503, -1, -2] {
+            let fixture = SetupHTTPFixture()
+            fixture.enable()
+            fixture.setRegistrationStatus(failure)
+            SetupURLProtocol.fixture = fixture
+            let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
+            auth.clearAuth()
+            login(auth)
+            let storage = MemoryPushSetupStorage()
+            let manager = PushNotificationManager(system: TestPushSystem(), storage: storage)
+            manager.configure(apiClient: APIClient(authManager: auth))
+            await manager.reconcile()
+            await register(manager, fixture: fixture)
+            XCTAssertFalse(manager.confirmed?.registered == true)
+            XCTAssertNotNil(manager.errorMessage)
+            let key = try XCTUnwrap(manager.contentKey())
+            XCTAssertEqual(Set(storage.values.keys), Set([PushContentKey.storageKey]))
+            fixture.setRegistrationStatus(200)
+            let restarted = PushNotificationManager(system: TestPushSystem(), storage: storage)
+            restarted.configure(apiClient: APIClient(authManager: auth))
+            await restarted.reconcile()
+            await register(restarted, fixture: fixture)
+            XCTAssertTrue(restarted.confirmed?.registered == true)
+            XCTAssertNil(restarted.errorMessage)
+            XCTAssertEqual(restarted.contentKey()?.key, key.key)
+            XCTAssertEqual(restarted.contentKey()?.keyId, key.keyId)
+            let requests = registrations(fixture)
+            XCTAssertEqual(requests.count, 2)
+            let expected = requests.map { (PushSetupTestData.body($0)["expected_revision"] as? NSNumber)?.int64Value }
+            XCTAssertEqual(expected, failure == -2 ? [1, 2] : [1, 1])
+            for request in requests {
+                XCTAssertEqual(PushSetupTestData.body(request)["content_key"] as? String, key.key)
+                XCTAssertEqual(PushSetupTestData.body(request)["content_key_id"] as? String, key.keyId)
+            }
+            await restarted.unregister()
+            XCTAssertTrue(storage.values.isEmpty)
+            auth.clearAuth()
+        }
+    }
+
+    func testTokenRotationReusesContentKeyAndDuplicateCallbackDoesNotRegister() async throws {
+        let fixture = SetupHTTPFixture()
+        fixture.enable()
+        SetupURLProtocol.fixture = fixture
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
+        auth.clearAuth()
+        login(auth)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        await register(manager, fixture: fixture)
+        let key = try XCTUnwrap(manager.contentKey())
+        fixture.registered = nil
+        manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
+        await Task.yield()
+        await manager.reconcile()
+        await manager.waitForPendingRegistrations()
+        XCTAssertEqual(registrations(fixture).count, 1)
+        await register(manager, fixture: fixture, byte: 11)
+        XCTAssertEqual(registrations(fixture).count, 2)
+        XCTAssertEqual(manager.contentKey()?.key, key.key)
+        XCTAssertEqual(manager.contentKey()?.keyId, key.keyId)
+        XCTAssertEqual(PushSetupTestData.body(try XCTUnwrap(registrations(fixture).last))["device_token"] as? String,
+                       String(repeating: "0b", count: 32))
+    }
+
+    func testDisableRemovesKeyAndReenableRegistersFreshKey() async throws {
+        let fixture = SetupHTTPFixture()
+        fixture.enable()
+        SetupURLProtocol.fixture = fixture
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
+        auth.clearAuth()
+        login(auth)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        await register(manager, fixture: fixture)
+        let key = try XCTUnwrap(manager.contentKey())
+        await manager.savePreferences(PushPreferences())
+        XCTAssertNil(manager.contentKey())
+        XCTAssertEqual(manager.confirmed?.preferences.enabled, false)
+        let registered = expectation(description: "re-enabled installation registered")
+        fixture.registered = { registered.fulfill() }
+        await manager.savePreferences(PushPreferences(enabled: true, alerts: true))
+        await fulfillment(of: [registered], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        XCTAssertTrue(manager.confirmed?.registered == true)
+        XCTAssertNotEqual(manager.contentKey()?.keyId, key.keyId)
+        XCTAssertNotEqual(manager.contentKey()?.key, key.key)
+        XCTAssertEqual(registrations(fixture).count, 2)
+    }
+
+    func testLostDisableReplyClearsKeyOnlyWhenServerConfirmsDisabled() async throws {
+        let fixture = SetupHTTPFixture()
+        fixture.enable()
+        SetupURLProtocol.fixture = fixture
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
+        auth.clearAuth()
+        login(auth)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        await register(manager, fixture: fixture)
+        let key = try XCTUnwrap(manager.contentKey())
+        fixture.loseCommittedSaveReply()
+        await manager.savePreferences(PushPreferences())
+        XCTAssertNotNil(manager.errorMessage)
+        XCTAssertEqual(manager.contentKey()?.keyId, key.keyId)
+        await manager.reconcile()
+        XCTAssertEqual(manager.confirmed?.preferences.enabled, false)
+        XCTAssertNil(manager.errorMessage)
+        XCTAssertNil(manager.contentKey())
+        XCTAssertEqual(registrations(fixture).count, 1)
+    }
+
+    func testOldCleanupCannotRemoveReplacementLoginContentKey() async throws {
+        let fixture = SetupHTTPFixture()
+        fixture.enable()
+        SetupURLProtocol.fixture = fixture
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
+        auth.clearAuth()
+        login(auth)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        await register(manager, fixture: fixture)
+        let old = try XCTUnwrap(auth.captureContext())
+        let oldKey = try XCTUnwrap(manager.contentKey())
+        auth.clearAuth()
+        login(auth, user: "bob")
+        manager.configure(apiClient: APIClient(authManager: auth))
+        XCTAssertNil(manager.contentKey())
+        let replacement = SetupHTTPFixture()
+        replacement.enable()
+        SetupURLProtocol.fixture = replacement
+        let registered = expectation(description: "replacement login registered")
+        replacement.registered = { registered.fulfill() }
+        await manager.reconcile()
+        await fulfillment(of: [registered], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        let replacementKey = try XCTUnwrap(manager.contentKey())
+        XCTAssertNotEqual(replacementKey.keyId, oldKey.keyId)
+        XCTAssertNotEqual(replacementKey.key, oldKey.key)
+        XCTAssertEqual(replacementKey.userId, "bob")
+        await manager.unregister(context: old)
+        XCTAssertEqual(manager.contentKey()?.keyId, replacementKey.keyId)
+        XCTAssertEqual(manager.confirmed?.registered, true)
+        XCTAssertEqual(auth.user?.id, "bob")
+    }
+
+    private func register(_ manager: PushNotificationManager, fixture: SetupHTTPFixture, byte: UInt8 = 10) async {
+        let registered = expectation(description: "installation registration reached Server")
+        fixture.registered = { registered.fulfill() }
+        manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: byte, count: 32))
+        await fulfillment(of: [registered], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        fixture.registered = nil
+    }
+
+    private func registrations(_ fixture: SetupHTTPFixture) -> [URLRequest] {
+        fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/encrypted-register" }
     }
 }

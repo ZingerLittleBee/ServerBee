@@ -50,7 +50,7 @@ final class PushTestDelivery {
     }
 
     func send(setup: PushSetup?) async {
-        guard !isTesting, let setup, setup.registered, setup.preferences.enabled,
+        guard !isTesting, let setup, setup.registered, setup.preferences.enabled, setup.testAvailable != false,
               let apiClient, let captured = context, apiClient.isCurrent(captured) else { return }
         let owner = begin()
         defer { finish(owner) }

@@ -21,10 +21,6 @@ impl MigrationTrait for Migration {
                 task_success BOOLEAN NOT NULL DEFAULT 0,
                 device_token TEXT,
                 environment TEXT CHECK(environment IN ('sandbox', 'production')),
-                key_id TEXT,
-                grant_id TEXT,
-                grant_token TEXT,
-                grant_expires_at TEXT,
                 updated_at TEXT NOT NULL
             )",
             )

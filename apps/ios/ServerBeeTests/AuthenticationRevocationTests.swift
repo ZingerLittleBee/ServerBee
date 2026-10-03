@@ -139,7 +139,7 @@ final class AuthenticationRevocationTests: XCTestCase {
             switch request.request.url?.path {
             case "/api/mobile/auth/refresh": request.respond(200, data: bobResponse)
             case "/api/mobile/push/settings": request.respond(200, data: PushSetupTestData.response())
-            case "/api/mobile/push/verified-register":
+            case "/api/mobile/push/encrypted-register":
                 if request.request.value(forHTTPHeaderField: "Authorization") == "Bearer access-bob" {
                     request.respond(401)
                 } else {
@@ -150,13 +150,13 @@ final class AuthenticationRevocationTests: XCTestCase {
             default: request.respond(200)
             }
         }
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         manager.didRegisterForRemoteNotifications(deviceToken: Data([1, 2]))
         await fulfillment(of: [retried], timeout: 3)
         XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/auth/refresh" }.count, 1)
-        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }.count, 2)
+        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/encrypted-register" }.count, 2)
         await gate.open()
         do {
             _ = try await oldRefresh.value
@@ -289,7 +289,7 @@ extension AuthenticationRevocationTests {
                     request.respond(200, data: Self.bootstrapResponse(user: "alice", proof: proof ?? ""))
                 }
             } else {
-                XCTAssertEqual(request.request.url?.path, "/api/mobile/push/verified-register")
+                XCTAssertEqual(request.request.url?.path, "/api/mobile/push/encrypted-register")
                 XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer rotated-alice")
                 registered.fulfill()
                 request.respond(200, data: PushSetupTestData.response(registered: true, revision: 2))
@@ -305,9 +305,8 @@ extension AuthenticationRevocationTests {
         }
         let proposed = try XCTUnwrap((try AuthManager.readAuthentication())?.proposedDeletionProof)
         let _: PushSetup = try await APIClient(authManager: auth).send(
-            "/api/mobile/push/verified-register", method: "POST", body: VerifiedPushRequest(
+            "/api/mobile/push/encrypted-register", method: "POST", body: PushRegistrationRequest(
                 expectedRevision: 1, deviceToken: String(repeating: "a", count: 64), environment: "sandbox",
-                keyId: "fixture-key", grantId: "fixture-grant", grantToken: "fixture-secret",
                 contentKeyId: "11111111-1111-4111-8111-111111111111",
                 contentKey: Data(repeating: 0x41, count: 32).base64EncodedString(),
                 deploymentId: context.serverUrl

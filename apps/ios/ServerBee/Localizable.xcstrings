@@ -17734,12 +17734,12 @@
         }
       }
     },
-    "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, environment, grant identifiers and encrypted content. It cannot read notification content or content keys.": {
+    "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, environment and encrypted content. It cannot read notification content or content keys.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "接收者由你的 Server 选择。Push Relay 可见设备令牌、来源 IP、时间、请求大小、环境、授权标识及加密内容，无法读取通知正文或内容密钥。"
+            "value": "接收者由你的 Server 选择。Push Relay 可见设备令牌、来源 IP、时间、请求大小、环境及加密内容，无法读取通知正文或内容密钥。"
           }
         }
       }
@@ -17864,12 +17864,12 @@
         }
       }
     },
-    "Verified push is unavailable. Monitoring and login still work.": {
+    "Notification setup is unavailable. Monitoring and login still work.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设备验证推送不可用，监控与登录仍可正常使用。"
+            "value": "通知设置不可用，监控与登录仍可正常使用。"
           }
         }
       }
@@ -17924,12 +17924,12 @@
         }
       }
     },
-    "Awaiting verification": {
+    "Awaiting registration": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "等待验证"
+            "value": "等待注册"
           }
         }
       }

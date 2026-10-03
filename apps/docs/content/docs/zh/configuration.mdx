@@ -379,29 +379,15 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 | Key | 类型 | 默认值 | 说明 |
 |-----|------|--------|------|
-| `url` | string | `""` | 独立 Push Relay 的 HTTPS 地址。留空会关闭已验证注册。Server 不应保存 Apple 签名密钥。 |
+| `url` | string | `""` | 公开 Push Relay 的 HTTPS 地址。留空关闭通知注册。Apple 签名密钥只存放在 Worker 中。 |
 
-通过 `SERVERBEE_PUSH_RELAY__URL` 覆盖地址。Relay 配置 `APNS_ENVIRONMENTS=sandbox,production` 后，开发与分发设备可使用同一地址；存在签名 App Attest 扩展时，`APP_ATTEST_BUNDLE_VERSIONS` 允许列表会校验其中的版本声明。隔离的本地 Server 集成测试可使用 `http://127.0.0.1:<port>`，iOS 应用要求 HTTPS。目前支持 App Attest 注册、Server 确认的订阅、加密告警触发和恢复通知、仅发给当前安装的测试通知，以及管理员任务最终失败通知。成功运行默认静默，单独启用后沿用所有者的最终汇总链路。队列发送前会再次检查对应结果的订阅和当前管理员权限。管理员安全规则通知沿用现有抑制，无需通知组，并在发送前重新检查当前角色和订阅，详见[移动端](/zh/docs/mobile)。 加密测试通知可在 Server 重启后恢复，并在最初创建后 30 分钟内重试临时 Relay 故障。入队表示等待发送，不代表提供商接受。关闭或撤销通知会阻止后续符合条件的发送，已被 APNs 接受的通知无法撤回。
+通过 `SERVERBEE_PUSH_RELAY__URL` 指定最终 HTTPS Worker 地址。这里的“已验证”指 Server 已认证的账户、安装与会话归属，不再使用 App Attest 或 Relay grant。应用仅通过 HTTPS 向已登录 Server 注册设备令牌、APNs 环境和每安装独立的内容密钥。Server 加密内容后向 Worker 的公开 `POST /v1/send` 发送令牌、环境、事件标识、期限与密文。隔离 Server 测试可使用 `http://127.0.0.1:<port>`；应用要求 HTTPS 并拒绝重定向。
 
-以下变量属于独立 Relay 进程，不得配置在 Server 上：
+仅 Worker 使用 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_TOPIC`、`APNS_ENVIRONMENTS` 和保存 PKCS#8 PEM 文本的 `APNS_PRIVATE_KEY` secret。这些配置不得进入 Server 或应用。`APNS_ENVIRONMENTS=sandbox,production` 支持两种设备环境；topic 和 APNs 主机由 Worker 固定。不再需要数据库、challenge/grant 生命周期、版本或分发策略、Bun/OpenSSL 运行时。参见 [Cloudflare 设置](/zh/docs/push-relay#cloudflare-快速设置)。
 
-| 变量 | 含义 |
-| --- | --- |
-| `RELAY_TRUSTED_PROXY_IPS` | 必填，逗号分隔的准确代理对端 IP（例如 `127.0.0.1`）；不默认信任 loopback，不支持 CIDR 或主机名 |
-| `APP_ATTEST_BUNDLE_VERSIONS` | 必填，逗号分隔的允许签名 `CFBundleVersion` 值 |
-| `APP_ATTEST_REQUIRE_EXTENSIONS` | 可选，仅接受精确小写 `true` 或 `false`；省略等同 `false`，其他值会导致启动失败。`true` 要求签发或续期 grant 必须有签名扩展 |
-| `APNS_TEAM_ID` | 发布者 Apple 团队标识 |
-| `APNS_KEY_ID` | 发布者 APNs 签名密钥标识 |
-| `APNS_PRIVATE_KEY` | 私有 P-256 PEM 文件路径，仅允许 Relay 读取 |
-| `APNS_TOPIC` | 官方应用 bundle 标识，不是扩展标识 |
+公开端点接受滥用风险：已知有效令牌可被用于垃圾密文或通用通知骚扰；不知道他人令牌也能通过任意请求或自己的令牌消耗配额。严格载荷大小、流式读取硬上限、超时、并发限制以及有界的 isolate 内来源与目标限流只能尽力减轻风险，不是全局准入或费用保证。内容密钥与业务明文不经过 Relay。
 
-Apple 从 [iOS 27 起](https://developer.apple.com/videos/play/wwdc2026/201/)提供这些签名扩展，而 ServerBee 支持 iOS 17+。默认兼容模式接受没有扩展的有效旧版证明，无法为其保证严格的版本或细分分发类别允许列表；开发与生产环境及全部密码学检查仍然生效。两种模式都会在存在扩展时强制校验类别和版本允许列表。严格模式阻止无签名扩展的新 grant 签发和续期。启用严格模式或修改版本允许列表不会追溯撤销未过期 grant；续期失败时，原有 grant 和已存计数器均不改变。原有 grant 在过期或被撤销前仍有效（有效期为 24 小时）。仅删除权限的撤销操作仍接受通过密码学验证、作用域匹配的旧版无扩展 assertion。登录与监控仍可用。详见 [App Attest 证明模式](/zh/docs/push-relay#app-attest-证明模式)。
-
-Relay 可执行程序启动时要求设置 `RELAY_TRUSTED_PROXY_IPS`。升级现有部署时，必须同时设置该变量，并让 TLS 代理覆盖 `X-ServerBee-Client-IP` 为单个纯客户端 IP。只有配置中的真实 socket 对端才能提供此头；缺失、格式错误或可见的逗号列表返回 HTTP 400。Bun 可能隐藏原始重复自定义头，后端无法证明线上唯一性，因此代理必须覆盖所有传入实例。未列出的对端使用实际 IP，其他转发头均被忽略。原有每分钟 30 次的限额按规范化客户端 IP 计算，包括失败请求；同一 NAT 出口仍共享限额。边缘代理仍须保留来源 IP 限流、32 KiB 请求体、连接及读写超时和有界并发。参见 [Nginx 覆盖示例](/zh/docs/push-relay#可信代理客户端身份)。
-
-加密设置要求通过 HTTPS 连接 Server。应用和 Notification Service Extension 共享仅限本设备的 Keychain 组。APNs 接受仅代表服务商回执，不证明通知已展示。迁移与真机要求见[移动端](/zh/docs/mobile)。
-
-隔离签名、元数据隐私、排障及真实设备记录参见 [Push Relay 运维](/zh/docs/push-relay)。所有类别均在原始创建后 30 分钟投递过期，已展示的真实通知点击仍请求当前有权限的详情。
+Server 保留已认证订阅、接收方检查、持久化加密 outbox/重试和从原始事件起算的 30 分钟期限。告警触发/恢复、管理员安全规则匹配、仅发给所有者的计划任务最终结果继续生效；成功通知须主动启用。角色、会话、订阅或注册版本改变会阻止后续符合条件的投递。终态密文会清除，已发送或接受的通知无法撤回。APNs 接受只代表服务商回执，不证明手机展示。应用/NSE 共享 Keychain 签名与真机验收仍须单独验证。参见[移动端](/zh/docs/mobile)与 [Push Relay 运维](/zh/docs/push-relay)。
 
 ### `[firewall]` —— 防火墙黑名单护栏
 

@@ -32,10 +32,10 @@ async fn stitched_categories_use_actual_relay_and_preserve_external_legacy_deliv
             .status(),
         200
     );
-    let registration = content_registration(&relay.ready["grant"], 1);
+    let registration = content_registration(&relay.ready, 1);
     assert_eq!(
         client
-            .post(format!("{base}/api/mobile/push/verified-register"))
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
             .bearer_auth(access)
             .json(&registration)
             .send()
@@ -95,7 +95,7 @@ async fn stitched_categories_use_actual_relay_and_preserve_external_legacy_deliv
     let mut entries = Vec::new();
     for line in captured.lines() {
         let request: Value = serde_json::from_str(line).unwrap();
-        assert_eq!(request["token"], relay.ready["grant"]["device_token"]);
+        assert_eq!(request["token"], relay.ready["device_token"]);
         assert_eq!(request["environment"], "sandbox");
         assert_eq!(request["headers"]["apns-topic"], "com.serverbee.mobile");
         assert_eq!(request["headers"]["apns-push-type"], "alert");

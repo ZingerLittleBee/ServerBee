@@ -19,20 +19,18 @@ struct PushSetup: Decodable, Sendable {
     let preferences: PushPreferences
     let securityAllowed: Bool
     var registered: Bool
-    let grantExpiresAt: String?
-    let relayUrl: String
     let deliveryAvailable: Bool
     var tasksAllowed: Bool?
     var taskFailureAvailable: Bool?
+    var testAvailable: Bool?
 
     enum CodingKeys: String, CodingKey {
         case revision, preferences, registered
         case securityAllowed = "security_allowed"
-        case grantExpiresAt = "grant_expires_at"
-        case relayUrl = "relay_url"
         case deliveryAvailable = "delivery_available"
         case tasksAllowed = "tasks_allowed"
         case taskFailureAvailable = "task_failure_available"
+        case testAvailable = "test_available"
     }
 }
 
@@ -45,30 +43,10 @@ struct PushPreferencesRequest: Encodable, Sendable {
     }
 }
 
-struct RelayGrant: Codable, Sendable {
-    let grantId: String
-    let grantToken: String
-    let keyId: String
-    let deviceToken: String
-    let environment: String
-    let expiresAt: Int64
-    enum CodingKeys: String, CodingKey {
-        case grantId = "grant_id"
-        case grantToken = "grant_token"
-        case keyId = "key_id"
-        case deviceToken = "device_token"
-        case environment
-        case expiresAt = "expires_at"
-    }
-}
-
-struct VerifiedPushRequest: Encodable, Sendable {
+struct PushRegistrationRequest: Encodable, Sendable {
     let expectedRevision: Int64
     let deviceToken: String
     let environment: String
-    let keyId: String
-    let grantId: String
-    let grantToken: String
     let contentKeyId: String
     let contentKey: String
     let deploymentId: String
@@ -76,9 +54,6 @@ struct VerifiedPushRequest: Encodable, Sendable {
         case expectedRevision = "expected_revision"
         case deviceToken = "device_token"
         case environment
-        case keyId = "key_id"
-        case grantId = "grant_id"
-        case grantToken = "grant_token"
         case contentKeyId = "content_key_id"
         case contentKey = "content_key"
         case deploymentId = "deployment_id"

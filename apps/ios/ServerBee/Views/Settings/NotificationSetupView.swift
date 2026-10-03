@@ -11,7 +11,7 @@ struct NotificationSetupView: View {
             Section {
                 Text(LocalizedStringKey(
                     "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
-                    "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
+                    "environment and encrypted content. It cannot read notification content or content keys."
                 ))
                 Text("Encrypted tests, alert transitions, administrator security rule matches and final task outcomes are supported.")
                     .foregroundStyle(.secondary)
@@ -52,7 +52,7 @@ struct NotificationSetupView: View {
 
             Section("Test notification") {
                 Button("Send test notification") { Task { await manager.sendTestNotification() } }
-                    .disabled(manager.isSaving || manager.isTesting || manager.confirmed?.registered != true)
+                    .disabled(manager.isSaving || manager.isTesting || manager.confirmed?.registered != true || manager.confirmed?.testAvailable == false)
                 if manager.isTesting { ProgressView() }
                 Button("Refresh test status") { Task { await manager.refreshTestStatus() } }
                     .disabled(manager.isTesting)
@@ -69,9 +69,6 @@ struct NotificationSetupView: View {
                 LabeledContent("Server registration", value: registrationLabel)
                 if manager.isSaving { ProgressView() }
                 if let error = manager.errorMessage { Text(error).foregroundStyle(.red) }
-                if manager.verificationUnavailable {
-                    Text("Verified push is unavailable. Monitoring and login still work.")
-                }
                 Button("Retry notification setup") { Task { await manager.retry() } }
                     .disabled(manager.isSaving)
                 Button("Open notification settings") {
@@ -115,7 +112,7 @@ struct NotificationSetupView: View {
     private var registrationLabel: String {
         if manager.errorMessage != nil { return String(localized: "Setup failed") }
         if manager.confirmed?.registered == true { return String(localized: "Setup confirmed") }
-        if manager.confirmed?.preferences.enabled == true { return String(localized: "Awaiting verification") }
+        if manager.confirmed?.preferences.enabled == true { return String(localized: "Awaiting registration") }
         return String(localized: "Disabled")
     }
 }

@@ -10,8 +10,7 @@ extension PushPreferenceRecoveryTests {
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
-        let relay = TestPushRelay()
-        let manager = manager(auth, system: system, relay: relay)
+        let manager = manager(auth, system: system)
         await manager.reconcile()
         let confirmed = try XCTUnwrap(manager.confirmed?.preferences)
         var draft = confirmed
@@ -35,35 +34,22 @@ extension PushPreferenceRecoveryTests {
         XCTAssertEqual(manager.unconfirmedPreferences, draft)
         XCTAssertEqual(manager.errorMessage, saveError)
         XCTAssertEqual(http.registrationAttempts().count, 1)
-        let held = expectation(description: "old login renewal suspended at Apple boundary")
-        var continuation: CheckedContinuation<Void, Never>?
-        defer { continuation?.resume() }
-        relay.registerHook = {
-            await withCheckedContinuation { continuation = $0; held.fulfill() }
-        }
+        let held = expectation(description: "old login registration recovery read suspended")
+        http.holdNextRead(held)
         let recovery = Task { await manager.retry() }
         await fulfillment(of: [held], timeout: 3)
-        let waiting = expectation(description: "old generation upload cleanup captured")
-        let settling = Task {
-            waiting.fulfill()
-            await manager.waitForPendingRegistrations()
-        }
-        await fulfillment(of: [waiting], timeout: 3)
         auth.clearAuth()
         login(auth, user: "bob")
         manager.configure(apiClient: APIClient(authManager: auth))
-        continuation?.resume()
-        continuation = nil
+        http.release()
         await recovery.value
-        await settling.value
         XCTAssertNil(manager.confirmed)
         XCTAssertNil(manager.unconfirmedPreferences)
         XCTAssertNil(manager.contentKey())
         XCTAssertEqual(auth.user?.id, "bob")
         XCTAssertEqual(system.permissionRequests, 0)
         XCTAssertEqual(http.savedPreferences(), [draft])
-        XCTAssertEqual(http.registrationAttempts().count, 1, "old Apple completion must not reach Server registration")
+        XCTAssertEqual(http.registrationAttempts().count, 1, "old read completion must not reach Server registration")
         XCTAssertEqual(http.registrationAttempts().first?.url?.host, "alice.test")
-        relay.registerHook = nil
     }
 }

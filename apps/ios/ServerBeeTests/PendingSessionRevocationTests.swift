@@ -120,7 +120,7 @@ final class PendingSessionRevocationTests: XCTestCase {
         XCTAssertNotNil(auth.recoveryError)
     }
 
-    func testUnconfirmedBootstrapCausesNoSettingsWriteOrRelayRegistration() async throws {
+    func testUnconfirmedBootstrapCausesNoSettingsWriteOrRegistration() async throws {
         let journal = MemorySessionRevocations()
         let normal = MemoryAuthentication()
         let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
@@ -138,15 +138,13 @@ final class PendingSessionRevocationTests: XCTestCase {
                 request.loseResponse()
             }
         }
-        let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         await manager.savePreferences(PushPreferences(enabled: false))
         manager.didRegisterForRemoteNotifications(deviceToken: Data([1]))
         await manager.waitForPendingRegistrations()
-        XCTAssertEqual(relay.attempts, 0)
-        XCTAssertFalse(log.snapshot().contains { $0.httpMethod == "PUT" || $0.url?.path == "/api/mobile/push/verified-register" })
+        XCTAssertFalse(log.snapshot().contains { $0.httpMethod == "PUT" || $0.url?.path == "/api/mobile/push/encrypted-register" })
         XCTAssertEqual(normal.value?.refreshToken, "refresh-alice")
         XCTAssertNotNil(normal.value?.proposedDeletionProof)
     }
@@ -369,9 +367,6 @@ extension PendingSessionRevocationTests {
                 deploymentId: old.serverUrl, userId: user.id, installationId: installation, scope: old.pushScope)
             let contentBytes = try JSONEncoder().encode(content)
             try storage.save(contentBytes, key: PushContentKey.storageKey)
-            let grantKey = "serverbee_pending_push_" + old.pushScope
-            let grantBytes = Data("existing-pending-grant-fixture".utf8)
-            try storage.save(grantBytes, key: grantKey)
             let event = UUID().uuidString.lowercased()
             try storage.save(JSONEncoder().encode(SavedTestPush(scope: old.pushScope,
                 request: TestPushRequest(eventId: event, expectedRevision: 2), admission: .admitted)), key: "serverbee_pending_push_test")
@@ -409,11 +404,10 @@ extension PendingSessionRevocationTests {
             await restarted.initialize()
             XCTAssertEqual(restarted.authenticationGeneration, first.authenticationGeneration)
             XCTAssertEqual(restarted.captureContext()?.pushScope, old.pushScope)
-            let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
+            let manager = PushNotificationManager(system: TestPushSystem(), storage: storage)
             let api = APIClient(authManager: restarted)
             manager.configure(apiClient: api)
             XCTAssertEqual(storage.load(PushContentKey.storageKey), contentBytes)
-            XCTAssertEqual(storage.load(grantKey), grantBytes)
             let delivery = PushTestDelivery(storage: storage)
             delivery.configure(apiClient: api)
             await delivery.refresh(setup: nil)

@@ -6,6 +6,9 @@ on:
     paths:
       - 'apps/ios/**'
       - 'tests/fixtures/push*-envelope-v1.json'
+      - 'crates/server/**'
+      - 'apps/push-relay/**'
+      - 'bun.lock'
       - '!apps/ios/**/*.md'
       - '.github/workflows/ci-ios.yml'
   pull_request:
@@ -13,6 +16,9 @@ on:
     paths:
       - 'apps/ios/**'
       - 'tests/fixtures/push*-envelope-v1.json'
+      - 'crates/server/**'
+      - 'apps/push-relay/**'
+      - 'bun.lock'
       - '!apps/ios/**/*.md'
       - '.github/workflows/ci-ios.yml'
 
@@ -21,14 +27,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  push-trace:
+    name: Produce Rust to Relay ciphertext traces
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: parallel-tests-v1
+          add-job-id-key: "false"
+          cache-workspace-crates: "true"
+      - name: Install locked dependencies and build embedded assets
+        run: bun install --frozen-lockfile && bun --filter @serverbee/web build
+      - name: Produce real Server to Worker payloads
+        env:
+          SERVERBEE_PUSH_TRACE_DIR: ${{ runner.temp }}/push-traces
+        run: |
+          mkdir -p "$SERVERBEE_PUSH_TRACE_DIR"
+          cargo test -p serverbee-server --test mobile_push_integration encrypted_test_uses_real_relay_admission_transport_and_legacy_migration --locked -- --exact
+          cargo test -p serverbee-server --test mobile_push_integration task_outcomes::lifecycle::trace::stitched_categories_use_actual_relay_and_preserve_external_legacy_delivery --locked -- --exact
+          test -s "$SERVERBEE_PUSH_TRACE_DIR/trace.json"
+          test -s "$SERVERBEE_PUSH_TRACE_DIR/trace-categories.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: push-ciphertext-traces
+          path: ${{ runner.temp }}/push-traces
+          if-no-files-found: error
+          retention-days: 1
+
   test:
     name: iOS Test
+    needs: push-trace
+    env:
+      TEST_RUNNER_SERVERBEE_PUSH_TRACE_DIR: ${{ runner.temp }}/push-traces
     runs-on: macos-15
     defaults:
       run:
         working-directory: apps/ios
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: push-ciphertext-traces
+          path: ${{ runner.temp }}/push-traces
 
       - uses: maxim-lobanov/setup-xcode@v1
         with:

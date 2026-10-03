@@ -87,7 +87,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
                 } catch APIError.unauthorized { /* Production automatic cleanup recovers the captured proof. */ }
             } else if route == "push" {
                 // This legacy request holds its pre-upgrade push context. The
-                // current client must not create a verified row without bootstrap.
+                // current client must not create an encrypted registration without bootstrap.
                 do {
                     try await api.postVoid("/api/mobile/push/register", body: ["device_token": "legacy-token"], context: fixture.context)
                     XCTFail("Expected unauthorized for the captured legacy push request")
@@ -270,7 +270,7 @@ private extension IOSFirstUpgradeRevocationTests {
     private func prepareUpgradedSession(
         _ replacements: Int, restore: Bool
     ) async throws -> UpgradedSessionFixture {
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         let (original, context) = try await seedIOSFirstSession(replacements, manager: manager)
         var auth = original
         let log = AuthenticationRequestLog()
@@ -298,7 +298,7 @@ private extension IOSFirstUpgradeRevocationTests {
         await manager.reconcile()
         XCTAssertNil((try AuthManager.readAuthentication())?.confirmedDeletionProof)
         XCTAssertTrue(try PendingSessionRevocations().records().isEmpty)
-        XCTAssertFalse(log.snapshot().contains { $0.url?.path == "/api/mobile/push/verified-register" })
+        XCTAssertFalse(log.snapshot().contains { $0.url?.path == "/api/mobile/push/encrypted-register" })
         return UpgradedSessionFixture(auth: auth, api: api, manager: manager, context: context)
     }
 

@@ -126,6 +126,26 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         run: cargo clippy --workspace --benches --tests --examples --all-features --locked -- -D warnings
 
+      - name: Generate current API contracts
+        if: needs.changes.outputs.rust == 'true'
+        working-directory: apps/web
+        run: bun run generate:api-types
+
+      - name: Upload generated API contracts
+        if: needs.changes.outputs.rust == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-api-contracts
+          path: |
+            apps/web/openapi.json
+            apps/web/src/lib/api-types.ts
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Check generated API contracts are committed
+        if: needs.changes.outputs.rust == 'true'
+        run: git diff --exit-code -- apps/web/openapi.json apps/web/src/lib/api-types.ts
+
       - name: Warm Rust test cache
         if: needs.changes.outputs.rust == 'true'
         run: |

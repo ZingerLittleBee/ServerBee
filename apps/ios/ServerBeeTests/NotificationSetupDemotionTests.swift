@@ -42,8 +42,7 @@ private final class DemotionHTTPFixture: @unchecked Sendable {
         return (200, Data("""
         {"data":{"revision":\(revision),"preferences":\(json),"security_allowed":\(securityAllowed),
         "tasks_allowed":\(securityAllowed),"task_failure_available":true,
-        "registered":\(preferences.enabled),"grant_expires_at":\(preferences.enabled ? "\"2033-05-18T03:33:20Z\"" : "null"),
-        "relay_url":"https://relay.test","delivery_available":false}}
+        "registered":\(preferences.enabled),"test_available":true,"delivery_available":false}}
         """.utf8))
     }
 
@@ -106,8 +105,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
                 login(auth)
                 let system = TestPushSystem()
                 system.status = .denied
-                let relay = TestPushRelay()
-                let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
+                let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
                 manager.configure(apiClient: APIClient(authManager: auth))
                 await manager.reconcile()
                 XCTAssertEqual(manager.confirmed?.securityAllowed, true)
@@ -141,7 +139,6 @@ final class NotificationSetupDemotionTests: XCTestCase {
                 XCTAssertEqual(manager.confirmed?.deliveryAvailable, false)
                 XCTAssertNil(manager.errorMessage)
                 XCTAssertEqual(system.permissionRequests, 0)
-                XCTAssertEqual(relay.attempts, 0)
                 await manager.waitForPendingRegistrations()
                 auth.clearAuth()
             }
@@ -156,8 +153,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
-        let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: system, storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         var disabled = try XCTUnwrap(manager.confirmed?.preferences)
@@ -193,7 +189,6 @@ final class NotificationSetupDemotionTests: XCTestCase {
         XCTAssertEqual(manager.confirmed?.preferences.taskSuccess, false)
         XCTAssertEqual(http.requestedRevisions(), [2, 2, 2])
         XCTAssertEqual(system.permissionRequests, 0)
-        XCTAssertEqual(relay.attempts, 0)
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(auth.user?.role, "admin", "Cached login metadata is not the category authority")
         await manager.waitForPendingRegistrations()

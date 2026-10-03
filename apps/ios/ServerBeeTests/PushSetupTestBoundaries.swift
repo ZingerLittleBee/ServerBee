@@ -17,21 +17,6 @@ final class TestPushSystem: PushSystemBoundary {
     func register() { registrations += 1 }
 }
 
-@MainActor
-final class TestPushRelay: PushRelayBoundary {
-    var supported = true
-    var attempts = 0
-    var revocations = 0
-    var registerHook: (() async throws -> Void)?
-    func register(token: String, relayUrl: String, scope: String, validate: @MainActor () throws -> Void) async throws -> RelayGrant {
-        attempts += 1
-        try await registerHook?()
-        try validate()
-        return RelayGrant(grantId: "fixture-grant-\(attempts)", grantToken: "fixture-secret-\(attempts)", keyId: "fixture-key", deviceToken: token, environment: "sandbox", expiresAt: 2_000_000_000)
-    }
-    func revoke(_ grant: RelayGrant, relayUrl: String) async throws { revocations += 1 }
-}
-
 enum PushSetupTestData {
     static func response(enabled: Bool = true, registered: Bool = false, revision: Int64 = 1, preferences: PushPreferences? = nil, securityAllowed: Bool = true, tasksAllowed: Bool? = nil) -> Data {
         let taskPermission = tasksAllowed ?? securityAllowed
@@ -40,8 +25,7 @@ enum PushSetupTestData {
         {"data":{"revision":\(revision),"preferences":{"enabled":\(selected.enabled),"alerts":\(selected.alerts),"security":\(selected.security),
         "task_failure":\(selected.taskFailure),"task_success":\(selected.taskSuccess)},
         "tasks_allowed":\(taskPermission),"task_failure_available":true,"security_allowed":\(securityAllowed),"registered":\(registered),
-        "grant_expires_at":\(registered ? "\"2033-05-18T03:33:20Z\"" : "null"),
-        "relay_url":"https://relay.test","delivery_available":false}}
+        "test_available":true,"delivery_available":false}}
         """.utf8)
     }
     static func body(_ request: URLRequest) -> [String: Any] {

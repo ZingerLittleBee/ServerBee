@@ -21,13 +21,13 @@ final class TestPushActionTests: XCTestCase {
                                                     user: MobileUser(id: "alice", username: "alice", role: "member"),
                                                     revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let storage = MemoryPushSetupStorage()
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: storage)
         let registered = expectation(description: "content key registered securely")
         let sent = expectation(description: "test request has no caller-selected recipient")
         PushLifecycleURLProtocol.handler = { request in
             let body = PushSetupTestData.body(request.request)
             switch request.request.url?.path {
-            case "/api/mobile/push/verified-register":
+            case "/api/mobile/push/encrypted-register":
                 XCTAssertEqual(request.request.url?.scheme, "https")
                 XCTAssertEqual(Data(base64Encoded: body["content_key"] as? String ?? "")?.count, 32)
                 XCTAssertNotNil(body["content_key_id"] as? String)
@@ -65,7 +65,7 @@ final class TestPushActionTests: XCTestCase {
                                                     user: MobileUser(id: "alice", username: "alice", role: "member"),
                                                     revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let storage = MemoryPushSetupStorage()
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: storage)
         let api = APIClient(authManager: auth)
         let posts = AuthenticationRequestLog()
         let reads = AuthenticationRequestLog()
@@ -102,7 +102,7 @@ final class TestPushActionTests: XCTestCase {
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(PushSetupTestData.body(requests[0])["event_id"] as? String,
                        PushSetupTestData.body(requests[1])["event_id"] as? String)
-        let restored = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
+        let restored = PushNotificationManager(system: TestPushSystem(), storage: storage)
         restored.configure(apiClient: api)
         await restored.refreshTestStatus()
         XCTAssertEqual(restored.testResult?.outcome, "retryable")
@@ -125,25 +125,23 @@ final class TestPushActionTests: XCTestCase {
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
                                                     user: MobileUser(id: "alice", username: "alice", role: "member"),
                                                     revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
-        let relay = TestPushRelay()
         let registration = expectation(description: "HTTP content key request forbidden")
         registration.isInverted = true
         PushLifecycleURLProtocol.handler = { request in
-            if request.request.url?.path == "/api/mobile/push/verified-register" { registration.fulfill() }
+            if request.request.url?.path == "/api/mobile/push/encrypted-register" { registration.fulfill() }
             request.respond(200)
         }
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 0xaa, count: 32))
         await fulfillment(of: [registration], timeout: 0.2)
         await manager.waitForPendingRegistrations()
-        XCTAssertEqual(relay.attempts, 0)
         XCTAssertNotNil(manager.errorMessage)
         XCTAssertNil(manager.contentKey())
     }
 
-    func testRejectedRedirectKeepsContentKeyAndGrantForExplicitSetupRetry() async throws {
+    func testRejectedRedirectKeepsContentKeyForExplicitSetupRetry() async throws {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
@@ -151,13 +149,12 @@ final class TestPushActionTests: XCTestCase {
                                                     user: MobileUser(id: "alice", username: "alice", role: "member"),
                                                     revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let storage = MemoryPushSetupStorage()
-        let relay = TestPushRelay()
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: storage)
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: storage)
         let log = AuthenticationRequestLog()
         let rejected = expectation(description: "registration redirect rejected")
         let retried = expectation(description: "explicit setup retry registers at original endpoint")
         PushLifecycleURLProtocol.handler = { request in
-            if request.request.url?.path == "/api/mobile/push/verified-register" {
+            if request.request.url?.path == "/api/mobile/push/encrypted-register" {
                 let count = log.append(request.request)
                 if count == 1 { rejected.fulfill(); request.respond(308) } else { retried.fulfill(); request.respond(200) }
             } else { request.respond(200) }
@@ -175,14 +172,13 @@ final class TestPushActionTests: XCTestCase {
         await manager.waitForPendingRegistrations()
         XCTAssertTrue(manager.confirmed?.registered == true)
         XCTAssertEqual(storage.load(PushContentKey.storageKey), content)
-        XCTAssertEqual(relay.attempts, 1)
         let requests = log.snapshot()
         XCTAssertEqual(requests.count, 2)
-        XCTAssertTrue(requests.allSatisfy { $0.url?.absoluteString == "https://serverbee.test/api/mobile/push/verified-register" })
+        XCTAssertTrue(requests.allSatisfy { $0.url?.absoluteString == "https://serverbee.test/api/mobile/push/encrypted-register" })
         XCTAssertEqual(PushSetupTestData.body(requests[0])["content_key"] as? String,
                        PushSetupTestData.body(requests[1])["content_key"] as? String)
-        XCTAssertEqual(PushSetupTestData.body(requests[0])["grant_token"] as? String,
-                       PushSetupTestData.body(requests[1])["grant_token"] as? String)
+        XCTAssertEqual(PushSetupTestData.body(requests[0])["content_key_id"] as? String,
+                       PushSetupTestData.body(requests[1])["content_key_id"] as? String)
     }
 
     func testDirectRegistrationCallerCannotBypassHttpsRequirement() async throws {
@@ -198,15 +194,40 @@ final class TestPushActionTests: XCTestCase {
         PushLifecycleURLProtocol.handler = { request in forbidden.fulfill(); request.respond(200) }
         do {
             let _: PushSetup = try await APIClient(authManager: auth).send(
-                "/api/mobile/push/verified-register", method: "POST",
-                body: VerifiedPushRequest(expectedRevision: 1, deviceToken: String(repeating: "a", count: 64), environment: "sandbox",
-                                          keyId: "fixture-key", grantId: "fixture-grant", grantToken: "fixture-secret",
-                                          contentKeyId: UUID().uuidString, contentKey: Data(repeating: 0x41, count: 32).base64EncodedString(),
+                "/api/mobile/push/encrypted-register", method: "POST",
+                body: PushRegistrationRequest(expectedRevision: 1, deviceToken: String(repeating: "a", count: 64), environment: "sandbox",
+                                              contentKeyId: UUID().uuidString, contentKey: Data(repeating: 0x41, count: 32).base64EncodedString(),
                                           deploymentId: context.serverUrl), context: context
             )
             XCTFail("Direct registration over HTTP must fail before sending")
         } catch PushSetupError.insecureServer { }
         await fulfillment(of: [forbidden], timeout: 0.2)
         XCTAssertTrue(auth.isCurrent(context))
+    }
+}
+
+
+extension TestPushActionTests {
+    func testServerTestAvailabilityPreventsUnadmittedTestSend() async throws {
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
+        auth.setServerUrl("https://serverbee.test")
+        auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
+            refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
+            user: MobileUser(id: "alice", username: "alice", role: "member"),
+            revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
+        let forbidden = expectation(description: "Server reports tests unavailable")
+        forbidden.isInverted = true
+        PushLifecycleURLProtocol.handler = { request in forbidden.fulfill(); request.respond(200) }
+        let storage = MemoryPushSetupStorage()
+        let delivery = PushTestDelivery(storage: storage)
+        delivery.configure(apiClient: APIClient(authManager: auth))
+        var setup = try JSONDecoder().decode(ApiResponse<PushSetup>.self, from: PushSetupTestData.response(registered: true)).data
+        XCTAssertEqual(setup.testAvailable, true)
+        setup.testAvailable = false
+        await delivery.send(setup: setup)
+        await fulfillment(of: [forbidden], timeout: 0.2)
+        XCTAssertNil(delivery.result)
+        XCTAssertFalse(delivery.isTesting)
+        XCTAssertTrue(storage.values.isEmpty)
     }
 }

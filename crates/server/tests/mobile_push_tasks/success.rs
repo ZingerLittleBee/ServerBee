@@ -84,7 +84,7 @@ async fn manual_success_waits_for_all_targets_and_only_opted_in_initiator_device
         let client = reqwest::Client::new();
         let creator = login_http(&client, &base, "admin", "creator").await;
         let creator_access = creator["access_token"].as_str().unwrap();
-        subscribe(&client, &base, creator_access, "creator-grant").await;
+        subscribe(&client, &base, creator_access, "creator-device").await;
         preferences(&client, &base, creator_access, true, true).await;
         AuthService::create_user(&state.db, "initiator", "testpass", "admin")
             .await

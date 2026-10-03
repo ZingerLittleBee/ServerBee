@@ -26,7 +26,7 @@ final class PushLifecycleURLProtocol: URLProtocol {
         guard Self.pending.finish(self), let url = request.url,
               let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        let result = request.url?.path == "/api/mobile/push/verified-register" && status == 200 && data == Data(#"{"data":"ok"}"#.utf8)
+        let result = request.url?.path == "/api/mobile/push/encrypted-register" && status == 200 && data == Data(#"{"data":"ok"}"#.utf8)
             ? PushSetupTestData.response(registered: true, revision: 2) : data
         client?.urlProtocol(self, didLoad: result)
         client?.urlProtocolDidFinishLoading(self)
@@ -104,7 +104,7 @@ final class PushRegistrationLifecycleTests: XCTestCase {
     private func assertStaleUpload(server: String, user: String, status: Int) async {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let started = expectation(description: "original upload started")
@@ -114,7 +114,7 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         let held = HeldPushRequest()
         PushLifecycleURLProtocol.handler = { request in
             if request.request.url?.host == "original.test",
-               request.request.url?.path == "/api/mobile/push/verified-register", held.holdFirst(request) {
+               request.request.url?.path == "/api/mobile/push/encrypted-register", held.holdFirst(request) {
                 XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
                 started.fulfill()
             } else if request.request.url?.host == "original.test",
@@ -191,7 +191,7 @@ extension PushRegistrationLifecycleTests {
     func testUploadRetriesRefreshOnlyWithinCapturedLogin() async {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let retried = expectation(description: "upload retried with rotated credential")
@@ -201,7 +201,7 @@ extension PushRegistrationLifecycleTests {
             log.append(request.request)
             XCTAssertEqual(request.request.url?.host, "original.test")
             switch request.request.url?.path {
-            case "/api/mobile/push/verified-register":
+            case "/api/mobile/push/encrypted-register":
                 if request.request.value(forHTTPHeaderField: "Authorization") == "Bearer access-alice" {
                     request.respond(401)
                 } else {
@@ -225,15 +225,15 @@ extension PushRegistrationLifecycleTests {
         XCTAssertEqual(auth.getAccessToken(), "rotated-alice")
         await manager.unregister()
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, [
-            "/api/mobile/push/verified-register", "/api/mobile/auth/refresh",
-            "/api/mobile/push/verified-register", "/api/mobile/push/unregister"
+            "/api/mobile/push/encrypted-register", "/api/mobile/auth/refresh",
+            "/api/mobile/push/encrypted-register", "/api/mobile/push/unregister"
         ])
     }
 
     func testRefreshCompletionAfterLogoutCannotRestorePreviousAccount() async {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         await manager.reconcile()
         let refreshing = expectation(description: "refresh held in flight")
@@ -258,7 +258,7 @@ extension PushRegistrationLifecycleTests {
         XCTAssertEqual(auth.getAccessToken(), "access-bob")
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, [
-            "/api/mobile/push/verified-register", "/api/mobile/auth/refresh", "/api/mobile/push/unregister"
+            "/api/mobile/push/encrypted-register", "/api/mobile/auth/refresh", "/api/mobile/push/unregister"
         ])
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "original.test" })
     }
@@ -267,7 +267,7 @@ extension PushRegistrationLifecycleTests {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let api = APIClient(authManager: auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: api)
         await manager.reconcile()
         let uploadStarted = expectation(description: "upload held in flight")
@@ -279,7 +279,7 @@ extension PushRegistrationLifecycleTests {
         let log = PushRequestLog()
         PushLifecycleURLProtocol.handler = { request in
             log.append(request.request)
-            if request.request.url?.path == "/api/mobile/push/verified-register" {
+            if request.request.url?.path == "/api/mobile/push/encrypted-register" {
                 held.hold(request)
                 uploadStarted.fulfill()
             } else {
@@ -306,7 +306,7 @@ extension PushRegistrationLifecycleTests {
         held.release(200)
         await logout.value
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, [
-            "/api/mobile/push/verified-register", "/api/mobile/push/unregister", "/api/mobile/auth/revoke"
+            "/api/mobile/push/encrypted-register", "/api/mobile/push/unregister", "/api/mobile/auth/revoke"
         ])
         for request in log.snapshot() {
             if request.url?.path == "/api/mobile/auth/revoke" {
@@ -323,7 +323,7 @@ extension PushRegistrationLifecycleTests {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let api = APIClient(authManager: auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: api)
         await manager.reconcile()
         let unregistering = expectation(description: "unregister held in flight")
@@ -364,7 +364,7 @@ extension PushRegistrationLifecycleTests {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let api = APIClient(authManager: auth)
-        let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
+        let manager = PushNotificationManager(system: TestPushSystem(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: api)
         await manager.reconcile()
         let log = PushRequestLog()
@@ -393,7 +393,7 @@ extension PushRegistrationLifecycleTests {
         PushLifecycleURLProtocol.handler = { request in
             XCTAssertEqual(request.request.url?.host, "replacement.test")
             XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-bob")
-            if request.request.url?.path == "/api/mobile/push/verified-register" { replacementUpload.fulfill() }
+            if request.request.url?.path == "/api/mobile/push/encrypted-register" { replacementUpload.fulfill() }
             request.respond(200)
         }
         manager.didRegisterForRemoteNotifications(deviceToken: Data([5, 6]))

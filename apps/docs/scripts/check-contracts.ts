@@ -634,8 +634,8 @@ for (const locale of locales) {
     `${locale}/deployment.mdx omits isolated Relay operations`
   )
   invariant(
-    operations.includes('APP_ATTEST_ROOT_SHA256') && operations.includes('APNS_PRIVATE_KEY'),
-    `${locale} Relay operations omit trust/signing ownership`
+    operations.includes('APNS_PRIVATE_KEY') && operations.includes('Cloudflare') && operations.includes('/v1/send'),
+    `${locale} Relay operations omit Worker protocol/signing ownership`
   )
   invariant(
     !/under development|仍在开发中/.test(mobile),

@@ -13,7 +13,7 @@ final class PushKeychainIsolationTests: XCTestCase {
         AuthenticationURLProtocol.handler = nil
         AuthenticationURLProtocol.cancelPending()
         URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
-        KeychainService.delete(for: "fixture-pending-relay-grant")
+        KeychainService.delete(for: "fixture-private-metadata")
         AuthManager().clearAuth()
         try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
@@ -32,7 +32,7 @@ final class PushKeychainIsolationTests: XCTestCase {
                                      installationId: context.installationId, scope: context.pushScope)
         let bytes = try JSONEncoder().encode(content)
         try storage.save(bytes, key: PushContentKey.storageKey)
-        try storage.save(Data("fixture-grant-secret".utf8), key: "fixture-pending-relay-grant")
+        try storage.save(Data("fixture-private-secret".utf8), key: "fixture-private-metadata")
         XCTAssertEqual(SharedPushKeychain.load(), bytes)
         XCTAssertNil(KeychainService.load(for: PushContentKey.storageKey))
         XCTAssertEqual(try read(group: sharedGroup, service: "com.serverbee.mobile.push", account: PushContentKey.storageKey), bytes)
@@ -87,9 +87,9 @@ final class PushKeychainIsolationTests: XCTestCase {
             XCTAssertNil(try read(group: privateGroup, service: "com.serverbee.mobile", account: key), "Obsolete credential copies must be deleted")
             XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: key))
         }
-        XCTAssertEqual(try read(group: privateGroup, service: "com.serverbee.mobile", account: "fixture-pending-relay-grant"),
-                       Data("fixture-grant-secret".utf8))
-        XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: "fixture-pending-relay-grant"))
+        XCTAssertEqual(try read(group: privateGroup, service: "com.serverbee.mobile", account: "fixture-private-metadata"),
+                       Data("fixture-private-secret".utf8))
+        XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: "fixture-private-metadata"))
     }
 
     func testPendingDeletionProofRemainsPrivateWithoutNormalCredentials() throws {

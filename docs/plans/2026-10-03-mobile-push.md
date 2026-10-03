@@ -1,6 +1,6 @@
 # Server-originated mobile notifications
 
-Status: design decisions agreed individually; awaiting final design confirmation.
+Status: approved, revised 2026-10-03 for public stateless Cloudflare Workers forwarding. The initial unreleased App Attest/grant design is superseded; account ownership, encryption and Server reliability remain required.
 
 ## Outcome
 
@@ -10,8 +10,8 @@ backgrounded, or not running:
 `ServerBee Server -> ServerBee Push Relay -> APNs -> iOS`
 
 The Server owns event selection, subscriptions, recipients, and pending
-deliveries. The relay owns Apple credentials and validates device-bound
-delivery authorization. It cannot decrypt notification content.
+deliveries. The public stateless Cloudflare Worker owns Apple credentials and bounded
+forwarding. It cannot decrypt notification content or authenticate senders.
 
 ## Current implementation and confirmed gaps
 
@@ -27,8 +27,8 @@ delivery authorization. It cannot decrypt notification content.
   details; a rule-only fallback is not the actual alert-detail identity.
 - Delegate callbacks can arrive before the app injects its push stores.
 - The current relay reference is Heeler's separate-topic, encrypted,
-  developer-operated Cloudflare Worker. Its public admission and SSH device
-  registration are unsuitable for ServerBee's selected ownership model.
+  developer-operated Cloudflare Worker. The revised design adopts public forwarding
+  while retaining ServerBee's authenticated HTTPS ownership model, not SSH registration.
 
 These are source findings, not runtime or real-device verification.
 
@@ -81,27 +81,31 @@ registered relay installation.
   and navigation target inside the encrypted content.
 - Carry the actual APNs environment with registration. Development tokens
   and distribution tokens must use their corresponding Apple endpoints.
-- Use App Attest with one-time challenges to authorize relay registration.
-  Verify the Apple trust chain, app identity, environment, nonce, and key;
-  verify subsequent assertions and reject replay.
-- Issue narrowly scoped delivery grants for the registered device and
-  environment. Refresh and revocation must not authorize another device.
-- Keep relay state for challenge/replay/revocation and admission limits;
-  do not store notification content keys or plaintext messages there.
-- A relay failure or unsupported App Attest leaves push unavailable with
-  visible status; it does not disable login or monitoring, and does not
-  fall back to public production admission.
+- Register token, environment and content key only with the authenticated HTTPS
+  Server at `/api/mobile/push/encrypted-register`. Preserve account, installation,
+  session and revision ownership; keep legacy `/register` behavior separate.
+- Use one public Worker `POST /v1/send`, with no App Attest, build/distribution
+  allowlist, challenge/grant service or Relay database. Do not replace it with
+  another token issuer or authorization system.
+- Accept known-token junk/replay/generic-notification risk and resource/quota abuse
+  even without a victim token. Encryption is content protection, not admission.
+- Retain hard streamed body/parse/payload limits, fixed APNs hosts/topic/environment,
+  generic fallback, deadlines and bounded concurrency. Per-source/target rate maps
+  have hard cardinality bounds and an isolate-wide cap; they are not global quotas.
+- WebCrypto signs provider JWTs and platform fetch owns connection management.
+  APNs credentials are Worker variables/secrets, never Server or client config.
+
 - Use an isolated ServerBee relay deployment with its own topic and
   configuration. Do not modify or deploy the existing Heeler relay.
 
 The relay can observe device tokens, source IPs, timing, request size,
-environment, authorization identifiers, and ciphertext. Explain this
+environment, event/delivery identifiers, and ciphertext. Explain this
 before permission is requested and in the mobile documentation.
 
 ## Server lifecycle and delivery
 
 - Persist subscriptions and registration ownership with a stable
-  installation identity and a revision for token/key/grant changes.
+  installation identity and a revision for token/key changes.
 - Rotate authentication credentials atomically while retaining the
   installation's valid push binding. Logout, device revocation, password
   changes, user deletion, and session expiry stop eligible delivery.
@@ -122,20 +126,16 @@ before permission is requested and in the mobile documentation.
 
 1. Server registration/auth lifecycle, subscription APIs, migrations,
    encrypted envelope, outbox/worker, event wiring, and behavior tests.
-2. iOS notification settings, App Attest registration, shared Keychain,
+2. iOS notification settings, authenticated content-key registration, shared Keychain,
    notification extension, callback buffering, identity-aware routing,
    localization, and tests.
-3. Isolated Relay admission, scoped grants, revocation, APNs transport,
+3. Stateless Cloudflare Worker, public request bounds, APNs transport,
    request limits, tests, and deployment documentation.
 4. Integration verification, bilingual mobile/configuration documentation,
    API type generation where contracts change, and focused local commits.
 
-Use established cryptography implementations rather than handwritten
-cryptographic primitives or certificate validation. Proposed additional
-libraries are Rust `aes-gcm` for the envelope and Relay `cbor-x` plus
-`@peculiar/x509` for App Attest's CBOR and certificate boundary. Confirm
-runtime/version support before installation. Their addition remains part
-of final design confirmation.
+The Worker has no production package dependencies. Use native WebCrypto and fetch;
+Wrangler and Workers-runtime testing packages are development tooling only.
 
 ## Verification and handoff
 
@@ -143,16 +143,17 @@ of final design confirmation.
   revocation stop delivery; role/category/expiry filtering; task retries
   produce only a final summary; security-rule suppression; queue expiry,
   restart, provider failure, and token replacement races.
-- Relay tests: valid and invalid attestation/assertion fixtures, replay,
-  grant scope/revocation, APNs environment and headers, size limits, error
-  classification, and JWT caching. Mock only Apple/network boundaries.
+- Relay tests: actual Workers request boundary, streamed oversize/slow bodies,
+  bounded limiter cardinality, fixed schema/fallback/hosts, both environments,
+  payload/header correctness, JWT reuse and APNs error classification. Mock only
+  external provider networking; perform a local Wrangler deployment dry run.
 - iOS tests: permission states, callback buffering, authenticated
   registration, failed preference saves, identity/routing, and encrypted
   envelope fixtures. Regenerate the Xcode project and run relevant builds
   and tests on an explicitly selected simulator.
 - Relevant Rust formatting/Clippy, client types, docs contracts, and
   navigation checks follow repository entry points.
-- Separately verify real-device App Attest and APNs delivery, foreground,
+- Separately verify live APNs delivery, foreground,
   background, terminated launch, notification decryption, refresh, logout,
   and taps when a configured test relay and signed device build exist.
 
@@ -168,5 +169,3 @@ verification from any blocked live-device or deployed-service checks.
 - [APNs registration](https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns)
 - [APNs signing keys](https://developer.apple.com/help/account/capabilities/communicate-with-apns-using-authentication-tokens/)
 - [Notification Service Extension](https://developer.apple.com/documentation/usernotifications/modifying-content-in-newly-delivered-notifications)
-- [App Attest](https://developer.apple.com/documentation/devicecheck/establishing-your-app-s-integrity)
-- [App Attest server validation](https://developer.apple.com/documentation/devicecheck/validating-apps-that-connect-to-your-server)
