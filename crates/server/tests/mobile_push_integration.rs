@@ -2079,16 +2079,21 @@ async fn queued_delivery_revalidates_disable_logout_revocation_expiry_role_passw
                     200
                 );
             }
-            "user" => assert_eq!(
-                client
+            "user" => {
+                let response = client
                     .delete(format!("{base}/api/users/{user_id}"))
                     .bearer_auth(admin)
                     .send()
                     .await
-                    .unwrap()
-                    .status(),
-                200
-            ),
+                    .unwrap();
+                let status = response.status();
+                let body = response.json::<serde_json::Value>().await.unwrap();
+                assert_eq!(
+                    status, 200,
+                    "DELETE user error code={}, message={}",
+                    body["error"]["code"], body["error"]["message"]
+                );
+            }
             "grant_expiry" => {
                 use serverbee_server::entity::mobile_push_registration as registration;
                 registration::Entity::update_many()
@@ -2359,4 +2364,77 @@ async fn abandoned_inflight_lease_recovers_after_restart_without_renewing_event_
     assert_eq!(delivered.expires_at, original.expires_at);
     assert_eq!(delivered.attempts, 2);
     assert_eq!(relay.requests().await.len(), 2);
+}
+
+#[tokio::test]
+async fn user_mutations_wait_for_outbox_writer_before_reading_revocation_guards() {
+    for operation in ["delete", "password", "role"] {
+        let (base, state, _tmp, relay) = queued_setup().await;
+        let client = reqwest::Client::new();
+        let login = login_http(&client, &base, "member", "contended-install").await;
+        let access = login["access_token"].as_str().unwrap();
+        let admin = login_http(&client, &base, "admin", "admin-install").await;
+        queued_register(&client, &base, access, "device-a").await;
+        let event = uuid::Uuid::new_v4().to_string();
+        assert_eq!(
+            enqueue_test(&client, &base, access, 2, &event)
+                .await
+                .status(),
+            200
+        );
+        // Hold a real SQLite writer on the outbox, as an independent worker can.
+        // No policy or persistence helper is substituted. The old deferred
+        // transaction reads user guards then fails its upgrade with SQLITE_BUSY.
+        use sea_orm::TransactionTrait;
+        let writer = state.db.begin().await.unwrap();
+        writer
+            .execute_unprepared("UPDATE mobile_push_outbox SET attempts=attempts")
+            .await
+            .unwrap();
+        let releasing = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            writer.commit().await.unwrap();
+        });
+        let endpoint = format!("{base}/api/users/{}", login["user"]["id"].as_str().unwrap());
+        let request = if operation == "delete" {
+            client.delete(endpoint)
+        } else {
+            client.put(endpoint).json(&if operation == "role" {
+                serde_json::json!({"role":"admin"})
+            } else {
+                serde_json::json!({"password":"replacement-testpass"})
+            })
+        };
+        let response = request
+            .bearer_auth(admin["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.json::<serde_json::Value>().await.unwrap();
+        assert_eq!(
+            status, 200,
+            "{operation} error code={}, message={}",
+            body["error"]["code"], body["error"]["message"]
+        );
+        releasing.await.unwrap();
+        let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+        for _ in 0..100 {
+            if outbox_job(&state, &event, "contended-install")
+                .await
+                .outcome
+                == "permanent"
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        worker.abort();
+        let _ = worker.await;
+        assert_eq!(
+            outbox_job(&state, &event, "contended-install").await.reason,
+            "Ineligible"
+        );
+        assert!(relay.requests().await.is_empty(), "{operation}");
+    }
 }

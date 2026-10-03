@@ -81,9 +81,9 @@ async fn eligible(
             if !owner.must_change_password
                 && owner.role == job.recipient_role
                 && matches!(owner.role.as_str(), "admin" | "member")
-                && !owner
+                && owner
                     .password_changed_at
-                    .is_some_and(|changed| mobile.created_at < changed) =>
+                    .is_none_or(|changed| mobile.created_at >= changed) =>
         {
             Ok(Some(row))
         }
@@ -93,6 +93,22 @@ async fn eligible(
 
 async fn deliver_next(state: &AppState) -> Result<(), AppError> {
     let now = Utc::now().timestamp();
+    // Idle workers only read. Avoid competing for SQLite's writer lock on
+    // every poll when there is no due/expired work. Recheck under the lock below.
+    let ready = outbox::Entity::find()
+        .filter(outbox::Column::Outcome.is_in(["pending", "retryable"]))
+        .filter(outbox::Column::LeaseUntil.lte(now))
+        .filter(
+            sea_orm::Condition::any()
+                .add(outbox::Column::NextAttemptAt.lte(now))
+                .add(outbox::Column::ExpiresAt.lte(now)),
+        )
+        .limit(1)
+        .one(&state.db)
+        .await?;
+    if ready.is_none() {
+        return Ok(());
+    }
     let txn = state.db.begin().await?;
     // Take the SQLite writer lock before selection, eligibility and claim.
     txn.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,

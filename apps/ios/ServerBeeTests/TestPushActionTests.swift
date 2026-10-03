@@ -75,7 +75,8 @@ final class TestPushActionTests: XCTestCase {
                 request.respond(200, data: Data("{\"data\":{\"event_id\":\"\(event)\",\"outcome\":\"pending\",\"reason\":\"Queued\",\"presentation\":\"unobserved\"}}".utf8))
             } else if path.hasPrefix("/api/mobile/push/test/") {
                 let count = reads.append(request.request)
-                let outcome = ["retryable", "accepted", "permanent", "expired"][min(count - 1, 3)]
+                if count == 1 { request.respond(404); return }
+                let outcome = ["retryable", "accepted", "permanent", "expired"][min(count - 2, 3)]
                 let event = request.request.url?.lastPathComponent ?? ""
                 request.respond(200, data: Data("{\"data\":{\"event_id\":\"\(event)\",\"outcome\":\"\(outcome)\",\"reason\":\"Fixture\",\"presentation\":\"unobserved\"}}".utf8))
             } else { request.respond(200) }

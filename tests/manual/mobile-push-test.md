@@ -189,3 +189,13 @@ Relay outage/restart exercise: verify pending/retryable status, restore the Rela
 inside the 30-minute window, then record the provider receipt and actual phone
 presentation separately. Repeat after disable/revocation and past expiry; already
 in-flight or accepted notifications are not retractable.
+
+The iOS recovery coordinator distinguishes an unknown reply, confirmed absence
+and confirmed admission in app-private saved metadata. When registration changes,
+an owned status lookup must establish absence before updating the same UUID's
+expected revision. Existing admitted work is queried rather than resubmitted;
+even a later 404 cannot recreate its original expiry window. Recovery tests cover
+lost accepted replies, old saved metadata, restart, definite 404, conflicting late
+admission and previous-account completions. `user_mutations_wait_for_outbox_writer_before_reading_revocation_guards`
+holds a real SQLite outbox writer while authenticated user DELETE/password/role
+operations start; each must wait successfully and prevent later eligible sends.

@@ -38,11 +38,12 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     private(set) var deviceToken: String?
     private(set) var confirmed: PushSetup?
     private(set) var isSaving = false
-    var errorMessage: String? { failedPreferences?.message ?? registrationErrorMessage }
+    var errorMessage: String? { failedPreferences?.message ?? registrationErrorMessage ?? testDelivery.errorMessage }
     var unconfirmedPreferences: PushPreferences? { failedPreferences?.preferences }
     private(set) var verificationUnavailable = false
-    private(set) var testResult: TestPushResponse?
-    private(set) var isTesting = false
+    var testResult: TestPushResponse? { testDelivery.result }
+    var isTesting: Bool { testDelivery.isTesting }
+    private let testDelivery: PushTestDelivery
     private let system: any PushSystemBoundary
     private let relay: any PushRelayBoundary
     private let storage: any PushSetupStorage
@@ -60,9 +61,6 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     private var latestRead: UUID?
     private var activeWrite: UUID?
     private var permissionRequest: UUID?
-    private var testRequest: TestPushRequest?
-    private var activeTest: UUID?
-    private let testStorageKey = "serverbee_pending_push_test"
 
     init(
         system: any PushSystemBoundary = NativePushSystem(), relay: any PushRelayBoundary = AppAttestPushRelay(),
@@ -71,6 +69,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         self.system = system
         self.relay = relay
         self.storage = storage
+        testDelivery = PushTestDelivery(storage: storage)
         super.init()
     }
 
@@ -147,10 +146,6 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 } else if permissionGranted, let deviceToken { uploadToken(deviceToken) }
             } else {
                 clearContentKey(captured)
-                testResult = nil
-                testRequest = nil
-                activeTest = nil
-                isTesting = false
                 let pending = pendingGrant(captured, url: setup.relayUrl)
                 clearPending(captured)
                 let binding = grants.removeValue(forKey: captured.generation)
@@ -321,7 +316,7 @@ extension PushNotificationManager {
     }
     private func clearContentKey(_ captured: MobileAuthenticationContext) {
         if contentKey()?.scope == captured.pushScope { storage.delete(PushContentKey.storageKey) }
-        if savedTest()?.scope == captured.pushScope { storage.delete(testStorageKey) }
+        testDelivery.clear(context: captured)
     }
 }
 
@@ -429,16 +424,9 @@ private struct PendingPushGrant: Codable {
 }
 
 extension PushNotificationManager {
-    private func savedTest() -> SavedTestPush? {
-        storage.load(testStorageKey).flatMap { try? JSONDecoder().decode(SavedTestPush.self, from: $0) }
-    }
     func configure(apiClient: APIClient) {
         let next = apiClient.captureContext()
         if context?.generation != next?.generation {
-            testResult = nil
-            testRequest = nil
-            activeTest = nil
-            isTesting = false
             confirmed = nil
             registrationErrorMessage = nil
             failedPreferences = nil
@@ -451,50 +439,14 @@ extension PushNotificationManager {
         self.apiClient = apiClient
         context = next
         acceptingRegistrations = next != nil
-        if testRequest == nil, let saved = savedTest() {
-            if saved.scope == next?.pushScope { testRequest = saved.request } else { storage.delete(testStorageKey) }
-        }
+        testDelivery.configure(apiClient: apiClient)
         if let record = contentKey(), record.scope != next?.pushScope { storage.delete(PushContentKey.storageKey) }
     }
 
     func sendTestNotification() async {
-        guard !isSaving, !isTesting, let apiClient, let captured = context,
-              let setup = confirmed, setup.registered, setup.preferences.enabled,
-              apiClient.isCurrent(captured) else { return }
-        let operation = UUID()
-        activeTest = operation
-        isTesting = true
-        defer { if activeTest == operation { activeTest = nil; isTesting = false } }
-        do {
-            if testRequest == nil || testResult?.isPending == false {
-                testRequest = TestPushRequest(eventId: UUID().uuidString.lowercased(), expectedRevision: setup.revision)
-            }
-            guard let request = testRequest else { return }
-            // Retain this scoped identity in app-private storage across lost responses/restarts.
-            try storage.save(JSONEncoder().encode(SavedTestPush(scope: captured.pushScope, request: request)), key: testStorageKey)
-            let result: TestPushResponse = try await apiClient.send(
-                "/api/mobile/push/test", method: "POST", body: request, context: captured
-            )
-            guard apiClient.isCurrent(captured), context?.generation == captured.generation, activeTest == operation else { return }
-            testResult = result
-            registrationErrorMessage = nil
-        } catch { report(error, captured: captured) }
+        guard !isSaving, acceptingRegistrations else { return }
+        await testDelivery.send(setup: confirmed)
     }
-    func refreshTestStatus() async {
-        guard !isTesting, let apiClient, let captured = context, let request = testRequest,
-              apiClient.isCurrent(captured) else { return }
-        let operation = UUID()
-        activeTest = operation
-        isTesting = true
-        defer { if activeTest == operation { activeTest = nil; isTesting = false } }
-        do {
-            let result: TestPushResponse = try await apiClient.get(
-                "/api/mobile/push/test/\(request.eventId)", context: captured
-            )
-            guard apiClient.isCurrent(captured), context?.generation == captured.generation,
-                  testRequest?.eventId == request.eventId, activeTest == operation else { return }
-            testResult = result
-            if !result.isPending { storage.delete(testStorageKey) }
-        } catch { report(error, captured: captured) }
-    }
+
+    func refreshTestStatus() async { await testDelivery.refresh(setup: confirmed) }
 }

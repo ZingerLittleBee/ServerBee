@@ -91,6 +91,20 @@ impl UserService {
         AuthService::create_user(db, username, password, role).await
     }
 
+    /// Take SQLite's writer lock before reading mutation guards. A deferred
+    /// read transaction cannot safely upgrade while delivery workers write.
+    async fn lock_user_for_mutation(txn: &DatabaseTransaction, id: &str) -> Result<(), AppError> {
+        user::Entity::update_many()
+            .col_expr(
+                user::Column::UpdatedAt,
+                sea_query::Expr::col(user::Column::UpdatedAt).into(),
+            )
+            .filter(user::Column::Id.eq(id))
+            .exec(txn)
+            .await?;
+        Ok(())
+    }
+
     /// Update a user's role and optionally reset their password.
     ///
     /// Runs entirely in one transaction so the last-admin guard's count and
@@ -104,6 +118,7 @@ impl UserService {
         input: UpdateUserInput,
     ) -> Result<user::Model, AppError> {
         let txn = db.begin().await?;
+        Self::lock_user_for_mutation(&txn, id).await?;
 
         let user = user::Entity::find_by_id(id)
             .one(&txn)
@@ -171,6 +186,7 @@ impl UserService {
     /// and the multi-table cleanup is atomic.
     pub async fn delete_user(db: &DatabaseConnection, id: &str) -> Result<(), AppError> {
         let txn = db.begin().await?;
+        Self::lock_user_for_mutation(&txn, id).await?;
 
         let user = user::Entity::find_by_id(id)
             .one(&txn)

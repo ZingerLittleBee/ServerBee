@@ -113,8 +113,14 @@ struct TestPushResponse: Decodable, Sendable {
     }
 }
 
+enum TestPushAdmission: String, Codable, Sendable {
+    case unknown, unadmitted, admitted
+}
+
 struct SavedTestPush: Codable, Sendable {
     let scope: String
     let request: TestPushRequest
-    enum CodingKeys: String, CodingKey { case scope, request }
+    // Optional for metadata saved by the first durable-test implementation.
+    let admission: TestPushAdmission?
+    enum CodingKeys: String, CodingKey { case scope, request, admission }
 }
