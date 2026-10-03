@@ -121,7 +121,6 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
     private func assertLogoutHandoff(committed: Bool) async throws {
         let fixture = try await prepareUpgradedSession(3, restore: false)
         let auth = fixture.auth
-        let api = fixture.api
         let manager = fixture.manager
         let log = AuthenticationRequestLog()
         let started = expectation(description: "overlapping original refresh is held")

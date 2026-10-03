@@ -80,11 +80,20 @@ final class AuthManager {
 
     func prepareForLogin() async throws {
         try loadAuthenticationIfNeeded()
+        let generation = authenticationGeneration
         await retryPendingRevocations()
+        guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
         if let saved {
             guard let record = saved.revocation else { throw AuthError.secureLogoutNeedsConnection }
             try revocations.enqueue(record)
+            // The initial capacity-recovery pass predates this record. Attempt
+            // this exact identity before a replacement can create push ownership.
+            do {
+                try await APIClient.revokeSavedSession(record)
+                try revocations.remove(record)
+            } catch { /* Retain the exact proof for the next bounded retry. */ }
         }
+        guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
         try revocations.requireLoginCapacity()
     }
 

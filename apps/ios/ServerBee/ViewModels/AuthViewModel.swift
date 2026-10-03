@@ -44,8 +44,9 @@ final class AuthViewModel {
         )
 
         do {
-            try await authManager.prepareForLogin()
             let generation = authManager.authenticationGeneration
+            try await authManager.prepareForLogin()
+            guard authManager.authenticationGeneration == generation else { throw AuthError.staleIdentity }
             guard let url = URL(string: "\(normalizedUrl)/api/mobile/auth/login") else {
                 errorMessage = String(localized: "Invalid server URL.")
                 return
@@ -147,8 +148,9 @@ final class AuthViewModel {
             throw PairError.invalidServerUrl
         }
 
-        try await authManager.prepareForLogin()
         let generation = authManager.authenticationGeneration
+        try await authManager.prepareForLogin()
+        guard authManager.authenticationGeneration == generation else { throw AuthError.staleIdentity }
         let installationId = try InstallationID.getOrCreateThrowing()
         let body: [String: String] = [
             "code": code,

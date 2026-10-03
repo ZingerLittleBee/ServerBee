@@ -230,23 +230,12 @@ extension PendingSessionRevocationTests {
         let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal)
         login(auth, confirmed: false)
         let log = AuthenticationRequestLog()
+        let entered = expectation(description: "bootstrap request held before its response")
         AuthenticationURLProtocol.handler = { request in
             _ = log.append(request.request)
             if request.request.url?.path == "/api/mobile/auth/refresh" {
-                Task { @MainActor in
-                    let proposal = PushSetupTestData.body(request.request)["revocation_proof"] as? String
-                    XCTAssertEqual(proposal, normal.value?.proposedDeletionProof)
-                    XCTAssertNil(normal.value?.confirmedDeletionProof)
-                    guard let proposal else { request.respond(500); return }
-                    let response = MobileTokenResponse(accessToken: "rotated", accessExpiresInSecs: 900,
-                        refreshToken: "rotated-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                        user: MobileUser(id: "alice", username: "alice", role: "member"),
-                        revocationToken: proposal, mobileSessionId: "11111111-1111-4111-8111-111111111111")
-                    var data = Data(#"{"data":"#.utf8)
-                    data.append((try? JSONEncoder().encode(response)) ?? Data())
-                    data.append(Data("}".utf8))
-                    request.respond(200, data: data)
-                }
+                log.hold(request)
+                entered.fulfill()
             } else {
                 XCTAssertEqual(request.request.httpMethod, "PUT")
                 XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer rotated")
@@ -254,8 +243,25 @@ extension PendingSessionRevocationTests {
             }
         }
         let context = try XCTUnwrap(auth.captureContext())
-        let _: PushSetup = try await APIClient(authManager: auth).send("/api/mobile/push/settings", method: "PUT",
-            body: PushPreferencesRequest(expectedRevision: 0, preferences: PushPreferences(enabled: false)), context: context)
+        let saving = Task {
+            let _: PushSetup = try await APIClient(authManager: auth).send("/api/mobile/push/settings", method: "PUT",
+                body: PushPreferencesRequest(expectedRevision: 0, preferences: PushPreferences(enabled: false)), context: context)
+        }
+        defer { saving.cancel() }
+        await fulfillment(of: [entered], timeout: 3)
+        let held = try XCTUnwrap(log.takeHeld())
+        let proposal = try XCTUnwrap(PushSetupTestData.body(held.request)["revocation_proof"] as? String)
+        XCTAssertEqual(proposal, normal.value?.proposedDeletionProof)
+        XCTAssertNil(normal.value?.confirmedDeletionProof)
+        let response = MobileTokenResponse(accessToken: "rotated", accessExpiresInSecs: 900,
+            refreshToken: "rotated-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
+            user: MobileUser(id: "alice", username: "alice", role: "member"),
+            revocationToken: proposal, mobileSessionId: "11111111-1111-4111-8111-111111111111")
+        var data = Data(#"{"data":"#.utf8)
+        data.append(try JSONEncoder().encode(response))
+        data.append(Data("}".utf8))
+        held.respond(200, data: data)
+        try await saving.value
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, ["/api/mobile/auth/refresh", "/api/mobile/push/settings"])
         XCTAssertEqual(normal.value?.mobileSessionId, "11111111-1111-4111-8111-111111111111")
         XCTAssertNotNil(normal.value?.confirmedDeletionProof)
