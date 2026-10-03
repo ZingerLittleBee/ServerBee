@@ -40,7 +40,7 @@ impl AgentAuthority {
         let tx = self.db.begin().await?;
         tx.execute(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Sqlite,
-            "UPDATE server SET id=id WHERE id=?",
+            "UPDATE servers SET id=id WHERE id=?",
             [server_id.into()],
         ))
         .await
