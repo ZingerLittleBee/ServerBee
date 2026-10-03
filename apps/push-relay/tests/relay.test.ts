@@ -244,9 +244,9 @@ test('production only admits production proof and bound actions cannot be interc
   )
 })
 
-test('bounds bodies and request rates; no public send or verification bypass exists', async () => {
+test('bounds bodies and request rates; no unauthenticated send or verification bypass exists', async () => {
   const flow = setup()
-  expect((await flow.request('/v1/send', {})).status).toBe(404)
+  expect((await flow.request('/v1/send', {})).status).toBe(403)
   expect((await flow.request('/v1/challenges', { padding: 'a'.repeat(40_000) })).status).toBe(413)
   for (let index = 0; index < 30; index++) {
     await flow.request('/v1/challenges', {}, undefined, 'rate-test')

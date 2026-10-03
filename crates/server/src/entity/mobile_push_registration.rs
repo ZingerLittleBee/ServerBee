@@ -20,6 +20,9 @@ pub struct Model {
     pub grant_id: Option<String>,
     pub grant_token: Option<String>,
     pub grant_expires_at: Option<DateTimeUtc>,
+    pub content_key_id: Option<String>,
+    pub content_key: Option<String>,
+    pub deployment_id: Option<String>,
     pub updated_at: DateTimeUtc,
 }
 

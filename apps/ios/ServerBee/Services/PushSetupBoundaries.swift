@@ -69,9 +69,13 @@ protocol PushSetupStorage {
 
 @MainActor
 struct KeychainPushSetupStorage: PushSetupStorage {
-    func load(_ key: String) -> Data? { KeychainService.load(for: key) }
-    func save(_ data: Data, key: String) throws { try KeychainService.save(data, for: key) }
-    func delete(_ key: String) { KeychainService.delete(for: key) }
+    func load(_ key: String) -> Data? { key == PushContentKey.storageKey ? SharedPushKeychain.load() : KeychainService.load(for: key) }
+    func save(_ data: Data, key: String) throws {
+        if key == PushContentKey.storageKey { try SharedPushKeychain.save(data) } else { try KeychainService.save(data, for: key) }
+    }
+    func delete(_ key: String) {
+        if key == PushContentKey.storageKey { SharedPushKeychain.delete() } else { KeychainService.delete(for: key) }
+    }
 }
 
 @MainActor
@@ -290,7 +294,13 @@ private struct RelayRevocation: Decodable {
 
 enum PushSetupError: Error, LocalizedError {
     case unavailable
-    var errorDescription: String? { String(localized: "Verified push is unavailable. Monitoring and login still work.") }
+    case insecureServer
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: String(localized: "Verified push is unavailable. Monitoring and login still work.")
+        case .insecureServer: String(localized: "Encrypted notification setup requires an HTTPS Server.")
+        }
+    }
 }
 
 private final class RelayNoRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

@@ -3775,6 +3775,47 @@
         ]
       }
     },
+    "/api/mobile/push/test": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "test_mobile_push",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestPushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestPushResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Setup unavailable"
+          },
+          "409": {
+            "description": "Stale revision"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/mobile/push/unregister": {
       "post": {
         "tags": [
@@ -12134,7 +12175,8 @@
           "security_allowed",
           "registered",
           "relay_url",
-          "delivery_available"
+          "delivery_available",
+          "test_available"
         ],
         "properties": {
           "delivery_available": {
@@ -12164,6 +12206,10 @@
           "security_allowed": {
             "type": "boolean",
             "description": "Whether the current account role permits security subscriptions."
+          },
+          "test_available": {
+            "type": "boolean",
+            "description": "Only the current-installation tracer bullet is enabled in this release."
           }
         }
       },
@@ -14010,6 +14056,52 @@
           }
         }
       },
+      "TestPushOutcome": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "retryable",
+          "permanent",
+          "expired"
+        ]
+      },
+      "TestPushRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TestPushResponse": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "outcome",
+          "reason",
+          "presentation"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/TestPushOutcome"
+          },
+          "presentation": {
+            "type": "string",
+            "description": "APNs acceptance cannot establish native presentation."
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "TotpDisableRequest": {
         "type": "object",
         "required": [
@@ -15437,9 +15529,21 @@
           "environment",
           "key_id",
           "grant_id",
-          "grant_token"
+          "grant_token",
+          "content_key_id",
+          "content_key",
+          "deployment_id"
         ],
         "properties": {
+          "content_key": {
+            "type": "string"
+          },
+          "content_key_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
           "device_token": {
             "type": "string"
           },

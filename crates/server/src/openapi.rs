@@ -220,6 +220,7 @@ impl Modify for SecurityAddon {
         crate::router::api::mobile_push::settings,
         crate::router::api::mobile_push::save_preferences,
         crate::router::api::mobile_push::verified_register,
+        crate::router::api::mobile_push::test_notification,
         // files
         crate::router::api::file::list_files,
         crate::router::api::file::stat_file,
@@ -441,6 +442,9 @@ impl Modify for SecurityAddon {
             crate::router::api::mobile_push::PushPreferencesRequest,
             crate::router::api::mobile_push::VerifiedPushRequest,
             crate::router::api::mobile_push::PushSetupResponse,
+            crate::router::api::mobile_push::TestPushRequest,
+            crate::router::api::mobile_push::TestPushResponse,
+            crate::router::api::mobile_push::TestPushOutcome,
             crate::service::mobile_auth::MobileTokenResponse,
             crate::service::mobile_auth::MobileUserResponse,
             // files

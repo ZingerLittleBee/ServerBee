@@ -48,6 +48,7 @@ mod m20261003_000076_mobile_session_revocation;
 mod m20261003_000077_mobile_session_revocation_proofs;
 
 mod m20261003_000078_mobile_push_registration;
+mod m20261003_000079_mobile_push_content;
 
 pub struct Migrator;
 
@@ -101,6 +102,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261003_000076_mobile_session_revocation::Migration),
             Box::new(m20261003_000077_mobile_session_revocation_proofs::Migration),
             Box::new(m20261003_000078_mobile_push_registration::Migration),
+            Box::new(m20261003_000079_mobile_push_content::Migration),
         ]
     }
 }

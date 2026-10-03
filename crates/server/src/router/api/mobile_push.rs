@@ -1,4 +1,5 @@
 //! Current-installation subscription intent and verified relay setup.
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::sync::Arc;
 
 use axum::{
@@ -8,7 +9,10 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, Utc};
-use sea_orm::{ActiveModelTrait, EntityTrait, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, Set,
+    Statement, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 
 use super::mobile::{extract_bearer, push_session};
@@ -44,6 +48,9 @@ pub struct VerifiedPushRequest {
     pub key_id: String,
     pub grant_id: String,
     pub grant_token: String,
+    pub content_key_id: String,
+    pub content_key: String,
+    pub deployment_id: String,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -57,6 +64,8 @@ pub struct PushSetupResponse {
     pub relay_url: String,
     /// Setup ships before category delivery, which has its own acceptance gate.
     pub delivery_available: bool,
+    /// Only the current-installation tracer bullet is enabled in this release.
+    pub test_available: bool,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +81,7 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/mobile/push/settings", get(settings).put(save_preferences))
         .route("/mobile/push/verified-register", post(verified_register))
+        .route("/mobile/push/test", post(test_notification))
 }
 
 fn response(
@@ -92,11 +102,14 @@ fn response(
         registered: row.is_some_and(|r| {
             r.enabled
                 && r.grant_token.is_some()
+                && r.content_key.is_some()
                 && r.grant_expires_at.is_some_and(|e| e > Utc::now())
         }),
         grant_expires_at: row.and_then(|r| r.grant_expires_at),
         relay_url: relay_url.to_owned(),
         delivery_available: false,
+        test_available: row
+            .is_some_and(|r| r.enabled && r.content_key.is_some() && r.grant_token.is_some()),
     }
 }
 
@@ -212,6 +225,7 @@ pub async fn settings(
             .as_ref()
             .zip(snapshot.as_ref())
             .is_some_and(|(a, b)| a.revision == b.revision && a.grant_token == b.grant_token);
+    result.test_available &= result.registered;
     txn.commit().await?;
     ok(result)
 }
@@ -250,6 +264,9 @@ pub async fn save_preferences(
             grant_id: Set(None),
             grant_token: Set(None),
             grant_expires_at: Set(None),
+            content_key_id: Set(None),
+            content_key: Set(None),
+            deployment_id: Set(None),
             ..Default::default()
         }
     };
@@ -290,6 +307,19 @@ pub async fn verified_register(
     {
         return Err(AppError::Validation(
             "Invalid device token, environment or grant".into(),
+        ));
+    }
+    let content_key = STANDARD
+        .decode(&body.content_key)
+        .map_err(|_| AppError::Validation("Invalid content key".into()))?;
+    if content_key.len() != 32
+        || uuid::Uuid::parse_str(&body.content_key_id).is_err()
+        || body.deployment_id.len() > 512
+        || !(body.deployment_id.starts_with("https://")
+            || body.deployment_id.starts_with("http://127.0.0.1:"))
+    {
+        return Err(AppError::Validation(
+            "Invalid content key or deployment identity".into(),
         ));
     }
     // Authenticate before network work, then revalidate under SQLite's writer lock.
@@ -340,9 +370,179 @@ pub async fn verified_register(
     model.grant_id = Set(Some(body.grant_id));
     model.grant_token = Set(Some(body.grant_token));
     model.grant_expires_at = Set(Some(expires));
+    model.content_key_id = Set(Some(body.content_key_id));
+    model.content_key = Set(Some(body.content_key));
+    model.deployment_id = Set(Some(body.deployment_id));
     model.updated_at = Set(Utc::now());
+    // A durable migration marker survives disabling, unregister and session
+    // revocation. It prevents an old app from restoring plaintext delivery.
+    txn.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "INSERT OR IGNORE INTO mobile_push_migrations (installation_id, user_id) VALUES (?, ?)",
+        [
+            mobile.installation_id.clone().into(),
+            session.user_id.clone().into(),
+        ],
+    ))
+    .await?;
+    crate::entity::device_token::Entity::delete_many()
+        .filter(crate::entity::device_token::Column::InstallationId.eq(&mobile.installation_id))
+        .filter(crate::entity::device_token::Column::UserId.eq(&session.user_id))
+        .exec(&txn)
+        .await?;
     let row = model.update(&txn).await?;
     let result = response(Some(&row), url, owner.role == "admin");
     txn.commit().await?;
     ok(result)
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TestPushRequest {
+    pub expected_revision: i64,
+}
+
+#[derive(Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TestPushOutcome {
+    Accepted,
+    Retryable,
+    Permanent,
+    Expired,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+pub struct TestPushResponse {
+    pub event_id: String,
+    pub outcome: TestPushOutcome,
+    pub reason: String,
+    /// APNs acceptance cannot establish native presentation.
+    pub presentation: String,
+}
+
+#[derive(Deserialize)]
+struct RelayDelivery {
+    outcome: TestPushOutcome,
+    reason: String,
+    device_invalid: bool,
+}
+
+#[utoipa::path(post, path = "/api/mobile/push/test", operation_id = "test_mobile_push", tag = "mobile-auth", request_body = TestPushRequest, responses((status = 200, body = TestPushResponse), (status = 403, description = "Setup unavailable"), (status = 409, description = "Stale revision")), security(("bearer_token" = [])))]
+pub async fn test_notification(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<TestPushRequest>,
+) -> Result<Json<ApiResponse<TestPushResponse>>, AppError> {
+    use crate::service::push_envelope::{PushContent, encrypt};
+    let token = extract_bearer(&headers).ok_or(AppError::Unauthorized)?;
+    let txn = state.db.begin().await?;
+    let (session, mobile) = push_session(&txn, &token).await?;
+    let snapshot = owned_row(&txn, &mobile.installation_id, &session.user_id, &mobile.id)
+        .await?
+        .ok_or_else(|| AppError::Forbidden("Enable notifications first".into()))?;
+    check_revision(Some(&snapshot), body.expected_revision)?;
+    if !response(Some(&snapshot), "", false).registered {
+        return Err(AppError::Forbidden("Retry notification setup first".into()));
+    }
+    txn.commit().await?;
+    if !relay_confirmed(&snapshot, &state.config.push_relay.url).await {
+        return Err(AppError::Forbidden(
+            "Retry verified registration first".into(),
+        ));
+    }
+    // Revalidate real session, ownership, intent and replacement revision after
+    // inspection. No caller-selected recipient, target or message is accepted.
+    let txn = state.db.begin().await?;
+    let (session, mobile) = push_session(&txn, &token).await?;
+    let row = owned_row(&txn, &mobile.installation_id, &session.user_id, &mobile.id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    check_revision(Some(&row), body.expected_revision)?;
+    if row.mobile_session_id != snapshot.mobile_session_id
+        || !row.enabled
+        || row.grant_token != snapshot.grant_token
+    {
+        return Err(AppError::Forbidden(
+            "Registration changed; retry setup".into(),
+        ));
+    }
+    let unavailable = || AppError::Forbidden("Content key is not registered".into());
+    let key_id = row.content_key_id.as_deref().ok_or_else(unavailable)?;
+    let secret = STANDARD
+        .decode(row.content_key.as_deref().ok_or_else(unavailable)?)
+        .map_err(|_| unavailable())?;
+    let now = Utc::now().timestamp();
+    let event_id = uuid::Uuid::new_v4().to_string();
+    let content = PushContent {
+        kind: "test".into(),
+        deployment_id: row.deployment_id.clone().ok_or_else(unavailable)?,
+        user_id: session.user_id,
+        installation_id: mobile.installation_id,
+        event_id: event_id.clone(),
+        created_at: now,
+        expires_at: now + 1800,
+    };
+    let envelope = encrypt(key_id, &secret, &content)?;
+    let request = serde_json::json!({ "event_id": event_id, "expires_at": content.expires_at, "envelope": envelope });
+    let grant = row.grant_token.as_deref().ok_or_else(unavailable)?;
+    txn.commit().await?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| AppError::Internal("Push client configuration failed".into()))?;
+    let result = client
+        .post(format!(
+            "{}/v1/send",
+            state.config.push_relay.url.trim_end_matches('/')
+        ))
+        .bearer_auth(grant)
+        .json(&request)
+        .send()
+        .await;
+    let delivery = match result {
+        Ok(reply) if reply.status().is_success() => reply.json::<RelayDelivery>().await.ok(),
+        Ok(reply) if reply.status().is_client_error() && reply.status().as_u16() != 429 => {
+            Some(RelayDelivery {
+                outcome: TestPushOutcome::Permanent,
+                reason: "RelayAuthorizationOrPayload".into(),
+                device_invalid: false,
+            })
+        }
+        _ => None,
+    }
+    .unwrap_or(RelayDelivery {
+        outcome: TestPushOutcome::Retryable,
+        reason: "RelayUnavailable".into(),
+        device_invalid: false,
+    });
+    if delivery.device_invalid
+        && delivery.reason == "Unregistered"
+        && matches!(delivery.outcome, TestPushOutcome::Permanent)
+    {
+        // Late provider errors must not invalidate replacement tokens/keys/grants.
+        registration::Entity::update_many()
+            .col_expr(
+                registration::Column::GrantToken,
+                sea_orm::sea_query::Expr::value(Option::<String>::None),
+            )
+            .col_expr(
+                registration::Column::Revision,
+                sea_orm::sea_query::Expr::value(row.revision + 1),
+            )
+            .filter(registration::Column::InstallationId.eq(&row.installation_id))
+            .filter(registration::Column::UserId.eq(&row.user_id))
+            .filter(registration::Column::MobileSessionId.eq(&row.mobile_session_id))
+            .filter(registration::Column::Revision.eq(row.revision))
+            .filter(registration::Column::ContentKeyId.eq(row.content_key_id.clone()))
+            .filter(registration::Column::GrantToken.eq(row.grant_token.clone()))
+            .exec(&state.db)
+            .await?;
+    }
+    ok(TestPushResponse {
+        event_id,
+        outcome: delivery.outcome,
+        reason: delivery.reason,
+        presentation: "unobserved".into(),
+    })
 }

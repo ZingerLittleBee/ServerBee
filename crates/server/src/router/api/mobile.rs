@@ -10,8 +10,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use rand::RngCore;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, Set,
-    TransactionTrait, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    Set, TransactionTrait, sea_query::Expr,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -479,6 +479,17 @@ pub async fn push_register(
     let txn = state.db.begin().await?;
     let (session, mobile_session) = push_session(&txn, &token).await?;
     let mobile_session_id = &mobile_session.id;
+
+    let migrated = txn.query_one(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Sqlite,
+        "SELECT 1 AS migrated FROM mobile_push_migrations WHERE installation_id=? AND user_id=?",
+        [mobile_session.installation_id.clone().into(), session.user_id.clone().into()],
+    )).await?;
+    if migrated.is_some() {
+        return Err(AppError::Conflict(
+            "This installation uses encrypted relay delivery".into(),
+        ));
+    }
 
     // Upsert: find by installation_id, update if exists, insert if not
     let existing = crate::entity::device_token::Entity::find()

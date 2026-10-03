@@ -229,8 +229,12 @@ HTTPS endpoint. No Apple private keys are installed by notification setup.
 | `APP_ATTEST_BUNDLE_VERSIONS` | required | Comma-separated approved `CFBundleVersion` values for signed extensions |
 | `APNS_ENVIRONMENTS` | required unless singular alternative is set | Allowed admission environments; `sandbox,production` supports coexistence on one URL and database |
 | `APNS_ENVIRONMENT` | required unless plural setting is set | Single-environment alternative, `sandbox` or `production`; plural setting takes precedence |
+| `APNS_TEAM_ID` | required | Publisher Apple team identifier, Relay only |
+| `APNS_KEY_ID` | required | Publisher APNs signing key identifier, Relay only |
+| `APNS_PRIVATE_KEY` | required | Path to publisher-only APNs P-256 PEM file, Relay only |
+| `APNS_TOPIC` | required | Official app bundle identifier, Relay only |
 | `RELAY_PORT` | `8787` | Loopback listener port |
 
-Registration supports both environments but category delivery remains under
-implementation. See [Relay setup](apps/push-relay/README.md) for trust, signing and
+Registration and encrypted test delivery support both environments. Category
+delivery and durable retry remain under implementation. See [Relay setup](apps/push-relay/README.md) for trust, signing and
 separate real-device acceptance requirements.

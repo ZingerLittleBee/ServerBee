@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import UIKit
 import UserNotifications
@@ -40,6 +41,8 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     var errorMessage: String? { failedPreferences?.message ?? registrationErrorMessage }
     var unconfirmedPreferences: PushPreferences? { failedPreferences?.preferences }
     private(set) var verificationUnavailable = false
+    private(set) var testResult: TestPushResponse?
+    private(set) var isTesting = false
 
     private let system: any PushSystemBoundary
     private let relay: any PushRelayBoundary
@@ -72,6 +75,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
     func configure(apiClient: APIClient) {
         let next = apiClient.captureContext()
         if context?.generation != next?.generation {
+            testResult = nil
             confirmed = nil
             registrationErrorMessage = nil
             failedPreferences = nil
@@ -84,6 +88,8 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         self.apiClient = apiClient
         context = next
         acceptingRegistrations = next != nil
+        if let record = contentKey(), record.scope != next?.pushScope { storage.delete(PushContentKey.storageKey) }
+
     }
 
     /// Read permission without prompting. Launch, foreground and connectivity
@@ -158,6 +164,8 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                     await requestPermission(context: captured)
                 } else if permissionGranted, let deviceToken { uploadToken(deviceToken) }
             } else {
+                clearContentKey(captured)
+                testResult = nil
                 let pending = pendingGrant(captured, url: setup.relayUrl)
                 clearPending(captured)
                 let binding = grants.removeValue(forKey: captured.generation)
@@ -235,6 +243,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 }
             }
             do {
+                guard URL(string: captured.serverUrl)?.scheme == "https" else { throw PushSetupError.insecureServer }
                 let grant: RelayGrant
                 if let pending = self.pendingGrant(captured, url: setup.relayUrl),
                    pending.deviceToken == token, pending.expiresAt > Int64(Date().timeIntervalSince1970) {
@@ -252,10 +261,12 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
                 // if the Server response or a subsequent identity check fails.
                 self.grants[captured.generation] = (grant, setup.relayUrl)
                 guard apiClient.isCurrent(captured), self.context?.generation == captured.generation else { throw AuthError.staleIdentity }
+                let content = try self.prepareContentKey(captured)
                 let result: PushSetup = try await apiClient.send(
                     "/api/mobile/push/verified-register", method: "POST",
                     body: VerifiedPushRequest(expectedRevision: setup.revision, deviceToken: token, environment: grant.environment,
-                                              keyId: grant.keyId, grantId: grant.grantId, grantToken: grant.grantToken), context: captured
+                                              keyId: grant.keyId, grantId: grant.grantId, grantToken: grant.grantToken,
+                                              contentKeyId: content.keyId, contentKey: content.key, deploymentId: content.deploymentId), context: captured
                 )
                 guard self.ownsWrite(id, captured: captured) else { throw AuthError.staleIdentity }
                 guard result.registered, result.revision >= (self.confirmed?.revision ?? 0) else { throw PushSetupError.unavailable }
@@ -288,6 +299,7 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
             let pending = storage.load(pendingKey(capturedContext))
                 .flatMap { try? JSONDecoder.snakeCase.decode(PendingPushGrant.self, from: $0) }
             clearPending(capturedContext)
+            clearContentKey(capturedContext)
             if let grant = binding?.grant ?? pending?.grant, let url = binding?.url ?? pending?.url {
                 do { try await relay.revoke(grant, relayUrl: url) } catch {
                     AppLog.push.error("Relay revocation failed; Server session revocation still stops delivery")
@@ -306,19 +318,49 @@ final class PushNotificationManager: NSObject, PushNotificationManaging {
         }
     }
 
-    /// Parse a notification tap into a deep link.
-    /// Backend payload (see `crates/server/src/service/apns.rs`) attaches
-    /// `server_id` and optionally `rule_id` as APNs custom data.
-    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink? {
-        let userInfo = response.notification.request.content.userInfo
-        if let serverId = userInfo["server_id"] as? String, !serverId.isEmpty {
-            return .serverDetail(serverId: serverId)
-        }
-        if let ruleId = userInfo["rule_id"] as? String, !ruleId.isEmpty {
-            return .alertDetail(alertKey: ruleId)
-        }
-        return nil
+    /// Notification callbacks are parsed by AppDelegate even before this
+    /// manager exists; authenticated target checks happen when stores are ready.
+    nonisolated func handleNotificationResponse(_ response: UNNotificationResponse) -> ServerDeepLink? { nil }
+
+}
+
+extension PushNotificationManager {
+    func sendTestNotification() async {
+        guard !isSaving, !isTesting, let apiClient, let captured = context,
+              let setup = confirmed, setup.registered, setup.preferences.enabled,
+              apiClient.isCurrent(captured) else { return }
+        isTesting = true
+        testResult = nil
+        defer { isTesting = false }
+        do {
+            let result: TestPushResponse = try await apiClient.send(
+                "/api/mobile/push/test", method: "POST",
+                body: TestPushRequest(expectedRevision: setup.revision), context: captured
+            )
+            guard apiClient.isCurrent(captured), context?.generation == captured.generation else { return }
+            testResult = result
+            registrationErrorMessage = nil
+        } catch { report(error, captured: captured) }
     }
+
+    func contentKey() -> PushContentKey? {
+        storage.load(PushContentKey.storageKey).flatMap { try? JSONDecoder().decode(PushContentKey.self, from: $0) }
+    }
+
+    private func prepareContentKey(_ captured: MobileAuthenticationContext) throws -> PushContentKey {
+        if let existing = contentKey(), existing.scope == captured.pushScope { return existing }
+        let secret = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+        let record = PushContentKey(keyId: UUID().uuidString.lowercased(), key: secret.base64EncodedString(),
+                                    deploymentId: captured.serverUrl, userId: captured.userId,
+                                    installationId: captured.installationId, scope: captured.pushScope)
+        try storage.save(JSONEncoder().encode(record), key: PushContentKey.storageKey)
+        return record
+    }
+
+    private func clearContentKey(_ captured: MobileAuthenticationContext) {
+        if contentKey()?.scope == captured.pushScope { storage.delete(PushContentKey.storageKey) }
+    }
+
 }
 
 private extension PushNotificationManager {

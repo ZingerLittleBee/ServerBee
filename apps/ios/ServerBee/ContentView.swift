@@ -58,6 +58,8 @@ struct ContentView: View {
                     AlertsListView()
                         .navigationDestination(for: ServerDeepLink.self) { link in
                             switch link {
+                            case .account:
+                                EmptyView()
                             case .alertDetail(let key):
                                 AlertDetailView(alertKey: key)
                             case .serverDetail:
@@ -94,6 +96,7 @@ struct ContentView: View {
             OfflineBannerView(isConnected: networkMonitor.isConnected)
                 .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)
         }
+        .onChange(of: pushRouter.pendingEnvelope?.ciphertext) { _, _ in consumePushAccountTarget() }
         .onChange(of: pushRouter.pendingDeepLink) { _, newValue in
             guard let link = newValue else { return }
             handleDeepLink(link)
@@ -127,6 +130,8 @@ struct ContentView: View {
                let token = auth.getAccessToken() {
                 await wsClient.connect(serverUrl: serverUrl, accessToken: token)
             }
+
+            consumePushAccountTarget()
 
             // If a push tap arrived during cold launch BEFORE this view existed,
             // consume it now.
@@ -190,6 +195,12 @@ struct ContentView: View {
         }
     }
 
+    private func consumePushAccountTarget() {
+        guard let context = apiClient.captureContext(),
+              let link = pushRouter.consumeAccountTarget(context: context, key: pushManager.contentKey()) else { return }
+        handleDeepLink(link)
+    }
+
     private func handleDeepLink(_ link: ServerDeepLink) {
         ContentView.applyDeepLink(
             link,
@@ -209,6 +220,10 @@ struct ContentView: View {
         alertsPath: inout [ServerDeepLink]
     ) {
         switch link {
+        case .account:
+            selectedTab = ContentView.settingsTabTag
+            serversPath = []
+            alertsPath = []
         case .serverDetail(let serverId):
             selectedTab = ContentView.serversTabTag
             serversPath = [.detailById(serverId)]

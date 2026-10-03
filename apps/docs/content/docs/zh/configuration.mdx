@@ -381,7 +381,18 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 |-----|------|--------|------|
 | `url` | string | `""` | 独立 Push Relay 的 HTTPS 地址。留空会关闭已验证注册。Server 不应保存 Apple 签名密钥。 |
 
-通过 `SERVERBEE_PUSH_RELAY__URL` 覆盖地址。Relay 配置 `APNS_ENVIRONMENTS=sandbox,production` 后，开发与分发设备可使用同一地址；`APP_ATTEST_BUNDLE_VERSIONS` 允许列表校验签名中的版本声明。隔离的本地 Server 集成测试可使用 `http://127.0.0.1:<port>`，iOS 应用要求 HTTPS。目前支持 App Attest 注册与 Server 确认的订阅意图，各类通知投递仍在开发中，详见[移动端](/zh/docs/mobile)。
+通过 `SERVERBEE_PUSH_RELAY__URL` 覆盖地址。Relay 配置 `APNS_ENVIRONMENTS=sandbox,production` 后，开发与分发设备可使用同一地址；`APP_ATTEST_BUNDLE_VERSIONS` 允许列表校验签名中的版本声明。隔离的本地 Server 集成测试可使用 `http://127.0.0.1:<port>`，iOS 应用要求 HTTPS。目前支持 App Attest 注册、Server 确认的订阅意图和仅发给当前安装的加密测试通知，各类通知投递仍在开发中，详见[移动端](/zh/docs/mobile)。
+
+以下变量属于独立 Relay 进程，不得配置在 Server 上：
+
+| 变量 | 含义 |
+| --- | --- |
+| `APNS_TEAM_ID` | 发布者 Apple 团队标识 |
+| `APNS_KEY_ID` | 发布者 APNs 签名密钥标识 |
+| `APNS_PRIVATE_KEY` | 私有 P-256 PEM 文件路径，仅允许 Relay 读取 |
+| `APNS_TOPIC` | 官方应用 bundle 标识，不是扩展标识 |
+
+加密设置要求通过 HTTPS 连接 Server。应用和 Notification Service Extension 共享仅限本设备的 Keychain 组。APNs 接受仅代表服务商回执，不证明通知已展示。迁移与真机要求见[移动端](/zh/docs/mobile)。
 
 ### `[firewall]` —— 防火墙黑名单护栏
 

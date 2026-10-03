@@ -1223,6 +1223,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/push/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_mobile_push"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/push/unregister": {
         parameters: {
             query?: never;
@@ -3379,6 +3395,8 @@ export interface components {
             revision: number;
             /** @description Whether the current account role permits security subscriptions. */
             security_allowed: boolean;
+            /** @description Only the current-installation tracer bullet is enabled in this release. */
+            test_available: boolean;
         };
         RateLimitEntryDto: {
             /** @description True if `count >= max` and the window is still open. */
@@ -3943,6 +3961,19 @@ export interface components {
             /** Format: int64 */
             granted_at: number;
         };
+        /** @enum {string} */
+        TestPushOutcome: "accepted" | "retryable" | "permanent" | "expired";
+        TestPushRequest: {
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        TestPushResponse: {
+            event_id: string;
+            outcome: components["schemas"]["TestPushOutcome"];
+            /** @description APNs acceptance cannot establish native presentation. */
+            presentation: string;
+            reason: string;
+        };
         TotpDisableRequest: {
             password: string;
         };
@@ -4330,6 +4361,9 @@ export interface components {
             username: string;
         };
         VerifiedPushRequest: {
+            content_key: string;
+            content_key_id: string;
+            deployment_id: string;
             device_token: string;
             environment: string;
             /** Format: int64 */
@@ -7180,6 +7214,43 @@ export interface operations {
                 };
             };
             /** @description Category or installation forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stale revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_mobile_push: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestPushRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestPushResponse"];
+                };
+            };
+            /** @description Setup unavailable */
             403: {
                 headers: {
                     [name: string]: unknown;

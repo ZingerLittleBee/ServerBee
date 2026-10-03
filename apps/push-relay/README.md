@@ -1,9 +1,9 @@
 # ServerBee Push Relay admission
 
-This package implements verified device registration, renewal, grant inspection
-and revocation for #198. APNs transport and category delivery are subsequent
-implementation gates. There is no send endpoint in this package yet. Setup
-confirmation must not be advertised as working notification delivery.
+This package implements verified device registration, renewal, grant inspection,
+revocation and encrypted current-installation test delivery. Category event
+selection and the durable outbox are separate implementation gates. APNs
+acceptance does not establish device presentation.
 
 ## Isolated configuration
 
@@ -24,6 +24,10 @@ Required environment variables:
 | `APP_ATTEST_BUNDLE_VERSIONS` | Comma-separated approved `CFBundleVersion` values for signed extension claims |
 | `APNS_ENVIRONMENTS` | Allowed environments; `sandbox,production` admits both on one URL/database |
 | `APNS_ENVIRONMENT` | Single-environment alternative when `APNS_ENVIRONMENTS` is absent |
+| `APNS_TEAM_ID` | Publisher Apple team identifier |
+| `APNS_KEY_ID` | Publisher APNs signing key identifier |
+| `APNS_PRIVATE_KEY` | Path to publisher-only P-256 signing key PEM, readable only by the Relay process |
+| `APNS_TOPIC` | Official app bundle identifier (not the extension bundle identifier) |
 | `RELAY_PORT` | Optional loopback listener port, default `8787` |
 
 Obtain and verify the App Attest root from Apple's published trust material.
@@ -48,9 +52,12 @@ Configure the self-hosted Server with `SERVERBEE_PUSH_RELAY__URL` or
 HTTP integration harness permits a loopback HTTP Relay. Apple signing credentials
 must never be installed on a self-hosted Server.
 
-APNs transport will consume publisher-only `APNS_TEAM_ID`, `APNS_KEY_ID`,
-`APNS_PRIVATE_KEY` and `APNS_TOPIC`. They are credential names, not values; this
-package does not consume these signing inputs or send APNs notifications yet.
+APNs transport consumes publisher-only `APNS_TEAM_ID`, `APNS_KEY_ID`,
+`APNS_PRIVATE_KEY` (a file path) and `APNS_TOPIC`. Keep keys outside the
+repository and every self-hosted Server. HTTP/2 connections target the grant
+environment, with alert push type, priority 10, the fixed configured topic and
+the event expiry. ES256 JWTs are reused for up to 50 minutes. Provider requests
+time out after ten seconds and both payloads and responses have 4 KiB bounds.
 
 ## Signing and environment
 
@@ -105,8 +112,14 @@ Server subscription APIs:
   inside `preferences`. Security requires an administrator. Disable clears the
   Server grant immediately. Re-enable requires fresh proof.
 - `POST /api/mobile/push/verified-register`: `expected_revision`, `device_token`,
-  `environment`, `key_id`, `grant_id`, `grant_token`. Requires explicit enabled
+  `environment`, `key_id`, `grant_id`, `grant_token`, `content_key_id`,
+  `content_key` (32 bytes, standard base64), `deployment_id` (captured Server URL). Requires explicit enabled
   intent and a valid grant inspected through the configured Relay.
+- `POST /api/mobile/push/test`: only `expected_revision`. Recipient, content and
+  logical event identity are Server-derived. Returns `event_id`, `outcome`,
+  `reason` and `presentation=unobserved`. It is a synchronous tracer bullet,
+  without durable retry. A lost response can mean provider acceptance; user
+  retries are new logical tests, never a claim of exactly-once presentation.
 - `POST /api/mobile/push/unregister`: cleanup remains scoped to user, installation
   and mobile session. Database foreign keys cascade logout/device/account removal.
 
@@ -131,7 +144,7 @@ authentication generation checks.
 
 Live acceptance requires an isolated configured Relay and correctly provisioned
 physical device. Record genuine App Attest admission, wrong-environment rejection,
-renewal and revocation separately. When subsequent delivery packages are ready,
+renewal and revocation separately. For the current encrypted test path,
 record APNs provider acceptance, observed foreground/background/terminated
 presentation and authenticated tap navigation as three distinct layers. Missing
 Apple credentials, signing, or a physical device cannot be compensated for by a
@@ -178,4 +191,51 @@ checks. Assertions must use the previously attested key's environment. Grants
 retain their device/environment scope; renewal or revocation of a sandbox key
 cannot affect a production key. Grant inspection locates the opaque bearer in
 that shared database and returns its verified environment for Server comparison.
-This enables admission only, not APNs delivery.
+APNs delivery also uses each grant's saved environment.
+
+
+## Encryption and legacy migration
+
+The official app creates a fresh random AES-256 content key per paired login,
+registers it only over its authenticated HTTPS Server connection, and shares its
+device-only Keychain record with `com.serverbee.mobile.notifications`. Both targets
+need `$(AppIdentifierPrefix)com.serverbee.mobile.push` in their effective
+`keychain-access-groups` entitlement and `PushKeychainAccessGroup` plist value.
+Changing accounts, disabling notifications or logging out removes that key. A
+failed Server confirmation keeps the same key for recovery of a committed setup.
+The extension uses generic localized text if the key is unavailable (including
+before the first unlock after reboot), the envelope is invalid or it has expired.
+The app validates ciphertext again before navigating to the current account.
+
+Version 1 uses AES-256-GCM, a fresh 12-byte nonce and a 16-byte appended tag.
+The base64 ciphertext encrypts a bounded JSON `PushContent` (maximum 2048 bytes).
+`identity` is the lowercase SHA256 of UTF-8 compact JSON
+`[deployment_id,user_id,installation_id]`, with unescaped slashes. AAD is UTF-8
+`ServerBee.Push.v1|<content_key_id>|<identity>`. Identity fields, event ID, creation,
+expiry and kind are inside authenticated ciphertext; neither account IDs nor
+Server addresses are sent in plaintext. Unknown versions and identity mismatch
+fail closed. `tests/fixtures/push-envelope-v1.json` is a fixed non-secret vector
+shared by Rust encryption and Swift decryption tests. Content keys never appear in
+Relay grants or requests. Generic APNs fallback text contains no event detail.
+
+`POST /v1/send` requires a live bearer grant and accepts only `event_id`,
+`expires_at` (no more than 30 minutes ahead) and `envelope`. It derives token and
+environment from persistent admission, including a second check after reading the
+bounded body. It rejects a caller-selected device, plaintext and content-key fields.
+APNs 410 `Unregistered` is the sole terminal device verdict; configuration,
+payload and `BadDeviceToken` environment ambiguity do not erase registration.
+The Server invalidates a terminal grant only if installation, account, session,
+content-key ID, grant and revision still match the sending snapshot.
+
+Verified setup atomically removes that account's legacy token for the installation
+and records a durable migration marker. Later legacy registration is rejected,
+even after disabling, unregistering or revoking the modern login. The legacy
+selector also excludes marked rows restored from an older database snapshot.
+Other accounts/installations and existing external-channel groups keep their
+legacy behavior. Migrating does not add an APNs channel or notification group.
+
+See [the isolated delivery checklist](../../tests/manual/mobile-push-test.md) for
+the stitched Server/Relay/extension commands and separate real-device acceptance.
+Protocol references: [APNs requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns),
+[APNs errors](https://developer.apple.com/documentation/usernotifications/handling-error-responses-from-apns),
+and [notification content modification](https://developer.apple.com/documentation/usernotifications/modifying-content-in-newly-delivered-notifications).

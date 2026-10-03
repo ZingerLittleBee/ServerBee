@@ -91,6 +91,7 @@ final class AuthManager {
 
     /// Persist tokens & user from a successful fresh login response.
     func handleLoginResponse(_ response: MobileTokenResponse) {
+        SharedPushKeychain.delete()
         authenticationGeneration = UUID()
         // A fresh login owns a fresh stable revocation credential.
         KeychainService.delete(for: KeychainService.revocationTokenKey)
@@ -135,6 +136,7 @@ final class AuthManager {
     /// If you need a hard reset (e.g. "Forget this server" affordance), add a
     /// separate `forgetServer()` API rather than expanding this method.
     func clearAuth() {
+        SharedPushKeychain.delete()
         authenticationGeneration = UUID()
         KeychainService.delete(for: KeychainService.accessTokenKey)
         KeychainService.delete(for: KeychainService.refreshTokenKey)

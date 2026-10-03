@@ -338,7 +338,7 @@ async fn setup_http_request(
     grant: &str,
 ) -> reqwest::Response {
     client.post(format!("{base}/api/mobile/push/verified-register")).bearer_auth(access).json(&serde_json::json!({
-        "expected_revision":revision, "device_token":"a".repeat(64), "environment":"sandbox", "key_id":"fixture-key", "grant_id":"fixture-grant", "grant_token":grant
+        "expected_revision":revision, "device_token":"a".repeat(64), "environment":"sandbox", "key_id":"fixture-key", "grant_id":"fixture-grant", "grant_token":grant, "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"
     })).send().await.unwrap()
 }
 async fn status_http(client: &reqwest::Client, base: &str, access: &str) -> serde_json::Value {
@@ -904,7 +904,7 @@ async fn one_server_and_relay_url_keep_sandbox_and_production_bindings_independe
         serde_json::json!({
             "expected_revision":1, "device_token":if environment == "sandbox" {"a".repeat(64)} else {"b".repeat(64)},
             "environment":environment, "key_id":format!("{environment}-key"), "grant_id":format!("{environment}-grant"),
-            "grant_token":format!("{environment}-fixture")
+            "grant_token":format!("{environment}-fixture"), "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"
         })
     };
     let mut wrong = registration("sandbox");
@@ -974,4 +974,680 @@ async fn one_server_and_relay_url_keep_sandbox_and_production_bindings_independe
         .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].environment.as_deref(), Some("production"));
+}
+
+struct DeliveryRelayFixture {
+    child: std::process::Child,
+    directory: tempfile::TempDir,
+    ready: serde_json::Value,
+}
+impl Drop for DeliveryRelayFixture {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+impl DeliveryRelayFixture {
+    async fn start() -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let child = std::process::Command::new("bun")
+            .arg(root.join("apps/push-relay/tests/serve-delivery-fixture.ts"))
+            .arg(directory.path())
+            .current_dir(&root)
+            .spawn()
+            .expect("Bun fixture requires installed Relay dependencies and OpenSSL 3");
+        let mut result = Self {
+            child,
+            directory,
+            ready: serde_json::Value::Null,
+        };
+        for _ in 0..250 {
+            if let Ok(bytes) = std::fs::read(result.path("ready.json")) {
+                result.ready = serde_json::from_slice(&bytes).unwrap();
+                return result;
+            }
+            assert!(
+                result.child.try_wait().unwrap().is_none(),
+                "Relay fixture exited before actual admission"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        panic!("Relay fixture admission timed out");
+    }
+    fn path(&self, file: &str) -> std::path::PathBuf {
+        self.directory.path().join(file)
+    }
+    fn control(&self, value: serde_json::Value) {
+        std::fs::write(
+            self.path("provider.json"),
+            serde_json::to_vec(&value).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
+fn content_registration(grant: &serde_json::Value, revision: i64) -> serde_json::Value {
+    serde_json::json!({"expected_revision":revision, "device_token":grant["device_token"], "environment":grant["environment"],
+        "key_id":grant["key_id"], "grant_id":grant["grant_id"], "grant_token":grant["grant_token"],
+        "content_key_id":"22222222-2222-4222-8222-222222222222", "content_key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=", "deployment_id":"https://serverbee.test"})
+}
+async fn post_test(
+    client: &reqwest::Client,
+    base: &str,
+    access: &str,
+    revision: i64,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/push/test"))
+        .bearer_auth(access)
+        .json(&serde_json::json!({"expected_revision":revision}))
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn encrypted_test_uses_real_relay_admission_transport_and_legacy_migration() {
+    use serverbee_server::service::apns::ApnsService;
+    let relay = DeliveryRelayFixture::start().await;
+    let (_, initial, _tmp) = setup_http().await;
+    let mut config = initial.config.clone();
+    config.push_relay.url = relay.ready["url"].as_str().unwrap().to_owned();
+    let state = AppState::new(initial.db.clone(), config).await.unwrap();
+    let base = serve_setup_state(state.clone()).await;
+    let client = reqwest::Client::new();
+    let owner = login_http(&client, &base, "admin", "migrating-install").await;
+    let other = login_http(&client, &base, "member", "legacy-install").await;
+    let owner_other = login_http(&client, &base, "admin", "other-owner-install").await;
+    let access = owner["access_token"].as_str().unwrap();
+    // Seed through actual legacy HTTP registration, including another owner
+    // and another installation of the same user, before verified migration.
+    for (login, token) in [
+        (&owner, "a".repeat(64)),
+        (&other, "c".repeat(64)),
+        (&owner_other, "d".repeat(64)),
+    ] {
+        assert_eq!(
+            client
+                .post(format!("{base}/api/mobile/push/register"))
+                .bearer_auth(login["access_token"].as_str().unwrap())
+                .json(&serde_json::json!({"device_token":token}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+    }
+    assert_eq!(
+        ApnsService::legacy_recipients(&state.db)
+            .await
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(post_test(&client, &base, access, 0).await.status(), 403);
+    assert_eq!(
+        preferences_http(&client, &base, access, 0, intent(true, true))
+            .await
+            .status(),
+        200
+    );
+    let registration = content_registration(&relay.ready["grant"], 1);
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/verified-register"))
+            .bearer_auth(access)
+            .json(&registration)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        status_http(&client, &base, access).await["test_available"],
+        true
+    );
+    let selected = ApnsService::legacy_recipients(&state.db).await.unwrap();
+    assert_eq!(selected.len(), 2);
+    assert!(
+        !selected
+            .iter()
+            .any(|row| row.installation_id == "migrating-install")
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/register"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"device_token":"a".repeat(64)}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/test"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"expected_revision":2, "installation_id":"legacy-install"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        422
+    );
+    assert_eq!(
+        post_test(&client, &base, other["access_token"].as_str().unwrap(), 0)
+            .await
+            .status(),
+        403
+    );
+    assert_eq!(post_test(&client, &base, access, 1).await.status(), 409);
+    let sent = post_test(&client, &base, access, 2).await;
+    assert_eq!(sent.status(), 200);
+    let sent = sent.json::<serde_json::Value>().await.unwrap()["data"].clone();
+    assert_eq!(sent["outcome"], "accepted");
+    assert_eq!(sent["presentation"], "unobserved");
+    let provider: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(relay.path("provider-request.json")).unwrap())
+            .unwrap();
+    assert_eq!(provider["token"], "a".repeat(64));
+    assert_eq!(provider["environment"], "sandbox");
+    let payload = provider["payload"].as_str().unwrap();
+    for plaintext in [
+        "deployment_id",
+        "user_id",
+        "installation_id",
+        "content_key",
+        "https://serverbee.test",
+        "migrating-install",
+    ] {
+        assert!(!payload.contains(plaintext));
+    }
+    let payload: serde_json::Value = serde_json::from_str(payload).unwrap();
+    assert_eq!(payload["aps"]["mutable-content"], 1);
+    assert_eq!(provider["headers"]["apns-id"], sent["event_id"]);
+    // Export only isolated fixture material for the actual Swift extension and
+    // app tap tests. Nothing uses a live grant, Apple key or production service.
+    if let Some(trace) = std::env::var_os("SERVERBEE_PUSH_TRACE_DIR") {
+        std::fs::create_dir_all(&trace).unwrap();
+        std::fs::write(std::path::Path::new(&trace).join("trace.json"), serde_json::to_vec_pretty(&serde_json::json!({
+            "payload":payload, "registration":registration, "user_id":owner["user"]["id"], "installation_id":"migrating-install", "event_id":sent["event_id"]
+        })).unwrap()).unwrap();
+    }
+    let refreshed = client.post(format!("{base}/api/mobile/auth/refresh"))
+        .json(&serde_json::json!({"installation_id":"migrating-install", "refresh_token":owner["refresh_token"]}))
+        .send().await.unwrap();
+    assert_eq!(refreshed.status(), 200);
+    let refreshed: serde_json::Value = refreshed.json().await.unwrap();
+    let access = refreshed["data"]["access_token"].as_str().unwrap();
+    assert_eq!(
+        post_test(&client, &base, access, 2)
+            .await
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["data"]["outcome"],
+        "accepted"
+    );
+    relay.control(serde_json::json!({"status":400,"reason":"BadTopic"}));
+    assert_eq!(
+        post_test(&client, &base, access, 2)
+            .await
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["data"]["outcome"],
+        "permanent"
+    );
+    assert_eq!(
+        status_http(&client, &base, access).await["registered"],
+        true
+    );
+    relay.control(serde_json::json!({"status":503}));
+    assert_eq!(
+        post_test(&client, &base, access, 2)
+            .await
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["data"]["outcome"],
+        "retryable"
+    );
+    assert_eq!(
+        status_http(&client, &base, access).await["registered"],
+        true
+    );
+    assert_eq!(
+        preferences_http(&client, &base, access, 2, intent(false, false))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(post_test(&client, &base, access, 3).await.status(), 403);
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/register"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"device_token":"a".repeat(64)}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/unregister"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/register"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"device_token":"a".repeat(64)}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    // Even a historical leftover restored to SQLite cannot enter the real
+    // legacy selector. Legitimate other installations remain available.
+    push_register(
+        State(state.clone()),
+        bearer(other["access_token"].as_str().unwrap()),
+        Json(PushRegisterRequest {
+            device_token: "e".repeat(64),
+        }),
+    )
+    .await
+    .unwrap();
+    let migrated_session = mobile_session::Entity::find()
+        .filter(mobile_session::Column::InstallationId.eq("migrating-install"))
+        .filter(mobile_session::Column::UserId.eq(owner["user"]["id"].as_str().unwrap()))
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    device_token::ActiveModel {
+        id: Set("restored-legacy".into()),
+        user_id: Set(migrated_session.user_id.clone()),
+        mobile_session_id: Set(migrated_session.id),
+        installation_id: Set("migrating-install".into()),
+        token: Set("a".repeat(64)),
+        created_at: Set(Utc::now()),
+        updated_at: Set(Utc::now()),
+    }
+    .insert(&state.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        device_token::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap()
+            .len(),
+        3
+    );
+    let selected = ApnsService::legacy_recipients(&state.db).await.unwrap();
+    assert_eq!(selected.len(), 2);
+    assert!(selected.iter().any(|row| row.token == "e".repeat(64)));
+    assert!(
+        !selected
+            .iter()
+            .any(|row| row.installation_id == "migrating-install")
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(post_test(&client, &base, access, 0).await.status(), 401);
+    let relogin = login_http(&client, &base, "admin", "migrating-install").await;
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/register"))
+            .bearer_auth(relogin["access_token"].as_str().unwrap())
+            .json(&serde_json::json!({"device_token":"a".repeat(64)}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+}
+
+#[tokio::test]
+async fn late_terminal_apns_response_cannot_invalidate_replacement_token_or_key() {
+    let relay = DeliveryRelayFixture::start().await;
+    let (_, initial, _tmp) = setup_http().await;
+    let mut config = initial.config.clone();
+    let relay_url = relay.ready["url"].as_str().unwrap();
+    config.push_relay.url = relay_url.to_owned();
+    let state = AppState::new(initial.db.clone(), config).await.unwrap();
+    let base = serve_setup_state(state).await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "replacement-install").await;
+    let access = login["access_token"].as_str().unwrap().to_owned();
+    assert_eq!(
+        preferences_http(&client, &base, &access, 0, intent(false, true))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/verified-register"))
+            .bearer_auth(&access)
+            .json(&content_registration(&relay.ready["grant"], 1))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    relay
+        .control(serde_json::json!({"status":410,"reason":"Unregistered","wait_for_release":true}));
+    let sending = {
+        let client = client.clone();
+        let base = base.clone();
+        let access = access.clone();
+        tokio::spawn(async move { post_test(&client, &base, &access, 2).await })
+    };
+    for _ in 0..250 {
+        if relay.path("provider-started.json").exists() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(relay.path("provider-started.json").exists());
+    let grant: serde_json::Value = client
+        .post(format!("{relay_url}/fixture/renew"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let mut replacement = content_registration(&grant, 2);
+    replacement["content_key_id"] = serde_json::json!("33333333-3333-4333-8333-333333333333");
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/verified-register"))
+            .bearer_auth(&access)
+            .json(&replacement)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    std::fs::write(relay.path("release"), "release").unwrap();
+    assert_eq!(
+        sending
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["data"]["reason"],
+        "Unregistered"
+    );
+    let after = status_http(&client, &base, &access).await;
+    assert_eq!(after["registered"], true);
+    assert_eq!(after["revision"], 3);
+    relay.control(serde_json::json!({"status":410,"reason":"Unregistered"}));
+    assert_eq!(
+        post_test(&client, &base, &access, 3)
+            .await
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["data"]["outcome"],
+        "permanent"
+    );
+    assert_eq!(
+        status_http(&client, &base, &access).await["registered"],
+        false
+    );
+    assert_eq!(post_test(&client, &base, &access, 4).await.status(), 403);
+}
+
+struct HeldLegacyApple {
+    started: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+    tokens: tokio::sync::Mutex<Vec<String>>,
+}
+#[async_trait::async_trait]
+impl serverbee_server::service::apns::LegacyApnsTransport for HeldLegacyApple {
+    async fn send(
+        &self,
+        payload: a2::request::payload::Payload<'_>,
+    ) -> Result<a2::Response, a2::Error> {
+        let first = {
+            let mut tokens = self.tokens.lock().await;
+            tokens.push(payload.device_token.to_owned());
+            tokens.len() == 1
+        };
+        if first {
+            self.started.notify_one();
+            self.release.notified().await;
+        }
+        Ok(a2::Response {
+            code: 200,
+            error: None,
+            apns_id: None,
+        })
+    }
+}
+
+#[tokio::test]
+async fn legacy_dispatch_rechecks_cached_later_recipient_after_verified_migration() {
+    use serverbee_server::service::apns::{ApnsConfig, ApnsService};
+    let (base, state, _tmp) = setup_http().await;
+    let client = reqwest::Client::new();
+    let first = login_http(&client, &base, "member", "earlier-install").await;
+    let migrating = login_http(&client, &base, "admin", "later-install").await;
+    let first_access = first["access_token"].as_str().unwrap();
+    let migrating_access = migrating["access_token"].as_str().unwrap();
+    for (access, token) in [
+        (first_access, "first-token"),
+        (migrating_access, "later-token"),
+    ] {
+        assert_eq!(
+            client
+                .post(format!("{base}/api/mobile/push/register"))
+                .bearer_auth(access)
+                .json(&serde_json::json!({"device_token":token}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+    }
+    // Another owner reuses that installation string. Migration must not silence
+    // its legacy row or grant it access to the real owner's modern registration.
+    let other = login_http(&client, &base, "member", "later-install").await;
+    // The real HTTP API rejects an overwrite; an unrelated owner's marker
+    // still cannot suppress the actual owner's selected row.
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/register"))
+            .bearer_auth(other["access_token"].as_str().unwrap())
+            .json(&serde_json::json!({"device_token":"attacker-token"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let other_session = mobile_session::Entity::find()
+        .filter(mobile_session::Column::UserId.eq(other["user"]["id"].as_str().unwrap()))
+        .filter(mobile_session::Column::InstallationId.eq("later-install"))
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    // device_tokens has a unique installation index, so use a distinct legitimate
+    // installation for the other owner while testing forged tombstones below.
+    let third = login_http(&client, &base, "member", "unrelated-install").await;
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/register"))
+            .bearer_auth(third["access_token"].as_str().unwrap())
+            .json(&serde_json::json!({"device_token":"unrelated-token"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    // A marker from the other user cannot suppress the actual owner.
+    state
+        .db
+        .execute(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "INSERT INTO mobile_push_migrations (installation_id,user_id) VALUES (?,?)",
+            ["later-install".into(), other_session.user_id.into()],
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        ApnsService::legacy_recipients(&state.db)
+            .await
+            .unwrap()
+            .len(),
+        3
+    );
+    let apple = Arc::new(HeldLegacyApple {
+        started: tokio::sync::Notify::new(),
+        release: tokio::sync::Notify::new(),
+        tokens: tokio::sync::Mutex::new(Vec::new()),
+    });
+    let sending = {
+        let apple = apple.clone();
+        let state = state.clone();
+        tokio::spawn(async move {
+            // Signing is irrelevant at this substituted Apple network boundary;
+            // actual selection, loop, payload creation and revalidation run.
+            let config = ApnsConfig {
+                key_id: "fixture",
+                team_id: "fixture",
+                private_key: "fixture",
+                bundle_id: "com.serverbee.mobile",
+                sandbox: true,
+            };
+            ApnsService::send_push_with_transport(
+                &state.db,
+                &config,
+                "Legacy event",
+                "Body",
+                None,
+                None,
+                apple.as_ref(),
+            )
+            .await
+        })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), apple.started.notified())
+        .await
+        .unwrap();
+    assert_eq!(*apple.tokens.lock().await, ["first-token"]);
+    assert_eq!(
+        preferences_http(&client, &base, migrating_access, 0, intent(true, true))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        setup_http_request(&client, &base, migrating_access, 1, "verified-fixture")
+            .await
+            .status(),
+        200
+    );
+    // This first request is already in flight. Migrating it now cannot retract
+    // its provider receipt; the cached later request has not started and is skipped.
+    assert_eq!(
+        preferences_http(&client, &base, first_access, 0, intent(false, true))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        setup_http_request(&client, &base, first_access, 1, "verified-fixture")
+            .await
+            .status(),
+        200
+    );
+    apple.release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(5), sending)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        *apple.tokens.lock().await,
+        ["first-token", "unrelated-token"]
+    );
+    assert_eq!(
+        ApnsService::legacy_recipients(&state.db)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn expired_mobile_session_cannot_send_a_registered_encrypted_test() {
+    let relay = DeliveryRelayFixture::start().await;
+    let (_, initial, _tmp) = setup_http().await;
+    let mut config = initial.config.clone();
+    config.push_relay.url = relay.ready["url"].as_str().unwrap().to_owned();
+    let state = AppState::new(initial.db.clone(), config).await.unwrap();
+    let base = serve_setup_state(state.clone()).await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "expired-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    assert_eq!(
+        preferences_http(&client, &base, access, 0, intent(false, true))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/verified-register"))
+            .bearer_auth(access)
+            .json(&content_registration(&relay.ready["grant"], 1))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    // Advance only the persisted time boundary; real HTTP/session policy and
+    // registration are not substituted. The access token remains unexpired.
+    mobile_session::Entity::update_many()
+        .col_expr(
+            mobile_session::Column::ExpiresAt,
+            sea_orm::sea_query::Expr::value(Utc::now() - ChronoDuration::seconds(1)),
+        )
+        .filter(mobile_session::Column::InstallationId.eq("expired-install"))
+        .filter(mobile_session::Column::UserId.eq(login["user"]["id"].as_str().unwrap()))
+        .exec(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(post_test(&client, &base, access, 2).await.status(), 401);
+    assert!(!relay.path("provider-request.json").exists());
 }

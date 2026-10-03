@@ -381,7 +381,18 @@ The log level can also be set via the `RUST_LOG` environment variable, which tak
 |-----|------|---------|-------------|
 | `url` | string | `""` | Dedicated Push Relay HTTPS URL. Empty disables verified registration. No Apple signing keys belong on the Server. |
 
-Set `SERVERBEE_PUSH_RELAY__URL` to override this URL. Configure the Relay with `APNS_ENVIRONMENTS=sandbox,production` for development and distribution installations on the same URL. Its `APP_ATTEST_BUNDLE_VERSIONS` allowlist validates signed version claims. An isolated local Server integration harness may use `http://127.0.0.1:<port>`; the iOS app requires HTTPS. Current support covers App Attest registration and confirmed subscription intent. Category delivery is still being implemented; see [Mobile](/en/docs/mobile).
+Set `SERVERBEE_PUSH_RELAY__URL` to override this URL. Configure the Relay with `APNS_ENVIRONMENTS=sandbox,production` for development and distribution installations on the same URL. Its `APP_ATTEST_BUNDLE_VERSIONS` allowlist validates signed version claims. An isolated local Server integration harness may use `http://127.0.0.1:<port>`; the iOS app requires HTTPS. Current support covers App Attest registration, confirmed subscription intent and encrypted current-installation test notifications. Category delivery is still being implemented; see [Mobile](/en/docs/mobile).
+
+These variables belong to the separate Relay process, never the Server:
+
+| Variable | Meaning |
+| --- | --- |
+| `APNS_TEAM_ID` | Publisher Apple team identifier |
+| `APNS_KEY_ID` | Publisher APNs signing key identifier |
+| `APNS_PRIVATE_KEY` | Private P-256 PEM file path, readable only by the Relay |
+| `APNS_TOPIC` | Official app bundle identifier, not the extension identifier |
+
+Encrypted setup requires an HTTPS Server connection. The app and Notification Service Extension share a device-only Keychain group. APNs acceptance is a provider receipt, not proof of presentation. See [Mobile](/en/docs/mobile) for migration and real-device requirements.
 
 ### `[firewall]` -- Firewall Blocklist Guardrail
 

@@ -1,8 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { randomBytes, randomUUID } from 'node:crypto'
+import type { ApnsTransport } from './apns'
 import { assertion, attest, type Environment, hash, requireValue, type Trust } from './attestation'
 
 const tokenPattern = /^[a-f0-9]{64}$/
+const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
+const identityPattern = /^[a-f0-9]{64}$/
+const noncePattern = /^[A-Za-z0-9+/]{16}$/
+const ciphertextPattern = /^[A-Za-z0-9+/]+={0,2}$/
 const keyPattern = /^[A-Za-z0-9+/]{43}=$/
 
 class BodyTooLarge extends Error {}
@@ -55,19 +60,21 @@ interface Grant {
   token_hash: string
 }
 
-/** No public-send endpoint or alternate unverified admission exists. Delivery
- * is a later ticket; inspection authorizes only the exact device grant. */
+/** Admission and delivery share persistent, device-scoped grants. */
 export class Relay {
   readonly db: Database
   private readonly trust: Trust
   private readonly environments: readonly Environment[]
+  private readonly apns?: ApnsTransport
   private readonly clock: () => number
 
   constructor(
     path: string,
     trust: Trust & { environments?: readonly Environment[] },
-    clock: () => number = () => Math.floor(Date.now() / 1000)
+    clock: () => number = () => Math.floor(Date.now() / 1000),
+    apns?: ApnsTransport
   ) {
+    this.apns = apns
     this.trust = trust
     this.environments = trust.environments ?? [trust.environment]
     requireValue(
@@ -109,7 +116,7 @@ export class Relay {
     })()
   }
 
-  private inspect(request: Request, now: number): Response {
+  private grant(request: Request, now: number): Grant {
     const authorization = request.headers.get('authorization')
     const secret = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null
     requireValue(secret && secret.length < 256, 'Missing grant')
@@ -120,6 +127,11 @@ export class Relay {
       grant && grant.expires_at > now && this.environments.includes(grant.environment),
       'Expired, revoked or disabled grant'
     )
+    return grant
+  }
+
+  private inspect(request: Request, now: number): Response {
+    const grant = this.grant(request, now)
     return Response.json(
       {
         grant_id: grant.grant_id,
@@ -177,6 +189,52 @@ export class Relay {
     )
   }
 
+  private async deliver(request: Request, now: number): Promise<Response> {
+    const grant = this.grant(request, now)
+    const body = await readBody(request)
+    requireValue(
+      Object.keys(body).every((key) => ['event_id', 'expires_at', 'envelope'].includes(key)),
+      'Invalid delivery fields'
+    )
+    requireValue(typeof body.event_id === 'string' && uuidPattern.test(body.event_id), 'Invalid event ID')
+    requireValue(
+      typeof body.expires_at === 'number' && Number.isInteger(body.expires_at) && body.expires_at <= now + 1800,
+      'Invalid expiry'
+    )
+    const envelope = body.envelope as Record<string, unknown> | undefined
+    requireValue(
+      envelope && Object.keys(envelope).sort().join(',') === 'ciphertext,identity,key_id,nonce,version',
+      'Invalid envelope'
+    )
+    requireValue(
+      envelope.version === 1 && typeof envelope.key_id === 'string' && uuidPattern.test(envelope.key_id),
+      'Unsupported envelope'
+    )
+    requireValue(typeof envelope.identity === 'string' && identityPattern.test(envelope.identity), 'Invalid binding')
+    requireValue(typeof envelope.nonce === 'string' && noncePattern.test(envelope.nonce), 'Invalid nonce')
+    requireValue(
+      typeof envelope.ciphertext === 'string' &&
+        envelope.ciphertext.length <= 2760 &&
+        ciphertextPattern.test(envelope.ciphertext) &&
+        Buffer.from(envelope.ciphertext, 'base64').length >= 16,
+      'Invalid ciphertext'
+    )
+    // Revalidate after streamed body reads: rotation/revocation may happen
+    // during an upload. The caller cannot select a token or environment.
+    const current = this.grant(request, this.clock())
+    requireValue(current.grant_id === grant.grant_id, 'Changed grant')
+    if (!this.apns) {
+      return Response.json(
+        { outcome: 'permanent', reason: 'RelayNotConfigured', device_invalid: false },
+        { status: 503 }
+      )
+    }
+    return Response.json(
+      await this.apns.send(current.device_token, current.environment, body.event_id, body.expires_at, envelope),
+      { headers: { 'Cache-Control': 'no-store' } }
+    )
+  }
+
   async handle(request: Request, source: string): Promise<Response> {
     const now = this.clock()
     if (this.limited(source, now)) {
@@ -189,6 +247,9 @@ export class Relay {
       }
       if (path === '/v1/grants/inspect') {
         return this.inspect(request, now)
+      }
+      if (path === '/v1/send') {
+        return await this.deliver(request, now)
       }
       if (!['/v1/challenges', '/v1/attest', '/v1/renew', '/v1/revoke'].includes(path)) {
         return new Response(null, { status: 404 })

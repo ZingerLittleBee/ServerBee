@@ -13,7 +13,7 @@ struct NotificationSetupView: View {
                     "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
                     "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
                 ))
-                Text("This build supports verified setup. Category delivery is still being implemented.")
+                Text("This build supports encrypted test notifications. Category delivery is still being implemented.")
                     .foregroundStyle(.secondary)
             } header: { Text("Mobile notification privacy") }
 
@@ -40,6 +40,18 @@ struct NotificationSetupView: View {
                 }
             }
             .disabled(manager.isSaving || manager.confirmed == nil)
+
+            Section("Test notification") {
+                Button("Send test notification") { Task { await manager.sendTestNotification() } }
+                    .disabled(manager.isSaving || manager.isTesting || manager.confirmed?.registered != true)
+                if manager.isTesting { ProgressView() }
+                if let result = manager.testResult {
+                    Text(result.outcome == "accepted"
+                         ? "APNs accepted the notification. Device presentation has not been observed."
+                         : "The provider did not accept the notification. Retry setup or try again.")
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Section("Setup status") {
                 LabeledContent("System permission", value: permissionLabel)

@@ -16,12 +16,50 @@ pub struct ApnsConfig<'a> {
     pub sandbox: bool,
 }
 
+/// Only the external Apple transport is replaceable. Recipient selection,
+/// pre-send migration checks, payload construction and cleanup stay real.
+#[async_trait::async_trait]
+pub trait LegacyApnsTransport: Send + Sync {
+    async fn send(
+        &self,
+        payload: a2::request::payload::Payload<'_>,
+    ) -> Result<a2::Response, a2::Error>;
+}
+
+#[async_trait::async_trait]
+impl LegacyApnsTransport for a2::Client {
+    async fn send(
+        &self,
+        payload: a2::request::payload::Payload<'_>,
+    ) -> Result<a2::Response, a2::Error> {
+        a2::Client::send(self, payload).await
+    }
+}
+
+struct LegacyNotification<'a> {
+    title: &'a str,
+    body: &'a str,
+    server_id: Option<&'a str>,
+    rule_id: Option<&'a str>,
+}
+
 pub struct ApnsService;
 
 impl ApnsService {
+    /// Both selection and migration are scoped to the legacy row owner. A
+    /// forged installation from another account cannot silence that owner.
+    pub async fn legacy_recipients(
+        db: &DatabaseConnection,
+    ) -> Result<Vec<device_token::Model>, AppError> {
+        Ok(device_token::Entity::find().from_raw_sql(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            "SELECT d.* FROM device_tokens d WHERE NOT EXISTS (SELECT 1 FROM mobile_push_migrations m WHERE m.installation_id=d.installation_id AND m.user_id=d.user_id) ORDER BY d.created_at, d.id".to_owned(),
+        )).all(db).await?)
+    }
+
     /// Send a push notification to all registered device tokens.
     ///
-    /// Automatically removes invalid tokens (410 Unregistered / 400 BadDeviceToken).
+    /// Removes terminal 410 Unregistered tokens only if their snapshot is current.
     pub async fn send_push(
         db: &DatabaseConnection,
         config: &ApnsConfig<'_>,
@@ -30,7 +68,7 @@ impl ApnsService {
         server_id: Option<&str>,
         rule_id: Option<&str>,
     ) -> Result<(), AppError> {
-        let tokens = device_token::Entity::find().all(db).await?;
+        let tokens = Self::legacy_recipients(db).await?;
 
         if tokens.is_empty() {
             tracing::debug!("No device tokens registered, skipping APNs push");
@@ -52,11 +90,72 @@ impl ApnsService {
         )
         .map_err(|e| AppError::Internal(format!("Failed to create APNs client: {e}")))?;
 
+        Self::dispatch(
+            db,
+            config,
+            tokens,
+            LegacyNotification {
+                title,
+                body,
+                server_id,
+                rule_id,
+            },
+            &client,
+        )
+        .await
+    }
+
+    /// Production dispatch with only outbound APNs substituted by callers that
+    /// cannot use Apple services (the integration harness).
+    pub async fn send_push_with_transport(
+        db: &DatabaseConnection,
+        config: &ApnsConfig<'_>,
+        title: &str,
+        body: &str,
+        server_id: Option<&str>,
+        rule_id: Option<&str>,
+        transport: &dyn LegacyApnsTransport,
+    ) -> Result<(), AppError> {
+        let tokens = Self::legacy_recipients(db).await?;
+        Self::dispatch(
+            db,
+            config,
+            tokens,
+            LegacyNotification {
+                title,
+                body,
+                server_id,
+                rule_id,
+            },
+            transport,
+        )
+        .await
+    }
+
+    async fn dispatch(
+        db: &DatabaseConnection,
+        config: &ApnsConfig<'_>,
+        tokens: Vec<device_token::Model>,
+        notification: LegacyNotification<'_>,
+        transport: &dyn LegacyApnsTransport,
+    ) -> Result<(), AppError> {
         let mut sent = 0u32;
         for dt in &tokens {
+            // Recheck each cached recipient immediately before entering the
+            // external request. Earlier sends may have awaited while this
+            // installation migrated, refreshed its token or logged out.
+            let eligible = device_token::Entity::find().from_raw_sql(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                "SELECT d.* FROM device_tokens d WHERE d.id=? AND d.user_id=? AND d.mobile_session_id=? AND d.token=? AND d.updated_at=? AND NOT EXISTS (SELECT 1 FROM mobile_push_migrations m WHERE m.installation_id=d.installation_id AND m.user_id=d.user_id)",
+                [dt.id.clone().into(), dt.user_id.clone().into(), dt.mobile_session_id.clone().into(), dt.token.clone().into(), dt.updated_at.into()],
+            )).one(db).await?;
+            if eligible.is_none() {
+                continue;
+            }
+
             let builder = DefaultNotificationBuilder::new()
-                .set_title(title)
-                .set_body(body)
+                .set_title(notification.title)
+                .set_body(notification.body)
                 .set_sound("default")
                 .set_badge(1);
 
@@ -70,26 +169,35 @@ impl ApnsService {
             );
 
             // Add custom data for deep linking on iOS
-            if let Some(sid) = server_id {
+            if let Some(sid) = notification.server_id {
                 let _ = payload.add_custom_data("server_id", &sid);
             }
-            if let Some(rid) = rule_id {
+            if let Some(rid) = notification.rule_id {
                 let _ = payload.add_custom_data("rule_id", &rid);
             }
 
-            match client.send(payload).await {
+            match transport.send(payload).await {
                 Ok(_response) => {
                     sent += 1;
                 }
                 Err(a2::Error::ResponseError(response)) => {
-                    // 410 = Unregistered, 400 = BadDeviceToken → remove stale token
-                    if response.code == 410 || response.code == 400 {
+                    if response.code == 410
+                        && response
+                            .error
+                            .as_ref()
+                            .is_some_and(|e| e.reason == a2::ErrorReason::Unregistered)
+                    {
                         tracing::warn!(
                             "APNs token invalid for device {} (HTTP {}), removing",
                             dt.installation_id,
                             response.code
                         );
-                        let _ = device_token::Entity::delete_by_id(&dt.id).exec(db).await;
+                        let _ = device_token::Entity::delete_many()
+                            .filter(device_token::Column::Id.eq(&dt.id))
+                            .filter(device_token::Column::Token.eq(&dt.token))
+                            .filter(device_token::Column::UpdatedAt.eq(dt.updated_at))
+                            .exec(db)
+                            .await;
                     } else {
                         tracing::error!(
                             "APNs rejected push for device {} (HTTP {}): {:?}",
@@ -183,7 +291,10 @@ mod tests {
 
         let result = ApnsService::send_push(&db, &config, "T", "B", None, None).await;
 
-        assert!(result.is_ok(), "empty table + None args should still return Ok");
+        assert!(
+            result.is_ok(),
+            "empty table + None args should still return Ok"
+        );
     }
 
     #[tokio::test]

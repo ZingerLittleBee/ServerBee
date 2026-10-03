@@ -65,6 +65,9 @@ struct VerifiedPushRequest: Encodable, Sendable {
     let keyId: String
     let grantId: String
     let grantToken: String
+    let contentKeyId: String
+    let contentKey: String
+    let deploymentId: String
     enum CodingKeys: String, CodingKey {
         case expectedRevision = "expected_revision"
         case deviceToken = "device_token"
@@ -72,5 +75,24 @@ struct VerifiedPushRequest: Encodable, Sendable {
         case keyId = "key_id"
         case grantId = "grant_id"
         case grantToken = "grant_token"
+        case contentKeyId = "content_key_id"
+        case contentKey = "content_key"
+        case deploymentId = "deployment_id"
+    }
+}
+
+struct TestPushRequest: Encodable, Sendable {
+    let expectedRevision: Int64
+    enum CodingKeys: String, CodingKey { case expectedRevision = "expected_revision" }
+}
+
+struct TestPushResponse: Decodable, Sendable {
+    let eventId: String
+    let outcome: String
+    let reason: String
+    let presentation: String
+    enum CodingKeys: String, CodingKey {
+        case outcome, reason, presentation
+        case eventId = "event_id"
     }
 }

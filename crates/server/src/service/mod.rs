@@ -29,6 +29,7 @@ pub mod notification;
 pub mod oauth;
 pub mod ping;
 pub mod public_status;
+pub mod push_envelope;
 pub mod record;
 pub mod rollup;
 pub mod security;

@@ -60,6 +60,7 @@ private struct RootView: View {
 
 // MARK: - AppDelegate
 
+@MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
     var pushManager: PushNotificationManager? {
         didSet {
@@ -68,7 +69,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUser
         }
     }
     private var pendingToken: Data?
-    var pushRouter: PushNotificationRouter?
+    private var pendingEnvelope: PushEnvelope?
+    var pushRouter: PushNotificationRouter? {
+        didSet {
+            if let pendingEnvelope { pushRouter?.enqueue(envelope: pendingEnvelope) }
+            pendingEnvelope = nil
+        }
+    }
 
     /// Cold-launch from a push tap. iOS does not invoke
     /// `userNotificationCenter(_:didReceive:)` for the launch notification
@@ -105,10 +112,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUser
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let link = pushManager?.handleNotificationResponse(response) {
-            pushRouter?.enqueue(link)
-        }
+        bufferNotification(userInfo: response.notification.request.content.userInfo)
         completionHandler()
+    }
+
+    @MainActor
+    func bufferNotification(userInfo: [AnyHashable: Any]) {
+        guard let object = userInfo["serverbee_envelope"], JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object), data.count <= 4096,
+              let envelope = try? JSONDecoder().decode(PushEnvelope.self, from: data) else { return }
+        if let pushRouter { pushRouter.enqueue(envelope: envelope) } else { pendingEnvelope = envelope }
     }
 
     func userNotificationCenter(

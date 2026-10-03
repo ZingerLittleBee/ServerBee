@@ -14479,7 +14479,22 @@
         }
       }
     },
-    "ServerBee": {},
+    "ServerBee": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ServerBee"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ServerBee"
+          }
+        }
+      }
+    },
     "Servers": {
       "extractionState": "manual",
       "localizations": {
@@ -17525,16 +17540,6 @@
         }
       }
     },
-    "This build supports verified setup. Category delivery is still being implemented.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此版本支持设备验证与注册，各类通知的投递仍在开发中。"
-          }
-        }
-      }
-    },
     "Mobile notification privacy": {
       "localizations": {
         "zh-Hans": {
@@ -17771,6 +17776,136 @@
           "stringUnit": {
             "state": "translated",
             "value": "通知"
+          }
+        }
+      }
+    },
+    "Test notification": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test notification"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试通知"
+          }
+        }
+      }
+    },
+    "Send test notification": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send test notification"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送测试通知"
+          }
+        }
+      }
+    },
+    "APNs accepted the notification. Device presentation has not been observed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "APNs accepted the notification. Device presentation has not been observed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "APNs 已接受通知。尚未观察到设备展示。"
+          }
+        }
+      }
+    },
+    "The provider did not accept the notification. Retry setup or try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The provider did not accept the notification. Retry setup or try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务商未接受通知。请重试设置或再次发送。"
+          }
+        }
+      }
+    },
+    "Open ServerBee to view this notification.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open ServerBee to view this notification."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 ServerBee 查看此通知。"
+          }
+        }
+      }
+    },
+    "Your encrypted ServerBee notification is ready.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your encrypted ServerBee notification is ready."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 ServerBee 加密通知已就绪。"
+          }
+        }
+      }
+    },
+    "Encrypted notification setup requires an HTTPS Server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encrypted notification setup requires an HTTPS Server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加密通知设置需要使用 HTTPS 的 Server。"
+          }
+        }
+      }
+    },
+    "This build supports encrypted test notifications. Category delivery is still being implemented.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This build supports encrypted test notifications. Category delivery is still being implemented."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本支持加密测试通知。各类通知投递仍在开发中。"
           }
         }
       }

@@ -1,6 +1,7 @@
 import { X509Certificate } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { serve } from 'bun'
+import { ApnsTransport } from './apns'
 import { type Environment, requireValue } from './attestation'
 import { Relay } from './relay'
 
@@ -28,13 +29,23 @@ requireValue(
   bundleVersions.every((version) => version.length > 0 && version.length <= 128),
   'Invalid app versions'
 )
-const relay = new Relay(required('RELAY_DATABASE'), {
-  appId: required('APP_ATTEST_APP_ID'),
-  rootPem,
-  environment,
-  environments,
-  bundleVersions
-})
+const relay = new Relay(
+  required('RELAY_DATABASE'),
+  {
+    appId: required('APP_ATTEST_APP_ID'),
+    rootPem,
+    environment,
+    environments,
+    bundleVersions
+  },
+  undefined,
+  new ApnsTransport({
+    teamId: required('APNS_TEAM_ID'),
+    keyId: required('APNS_KEY_ID'),
+    privateKey: readFileSync(required('APNS_PRIVATE_KEY'), 'utf8'),
+    topic: required('APNS_TOPIC')
+  })
+)
 
 serve({
   hostname: '127.0.0.1',
