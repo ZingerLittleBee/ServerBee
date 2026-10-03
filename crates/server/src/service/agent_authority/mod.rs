@@ -32,6 +32,25 @@ impl AgentAuthority {
         Self { db, agent_manager }
     }
 
+    /// Acquire SQLite's write reservation before any lifecycle read snapshot.
+    /// This uses the bounded production busy wait, never a lifecycle-lock retry
+    /// loop. Background security recovery must not cause read-to-write upgrades
+    /// in enrollment, revocation or deletion to fail immediately under WAL.
+    async fn begin_write(&self, server_id: &str) -> Result<DatabaseTransaction, AppError> {
+        let tx = self.db.begin().await?;
+        tx.execute(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "UPDATE server SET id=id WHERE id=?",
+            [server_id.into()],
+        ))
+        .await
+        .map_err(|error| {
+            tracing::error!(server_id, error = ?error, "Agent authority write reservation failed");
+            AppError::from(error)
+        })?;
+        Ok(tx)
+    }
+
     pub async fn issue_offer_for_unclaimed(
         &self,
         input: IssueOfferForUnclaimed,
@@ -40,7 +59,7 @@ impl AgentAuthority {
             .agent_manager
             .server_lifecycle_lock(input.server_id.as_str());
         let _guard = server_lock.lock().await;
-        let tx = self.db.begin().await.map_err(AppError::from)?;
+        let tx = self.begin_write(input.server_id.as_str()).await?;
         let server = server::Entity::find_by_id(input.server_id.as_str())
             .one(&tx)
             .await
@@ -86,7 +105,7 @@ impl AgentAuthority {
             .agent_manager
             .server_lifecycle_lock(&candidate.target_server_id);
         let _guard = server_lock.lock().await;
-        let tx = self.db.begin().await.map_err(AppError::from)?;
+        let tx = self.begin_write(&candidate.target_server_id).await?;
 
         let Some(offer) = enrollment_offer::Entity::find_by_id(&candidate.id)
             .one(&tx)
@@ -173,7 +192,7 @@ impl AgentAuthority {
             .agent_manager
             .server_lifecycle_lock(input.server_id.as_str());
         let _guard = server_lock.lock().await;
-        let tx = self.db.begin().await.map_err(AppError::from)?;
+        let tx = self.begin_write(input.server_id.as_str()).await?;
         let server = server::Entity::find_by_id(input.server_id.as_str())
             .one(&tx)
             .await
@@ -231,7 +250,7 @@ impl AgentAuthority {
             .agent_manager
             .server_lifecycle_lock(input.server_id.as_str());
         let _guard = server_lock.lock().await;
-        let tx = self.db.begin().await.map_err(AppError::from)?;
+        let tx = self.begin_write(input.server_id.as_str()).await?;
         let server = server::Entity::find_by_id(input.server_id.as_str())
             .one(&tx)
             .await
@@ -317,7 +336,7 @@ impl AgentAuthority {
             .agent_manager
             .server_lifecycle_lock(input.server_id.as_str());
         let _guard = server_lock.lock().await;
-        let tx = self.db.begin().await.map_err(AppError::from)?;
+        let tx = self.begin_write(input.server_id.as_str()).await?;
         let server = server::Entity::find_by_id(input.server_id.as_str())
             .one(&tx)
             .await
@@ -388,7 +407,7 @@ impl AgentAuthority {
             .agent_manager
             .server_lifecycle_lock(input.server_id.as_str());
         let _guard = server_lock.lock().await;
-        let tx = self.db.begin().await.map_err(AppError::from)?;
+        let tx = self.begin_write(input.server_id.as_str()).await?;
         let server = server::Entity::find_by_id(input.server_id.as_str())
             .one(&tx)
             .await
@@ -397,6 +416,7 @@ impl AgentAuthority {
         let before = authority_status(&server);
         let open_offer = find_open_offer(&tx, &server.id).await?;
         if before == AuthorityStatus::Unclaimed && open_offer.is_none() {
+            tx.commit().await.map_err(AppError::from)?;
             self.agent_manager.remove_connection(&server.id);
             self.broadcast_authority_state(&server.id, AuthorityStatus::Unclaimed, None);
             return Ok(RevocationReceipt {
@@ -405,7 +425,6 @@ impl AgentAuthority {
             });
         }
 
-        self.agent_manager.remove_connection(&server.id);
         if let Some(offer) = open_offer {
             let outcome = if offer.expires_at <= Utc::now() {
                 OfferOutcome::Expired
@@ -448,6 +467,9 @@ impl AgentAuthority {
             .await?;
         }
         tx.commit().await.map_err(AppError::from)?;
+        // Keep the lifecycle lock through both commit and runtime fencing.
+        // A failed database transition leaves the authorized socket intact.
+        self.agent_manager.remove_connection(&server.id);
         self.broadcast_authority_state(&server.id, AuthorityStatus::Unclaimed, None);
         Ok(RevocationReceipt {
             server_id: input.server_id,
@@ -646,7 +668,9 @@ impl AgentAuthority {
             guards.push(lock.lock().await);
         }
 
-        let tx = self.db.begin().await?;
+        let tx = self
+            .begin_write(ids.first().map(String::as_str).unwrap_or(""))
+            .await?;
         let rows = server::Entity::find()
             .filter(server::Column::Id.is_in(ids.iter().cloned()))
             .all(&tx)
@@ -1737,6 +1761,13 @@ mod tests {
         let fixture = authority_with_unclaimed_server().await;
         fixture.claim_initial(FIRST_TOKEN).await;
         fixture.add_connection();
+        let original_connection = fixture
+            .agent_manager
+            .stale_connection_candidates(0)
+            .into_iter()
+            .find(|(id, _)| id == fixture.server_id.as_str())
+            .expect("current connection")
+            .1;
         fixture
             .db
             .execute_unprepared(
@@ -1756,7 +1787,12 @@ mod tests {
             .await;
 
         assert!(matches!(result, Err(RevokeAuthorityError::Store(_))));
-        assert!(!fixture.agent_manager.is_online(fixture.server_id.as_str()));
+        assert!(
+            fixture
+                .agent_manager
+                .is_current_connection(fixture.server_id.as_str(), original_connection),
+            "failed durable revocation preserves the original authorized connection"
+        );
         assert!(
             AuthService::validate_agent_token(&fixture.db, FIRST_TOKEN)
                 .await

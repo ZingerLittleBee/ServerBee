@@ -26,6 +26,12 @@ impl MigrationTrait for Migration {
              WHERE admission_payload IS NOT NULL OR push_intent IS NOT NULL",
         )
         .await?;
+        db.execute_unprepared(
+            "CREATE INDEX IF NOT EXISTS idx_security_event_pending_key
+             ON security_event(server_id, event_type, source_ip, created_at, id)
+             WHERE admission_payload IS NOT NULL",
+        )
+        .await?;
         Ok(())
     }
 

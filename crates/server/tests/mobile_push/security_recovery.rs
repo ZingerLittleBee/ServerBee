@@ -34,6 +34,10 @@ impl Drop for OnceOnlyFixture {
 
 impl OnceOnlyFixture {
     async fn new(kind: &str) -> Self {
+        Self::with_window(kind, 300).await
+    }
+
+    async fn with_window(kind: &str, window: u32) -> Self {
         use axum::{Router, routing::post};
         let (base, state, tmp, relay) = queued_setup().await;
         let (client, login) = admin_client(&base).await;
@@ -101,7 +105,7 @@ impl OnceOnlyFixture {
             .post(format!("{base}/api/alert-rules"))
             .json(
                 &json!({"name":"once-only-rule","cover_type":"all","enabled":true,
-                "rules":[{"rule_type":rule_type,"security":{"dedupe_window_seconds":300}}],
+                "rules":[{"rule_type":rule_type,"security":{"dedupe_window_seconds":window}}],
                 "notification_group_id":group,"actions":actions}),
             )
             .send()
@@ -117,7 +121,7 @@ impl OnceOnlyFixture {
             &client,
             &base,
             rule_type,
-            json!({"dedupe_window_seconds":300}),
+            json!({"dedupe_window_seconds":window}),
             "all",
             vec![],
             true,
@@ -223,6 +227,88 @@ impl OnceOnlyFixture {
         .expect("existing external channel effect was preserved");
     }
 
+    async fn assert_production_wal(&self) {
+        use sea_orm::TransactionTrait;
+        // Hold every pooled connection so options cannot accidentally be
+        // verified repeatedly on only one connection.
+        let mut connections = Vec::new();
+        for _ in 0..self.state.config.database.max_connections {
+            connections.push(self.state.db.begin().await.unwrap());
+        }
+        for connection in &connections {
+            let mode = connection
+                .query_one(sea_orm::Statement::from_string(
+                    sea_orm::DatabaseBackend::Sqlite,
+                    "PRAGMA journal_mode".to_owned(),
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(mode.try_get::<String>("", "journal_mode").unwrap(), "wal");
+            for (pragma, value) in [
+                ("synchronous", 1_i64),
+                ("foreign_keys", 1),
+                ("busy_timeout", 5000),
+            ] {
+                let row = connection
+                    .query_one(sea_orm::Statement::from_string(
+                        sea_orm::DatabaseBackend::Sqlite,
+                        format!("PRAGMA {pragma}"),
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(row.try_get::<i64>("", pragma).unwrap(), value);
+            }
+        }
+        for connection in connections {
+            connection.rollback().await.unwrap();
+        }
+    }
+
+    async fn revoke_response(&self) -> (reqwest::StatusCode, String) {
+        let response = tokio::time::timeout(
+            Duration::from_secs(8),
+            self.client
+                .delete(format!(
+                    "{}/api/servers/{}/agent-authority",
+                    self.base, self.server
+                ))
+                .send(),
+        )
+        .await
+        .expect("revocation is bounded by the production write wait")
+        .unwrap();
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        (status, body)
+    }
+
+    async fn original_for(&self, username: &str) -> security_event::Model {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            loop {
+                if let Some(event) = security_event::Entity::find()
+                    .filter(security_event::Column::Username.eq(username))
+                    .one(&self.state.db)
+                    .await
+                    .unwrap()
+                {
+                    break event;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("once-only WS raw event persisted")
+    }
+
+    async fn stop_recovery(&mut self) {
+        if let Some(worker) = self.recovery.take() {
+            worker.abort();
+            let _ = worker.await;
+        }
+    }
+
     async fn restart(&mut self) {
         if let Some(worker) = self.recovery.take() {
             worker.abort();
@@ -232,13 +318,13 @@ impl OnceOnlyFixture {
             self.sink.close().await.unwrap();
             self.connected = false;
         }
-        let db = Database::connect(format!(
-            "sqlite://{}/test.db?mode=rwc",
-            self.tmp.path().display()
-        ))
-        .await
-        .unwrap();
+        let db = production_wal_db(
+            &self.tmp.path().join("test.db"),
+            self.state.config.database.max_connections,
+        )
+        .await;
         self.state = AppState::new(db, self.state.config.clone()).await.unwrap();
+        self.base = serve_outbox_http(self.state.clone()).await;
         self.recovery = Some(self.state.security_service.start_recovery());
     }
 
@@ -868,25 +954,95 @@ async fn security_raw_fault_rechecks_agent_capability_before_storage() {
 
 #[tokio::test]
 async fn security_durable_admission_rechecks_authority_after_restart() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::ERROR)
+        .with_test_writer()
+        .try_init();
     let mut f = OnceOnlyFixture::new("port_scan").await;
+    f.assert_production_wal().await;
     f.fault("intent").await;
     f.send_once(&detection("port_scan", "203.0.113.42", 10, "alice", true))
         .await;
     let original = f.event(true, false).await;
+    // A real competing writer makes the old read-then-upgrade path fail in
+    // WAL. The admission fault stays installed throughout the HTTP request.
+    use sea_orm::TransactionTrait;
+    let writer = f.state.db.begin().await.unwrap();
+    writer
+        .execute_unprepared("UPDATE security_event SET push_intent=push_intent")
+        .await
+        .unwrap();
+    let client = f.client.clone();
+    let url = format!("{}/api/servers/{}/agent-authority", f.base, f.server);
+    let revoke = tokio::spawn(async move {
+        let response = client.delete(url).send().await.unwrap();
+        let status = response.status();
+        (status, response.text().await.unwrap())
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let waited_for_writer = !revoke.is_finished();
+    let stayed_online = f.state.agent_manager.is_online(&f.server);
+    writer.commit().await.unwrap();
+    let (status, body) = tokio::time::timeout(Duration::from_secs(8), revoke)
+        .await
+        .unwrap()
+        .unwrap();
+
     assert_eq!(
-        f.client
-            .delete(format!(
-                "{}/api/servers/{}/agent-authority",
-                f.base, f.server
-            ))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        200
+        status, 200,
+        "DELETE agent-authority response: {body}; inspect captured database error/code above"
+    );
+    assert!(
+        waited_for_writer,
+        "revocation must serialize before reading authority"
+    );
+    assert!(
+        stayed_online,
+        "a blocked, uncommitted revocation cannot fence the socket"
+    );
+    let receipt: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(receipt["data"]["changed"], true);
+    assert!(!f.state.agent_manager.is_online(&f.server));
+    let stored = serverbee_server::entity::server::Entity::find_by_id(&f.server)
+        .one(&f.state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stored.token_hash.is_none());
+    let history = serverbee_server::entity::agent_authority_event::Entity::find()
+        .filter(serverbee_server::entity::agent_authority_event::Column::ServerId.eq(&f.server))
+        .all(&f.state.db)
+        .await
+        .unwrap();
+    assert!(
+        history.iter().any(
+            |event| event.authority_before == "claimed" && event.authority_after == "unclaimed"
+        )
+    );
+    let url = format!(
+        "{}/api/agent/ws?token={}",
+        f.base.replace("http://", "ws://"),
+        f.token
+    );
+    let error = match tokio_tungstenite::connect_async(url).await {
+        Err(tokio_tungstenite::tungstenite::Error::Http(response)) => response.status(),
+        other => panic!(
+            "old-token handshake must be rejected by HTTP authorization: {}",
+            if other.is_ok() {
+                "accepted"
+            } else {
+                "unexpected transport failure"
+            }
+        ),
+    };
+    assert_eq!(error.as_u16(), 401);
+    assert!(
+        f.event(true, false).await.admission_payload.is_some(),
+        "fault remains installed through durable revocation"
     );
     f.connected = false;
     f.restart().await;
+    f.assert_production_wal().await;
     f.clear_fault().await;
     let recovered = f.event(false, false).await;
     assert_eq!(recovered.id, original.id);
@@ -1107,4 +1263,675 @@ async fn security_maintenance_lookup_failure_keeps_raw_browser_and_blocks_effect
             .is_empty()
     );
     assert!(f.external.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn security_wal_failed_revocation_preserves_token_history_and_live_connection() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::ERROR)
+        .with_test_writer()
+        .try_init();
+    let mut f = OnceOnlyFixture::new("port_scan").await;
+    f.assert_production_wal().await;
+    f.fault("intent").await;
+    f.send_once(&detection("port_scan", "203.0.113.42", 10, "alice", true))
+        .await;
+    let original = f.event(true, false).await;
+    let before = serverbee_server::entity::server::Entity::find_by_id(&f.server)
+        .one(&f.state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    let history_before = serverbee_server::entity::agent_authority_event::Entity::find()
+        .filter(serverbee_server::entity::agent_authority_event::Column::ServerId.eq(&f.server))
+        .all(&f.state.db)
+        .await
+        .unwrap();
+    f.state
+        .db
+        .execute_unprepared(
+            "CREATE TRIGGER fail_revocation_history BEFORE INSERT ON agent_authority_events
+         WHEN NEW.transition='authority_revoked'
+         BEGIN SELECT RAISE(ABORT, 'fixture revocation history failure'); END",
+        )
+        .await
+        .unwrap();
+    let (status, body) = f.revoke_response().await;
+    assert_eq!(status, 500, "injected history fault response: {body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["error"]["message"],
+        "Internal error: Database error"
+    );
+    assert!(
+        f.state.agent_manager.is_online(&f.server),
+        "rollback must preserve the authorized socket"
+    );
+    let after = serverbee_server::entity::server::Entity::find_by_id(&f.server)
+        .one(&f.state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.token_hash, before.token_hash);
+    assert_eq!(
+        serverbee_server::entity::agent_authority_event::Entity::find()
+            .filter(serverbee_server::entity::agent_authority_event::Column::ServerId.eq(&f.server))
+            .all(&f.state.db)
+            .await
+            .unwrap(),
+        history_before
+    );
+    common::send_system_info(
+        &mut f.sink,
+        &mut f._reader,
+        "after-rollback",
+        Some(CAP_SECURITY_EVENTS),
+    )
+    .await;
+    let (mut replacement, mut reader) = common::connect_agent(&f.base, &f.token).await;
+    common::send_system_info(
+        &mut replacement,
+        &mut reader,
+        "unchanged-token-after-rollback",
+        Some(CAP_SECURITY_EVENTS),
+    )
+    .await;
+    assert!(jobs(&f.state).await.is_empty());
+    assert!(f.external.lock().await.is_empty());
+    f.state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_revocation_history")
+        .await
+        .unwrap();
+    let (status, body) = f.revoke_response().await;
+    assert_eq!(
+        status, 200,
+        "repaired storage response: {body}; inspect database error above if failing"
+    );
+    assert!(!f.state.agent_manager.is_online(&f.server));
+    f.connected = false;
+    let _ = replacement.close().await;
+    f.restart().await;
+    f.clear_fault().await;
+    let recovered = f.event(false, false).await;
+    assert_eq!(recovered.id, original.id);
+    assert_eq!(recovered.created_at, original.created_at);
+    assert!(jobs(&f.state).await.is_empty());
+    assert!(
+        block_list::Entity::find()
+            .all(&f.state.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(f.external.lock().await.is_empty());
+}
+
+async fn finished_originals(f: &OnceOnlyFixture, usernames: &[&str]) -> Vec<security_event::Model> {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            let rows = security_event::Entity::find()
+                .all(&f.state.db)
+                .await
+                .unwrap();
+            let originals: Option<Vec<_>> = usernames
+                .iter()
+                .map(|name| {
+                    rows.iter()
+                        .find(|event| {
+                            event.username.as_deref() == Some(*name)
+                                && event.admission_payload.is_none()
+                                && event.push_intent.is_none()
+                        })
+                        .cloned()
+                })
+                .collect();
+            if let Some(originals) = originals {
+                break originals;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("originals finish automatic ordered admission")
+}
+
+async fn assert_original_broadcasts(
+    browser: &mut tokio::sync::broadcast::Receiver<serverbee_common::protocol::BrowserMessage>,
+    expected: &[security_event::Model],
+) {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        let mut seen = std::collections::HashSet::new();
+        while seen.len() < expected.len() {
+            if let serverbee_common::protocol::BrowserMessage::SecurityEvent(event) =
+                browser.recv().await.unwrap()
+            {
+                let original = expected
+                    .iter()
+                    .find(|original| original.id == event.event_id)
+                    .expect("no new detection or UUID");
+                assert!(seen.insert(event.event_id));
+                assert_eq!(event.event.username, original.username);
+                assert_eq!(event.event.source_ip, original.source_ip);
+                assert_eq!(event.event.ended_at, original.ended_at.timestamp());
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+async fn assert_ordered_notifications(
+    f: &mut OnceOnlyFixture,
+    a: &security_event::Model,
+    b: &security_event::Model,
+    unrelated: &security_event::Model,
+    original_c: &security_event::Model,
+) {
+    let rows = finished_originals(
+        f,
+        &[
+            "first-original",
+            "second-original",
+            "unrelated-original",
+            "third-original",
+        ],
+    )
+    .await;
+    for original in [a, b, unrelated, original_c] {
+        let recovered = rows.iter().find(|event| event.id == original.id).unwrap();
+        let mut expected = original.clone();
+        expected.admission_payload = None;
+        expected.push_intent = None;
+        expected.maintenance_at_admission = Some(false);
+        assert_eq!(
+            recovered, &expected,
+            "original UUID/time/payload facts never change"
+        );
+    }
+    assert_eq!(
+        security_event::Entity::find()
+            .all(&f.state.db)
+            .await
+            .unwrap()
+            .len(),
+        4
+    );
+    let states = alert_state::Entity::find().all(&f.state.db).await.unwrap();
+    assert_eq!(states.len(), 4, "two rules with two distinct source keys");
+    for state in &states {
+        if state.event_key == a.source_ip {
+            assert_eq!(state.count, 3);
+            assert_eq!(state.first_triggered_at, a.created_at);
+            assert_eq!(state.last_notified_at, original_c.created_at);
+            assert_eq!(state.updated_at, original_c.created_at);
+        } else {
+            assert_eq!(state.event_key, unrelated.source_ip);
+            assert_eq!(state.count, 1);
+            assert_eq!(state.last_notified_at, unrelated.created_at);
+        }
+    }
+    let queued = jobs(&f.state).await;
+    assert_eq!(
+        queued.len(),
+        6,
+        "A and B notify, C is suppressed, unrelated key progresses"
+    );
+    for original in [a, b, unrelated] {
+        let recipients: Vec<_> = queued
+            .iter()
+            .filter(|job| job.event_id == original.id)
+            .collect();
+        assert_eq!(recipients.len(), 2);
+        assert_ne!(recipients[0].installation_id, recipients[1].installation_id);
+        for job in recipients {
+            assert_eq!(job.category, "security");
+            assert_eq!(job.created_at, original.created_at.timestamp());
+            assert_eq!(job.expires_at, original.created_at.timestamp() + 1800);
+        }
+    }
+    assert!(queued.iter().all(|job| job.event_id != original_c.id));
+    f.external_count(3).await;
+    let external = f.external.lock().await;
+    assert_eq!(
+        external
+            .iter()
+            .filter(|body| body.contains(&a.source_ip))
+            .count(),
+        2
+    );
+    assert_eq!(
+        external
+            .iter()
+            .filter(|body| body.contains(&unrelated.source_ip))
+            .count(),
+        1
+    );
+    drop(external);
+    let blocks = block_list::Entity::find().all(&f.state.db).await.unwrap();
+    assert_eq!(blocks.len(), 2);
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.origin_event_id.as_deref() == Some(a.id.as_str()))
+    );
+    assert!(
+        blocks
+            .iter()
+            .any(|block| block.origin_event_id.as_deref() == Some(unrelated.id.as_str()))
+    );
+    f.relay
+        .status
+        .store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(f.state.clone());
+    wait_jobs(&f.state, 6, "accepted").await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(f.relay.requests().await.len(), 6);
+    for request in f.relay.requests().await {
+        let content = decrypted_delivery(&request);
+        let original = [a, b, unrelated]
+            .into_iter()
+            .find(|event| content["event_id"] == event.id)
+            .unwrap();
+        assert_eq!(content["created_at"], original.created_at.timestamp());
+        assert_eq!(
+            content["expires_at"],
+            original.created_at.timestamp() + 1800
+        );
+        assert_eq!(content["server_id"], f.server);
+    }
+    // Verify persistent monotonic cooldown after another database reopen; a
+    // cache-only guard or replayed effects cannot satisfy these assertions.
+    f.restart().await;
+    let reopened = alert_state::Entity::find().all(&f.state.db).await.unwrap();
+    assert_eq!(reopened.len(), states.len());
+    for original in &states {
+        assert_eq!(
+            reopened.iter().find(|state| state.id == original.id),
+            Some(original)
+        );
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(jobs(&f.state).await.len(), 6);
+    assert_eq!(f.external.lock().await.len(), 3);
+}
+
+async fn ordered_multi_event_recovery(memory_raw_fault: bool) {
+    let mut f = OnceOnlyFixture::with_window("port_scan", 4).await;
+    f.assert_production_wal().await;
+    let mut browser = f.state.browser_tx.subscribe();
+    f.state.db.execute_unprepared(
+        "CREATE TRIGGER fail_first_admission BEFORE UPDATE ON security_event
+         WHEN OLD.username='first-original' AND OLD.admission_payload IS NOT NULL AND NEW.admission_payload IS NULL
+         BEGIN SELECT RAISE(ABORT, 'fixture oldest admission failure'); END"
+    ).await.unwrap();
+    if memory_raw_fault {
+        f.state
+            .db
+            .execute_unprepared(
+                "CREATE TRIGGER fail_first_raw BEFORE INSERT ON security_event
+             WHEN NEW.username='first-original'
+             BEGIN SELECT RAISE(ABORT, 'fixture oldest raw failure'); END",
+            )
+            .await
+            .unwrap();
+    } else {
+        f.state
+            .db
+            .execute_unprepared("ALTER TABLE maintenance RENAME TO unavailable_maintenance")
+            .await
+            .unwrap();
+    }
+    f.send_once(&detection(
+        "port_scan",
+        "203.0.113.42",
+        10,
+        "first-original",
+        true,
+    ))
+    .await;
+    common::send_system_info(
+        &mut f.sink,
+        &mut f._reader,
+        "first-original-retained",
+        Some(CAP_SECURITY_EVENTS),
+    )
+    .await;
+    let accepted_before = Utc::now();
+    let mut a = if memory_raw_fault {
+        None
+    } else {
+        Some(f.original_for("first-original").await)
+    };
+    if let Some(original) = &a {
+        assert!(original.admission_payload.is_some());
+        assert_eq!(original.maintenance_at_admission, None);
+        assert_original_broadcasts(&mut browser, std::slice::from_ref(original)).await;
+        f.stop_recovery().await;
+        f.state
+            .db
+            .execute_unprepared("ALTER TABLE unavailable_maintenance RENAME TO maintenance")
+            .await
+            .unwrap();
+    }
+    // Use a real short rule window and original wall-clock reception times.
+    // No timestamp rewrite, private service call or retransmitted detection.
+    tokio::time::sleep(Duration::from_millis(4200)).await;
+    f.send_once(&detection(
+        "port_scan",
+        "203.0.113.42",
+        10,
+        "second-original",
+        true,
+    ))
+    .await;
+    f.send_once(&detection(
+        "port_scan",
+        "203.0.113.43",
+        10,
+        "unrelated-original",
+        true,
+    ))
+    .await;
+    common::send_system_info(
+        &mut f.sink,
+        &mut f._reader,
+        "later-originals-retained",
+        Some(CAP_SECURITY_EVENTS),
+    )
+    .await;
+    if f.recovery.is_none() {
+        f.recovery = Some(f.state.security_service.start_recovery());
+    }
+    let b = f.original_for("second-original").await;
+    let unrelated = finished_originals(&f, &["unrelated-original"])
+        .await
+        .remove(0);
+    wait_jobs(&f.state, 2, "pending").await;
+    f.external_count(1).await;
+    let pending_b = f.original_for("second-original").await;
+    assert!(
+        pending_b.admission_payload.is_some(),
+        "newer same-key original cannot overtake the head"
+    );
+    assert_eq!(pending_b.created_at, b.created_at);
+    assert!(
+        jobs(&f.state)
+            .await
+            .iter()
+            .all(|job| job.event_id == unrelated.id)
+    );
+    assert!(
+        alert_state::Entity::find()
+            .all(&f.state.db)
+            .await
+            .unwrap()
+            .iter()
+            .all(|state| state.event_key == unrelated.source_ip)
+    );
+    if memory_raw_fault {
+        assert!(
+            security_event::Entity::find()
+                .filter(security_event::Column::Username.eq("first-original"))
+                .all(&f.state.db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        f.state
+            .db
+            .execute_unprepared("DROP TRIGGER fail_first_raw")
+            .await
+            .unwrap();
+        a = Some(f.original_for("first-original").await);
+    }
+    let a = a.unwrap();
+    assert!(a.created_at <= accepted_before);
+    assert!(b.created_at - a.created_at >= ChronoDuration::seconds(4));
+    // Once A is durable, its own admission fault keeps B blocked while the
+    // unrelated key already has both recipients and its existing effects.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        f.original_for("second-original")
+            .await
+            .admission_payload
+            .is_some()
+    );
+    assert_eq!(jobs(&f.state).await.len(), 2);
+    f.restart().await;
+    f.assert_production_wal().await;
+    f.state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_first_admission")
+        .await
+        .unwrap();
+    let completed = finished_originals(
+        &f,
+        &["first-original", "second-original", "unrelated-original"],
+    )
+    .await;
+    wait_jobs(&f.state, 6, "pending").await;
+    if memory_raw_fault {
+        assert_original_broadcasts(&mut browser, &completed).await;
+    } else {
+        let later: Vec<_> = completed
+            .iter()
+            .filter(|event| event.id != a.id)
+            .cloned()
+            .collect();
+        assert_original_broadcasts(&mut browser, &later).await;
+    }
+    // Reconnect the unchanged valid token to the
+    // restarted production state before sending one new original C.
+    let (mut sink, mut reader) = common::connect_agent(&f.base, &f.token).await;
+    common::send_system_info(
+        &mut sink,
+        &mut reader,
+        "third-original-after-reopen",
+        Some(CAP_SECURITY_EVENTS),
+    )
+    .await;
+    f.sink = sink;
+    f._reader = reader;
+    f.connected = true;
+    let mut after_restart_browser = f.state.browser_tx.subscribe();
+    f.send_once(&detection(
+        "port_scan",
+        "203.0.113.42",
+        10,
+        "third-original",
+        true,
+    ))
+    .await;
+    let c = finished_originals(&f, &["third-original"]).await.remove(0);
+    assert!(
+        c.created_at - b.created_at < ChronoDuration::seconds(4),
+        "C is genuinely inside B's rule cooldown"
+    );
+    assert_original_broadcasts(&mut after_restart_browser, std::slice::from_ref(&c)).await;
+    assert_ordered_notifications(&mut f, &a, &b, &unrelated, &c).await;
+}
+
+#[tokio::test]
+async fn security_ordered_missing_snapshot_recovers_multiple_originals_across_wal_restart() {
+    ordered_multi_event_recovery(false).await;
+}
+
+#[tokio::test]
+async fn security_ordered_memory_and_durable_faults_preserve_keys_without_blocking_other_recipients()
+ {
+    ordered_multi_event_recovery(true).await;
+}
+
+#[tokio::test]
+async fn security_wal_reenrollment_transfers_authority_and_cancels_old_pending_original() {
+    let mut f = OnceOnlyFixture::new("port_scan").await;
+    f.assert_production_wal().await;
+    f.fault("intent").await;
+    f.send_once(&detection("port_scan", "203.0.113.42", 10, "alice", true))
+        .await;
+    let original = f.event(true, false).await;
+    let before = serverbee_server::entity::server::Entity::find_by_id(&f.server)
+        .one(&f.state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    let offer = f
+        .client
+        .post(format!(
+            "{}/api/servers/{}/agent-authority/re-enrollment",
+            f.base, f.server
+        ))
+        .json(&json!({"mode":"graceful","ttl_secs":3600}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(offer.status(), 200);
+    let offer: Value = offer.json().await.unwrap();
+    assert!(
+        f.state.agent_manager.is_online(&f.server),
+        "graceful offer keeps current authority"
+    );
+    assert_eq!(
+        serverbee_server::entity::server::Entity::find_by_id(&f.server)
+            .one(&f.state.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .token_hash,
+        before.token_hash
+    );
+    let replacement_token = format!("replacement-token-{}", uuid::Uuid::new_v4());
+    let claim = reqwest::Client::new()
+        .post(format!("{}/api/agent/register", f.base))
+        .bearer_auth(offer["data"]["enrollment"]["code"].as_str().unwrap())
+        .json(&json!({"proposed_run_token":replacement_token}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(claim.status(), 200);
+    assert_eq!(
+        claim.json::<Value>().await.unwrap()["data"]["server_id"],
+        f.server
+    );
+    assert!(!f.state.agent_manager.is_online(&f.server));
+    let old_url = format!(
+        "{}/api/agent/ws?token={}",
+        f.base.replace("http://", "ws://"),
+        f.token
+    );
+    let old = tokio_tungstenite::connect_async(old_url).await;
+    assert!(
+        matches!(old, Err(tokio_tungstenite::tungstenite::Error::Http(response)) if response.status().as_u16()==401)
+    );
+    f.connected = false;
+    f.token = replacement_token;
+    f.restart().await;
+    let (mut sink, mut reader) = common::connect_agent(&f.base, &f.token).await;
+    common::send_system_info(
+        &mut sink,
+        &mut reader,
+        "replacement-authority-after-reopen",
+        Some(CAP_SECURITY_EVENTS),
+    )
+    .await;
+    f.sink = sink;
+    f._reader = reader;
+    f.connected = true;
+    f.clear_fault().await;
+    let recovered = f.event(false, false).await;
+    assert_eq!(recovered.id, original.id);
+    assert_eq!(recovered.created_at, original.created_at);
+    assert!(
+        f.state.agent_manager.is_online(&f.server),
+        "old recovery cannot fence replacement authority"
+    );
+    assert!(jobs(&f.state).await.is_empty());
+    assert!(
+        block_list::Entity::find()
+            .all(&f.state.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(f.external.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn security_ordered_recovery_rotates_blocked_intent_pages_without_starving_ready_installations()
+ {
+    let mut f = OnceOnlyFixture::new("ssh_login").await;
+    f.state.db.execute_unprepared(
+        "CREATE TRIGGER fail_blocked_intents BEFORE INSERT ON mobile_push_outbox
+         WHEN EXISTS (SELECT 1 FROM security_event WHERE id=NEW.event_id AND username LIKE 'blocked-%')
+         BEGIN SELECT RAISE(ABORT, 'fixture blocked intent backlog'); END"
+    ).await.unwrap();
+    for i in 1..=65 {
+        f.send_once(&detection(
+            "ssh_login",
+            &format!("203.0.113.{i}"),
+            0,
+            &format!("blocked-{i}"),
+            true,
+        ))
+        .await;
+    }
+    f.send_once(&detection(
+        "ssh_login",
+        "203.0.113.100",
+        0,
+        "ready-last",
+        true,
+    ))
+    .await;
+    let ready = f.original_for("ready-last").await;
+    wait_jobs(&f.state, 2, "pending").await;
+    assert!(
+        jobs(&f.state)
+            .await
+            .iter()
+            .all(|job| job.event_id == ready.id),
+        "later ready recipients bypass over 64 failed intents"
+    );
+    f.external_count(66).await;
+    let originals = security_event::Entity::find()
+        .all(&f.state.db)
+        .await
+        .unwrap();
+    assert_eq!(originals.len(), 66);
+    assert!(
+        originals
+            .iter()
+            .all(|event| event.admission_payload.is_none())
+    );
+    assert_eq!(
+        originals
+            .iter()
+            .filter(|event| event.push_intent.is_some())
+            .count(),
+        65
+    );
+    f.state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_blocked_intents")
+        .await
+        .unwrap();
+    wait_jobs(&f.state, 132, "pending").await;
+    let queued = jobs(&f.state).await;
+    for original in &originals {
+        let jobs: Vec<_> = queued
+            .iter()
+            .filter(|job| job.event_id == original.id)
+            .collect();
+        assert_eq!(jobs.len(), 2);
+        for job in jobs {
+            assert_eq!(job.created_at, original.created_at.timestamp());
+            assert_eq!(job.expires_at, original.created_at.timestamp() + 1800);
+        }
+    }
+    assert_eq!(
+        f.external.lock().await.len(),
+        66,
+        "push recovery does not replay rule effects"
+    );
 }

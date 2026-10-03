@@ -10,11 +10,17 @@ the Server/app/Relay revisions and APNs environment with each observation.
   uses real HTTP mobile login, confirmed subscriptions, rule writes, migrated
   SQLite, a registered Agent WebSocket and security event evaluation. Only the
   external Relay/Apple and configured webhook boundaries are fixtures. Real
-  SQLite faults cover raw writes, rule/intent commit and a second recipient's
+  Production WAL/NORMAL/foreign-key/5-second busy settings apply to every pooled
+  connection and database reopen. SQLite faults cover raw writes, rule/intent commit and a second recipient's
   outbox INSERT. Once-only WS cases verify raw/browser/firewall/external
   preservation, suppression rollback before durable intent, atomic fan-out,
   original UUID/facts/deadline, current recipient checks, responsive reports/Pong/connection replacement/closure/revocation while raw storage fails, cancellation of unauthorized recovery, maintenance decisions across window starts/ends and lookup failures, and automatic recovery
-  after faults and database reopen, without another detection or service call. Before the first successful raw write, retention is service-owned memory; process-death recovery is not guaranteed at that boundary. Existing `mobile_push_integration`
+  after faults and database reopen, without another detection or service call.
+  Competing writers must preserve durable revocation and old-token rejection;
+  failed history commits retain the valid token, history and live connection.
+  Multi-event cases retain original timestamps across memory/snapshot/admission
+  faults, let unrelated keys and both installations progress, and verify A/B
+  delivery with C suppression plus monotonic SQLite cooldown after reopen. Before the first successful raw write, retention is service-owned memory; process-death recovery is not guaranteed at that boundary. Existing `mobile_push_integration`
   cases retain registration ownership, revocation and retry coverage.
 - Native: run `EncryptedPushNavigationTests`, `SecurityNotificationDetailTests`
   and `NotificationServiceTests` in `ServerBeeTests`. These verify encryption,

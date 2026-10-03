@@ -10,8 +10,7 @@ use axum::http::HeaderMap;
 use axum::http::header::AUTHORIZATION;
 use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectOptions, ConnectionTrait, Database, EntityTrait,
-    QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, EntityTrait, QueryFilter, Set,
 };
 use sea_orm_migration::MigratorTrait;
 
@@ -22,6 +21,31 @@ use serverbee_server::migration::Migrator;
 use serverbee_server::router::api::mobile::{PushRegisterRequest, push_register, push_unregister};
 use serverbee_server::service::auth::AuthService;
 use serverbee_server::state::AppState;
+
+/// Match production's options on every pooled connection, including reopen.
+async fn production_wal_db(
+    path: &std::path::Path,
+    max_connections: u32,
+) -> sea_orm::DatabaseConnection {
+    use sqlx::ConnectOptions as _;
+    use sqlx::sqlite::{
+        SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
+    };
+    let options = SqliteConnectOptions::new()
+        .filename(path)
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .foreign_keys(true)
+        .busy_timeout(std::time::Duration::from_secs(5))
+        .disable_statement_logging();
+    let pool = SqlitePoolOptions::new()
+        .max_connections(max_connections)
+        .connect_with(options)
+        .await
+        .expect("production-configured WAL pool");
+    sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool)
+}
 
 /// Build an `AppState` backed by a fresh migrated temp SQLite database.
 async fn test_state() -> (Arc<AppState>, tempfile::TempDir) {
@@ -46,14 +70,7 @@ async fn test_state() -> (Arc<AppState>, tempfile::TempDir) {
         ..AppConfig::default()
     };
 
-    let db_url = format!("sqlite://{}/test.db?mode=rwc", data_dir);
-    let mut opt = ConnectOptions::new(&db_url);
-    opt.max_connections(5);
-    opt.sqlx_logging(false);
-    let db = Database::connect(opt).await.expect("connect test db");
-    db.execute_unprepared("PRAGMA foreign_keys=ON")
-        .await
-        .unwrap();
+    let db = production_wal_db(&tmp.path().join("test.db"), config.database.max_connections).await;
     Migrator::up(&db, None).await.expect("migrations");
 
     let state = AppState::new(db, config).await.expect("app state");

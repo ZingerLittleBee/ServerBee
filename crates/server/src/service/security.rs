@@ -31,6 +31,7 @@ struct MatchedSecurityRule {
     rule: alert_rule::Model,
     state: alert_state::Model,
     should_notify: bool,
+    event_time: DateTime<Utc>,
 }
 
 #[derive(Clone)]
@@ -52,6 +53,8 @@ pub struct SecurityService {
     pub agent_manager: Arc<AgentManager>,
     admission_lock: tokio::sync::Mutex<()>,
     retained: tokio::sync::Mutex<VecDeque<RetainedSecurityEvent>>,
+    recovery_cursor: tokio::sync::Mutex<Option<(DateTime<Utc>, String)>>,
+    push_cursor: tokio::sync::Mutex<Option<(DateTime<Utc>, String)>>,
 }
 
 impl SecurityService {
@@ -72,6 +75,8 @@ impl SecurityService {
             agent_manager,
             admission_lock: tokio::sync::Mutex::new(()),
             retained: tokio::sync::Mutex::new(VecDeque::new()),
+            recovery_cursor: tokio::sync::Mutex::new(None),
+            push_cursor: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -242,49 +247,162 @@ impl SecurityService {
         // Never move an item out before persistence: cancellation/shutdown of
         // the worker leaves it owned by the service. Each item gets one attempt
         // per pass, so a faulty source cannot starve other original events.
-        let retained: Vec<_> = self.retained.lock().await.iter().cloned().collect();
+        let retained: Vec<_> = self
+            .retained
+            .lock()
+            .await
+            .iter()
+            .take(64)
+            .cloned()
+            .collect();
         for original in retained {
-            if self.persist_original(&original).await.is_ok() {
-                let id = original.event.id.clone();
-                self.retained
-                    .lock()
-                    .await
-                    .retain(|item| item.event.id != id);
-            } else {
-                tracing::warn!("Security raw storage unavailable; owner retains original event");
+            let id = &original.event.id;
+            let completed = self.persist_original(&original).await.is_ok();
+            let mut queue = self.retained.lock().await;
+            if let Some(position) = queue.iter().position(|item| &item.event.id == id) {
+                if completed {
+                    let _ = queue.remove(position);
+                } else if let Some(pending) = queue.remove(position) {
+                    // Rotate retry failures inside the owner, never across an
+                    // await. Other sources still receive bounded write attempts.
+                    queue.push_back(pending);
+                    tracing::warn!(
+                        "Security raw storage unavailable; owner retains original event"
+                    );
+                }
             }
         }
 
-        let pending = security_event::Entity::find()
-            .filter(security_event::Column::AdmissionPayload.is_not_null())
-            .order_by_asc(security_event::Column::CreatedAt)
-            .order_by_asc(security_event::Column::Id)
-            .limit(64)
-            .all(&self.db)
-            .await?;
+        // Select only the oldest durable original per potential rule dedup key.
+        // A missing snapshot or failed admission must not expose that key's tail.
+        // Cursor rotation prevents blocked keys from monopolizing the 64 slots.
+        let cursor = self.recovery_cursor.lock().await.clone();
+        let mut pending = self.pending_heads(cursor).await?;
+        if pending.is_empty() {
+            pending = self.pending_heads(None).await?;
+        }
+        *self.recovery_cursor.lock().await = pending
+            .last()
+            .map(|event| (event.created_at, event.id.clone()));
         let mut error = None;
         for event in pending {
             if let Err(e) = self.admit_original_event(&event.id).await {
                 error = Some(e);
-                // Keep unresolved rule decisions in original event order.
-                break;
+                // This key remains pending, but unrelated originals may proceed.
             }
         }
         // Poll these independently: even many broken push intents must never
         // starve raw events' rule decisions, firewall or external channels.
-        let intents = security_event::Entity::find()
-            .filter(security_event::Column::PushIntent.is_not_null())
-            .order_by_asc(security_event::Column::CreatedAt)
-            .order_by_asc(security_event::Column::Id)
-            .limit(64)
-            .all(&self.db)
-            .await?;
+        let cursor = self.push_cursor.lock().await.clone();
+        let mut intents = self.pending_push_intents(cursor).await?;
+        if intents.is_empty() {
+            intents = self.pending_push_intents(None).await?;
+        }
+        *self.push_cursor.lock().await = intents
+            .last()
+            .map(|event| (event.created_at, event.id.clone()));
         for event in intents {
             if let Err(e) = self.materialize_push_intent(&event.id).await {
                 error = Some(e);
             }
         }
         error.map_or(Ok(()), Err)
+    }
+
+    async fn pending_push_intents(
+        &self,
+        cursor: Option<(DateTime<Utc>, String)>,
+    ) -> Result<Vec<security_event::Model>, AppError> {
+        let mut query =
+            security_event::Entity::find().filter(security_event::Column::PushIntent.is_not_null());
+        if let Some((time, id)) = cursor {
+            query = query.filter(
+                Condition::any()
+                    .add(security_event::Column::CreatedAt.gt(time))
+                    .add(
+                        Condition::all()
+                            .add(security_event::Column::CreatedAt.eq(time))
+                            .add(security_event::Column::Id.gt(id)),
+                    ),
+            );
+        }
+        Ok(query
+            .order_by_asc(security_event::Column::CreatedAt)
+            .order_by_asc(security_event::Column::Id)
+            .limit(64)
+            .all(&self.db)
+            .await?)
+    }
+
+    async fn pending_heads(
+        &self,
+        cursor: Option<(DateTime<Utc>, String)>,
+    ) -> Result<Vec<security_event::Model>, AppError> {
+        let mut query = security_event::Entity::find()
+            .filter(security_event::Column::AdmissionPayload.is_not_null())
+            .filter(sea_orm::sea_query::Expr::cust(
+                "NOT EXISTS (SELECT 1 FROM security_event AS earlier
+                 WHERE earlier.admission_payload IS NOT NULL
+                   AND earlier.server_id=security_event.server_id
+                   AND earlier.event_type=security_event.event_type
+                   AND earlier.source_ip=security_event.source_ip
+                   AND (earlier.created_at<security_event.created_at OR
+                        (earlier.created_at=security_event.created_at AND earlier.id<security_event.id)))",
+            ));
+        if let Some((time, id)) = cursor {
+            query = query.filter(
+                Condition::any()
+                    .add(security_event::Column::CreatedAt.gt(time))
+                    .add(
+                        Condition::all()
+                            .add(security_event::Column::CreatedAt.eq(time))
+                            .add(security_event::Column::Id.gt(id)),
+                    ),
+            );
+        }
+        Ok(query
+            .order_by_asc(security_event::Column::CreatedAt)
+            .order_by_asc(security_event::Column::Id)
+            .limit(64)
+            .all(&self.db)
+            .await?)
+    }
+
+    async fn has_earlier_original(
+        &self,
+        txn: &DatabaseTransaction,
+        event: &security_event::Model,
+    ) -> Result<bool, AppError> {
+        // An accepted original still in memory is a barrier for this key, even
+        // when a later raw write succeeded. Never hold this mutex across SQL.
+        if self.retained.lock().await.iter().any(|original| {
+            let earlier = &original.event;
+            earlier.server_id == event.server_id
+                && earlier.event_type == event.event_type
+                && earlier.source_ip == event.source_ip
+                && (earlier.created_at, &earlier.id) < (event.created_at, &event.id)
+        }) {
+            return Ok(true);
+        }
+        // Recheck under the writer reservation: a selection made before a new
+        // durable older original appeared cannot admit a stale tail.
+        Ok(security_event::Entity::find()
+            .filter(security_event::Column::AdmissionPayload.is_not_null())
+            .filter(security_event::Column::ServerId.eq(&event.server_id))
+            .filter(security_event::Column::EventType.eq(&event.event_type))
+            .filter(security_event::Column::SourceIp.eq(&event.source_ip))
+            .filter(
+                Condition::any()
+                    .add(security_event::Column::CreatedAt.lt(event.created_at))
+                    .add(
+                        Condition::all()
+                            .add(security_event::Column::CreatedAt.eq(event.created_at))
+                            .add(security_event::Column::Id.lt(&event.id)),
+                    ),
+            )
+            .one(txn)
+            .await?
+            .is_some())
     }
 
     async fn lock_event(
@@ -324,6 +442,10 @@ impl SecurityService {
             let mut model: security_event::ActiveModel = event.into();
             model.admission_payload = Set(None);
             model.update(&txn).await?;
+            txn.commit().await?;
+            return Ok(());
+        }
+        if self.has_earlier_original(&txn, &event).await? {
             txn.commit().await?;
             return Ok(());
         }
@@ -480,10 +602,12 @@ impl SecurityService {
                 } else {
                     model.count = Set(row.count.saturating_add(1));
                 }
-                model.last_notified_at = Set(now);
+                // Ordered admission is primary. A late historical record or
+                // wall-clock correction still must not regress durable cooldown.
+                model.last_notified_at = Set(now.max(row.last_notified_at));
                 model.resolved = Set(false);
                 model.resolved_at = Set(None);
-                model.updated_at = Set(now);
+                model.updated_at = Set(now.max(row.updated_at));
                 model.update(txn).await?
             } else {
                 alert_state::ActiveModel {
@@ -505,6 +629,7 @@ impl SecurityService {
                 rule,
                 state,
                 should_notify,
+                event_time: now,
             });
         }
         Ok(matched)
@@ -521,7 +646,7 @@ impl SecurityService {
         let mut cached_server_name: Option<String> = None;
         for admitted in matched {
             let rule = &admitted.rule;
-            let now = admitted.state.last_notified_at;
+            let now = admitted.event_time;
             // Auto-actions run on every rule match, even when the
             // notification is dedupe-suppressed or no notification group
             // is configured.
