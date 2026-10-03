@@ -285,6 +285,10 @@ final class NotificationSetupTests: XCTestCase {
             await manager.waitForPendingRegistrations()
             XCTAssertEqual(manager.confirmed?.registered, true)
             XCTAssertEqual(relay.attempts, 1)
+            let originalContext = try XCTUnwrap(auth.captureContext())
+            let pendingKey = manager.pendingKey(originalContext)
+            let originalKeyData = try XCTUnwrap(storage.load(PushContentKey.storageKey))
+            let originalKey = try JSONDecoder().decode(PushContentKey.self, from: originalKeyData)
             fixture.setRegistrationStatus(failure)
             let failed = expectation(description: "rotated grant save failed")
             fixture.registered = { failed.fulfill() }
@@ -294,6 +298,8 @@ final class NotificationSetupTests: XCTestCase {
             XCTAssertEqual(relay.attempts, 2)
             XCTAssertEqual(manager.confirmed?.registered, false)
             XCTAssertNotNil(manager.errorMessage)
+            XCTAssertNotNil(storage.load(pendingKey))
+            XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
             // Even a stale Server response claiming a long-lived old grant must
             // not erase the pending rotation or produce Setup confirmed.
             fixture.confirm()
@@ -324,12 +330,37 @@ final class NotificationSetupTests: XCTestCase {
             XCTAssertEqual(restarted.confirmed?.registered, true)
             XCTAssertNil(restarted.errorMessage)
             XCTAssertEqual(relay.attempts, 2)
-            XCTAssertTrue(storage.values.isEmpty)
+            XCTAssertNil(storage.load(pendingKey), "Successful recovery removes only the current pending grant")
+            XCTAssertEqual(storage.values, [PushContentKey.storageKey: originalKeyData])
+            let recoveredKey = try XCTUnwrap(restarted.contentKey())
+            XCTAssertEqual(recoveredKey.keyId, originalKey.keyId)
+            XCTAssertEqual(recoveredKey.key, originalKey.key)
+            XCTAssertEqual(recoveredKey.scope, originalContext.pushScope)
+            XCTAssertEqual(recoveredKey.deploymentId, originalContext.serverUrl)
+            XCTAssertEqual(recoveredKey.userId, originalContext.userId)
+            XCTAssertEqual(recoveredKey.installationId, originalContext.installationId)
             let saved = fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }
             XCTAssertEqual(saved.count, 4)
             XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1", "fixture-grant-2", "fixture-grant-2", "fixture-grant-2"])
+            let revisions = saved.map { (PushSetupTestData.body($0)["expected_revision"] as? NSNumber)?.int64Value }
+            XCTAssertEqual(revisions, failure == -2 ? [1, 2, 3, 4] : [1, 2, 2, 2])
+            XCTAssertEqual(restarted.confirmed?.revision, failure == -2 ? 5 : 3)
+            for request in saved {
+                let body = PushSetupTestData.body(request)
+                XCTAssertEqual(body["content_key_id"] as? String, originalKey.keyId)
+                XCTAssertEqual(body["content_key"] as? String, originalKey.key)
+                XCTAssertEqual(body["deployment_id"] as? String, originalKey.deploymentId)
+                XCTAssertEqual(request.url?.host, "alice.test")
+            }
             // End all work before changing the global fixture for the next case.
             await restarted.unregister()
+            XCTAssertTrue(storage.values.isEmpty, "Public unregister removes both the grant and content key")
+            XCTAssertNil(restarted.contentKey())
+            XCTAssertEqual(relay.revocations, 1)
+            XCTAssertTrue(restoredAuth.isAuthenticated)
+            let cleanup = fixture.snapshot().last
+            XCTAssertEqual(cleanup?.url?.path, "/api/mobile/push/unregister")
+            XCTAssertEqual(cleanup?.value(forHTTPHeaderField: "Authorization"), "Bearer restored-access")
             auth.clearAuth()
         }
     }
