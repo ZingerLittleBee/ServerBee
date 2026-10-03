@@ -44,7 +44,7 @@ final class CombinedPushTraceTests: XCTestCase {
                                         startedAt: 100, endedAt: 101, firstSeen: false, detectorSource: "journal"))
         let ws = WebSocketRouter(servers: { _ in }, alerts: { _ in }, security: { feed.ingest($0) })
         let center = UNUserNotificationCenter.current()
-        let before = await center.pendingNotificationRequests().map(\.identifier).sorted()
+        let before = await pendingNotificationIdentifiers(center)
         var completions = 0
         delegate.userNotificationCenter(center, willPresent: notification) { options in
             completions += 1
@@ -52,7 +52,7 @@ final class CombinedPushTraceTests: XCTestCase {
         }
         ws.dispatch(.securityEvent(broadcast))
         ws.dispatch(.securityEvent(broadcast))
-        let after = await center.pendingNotificationRequests().map(\.identifier).sorted()
+        let after = await pendingNotificationIdentifiers(center)
         XCTAssertEqual(completions, 1)
         XCTAssertEqual(feed.events.map(\.id), [eventId])
         XCTAssertEqual(after, before, "matching WS updates must not schedule another system notification")
@@ -111,6 +111,15 @@ final class CombinedPushTraceTests: XCTestCase {
         }
         XCTAssertEqual(kinds, ["test", "alert", "security", "task_failure", "task_success"])
         XCTAssertEqual(alertStatuses, ["firing", "resolved"])
+    }
+
+    private func pendingNotificationIdentifiers(_ center: UNUserNotificationCenter) async -> [String] {
+        // Keep non-Sendable notification requests inside the system callback.
+        await withCheckedContinuation { continuation in
+            center.getPendingNotificationRequests { requests in
+                continuation.resume(returning: requests.map(\.identifier).sorted())
+            }
+        }
     }
 
     private func target(for content: PushContent) throws -> ServerDeepLink {
