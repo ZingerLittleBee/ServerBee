@@ -308,14 +308,17 @@ impl ServerService {
     }
 
     /// Update system info for a server from an agent report.
-    pub async fn update_system_info(
-        db: &DatabaseConnection,
+    pub async fn update_system_info<C: ConnectionTrait>(
+        db: &C,
         server_id: &str,
         info: &SystemInfo,
         region: Option<String>,
         country_code: Option<String>,
     ) -> Result<(), AppError> {
-        let model = Self::get_server(db, server_id).await?;
+        let model = server::Entity::find_by_id(server_id)
+            .one(db)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("Server {server_id} not found")))?;
         // A manual geo override freezes region/country_code against auto-detection.
         let geo_manual = model.geo_manual;
         let mut active: server::ActiveModel = model.into();

@@ -257,7 +257,7 @@ pub struct TriggeredInfo {
 pub struct AlertStateManager {
     triggered: DashMap<(String, String, String), TriggeredInfo>,
     // Keep post-commit cache publication ordered with general-alert admission.
-    admission_lock: tokio::sync::Mutex<()>,
+    pub(super) admission_lock: tokio::sync::Mutex<()>,
 }
 
 impl Default for AlertStateManager {
@@ -405,8 +405,18 @@ impl AlertStateManager {
             return Err(error);
         }
         txn.commit().await?;
-        // No await between durable commit and publication. Cancellation/crashes
-        // are recovered from the persisted state, never from cache eligibility.
+        self.publish_state(&state);
+        Ok(should_notify)
+    }
+
+    // Publish synchronously after commit. Durable eligibility never relies on
+    // this display cache, including after cancellation or process restart.
+    pub(super) fn publish_state(&self, state: &alert_state::Model) {
+        let key = (
+            state.rule_id.clone(),
+            state.server_id.clone(),
+            state.event_key.clone(),
+        );
         if state.resolved {
             self.triggered.remove(&key);
         } else {
@@ -419,7 +429,6 @@ impl AlertStateManager {
                 },
             );
         }
-        Ok(should_notify)
     }
 
     pub async fn mark_triggered(
@@ -788,12 +797,25 @@ impl AlertService {
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
     ) -> Result<(), AppError> {
+        // Event-driven conditions cannot be re-polled. Replay captured intents
+        // before ordinary rules, including the first tick after Server restart.
+        crate::service::alert_event_intents::replay(db, config, state_manager).await?;
         let rules = alert_rule::Entity::find()
             .filter(alert_rule::Column::Enabled.eq(true))
             .all(db)
             .await?;
 
         for rule in rules {
+            // A failed event admission reserves the dimension/cycle. Do not
+            // overwrite it with a later periodic evaluation of a mixed rule.
+            if crate::entity::alert_event_intent::Entity::find()
+                .filter(crate::entity::alert_event_intent::Column::RuleId.eq(&rule.id))
+                .one(db)
+                .await?
+                .is_some()
+            {
+                continue;
+            }
             // Skip rules where ALL items are event-driven (e.g. ip_changed).
             // These are dispatched from WS handlers via check_event_rules().
             let items: Vec<AlertRuleItem> =
@@ -916,7 +938,21 @@ impl AlertService {
         let should_notify = state_manager
             .admit_alert_transition(db, rule, server_id, server_name, false)
             .await?;
-        if should_notify && let Some(ref group_id) = rule.notification_group_id {
+        if should_notify {
+            Self::notify_triggered(db, config, rule, server_id, server_name, Utc::now()).await;
+        }
+        Ok(())
+    }
+
+    pub(super) async fn notify_triggered(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        rule: &alert_rule::Model,
+        server_id: &str,
+        server_name: &str,
+        occurred_at: chrono::DateTime<Utc>,
+    ) {
+        if let Some(ref group_id) = rule.notification_group_id {
             let ctx = NotifyContext {
                 server_name: server_name.to_string(),
                 server_id: server_id.to_string(),
@@ -931,15 +967,13 @@ impl AlertService {
                         format!("Alert rule '{}' triggered ({cond})", rule.name)
                     }
                 },
-                time: Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                time: occurred_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
                 ..Default::default()
             };
             if let Err(e) = NotificationService::send_group(db, config, group_id, &ctx).await {
                 tracing::error!("Failed to send alert notification: {e}");
             }
         }
-
-        Ok(())
     }
 
     /// Send a recovery notification when an alert transitions back to normal.
@@ -989,45 +1023,15 @@ impl AlertService {
         server_id: &str,
         event_type: &str,
     ) -> Result<(), AppError> {
-        let rules = alert_rule::Entity::find()
-            .filter(alert_rule::Column::Enabled.eq(true))
-            .all(db)
+        let txn = db.begin().await?;
+        txn.execute_unprepared("UPDATE alert_states SET updated_at=updated_at WHERE 0")
             .await?;
-
-        for rule in &rules {
-            let items: Vec<AlertRuleItem> =
-                serde_json::from_str(&rule.rules_json).unwrap_or_default();
-
-            // Check if any item in this rule matches the event type
-            let has_matching_event = items.iter().any(|i| i.rule_type == event_type);
-            if !has_matching_event {
-                continue;
-            }
-
-            // Check if this rule covers the given server
-            if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
-                continue;
-            }
-
-            // Skip if server is in maintenance
-            if MaintenanceService::is_in_maintenance(db, server_id)
-                .await
-                .unwrap_or(false)
-            {
-                tracing::debug!("Skipping event alert for server {server_id}: in maintenance");
-                continue;
-            }
-
-            // Resolve server name for notification context
-            let server_name = server::Entity::find_by_id(server_id)
-                .one(db)
-                .await?
-                .map(|s| s.name)
-                .unwrap_or_else(|| "Unknown".to_string());
-
-            Self::handle_triggered(db, config, state_manager, rule, server_id, &server_name)
-                .await?;
-        }
+        crate::service::alert_event_intents::capture(&txn, server_id, event_type, Utc::now())
+            .await?;
+        txn.commit().await?;
+        // Durable capture succeeds independently of job admission. The periodic
+        // evaluator retries any failed job write without another source event.
+        crate::service::alert_event_intents::replay(db, config, state_manager).await?;
 
         Ok(())
     }

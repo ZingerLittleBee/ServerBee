@@ -305,7 +305,7 @@ async fn handle_current_connection_frame(
 
     match frame {
         CurrentConnectionFrame::AgentMessage(agent_msg) => {
-            handle_agent_message(state, server_id, *agent_msg).await;
+            return handle_agent_message(state, server_id, *agent_msg).await;
         }
         CurrentConnectionFrame::Pong => {
             state.agent_manager.touch_connection(server_id);
@@ -315,7 +315,7 @@ async fn handle_current_connection_frame(
     true
 }
 
-async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
+async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) -> bool {
     match msg {
         AgentMessage::SystemInfo {
             msg_id,
@@ -323,7 +323,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             agent_local_capabilities,
             temporary,
         } => {
-            system_info::on_system_info(
+            return system_info::on_system_info(
                 state,
                 server_id,
                 msg_id,
@@ -524,7 +524,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             ipv6,
             interfaces: _,
         } => {
-            system_info::on_ip_changed(state, server_id, ipv4, ipv6).await;
+            return system_info::on_ip_changed(state, server_id, ipv4, ipv6).await;
         }
         AgentMessage::TracerouteResult {
             request_id,
@@ -567,6 +567,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             security::on_unlock_results(state, server_id, egress_ip, results, checked_at).await;
         }
     }
+    true
 }
 
 async fn send_server_message(

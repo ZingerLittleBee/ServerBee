@@ -1,3 +1,5 @@
+mod common;
+
 use std::sync::Arc;
 
 use axum::Json;
@@ -3384,5 +3386,442 @@ async fn alert_delivery_expiry_preserves_current_authenticated_detail_lookup() {
             .status(),
         404,
         "An unavailable exact target never opens another alert"
+    );
+}
+
+async fn event_ws_fixture(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+) -> (
+    String,
+    String,
+    String,
+    common::AgentSink,
+    common::AgentReader,
+) {
+    let created = client.post(format!("{base}/api/servers")).bearer_auth(admin)
+        .json(&serde_json::json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"Event intent Server"}))
+        .send().await.unwrap().json::<serde_json::Value>().await.unwrap();
+    let server = created["data"]["server_id"].as_str().unwrap().to_owned();
+    let code = created["data"]["enrollment"]["code"].as_str().unwrap();
+    let token = format!("test-token-{}", uuid::Uuid::new_v4());
+    let registered = client
+        .post(format!("{base}/api/agent/register"))
+        .bearer_auth(code)
+        .json(&serde_json::json!({"proposed_run_token":token}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(registered.status(), 200);
+    let (mut sink, mut reader) = common::connect_agent(base, &token).await;
+    assert_eq!(
+        common::recv_agent_text(&mut reader).await["type"],
+        "welcome"
+    );
+    // Complete initial address population before enabling the event rule.
+    common::send_system_info(&mut sink, &mut reader, "event-baseline", None).await;
+    let response = client
+        .post(format!("{base}/api/alert-rules"))
+        .bearer_auth(admin)
+        .json(
+            &serde_json::json!({"name":"Once-only IP change","enabled":true,"trigger_mode":"once",
+            "cover_type":"include","server_ids":[server],"rules":[{"rule_type":"ip_changed"}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let rule = response.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (server, rule, token, sink, reader)
+}
+
+fn ip_event_frame(ip: &str, system_info: bool) -> serde_json::Value {
+    if system_info {
+        serde_json::json!({"type":"system_info","msg_id":"event-report","cpu_name":"Fixture CPU","cpu_cores":1,
+            "cpu_arch":"x86_64","os":"Linux","kernel_version":"fixture","mem_total":1024,"swap_total":0,"disk_total":1024,
+            "ipv4":ip,"ipv6":null,"virtualization":null,"agent_version":"0.1.0","protocol_version":1,"features":[]})
+    } else {
+        serde_json::json!({"type":"ip_changed","ipv4":ip,"ipv6":null,"interfaces":[]})
+    }
+}
+
+async fn send_ip_event(sink: &mut common::AgentSink, ip: &str, system_info: bool) {
+    use futures_util::SinkExt;
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        ip_event_frame(ip, system_info).to_string().into(),
+    ))
+    .await
+    .unwrap();
+}
+
+async fn event_ws_barrier(sink: &mut common::AgentSink, reader: &mut common::AgentReader) {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    // FIFO control frame proves the preceding production WS handler completed.
+    sink.send(Message::Ping(b"event-intent-barrier".to_vec().into()))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Message::Pong(payload) = reader.next().await.unwrap().unwrap()
+                && payload.as_ref() == b"event-intent-barrier"
+            {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("production WS event completed");
+}
+
+async fn event_intents(
+    state: &AppState,
+) -> Vec<serverbee_server::entity::alert_event_intent::Model> {
+    use sea_orm::QueryOrder;
+    use serverbee_server::entity::alert_event_intent as intent;
+    intent::Entity::find()
+        .order_by_asc(intent::Column::Id)
+        .all(&state.db)
+        .await
+        .unwrap()
+}
+
+async fn wait_event_replay(state: &AppState) {
+    for _ in 0..100 {
+        if event_intents(state).await.is_empty() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("Production evaluator did not replay the durable event");
+}
+
+async fn exercise_ws_event_restart(
+    system_info: bool,
+    fault: AlertAdmissionFault,
+    disable_second: bool,
+) {
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "event-owner-a").await;
+    let member = login_http(&client, &base, "member", "event-owner-b").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let other = member["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    queued_register(&client, &base, other, "device-b").await;
+    let (server, rule, _token, mut sink, mut reader) =
+        event_ws_fixture(&client, &base, admin).await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    fault_alert_admission(&state, fault).await;
+    send_ip_event(&mut sink, "203.0.113.8", system_info).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    let captured = event_intents(&state).await;
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].rule_id, rule);
+    assert_eq!(captured[0].server_id, server);
+    assert_eq!(captured[0].event_type, "ip_changed");
+    assert!(captured[0].should_notify);
+    assert_eq!(captured[0].first_triggered_at, captured[0].occurred_at);
+    assert!(
+        alert_jobs(&state).await.is_empty(),
+        "First recipient rolled back with failed admission"
+    );
+    assert!(
+        persisted_alert_cycle(&state, &rule, &server)
+            .await
+            .is_none()
+    );
+    assert!(!state.alert_state_manager.is_triggered(&rule, &server, ""));
+    assert!(webhook.lock().await.is_empty());
+    assert_eq!(
+        serverbee_server::entity::server::Entity::find_by_id(&server)
+            .one(&state.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .ipv4
+            .as_deref(),
+        Some("203.0.113.8")
+    );
+    // An unchanged report cannot manufacture another event. A different event
+    // while admission is pending uses the reserved once-cycle and is suppressed.
+    send_ip_event(&mut sink, "203.0.113.8", system_info).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    assert_eq!(event_intents(&state).await, captured);
+    send_ip_event(&mut sink, "203.0.113.9", system_info).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    let pending = event_intents(&state).await;
+    assert_eq!(pending.len(), 2);
+    assert_eq!(pending[0], captured[0]);
+    assert_eq!(
+        pending[1].first_triggered_at,
+        captured[0].first_triggered_at
+    );
+    assert!(!pending[1].should_notify);
+    let restarted = reopen_alert_state(&state, &directory).await;
+    // The real startup evaluator tick, not a manual event retry, sees the intent.
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        restarted.clone(),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(event_intents(&restarted).await, pending);
+    assert!(alert_jobs(&restarted).await.is_empty());
+    assert!(webhook.lock().await.is_empty());
+    if disable_second {
+        assert_eq!(
+            preferences_http(&client, &base, other, 2, intent(false, false))
+                .await
+                .status(),
+            200
+        );
+    }
+    restarted
+        .db
+        .execute_unprepared("DROP TRIGGER fail_alert_admission")
+        .await
+        .unwrap();
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        restarted.clone(),
+    ));
+    wait_event_replay(&restarted).await;
+    // Replay deletes intents before best-effort external dispatch. Wait for the
+    // loopback response rather than assuming deletion proves the external call.
+    for _ in 0..100 {
+        if webhook.lock().await.len() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+    let jobs = alert_jobs(&restarted).await;
+    assert_eq!(jobs.len(), if disable_second { 1 } else { 2 });
+    assert!(jobs.iter().all(|job| job.event_id == jobs[0].event_id));
+    for job in &jobs {
+        assert_eq!(job.created_at, captured[0].occurred_at.timestamp());
+        assert_eq!(job.expires_at, captured[0].occurred_at.timestamp() + 1800);
+        let content = decrypt_alert_envelope(
+            &serde_json::from_str(job.envelope.as_deref().unwrap()).unwrap(),
+        );
+        assert_eq!(content["event_id"], job.event_id);
+        assert_eq!(content["created_at"], job.created_at);
+        assert_eq!(content["expires_at"], job.expires_at);
+        let expected = persisted_alert_cycle(&restarted, &rule, &server)
+            .await
+            .unwrap();
+        assert_eq!(expected.first_triggered_at, captured[0].first_triggered_at);
+        assert_eq!(
+            content["alert"]["alert_key"],
+            serverbee_server::service::alert::alert_detail_key(&expected)
+        );
+        if disable_second {
+            assert_eq!(job.installation_id, "event-owner-a");
+        }
+    }
+    // Another owner and ordinary startup tick cannot replay external dispatch.
+    let final_restart = reopen_alert_state(&restarted, &directory).await;
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        final_restart.clone(),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(alert_jobs(&final_restart).await, jobs);
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(final_restart.clone());
+    wait_alert_dispatch(&final_restart).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), jobs.len());
+    for job in jobs {
+        let receipt = outbox_job(&final_restart, &job.event_id, &job.installation_id).await;
+        assert_eq!(receipt.outcome, "accepted");
+        assert_eq!(receipt.created_at, job.created_at);
+        assert_eq!(receipt.expires_at, job.expires_at);
+    }
+}
+
+#[tokio::test]
+async fn ws_ip_event_intents_recover_insert_and_commit_failures_on_startup() {
+    for system_info in [false, true] {
+        for fault in [
+            AlertAdmissionFault::SecondInsert,
+            AlertAdmissionFault::DeferredCommit,
+        ] {
+            exercise_ws_event_restart(system_info, fault, false).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn ws_ip_event_replay_rechecks_installation_eligibility() {
+    exercise_ws_event_restart(false, AlertAdmissionFault::SecondInsert, true).await;
+}
+
+#[tokio::test]
+async fn ws_ip_intent_capture_failure_does_not_consume_source_update() {
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+    for (system_info, fail_commit) in [(false, false), (true, false), (false, true), (true, true)] {
+        let (base, state, directory, _relay) = queued_setup().await;
+        let client = reqwest::Client::new();
+        let login = login_http(&client, &base, "admin", "capture-owner").await;
+        let admin = login["access_token"].as_str().unwrap();
+        queued_register(&client, &base, admin, "device-a").await;
+        let (server, rule, token, mut sink, mut reader) =
+            event_ws_fixture(&client, &base, admin).await;
+        let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+        let fault_sql = if fail_commit {
+            "CREATE TABLE source_commit_parent (id INTEGER PRIMARY KEY);
+            CREATE TABLE source_commit_child (parent_id INTEGER REFERENCES source_commit_parent(id)
+                DEFERRABLE INITIALLY DEFERRED);
+            CREATE TRIGGER fail_event_capture AFTER INSERT ON alert_event_intents
+            BEGIN INSERT INTO source_commit_child(parent_id) VALUES (1); END"
+        } else {
+            "CREATE TRIGGER fail_event_capture BEFORE INSERT ON alert_event_intents
+            BEGIN SELECT RAISE(ABORT, 'injected capture failure'); END"
+        };
+        state.db.execute_unprepared(fault_sql).await.unwrap();
+        send_ip_event(&mut sink, "203.0.113.8", system_info).await;
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                match reader.next().await {
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(Message::Text(text))) => {
+                        let message: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        assert_ne!(
+                            message["msg_id"], "event-report",
+                            "Failed capture cannot Ack SystemInfo"
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("Failed capture closes the source socket for automatic reconnect");
+        assert_eq!(
+            serverbee_server::entity::server::Entity::find_by_id(&server)
+                .one(&state.db)
+                .await
+                .unwrap()
+                .unwrap()
+                .ipv4
+                .as_deref(),
+            Some("1.2.3.4")
+        );
+        assert!(event_intents(&state).await.is_empty());
+        assert!(alert_jobs(&state).await.is_empty());
+        assert!(webhook.lock().await.is_empty());
+        let restarted = reopen_alert_state(&state, &directory).await;
+        restarted
+            .db
+            .execute_unprepared("DROP TRIGGER fail_event_capture")
+            .await
+            .unwrap();
+        let restarted_base = serve_outbox_http(restarted.clone()).await;
+        let (mut sink, mut reader) = common::connect_agent(&restarted_base, &token).await;
+        assert_eq!(
+            common::recv_agent_text(&mut reader).await["type"],
+            "welcome"
+        );
+        // Agent reconnect sends the SAME current IP in its SystemInfo snapshot;
+        // it need not observe a second IP transition to recover the first one.
+        send_ip_event(&mut sink, "203.0.113.8", true).await;
+        event_ws_barrier(&mut sink, &mut reader).await;
+        assert_eq!(
+            serverbee_server::entity::server::Entity::find_by_id(&server)
+                .one(&restarted.db)
+                .await
+                .unwrap()
+                .unwrap()
+                .ipv4
+                .as_deref(),
+            Some("203.0.113.8")
+        );
+        assert!(event_intents(&restarted).await.is_empty());
+        assert_eq!(alert_jobs(&restarted).await.len(), 1);
+        assert_eq!(*webhook.lock().await, ["triggered"]);
+    }
+}
+
+#[tokio::test]
+async fn ws_event_replay_does_not_restart_an_expired_mobile_deadline() {
+    use serverbee_server::entity::alert_event_intent as pending;
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "expired-event-owner").await;
+    let admin = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    // The fault needs two recipients to fail after the first actual insertion.
+    let other = login_http(&client, &base, "member", "expired-event-other").await;
+    queued_register(
+        &client,
+        &base,
+        other["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    let (server, rule, _token, mut sink, mut reader) =
+        event_ws_fixture(&client, &base, admin).await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    fault_alert_admission(&state, AlertAdmissionFault::SecondInsert).await;
+    send_ip_event(&mut sink, "203.0.113.8", false).await;
+    event_ws_barrier(&mut sink, &mut reader).await;
+    let original = event_intents(&state).await;
+    assert_eq!(original.len(), 1);
+    let old = Utc::now() - ChronoDuration::seconds(3600);
+    pending::Entity::update_many()
+        .col_expr(
+            pending::Column::OccurredAt,
+            sea_orm::sea_query::Expr::value(old),
+        )
+        .col_expr(
+            pending::Column::FirstTriggeredAt,
+            sea_orm::sea_query::Expr::value(old),
+        )
+        .exec(&state.db)
+        .await
+        .unwrap();
+    state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_alert_admission")
+        .await
+        .unwrap();
+    let restarted = reopen_alert_state(&state, &directory).await;
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        restarted.clone(),
+    ));
+    wait_event_replay(&restarted).await;
+    for _ in 0..100 {
+        if webhook.lock().await.len() == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert!(
+        alert_jobs(&restarted).await.is_empty(),
+        "Expired event cannot gain a new mobile window"
+    );
+    let cycle = persisted_alert_cycle(&restarted, &rule, &server)
+        .await
+        .unwrap();
+    assert_eq!(cycle.first_triggered_at, old);
+    assert_eq!(cycle.last_notified_at, old);
+    assert!(relay.requests().await.is_empty());
+    assert_eq!(
+        *webhook.lock().await,
+        ["triggered"],
+        "Existing external channels retain their own semantics"
     );
 }

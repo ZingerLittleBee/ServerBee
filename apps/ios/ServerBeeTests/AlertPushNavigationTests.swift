@@ -144,7 +144,7 @@ final class AlertPushNavigationTests: XCTestCase {
             ContentView.applyDeepLink(link, selectedTab: &tab, serversPath: &servers, alertsPath: &alerts)
             XCTAssertEqual(tab, 1)
             XCTAssertEqual(alerts, [.alertDetail(alertKey: fixture.target)])
-            XCTAssertTrue(servers.isEmpty)
+            XCTAssertEqual(servers, [.detailById("old")])
             XCTAssertNil(router.consumeAccountTarget(context: context(), key: fixture.key))
         }
     }

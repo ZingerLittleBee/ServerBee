@@ -241,3 +241,23 @@ isolated device, leave an already-presented alert for more than 30 minutes befor
 warm and cold taps. Its exact detail must still resolve or show the safe fallback;
 an expired notification arriving for the first time must not render alert content.
 These are separate from provider acceptance and still require live device evidence.
+
+
+## One-shot event durability (#201 correction)
+
+Migration `m20261003_000084_alert_event_intents` is reserved for this ticket.
+`ws_ip_event_intents_recover_insert_and_commit_failures_on_startup` sends real
+IpChanged and SystemInfo frames, fails second-recipient INSERT or actual COMMIT,
+and reopens migrated file SQLite. The production startup evaluator must recover
+without another IP transition, retaining the original cycle, event time and
+30-minute deadline. A second event pending admission must respect once suppression.
+`ws_ip_event_replay_rechecks_installation_eligibility` disables an installation
+before replay. `ws_ip_intent_capture_failure_does_not_consume_source_update`
+verifies failed durable capture rolls back source addresses and closes the socket;
+reconnection with the same current SystemInfo IP recovers the unconsumed change.
+`ws_event_replay_does_not_restart_an_expired_mobile_deadline` checks mobile expiry
+independently of the existing best-effort external group. Captured intents contain
+only pending event metadata and are removed atomically with alert state/jobs.
+External group dispatch follows that successful commit and is not repeated by
+subsequent event-job retries or normal startup replay. Provider acceptance and
+real signed-device presentation remain separate evidence.

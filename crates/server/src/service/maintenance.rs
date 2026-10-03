@@ -138,8 +138,8 @@ impl MaintenanceService {
     /// Returns true if there is at least one maintenance where:
     ///   active = true AND start_at <= now AND end_at >= now AND
     ///   (server_ids_json IS NULL OR server_ids_json contains the server_id)
-    pub async fn is_in_maintenance(
-        db: &DatabaseConnection,
+    pub async fn is_in_maintenance<C: ConnectionTrait>(
+        db: &C,
         server_id: &str,
     ) -> Result<bool, AppError> {
         let now = Utc::now();
