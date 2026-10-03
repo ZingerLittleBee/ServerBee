@@ -133,6 +133,7 @@ async fn security_rules_deliver_one_category_per_event_to_each_admin_installatio
     use futures_util::SinkExt;
     use serverbee_common::{constants::CAP_SECURITY_EVENTS, protocol::AgentMessage};
     let (base, state, _tmp, relay) = queued_setup().await;
+    let recovery = state.security_service.start_recovery();
     let (client, login) = admin_client(&base).await;
     security_register(
         &client,
@@ -274,6 +275,8 @@ async fn security_rules_deliver_one_category_per_event_to_each_admin_installatio
         ));
     }
     sink.close().await.unwrap();
+    recovery.abort();
+    let _ = recovery.await;
 }
 
 #[tokio::test]

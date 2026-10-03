@@ -13,8 +13,8 @@ the Server/app/Relay revisions and APNs environment with each observation.
   SQLite faults cover raw writes, rule/intent commit and a second recipient's
   outbox INSERT. Once-only WS cases verify raw/browser/firewall/external
   preservation, suppression rollback before durable intent, atomic fan-out,
-  original UUID/facts/deadline, current recipient checks and automatic recovery
-  after faults and database reopen, without another detection or service call. Existing `mobile_push_integration`
+  original UUID/facts/deadline, current recipient checks, responsive reports/Pong/connection replacement/closure/revocation while raw storage fails, cancellation of unauthorized recovery, maintenance decisions across window starts/ends and lookup failures, and automatic recovery
+  after faults and database reopen, without another detection or service call. Before the first successful raw write, retention is service-owned memory; process-death recovery is not guaranteed at that boundary. Existing `mobile_push_integration`
   cases retain registration ownership, revocation and retry coverage.
 - Native: run `EncryptedPushNavigationTests`, `SecurityNotificationDetailTests`
   and `NotificationServiceTests` in `ServerBeeTests`. These verify encryption,

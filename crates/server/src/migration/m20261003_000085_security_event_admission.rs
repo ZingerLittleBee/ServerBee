@@ -7,10 +7,15 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        for column in ["admission_payload", "push_intent"] {
+        for (column, sql_type) in [
+            ("admission_payload", "TEXT"),
+            ("push_intent", "TEXT"),
+            ("authority_fingerprint", "TEXT"),
+            ("maintenance_at_admission", "BOOLEAN"),
+        ] {
             if !manager.has_column("security_event", column).await? {
                 db.execute_unprepared(&format!(
-                    "ALTER TABLE security_event ADD COLUMN {column} TEXT"
+                    "ALTER TABLE security_event ADD COLUMN {column} {sql_type}"
                 ))
                 .await?;
             }
@@ -65,6 +70,8 @@ mod tests {
         assert!(rows[0].evidence.contains("publickey"));
         assert!(rows[0].admission_payload.is_none());
         assert!(rows[0].push_intent.is_none());
+        assert!(rows[0].authority_fingerprint.is_none());
+        assert!(rows[0].maintenance_at_admission.is_none());
         Migration.down(&SchemaManager::new(&db)).await.unwrap();
         assert_eq!(security_event::Entity::find().all(&db).await.unwrap(), rows);
     }

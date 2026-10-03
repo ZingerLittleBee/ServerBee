@@ -1,6 +1,7 @@
-//! Persistence, browser broadcast, and inline alert evaluation for security
-//! events emitted by agents.
+//! Owned retention, persistence, browser broadcast and rule admission for
+//! security events emitted by agents.
 
+use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,6 +11,7 @@ use ipnet::IpNet;
 use sea_orm::*;
 use serverbee_common::protocol::{BrowserMessage, SecurityEventBroadcast};
 use serverbee_common::security::{SecurityEventPayload, SecurityEventType};
+use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -31,6 +33,16 @@ struct MatchedSecurityRule {
     should_notify: bool,
 }
 
+#[derive(Clone)]
+struct RetainedSecurityEvent {
+    event: security_event::Model,
+    payload: SecurityEventPayload,
+}
+
+pub(crate) fn authority_fingerprint(token_hash: &str) -> String {
+    format!("{:x}", Sha256::digest(token_hash.as_bytes()))
+}
+
 pub struct SecurityService {
     pub db: DatabaseConnection,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
@@ -39,6 +51,7 @@ pub struct SecurityService {
     pub firewall: Arc<FirewallService>,
     pub agent_manager: Arc<AgentManager>,
     admission_lock: tokio::sync::Mutex<()>,
+    retained: tokio::sync::Mutex<VecDeque<RetainedSecurityEvent>>,
 }
 
 impl SecurityService {
@@ -58,16 +71,49 @@ impl SecurityService {
             firewall,
             agent_manager,
             admission_lock: tokio::sync::Mutex::new(()),
+            retained: tokio::sync::Mutex::new(VecDeque::new()),
         }
     }
 
-    /// Persist a security event, broadcast it, and evaluate matching alert
-    /// rules inline. Returns the generated event id.
+    /// The WS caller transfers the original event to this service-owned queue
+    /// while still holding its current-connection gate. No storage or effects
+    /// await in that critical section. Before the first successful raw write,
+    /// retention is in memory: process death cannot recover an unwritten event.
+    pub async fn retain_agent_event(
+        &self,
+        server_id: &str,
+        payload: SecurityEventPayload,
+    ) -> Result<(), AppError> {
+        let fingerprint = self
+            .agent_manager
+            .security_authority(server_id)
+            .ok_or_else(|| AppError::Forbidden("Security authority unavailable".into()))?;
+        let mut retained = Self::original_event(server_id, payload)?;
+        retained.event.authority_fingerprint = Some(fingerprint);
+        self.retained.lock().await.push_back(retained);
+        Ok(())
+    }
+
+    /// Synchronous trusted service entry point; production WS uses retention.
+    /// A storage failure returns once instead of waiting under a caller's lock.
     pub async fn record_event(
         &self,
         server_id: &str,
         payload: SecurityEventPayload,
     ) -> Result<String, AppError> {
+        let retained = Self::original_event(server_id, payload)?;
+        let id = retained.event.id.clone();
+        self.persist_original(&retained).await?;
+        if self.recover_pending().await.is_err() {
+            tracing::warn!("Security admission deferred; original event remains durable");
+        }
+        Ok(id)
+    }
+
+    fn original_event(
+        server_id: &str,
+        payload: SecurityEventPayload,
+    ) -> Result<RetainedSecurityEvent, AppError> {
         payload.source_ip.parse::<IpAddr>().map_err(|_| {
             AppError::BadRequest(format!("invalid source_ip: {}", payload.source_ip))
         })?;
@@ -80,55 +126,99 @@ impl SecurityService {
         let event_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
-        let event = security_event::ActiveModel {
-            id: Set(event_id.clone()),
-            server_id: Set(server_id.to_string()),
-            event_type: Set(event_type_to_str(payload.event_type).to_string()),
-            severity: Set(severity_to_str(payload.severity).to_string()),
-            source_ip: Set(payload.source_ip.clone()),
-            source_port: Set(payload.source_port.map(|p| p as i32)),
-            username: Set(payload.username.clone()),
-            started_at: Set(unix_to_utc(payload.started_at)),
-            ended_at: Set(unix_to_utc(payload.ended_at)),
-            first_seen: Set(payload.first_seen),
-            detector_source: Set(detector_source_to_str(payload.detector_source).to_string()),
-            evidence: Set(evidence_json),
-            created_at: Set(now),
-            admission_payload: Set(Some(admission_payload)),
-            push_intent: Set(None),
+        let event = security_event::Model {
+            id: event_id.clone(),
+            server_id: server_id.to_string(),
+            event_type: event_type_to_str(payload.event_type).to_string(),
+            severity: severity_to_str(payload.severity).to_string(),
+            source_ip: payload.source_ip.clone(),
+            source_port: payload.source_port.map(|p| p as i32),
+            username: payload.username.clone(),
+            started_at: unix_to_utc(payload.started_at),
+            ended_at: unix_to_utc(payload.ended_at),
+            first_seen: payload.first_seen,
+            detector_source: detector_source_to_str(payload.detector_source).to_string(),
+            evidence: evidence_json,
+            created_at: now,
+            admission_payload: Some(admission_payload),
+            push_intent: None,
+            authority_fingerprint: None,
+            maintenance_at_admission: None,
         };
-        // The once-only WS caller retains this original UUID/time/payload until
-        // storage accepts it. Never log an intent-write error and consume the
-        // detection. Raw facts and their replay marker are one independent write.
-        loop {
-            if event.clone().insert(&self.db).await.is_ok()
-                || security_event::Entity::find_by_id(&event_id)
-                    .one(&self.db)
-                    .await
-                    .is_ok_and(|row| row.is_some())
-            {
-                break;
-            }
-            tracing::warn!("Security event storage unavailable; retaining original detection");
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
+        Ok(RetainedSecurityEvent { event, payload })
+    }
 
-        // send() only fails when no subscribers exist — normal at startup.
+    async fn authority_valid<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        server_id: &str,
+        expected: Option<&str>,
+    ) -> Result<bool, AppError> {
+        // Legacy/trusted records predate WS ownership snapshots.
+        let Some(expected) = expected else {
+            return Ok(true);
+        };
+        let Some(server) = server::Entity::find_by_id(server_id).one(db).await? else {
+            return Ok(false);
+        };
+        let matches = server
+            .token_hash
+            .as_deref()
+            .is_some_and(|hash| authority_fingerprint(hash) == expected);
+        let caps = self
+            .agent_manager
+            .effective_capabilities_or(server_id, server.capabilities as u32);
+        Ok(matches
+            && serverbee_common::constants::has_capability(
+                caps,
+                serverbee_common::constants::CAP_SECURITY_EVENTS,
+            ))
+    }
+
+    /// One bounded attempt, outside Agent/lifecycle locks. A SQLite writer
+    /// transaction serializes the authority check with durable revocation.
+    /// Cancellation consumes only unauthorized work, never a storage failure.
+    async fn persist_original(&self, retained: &RetainedSecurityEvent) -> Result<(), AppError> {
+        let mut event = retained.event.clone();
+        let server_id = event.server_id.clone();
+        let event_id = event.id.clone();
+        let txn = self.db.begin().await?;
+        txn.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE security_event SET push_intent=push_intent WHERE id=?",
+            [event_id.clone().into()],
+        ))
+        .await?;
+        if !self
+            .authority_valid(&txn, &server_id, event.authority_fingerprint.as_deref())
+            .await?
+        {
+            txn.commit().await?;
+            return Ok(());
+        }
+        if security_event::Entity::find_by_id(&event_id)
+            .one(&txn)
+            .await?
+            .is_none()
+        {
+            // A failed lookup leaves the raw event/browser independent and
+            // admission unresolved. None is never interpreted as permission.
+            event.maintenance_at_admission =
+                MaintenanceService::is_in_maintenance_at(&txn, &server_id, event.created_at)
+                    .await
+                    .ok();
+            let model: security_event::ActiveModel = event.into();
+            model.insert(&txn).await?;
+        }
+        txn.commit().await?;
         let _ = self
             .browser_tx
             .send(BrowserMessage::SecurityEvent(SecurityEventBroadcast {
-                server_id: server_id.to_string(),
-                event_id: event_id.clone(),
-                event: payload.clone(),
+                server_id,
+                event_id,
+                event: retained.payload.clone(),
             }));
-
-        if self.recover_pending().await.is_err() {
-            // Raw history/browser publication stay independent of push faults.
-            // The persisted marker is retried by the production recovery owner.
-            tracing::warn!("Security admission deferred; original event remains durable");
-        }
-
-        Ok(event_id)
+        Ok(())
     }
 
     /// Production startup owner, also used by file-SQLite restart tests. Pending
@@ -149,6 +239,22 @@ impl SecurityService {
         // Preserve original event ordering for sliding cooldown. The SQLite
         // writer lock and durable markers also fence overlapping Server owners.
         let _guard = self.admission_lock.lock().await;
+        // Never move an item out before persistence: cancellation/shutdown of
+        // the worker leaves it owned by the service. Each item gets one attempt
+        // per pass, so a faulty source cannot starve other original events.
+        let retained: Vec<_> = self.retained.lock().await.iter().cloned().collect();
+        for original in retained {
+            if self.persist_original(&original).await.is_ok() {
+                let id = original.event.id.clone();
+                self.retained
+                    .lock()
+                    .await
+                    .retain(|item| item.event.id != id);
+            } else {
+                tracing::warn!("Security raw storage unavailable; owner retains original event");
+            }
+        }
+
         let pending = security_event::Entity::find()
             .filter(security_event::Column::AdmissionPayload.is_not_null())
             .order_by_asc(security_event::Column::CreatedAt)
@@ -207,10 +313,43 @@ impl SecurityService {
             txn.commit().await?;
             return Ok(());
         };
+        if !self
+            .authority_valid(
+                &txn,
+                &event.server_id,
+                event.authority_fingerprint.as_deref(),
+            )
+            .await?
+        {
+            let mut model: security_event::ActiveModel = event.into();
+            model.admission_payload = Set(None);
+            model.update(&txn).await?;
+            txn.commit().await?;
+            return Ok(());
+        }
+        // A failed initial lookup or a pre-correction pending record has no
+        // decision yet. Never infer permission from that missing snapshot.
+        // Persist the historical decision independently of admission rollback.
+        if event.maintenance_at_admission.is_none() {
+            let decision =
+                MaintenanceService::is_in_maintenance_at(&txn, &event.server_id, event.created_at)
+                    .await?;
+            let mut model: security_event::ActiveModel = event.clone().into();
+            model.maintenance_at_admission = Set(Some(decision));
+            model.update(&txn).await?;
+            txn.commit().await?;
+            return Ok(());
+        }
         let payload: SecurityEventPayload = serde_json::from_str(original)
             .map_err(|_| AppError::Internal("Invalid stored security admission".into()))?;
         let matched = self
-            .evaluate_rules(&txn, &event.server_id, &payload, event.created_at)
+            .evaluate_rules(
+                &txn,
+                &event.server_id,
+                &payload,
+                event.created_at,
+                event.maintenance_at_admission == Some(true),
+            )
             .await?;
         let recipients = if matched.iter().any(|m| m.should_notify) {
             super::mobile_push_outbox::prepare_security(
@@ -288,8 +427,9 @@ impl SecurityService {
         server_id: &str,
         payload: &SecurityEventPayload,
         now: DateTime<Utc>,
+        in_maintenance: bool,
     ) -> Result<Vec<MatchedSecurityRule>, AppError> {
-        if MaintenanceService::is_in_maintenance(txn, server_id).await? {
+        if in_maintenance {
             return Ok(Vec::new());
         }
         let event_type_key = event_type_to_rule_type(payload.event_type);

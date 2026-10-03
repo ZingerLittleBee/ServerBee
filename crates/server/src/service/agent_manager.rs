@@ -146,6 +146,7 @@ struct PendingRequest {
 #[allow(dead_code)]
 pub struct AgentConnection {
     pub connection_id: u64,
+    authority_fingerprint: Option<String>,
     pub server_id: String,
     pub server_name: String,
     pub tx: mpsc::Sender<ServerMessage>,
@@ -198,6 +199,7 @@ impl AgentManager {
             server_id.clone(),
             AgentConnection {
                 connection_id,
+                authority_fingerprint: None,
                 server_id: server_id.clone(),
                 server_name,
                 tx,
@@ -249,6 +251,19 @@ impl AgentManager {
             server_id,
             agent_authority,
         });
+    }
+
+    pub(crate) fn bind_security_authority(&self, server_id: &str, fingerprint: String) {
+        if let Some(mut connection) = self.connections.get_mut(server_id) {
+            connection.authority_fingerprint = Some(fingerprint);
+        }
+    }
+
+    pub(crate) fn security_authority(&self, server_id: &str) -> Option<String> {
+        self.connections
+            .get(server_id)?
+            .authority_fingerprint
+            .clone()
     }
 
     pub fn is_current_connection(&self, server_id: &str, expected_connection_id: u64) -> bool {

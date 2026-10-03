@@ -711,6 +711,14 @@ impl PendingAdmission {
             connection.tx,
             connection.remote_addr,
         );
+        // Capture the already validated authority while admission owns the
+        // lifecycle lock. Security recovery never restores connection ownership.
+        if let Some(hash) = server.token_hash.as_deref() {
+            self.authority.agent_manager.bind_security_authority(
+                &server.id,
+                crate::service::security::authority_fingerprint(hash),
+            );
+        }
         Ok(AdmittedConnection {
             server_id: self.expected_server_id,
             server_name: server.name,

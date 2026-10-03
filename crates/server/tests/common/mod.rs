@@ -73,6 +73,7 @@ pub async fn start_test_server() -> (String, tempfile::TempDir) {
     let state = AppState::new(db, config)
         .await
         .expect("Failed to create AppState");
+    let security_recovery = state.security_service.start_recovery();
     let app = create_router(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -88,6 +89,7 @@ pub async fn start_test_server() -> (String, tempfile::TempDir) {
         )
         .await
         .unwrap();
+        security_recovery.abort();
     });
 
     tokio::time::sleep(Duration::from_millis(50)).await;

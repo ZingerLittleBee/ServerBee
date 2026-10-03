@@ -50,10 +50,21 @@ pub(super) async fn on_security_event(
     payload: serverbee_common::security::SecurityEventPayload,
 ) {
     use serverbee_common::constants::CAP_SECURITY_EVENTS;
-    if !gate_inbound_data(state, server_id, CAP_SECURITY_EVENTS, "security_event_denied").await {
+    if !gate_inbound_data(
+        state,
+        server_id,
+        CAP_SECURITY_EVENTS,
+        "security_event_denied",
+    )
+    .await
+    {
         return;
     }
-    if let Err(e) = state.security_service.record_event(server_id, payload).await {
+    if let Err(e) = state
+        .security_service
+        .retain_agent_event(server_id, payload)
+        .await
+    {
         tracing::error!(server_id, error = %e, "security_event record failed");
     }
 }
