@@ -226,7 +226,7 @@ authenticated HTTPS Server; it does not contact Relay or receive Apple keys.
 | `APNS_TEAM_ID` | Worker variable | Publisher Apple team identifier |
 | `APNS_KEY_ID` | Worker variable | Publisher APNs signing key identifier |
 | `APNS_PRIVATE_KEY` | Worker secret | PKCS#8 P-256 PEM contents, never a file path or repository value |
-| `APNS_TOPIC` | Worker variable | Fixed official app bundle identifier, not the extension identifier |
+| `APNS_TOPIC` | Worker variable | `app.serverbee`, the fixed official app bundle identifier, not `app.serverbee.notifications` |
 | `APNS_ENVIRONMENTS` | Optional Worker variable | Allowed `sandbox`, `production`, or `sandbox,production`; defaults to both |
 
 Configure these in the isolated Worker's Wrangler configuration and secrets,

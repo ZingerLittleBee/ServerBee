@@ -165,6 +165,8 @@ enum PushEnvelopeDecoder {
 
 /// Shared only with the app and its Notification Service Extension. Keys are
 /// device-only, not synchronized, and available after the first device unlock.
+// Keep the historical service label stable; the signed app.serverbee.push
+// access group controls sharing, independently of this item lookup attribute.
 enum SharedPushKeychain {
     private static func query() -> [String: Any]? {
         guard let group = Bundle.main.object(forInfoDictionaryKey: "PushKeychainAccessGroup") as? String,

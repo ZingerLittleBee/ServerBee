@@ -19,8 +19,7 @@ export default defineConfig({
         bindings: {
           APNS_TEAM_ID: 'TESTTEAM01',
           APNS_KEY_ID: 'TESTKEY001',
-          APNS_PRIVATE_KEY: key.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
-          APNS_TOPIC: 'com.serverbee.mobile'
+          APNS_PRIVATE_KEY: key.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
         }
       }
     })

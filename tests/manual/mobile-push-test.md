@@ -95,7 +95,8 @@ service tests remain relevant for external-channel behavior.
 Use a separate Worker, TLS hostname, fixed topic and publisher-owned signing
 key. Configure the Worker variables and `APNS_PRIVATE_KEY` secret described in
 `apps/push-relay/README.md`; never install Apple keys on the Server or commit them.
-Confirm the topic matches the signed app's bundle ID. Both app and extension must
+Confirm both the topic and signed main app Bundle ID are `app.serverbee`; the
+embedded extension is `app.serverbee.notifications`. Both app and extension must
 share the signed Keychain group and provisioning team; the embedded extension
 must include English and zh-Hans resources. Inspect effective signed entitlements,
 not only `project.yml`. Debug uses sandbox APNs; distribution uses production.
@@ -127,6 +128,17 @@ queries establish Simulator storage behavior only. Physical isolation still
 requires inspecting both effective signed entitlement sets and probing that the
 actual extension cannot read the app-private credential service. Record static
 configuration, Simulator queries and signed-device evidence separately.
+
+For an in-place update of an existing `app.serverbee` installation, compare its
+previous effective App ID prefix/private access group with the candidate, then
+verify the server URL, installation ID, login and pending logout recovery remain
+readable. The private service label stays `com.serverbee.mobile`; changing a
+Bundle ID does not migrate a separately installed app or a different access
+group. `testOfficialIdentityReadsHistoricalServiceInDefaultPrivateGroup` seeds
+an item using that historical service and the implicit default group, then reads
+it through the production explicit private-group query. This is Simulator
+coverage only. If a push-enabled test build used the old shared group, repeat
+notification setup and verify the new key/registration before testing delivery.
 
 ## Physical-device smoke record
 

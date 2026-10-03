@@ -32,7 +32,7 @@ const runtime = new Miniflare({
   bindings: {
     APNS_TEAM_ID: 'TESTTEAM01',
     APNS_KEY_ID: 'TESTKEY001',
-    APNS_TOPIC: 'com.serverbee.mobile',
+    APNS_TOPIC: 'app.serverbee',
     APNS_PRIVATE_KEY: key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
   },
   async outboundService(request: MiniflareRequest) {

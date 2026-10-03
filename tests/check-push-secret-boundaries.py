@@ -4,10 +4,12 @@ Compile only the Foundation transport and a synthetic client, never the iOS app.
 The temporary TLS certificate and all transmitted secrets are test fixtures.
 """
 
+import argparse
 import http.server
 import json
 from pathlib import Path
 import plistlib
+import re
 import socketserver
 import ssl
 import subprocess
@@ -21,7 +23,15 @@ IOS = ROOT / "apps/ios"
 
 
 def check_entitlements():
-    private = "$(AppIdentifierPrefix)com.serverbee.mobile"
+    bundle_id = "app.serverbee"
+    project = (IOS / "project.yml").read_text()
+    assert re.findall(r"PRODUCT_BUNDLE_IDENTIFIER: (\S+)", project) == [
+        bundle_id, bundle_id + ".notifications", bundle_id + ".tests"
+    ]
+    worker = (ROOT / "apps/push-relay/wrangler.jsonc").read_text()
+    assert re.search(r'"APNS_TOPIC":\s*"([^"\n]+)"', worker)[1] == bundle_id
+    assert f'BUNDLE_ID="{bundle_id}"' in (ROOT / "scripts/ios-install.sh").read_text()
+    private = "$(AppIdentifierPrefix)" + bundle_id
     shared = private + ".push"
     for config in ["Debug", "Release"]:
         with (IOS / f"ServerBee/ServerBee.{config}.entitlements").open("rb") as file:
@@ -35,7 +45,7 @@ def check_entitlements():
     assert app["PrivateKeychainAccessGroup"] == private
     assert app["PushKeychainAccessGroup"] == extension["PushKeychainAccessGroup"] == shared
     assert "PrivateKeychainAccessGroup" not in extension
-    print("Keychain group configuration: PASS (static only, not signed entitlement proof)")
+    print("App identity and Keychain group configuration: PASS (static only, not signed entitlement proof)")
 
 
 def check_redirects():
@@ -110,5 +120,9 @@ def check_redirects():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--static-only", action="store_true", help="Check source identities/groups without Swift or macOS")
+    args = parser.parse_args()
     check_entitlements()
-    check_redirects()
+    if not args.static_only:
+        check_redirects()

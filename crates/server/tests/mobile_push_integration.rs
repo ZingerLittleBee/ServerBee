@@ -1694,6 +1694,7 @@ async fn legacy_dispatch_rechecks_cached_later_recipient_after_encrypted_migrati
                 key_id: "fixture",
                 team_id: "fixture",
                 private_key: "fixture",
+                // An unrelated legacy channel may retain its own configured topic.
                 bundle_id: "com.serverbee.mobile",
                 sandbox: true,
             };

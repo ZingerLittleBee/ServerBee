@@ -18,6 +18,31 @@ final class PushKeychainIsolationTests: XCTestCase {
         try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
+    func testOfficialIdentityReadsHistoricalServiceInDefaultPrivateGroup() throws {
+        XCTAssertEqual(Bundle.main.bundleIdentifier, "app.serverbee")
+        let privateGroup = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "PrivateKeychainAccessGroup") as? String)
+        let sharedGroup = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "PushKeychainAccessGroup") as? String)
+        XCTAssertTrue(privateGroup.hasSuffix("app.serverbee"))
+        XCTAssertEqual(sharedGroup, privateGroup + ".push")
+
+        // Legacy items can omit kSecAttrAccessGroup. Keep both their default
+        // private group and service label readable by today's explicit query.
+        let account = "fixture-legacy-default-group"
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                   kSecAttrService as String: "com.serverbee.mobile",
+                                   kSecAttrAccount as String: account]
+        SecItemDelete(query as CFDictionary)
+        defer { SecItemDelete(query as CFDictionary) }
+        let bytes = Data("fixture-historical-secret".utf8)
+        var item = query
+        item[kSecValueData as String] = bytes
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        XCTAssertEqual(SecItemAdd(item as CFDictionary, nil), errSecSuccess)
+        XCTAssertEqual(try KeychainService.readThrowing(for: account), bytes)
+        XCTAssertEqual(try read(group: privateGroup, service: "com.serverbee.mobile", account: account), bytes)
+        XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: account))
+    }
+
     func testLoginAndRefreshKeepCredentialsPrivateAndOnlyContentKeyShared() async throws {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         auth.setServerUrl("https://keychain-fixture.test")

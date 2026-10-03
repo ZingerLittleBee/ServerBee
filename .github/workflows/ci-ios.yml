@@ -6,6 +6,8 @@ on:
     paths:
       - 'apps/ios/**'
       - 'tests/fixtures/push*-envelope-v1.json'
+      - 'tests/check-push-secret-boundaries.py'
+      - 'scripts/ios-install.sh'
       - 'crates/server/**'
       - 'apps/push-relay/**'
       - 'bun.lock'
@@ -16,6 +18,8 @@ on:
     paths:
       - 'apps/ios/**'
       - 'tests/fixtures/push*-envelope-v1.json'
+      - 'tests/check-push-secret-boundaries.py'
+      - 'scripts/ios-install.sh'
       - 'crates/server/**'
       - 'apps/push-relay/**'
       - 'bun.lock'
@@ -32,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check official app identity and Keychain group configuration
+        run: python3 tests/check-push-secret-boundaries.py --static-only
       - uses: actions/setup-node@v4
         with:
           node-version: 24

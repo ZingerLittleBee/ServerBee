@@ -21,7 +21,9 @@ bun --filter @serverbee/push-relay test
 bun --filter @serverbee/push-relay build   # dry-run only; no deployment
 ```
 
-Edit `apps/push-relay/wrangler.jsonc` with your Worker name and `APNS_TOPIC`.
+Edit `apps/push-relay/wrangler.jsonc` with your Worker name. The official app
+Bundle ID and `APNS_TOPIC` are `app.serverbee`; the embedded extension is
+`app.serverbee.notifications` and must never be used as the APNs topic.
 Keep `enable_request_signal` in `compatibility_flags`: it wires incoming client
 cancellation into the Worker’s upload/APNs deadlines and cleanup. A compatibility
 date alone does not enable this opt-in flag.

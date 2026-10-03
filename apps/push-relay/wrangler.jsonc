@@ -8,7 +8,7 @@
   "workers_dev": true,
   "observability": { "enabled": false },
   "vars": {
-    "APNS_TOPIC": "com.serverbee.mobile",
+    "APNS_TOPIC": "app.serverbee",
     "APNS_ENVIRONMENTS": "sandbox,production"
   }
   // Set APNS_TEAM_ID, APNS_KEY_ID and APNS_PRIVATE_KEY with `wrangler secret put`.

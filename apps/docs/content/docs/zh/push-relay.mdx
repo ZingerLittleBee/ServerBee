@@ -21,7 +21,7 @@ icon: Smartphone
 使用独立 ServerBee Worker 和合成测试数据，与 Heeler、生产服务隔离。记录准确版本、签名构建、APNs 环境和 UTC 时间。
 
 1. 使用仓库声明的 Bun 版本和 Node 24 安装锁定的开发依赖。生产代码使用 Web API、WebCrypto 和 fetch；Bun 仅为工具，不是部署运行时。
-2. 检查 `apps/push-relay/wrangler.jsonc`。选择独立 Worker 名称，固定 `APNS_TOPIC`、`APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_ENVIRONMENTS`。topic 必须是主应用 bundle 标识，不是扩展标识。可选环境允许列表为 `sandbox`、`production` 或逗号分隔两者；省略时允许两者。
+2. 检查 `apps/push-relay/wrangler.jsonc`。选择独立 Worker 名称，固定 `APNS_TOPIC`、`APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_ENVIRONMENTS`。官方 topic 为 `app.serverbee`，必须与主应用 bundle 标识一致，不能使用扩展标识 `app.serverbee.notifications`。可选环境允许列表为 `sandbox`、`production` 或逗号分隔两者；省略时允许两者。
 3. 将发布者 PKCS#8 P-256 PEM 内容配置为 Worker secret `APNS_PRIVATE_KEY`。使用已授权的安全凭据输入流程，不写入 Git、公开变量、应用或 Server。Worker 不使用 PEM 文件路径。
 4. 按 `apps/push-relay/README.md` 运行类型检查、Workers 运行时测试与部署 dry run。dry run 仅在本地打包，不验证 Apple 凭据，也不执行部署。
 5. 另行授权后才能部署，然后将 Server 的 `SERVERBEE_PUSH_RELAY__URL` 设置为最终 HTTPS Worker 地址。应用也应使用最终 HTTPS Server 地址，含密钥的 Server 请求拒绝重定向。
@@ -49,6 +49,10 @@ Server 向 `POST /v1/send` 提交 `device_token`、`environment`、`event_id`、
 APNs 状态与原因区分接受、可重试服务/限流/网络错误、永久载荷/配置错误和过期。只有确认的 `410 Unregistered` 才使准确匹配、仍为当前的注册失效；`BadDeviceToken` 或其他 HTTP 400 不会一概删除令牌。应用/NSE 检查加密内容身份，拒绝无效导航。
 
 ## 签名与排障
+
+源码中的标识为：主应用 `app.serverbee`、通知服务扩展 `app.serverbee.notifications`、测试 bundle `app.serverbee.tests`。主应用首先列出私有 Keychain 组 `$(AppIdentifierPrefix)app.serverbee`，然后列出共享组 `$(AppIdentifierPrefix)app.serverbee.push`；扩展仅拥有共享 `.push` 组。保留实际描述文件的 App ID 前缀，不要用猜测的 Team ID 替换。
+
+Keychain **service 标签** `com.serverbee.mobile` 和 `com.serverbee.mobile.push` 有意保持不变。它们是条目查询命名空间，不是 Bundle ID 或 APNs topic。保留私有 service 标签和原有默认访问组，可以继续读取已有 `app.serverbee` 的凭据、安装标识和待处理退出恢复记录。这不证明能够从独立安装的 `com.serverbee.mobile` 应用或使用其他实际访问组／前缀的构建迁移。升级前应检查旧签名构建并验证会话连续性；如果启用推送的测试构建曾使用旧共享组，应重新进行通知设置，在修正后的组中创建并注册密钥。不要为了迁移让扩展访问私有凭据组。
 
 检查应用与扩展的实际签名 entitlement。保留 APNs 和共享 Keychain，扩展不得拥有主应用私有凭据组。Debug 使用 sandbox APNs，分发构建使用 production。本次源码改造不会修改 Apple 账户已启用的 App Attest 能力或扩展注册，协议也不依赖它们。
 

@@ -25,7 +25,7 @@ targets:
       base:
         INFOPLIST_FILE: ServerBee/Info.plist
         INFOPLIST_KEY_CFBundleAllowMixedLocalizations: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile
+        PRODUCT_BUNDLE_IDENTIFIER: app.serverbee
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_STRICT_CONCURRENCY: complete
         # Emit compiler-extracted localizable strings so future builds surface
@@ -59,7 +59,7 @@ targets:
       - path: NotificationShared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile.notifications
+        PRODUCT_BUNDLE_IDENTIFIER: app.serverbee.notifications
         INFOPLIST_FILE: NotificationService/Info.plist
         CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -87,7 +87,7 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: ServerBeeTests/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile.tests
+        PRODUCT_BUNDLE_IDENTIFIER: app.serverbee.tests
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SERVERBEE_EXTENSION_TESTS"
         BUNDLE_LOADER: "$(TEST_HOST)"

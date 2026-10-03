@@ -34,6 +34,23 @@ iPhone (override with `IOS_DEVICE=<udid>`).
   **globbed** by directory. `.xcodeproj` is gitignored. After adding a new
   `.swift` file you MUST run `xcodegen generate` or it won't be compiled.
 
+## App identity and Keychain compatibility
+
+The official Bundle ID is `app.serverbee`; the embedded Notification Service
+Extension is `app.serverbee.notifications` and the test bundle is
+`app.serverbee.tests`. Relay's `APNS_TOPIC` must be the main app ID.
+
+Keep `$(AppIdentifierPrefix)` resolved from the correct provisioning profile.
+The main app's first/private Keychain group is `$(AppIdentifierPrefix)app.serverbee`;
+only `$(AppIdentifierPrefix)app.serverbee.push` is shared with the extension.
+The `com.serverbee.mobile` and `com.serverbee.mobile.push` Keychain service
+strings are stable item namespaces, not Bundle IDs; do not rename them during
+identity cleanup. Existing installed-build continuity still needs prior signed
+entitlements and a device upgrade check; a different bundle/prefix/group is not
+automatically migrated. From the repository root, run
+`python3 tests/check-push-secret-boundaries.py --static-only` for source
+identity/group consistency.
+
 ## Layout
 
 ```

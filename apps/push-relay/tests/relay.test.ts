@@ -37,6 +37,7 @@ function setup(options: Parameters<typeof createRelay>[0] = {}) {
 }
 
 test('runs the configured default Worker and real outbound fetch boundary in workerd', async () => {
+  expect(bindings.APNS_TOPIC).toBe('app.serverbee')
   const value = body()
   value.expires_at = Math.floor(Date.now() / 1000) + 1800
   const response = await (exports as unknown as { default: Fetcher }).default.fetch(request(value))

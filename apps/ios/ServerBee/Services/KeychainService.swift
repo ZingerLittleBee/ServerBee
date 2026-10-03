@@ -4,7 +4,9 @@ import Security
 /// A generic Keychain wrapper using Security.framework.
 ///
 /// All items are stored as `kSecClassGenericPassword` entries under the
-/// `com.serverbee.mobile` service namespace.
+/// `com.serverbee.mobile` service namespace. This stable storage label is not
+/// the app Bundle ID. Keep it so existing `app.serverbee` installations can read
+/// their credentials after an update; access is controlled by the signed group.
 ///
 /// **Accessibility policy:** items use `kSecAttrAccessibleAfterFirstUnlock`,
 /// which means the token survives device reboots but cannot be read while the

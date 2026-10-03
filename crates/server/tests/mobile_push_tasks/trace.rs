@@ -97,7 +97,7 @@ async fn stitched_categories_use_actual_relay_and_preserve_external_legacy_deliv
         let request: Value = serde_json::from_str(line).unwrap();
         assert_eq!(request["token"], relay.ready["device_token"]);
         assert_eq!(request["environment"], "sandbox");
-        assert_eq!(request["headers"]["apns-topic"], "com.serverbee.mobile");
+        assert_eq!(request["headers"]["apns-topic"], "app.serverbee");
         assert_eq!(request["headers"]["apns-push-type"], "alert");
         assert_eq!(request["headers"]["apns-priority"], "10");
         let event_id = request["headers"]["apns-id"].as_str().unwrap();
