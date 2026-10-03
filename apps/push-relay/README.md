@@ -10,7 +10,7 @@ with `bun install --frozen-lockfile` from the repository root, then run
 separate from Heeler. Never point fixtures or development clients at a production
 Relay. No deployment or credential installation is part of this ticket.
 
-Required environment variables:
+Relay environment variables:
 
 | Name | Meaning |
 | --- | --- |
@@ -19,7 +19,8 @@ Required environment variables:
 | `APP_ATTEST_ROOT_CA` | Path to Apple's App Attest root certificate PEM |
 | `APP_ATTEST_ROOT_SHA256` | Audited colon-separated SHA256 certificate fingerprint |
 | `APP_ATTEST_APP_ID` | App ID prefix plus `.` plus the official bundle identifier |
-| `APP_ATTEST_BUNDLE_VERSIONS` | Comma-separated approved `CFBundleVersion` values for signed extension claims |
+| `APP_ATTEST_BUNDLE_VERSIONS` | Required comma-separated approved `CFBundleVersion` values for signed extension claims |
+| `APP_ATTEST_REQUIRE_EXTENSIONS` | Optional: exact lowercase `true` or `false`; omitted means `false` (compatibility). Any other value fails startup. `true` requires signed extensions to issue or renew grants |
 | `APNS_ENVIRONMENTS` | Allowed environments; `sandbox,production` admits both on one URL/database |
 | `APNS_ENVIRONMENT` | Single-environment alternative when `APNS_ENVIRONMENTS` is absent |
 | `APNS_TEAM_ID` | Publisher Apple team identifier |
@@ -211,9 +212,9 @@ Protocol reference: [Apple App Attest server validation](https://developer.apple
 
 ### Renewal recovery and login isolation
 
-A Relay renewal immediately invalidates that key's earlier grants. Server settings
-inspect the current grant instead of inferring validity from its saved expiry. If
-Relay inspection fails, setup is unconfirmed, while subscription intent remains
+A successful Relay renewal immediately invalidates that key's earlier grants.
+Server settings inspect the current grant instead of inferring validity from its
+saved expiry. If Relay inspection fails, setup is unconfirmed, while subscription intent remains
 saved. The iOS client persists a newly obtained grant in Keychain until Server
 confirmation; foreground, connectivity and restart recovery reuse that grant with
 a fresh Server revision instead of rotating it again. No pending grant appears as
@@ -226,15 +227,33 @@ also run after challenge/native-proof completion, before sending the mutation.
 Native `invalidKey` errors discard that login's key and marker; transient network
 or Apple `serverUnavailable` errors retain the key for retry.
 
-Current assertions may include a signed CBOR extension dictionary following the
-37-byte header. Validate the complete authenticator data signature, extension flag
-and exact CBOR framing, distribution category and approved bundle version. Legacy
-assertions without extensions remain supported. Apple's attestation validation
-vector represents the category as a four-byte little-endian UInt32; assertion
-extension names follow the current validation guide (`validationCategory` and
-`bundleVersion`). Distribution is restricted to development for sandbox and
-TestFlight/App Store for production. Keep the version allowlist current when
-admitting a newly published build.
+### App Attest evidence modes
+
+Apple adds signed launch-category and bundle-version extensions to attestations
+and assertions in [iOS 27 and later](https://developer.apple.com/videos/play/wwdc2026/201/).
+ServerBee supports iOS 17+, so `APP_ATTEST_REQUIRE_EXTENSIONS` defaults to `false`:
+valid legacy proofs without extensions remain accepted. Compatibility mode cannot
+guarantee a hard build-version or finer distribution-category allowlist for those
+proofs; the development/production environment check still applies.
+
+Set `APP_ATTEST_REQUIRE_EXTENSIONS=true` only when new push grants and renewals
+must carry signed extensions. Older no-extension proofs then cannot obtain or
+renew push access; login and monitoring remain available. Enabling strict mode or
+changing the version allowlist does not retroactively revoke unexpired grants. A rejected renewal changes neither the
+existing grant nor its stored counter. Existing grants remain valid until expiry
+or revocation; grants last 24 hours. Deletion-only revocation still accepts a
+cryptographically verified, correctly scoped legacy assertion without extensions, so users can remove old access.
+
+In both modes, present extensions always enforce the distribution category and
+`APP_ATTEST_BUNDLE_VERSIONS`, including on revocation. Assertions with extensions
+carry a signed CBOR dictionary after the 37-byte header. Validate the complete
+authenticator data signature, extension flag and exact CBOR framing. Apple's
+attestation validation vector represents the category as a four-byte little-endian
+UInt32; assertion extension names follow the current validation guide
+(`validationCategory` and `bundleVersion`). Signed categories are restricted to
+development for sandbox and TestFlight/App Store for production. Keep the version
+allowlist current when admitting a newly published build. Neither mode relaxes
+certificate, nonce, app/key binding, signature, challenge or replay checks.
 
 ### Sandbox and production on one deployment
 

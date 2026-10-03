@@ -227,7 +227,8 @@ HTTPS endpoint. No Apple private keys are installed by notification setup.
 | `APP_ATTEST_ROOT_CA` | required | Path to the audited Apple App Attest root PEM |
 | `APP_ATTEST_ROOT_SHA256` | required | Pinned colon-separated SHA256 root fingerprint |
 | `APP_ATTEST_APP_ID` | required | Official App ID prefix and bundle identifier |
-| `APP_ATTEST_BUNDLE_VERSIONS` | required | Comma-separated approved `CFBundleVersion` values for signed extensions |
+| `APP_ATTEST_BUNDLE_VERSIONS` | required | Comma-separated approved `CFBundleVersion` values; enforced whenever signed extensions are present |
+| `APP_ATTEST_REQUIRE_EXTENSIONS` | `false` | Exact lowercase `true` or `false`; omission selects compatibility mode. Other values fail startup. `true` requires signed extensions to issue or renew grants |
 | `APNS_ENVIRONMENTS` | required unless singular alternative is set | Allowed admission environments; `sandbox,production` supports coexistence on one URL and database |
 | `APNS_ENVIRONMENT` | required unless plural setting is set | Single-environment alternative, `sandbox` or `production`; plural setting takes precedence |
 | `APNS_TEAM_ID` | required | Publisher Apple team identifier, Relay only |
@@ -235,6 +236,8 @@ HTTPS endpoint. No Apple private keys are installed by notification setup.
 | `APNS_PRIVATE_KEY` | required | Path to publisher-only APNs P-256 PEM file, Relay only |
 | `APNS_TOPIC` | required | Official app bundle identifier, Relay only |
 | `RELAY_PORT` | `8787` | Loopback listener port |
+
+Apple supplies signed launch-category and bundle-version extensions on [iOS 27 and later](https://developer.apple.com/videos/play/wwdc2026/201/); ServerBee supports iOS 17+. Default compatibility mode accepts valid legacy proofs without extensions, so it cannot guarantee a hard version or finer distribution-category allowlist for those proofs. Development/production environment and all cryptographic checks remain enforced. Both modes validate present extensions against the category and `APP_ATTEST_BUNDLE_VERSIONS` allowlists. Strict mode excludes no-extension proofs from new grants and renewals, while login/monitoring remain available. Enabling strict mode or changing the version allowlist does not retroactively revoke unexpired grants: a failed renewal changes neither the existing grant nor its stored counter. Existing grants remain valid until expiry or revocation (grants last 24 hours). Deletion-only revocation still accepts a cryptographically verified, correctly scoped legacy assertion without extensions; present extensions remain checked.
 
 The loopback executable refuses to start without `RELAY_TRUSTED_PROXY_IPS`. Existing deployments must add this setting and configure the proxy header together. Only listed native socket peers may supply the fixed header; missing, malformed or observable comma-list values return HTTP 400. Bun may hide repeated raw custom fields, so the proxy must overwrite them; the backend cannot establish wire-level uniqueness. Other peers use their native IP and all other forwarding headers are ignored. Normalized client IPs retain the 30-request/minute handler limit without pooling all proxy clients. The edge must still enforce 32 KiB bodies, source-IP limits, connection/read/write timeouts and bounded concurrency; see the Nginx example in [Relay setup](apps/push-relay/README.md).
 

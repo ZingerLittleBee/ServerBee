@@ -32,6 +32,11 @@ requireValue(
   bundleVersions.every((version) => version.length > 0 && version.length <= 128),
   'Invalid app versions'
 )
+const requireExtensions = process.env.APP_ATTEST_REQUIRE_EXTENSIONS ?? 'false'
+requireValue(
+  requireExtensions === 'true' || requireExtensions === 'false',
+  'Invalid APP_ATTEST_REQUIRE_EXTENSIONS: expected true or false'
+)
 const apns = new ApnsTransport({
   teamId: required('APNS_TEAM_ID'),
   keyId: required('APNS_KEY_ID'),
@@ -45,7 +50,8 @@ const relay = new Relay(
     rootPem,
     environment,
     environments,
-    bundleVersions
+    bundleVersions,
+    requireExtensions: requireExtensions === 'true'
   },
   undefined,
   apns

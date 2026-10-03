@@ -277,7 +277,10 @@ export class Relay {
       } else {
         const key = this.db.query<Key, [string]>('SELECT * FROM keys WHERE key_id=?').get(challenge.key_id)
         requireValue(key && key.environment === challenge.environment, 'Unknown device key')
-        nextCounter = assertion(body.proof, key.public_key, key.counter, clientData, trust)
+        // Revocation only removes a scoped grant; legacy authenticated proofs
+        // must still work after an operator enables strict issuance evidence.
+        const assertionTrust = challenge.action === 'revoke' ? { ...trust, requireExtensions: false } : trust
+        nextCounter = assertion(body.proof, key.public_key, key.counter, clientData, assertionTrust)
       }
       const token = randomBytes(32).toString('base64url')
       const grantId = randomUUID()

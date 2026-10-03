@@ -17,14 +17,23 @@ icon: Smartphone
 
 ### 配置归属
 
-| 归属 | 必需变量与用途 |
+| 归属 | 变量与用途 |
 | --- | --- |
 | Server | `SERVERBEE_PUSH_RELAY__URL` 或 `[push_relay].url`，最终 HTTPS Relay 地址；应用也使用无重定向的最终 HTTPS Server 地址 |
 | Relay 信任 | `APP_ATTEST_ROOT_CA`，审核后的 Apple 根证书 PEM 路径；`APP_ATTEST_ROOT_SHA256`，独立核验的指纹；`APP_ATTEST_APP_ID`，App ID 前缀和应用 bundle 标识；`APP_ATTEST_BUNDLE_VERSIONS`，允许的签名构建版本 |
+| Relay 证明策略 | `APP_ATTEST_REQUIRE_EXTENSIONS`，可选，仅接受精确小写 `true` 或 `false`，省略等同 `false`；其他值会导致启动失败。 |
 | Relay APNs | `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_PRIVATE_KEY`（私有 PEM **路径**）、`APNS_TOPIC`（应用 bundle 标识，不是扩展标识） |
 | Relay 代理 | `RELAY_TRUSTED_PROXY_IPS`，必填的准确代理对端 IP 列表；代理覆盖 `X-ServerBee-Client-IP` 为单个纯客户端 IP |
 | Relay 状态 | `RELAY_DATABASE`，私有持久 SQLite 路径；`RELAY_PORT`，loopback 监听端口 |
 | Relay 环境 | `APNS_ENVIRONMENTS=sandbox,production` 支持共存；也可使用 `APNS_ENVIRONMENT` 限定单一环境。复数配置优先。 |
+
+### App Attest 证明模式
+
+Apple 从 [iOS 27 起](https://developer.apple.com/videos/play/wwdc2026/201/)为 attestation 和 assertion 添加签名的启动类别及构建版本扩展。ServerBee 支持 iOS 17+。省略 `APP_ATTEST_REQUIRE_EXTENSIONS` 或设为 `false` 时，仍接受没有扩展的有效旧版证明。此兼容模式无法为旧版证明保证严格的构建版本或细分分发类别允许列表；开发与生产环境检查仍然生效。
+
+仅在要求签发和续期推送 grant 必须携带签名扩展时，设置 `APP_ATTEST_REQUIRE_EXTENSIONS=true`。旧版无扩展证明将无法获得或续期推送权限，登录与监控仍可用。启用严格模式或修改版本允许列表不会追溯撤销未过期 grant；续期被拒绝时，原有 grant 和已存计数器均不改变。原有 grant 在过期或被撤销前仍有效（有效期为 24 小时）。仅删除权限的撤销操作仍接受通过密码学验证、作用域匹配的旧版无扩展 assertion。
+
+两种模式都会校验已有扩展，撤销操作也不例外：sandbox 的类别必须为 development，production 必须为 TestFlight 或 App Store，签名构建版本必须匹配 `APP_ATTEST_BUNDLE_VERSIONS`。发布新构建时同步维护允许列表。证书、nonce、应用与密钥绑定、签名、challenge 及重放检查均保持不变。
 
 ### 可信代理客户端身份
 

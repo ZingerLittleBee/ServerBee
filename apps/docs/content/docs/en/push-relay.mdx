@@ -17,14 +17,23 @@ This runbook describes operator actions for an explicitly authorized isolated en
 
 ### Configuration Ownership
 
-| Owner | Required names and purpose |
+| Owner | Names and purpose |
 | --- | --- |
 | Server | `SERVERBEE_PUSH_RELAY__URL` or `[push_relay].url`, the final HTTPS Relay URL; the app also uses the final HTTPS Server URL without redirects |
 | Relay trust | `APP_ATTEST_ROOT_CA`, audited Apple root PEM path; `APP_ATTEST_ROOT_SHA256`, independently verified fingerprint; `APP_ATTEST_APP_ID`, App ID prefix plus app bundle identifier; `APP_ATTEST_BUNDLE_VERSIONS`, approved signed build versions |
+| Relay evidence policy | `APP_ATTEST_REQUIRE_EXTENSIONS`, optional exact lowercase `true` or `false`; omitted means `false`. Other values fail startup. |
 | Relay APNs | `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY` (private PEM **path**), `APNS_TOPIC` (app bundle identifier, not extension identifier) |
 | Relay proxy | `RELAY_TRUSTED_PROXY_IPS`, required exact proxy peer IP list; proxy overwrites `X-ServerBee-Client-IP` with one bare client IP |
 | Relay state | `RELAY_DATABASE`, private persistent SQLite path; `RELAY_PORT`, loopback listener port |
 | Relay environments | `APNS_ENVIRONMENTS=sandbox,production` for coexistence; alternatively `APNS_ENVIRONMENT` for one environment. The plural setting takes precedence. |
+
+### App Attest Evidence Modes
+
+Apple adds signed launch-category and bundle-version extensions to attestations and assertions in [iOS 27 and later](https://developer.apple.com/videos/play/wwdc2026/201/). ServerBee supports iOS 17+. With `APP_ATTEST_REQUIRE_EXTENSIONS` omitted or `false`, valid legacy proofs without extensions remain accepted. This compatibility mode cannot guarantee a hard build-version or finer distribution-category allowlist for legacy proofs; development/production environment checks still apply.
+
+Set `APP_ATTEST_REQUIRE_EXTENSIONS=true` only when issuing and renewing push grants must require signed extensions. Older no-extension proofs then cannot obtain or renew push access; login and monitoring remain available. Enabling strict mode or changing the version allowlist does not retroactively revoke unexpired grants. A rejected renewal changes neither the existing grant nor its stored counter. Existing grants remain valid until expiry or revocation; grants last 24 hours. Deletion-only revocation still accepts a cryptographically verified, correctly scoped legacy assertion without extensions.
+
+Both modes always validate present extensions, including on revocation: the category must be development for sandbox or TestFlight/App Store for production, and the signed build must match `APP_ATTEST_BUNDLE_VERSIONS`. Keep that allowlist current for new builds. Certificate, nonce, app/key binding, signature, challenge and replay checks remain unchanged.
 
 ### Trusted Proxy Client Identity
 

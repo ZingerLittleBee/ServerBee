@@ -14,6 +14,7 @@ export interface Trust {
   appId: string
   bundleVersions?: readonly string[]
   environment: Environment
+  requireExtensions?: boolean
   rootPem: string
 }
 
@@ -141,6 +142,7 @@ export function attest(encoded: string, keyId: string, clientData: Buffer, trust
   // biome-ignore lint/suspicious/noBitwiseOperators: WebAuthn extension presence is a wire bitmask.
   const hasExtensions = (data[32] & 0x80) !== 0
   requireValue(decoded.length === (hasExtensions ? 2 : 1), 'Invalid authenticator extensions')
+  requireValue(hasExtensions || !trust.requireExtensions, 'Missing required authenticator extensions')
   if (hasExtensions) {
     validateExtensions(decoded[1], trust, false)
   }
@@ -172,6 +174,7 @@ export function assertion(
   const hasExtensions = (data[32] & 0x80) !== 0
   // biome-ignore lint/suspicious/noBitwiseOperators: Assertions cannot carry attested credential data.
   requireValue((data[32] & 0x40) === 0, 'Unexpected assertion credential data')
+  requireValue(hasExtensions || !trust.requireExtensions, 'Missing required authenticator extensions')
   if (hasExtensions) {
     const values: unknown[] = []
     new Decoder({ mapsAsObjects: false, useRecords: false }).decodeMultiple(data.subarray(37), (value: unknown) => {
