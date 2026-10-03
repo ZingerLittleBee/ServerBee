@@ -22,6 +22,9 @@ bun --filter @serverbee/push-relay build   # dry-run only; no deployment
 ```
 
 Edit `apps/push-relay/wrangler.jsonc` with your Worker name and `APNS_TOPIC`.
+Keep `enable_request_signal` in `compatibility_flags`: it wires incoming client
+cancellation into the Worker’s upload/APNs deadlines and cleanup. A compatibility
+date alone does not enable this opt-in flag.
 `APNS_ENVIRONMENTS` is an optional comma-separated allowlist: `sandbox`,
 `production`, or `sandbox,production` (the default). Empty, duplicate or unknown
 values fail closed. It does not infer app authenticity or distribution channel.
@@ -144,7 +147,11 @@ observability is disabled by default. Avoid adding sensitive request logging.
 `bun --filter @serverbee/push-relay test` runs Vitest inside actual workerd using
 Cloudflare's official Workers Vitest pool, including real WebCrypto, stream cancellation,
 upload/provider deadlines, map hard caps, schema validation, per-IP/target/global
-limits, concurrency and mocked APNs fetch. `build` uses Wrangler's production
+limits, concurrency and mocked APNs fetch. A second Node-driven test sends real
+HTTP requests to the bundled Worker’s native workerd ingress, saturates the
+32-request limit, resets one TCP connection during a stalled APNs request, and
+verifies a new request can proceed before the 10-second provider deadline. It
+reads the actual Wrangler compatibility flags and always disposes the runtime. `build` uses Wrangler's production
 bundle dry-run without `nodejs_compat`. CI runs both as well as type checking. The pool, Wrangler and Miniflare versions
 are pinned to the last stable Miniflare 4-compatible release set, avoiding the
 Miniflare 5 alpha currently used by newer tooling.

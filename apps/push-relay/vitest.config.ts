@@ -1,5 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { cloudflareTest } from '@cloudflare/vitest-pool-workers'
+import type { Request as MiniflareRequest } from 'miniflare'
 import { defineConfig } from 'vitest/config'
 
 const key = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
@@ -8,7 +9,7 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
-        outboundService(request) {
+        outboundService(request: MiniflareRequest) {
           const url = new URL(request.url)
           if (url.hostname !== 'api.sandbox.push.apple.com' || request.method !== 'POST') {
             throw new Error('Unexpected outbound request')

@@ -2024,6 +2024,245 @@ async fn durable_outbox_deduplicates_retries_and_resumes_after_database_reopen()
 }
 
 #[tokio::test]
+async fn identical_registration_preserves_retryable_test_and_alert_until_delivery() {
+    use serverbee_server::entity::mobile_push_registration as registration;
+
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "reregister-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    let original_registration = registration::Entity::find_by_id("reregister-install")
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    let (server, _) = alert_http_fixture(&client, &base, access, "once").await;
+    evaluate_alerts(&state).await;
+    let alerts = alert_jobs(&state).await;
+    assert_eq!(alerts.len(), 1);
+    let test_event = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        enqueue_test(&client, &base, access, 2, &test_event)
+            .await
+            .status(),
+        200
+    );
+    let original = [
+        outbox_job(&state, &test_event, "reregister-install").await,
+        alerts[0].clone(),
+    ];
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    for job in &original {
+        wait_test(&client, &base, access, &job.event_id, "retryable").await;
+    }
+    worker.abort();
+    let _ = worker.await;
+
+    let target = serde_json::json!({"device_token":"a".repeat(64),"environment":"sandbox"});
+    let request = content_registration(&target, 2);
+    for _ in 0..2 {
+        let reply = client
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
+            .bearer_auth(access)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reply.status(), 200);
+        let reply = reply.json::<serde_json::Value>().await.unwrap();
+        assert_eq!(reply["data"]["revision"], 2);
+        assert_eq!(reply["data"]["registered"], true);
+    }
+    let current = registration::Entity::find_by_id("reregister-install")
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        current, original_registration,
+        "an exact retry does not rewrite registration"
+    );
+    // Idempotence must not bypass the revision guard or permit legacy fan-out.
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
+            .bearer_auth(access)
+            .json(&content_registration(&target, 1))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/push/register"))
+            .bearer_auth(access)
+            .json(&serde_json::json!({"device_token":"a".repeat(64)}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    for job in &original {
+        let retry = outbox_job(&state, &job.event_id, "reregister-install").await;
+        assert_eq!(retry.registration_revision, 2);
+        assert_eq!(retry.outcome, "retryable");
+        assert_eq!(retry.envelope, job.envelope);
+        assert_eq!(retry.created_at, job.created_at);
+        assert_eq!(retry.expires_at, job.expires_at);
+    }
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    for job in &original {
+        wait_test(&client, &base, access, &job.event_id, "accepted").await;
+    }
+    worker.abort();
+    let _ = worker.await;
+    for job in &original {
+        let delivered = outbox_job(&state, &job.event_id, "reregister-install").await;
+        assert_eq!(delivered.created_at, job.created_at);
+        assert_eq!(delivered.expires_at, job.expires_at);
+        assert!(delivered.envelope.is_none());
+        let attempts: Vec<_> = relay
+            .requests()
+            .await
+            .into_iter()
+            .filter(|request| request["event_id"] == job.event_id)
+            .collect();
+        assert!(
+            attempts.len() >= 2,
+            "the original logical event was retried"
+        );
+        for attempt in attempts {
+            assert_eq!(attempt["expires_at"], job.expires_at);
+            assert_eq!(
+                attempt["envelope"],
+                serde_json::from_str::<serde_json::Value>(job.envelope.as_deref().unwrap())
+                    .unwrap()
+            );
+        }
+    }
+
+    // New pending work still belongs to the old tuple and must be fenced when
+    // an actual token replacement arrives, even if its content key is unchanged.
+    let second_test = uuid::Uuid::new_v4().to_string();
+    assert_eq!(
+        enqueue_test(&client, &base, access, 2, &second_test)
+            .await
+            .status(),
+        200
+    );
+    set_alert_expiration(&client, &base, access, &server, false).await;
+    evaluate_alerts(&state).await;
+    let second_alert = alert_jobs(&state)
+        .await
+        .into_iter()
+        .find(|job| job.event_id != original[1].event_id)
+        .unwrap();
+    relay.status.store(503, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    for event in [&second_test, &second_alert.event_id] {
+        wait_test(&client, &base, access, event, "retryable").await;
+    }
+    worker.abort();
+    let _ = worker.await;
+    let sent_before_rotation = relay.requests().await.len();
+    let changed = content_registration(
+        &serde_json::json!({"device_token":"b".repeat(64),"environment":"sandbox"}),
+        2,
+    );
+    let reply = client
+        .post(format!("{base}/api/mobile/push/encrypted-register"))
+        .bearer_auth(access)
+        .json(&changed)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reply.status(), 200);
+    assert_eq!(
+        reply.json::<serde_json::Value>().await.unwrap()["data"]["revision"],
+        3
+    );
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    for event in [&second_test, &second_alert.event_id] {
+        let terminal = wait_test(&client, &base, access, event, "permanent").await;
+        assert_eq!(terminal["reason"], "Ineligible");
+        assert!(
+            outbox_job(&state, event, "reregister-install")
+                .await
+                .envelope
+                .is_none()
+        );
+    }
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), sent_before_rotation);
+}
+
+#[tokio::test]
+async fn registration_identity_changes_bump_revision_but_exact_retries_do_not() {
+    let (base, _state, _tmp) = setup_http().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "identity-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    let mut request = content_registration(
+        &serde_json::json!({"device_token":"a".repeat(64),"environment":"sandbox"}),
+        2,
+    );
+    for (index, (field, value)) in [
+        ("device_token", "b".repeat(64)),
+        ("environment", "production".into()),
+        (
+            "content_key_id",
+            "33333333-3333-4333-8333-333333333333".into(),
+        ),
+        (
+            "content_key",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
+        ),
+        ("deployment_id", "https://other.serverbee.test".into()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        request[field] = serde_json::json!(value);
+        let revision = index as i64 + 3;
+        let changed = client
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
+            .bearer_auth(access)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(changed.status(), 200, "{field}");
+        assert_eq!(
+            changed.json::<serde_json::Value>().await.unwrap()["data"]["revision"],
+            revision,
+            "{field}"
+        );
+        request["expected_revision"] = serde_json::json!(revision);
+        let retry = client
+            .post(format!("{base}/api/mobile/push/encrypted-register"))
+            .bearer_auth(access)
+            .json(&request)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(retry.status(), 200, "{field}");
+        assert_eq!(
+            retry.json::<serde_json::Value>().await.unwrap()["data"]["revision"],
+            revision,
+            "{field}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn retryable_provider_reply_preserves_ciphertext_for_later_delivery() {
     for (http_status, expected_reason) in [(202, "NetworkUnavailable"), (408, "RequestTimeout")] {
         let (base, state, _tmp, relay) = queued_setup().await;

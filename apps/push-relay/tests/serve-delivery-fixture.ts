@@ -6,7 +6,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { Miniflare } from 'miniflare'
+import { Miniflare, type Request as MiniflareRequest } from 'miniflare'
 
 const directory = process.argv[2]
 if (!directory) {
@@ -26,6 +26,7 @@ const runtime = new Miniflare({
   modules: true,
   script: bundle.outputFiles[0].text,
   compatibilityDate: '2026-07-30',
+  compatibilityFlags: ['enable_request_signal'],
   host: '127.0.0.1',
   port: 0,
   bindings: {
@@ -34,7 +35,7 @@ const runtime = new Miniflare({
     APNS_TOPIC: 'com.serverbee.mobile',
     APNS_PRIVATE_KEY: key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
   },
-  async outboundService(request) {
+  async outboundService(request: MiniflareRequest) {
     const url = new URL(request.url)
     if (!['api.push.apple.com', 'api.sandbox.push.apple.com'].includes(url.hostname) || request.method !== 'POST') {
       throw new Error('Unexpected fixture outbound request')

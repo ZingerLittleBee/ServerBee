@@ -257,14 +257,11 @@ pub async fn encrypted_register(
         .one(&txn)
         .await?
         .ok_or(AppError::Unauthorized)?;
-    let mut model: registration::ActiveModel = row.into();
-    model.revision = Set(body.expected_revision + 1);
-    model.device_token = Set(Some(body.device_token));
-    model.environment = Set(Some(body.environment));
-    model.content_key_id = Set(Some(body.content_key_id));
-    model.content_key = Set(Some(body.content_key));
-    model.deployment_id = Set(Some(body.deployment_id));
-    model.updated_at = Set(Utc::now());
+    let unchanged = row.device_token.as_deref() == Some(body.device_token.as_str())
+        && row.environment.as_deref() == Some(body.environment.as_str())
+        && row.content_key_id.as_deref() == Some(body.content_key_id.as_str())
+        && row.content_key.as_deref() == Some(body.content_key.as_str())
+        && row.deployment_id.as_deref() == Some(body.deployment_id.as_str());
     // A durable migration marker survives disabling, unregister and session
     // revocation. It prevents an old app from restoring plaintext delivery.
     txn.execute(Statement::from_sql_and_values(
@@ -281,7 +278,22 @@ pub async fn encrypted_register(
         .filter(crate::entity::device_token::Column::UserId.eq(&session.user_id))
         .exec(&txn)
         .await?;
-    let row = model.update(&txn).await?;
+    // App restarts may upload the same APNs token/key again. Preserve the
+    // identity revision so pending/retryable ciphertext keeps its recipient.
+    // Ownership, expected revision and legacy cleanup still apply to retries.
+    let row = if unchanged {
+        row
+    } else {
+        let mut model: registration::ActiveModel = row.into();
+        model.revision = Set(body.expected_revision + 1);
+        model.device_token = Set(Some(body.device_token));
+        model.environment = Set(Some(body.environment));
+        model.content_key_id = Set(Some(body.content_key_id));
+        model.content_key = Set(Some(body.content_key));
+        model.deployment_id = Set(Some(body.deployment_id));
+        model.updated_at = Set(Utc::now());
+        model.update(&txn).await?
+    };
     let result = response(
         Some(&row),
         owner.role == "admin",

@@ -1191,6 +1191,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/push/encrypted-register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["encrypted_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/push/register": {
         parameters: {
             query?: never;
@@ -1265,22 +1281,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["push_unregister"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mobile/push/verified-register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["verified_register"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3406,14 +3406,20 @@ export interface components {
             /** @description The APNs device token obtained from the iOS device. */
             device_token: string;
         };
+        PushRegistrationRequest: {
+            content_key: string;
+            content_key_id: string;
+            deployment_id: string;
+            device_token: string;
+            environment: string;
+            /** Format: int64 */
+            expected_revision: number;
+        };
         PushSetupResponse: {
             /** @description Whether at least one event category is available for the current role. */
             delivery_available: boolean;
-            /** Format: date-time */
-            grant_expires_at?: string | null;
             preferences: components["schemas"]["PushPreferences"];
             registered: boolean;
-            relay_url: string;
             /** Format: int64 */
             revision: number;
             /** @description Whether the current account role permits security subscriptions. */
@@ -4387,18 +4393,6 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             username: string;
-        };
-        VerifiedPushRequest: {
-            content_key: string;
-            content_key_id: string;
-            deployment_id: string;
-            device_token: string;
-            environment: string;
-            /** Format: int64 */
-            expected_revision: number;
-            grant_id: string;
-            grant_token: string;
-            key_id: string;
         };
         WidgetInput: {
             config_json: unknown;
@@ -7165,6 +7159,43 @@ export interface operations {
             };
         };
     };
+    encrypted_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushRegistrationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSetupResponse"];
+                };
+            };
+            /** @description Installation forbidden or notifications disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stale revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     push_register: {
         parameters: {
             query?: never;
@@ -7341,43 +7372,6 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    verified_register: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VerifiedPushRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PushSetupResponse"];
-                };
-            };
-            /** @description Unverified or mismatched grant */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Stale revision */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };

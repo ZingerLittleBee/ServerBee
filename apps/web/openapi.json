@@ -3677,6 +3677,47 @@
         ]
       }
     },
+    "/api/mobile/push/encrypted-register": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "encrypted_register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSetupResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Installation forbidden or notifications disabled"
+          },
+          "409": {
+            "description": "Stale revision"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/mobile/push/register": {
       "post": {
         "tags": [
@@ -3867,47 +3908,6 @@
           },
           "401": {
             "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearer_token": []
-          }
-        ]
-      }
-    },
-    "/api/mobile/push/verified-register": {
-      "post": {
-        "tags": [
-          "mobile-auth"
-        ],
-        "operationId": "verified_register",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VerifiedPushRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PushSetupResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Unverified or mismatched grant"
-          },
-          "409": {
-            "description": "Stale revision"
           }
         },
         "security": [
@@ -12241,6 +12241,39 @@
           }
         }
       },
+      "PushRegistrationRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "device_token",
+          "environment",
+          "content_key_id",
+          "content_key",
+          "deployment_id"
+        ],
+        "properties": {
+          "content_key": {
+            "type": "string"
+          },
+          "content_key_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "device_token": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "PushSetupResponse": {
         "type": "object",
         "required": [
@@ -12250,7 +12283,6 @@
           "tasks_allowed",
           "task_failure_available",
           "registered",
-          "relay_url",
           "delivery_available",
           "test_available"
         ],
@@ -12259,21 +12291,11 @@
             "type": "boolean",
             "description": "Whether at least one event category is available for the current role."
           },
-          "grant_expires_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
           "preferences": {
             "$ref": "#/components/schemas/PushPreferences"
           },
           "registered": {
             "type": "boolean"
-          },
-          "relay_url": {
-            "type": "string"
           },
           "revision": {
             "type": "integer",
@@ -15609,51 +15631,6 @@
             "type": "string"
           }
         }
-      },
-      "VerifiedPushRequest": {
-        "type": "object",
-        "required": [
-          "expected_revision",
-          "device_token",
-          "environment",
-          "key_id",
-          "grant_id",
-          "grant_token",
-          "content_key_id",
-          "content_key",
-          "deployment_id"
-        ],
-        "properties": {
-          "content_key": {
-            "type": "string"
-          },
-          "content_key_id": {
-            "type": "string"
-          },
-          "deployment_id": {
-            "type": "string"
-          },
-          "device_token": {
-            "type": "string"
-          },
-          "environment": {
-            "type": "string"
-          },
-          "expected_revision": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "grant_id": {
-            "type": "string"
-          },
-          "grant_token": {
-            "type": "string"
-          },
-          "key_id": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
       },
       "WidgetInput": {
         "type": "object",

@@ -4,6 +4,7 @@
   "main": "src/relay.ts",
   "tsconfig": "tsconfig.json",
   "compatibility_date": "2026-07-30",
+  "compatibility_flags": ["enable_request_signal"],
   "workers_dev": true,
   "observability": { "enabled": false },
   "vars": {

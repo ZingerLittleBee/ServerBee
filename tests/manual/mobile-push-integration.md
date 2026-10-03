@@ -20,6 +20,15 @@ Retain the existing three-category unsubscribe tests and exclusive encrypted tar
 
 `task_outcomes::lifecycle::trace::stitched_categories_use_actual_relay_and_preserve_external_legacy_delivery` extends the existing real Relay fixture. Seven actual provider transport payloads cover test, alert firing/resolved/rearm, security, task failure and task success; migration excludes the modern installation from legacy selection while an unrelated legacy installation remains. A configured external webhook receives recovery/rearm exactly once. `CombinedPushTraceTests.testStitchedAllServerCategoriesThroughActualExtensionAndAuthenticatedRouter` consumes these exact provider payloads through the actual NSE and cold-launch router, checking identities, exclusive targets, localized non-generic rendering and account replacement rejection. This synthetic APNs boundary does not establish genuine device proof.
 
+## Stateless registration retry identity
+
+Repeat an identical authenticated `encrypted-register` while test and alert jobs
+are retryable. The same revision, ciphertext, event identity and original expiry
+must survive and then deliver after provider recovery. Changing any token,
+environment, content-key identity/bytes or deployment field must still advance
+the revision and stop old work. Ownership/CAS/enabled checks and the legacy
+plaintext migration barrier apply even to an idempotent registration retry.
+
 ## Offline logout and upgrade recovery
 
 `router_mobile` scoped-revocation regressions exercise real verified settings ownership, expiry-hidden originals, repeated/concurrent exact-session absence acknowledgements, replacement-login isolation, malformed IDs, corrupt dangling authority, and refresh-proof bootstrap. Historical outbox rows remain governed by existing eligibility and expiry checks; absence acknowledgement does not promise in-flight recall.

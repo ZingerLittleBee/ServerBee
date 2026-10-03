@@ -63,8 +63,6 @@ jobs:
   test:
     name: iOS Test
     needs: push-trace
-    env:
-      TEST_RUNNER_SERVERBEE_PUSH_TRACE_DIR: ${{ runner.temp }}/push-traces
     runs-on: macos-15
     defaults:
       run:
@@ -87,6 +85,8 @@ jobs:
           use-cache: true
 
       - uses: mxcl/xcodebuild@v3
+        env:
+          TEST_RUNNER_SERVERBEE_PUSH_TRACE_DIR: ${{ runner.temp }}/push-traces
         with:
           platform: iOS
           scheme: ServerBee
