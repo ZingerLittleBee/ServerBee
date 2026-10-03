@@ -120,7 +120,8 @@ final class AuthenticationRevocationTests: XCTestCase {
                 await gate.wait()
             }
         }
-        let auth = AuthManager(refreshCoordinator: coordinator)
+        let auth = AuthManager(refreshCoordinator: coordinator,
+                               cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(auth, user: "alice")
         let aliceResponse = response(user: "alice")
         AuthenticationURLProtocol.handler = { request in request.respond(200, data: aliceResponse) }
@@ -189,7 +190,7 @@ final class AuthenticationRevocationTests: XCTestCase {
     }
 
     private func assertLogoutDuringRefresh(outcome: String, legacy: Bool = false) async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(auth, user: "alice", legacy: legacy)
         let api = APIClient(authManager: auth)
         let manager = PushNotificationManager()
@@ -249,7 +250,7 @@ final class AuthenticationRevocationTests: XCTestCase {
 
 extension AuthenticationRevocationTests {
     func testRedirectedRefreshAndRevocationPreserveOriginalCredentialsForRetry() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(auth, user: "alice")
         let context = try XCTUnwrap(auth.captureContext())
         let log = AuthenticationRequestLog()
@@ -273,7 +274,7 @@ extension AuthenticationRevocationTests {
     }
 
     func testLegacyOrdinaryRefreshKeepsCapturedContextUntilDeletionProofBootstrap() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(auth, user: "alice", legacy: true)
         let context = try XCTUnwrap(auth.captureContext())
         let payload = response(user: "alice")
@@ -323,7 +324,7 @@ extension AuthenticationRevocationTests {
     }
 
     func testRestoredLegacyFirstRefreshResponseLossRevokesBeforeClearingProof() async {
-        let original = AuthManager()
+        let original = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(original, user: "alice", legacy: true)
         let log = AuthenticationRequestLog()
         let revoked = expectation(description: "restored legacy proof revokes after response loss")
@@ -341,7 +342,7 @@ extension AuthenticationRevocationTests {
                 request.respond(401)
             }
         }
-        let restored = AuthManager()
+        let restored = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         await restored.initialize()
         await fulfillment(of: [revoked], timeout: 3)
         XCTAssertFalse(restored.isAuthenticated)

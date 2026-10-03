@@ -69,7 +69,7 @@ final class RefreshErrorClassificationTests: XCTestCase {
     }
 
     private func signedInAuthentication(access: String = "access") -> AuthManager {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
         auth.setServerUrl("https://stub.test")
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: access, accessExpiresInSecs: 900,

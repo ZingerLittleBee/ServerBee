@@ -45,7 +45,7 @@ final class PushTestRecoveryTests: XCTestCase {
     }
 
     private func signedIn(_ name: String = "alice") -> AuthManager {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [TestRecoveryURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-\(name)", accessExpiresInSecs: 900,
                                                     refreshToken: "refresh-\(name)", refreshExpiresInSecs: 3600, tokenType: "Bearer",

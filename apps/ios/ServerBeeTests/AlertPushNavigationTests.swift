@@ -219,7 +219,7 @@ final class AlertPushNavigationTests: XCTestCase {
 
     func testLateAlertTapFetchesCurrentDetailAndClearsUnavailableTargets() async throws {
         URLProtocol.registerClass(PushLifecycleURLProtocol.self)
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         defer {
             PushLifecycleURLProtocol.handler = nil
             PushLifecycleURLProtocol.cancelPending()

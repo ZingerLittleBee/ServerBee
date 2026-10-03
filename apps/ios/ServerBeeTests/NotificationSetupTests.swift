@@ -132,7 +132,7 @@ final class NotificationSetupTests: XCTestCase {
     func testLaunchAndRepeatedReconciliationNeverPromptWithoutExplicitOptIn() async {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -151,7 +151,7 @@ final class NotificationSetupTests: XCTestCase {
     func testExplicitEnableSavesIntentBeforePromptAndServerConfirmsRegistration() async {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -181,7 +181,7 @@ final class NotificationSetupTests: XCTestCase {
         let fixture = SetupHTTPFixture()
         fixture.failSave()
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -200,7 +200,7 @@ final class NotificationSetupTests: XCTestCase {
     func testUnsupportedAttestationPreservesLoginAndReportsUnavailable() async {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -224,7 +224,7 @@ final class NotificationSetupTests: XCTestCase {
         fixture.enable()
         fixture.setRegistrationStatus(503)
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let relay = TestPushRelay()
@@ -253,7 +253,7 @@ final class NotificationSetupTests: XCTestCase {
     func testPermissionCompletionAfterAccountSwitchCannotRegisterReplacement() async {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -289,7 +289,7 @@ extension NotificationSetupTests {
             let fixture = SetupHTTPFixture()
             fixture.enable()
             SetupURLProtocol.fixture = fixture
-            let auth = AuthManager()
+            let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
             auth.clearAuth()
             login(auth)
             let storage = MemoryPushSetupStorage()
@@ -337,7 +337,7 @@ extension NotificationSetupTests {
             XCTAssertEqual(storage.load(pending.key), pending.value)
             XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
             // Restore both authentication and setup coordinator from persistence.
-            let restoredAuth = AuthManager()
+            let restoredAuth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
             await restoredAuth.initialize()
             XCTAssertTrue(restoredAuth.isAuthenticated)
             XCTAssertEqual(restoredAuth.captureContext()?.pushScope, auth.captureContext()?.pushScope)
@@ -405,7 +405,7 @@ extension NotificationSetupTests {
         let fixture = SetupHTTPFixture()
         fixture.enable()
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let relay = TestPushRelay()
@@ -450,7 +450,7 @@ extension NotificationSetupTests {
     func testPermissionRecoveryAndRefreshKeepAllConfirmedCategoriesUntilAccountReplacement() async throws {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [SetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()

@@ -101,7 +101,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
             for enabled in [true, false] {
                 let http = DemotionHTTPFixture()
                 DemotionURLProtocol.fixture = http
-                let auth = AuthManager()
+                let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [DemotionURLProtocol.self]))
                 auth.clearAuth()
                 login(auth)
                 let system = TestPushSystem()
@@ -151,7 +151,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
     func testDemotionBetweenReadAndSaveFailsHonestlyThenRecoversAfterServerConfirmation() async throws {
         let http = DemotionHTTPFixture()
         DemotionURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [DemotionURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()

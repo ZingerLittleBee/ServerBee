@@ -70,7 +70,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
         }
         let subject: AuthManager
         if route == "startup" {
-            subject = AuthManager()
+            subject = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
             await subject.initialize()
         } else {
             subject = auth
@@ -216,7 +216,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
     func testAbsentCurrentValidAndStaleProofsUseOnlyCapturedDeletionCredentials() async throws {
         let proofStates: [String?] = [nil, "refresh-0", "stable-proof", "stale-proof"]
         for storedProof in proofStates {
-            let auth = AuthManager()
+            let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
             auth.clearAuth()
             auth.setServerUrl("https://ios-first-upgrade.test")
             auth.handleLoginResponse(MobileTokenResponse(
@@ -244,7 +244,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
 
 private extension IOSFirstUpgradeRevocationTests {
     private func seedIOSFirstSession(_ replacements: Int, manager: PushNotificationManager) async throws -> (AuthManager, MobileAuthenticationContext) {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         auth.clearAuth()
         auth.setServerUrl("https://ios-first-upgrade.test")
         auth.handleLoginResponse(try JSONDecoder.snakeCase.decode(ApiResponse<MobileTokenResponse>.self, from: Self.tokens(0)).data)
@@ -287,7 +287,7 @@ private extension IOSFirstUpgradeRevocationTests {
             }
         }
         if restore {
-            auth = AuthManager()
+            auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
             await auth.initialize()
         } else { _ = try await auth.refreshAccessToken() }
         XCTAssertTrue(auth.isAuthenticated)

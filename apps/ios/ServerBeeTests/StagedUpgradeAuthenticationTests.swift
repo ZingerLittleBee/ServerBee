@@ -104,7 +104,7 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
             default: XCTFail("Reachable restoration cleanup must revoke the original login"); request.respond(401)
             }
         }
-        let restored = AuthManager()
+        let restored = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         await restored.initialize()
         XCTAssertFalse(restored.isAuthenticated)
         XCTAssertFalse(restored.isLoading)
@@ -127,7 +127,7 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
                 request.respond(200)
             }
         }
-        let restored = AuthManager()
+        let restored = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         await restored.initialize()
         let context = try XCTUnwrap(restored.captureContext())
         for _ in 0..<2 {
@@ -158,7 +158,7 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
                 cleanup.fulfill()
             }
         }
-        let restored = AuthManager()
+        let restored = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         let startup = Task { await restored.initialize() }
         await fulfillment(of: [cleanup], timeout: 3)
         restored.clearAuth()
@@ -181,7 +181,7 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
 
     func testCurrentSecretRevokesBeforeOverlappingRefreshWithoutBearerFallback() async throws {
         try await restoreOldClient(newServerLogin: true, rotations: 1)
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         // This overlap scenario starts from the last old-client pair. Separate
         // restoration tests exercise migration of the same legacy Keychain inputs.
         auth.clearAuth()

@@ -14,7 +14,7 @@ final class TestPushActionTests: XCTestCase {
     }
 
     func testTargetedActionSendsOnlyConfirmedRevisionAndReportsProviderAcceptance() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
@@ -58,7 +58,7 @@ final class TestPushActionTests: XCTestCase {
     }
 
     func testLostResponseReusesIdentityAndPendingStatusSurvivesManagerRestart() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
@@ -119,7 +119,7 @@ final class TestPushActionTests: XCTestCase {
     }
 
     func testHttpSetupNeverTransmitsContentKey() async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("http://127.0.0.1:9527")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
@@ -144,7 +144,7 @@ final class TestPushActionTests: XCTestCase {
     }
 
     func testRejectedRedirectKeepsContentKeyAndGrantForExplicitSetupRetry() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
@@ -186,7 +186,7 @@ final class TestPushActionTests: XCTestCase {
     }
 
     func testDirectRegistrationCallerCannotBypassHttpsRequirement() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("http://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",

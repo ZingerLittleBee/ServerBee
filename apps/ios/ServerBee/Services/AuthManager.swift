@@ -7,6 +7,7 @@ final class AuthManager {
     private let refreshCoordinator: RefreshCoordinator
     private let revocations: PendingSessionRevocations
     private let authenticationStorage: any MobileAuthenticationStorage
+    private let cleanupSession: URLSession
     private var saved: SavedMobileAuthentication?
     private var storageLoaded = false
     private var retryTask: Task<Void, Never>?
@@ -23,10 +24,12 @@ final class AuthManager {
 
     init(refreshCoordinator: RefreshCoordinator = RefreshCoordinator(),
          revocations: PendingSessionRevocations = PendingSessionRevocations(),
-         authenticationStorage: any MobileAuthenticationStorage = PrivateMobileAuthenticationStorage()) {
+         authenticationStorage: any MobileAuthenticationStorage = PrivateMobileAuthenticationStorage(),
+         cleanupSession: URLSession = APIClient.makeCleanupSession()) {
         self.refreshCoordinator = refreshCoordinator
         self.revocations = revocations
         self.authenticationStorage = authenticationStorage
+        self.cleanupSession = cleanupSession
     }
 
     func initialize() async {
@@ -89,7 +92,7 @@ final class AuthManager {
             // The initial capacity-recovery pass predates this record. Attempt
             // this exact identity before a replacement can create push ownership.
             do {
-                try await APIClient.revokeSavedSession(record)
+                try await APIClient.revokeSavedSession(record, session: cleanupSession)
                 try revocations.remove(record)
             } catch { /* Retain the exact proof for the next bounded retry. */ }
         }
@@ -199,8 +202,8 @@ final class AuthManager {
                 let records = try revocations.records().filter { !ending.contains($0.id) }
                 await withTaskGroup(of: PendingSessionRevocation?.self) { group in
                     for record in records {
-                        group.addTask {
-                            do { try await APIClient.revokeSavedSession(record); return record }
+                        group.addTask { [cleanupSession] in
+                            do { try await APIClient.revokeSavedSession(record, session: cleanupSession); return record }
                             catch { return nil }
                         }
                     }
@@ -232,7 +235,7 @@ final class AuthManager {
                 await beforeRevocation?()
                 if authenticationGeneration == context.generation { try clearPersistedAuthentication() }
                 do {
-                    try await APIClient.revokeSavedSession(record)
+                    try await APIClient.revokeSavedSession(record, session: cleanupSession)
                     try revocations.remove(record)
                 } catch { /* Local logout succeeded; private proof remains for retry. */ }
             } else {

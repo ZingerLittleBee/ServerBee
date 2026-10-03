@@ -19,7 +19,7 @@ final class PushKeychainIsolationTests: XCTestCase {
     }
 
     func testLoginAndRefreshKeepCredentialsPrivateAndOnlyContentKeyShared() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         auth.setServerUrl("https://keychain-fixture.test")
         auth.handleLoginResponse(tokens(access: "fixture-access", refresh: "fixture-refresh"))
         let context = try XCTUnwrap(auth.captureContext())
@@ -93,7 +93,7 @@ final class PushKeychainIsolationTests: XCTestCase {
     }
 
     func testPendingDeletionProofRemainsPrivateWithoutNormalCredentials() throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         auth.setServerUrl("https://keychain-fixture.test")
         auth.handleLoginResponse(tokens(access: "fixture-access", refresh: "fixture-refresh"))
         let saved = try XCTUnwrap(AuthManager.readAuthentication())

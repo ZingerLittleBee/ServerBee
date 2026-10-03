@@ -102,7 +102,7 @@ final class PushRegistrationLifecycleTests: XCTestCase {
     }
 
     private func assertStaleUpload(server: String, user: String, status: Int) async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
@@ -189,7 +189,7 @@ private extension PushRegistrationLifecycleTests {
 
 extension PushRegistrationLifecycleTests {
     func testUploadRetriesRefreshOnlyWithinCapturedLogin() async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
@@ -231,7 +231,7 @@ extension PushRegistrationLifecycleTests {
     }
 
     func testRefreshCompletionAfterLogoutCannotRestorePreviousAccount() async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
@@ -264,7 +264,7 @@ extension PushRegistrationLifecycleTests {
     }
 
     func testLogoutDrainsUploadBeforeUnregisterAndSessionRevocation() async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let api = APIClient(authManager: auth)
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
@@ -320,7 +320,7 @@ extension PushRegistrationLifecycleTests {
     }
 
     func testLogoutCompletionDoesNotClearReplacementLogin() async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let api = APIClient(authManager: auth)
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
@@ -361,7 +361,7 @@ extension PushRegistrationLifecycleTests {
 
 extension PushRegistrationLifecycleTests {
     func testLogoutKeepsCapturedIdentityIfLoginChangesWhileClosingWebSocket() async {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         signIn(auth)
         let api = APIClient(authManager: auth)
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())

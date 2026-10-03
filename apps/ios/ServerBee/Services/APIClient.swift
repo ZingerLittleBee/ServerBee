@@ -124,17 +124,22 @@ actor APIClient {
         }
     }
 
-    private static let cleanupSession: URLSession = {
+    private static let cleanupSession = makeCleanupSession()
+
+    /// Inject only the HTTP transport in tests; production and fixtures share
+    /// the same cookie-, credential-, and cache-free replay configuration.
+    static func makeCleanupSession(protocolClasses: [AnyClass]? = nil) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
         configuration.urlCache = nil
+        if let protocolClasses { configuration.protocolClasses = protocolClasses }
         return URLSession(configuration: configuration)
-    }()
+    }
 
     /// Replay has no AuthManager dependency and cannot refresh or adopt a login.
-    static func revokeSavedSession(_ record: PendingSessionRevocation) async throws {
+    static func revokeSavedSession(_ record: PendingSessionRevocation, session: URLSession? = nil) async throws {
         guard let url = URL(string: "\(record.serverUrl)/api/mobile/auth/revoke") else { throw APIError.noServerUrl }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -143,7 +148,7 @@ actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder.snakeCase.encode(MobileRevokeRequest(
             installationId: record.installationId, revocationToken: record.proof, expectedSessionId: record.mobileSessionId))
-        let (data, response) = try await ServerHTTPTransport.data(for: request, session: cleanupSession)
+        let (data, response) = try await ServerHTTPTransport.data(for: request, session: session ?? cleanupSession)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
             throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1, data: data)
         }

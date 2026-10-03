@@ -96,7 +96,7 @@ final class TaskPushNavigationTests: XCTestCase {
             AuthManager().clearAuth()
             try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         }
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900, refreshToken: "fixture-refresh",
                                                     refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin"),
@@ -204,7 +204,7 @@ extension TaskPushNavigationTests {
             AuthManager().clearAuth()
             try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         }
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900, refreshToken: "fixture-refresh",
                                                     refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin"),
@@ -282,7 +282,7 @@ extension TaskPushNavigationTests {
             AuthManager().clearAuth()
             try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         }
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PushLifecycleURLProtocol.self]))
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900, refreshToken: "fixture-refresh",
                                                     refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin"),

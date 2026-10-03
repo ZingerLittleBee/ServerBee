@@ -26,7 +26,7 @@ final class AuthViewModelTests: XCTestCase {
         URLProtocolStub.stubResponse = nil
         URLProtocolStub.stubError = URLError(.cannotConnectToHost)
 
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
         let vm = AuthViewModel()
         vm.serverUrlInput = "https://stub.test"
         vm.username = "u"
@@ -41,7 +41,7 @@ final class AuthViewModelTests: XCTestCase {
         URLProtocol.registerClass(NonHTTPURLProtocolStub.self)
         defer { URLProtocol.unregisterClass(NonHTTPURLProtocolStub.self) }
 
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [NonHTTPURLProtocolStub.self]))
         let vm = AuthViewModel()
         vm.serverUrlInput = "https://stub.test"
         vm.username = "u"
@@ -168,7 +168,8 @@ final class AuthViewModelTests: XCTestCase {
     }
 
     private func preparationAuth(_ journal: PreparationRevocationStorage) -> AuthManager {
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal))
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal),
+                               cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         auth.handleLoginResponse(preparationTokens("alice"), origin: "https://current.test")
         return auth
     }

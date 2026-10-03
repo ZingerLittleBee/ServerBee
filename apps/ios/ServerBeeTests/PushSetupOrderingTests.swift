@@ -186,7 +186,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let http = OrderedSetupHTTP()
         defer { http.cancel() }
         OrderedSetupURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -222,7 +222,7 @@ final class PushSetupOrderingTests: XCTestCase {
             let http = OrderedSetupHTTP()
             defer { http.cancel() }
             OrderedSetupURLProtocol.fixture = http
-            let auth = AuthManager()
+            let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
             auth.clearAuth()
             login(auth)
             let system = TestPushSystem()
@@ -268,7 +268,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let http = OrderedSetupHTTP(registered: true, revision: 2)
         defer { http.cancel() }
         OrderedSetupURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -291,7 +291,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let http = OrderedSetupHTTP()
         defer { http.cancel() }
         OrderedSetupURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let relay = TestPushRelay()
@@ -319,7 +319,7 @@ final class PushSetupOrderingTests: XCTestCase {
     func testExplicitRetryRequestsPermissionAfterCommittedEnableResponseLoss() async {
         let http = OrderedSetupHTTP(enabled: false, revision: 0)
         OrderedSetupURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -351,9 +351,9 @@ final class PushSetupOrderingTests: XCTestCase {
     func testRestoredEnabledManagerNeverPromptsUntilExplicitRetry() async {
         let http = OrderedSetupHTTP()
         OrderedSetupURLProtocol.fixture = http
-        let previous = AuthManager()
+        let previous = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         login(previous)
-        let restored = AuthManager()
+        let restored = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         await restored.initialize()
         XCTAssertTrue(restored.isAuthenticated)
         XCTAssertEqual(restored.captureContext()?.pushScope, previous.captureContext()?.pushScope)
@@ -377,7 +377,7 @@ final class PushSetupOrderingTests: XCTestCase {
     func testRetryDoesNotPromptForDeniedPermission() async {
         let http = OrderedSetupHTTP()
         OrderedSetupURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -410,7 +410,7 @@ extension PushSetupOrderingTests {
         let replacement = OrderedSetupHTTP()
         defer { original.cancel(); replacement.cancel() }
         OrderedSetupURLProtocol.fixture = original
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [OrderedSetupURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let originalGeneration = auth.authenticationGeneration

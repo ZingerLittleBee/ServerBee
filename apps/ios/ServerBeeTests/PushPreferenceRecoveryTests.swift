@@ -165,7 +165,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
     func testRejectedSaveRemainsVisibleAfterOldReadsAndRetryUntilSuccessfulSave() async throws {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -206,7 +206,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
                 let http = PreferenceRecoveryHTTP()
                 if !currentAdmin { http.demote() }
                 PreferenceRecoveryURLProtocol.fixture = http
-                let auth = AuthManager()
+                let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
                 auth.clearAuth()
                 login(auth)
                 let system = TestPushSystem()
@@ -262,7 +262,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
     func testEqualPreferencesAtOriginalRevisionCannotResolveFailedSave() async throws {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -285,7 +285,7 @@ extension PushPreferenceRecoveryTests {
     func testDemotionCannotConfirmForbiddenIntentAtNewerRegistrationRevision() async throws {
         let http = PreferenceRecoveryHTTP(security: true)
         PreferenceRecoveryURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -324,7 +324,7 @@ extension PushPreferenceRecoveryTests {
         let replacement = PreferenceRecoveryHTTP()
         defer { original.cancel(); replacement.cancel() }
         PreferenceRecoveryURLProtocol.fixture = original
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -367,7 +367,7 @@ extension PushPreferenceRecoveryTests {
     func testRegistrationRecoveryDoesNotHideUnsavedPreferences() async throws {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -414,7 +414,7 @@ extension PushPreferenceRecoveryTests {
     func testSuccessOptInAndOptOutRequireConfirmationAndKeepRejectedDraftVisible() async throws {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
@@ -449,7 +449,7 @@ extension PushPreferenceRecoveryTests {
     func testTaskSubscriptionsUseCurrentServerPermissionWhenSavingAfterDemotion() async throws {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [PreferenceRecoveryURLProtocol.self]))
         auth.clearAuth()
         login(auth)
         let manager = manager(auth, system: TestPushSystem())

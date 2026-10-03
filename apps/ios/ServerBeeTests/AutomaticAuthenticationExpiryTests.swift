@@ -56,7 +56,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
     }
 
     private func assertAutomaticLogout(kind: String, legacy: Bool, loseFirstRefresh: Bool) async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         auth.clearAuth()
         signIn(auth, legacy: legacy)
         let context = try XCTUnwrap(auth.captureContext())
@@ -112,7 +112,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
     }
 
     func testAutomaticExpiryCleanupCannotClearOrRevokeReplacementLogin() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(auth)
         let log = AuthenticationRequestLog()
         let cleanupStarted = expectation(description: "original revocation is in flight")
@@ -149,7 +149,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
     }
 
     func testLateOld401CannotRefreshOrClearReplacementLogin() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(auth)
         let log = AuthenticationRequestLog()
         let started = expectation(description: "old ordinary request in flight")
@@ -175,7 +175,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
 
     func testReconnectExpiryRevokesAfterCommittedResponseLoss() async throws {
         for legacy in [false, true] {
-            let auth = AuthManager()
+            let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
             signIn(auth, legacy: legacy)
             let log = AuthenticationRequestLog()
             AuthenticationURLProtocol.handler = { request in
@@ -200,7 +200,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
     }
 
     func testRejectedOldServerLogoutFallbackCannotReenterExpiryOrDiscardCredentials() async throws {
-        let auth = AuthManager()
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
         signIn(auth, legacy: true)
         let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in

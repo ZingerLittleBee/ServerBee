@@ -28,10 +28,13 @@ private final class MemoryAuthentication: MobileAuthenticationStorage {
 
 @MainActor
 final class PendingSessionRevocationTests: XCTestCase {
+    private let cleanupSession = APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self])
+
     override func setUp() async throws { URLProtocol.registerClass(AuthenticationURLProtocol.self) }
     override func tearDown() async throws {
         AuthenticationURLProtocol.handler = nil
         AuthenticationURLProtocol.cancelPending()
+        cleanupSession.invalidateAndCancel()
         URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthManager().clearAuth()
         try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
@@ -49,7 +52,8 @@ final class PendingSessionRevocationTests: XCTestCase {
     func testOfflineLogoutRestartsSignedOutAndReplaysOnlyOriginalDeletionProof() async throws {
         let journal = MemorySessionRevocations()
         let normal = MemoryAuthentication()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth)
         AuthenticationURLProtocol.handler = { $0.loseResponse() }
         let context = try XCTUnwrap(auth.captureContext())
@@ -68,7 +72,8 @@ final class PendingSessionRevocationTests: XCTestCase {
             XCTAssertEqual(body["expected_session_id"] as? String, "11111111-1111-4111-8111-111111111111")
             request.respond(200)
         }
-        let restarted = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let restarted = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         await restarted.initialize()
         XCTAssertFalse(restarted.isAuthenticated)
         XCTAssertTrue(journal.values.isEmpty)
@@ -77,7 +82,8 @@ final class PendingSessionRevocationTests: XCTestCase {
     func testLegacyOfflineLogoutPreservesNormalCredentialsAndReportsMigrationBlocker() async throws {
         let journal = MemorySessionRevocations()
         let normal = MemoryAuthentication()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth, confirmed: false)
         AuthenticationURLProtocol.handler = { $0.loseResponse() }
         await auth.endSession(context: try XCTUnwrap(auth.captureContext()))
@@ -90,7 +96,8 @@ final class PendingSessionRevocationTests: XCTestCase {
     func testJournalFailureCannotDiscardTheOnlyConfirmedProof() async throws {
         let journal = MemorySessionRevocations()
         let normal = MemoryAuthentication()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth)
         journal.failure = AuthError.cleanupCapacity
         AuthenticationURLProtocol.handler = { request in XCTFail("No destructive network step before durable save"); request.respond(500) }
@@ -104,7 +111,8 @@ final class PendingSessionRevocationTests: XCTestCase {
         let journal = MemorySessionRevocations()
         let normal = MemoryAuthentication()
         normal.failWrite = true
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth)
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(normal.value)
@@ -115,7 +123,8 @@ final class PendingSessionRevocationTests: XCTestCase {
     func testUnconfirmedBootstrapCausesNoSettingsWriteOrRelayRegistration() async throws {
         let journal = MemorySessionRevocations()
         let normal = MemoryAuthentication()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth, confirmed: false)
         let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in
@@ -152,7 +161,8 @@ final class PendingSessionRevocationTests: XCTestCase {
         XCTAssertThrowsError(try store.requireLoginCapacity())
         let before = journal.values
         AuthenticationURLProtocol.handler = { $0.respond(307) }
-        let auth = AuthManager(revocations: store, authenticationStorage: MemoryAuthentication())
+        let auth = AuthManager(revocations: store, authenticationStorage: MemoryAuthentication(),
+            cleanupSession: cleanupSession)
         await auth.retryPendingRevocations()
         XCTAssertEqual(journal.values, before)
         AuthenticationURLProtocol.handler = { $0.respond(401) }
@@ -162,7 +172,8 @@ final class PendingSessionRevocationTests: XCTestCase {
     func testUnreadableSnapshotBlocksLoginWithoutOverwritingOrSendingCredentials() async {
         let normal = MemoryAuthentication()
         normal.failRead = true
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         await auth.initialize()
         XCTAssertFalse(auth.isAuthenticated)
         AuthenticationURLProtocol.handler = { request in XCTFail("A failed auth read must block login HTTP"); request.respond(200) }
@@ -179,7 +190,8 @@ final class PendingSessionRevocationTests: XCTestCase {
     func testRefreshWriteFailurePreservesTheOriginalAtomicIdentityAndProof() async throws {
         let normal = MemoryAuthentication()
         let journal = MemorySessionRevocations()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth)
         normal.failWrite = true
         let response = Data("""
@@ -198,7 +210,8 @@ final class PendingSessionRevocationTests: XCTestCase {
     func testHeldOldReplayNeverUsesReplacementCredentialsOrClearsItsRecord() async throws {
         let normal = MemoryAuthentication()
         let journal = MemorySessionRevocations()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth)
         let started = expectation(description: "original proof held in flight")
         let log = AuthenticationRequestLog()
@@ -227,7 +240,8 @@ final class PendingSessionRevocationTests: XCTestCase {
 extension PendingSessionRevocationTests {
     func testBootstrapPersistsProposalBeforeRefreshAndConfirmsBeforeFirstSettingsPut() async throws {
         let normal = MemoryAuthentication()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth, confirmed: false)
         let log = AuthenticationRequestLog()
         let entered = expectation(description: "bootstrap request held before its response")
@@ -281,13 +295,19 @@ extension PendingSessionRevocationTests {
         }
         let record = PendingSessionRevocation(id: UUID(), serverUrl: "https://logout.test", userId: "alice",
             installationId: "installation", mobileSessionId: UUID().uuidString, proof: "deletion-alice")
-        try await APIClient.revokeSavedSession(record)
+        let configuration = cleanupSession.configuration
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertNil(configuration.urlCredentialStorage)
+        XCTAssertNil(configuration.urlCache)
+        try await APIClient.revokeSavedSession(record, session: cleanupSession)
     }
 
     func testOldLogoutCompletionCannotEraseAReplacementLoginFailure() async throws {
         let normal = MemoryAuthentication()
         let journal = MemorySessionRevocations()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth)
         let started = expectation(description: "old logout held")
         let log = AuthenticationRequestLog()
@@ -306,7 +326,8 @@ extension PendingSessionRevocationTests {
 
     func testMalformedBootstrapIdentityCannotCreatePushOwnership() async throws {
         let normal = MemoryAuthentication()
-        let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal)
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
         login(auth, confirmed: false)
         AuthenticationURLProtocol.handler = { request in
             XCTAssertEqual(request.request.url?.path, "/api/mobile/auth/refresh")
@@ -369,18 +390,22 @@ extension PendingSessionRevocationTests {
                 } else {
                     XCTAssertEqual(request.request.httpMethod, "GET", "An admitted test cannot be posted again after migration")
                     XCTAssertEqual(request.request.url?.path, "/api/mobile/push/test/" + event)
-                    request.respond(200, data: Data("{\"data\":{\"event_id\":\"\(event)\",\"outcome\":\"pending\",\"reason\":\"Fixture\"}}".utf8))
+                    let reply = "{\"data\":{\"event_id\":\"\(event)\",\"outcome\":\"pending\",\"reason\":\"Fixture\","
+                        + "\"presentation\":\"unobserved\"}}"
+                    request.respond(200, data: Data(reply.utf8))
                 }
             }
             let normal = MemoryAuthentication()
             let journal = PendingSessionRevocations(storage: MemorySessionRevocations())
-            let first = AuthManager(revocations: journal, authenticationStorage: normal)
+            let first = AuthManager(revocations: journal, authenticationStorage: normal,
+                cleanupSession: cleanupSession)
             await first.initialize()
             XCTAssertTrue(first.isAuthenticated)
             XCTAssertEqual(first.captureContext()?.pushScope, old.pushScope)
             XCTAssertNotNil(normal.value?.confirmedDeletionProof)
             XCTAssertEqual(normal.value?.revocationToken, legacyProof ?? "legacy-refresh")
-            let restarted = AuthManager(revocations: journal, authenticationStorage: normal)
+            let restarted = AuthManager(revocations: journal, authenticationStorage: normal,
+                cleanupSession: cleanupSession)
             await restarted.initialize()
             XCTAssertEqual(restarted.authenticationGeneration, first.authenticationGeneration)
             XCTAssertEqual(restarted.captureContext()?.pushScope, old.pushScope)
@@ -392,7 +417,9 @@ extension PendingSessionRevocationTests {
             let delivery = PushTestDelivery(storage: storage)
             delivery.configure(apiClient: api)
             await delivery.refresh(setup: nil)
+            XCTAssertNil(delivery.errorMessage)
             XCTAssertEqual(delivery.result?.eventId, event)
+            XCTAssertEqual(delivery.result?.presentation, "unobserved")
             XCTAssertEqual(log.snapshot().filter { $0.url?.path.hasPrefix("/api/mobile/push/test") == true }.count, 1)
         }
     }
@@ -400,7 +427,8 @@ extension PendingSessionRevocationTests {
     func testNoContextLogoutCannotClearLoginCreatedWhileClosingOrUnregistering() async {
         for heldStep in ["close", "unregister"] {
             let normal = MemoryAuthentication()
-            let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal)
+            let auth = AuthManager(revocations: PendingSessionRevocations(storage: MemorySessionRevocations()), authenticationStorage: normal,
+                cleanupSession: cleanupSession)
             let started = expectation(description: "nil-context logout held at " + heldStep)
             let gate = AsyncStream<Void>.makeStream()
             let logout = Task {
