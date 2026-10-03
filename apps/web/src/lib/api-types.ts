@@ -2358,6 +2358,7 @@ export interface components {
             trigger_count: number;
         };
         AlertEventResponse: {
+            alert_key: string;
             /** Format: int32 */
             count: number;
             /** @description first_triggered_at for firing, resolved_at for resolved */
@@ -3400,7 +3401,7 @@ export interface components {
             device_token: string;
         };
         PushSetupResponse: {
-            /** @description Setup ships before category delivery, which has its own acceptance gate. */
+            /** @description Alert trigger and recovery delivery is available through subscriptions. */
             delivery_available: boolean;
             /** Format: date-time */
             grant_expires_at?: string | null;
@@ -3411,7 +3412,7 @@ export interface components {
             revision: number;
             /** @description Whether the current account role permits security subscriptions. */
             security_allowed: boolean;
-            /** @description Only the current-installation tracer bullet is enabled in this release. */
+            /** @description A test is scoped to the authenticated installation. */
             test_available: boolean;
         };
         RateLimitEntryDto: {
@@ -4601,7 +4602,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Alert key in the format `rule_id:server_id` */
+                /** @description Versioned complete alert key from the event list; legacy rule_id:server_id selects only the general dimension */
                 alert_key: string;
             };
             cookie?: never;

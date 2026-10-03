@@ -199,3 +199,27 @@ lost accepted replies, old saved metadata, restart, definite 404, conflicting la
 admission and previous-account completions. `user_mutations_wait_for_outbox_writer_before_reading_revocation_guards`
 holds a real SQLite outbox writer while authenticated user DELETE/password/role
 operations start; each must wait successfully and prevent later eligible sends.
+
+
+## Alert subscription acceptance (#201)
+
+Run the Server `mobile_push_integration` tests whose names start with `alert_`,
+plus `event_alerts_enqueue_general_category_but_security_matches_do_not`.
+They use HTTP-created rules, subscriptions and authenticated sessions, migrated
+SQLite, production evaluation, and the production outbox worker. Only the
+external Relay HTTP boundary is substituted. The shared fixed alert-envelope
+vector is checked by Rust and Swift; `AlertPushNavigationTests` uses the actual
+notification extension for live-time trigger/recovery rendering and the early
+delegate/router path for cold taps. Run iOS tests once in English and once with
+`-AppleLanguages (zh-Hans)` to observe both localized titles and bodies.
+
+On the isolated signed real device, enable **Alerts and recoveries**, then
+verify a trigger and recovery without a notification group in foreground,
+background and terminated states. Record provider acceptance, observed banner,
+and authenticated alert-detail navigation separately. Verify old-account and
+old-deployment taps cannot navigate; delete the rule or rearm the alert before
+tapping an old cycle and verify **Alert not found** / **Back to alerts**. Unsubscribe
+before dispatch and confirm that installation receives no later eligible send;
+a second subscribed installation must still receive its own event. Verify
+maintenance, disabled rules and repeat suppression against external-channel
+behavior. Genuine App Attest and APNs presentation remain separate live evidence.

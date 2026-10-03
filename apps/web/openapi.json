@@ -277,7 +277,7 @@
           {
             "name": "alert_key",
             "in": "path",
-            "description": "Alert key in the format `rule_id:server_id`",
+            "description": "Versioned complete alert key from the event list; legacy rule_id:server_id selects only the general dimension",
             "required": true,
             "schema": {
               "type": "string"
@@ -8371,6 +8371,7 @@
       "AlertEventResponse": {
         "type": "object",
         "required": [
+          "alert_key",
           "rule_id",
           "rule_name",
           "server_id",
@@ -8380,6 +8381,9 @@
           "count"
         ],
         "properties": {
+          "alert_key": {
+            "type": "string"
+          },
           "count": {
             "type": "integer",
             "format": "int32"
@@ -12220,7 +12224,7 @@
         "properties": {
           "delivery_available": {
             "type": "boolean",
-            "description": "Setup ships before category delivery, which has its own acceptance gate."
+            "description": "Alert trigger and recovery delivery is available through subscriptions."
           },
           "grant_expires_at": {
             "type": [
@@ -12248,7 +12252,7 @@
           },
           "test_available": {
             "type": "boolean",
-            "description": "Only the current-installation tracer bullet is enabled in this release."
+            "description": "A test is scoped to the authenticated installation."
           }
         }
       },

@@ -23,8 +23,9 @@ struct PushContent: Codable, Sendable, Equatable {
     let eventId: String
     let createdAt: Int64
     let expiresAt: Int64
+    var alert: AlertPushTarget?
     enum CodingKeys: String, CodingKey {
-        case kind
+        case kind, alert
         case deploymentId = "deployment_id"
         case userId = "user_id"
         case installationId = "installation_id"
@@ -39,6 +40,27 @@ struct PushContent: Codable, Sendable, Equatable {
             let data = try encoder.encode([deploymentId, userId, installationId])
             return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         }
+    }
+}
+
+struct AlertPushTarget: Codable, Sendable, Equatable {
+    let alertKey: String
+    let status: String
+    let ruleName: String
+    let serverName: String
+    enum CodingKeys: String, CodingKey {
+        case alertKey = "alert_key"
+        case status
+        case ruleName = "rule_name"
+        case serverName = "server_name"
+    }
+    var isValid: Bool {
+        guard ["firing", "resolved"].contains(status), alertKey.hasPrefix("v1."), alertKey.count <= 4099 else { return false }
+        var encoded = String(alertKey.dropFirst(3)).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        encoded += String(repeating: "=", count: (4 - encoded.count % 4) % 4)
+        guard let data = Data(base64Encoded: encoded), let parts = try? JSONDecoder().decode([String].self, from: data),
+              parts.count == 4, !parts[0].isEmpty, !parts[1].isEmpty, !parts[3].isEmpty else { return false }
+        return true
     }
 }
 
@@ -73,7 +95,8 @@ enum PushEnvelopeDecoder {
         let sealed = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: ciphertext.dropLast(16), tag: ciphertext.suffix(16))
         let bytes = try AES.GCM.open(sealed, using: SymmetricKey(data: secret), authenticating: aad)
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
-        guard content.kind == "test", content.deploymentId == key.deploymentId, content.userId == key.userId,
+        let validKind = (content.kind == "test" && content.alert == nil) || (content.kind == "alert" && content.alert?.isValid == true)
+        guard validKind, content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
               UUID(uuidString: content.eventId) != nil,
               content.expiresAt > now, content.createdAt <= now + 60,
@@ -132,8 +155,13 @@ enum PushNotificationRenderer {
               let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key, now: now),
               let targetData = try? JSONEncoder().encode(content),
               let target = try? JSONSerialization.jsonObject(with: targetData) else { return result }
-        result.title = String(localized: "Test notification")
-        result.body = String(localized: "Your encrypted ServerBee notification is ready.")
+        if let alert = content.alert {
+            result.title = alert.status == "resolved" ? String(localized: "Alert recovered") : String(localized: "Alert triggered")
+            result.body = String(format: String(localized: "%@ on %@"), alert.ruleName, alert.serverName)
+        } else {
+            result.title = String(localized: "Test notification")
+            result.body = String(localized: "Your encrypted ServerBee notification is ready.")
+        }
         result.userInfo = ["serverbee_target": target, "serverbee_key_id": key.keyId, "serverbee_envelope": object]
         return result
     }

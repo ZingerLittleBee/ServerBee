@@ -13,7 +13,7 @@ struct NotificationSetupView: View {
                     "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
                     "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
                 ))
-                Text("This build supports encrypted test notifications. Category delivery is still being implemented.")
+                Text("Alert triggers and recoveries are available. Security and task delivery are still being implemented.")
                     .foregroundStyle(.secondary)
             } header: { Text("Mobile notification privacy") }
 
@@ -24,6 +24,10 @@ struct NotificationSetupView: View {
                 }
                 Toggle("Final task failures", isOn: $draft.taskFailure)
                 Toggle("Successful task runs", isOn: $draft.taskSuccess)
+                if manager.unconfirmedPreferences != nil {
+                    Text("Subscription changes are not saved. Retry to confirm them with the Server.")
+                        .foregroundStyle(.secondary)
+                }
                 if manager.confirmed?.preferences.enabled == true {
                     Button("Save subscriptions") { Task { await manager.savePreferences(draft) } }
                     Button("Disable notifications", role: .destructive) {

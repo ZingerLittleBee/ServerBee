@@ -382,7 +382,7 @@ async fn verified_setup_requires_explicit_intent_and_preserves_refresh_binding()
     let confirmed = status_http(&client, &base, access).await;
     assert_eq!(confirmed["registered"], true);
     assert_eq!(confirmed["revision"], 2);
-    assert_eq!(confirmed["delivery_available"], false);
+    assert_eq!(confirmed["delivery_available"], true);
     assert!(confirmed.get("grant_token").is_none());
     assert!(
         device_token::Entity::find()
@@ -559,7 +559,7 @@ async fn demoted_administrator_can_save_permitted_subscriptions_and_disable_setu
         assert_eq!(saved["revision"], 3);
         assert_eq!(saved["security_allowed"], false);
         assert_eq!(saved["registered"], enabled);
-        assert_eq!(saved["delivery_available"], false);
+        assert_eq!(saved["delivery_available"], true);
         assert_eq!(status_http(&client, &base, access).await, saved);
         let row = registration::Entity::find_by_id("demoted-install")
             .one(&state.db)
@@ -2437,4 +2437,516 @@ async fn user_mutations_wait_for_outbox_writer_before_reading_revocation_guards(
         );
         assert!(relay.requests().await.is_empty(), "{operation}");
     }
+}
+
+// Alert subscriptions exercise real HTTP setup, migrated SQLite, production
+// evaluation and durable dispatch. Only the Relay network boundary is replaced.
+async fn alert_http_fixture(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+    mode: &str,
+) -> (String, String) {
+    let response = client.post(format!("{base}/api/servers")).bearer_auth(admin)
+        .json(&serde_json::json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"Private alert Server"}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let server = response.json::<serde_json::Value>().await.unwrap()["data"]["server_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    set_alert_expiration(client, base, admin, &server, true).await;
+    let response = client
+        .post(format!("{base}/api/alert-rules"))
+        .bearer_auth(admin)
+        .json(
+            &serde_json::json!({"name":"Private expiration rule","enabled":true,"trigger_mode":mode,
+            "cover_type":"include","server_ids":[&server],
+            "rules":[{"rule_type":"expiration","duration":7}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let rule = response.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (server, rule)
+}
+async fn set_alert_expiration(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+    server: &str,
+    firing: bool,
+) {
+    let response = client.put(format!("{base}/api/servers/{server}")).bearer_auth(admin)
+        .json(&serde_json::json!({"expired_at":(Utc::now()+ChronoDuration::days(if firing {1} else {90})).to_rfc3339()}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+}
+async fn evaluate_alerts(state: &AppState) {
+    serverbee_server::service::alert::AlertService::evaluate_all(
+        &state.db,
+        &state.config,
+        &state.agent_manager,
+        &state.alert_state_manager,
+    )
+    .await
+    .unwrap();
+}
+async fn alert_jobs(state: &AppState) -> Vec<serverbee_server::entity::mobile_push_outbox::Model> {
+    use serverbee_server::entity::mobile_push_outbox as outbox;
+    outbox::Entity::find()
+        .filter(outbox::Column::Category.eq("alert"))
+        .all(&state.db)
+        .await
+        .unwrap()
+}
+fn decrypt_alert_envelope(envelope: &serde_json::Value) -> serde_json::Value {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use ring::aead;
+    let key = STANDARD
+        .decode("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+        .unwrap();
+    let nonce: [u8; 12] = STANDARD
+        .decode(envelope["nonce"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let mut ciphertext = STANDARD
+        .decode(envelope["ciphertext"].as_str().unwrap())
+        .unwrap();
+    let aad = format!(
+        "ServerBee.Push.v1|{}|{}",
+        envelope["key_id"].as_str().unwrap(),
+        envelope["identity"].as_str().unwrap()
+    );
+    let key = aead::LessSafeKey::new(aead::UnboundKey::new(&aead::AES_256_GCM, &key).unwrap());
+    let bytes = key
+        .open_in_place(
+            aead::Nonce::assume_unique_for_key(nonce),
+            aead::Aad::from(aad.as_bytes()),
+            &mut ciphertext,
+        )
+        .unwrap();
+    serde_json::from_slice(bytes).unwrap()
+}
+async fn wait_alert_dispatch(state: &AppState) {
+    for _ in 0..100 {
+        if alert_jobs(state)
+            .await
+            .iter()
+            .all(|j| !matches!(j.outcome.as_str(), "pending" | "retryable"))
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("Alert jobs did not reach a terminal result");
+}
+
+#[tokio::test]
+async fn alert_subscriptions_fan_out_trigger_recovery_without_group_and_open_exact_cycle() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "alert-operator").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let member = login_http(&client, &base, "member", "alert-device-a").await;
+    let second = login_http(&client, &base, "member", "alert-device-b").await;
+    queued_register(
+        &client,
+        &base,
+        member["access_token"].as_str().unwrap(),
+        "device-a",
+    )
+    .await;
+    queued_register(
+        &client,
+        &base,
+        second["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    let unsubscribed = login_http(&client, &base, "member", "alert-unsubscribed").await;
+    let unsubscribed_access = unsubscribed["access_token"].as_str().unwrap();
+    queued_register(&client, &base, unsubscribed_access, "device-b").await;
+    let mut prefs = intent(false, true);
+    prefs["alerts"] = serde_json::json!(false);
+    assert_eq!(
+        preferences_http(&client, &base, unsubscribed_access, 2, prefs)
+            .await
+            .status(),
+        200
+    );
+    let (server, rule) = alert_http_fixture(&client, &base, admin, "once").await;
+    evaluate_alerts(&state).await;
+    evaluate_alerts(&state).await;
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(jobs.len(), 3, "Once mode suppresses repeated evaluations");
+    assert_eq!(
+        jobs[0].event_id, jobs[1].event_id,
+        "One logical transition per installation"
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_str(jobs[0].envelope.as_deref().unwrap()).unwrap();
+    let content = decrypt_alert_envelope(&envelope);
+    assert_eq!(content["kind"], "alert");
+    assert_eq!(content["alert"]["status"], "firing");
+    assert_eq!(
+        content["expires_at"].as_i64().unwrap() - content["created_at"].as_i64().unwrap(),
+        1800
+    );
+    let key = content["alert"]["alert_key"].as_str().unwrap().to_owned();
+    let detail = client
+        .get(format!("{base}/api/alert-events/{key}"))
+        .bearer_auth(member["access_token"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(detail.status(), 200);
+    let detail = detail.json::<serde_json::Value>().await.unwrap();
+    assert_eq!(detail["data"]["rule_id"], rule);
+    assert_eq!(detail["data"]["server_id"], server);
+    let list = client
+        .get(format!("{base}/api/alert-events"))
+        .bearer_auth(admin)
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(list["data"][0]["alert_key"], key);
+    for job in &jobs {
+        let ciphertext = job.envelope.as_ref().unwrap();
+        for forbidden in [
+            "Private alert Server",
+            "Private expiration rule",
+            "rule_id",
+            "server_id",
+            "deployment_id",
+            "content_key",
+        ] {
+            assert!(
+                !ciphertext.contains(forbidden),
+                "No plaintext notification data in queue envelope"
+            );
+        }
+    }
+    set_alert_expiration(&client, &base, admin, &server, false).await;
+    evaluate_alerts(&state).await;
+    evaluate_alerts(&state).await;
+    let recovery_jobs = alert_jobs(&state).await;
+    assert_eq!(recovery_jobs.len(), 6, "Recovery is edge-triggered");
+    let recovered = recovery_jobs
+        .iter()
+        .find(|j| j.event_id != jobs[0].event_id)
+        .unwrap();
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(recovered.envelope.as_deref().unwrap()).unwrap(),
+    );
+    assert_eq!(content["alert"]["status"], "resolved");
+    assert_eq!(content["alert"]["alert_key"], key);
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_alert_dispatch(&state).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), 6);
+    // Restart must not replay accepted logical transitions.
+    let restarted = AppState::new(state.db.clone(), state.config.clone())
+        .await
+        .unwrap();
+    evaluate_alerts(&restarted).await;
+    assert_eq!(alert_jobs(&restarted).await.len(), 6);
+    set_alert_expiration(&client, &base, admin, &server, true).await;
+    evaluate_alerts(&restarted).await;
+    assert_eq!(
+        client
+            .get(format!("{base}/api/alert-events/{key}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404,
+        "Old cycle cannot open the new cycle"
+    );
+    assert_eq!(
+        client
+            .delete(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/api/alert-events/{key}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+}
+
+#[tokio::test]
+async fn alert_subscription_disabled_maintenance_and_always_suppression_preserve_gates() {
+    let (base, state, _tmp, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "gates-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, rule) = alert_http_fixture(&client, &base, admin, "always").await;
+    let response = client
+        .put(format!("{base}/api/alert-rules/{rule}"))
+        .bearer_auth(admin)
+        .json(&serde_json::json!({"enabled":false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    evaluate_alerts(&state).await;
+    assert!(alert_jobs(&state).await.is_empty());
+    assert_eq!(
+        client
+            .put(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .json(&serde_json::json!({"enabled":true}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let response=client.post(format!("{base}/api/maintenances")).bearer_auth(admin).json(&serde_json::json!({"title":"Planned work",
+        "start_at":(Utc::now()-ChronoDuration::minutes(5)).to_rfc3339(),"end_at":(Utc::now()+ChronoDuration::minutes(5)).to_rfc3339(),
+        "server_ids_json": [&server],"is_public":false})).send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let maintenance = response.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    evaluate_alerts(&state).await;
+    assert!(alert_jobs(&state).await.is_empty());
+    assert_eq!(
+        client
+            .delete(format!("{base}/api/maintenances/{maintenance}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    evaluate_alerts(&state).await;
+    evaluate_alerts(&state).await;
+    assert_eq!(
+        alert_jobs(&state).await.len(),
+        1,
+        "Five-minute debounce remains active"
+    );
+    // Recovery deliberately retains the existing evaluator's maintenance behavior.
+    set_alert_expiration(&client, &base, admin, &server, false).await;
+    evaluate_alerts(&state).await;
+    assert_eq!(alert_jobs(&state).await.len(), 2);
+}
+
+#[tokio::test]
+async fn alert_unsubscribe_before_dispatch_stops_only_that_installation() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "unsubscribe-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let a = login_http(&client, &base, "member", "unsubscribe-a").await;
+    let b = login_http(&client, &base, "member", "unsubscribe-b").await;
+    let access = a["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    queued_register(
+        &client,
+        &base,
+        b["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    alert_http_fixture(&client, &base, admin, "once").await;
+    evaluate_alerts(&state).await;
+    let mut prefs = intent(false, true);
+    prefs["alerts"] = serde_json::json!(false);
+    assert_eq!(
+        preferences_http(&client, &base, access, 1, prefs.clone())
+            .await
+            .status(),
+        409,
+        "Failed save cannot replace confirmed subscription"
+    );
+    assert_eq!(
+        status_http(&client, &base, access).await["preferences"]["alerts"],
+        true
+    );
+    assert_eq!(
+        preferences_http(&client, &base, access, 2, prefs)
+            .await
+            .status(),
+        200
+    );
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_alert_dispatch(&state).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), 1);
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(
+        jobs.iter()
+            .find(|j| j.installation_id == "unsubscribe-a")
+            .unwrap()
+            .reason,
+        "Ineligible"
+    );
+    assert_eq!(
+        jobs.iter()
+            .find(|j| j.installation_id == "unsubscribe-b")
+            .unwrap()
+            .outcome,
+        "accepted"
+    );
+}
+
+#[tokio::test]
+async fn event_alerts_enqueue_general_category_but_security_matches_do_not() {
+    let (base, state, _tmp, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "event-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, _) = alert_http_fixture(&client, &base, admin, "once").await;
+    for kind in ["ip_changed", "ssh_brute_force_detected"] {
+        let created = client.post(format!("{base}/api/alert-rules")).bearer_auth(admin)
+            .json(&serde_json::json!({"name":kind,"enabled":true,"trigger_mode":"once", "cover_type":"all",
+                "rules":[{"rule_type":kind}]})).send().await.unwrap();
+        assert_eq!(created.status(), 200);
+        serverbee_server::service::alert::AlertService::check_event_rules(
+            &state.db,
+            &state.config,
+            &state.alert_state_manager,
+            &server,
+            kind,
+        )
+        .await
+        .unwrap();
+    }
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(
+        jobs.len(),
+        1,
+        "Security is never fanned out through general alert subscriptions"
+    );
+    let content = decrypt_alert_envelope(
+        &serde_json::from_str(jobs[0].envelope.as_deref().unwrap()).unwrap(),
+    );
+    assert_eq!(content["alert"]["rule_name"], "ip_changed");
+}
+
+#[tokio::test]
+async fn alert_detail_complete_identity_distinguishes_event_dimensions() {
+    use serverbee_common::security::{
+        DetectorSource, SecurityEventPayload, SecurityEventType, SecurityEvidence, Severity,
+    };
+    let (base, state, _tmp, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let operator = login_http(&client, &base, "admin", "dimension-admin").await;
+    let admin = operator["access_token"].as_str().unwrap();
+    let (server, _) = alert_http_fixture(&client, &base, admin, "once").await;
+    let created = client
+        .post(format!("{base}/api/alert-rules"))
+        .bearer_auth(admin)
+        .json(
+            &serde_json::json!({"name":"Dimension rule","enabled":true,"cover_type":"all",
+            "rules":[{"rule_type":"ssh_brute_force_detected"}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 200);
+    let rule = created.json::<serde_json::Value>().await.unwrap()["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for ip in ["203.0.113.5", "203.0.113.6"] {
+        state
+            .security_service
+            .record_event(
+                &server,
+                SecurityEventPayload {
+                    event_type: SecurityEventType::SshBruteForce,
+                    severity: Severity::High,
+                    source_ip: ip.into(),
+                    source_port: None,
+                    username: None,
+                    started_at: Utc::now().timestamp() - 60,
+                    ended_at: Utc::now().timestamp(),
+                    first_seen: false,
+                    detector_source: DetectorSource::Journal,
+                    evidence: SecurityEvidence::SshBruteForce {
+                        failed_count: 47,
+                        distinct_users: 1,
+                        sample_users: vec!["root".into()],
+                        invalid_user_count: 0,
+                        window_seconds: 60,
+                        threshold: 10,
+                    },
+                },
+            )
+            .await
+            .unwrap();
+    }
+    let events = client
+        .get(format!("{base}/api/alert-events"))
+        .bearer_auth(admin)
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    let events: Vec<_> = events["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["rule_id"] == rule)
+        .collect();
+    assert_eq!(events.len(), 2);
+    assert_ne!(events[0]["alert_key"], events[1]["alert_key"]);
+    for event in events {
+        let key = event["alert_key"].as_str().unwrap();
+        let detail = client
+            .get(format!("{base}/api/alert-events/{key}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(detail.status(), 200);
+        assert_eq!(
+            detail.json::<serde_json::Value>().await.unwrap()["data"]["alert_key"],
+            key
+        );
+    }
+    assert_eq!(
+        client
+            .get(format!("{base}/api/alert-events/{rule}:{server}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404,
+        "Legacy keys must not select an arbitrary security dimension"
+    );
 }

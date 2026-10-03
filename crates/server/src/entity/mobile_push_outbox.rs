@@ -12,6 +12,7 @@ pub struct Model {
     pub mobile_session_id: String,
     pub registration_revision: i64,
     pub recipient_role: String,
+    pub category: String,
     pub created_at: i64,
     pub expires_at: i64,
     pub envelope: Option<String>,

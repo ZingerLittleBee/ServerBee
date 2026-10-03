@@ -50,7 +50,7 @@ pub fn start(state: Arc<AppState>) -> JoinHandle<()> {
     })
 }
 
-async fn eligible(
+pub(super) async fn eligible(
     txn: &sea_orm::DatabaseTransaction,
     job: &outbox::Model,
 ) -> Result<Option<registration::Model>, AppError> {
@@ -63,6 +63,11 @@ async fn eligible(
             && r.mobile_session_id == job.mobile_session_id
             && r.revision == job.registration_revision
             && r.enabled
+            && match job.category.as_str() {
+                "test" => true,
+                "alert" => r.alerts,
+                _ => false,
+            }
             && r.content_key.is_some()
             && r.grant_token.is_some()
             && r.grant_expires_at.is_some_and(|e| e > now)

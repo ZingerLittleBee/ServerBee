@@ -17893,23 +17893,6 @@
         }
       }
     },
-    "This build supports encrypted test notifications. Category delivery is still being implemented.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This build supports encrypted test notifications. Category delivery is still being implemented."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此版本支持加密测试通知。各类通知投递仍在开发中。"
-          }
-        }
-      }
-    },
     "Encrypted test queued on the Server. Provider acceptance is pending.": {
       "localizations": {
         "en": {
@@ -18002,6 +17985,102 @@
           "stringUnit": {
             "state": "translated",
             "value": "发送状态不保证设备展示，也不保证只展示一次。"
+          }
+        }
+      }
+    },
+    "Alert recovered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alert recovered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告警已恢复"
+          }
+        }
+      }
+    },
+    "Alert triggered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alert triggered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告警已触发"
+          }
+        }
+      }
+    },
+    "%@ on %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ on %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%@）"
+          }
+        }
+      }
+    },
+    "Back to alerts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to alerts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回告警列表"
+          }
+        }
+      }
+    },
+    "Alert triggers and recoveries are available. Security and task delivery are still being implemented.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alert triggers and recoveries are available. Security and task delivery are still being implemented."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现已支持告警触发和恢复通知。安全与任务通知仍在开发中。"
+          }
+        }
+      }
+    },
+    "Subscription changes are not saved. Retry to confirm them with the Server.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscription changes are not saved. Retry to confirm them with the Server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅更改尚未保存。请重试以获取 Server 确认。"
           }
         }
       }

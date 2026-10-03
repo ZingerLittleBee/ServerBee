@@ -432,6 +432,7 @@ impl AlertStateManager {
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct AlertEventResponse {
+    pub alert_key: String,
     pub rule_id: String,
     pub rule_name: String,
     pub server_id: String,
@@ -637,6 +638,7 @@ impl AlertService {
                 };
                 let resolved_at = s.resolved_at.map(|t| t.to_rfc3339());
                 AlertEventResponse {
+                    alert_key: alert_detail_key(&s),
                     rule_id: s.rule_id.clone(),
                     rule_name: rule_map
                         .get(&s.rule_id)
@@ -824,6 +826,13 @@ impl AlertService {
             .mark_triggered(db, &rule.id, server_id, "")
             .await?;
 
+        if should_notify
+            && let Err(error) =
+                crate::service::mobile_alert_push::enqueue(db, rule, server_id, server_name, false)
+                    .await
+        {
+            tracing::warn!("Could not enqueue mobile alert: {error}");
+        }
         if should_notify && let Some(ref group_id) = rule.notification_group_id {
             let ctx = NotifyContext {
                 server_name: server_name.to_string(),
@@ -863,6 +872,11 @@ impl AlertService {
         server_id: &str,
         server_name: &str,
     ) {
+        if let Err(error) =
+            crate::service::mobile_alert_push::enqueue(db, rule, server_id, server_name, true).await
+        {
+            tracing::warn!("Could not enqueue mobile recovery: {error}");
+        }
         let Some(ref group_id) = rule.notification_group_id else {
             return;
         };
@@ -939,6 +953,17 @@ impl AlertService {
 
         Ok(())
     }
+}
+
+/// Versioned URL-safe identity binds the complete dimension and trigger cycle.
+/// An overwritten cycle must return unavailable rather than a newer alert.
+pub fn alert_detail_key(state: &alert_state::Model) -> String {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let canonical = serde_json::json!([
+        state.rule_id, state.server_id, state.event_key,
+        state.first_triggered_at.to_rfc3339()
+    ]).to_string();
+    format!("v1.{}", URL_SAFE_NO_PAD.encode(canonical.as_bytes()))
 }
 
 // ── Helpers ──
