@@ -15,6 +15,7 @@ final class PushKeychainIsolationTests: XCTestCase {
         URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         KeychainService.delete(for: "fixture-pending-relay-grant")
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     func testLoginAndRefreshKeepCredentialsPrivateAndOnlyContentKeyShared() async throws {
@@ -54,7 +55,8 @@ final class PushKeychainIsolationTests: XCTestCase {
 
         auth.clearAuth()
         XCTAssertNil(SharedPushKeychain.load())
-        for key in [KeychainService.accessTokenKey, KeychainService.refreshTokenKey, KeychainService.revocationTokenKey] {
+        for key in [SavedMobileAuthentication.key, KeychainService.accessTokenKey, KeychainService.refreshTokenKey,
+                    KeychainService.revocationTokenKey, KeychainService.userKey] {
             XCTAssertNil(try read(group: privateGroup, service: "com.serverbee.mobile", account: key))
             XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: key))
         }
@@ -64,18 +66,49 @@ final class PushKeychainIsolationTests: XCTestCase {
         MobileTokenResponse(accessToken: access, accessExpiresInSecs: 900,
                             refreshToken: refresh, refreshExpiresInSecs: 3600, tokenType: "Bearer",
                             user: MobileUser(id: "alice", username: "alice", role: "member"),
-                            revocationToken: "fixture-stable-revocation")
+                            revocationToken: "fixture-stable-revocation", mobileSessionId: "11111111-1111-4111-8111-111111111111")
     }
 
     private func assertPrivateCredentials(privateGroup: String, sharedGroup: String, access: String, refresh: String) throws {
-        for (key, value) in [(KeychainService.accessTokenKey, access), (KeychainService.refreshTokenKey, refresh),
-                             (KeychainService.revocationTokenKey, "fixture-stable-revocation"),
-                             ("fixture-pending-relay-grant", "fixture-grant-secret")] {
-            XCTAssertEqual(try read(group: privateGroup, service: "com.serverbee.mobile", account: key), Data(value.utf8))
-            // Query the complete credential service from the extension's group,
-            // rather than only checking the separate content-key service.
+        let data = try XCTUnwrap(read(group: privateGroup, service: "com.serverbee.mobile", account: SavedMobileAuthentication.key))
+        let saved = try JSONDecoder().decode(SavedMobileAuthentication.self, from: data)
+        XCTAssertEqual(saved.accessToken, access)
+        XCTAssertEqual(saved.refreshToken, refresh)
+        XCTAssertEqual(saved.revocationToken, "fixture-stable-revocation")
+        XCTAssertEqual(saved.confirmedDeletionProof, "fixture-stable-revocation")
+        XCTAssertEqual(saved.mobileSessionId, "11111111-1111-4111-8111-111111111111")
+        XCTAssertEqual(saved.user.id, "alice")
+        XCTAssertEqual(saved.serverUrl, "https://keychain-fixture.test")
+        XCTAssertEqual(saved.installationId, InstallationID.getOrCreate())
+        // The whole authoritative record must be inaccessible to the extension.
+        XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: SavedMobileAuthentication.key))
+        for key in [KeychainService.accessTokenKey, KeychainService.refreshTokenKey,
+                    KeychainService.revocationTokenKey, KeychainService.userKey] {
+            XCTAssertNil(try read(group: privateGroup, service: "com.serverbee.mobile", account: key), "Obsolete credential copies must be deleted")
             XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: key))
         }
+        XCTAssertEqual(try read(group: privateGroup, service: "com.serverbee.mobile", account: "fixture-pending-relay-grant"),
+                       Data("fixture-grant-secret".utf8))
+        XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: "fixture-pending-relay-grant"))
+    }
+
+    func testPendingDeletionProofRemainsPrivateWithoutNormalCredentials() throws {
+        let auth = AuthManager()
+        auth.setServerUrl("https://keychain-fixture.test")
+        auth.handleLoginResponse(tokens(access: "fixture-access", refresh: "fixture-refresh"))
+        let saved = try XCTUnwrap(AuthManager.readAuthentication())
+        let record = try XCTUnwrap(saved.revocation)
+        try PendingSessionRevocations().enqueue(record)
+        auth.clearAuth()
+        let privateGroup = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "PrivateKeychainAccessGroup") as? String)
+        let sharedGroup = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "PushKeychainAccessGroup") as? String)
+        let bytes = try XCTUnwrap(read(group: privateGroup, service: "com.serverbee.mobile", account: PrivateSessionRevocationStorage.key))
+        XCTAssertEqual(try JSONDecoder().decode([PendingSessionRevocation].self, from: bytes), [record])
+        let serialized = try XCTUnwrap(String(data: bytes, encoding: .utf8))
+        XCTAssertFalse(serialized.contains("fixture-access"))
+        XCTAssertFalse(serialized.contains("fixture-refresh"))
+        XCTAssertNil(try read(group: privateGroup, service: "com.serverbee.mobile", account: SavedMobileAuthentication.key))
+        XCTAssertNil(try read(group: sharedGroup, service: "com.serverbee.mobile", account: PrivateSessionRevocationStorage.key))
     }
 
     private func read(group: String, service: String, account: String) throws -> Data? {

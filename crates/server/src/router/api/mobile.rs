@@ -39,6 +39,8 @@ pub struct MobileLoginRequest {
 pub struct MobileRefreshRequest {
     refresh_token: String,
     installation_id: String,
+    /// Persisted by the client before dispatch; accepted only with rotation.
+    revocation_proof: Option<String>,
 }
 
 /// A deletion-only proof for one installation's original mobile session.
@@ -46,6 +48,8 @@ pub struct MobileRefreshRequest {
 pub struct MobileRevokeRequest {
     installation_id: String,
     revocation_token: String,
+    /// Required by durable callers to fence recovery to the original login.
+    expected_session_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -219,13 +223,14 @@ pub async fn mobile_refresh(
     .to_string();
     let user_agent = extract_user_agent(&req_headers);
 
-    let response = MobileAuthService::refresh(
+    let response = MobileAuthService::refresh_with_revocation_proof(
         &state.db,
         &state.config.mobile,
         &body.refresh_token,
         &body.installation_id,
         &ip,
         &user_agent,
+        body.revocation_proof.as_deref(),
     )
     .await?;
 
@@ -272,9 +277,9 @@ pub async fn mobile_logout(
     tag = "mobile-auth",
     request_body = MobileRevokeRequest,
     responses(
-        (status = 200, description = "Original mobile session revoked"),
+        (status = 200, description = "Original mobile session revoked (ok) or confirmed absent (already_absent)"),
         (status = 401, description = "Invalid installation revocation credential"),
-        (status = 422, description = "Missing revocation credential"),
+        (status = 422, description = "Missing credential or invalid expected session UUID"),
     )
 )]
 pub async fn mobile_revoke(
@@ -286,13 +291,14 @@ pub async fn mobile_revoke(
             "installation_id and revocation_token are required".to_string(),
         ));
     }
-    MobileAuthService::revoke_with_credential(
+    let outcome = MobileAuthService::revoke_with_credential_for_session(
         &state.db,
         &body.installation_id,
         &body.revocation_token,
+        body.expected_session_id.as_deref(),
     )
     .await?;
-    ok("ok")
+    ok(outcome)
 }
 
 #[utoipa::path(

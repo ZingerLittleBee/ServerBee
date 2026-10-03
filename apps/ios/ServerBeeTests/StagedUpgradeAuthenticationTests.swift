@@ -11,7 +11,9 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
     override func tearDown() async throws {
         URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthenticationURLProtocol.handler = nil
+        AuthenticationURLProtocol.cancelPending()
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     nonisolated private static func tokens(_ rotation: Int, loginProof: Bool = false) -> Data {
@@ -25,6 +27,7 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
 
     private func restoreOldClient(newServerLogin: Bool, rotations: Int) async throws {
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in
             let count = log.append(request.request)
@@ -83,14 +86,19 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
             switch request.request.url?.path {
             case "/api/mobile/auth/refresh":
                 XCTAssertEqual(Self.body(request.request)["refresh_token"] as? String, proof)
-                XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), proof,
-                               "Proof must be durable before the first upgraded request")
+                XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, proof,
+                               "The legacy fallback stays only in the normal-auth snapshot before refresh")
+                for key in [KeychainService.accessTokenKey, KeychainService.refreshTokenKey,
+                            KeychainService.revocationTokenKey, KeychainService.userKey] {
+                    XCTAssertNil(KeychainService.load(for: key))
+                }
+                XCTAssertNil(KeychainService.load(for: PrivateSessionRevocationStorage.key))
                 request.loseResponse()
             case "/api/mobile/auth/revoke":
                 XCTAssertNil(request.request.value(forHTTPHeaderField: "Authorization"))
                 XCTAssertEqual(Self.body(request.request)["revocation_token"] as? String, proof)
                 XCTAssertEqual(Self.body(request.request)["installation_id"] as? String, installationId)
-                XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), proof,
+                XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, proof,
                                "Keep the original proof until cleanup completes")
                 request.respond(200)
             default: XCTFail("Reachable restoration cleanup must revoke the original login"); request.respond(401)
@@ -101,8 +109,7 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
         XCTAssertFalse(restored.isAuthenticated)
         XCTAssertFalse(restored.isLoading)
         XCTAssertNil(restored.getAccessToken())
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.refreshTokenKey))
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+        XCTAssertNil(try AuthManager.readAuthentication())
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, ["/api/mobile/auth/refresh", "/api/mobile/auth/revoke"])
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "staged-upgrade.test" })
     }
@@ -126,7 +133,9 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
         for _ in 0..<2 {
             _ = try await restored.refreshAccessToken(context: context)
             XCTAssertTrue(restored.isCurrent(context))
-            XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "refresh-3")
+            XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "refresh-3")
+            XCTAssertNil((try? AuthManager.readAuthentication())?.confirmedDeletionProof)
+            XCTAssertTrue(try PendingSessionRevocations().records().isEmpty)
         }
         try await APIClient(authManager: restored).postVoid(
             "/api/mobile/push/register", body: ["device_token": "preserved-registration"], context: context
@@ -152,19 +161,20 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
         let restored = AuthManager()
         let startup = Task { await restored.initialize() }
         await fulfillment(of: [cleanup], timeout: 3)
+        restored.clearAuth()
         restored.setServerUrl("https://replacement.test")
         restored.handleLoginResponse(MobileTokenResponse(
             accessToken: "replacement-access", accessExpiresInSecs: 900,
             refreshToken: "replacement-refresh", refreshExpiresInSecs: 3600,
             tokenType: "Bearer", user: MobileUser(id: "bob", username: "bob", role: "member"),
-            revocationToken: "replacement-proof"
+            revocationToken: "replacement-proof", mobileSessionId: "22222222-2222-4222-8222-222222222222"
         ))
         try XCTUnwrap(log.takeHeld()).respond(200)
         await startup.value
         XCTAssertTrue(restored.isAuthenticated)
         XCTAssertEqual(restored.user?.id, "bob")
         XCTAssertEqual(restored.getAccessToken(), "replacement-access")
-        XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "replacement-proof")
+        XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "replacement-proof")
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "staged-upgrade.test" })
         XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/auth/revoke" }.count, 1)
     }
@@ -172,6 +182,9 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
     func testCurrentSecretRevokesBeforeOverlappingRefreshWithoutBearerFallback() async throws {
         try await restoreOldClient(newServerLogin: true, rotations: 1)
         let auth = AuthManager()
+        // This overlap scenario starts from the last old-client pair. Separate
+        // restoration tests exercise migration of the same legacy Keychain inputs.
+        auth.clearAuth()
         auth.setServerUrl("https://staged-upgrade.test")
         auth.handleLoginResponse(try JSONDecoder.snakeCase.decode(ApiResponse<MobileTokenResponse>.self, from: Self.tokens(1)).data)
         let context = try XCTUnwrap(auth.captureContext())
@@ -201,7 +214,7 @@ final class StagedUpgradeAuthenticationTests: XCTestCase {
         } catch AuthError.staleIdentity { /* Expected original generation rejection. */ }
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(auth.getAccessToken())
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+        XCTAssertNil(try AuthManager.readAuthentication())
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, ["/api/mobile/auth/refresh", "/api/mobile/auth/revoke"])
     }
 

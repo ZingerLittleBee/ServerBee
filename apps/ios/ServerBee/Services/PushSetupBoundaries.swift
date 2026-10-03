@@ -30,7 +30,8 @@ struct NativePushSystem: PushSystemBoundary {
 
 extension MobileAuthenticationContext {
     /// Stable across refresh/restart, distinct for every paired login, including
-    /// replacement logins for the same account. Never send this credential to Relay.
+    /// replacement logins for the same account. Bootstrap keeps the original
+    /// scope credential separate from its new deletion-only capability.
     var pushScope: String {
         let identity = [serverUrl, userId, installationId, revocationToken ?? refreshToken ?? generation.uuidString]
         return SHA256.hash(data: Data(identity.joined(separator: "|").utf8))

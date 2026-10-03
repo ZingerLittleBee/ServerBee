@@ -2781,3 +2781,435 @@ async fn ios_first_upgrade_stale_proof_can_revoke_before_overlapping_refresh() {
         );
     }
 }
+
+// ── Durable, original-session-fenced logout recovery ────────────────────────
+
+fn proposed_revocation_proof(byte: u8) -> String {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    format!("sb-revoke-v1.{}", URL_SAFE_NO_PAD.encode([byte; 32]))
+}
+
+async fn refresh_with_proposal(
+    client: &reqwest::Client,
+    base: &str,
+    tokens: &Value,
+    installation: &str,
+    proof: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/auth/refresh"))
+        .json(&json!({
+            "refresh_token": tokens["data"]["refresh_token"],
+            "installation_id": installation,
+            "revocation_proof": proof,
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn revoke_original_session(
+    client: &reqwest::Client,
+    base: &str,
+    installation: &str,
+    proof: &str,
+    expected_session: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/auth/revoke"))
+        .json(&json!({
+            "installation_id": installation,
+            "revocation_token": proof,
+            "expected_session_id": expected_session,
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Exercise the verified setup ownership table. Legacy /push/register uses a
+/// different ownership policy and cannot establish this logout regression.
+async fn save_verified_push_settings(
+    client: &reqwest::Client,
+    base: &str,
+    tokens: &Value,
+) -> reqwest::Response {
+    client
+        .put(format!("{base}/api/mobile/push/settings"))
+        .bearer_auth(tokens["data"]["access_token"].as_str().unwrap())
+        .json(&json!({
+            "expected_revision": 0,
+            "preferences": {
+                "enabled": true, "alerts": true, "security": false,
+                "task_failure": false, "task_success": false,
+            },
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn durable_logout_absence_ack_releases_verified_ownership_and_preserves_new_login() {
+    use chrono::{Duration, Utc};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{mobile_push_registration, mobile_session, session};
+    use serverbee_server::service::auth::AuthService;
+
+    for expired_original in [false, true] {
+        let (base, tmp) = start_test_server().await;
+        let client = http_client();
+        let original = mobile_admin_token(&client, &base, INST_ID).await;
+        let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+        assert!(uuid::Uuid::parse_str(original_id).is_ok());
+        assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+        let proof = proposed_revocation_proof(19);
+        let response = refresh_with_proposal(&client, &base, &original, INST_ID, &proof).await;
+        assert_eq!(response.status(), 200);
+        let rotated: Value = response.json().await.unwrap();
+        assert_eq!(rotated["data"]["mobile_session_id"], original_id);
+        assert_eq!(rotated["data"]["revocation_token"], proof);
+        // Only the identity and proof persisted before dispatch are needed if
+        // the committed refresh response never reaches the installation.
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        let replacement_id = replacement["data"]["mobile_session_id"].as_str().unwrap();
+        assert_ne!(original_id, replacement_id);
+        let db = registration_db(&tmp).await;
+        let ownership = mobile_push_registration::Entity::find_by_id(INST_ID)
+            .one(&db).await.unwrap().unwrap();
+        assert_eq!(ownership.mobile_session_id, original_id);
+        if expired_original {
+            mobile_session::Entity::update_many()
+                .col_expr(mobile_session::Column::ExpiresAt, Expr::value(Utc::now() - Duration::days(1)))
+                .filter(mobile_session::Column::Id.eq(original_id))
+                .exec(&db).await.unwrap();
+            let visible: Value = client.get(format!("{base}/api/mobile/auth/devices"))
+                .bearer_auth(replacement["data"]["access_token"].as_str().unwrap())
+                .send().await.unwrap().json().await.unwrap();
+            assert!(visible["data"].as_array().unwrap().iter().all(|row| row["id"] != original_id));
+        }
+        assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 403);
+        let hash = AuthService::hash_session_token(&proof);
+        for (installation, candidate, expected) in [
+            ("wrong-installation", proof.as_str(), original_id),
+            (INST_ID, "wrong-proof", original_id),
+            (INST_ID, hash.as_str(), original_id),
+            (INST_ID, proof.as_str(), replacement_id),
+        ] {
+            assert_eq!(revoke_original_session(&client, &base, installation, candidate, expected).await.status(), 401);
+            assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), ownership);
+        }
+        for malformed in ["", "not-a-uuid"] {
+            assert_eq!(revoke_original_session(&client, &base, INST_ID, &proof, malformed).await.status(), 422);
+        }
+        // Concurrent retries are serialized: one authenticated deletion and
+        // one explicit absence ACK, both successful and neither targets B.
+        let (left, right) = tokio::join!(
+            revoke_original_session(&client, &base, INST_ID, &proof, original_id),
+            revoke_original_session(&client, &base, INST_ID, &proof, original_id),
+        );
+        assert_eq!(left.status(), 200);
+        assert_eq!(right.status(), 200);
+        let left: Value = left.json().await.unwrap();
+        let right: Value = right.json().await.unwrap();
+        assert!((left["data"] == "ok" && right["data"] == "already_absent")
+            || (right["data"] == "ok" && left["data"] == "already_absent"));
+        assert!(mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().is_none());
+        assert!(session::Entity::find().filter(session::Column::MobileSessionId.eq(original_id)).one(&db).await.unwrap().is_none());
+        assert!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().is_none());
+        assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+        let replacement_ownership = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
+        assert_eq!(replacement_ownership.mobile_session_id, replacement_id);
+        // Absence ACK is deliberately non-authenticating: the only statement
+        // made is that this exact original identity has no remaining authority.
+        for candidate in [proof.as_str(), hash.as_str(), "unknown-proof"] {
+            let response = revoke_original_session(&client, &base, INST_ID, candidate, original_id).await;
+            assert_eq!(response.status(), 200);
+            assert_eq!(response.json::<Value>().await.unwrap()["data"], "already_absent");
+            assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), replacement_ownership);
+        }
+        assert_eq!(revoke_original_session(&client, &base, INST_ID, &proof, replacement_id).await.status(), 401);
+        for credential in [&proof, &hash] {
+            assert_eq!(client.get(format!("{base}/api/auth/me")).bearer_auth(credential).send().await.unwrap().status(), 401);
+            assert_eq!(client.post(format!("{base}/api/mobile/auth/refresh")).json(&json!({"installation_id": INST_ID, "refresh_token": credential})).send().await.unwrap().status(), 401);
+        }
+        assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+        assert_eq!(refresh_mobile(&client, &base, &replacement).await.status(), 200);
+    }
+}
+
+#[tokio::test]
+async fn durable_logout_failed_deletion_rolls_back_verified_ownership() {
+    use sea_orm::{ConnectionTrait, EntityTrait};
+    use serverbee_server::entity::{mobile_push_registration, mobile_session};
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let proof = original["data"]["revocation_token"].as_str().unwrap();
+    assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    let db = registration_db(&tmp).await;
+    let before = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
+    db.execute_unprepared("CREATE TRIGGER fail_logout_delete BEFORE DELETE ON mobile_sessions BEGIN SELECT RAISE(ABORT, 'delete unavailable'); END").await.unwrap();
+    assert_eq!(revoke_original_session(&client, &base, INST_ID, proof, id).await.status(), 500);
+    assert!(mobile_session::Entity::find_by_id(id).one(&db).await.unwrap().is_some());
+    assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), before);
+    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 403);
+    assert_eq!(client.get(format!("{base}/api/auth/me")).bearer_auth(original["data"]["access_token"].as_str().unwrap()).send().await.unwrap().status(), 200);
+    db.execute_unprepared("DROP TRIGGER fail_logout_delete").await.unwrap();
+    let deleted = revoke_original_session(&client, &base, INST_ID, proof, id).await;
+    assert_eq!(deleted.status(), 200);
+    assert_eq!(deleted.json::<Value>().await.unwrap()["data"], "ok");
+    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+    // Omitted expected ID retains legacy strict credential semantics.
+    assert_eq!(revoke_mobile_with_proof(&client, &base, INST_ID, proof).await.status(), 401);
+}
+
+#[tokio::test]
+async fn durable_logout_absent_original_never_deletes_replacement_with_reused_proof() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{mobile_push_registration, mobile_session};
+    use serverbee_server::service::auth::AuthService;
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let proof = original["data"]["revocation_token"].as_str().unwrap();
+    assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+    assert_eq!(revoke_original_session(&client, &base, INST_ID, proof, original_id).await.status(), 200);
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    let replacement_id = replacement["data"]["mobile_session_id"].as_str().unwrap();
+    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let ownership = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
+    // Deliberate proof reuse must not influence an original-ID absence ACK.
+    mobile_session::Entity::update_many()
+        .col_expr(mobile_session::Column::RevocationTokenHash, Expr::value(AuthService::hash_session_token(proof)))
+        .filter(mobile_session::Column::Id.eq(replacement_id))
+        .exec(&db).await.unwrap();
+    for installation in [INST_ID, "different-installation"] {
+        let response = revoke_original_session(&client, &base, installation, proof, original_id).await;
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.json::<Value>().await.unwrap()["data"], "already_absent");
+        assert!(mobile_session::Entity::find_by_id(replacement_id).one(&db).await.unwrap().is_some());
+        assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), ownership);
+    }
+    assert_eq!(refresh_mobile(&client, &base, &original).await.status(), 401);
+    assert_eq!(refresh_mobile(&client, &base, &replacement).await.status(), 200);
+}
+
+#[tokio::test]
+async fn durable_logout_absence_ack_rejects_dangling_operational_authority() {
+    use sqlx::Connection;
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let absent = uuid::Uuid::new_v4().to_string();
+    let mut fixture = sqlx::SqliteConnection::connect(&format!(
+        "sqlite://{}?mode=rw", tmp.path().join("test.db").display()
+    )).await.unwrap();
+    // Deliberately corrupt a dedicated fixture connection only. Production
+    // retains FK enforcement; the HTTP endpoint must fail closed on old or
+    // externally damaged storage, without deleting unauthenticated artifacts.
+    sqlx::query("PRAGMA foreign_keys=OFF").execute(&mut fixture).await.unwrap();
+    for (insert, count, cleanup) in [
+        (
+            "INSERT INTO sessions (id,user_id,token,ip,user_agent,expires_at,created_at,source,mobile_session_id) SELECT 'orphan-session',user_id,'orphan-hash','','','2999-01-01 00:00:00',CURRENT_TIMESTAMP,'mobile',? FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM sessions WHERE id='orphan-session'",
+            "DELETE FROM sessions WHERE id='orphan-session'",
+        ),
+        (
+            "INSERT INTO device_tokens (id,user_id,mobile_session_id,installation_id,token,created_at,updated_at) SELECT 'orphan-device',user_id,?,'orphan-installation','orphan-token',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM device_tokens WHERE id='orphan-device'",
+            "DELETE FROM device_tokens WHERE id='orphan-device'",
+        ),
+        (
+            "INSERT INTO mobile_push_registrations (installation_id,user_id,mobile_session_id,updated_at) SELECT 'orphan-installation',user_id,?,CURRENT_TIMESTAMP FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM mobile_push_registrations WHERE installation_id='orphan-installation'",
+            "DELETE FROM mobile_push_registrations WHERE installation_id='orphan-installation'",
+        ),
+        (
+            "INSERT INTO mobile_session_revocation_proofs (id,mobile_session_id,token_hash) SELECT 'orphan-proof',?,'orphan-hash' FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM mobile_session_revocation_proofs WHERE id='orphan-proof'",
+            "DELETE FROM mobile_session_revocation_proofs WHERE id='orphan-proof'",
+        ),
+    ] {
+        sqlx::query(insert).bind(&absent).bind(original_id).execute(&mut fixture).await.unwrap();
+        assert_eq!(revoke_original_session(&client, &base, INST_ID, "unknown-proof", &absent).await.status(), 401);
+        let remaining: i64 = sqlx::query_scalar(count).fetch_one(&mut fixture).await.unwrap();
+        assert_eq!(remaining, 1, "unauthenticated absence check cannot clean up orphan state");
+        sqlx::query(cleanup).execute(&mut fixture).await.unwrap();
+    }
+    // Delivery metadata, including an old lease and ciphertext, is not
+    // independent authority. Existing eligibility requires the original live
+    // session; ACK must not mutate or wait for outbox/history cleanup.
+    sqlx::query("INSERT INTO mobile_push_outbox (event_id,installation_id,user_id,mobile_session_id,registration_revision,recipient_role,created_at,expires_at,envelope,outcome,reason,attempts,next_attempt_at,lease_id,lease_until,category) SELECT 'old-event','old-installation',user_id,?,1,'admin',1,9999999999,'ciphertext','pending','Queued',1,1,'old-lease',9999999999,'test' FROM mobile_sessions WHERE id=?")
+        .bind(&absent).bind(original_id).execute(&mut fixture).await.unwrap();
+    let response = revoke_original_session(&client, &base, INST_ID, "unknown-proof", &absent).await;
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.json::<Value>().await.unwrap()["data"], "already_absent");
+    let retained: (String, String, String) = sqlx::query_as(
+        "SELECT outcome,envelope,lease_id FROM mobile_push_outbox WHERE event_id='old-event'"
+    ).fetch_one(&mut fixture).await.unwrap();
+    assert_eq!(retained, ("pending".to_string(), "ciphertext".to_string(), "old-lease".to_string()));
+
+}
+
+#[tokio::test]
+async fn refresh_proposal_validation_authentication_and_conditional_rotation_are_atomic() {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{mobile_session, mobile_session_revocation_proof};
+    use serverbee_server::service::auth::AuthService;
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let db = registration_db(&tmp).await;
+    let before = mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().unwrap();
+    let valid = proposed_revocation_proof(31);
+    let mut noncanonical = proposed_revocation_proof(0);
+    noncanonical.pop();
+    noncanonical.push('B');
+    for invalid in [
+        String::new(),
+        URL_SAFE_NO_PAD.encode([1u8; 32]),
+        format!("sb-revoke-v2.{}", URL_SAFE_NO_PAD.encode([1u8; 32])),
+        format!("sb-revoke-v1.{}", URL_SAFE_NO_PAD.encode([1u8; 31])),
+        format!("sb-revoke-v1.{}", URL_SAFE_NO_PAD.encode([1u8; 33])),
+        format!("{valid}="),
+        format!(" {valid}"),
+        noncanonical,
+    ] {
+        let response = refresh_with_proposal(&client, &base, &original, INST_ID, &invalid).await;
+        assert_eq!(response.status(), 422);
+        let rejected: Value = response.json().await.unwrap();
+        assert!(rejected["data"]["revocation_token"].is_null());
+        assert_eq!(mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().unwrap(), before);
+        assert!(mobile_session_revocation_proof::Entity::find().one(&db).await.unwrap().is_none());
+    }
+    let mut forged = original.clone();
+    forged["data"]["refresh_token"] = json!("invalid-refresh");
+    for (tokens, installation) in [(&forged, INST_ID), (&original, "wrong-installation")] {
+        let response = refresh_with_proposal(&client, &base, tokens, installation, &valid).await;
+        assert_eq!(response.status(), 401);
+        let rejected: Value = response.json().await.unwrap();
+        assert!(rejected["data"]["revocation_token"].is_null());
+        assert!(mobile_session_revocation_proof::Entity::find().one(&db).await.unwrap().is_none());
+    }
+    // Failure after proof insertion must roll back the proposed proof and
+    // conditional rotation together; no response may claim acceptance.
+    db.execute_unprepared("CREATE TRIGGER fail_proposal_access BEFORE INSERT ON sessions WHEN NEW.source = 'mobile' BEGIN SELECT RAISE(ABORT, 'access insert unavailable'); END").await.unwrap();
+    let failed = refresh_with_proposal(&client, &base, &original, INST_ID, &valid).await;
+    assert_eq!(failed.status(), 500);
+    let failed: Value = failed.json().await.unwrap();
+    assert!(failed["data"]["revocation_token"].is_null());
+    assert!(mobile_session_revocation_proof::Entity::find().one(&db).await.unwrap().is_none());
+    assert_eq!(mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().unwrap(), before);
+    db.execute_unprepared("DROP TRIGGER fail_proposal_access").await.unwrap();
+
+    // Two proposals race with one refresh secret: only the committed winner
+    // may be accepted. The conditional update's loser must bind nothing.
+    let other = proposed_revocation_proof(32);
+    let (left, right) = tokio::join!(
+        refresh_with_proposal(&client, &base, &original, INST_ID, &valid),
+        refresh_with_proposal(&client, &base, &original, INST_ID, &other),
+    );
+    let (winner, loser, accepted, rejected) = if left.status() == 200 {
+        (left, right, &valid, &other)
+    } else {
+        (right, left, &other, &valid)
+    };
+    assert_eq!(winner.status(), 200);
+    assert_eq!(loser.status(), 401);
+    let winner: Value = winner.json().await.unwrap();
+    let loser: Value = loser.json().await.unwrap();
+    assert_eq!(winner["data"]["mobile_session_id"], original_id);
+    assert_eq!(winner["data"]["revocation_token"], accepted.as_str());
+    assert!(loser["data"]["revocation_token"].is_null());
+    for (proof, expected) in [(accepted, true), (rejected, false)] {
+        assert_eq!(mobile_session_revocation_proof::Entity::find()
+            .filter(mobile_session_revocation_proof::Column::TokenHash.eq(AuthService::hash_session_token(proof)))
+            .one(&db).await.unwrap().is_some(), expected);
+    }
+    let repeated = refresh_with_proposal(&client, &base, &winner, INST_ID, accepted).await;
+    assert_eq!(repeated.status(), 200, "same-original proposal is idempotent");
+    let repeated: Value = repeated.json().await.unwrap();
+    assert_eq!(repeated["data"]["revocation_token"], accepted.as_str());
+    assert_eq!(repeated["data"]["mobile_session_id"], original_id);
+    // Neither the proposal nor its hash can rotate even while the session lives.
+    for credential in [accepted.to_string(), AuthService::hash_session_token(accepted)] {
+        let mut as_refresh = repeated.clone();
+        as_refresh["data"]["refresh_token"] = json!(credential);
+        assert_eq!(refresh_mobile(&client, &base, &as_refresh).await.status(), 401);
+    }
+}
+
+#[tokio::test]
+async fn refresh_proposal_cannot_rebind_stable_or_historical_proofs() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{mobile_session, mobile_session_revocation_proof};
+    use serverbee_server::service::auth::AuthService;
+
+    for owner_kind in ["stable", "history"] {
+        let (base, tmp) = start_test_server().await;
+        let client = http_client();
+        let owner = mobile_admin_token(&client, &base, "other-installation").await;
+        let owner_id = owner["data"]["mobile_session_id"].as_str().unwrap();
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        let replacement_id = replacement["data"]["mobile_session_id"].as_str().unwrap();
+        let db = registration_db(&tmp).await;
+        let proof = proposed_revocation_proof(51);
+        let hash = AuthService::hash_session_token(&proof);
+        if owner_kind == "stable" {
+            mobile_session::Entity::update_many()
+                .col_expr(mobile_session::Column::RevocationTokenHash, Expr::value(hash.clone()))
+                .filter(mobile_session::Column::Id.eq(owner_id))
+                .exec(&db).await.unwrap();
+        } else {
+            assert_eq!(refresh_with_proposal(&client, &base, &owner, "other-installation", &proof).await.status(), 200);
+
+        }
+        let before = mobile_session::Entity::find_by_id(replacement_id).one(&db).await.unwrap().unwrap();
+        let response = refresh_with_proposal(&client, &base, &replacement, INST_ID, &proof).await;
+        assert_eq!(response.status(), 401, "{owner_kind} ownership cannot transfer");
+        let response: Value = response.json().await.unwrap();
+        assert!(response["data"]["revocation_token"].is_null());
+        assert_eq!(mobile_session::Entity::find_by_id(replacement_id).one(&db).await.unwrap().unwrap(), before);
+        assert!(mobile_session_revocation_proof::Entity::find()
+            .filter(mobile_session_revocation_proof::Column::MobileSessionId.eq(replacement_id))
+            .filter(mobile_session_revocation_proof::Column::TokenHash.eq(hash))
+            .one(&db).await.unwrap().is_none());
+        assert_eq!(refresh_mobile(&client, &base, &replacement).await.status(), 200, "rejected binding must roll back rotation");
+    }
+}
+
+#[test]
+fn mobile_recovery_schema_matches_checked_in_api_artifacts() {
+    use utoipa::OpenApi;
+
+    let generated = serde_json::to_value(serverbee_server::openapi::ApiDoc::openapi()).unwrap();
+    let checked_in: serde_json::Value =
+        serde_json::from_str(include_str!("../../../apps/web/openapi.json")).unwrap();
+    for name in [
+        "MobileRefreshRequest",
+        "MobileRevokeRequest",
+        "MobileTokenResponse",
+    ] {
+        assert_eq!(
+            generated["components"]["schemas"][name],
+            checked_in["components"]["schemas"][name],
+            "Regenerate the checked-in {name} schema from the Rust source"
+        );
+    }
+    assert_eq!(
+        generated["paths"]["/api/mobile/auth/revoke"],
+        checked_in["paths"]["/api/mobile/auth/revoke"]
+    );
+}

@@ -87,15 +87,17 @@ final class AuthenticationRevocationTests: XCTestCase {
         AuthenticationURLProtocol.cancelPending()
         URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
-    private func signIn(_ auth: AuthManager, user: String) {
+    private func signIn(_ auth: AuthManager, user: String, legacy: Bool = false) {
         auth.setServerUrl("https://same-deployment.test")
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: "access-\(user)", accessExpiresInSecs: 900,
             refreshToken: "refresh-\(user)", refreshExpiresInSecs: 3600,
             tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"),
-            revocationToken: "revocation-\(user)"
+            revocationToken: legacy ? nil : "revocation-\(user)",
+            mobileSessionId: legacy ? nil : (user == "alice" ? "11111111-1111-4111-8111-111111111111" : "22222222-2222-4222-8222-222222222222")
         ))
     }
 
@@ -188,8 +190,7 @@ final class AuthenticationRevocationTests: XCTestCase {
 
     private func assertLogoutDuringRefresh(outcome: String, legacy: Bool = false) async {
         let auth = AuthManager()
-        signIn(auth, user: "alice")
-        if legacy { KeychainService.delete(for: KeychainService.revocationTokenKey) }
+        signIn(auth, user: "alice", legacy: legacy)
         let api = APIClient(authManager: auth)
         let manager = PushNotificationManager()
         manager.configure(apiClient: api)
@@ -216,6 +217,7 @@ final class AuthenticationRevocationTests: XCTestCase {
                 let body = Self.requestBody(request.request)
                 XCTAssertEqual(body["installation_id"] as? String, installationId)
                 XCTAssertEqual(body["revocation_token"] as? String, proof)
+                XCTAssertEqual(body["expected_session_id"] as? String, legacy ? nil : "11111111-1111-4111-8111-111111111111")
                 revoked.fulfill()
                 request.respond(200)
             default:
@@ -227,7 +229,7 @@ final class AuthenticationRevocationTests: XCTestCase {
         await fulfillment(of: [refreshStarted], timeout: 3)
         let settings = SettingsViewModel()
         let logout = Task {
-            await settings.logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {})
+            await settings.logout(authManager: auth, unregisterPush: manager.unregister(context:), closeWebSocket: {})
         }
         await fulfillment(of: [cleanupStarted], timeout: 3)
         let pending = log.takeHeld()
@@ -239,7 +241,7 @@ final class AuthenticationRevocationTests: XCTestCase {
         await fulfillment(of: [revoked], timeout: 3)
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(auth.getAccessToken())
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+        XCTAssertNil(try AuthManager.readAuthentication())
         XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/auth/revoke" }.count, 1)
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "same-deployment.test" })
     }
@@ -265,21 +267,26 @@ extension AuthenticationRevocationTests {
         } catch APIError.httpError(let status, _) { XCTAssertEqual(status, 307) }
         XCTAssertTrue(auth.isCurrent(context))
         XCTAssertEqual(auth.getAccessToken(), "access-alice")
-        XCTAssertEqual(KeychainService.loadString(for: KeychainService.refreshTokenKey), "refresh-alice")
-        XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "revocation-alice")
+        XCTAssertEqual((try? AuthManager.readAuthentication())?.refreshToken, "refresh-alice")
+        XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "revocation-alice")
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, ["/api/mobile/auth/refresh", "/api/mobile/auth/revoke"])
     }
 
-    func testLegacyOrdinaryRefreshKeepsCapturedRegistrationAndOriginalProof() async throws {
+    func testLegacyOrdinaryRefreshKeepsCapturedContextUntilDeletionProofBootstrap() async throws {
         let auth = AuthManager()
-        signIn(auth, user: "alice")
-        KeychainService.delete(for: KeychainService.revocationTokenKey)
+        signIn(auth, user: "alice", legacy: true)
         let context = try XCTUnwrap(auth.captureContext())
         let payload = response(user: "alice")
         let registered = expectation(description: "captured registration uses current rotated credential")
+        let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in
+            let count = log.append(request.request)
             if request.request.url?.path == "/api/mobile/auth/refresh" {
-                request.respond(200, data: payload)
+                if count <= 2 { request.respond(200, data: payload) } else {
+                    let proof = Self.requestBody(request.request)["revocation_proof"] as? String
+                    XCTAssertNotNil(proof)
+                    request.respond(200, data: Self.bootstrapResponse(user: "alice", proof: proof ?? ""))
+                }
             } else {
                 XCTAssertEqual(request.request.url?.path, "/api/mobile/push/verified-register")
                 XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer rotated-alice")
@@ -291,8 +298,11 @@ extension AuthenticationRevocationTests {
             let token = try await auth.refreshAccessToken(context: context)
             XCTAssertEqual(token, "rotated-alice")
             XCTAssertTrue(auth.isCurrent(context))
-            XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "refresh-alice")
+            XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "refresh-alice")
+            XCTAssertNil((try? AuthManager.readAuthentication())?.confirmedDeletionProof)
+            XCTAssertTrue(try PendingSessionRevocations().records().isEmpty)
         }
+        let proposed = try XCTUnwrap((try AuthManager.readAuthentication())?.proposedDeletionProof)
         let _: PushSetup = try await APIClient(authManager: auth).send(
             "/api/mobile/push/verified-register", method: "POST", body: VerifiedPushRequest(
                 expectedRevision: 1, deviceToken: String(repeating: "a", count: 64), environment: "sandbox",
@@ -303,12 +313,18 @@ extension AuthenticationRevocationTests {
             ), context: context
         )
         await fulfillment(of: [registered], timeout: 3)
+        let saved = try XCTUnwrap(AuthManager.readAuthentication())
+        XCTAssertEqual(saved.mobileSessionId, "11111111-1111-4111-8111-111111111111")
+        XCTAssertEqual(saved.confirmedDeletionProof, proposed)
+        XCTAssertEqual(saved.revocationToken, "refresh-alice", "Bootstrap keeps the original scope and immediate legacy fallback")
+        XCTAssertNil(saved.proposedDeletionProof)
+        XCTAssertEqual(context.pushScope, try XCTUnwrap(auth.captureContext()).pushScope, "Bootstrap does not replace the login scope")
+        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/auth/refresh" }.count, 3)
     }
 
     func testRestoredLegacyFirstRefreshResponseLossRevokesBeforeClearingProof() async {
         let original = AuthManager()
-        signIn(original, user: "alice")
-        KeychainService.delete(for: KeychainService.revocationTokenKey)
+        signIn(original, user: "alice", legacy: true)
         let log = AuthenticationRequestLog()
         let revoked = expectation(description: "restored legacy proof revokes after response loss")
         AuthenticationURLProtocol.handler = { request in
@@ -330,7 +346,7 @@ extension AuthenticationRevocationTests {
         await fulfillment(of: [revoked], timeout: 3)
         XCTAssertFalse(restored.isAuthenticated)
         XCTAssertNil(restored.getAccessToken())
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+        XCTAssertNil(try AuthManager.readAuthentication())
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, [
             "/api/mobile/auth/refresh", "/api/mobile/auth/revoke"
         ])
@@ -338,6 +354,15 @@ extension AuthenticationRevocationTests {
 }
 
 private extension AuthenticationRevocationTests {
+    nonisolated static func bootstrapResponse(user: String, proof: String) -> Data {
+        Data("""
+        {"data":{"access_token":"rotated-\(user)","access_expires_in_secs":900,
+        "refresh_token":"rotated-refresh-\(user)","refresh_expires_in_secs":3600,"token_type":"Bearer",
+        "user":{"id":"\(user)","username":"\(user)","role":"member"},
+        "revocation_token":"\(proof)","mobile_session_id":"11111111-1111-4111-8111-111111111111"}}
+        """.utf8)
+    }
+
     nonisolated static func requestBody(_ request: URLRequest) -> [String: Any] {
         var data = request.httpBody ?? Data()
         if data.isEmpty, let stream = request.httpBodyStream {

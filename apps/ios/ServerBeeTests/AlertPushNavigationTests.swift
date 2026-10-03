@@ -225,11 +225,13 @@ final class AlertPushNavigationTests: XCTestCase {
             PushLifecycleURLProtocol.cancelPending()
             URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
             auth.clearAuth()
+            try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         }
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let current = try XCTUnwrap(auth.captureContext())
         let fixture = try encrypted(createdAt: Int64(Date().timeIntervalSince1970) - 3600, authentication: current)
         let router = PushNotificationRouter()

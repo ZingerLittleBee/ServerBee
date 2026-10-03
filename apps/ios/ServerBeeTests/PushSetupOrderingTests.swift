@@ -158,14 +158,15 @@ final class PushSetupOrderingTests: XCTestCase {
         OrderedSetupURLProtocol.cancelPending()
         URLProtocol.unregisterClass(OrderedSetupURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
     private func login(_ auth: AuthManager, server: String = "https://ordering.test", user: String = "alice") {
         auth.setServerUrl(server)
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: "access-\(UUID().uuidString)", accessExpiresInSecs: 900,
             refreshToken: "refresh-\(UUID().uuidString)", refreshExpiresInSecs: 3600,
-            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"), revocationToken: "proof-\(UUID().uuidString)"
-        ))
+            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"), revocationToken: "proof-\(UUID().uuidString)",
+            mobileSessionId: UUID().uuidString))
     }
     private func manager(_ auth: AuthManager, system: TestPushSystem, relay: TestPushRelay) -> PushNotificationManager {
         let manager = PushNotificationManager(system: system, relay: relay, storage: MemoryPushSetupStorage())
@@ -186,6 +187,7 @@ final class PushSetupOrderingTests: XCTestCase {
         defer { http.cancel() }
         OrderedSetupURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let relay = TestPushRelay()
@@ -221,6 +223,7 @@ final class PushSetupOrderingTests: XCTestCase {
             defer { http.cancel() }
             OrderedSetupURLProtocol.fixture = http
             let auth = AuthManager()
+            auth.clearAuth()
             login(auth)
             let system = TestPushSystem()
             let relay = TestPushRelay()
@@ -266,6 +269,7 @@ final class PushSetupOrderingTests: XCTestCase {
         defer { http.cancel() }
         OrderedSetupURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let manager = manager(auth, system: system, relay: TestPushRelay())
@@ -288,6 +292,7 @@ final class PushSetupOrderingTests: XCTestCase {
         defer { http.cancel() }
         OrderedSetupURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let relay = TestPushRelay()
         let manager = manager(auth, system: TestPushSystem(), relay: relay)
@@ -315,6 +320,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let http = OrderedSetupHTTP(enabled: false, revision: 0)
         OrderedSetupURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .notDetermined
@@ -372,6 +378,7 @@ final class PushSetupOrderingTests: XCTestCase {
         let http = OrderedSetupHTTP()
         OrderedSetupURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
@@ -404,6 +411,7 @@ extension PushSetupOrderingTests {
         defer { original.cancel(); replacement.cancel() }
         OrderedSetupURLProtocol.fixture = original
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let originalGeneration = auth.authenticationGeneration
         let originalScope = auth.captureContext()?.pushScope

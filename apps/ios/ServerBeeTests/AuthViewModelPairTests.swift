@@ -8,6 +8,8 @@ final class AuthViewModelPairTests: XCTestCase {
     private var session: URLSession!
 
     override func setUp() async throws {
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         URLProtocol.registerClass(URLProtocolStub.self)
         URLProtocolStub.stubResponse = nil
         URLProtocolStub.stubError = nil
@@ -23,6 +25,8 @@ final class AuthViewModelPairTests: XCTestCase {
         URLProtocolStub.stubError = nil
         URLProtocolStub.stubResponseFactory = nil
         session = nil
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     func test_pair_returnsToken_andHydratesAuthManager_on200() async throws {

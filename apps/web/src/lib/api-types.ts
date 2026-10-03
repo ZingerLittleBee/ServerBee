@@ -3049,9 +3049,13 @@ export interface components {
         MobileRefreshRequest: {
             installation_id: string;
             refresh_token: string;
+            /** @description Persisted by the client before dispatch; accepted only with rotation. */
+            revocation_proof?: string | null;
         };
         /** @description A deletion-only proof for one installation's original mobile session. */
         MobileRevokeRequest: {
+            /** @description Required by durable callers to fence recovery to the original login. */
+            expected_session_id?: string | null;
             installation_id: string;
             revocation_token: string;
         };
@@ -3060,10 +3064,12 @@ export interface components {
             /** Format: int64 */
             access_expires_in_secs: number;
             access_token: string;
+            /** @description Stable identity shared by every token rotation of this login. */
+            mobile_session_id: string;
             /** Format: int64 */
             refresh_expires_in_secs: number;
             refresh_token: string;
-            /** @description Stable session-revocation credential, issued at login and retained by the client. */
+            /** @description Deletion-only credential issued at login, or accepted from a refresh proposal. */
             revocation_token?: string | null;
             token_type: string;
             user: components["schemas"]["MobileUserResponse"];
@@ -7109,7 +7115,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Original mobile session revoked */
+            /** @description Original mobile session revoked (ok) or confirmed absent (already_absent) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7123,7 +7129,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Missing revocation credential */
+            /** @description Missing credential or invalid expected session UUID */
             422: {
                 headers: {
                     [name: string]: unknown;

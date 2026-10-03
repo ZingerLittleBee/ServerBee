@@ -41,6 +41,7 @@ final class PushTestRecoveryTests: XCTestCase {
         TestRecoveryURLProtocol.cancelPending()
         URLProtocol.unregisterClass(TestRecoveryURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     private func signedIn(_ name: String = "alice") -> AuthManager {
@@ -48,7 +49,8 @@ final class PushTestRecoveryTests: XCTestCase {
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-\(name)", accessExpiresInSecs: 900,
                                                     refreshToken: "refresh-\(name)", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: name, username: name, role: "member")))
+                                                    user: MobileUser(id: name, username: name, role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         return auth
     }
 
@@ -224,7 +226,8 @@ final class PushTestRecoveryTests: XCTestCase {
         await fulfillment(of: [started], timeout: 3)
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-bob", accessExpiresInSecs: 900,
                                                     refreshToken: "refresh-bob", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: "bob", username: "bob", role: "member")))
+                                                    user: MobileUser(id: "bob", username: "bob", role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         delivery.configure(apiClient: api)
         await delivery.send(setup: try setup(3))
         let replacement = try saved(storage)

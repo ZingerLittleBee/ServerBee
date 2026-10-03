@@ -83,6 +83,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
         DemotionURLProtocol.cancelPending()
         URLProtocol.unregisterClass(DemotionURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     private func login(_ auth: AuthManager) {
@@ -91,8 +92,8 @@ final class NotificationSetupDemotionTests: XCTestCase {
             accessToken: "access-\(UUID().uuidString)", accessExpiresInSecs: 900,
             refreshToken: "refresh-\(UUID().uuidString)", refreshExpiresInSecs: 3600,
             tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin"),
-            revocationToken: "proof-\(UUID().uuidString)"
-        ))
+            revocationToken: "proof-\(UUID().uuidString)",
+            mobileSessionId: UUID().uuidString))
     }
 
     func testDemotionAllowsActualSaveAndDisableDespiteHiddenOrStaleAdminDraft() async throws {
@@ -101,6 +102,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
                 let http = DemotionHTTPFixture()
                 DemotionURLProtocol.fixture = http
                 let auth = AuthManager()
+                auth.clearAuth()
                 login(auth)
                 let system = TestPushSystem()
                 system.status = .denied
@@ -150,6 +152,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
         let http = DemotionHTTPFixture()
         DemotionURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .denied

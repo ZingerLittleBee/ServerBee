@@ -94,11 +94,13 @@ final class TaskPushNavigationTests: XCTestCase {
             PushLifecycleURLProtocol.handler = nil
             URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
             AuthManager().clearAuth()
+            try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         }
         let auth = AuthManager()
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900, refreshToken: "fixture-refresh",
-                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin")))
+                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let target = TaskRunTarget(taskId: taskId, runId: runId)
         let model = TaskRunResultsViewModel()
         let api = APIClient(authManager: auth)
@@ -200,11 +202,13 @@ extension TaskPushNavigationTests {
             PushLifecycleURLProtocol.cancelPending()
             URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
             AuthManager().clearAuth()
+            try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         }
         let auth = AuthManager()
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900, refreshToken: "fixture-refresh",
-                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin")))
+                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let api = APIClient(authManager: auth)
         let target = TaskRunTarget(taskId: taskId, runId: runId)
         let entered = expectation(description: "old account request captured")
@@ -214,7 +218,8 @@ extension TaskPushNavigationTests {
         let loading = Task { await model.load(target: target, apiClient: api, isAdmin: true) }
         await fulfillment(of: [entered], timeout: 3)
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "replacement-access", accessExpiresInSecs: 900, refreshToken: "replacement-refresh",
-                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "bob", username: "bob", role: "admin")))
+                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "bob", username: "bob", role: "admin"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         held.release(data: Data("{\"data\":[]}".utf8))
         await loading.value
         XCTAssertTrue(model.unavailable)
@@ -275,11 +280,13 @@ extension TaskPushNavigationTests {
             PushLifecycleURLProtocol.cancelPending()
             URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
             AuthManager().clearAuth()
+            try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         }
         let auth = AuthManager()
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900, refreshToken: "fixture-refresh",
-                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin")))
+                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let current = try XCTUnwrap(auth.captureContext())
         let (envelope, key) = try encrypted(current, age: 3600)
         let router = PushNotificationRouter()

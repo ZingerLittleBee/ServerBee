@@ -15,10 +15,6 @@ final class PushLifecycleURLProtocol: URLProtocol {
             respond(200, data: PushSetupTestData.response())
             return
         }
-        if request.url?.path == "/api/mobile/auth/revoke" {
-            respond(404)
-            return
-        }
         if let handler = Self.handler { handler(self) } else {
             if Self.pending.finish(self) { client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
         }
@@ -77,6 +73,7 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         PushLifecycleURLProtocol.cancelPending()
         URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     private func signIn(
@@ -86,7 +83,9 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: accessToken ?? "access-\(user)", accessExpiresInSecs: 900,
             refreshToken: "refresh-\(user)", refreshExpiresInSecs: 3600,
-            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member")
+            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"),
+            revocationToken: "proof-\(accessToken ?? user)",
+            mobileSessionId: user == "alice" && accessToken == nil ? "11111111-1111-4111-8111-111111111111" : "22222222-2222-4222-8222-222222222222"
         ))
     }
 
@@ -157,6 +156,26 @@ private final class PushRequestLog: @unchecked Sendable {
 }
 
 private extension PushRegistrationLifecycleTests {
+    nonisolated static func assertAliceRevocation(_ request: URLRequest) {
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        var data = request.httpBody ?? Data()
+        if data.isEmpty, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 1024)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+        }
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        XCTAssertEqual(body?["revocation_token"] as? String, "proof-alice")
+        XCTAssertEqual(body?["expected_session_id"] as? String, "11111111-1111-4111-8111-111111111111")
+        XCTAssertNotNil(body?["installation_id"] as? String)
+        XCTAssertEqual(body?.count, 3, "Durable cleanup carries only its exact deletion capability")
+    }
+
     func refreshResponse() -> Data {
         Data(#"""
         {"data":{
@@ -272,7 +291,7 @@ extension PushRegistrationLifecycleTests {
         await fulfillment(of: [uploadStarted], timeout: 3)
         let settings = SettingsViewModel()
         let logout = Task { @MainActor in
-            await settings.logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:)) {
+            await settings.logout(authManager: auth, unregisterPush: manager.unregister(context:)) {
                 closeStarted.fulfill()
             }
         }
@@ -287,11 +306,15 @@ extension PushRegistrationLifecycleTests {
         held.release(200)
         await logout.value
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, [
-            "/api/mobile/push/verified-register", "/api/mobile/push/unregister", "/api/mobile/auth/logout"
+            "/api/mobile/push/verified-register", "/api/mobile/push/unregister", "/api/mobile/auth/revoke"
         ])
-        XCTAssertTrue(log.snapshot().allSatisfy {
-            $0.value(forHTTPHeaderField: "Authorization") == "Bearer access-alice"
-        })
+        for request in log.snapshot() {
+            if request.url?.path == "/api/mobile/auth/revoke" {
+                Self.assertAliceRevocation(request)
+            } else {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
+            }
+        }
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(manager.deviceToken)
     }
@@ -313,14 +336,14 @@ extension PushRegistrationLifecycleTests {
                 unregistering.fulfill()
             } else {
                 XCTAssertEqual(request.request.url?.host, "original.test")
-                XCTAssertEqual(request.request.url?.path, "/api/mobile/auth/logout")
-                XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
+                XCTAssertEqual(request.request.url?.path, "/api/mobile/auth/revoke")
+                Self.assertAliceRevocation(request.request)
                 request.respond(200)
             }
         }
         let settings = SettingsViewModel()
         let logout = Task { @MainActor in
-            await settings.logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {})
+            await settings.logout(authManager: auth, unregisterPush: manager.unregister(context:), closeWebSocket: {})
         }
         await fulfillment(of: [unregistering], timeout: 3)
         auth.clearAuth()
@@ -331,7 +354,7 @@ extension PushRegistrationLifecycleTests {
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(auth.getAccessToken(), "access-bob")
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, [
-            "/api/mobile/push/unregister", "/api/mobile/auth/logout"
+            "/api/mobile/push/unregister", "/api/mobile/auth/revoke"
         ])
     }
 }
@@ -348,10 +371,14 @@ extension PushRegistrationLifecycleTests {
         PushLifecycleURLProtocol.handler = { request in
             log.append(request.request)
             XCTAssertEqual(request.request.url?.host, "original.test")
-            XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
+            if request.request.url?.path == "/api/mobile/auth/revoke" {
+                Self.assertAliceRevocation(request.request)
+            } else {
+                XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-alice")
+            }
             request.respond(200)
         }
-        await SettingsViewModel().logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:)) {
+        await SettingsViewModel().logout(authManager: auth, unregisterPush: manager.unregister(context:)) {
             auth.clearAuth()
             self.signIn(auth, server: "https://replacement.test", user: "bob")
             manager.configure(apiClient: api)
@@ -360,7 +387,7 @@ extension PushRegistrationLifecycleTests {
         XCTAssertEqual(auth.user?.id, "bob")
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(log.snapshot().compactMap { $0.url?.path }, [
-            "/api/mobile/push/unregister", "/api/mobile/auth/logout"
+            "/api/mobile/push/unregister", "/api/mobile/auth/revoke"
         ])
         let replacementUpload = expectation(description: "replacement login can still register")
         PushLifecycleURLProtocol.handler = { request in

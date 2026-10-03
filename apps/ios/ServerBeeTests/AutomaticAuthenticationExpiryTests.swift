@@ -10,15 +10,18 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
         URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthenticationURLProtocol.handler = nil
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
-    private func signIn(_ auth: AuthManager, user: String = "alice", legacy: Bool = false) {
-        auth.setServerUrl("https://original-deployment.test")
+    private func signIn(_ auth: AuthManager, user: String = "alice", legacy: Bool = false,
+                        server: String = "https://original-deployment.test") {
+        auth.setServerUrl(server)
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: "access-\(user)", accessExpiresInSecs: 900,
             refreshToken: "refresh-\(user)", refreshExpiresInSecs: 3600,
             tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"),
-            revocationToken: legacy ? nil : "revoke-\(user)"
+            revocationToken: legacy ? nil : "revoke-\(user)",
+            mobileSessionId: legacy ? nil : (user == "alice" ? "11111111-1111-4111-8111-111111111111" : "22222222-2222-4222-8222-222222222222")
         ))
     }
 
@@ -54,6 +57,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
 
     private func assertAutomaticLogout(kind: String, legacy: Bool, loseFirstRefresh: Bool) async throws {
         let auth = AuthManager()
+        auth.clearAuth()
         signIn(auth, legacy: legacy)
         let context = try XCTUnwrap(auth.captureContext())
         let api = APIClient(authManager: auth)
@@ -76,6 +80,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
                 let payload = Self.body(request.request)
                 XCTAssertEqual(payload["revocation_token"] as? String, proof)
                 XCTAssertEqual(payload["installation_id"] as? String, context.installationId)
+                XCTAssertEqual(payload["expected_session_id"] as? String, legacy ? nil : "11111111-1111-4111-8111-111111111111")
                 request.respond(200)
             default: request.respond(401)
             }
@@ -86,7 +91,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
                 XCTFail("Committed rotation's response must be lost at the network boundary")
             } catch AuthError.refreshNetworkFailure { /* expected transport failure */ }
             XCTAssertTrue(auth.isAuthenticated, "The first transport failure must preserve the captured login")
-            XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), proof)
+            XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, proof)
         }
         do {
             try await ordinaryRequest(api, kind: kind, context: context)
@@ -94,7 +99,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
         } catch APIError.unauthorized { /* expected automatic logout */ }
         let requests = log.snapshot()
         XCTAssertEqual(requests.filter { $0.url?.path == "/api/mobile/auth/revoke" }.count, 1)
-        XCTAssertEqual(requests.last?.url?.path, "/api/mobile/auth/revoke", "Cleanup must precede discarding local proof")
+        XCTAssertEqual(requests.last?.url?.path, "/api/mobile/auth/revoke", "Cleanup targets the original login without reauthentication")
         XCTAssertTrue(requests.allSatisfy { $0.url?.host == "original-deployment.test" })
         if !loseFirstRefresh {
             let retries = requests.filter { $0.url?.path != "/api/mobile/auth/refresh" && $0.url?.path != "/api/mobile/auth/revoke" }
@@ -103,7 +108,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
         }
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(auth.getAccessToken())
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+        XCTAssertNil(try AuthManager.readAuthentication())
     }
 
     func testAutomaticExpiryCleanupCannotClearOrRevokeReplacementLogin() async throws {
@@ -124,9 +129,12 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
         let api = APIClient(authManager: auth)
         let expired = Task { let _: String = try await api.get("/api/servers") }
         await fulfillment(of: [cleanupStarted], timeout: 3)
-        XCTAssertTrue(auth.isAuthenticated, "Retain proof while revocation is pending")
-        signIn(auth, user: "bob")
-        auth.setServerUrl("https://replacement-deployment.test")
+        XCTAssertFalse(auth.isAuthenticated, "Durable proof permits local logout before the Server replies")
+        XCTAssertNil(try AuthManager.readAuthentication())
+        let pending = try PendingSessionRevocations().records()
+        XCTAssertEqual(pending.map(\.proof), ["revoke-alice"])
+        XCTAssertEqual(pending.map(\.mobileSessionId), ["11111111-1111-4111-8111-111111111111"])
+        signIn(auth, user: "bob", server: "https://replacement-deployment.test")
         try XCTUnwrap(log.takeHeld()).respond(200)
         do {
             try await expired.value
@@ -135,7 +143,7 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
         XCTAssertEqual(auth.user?.id, "bob")
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(auth.getAccessToken(), "access-bob")
-        XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "revoke-bob")
+        XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "revoke-bob")
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "original-deployment.test" })
         XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/auth/revoke" }.count, 1)
     }
@@ -184,16 +192,16 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
             let token = await auth.accessTokenForReconnect()
             XCTAssertNil(token)
             XCTAssertFalse(auth.isAuthenticated)
-            XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+            XCTAssertNil(try AuthManager.readAuthentication())
             XCTAssertEqual(log.snapshot().map { $0.url?.path }, [
                 "/api/mobile/auth/refresh", "/api/mobile/auth/refresh", "/api/mobile/auth/revoke"
             ])
         }
     }
 
-    func testOldServerLogoutFallbackCannotReenterAutomaticExpiry() async throws {
+    func testRejectedOldServerLogoutFallbackCannotReenterExpiryOrDiscardCredentials() async throws {
         let auth = AuthManager()
-        signIn(auth)
+        signIn(auth, legacy: true)
         let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in
             let count = log.append(request.request)
@@ -208,7 +216,10 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
             let _: String = try await APIClient(authManager: auth).get("/api/servers")
             XCTFail("Expired legacy Server credentials must remain unauthorized")
         } catch APIError.unauthorized { /* expected */ }
-        XCTAssertFalse(auth.isAuthenticated)
+        XCTAssertTrue(auth.isAuthenticated, "Unknown legacy material must be retained until reachable cleanup succeeds")
+        XCTAssertEqual((try AuthManager.readAuthentication())?.refreshToken, "refresh-alice")
+        XCTAssertNotNil(auth.recoveryError)
+        XCTAssertTrue(try PendingSessionRevocations().records().isEmpty)
         XCTAssertEqual(log.snapshot().map { $0.url?.path }, [
             "/api/servers", "/api/mobile/auth/refresh", "/api/mobile/auth/revoke", "/api/mobile/auth/logout"
         ])

@@ -182,7 +182,13 @@ For the isolated signing/deployment runbook, troubleshooting by layer, and the g
 1. **Login/QR Pair**: POST `/api/mobile/auth/login` or QR pair endpoint → returns access_token + refresh_token
 2. **API Requests**: Include `Authorization: Bearer {access_token}` header
 3. **Token Refresh**: On 401, POST `/api/mobile/auth/refresh` with refresh_token → new token pair
-4. **Logout**: POST `/api/mobile/auth/logout` revokes all tokens for the device
+4. **Logout**: POST `/api/mobile/auth/revoke` with a deletion-only proof and the exact original `expected_session_id`; the older authenticated `/logout` route remains available for compatibility
+
+### Offline Sign-out Recovery
+
+Before changing verified notification settings, the app confirms a deletion-only capability for that exact mobile session. When an established session signs out offline, its normal credentials are cleared only after its deletion capability is saved in the app-private Keychain. Pending cleanup retries on launch, foreground/network recovery, and before login or pairing; it never uses a replacement account's credentials. An acknowledgement for an already-absent original session does not delete another login using the same installation.
+
+An upgraded installation without a confirmed capability must connect once before secure sign-out can complete. Storage errors or a full pending-cleanup list also block destructive credential clearing or replacement login. The app reports these cases rather than losing the original session's cleanup proof. Existing push content keys, pending grants and test identities keep their original scope across migration and proof bootstrap. Server-side sign-out cannot retract notifications already in flight or accepted by APNs.
 
 ### WebSocket Connection
 

@@ -194,6 +194,7 @@ final class PushNotificationManager: NSObject {
             }
             do {
                 guard URL(string: captured.serverUrl)?.scheme == "https" else { throw PushSetupError.insecureServer }
+                try await apiClient.requireDeletionRecovery(context: captured)
                 let grant: RelayGrant
                 if let pending = self.pendingGrant(captured, url: setup.relayUrl),
                    pending.deviceToken == token, pending.expiresAt > Int64(Date().timeIntervalSince1970) {

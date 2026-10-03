@@ -10,6 +10,7 @@ final class TestPushActionTests: XCTestCase {
         PushLifecycleURLProtocol.cancelPending()
         URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     func testTargetedActionSendsOnlyConfirmedRevisionAndReportsProviderAcceptance() async throws {
@@ -17,7 +18,8 @@ final class TestPushActionTests: XCTestCase {
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let storage = MemoryPushSetupStorage()
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
         let registered = expectation(description: "content key registered securely")
@@ -60,7 +62,8 @@ final class TestPushActionTests: XCTestCase {
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let storage = MemoryPushSetupStorage()
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: storage)
         let api = APIClient(authManager: auth)
@@ -120,7 +123,8 @@ final class TestPushActionTests: XCTestCase {
         auth.setServerUrl("http://127.0.0.1:9527")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let relay = TestPushRelay()
         let registration = expectation(description: "HTTP content key request forbidden")
         registration.isInverted = true
@@ -144,7 +148,8 @@ final class TestPushActionTests: XCTestCase {
         auth.setServerUrl("https://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let storage = MemoryPushSetupStorage()
         let relay = TestPushRelay()
         let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: storage)
@@ -185,7 +190,8 @@ final class TestPushActionTests: XCTestCase {
         auth.setServerUrl("http://serverbee.test")
         auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900,
                                                     refreshToken: "fixture-refresh", refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                                                    user: MobileUser(id: "alice", username: "alice", role: "member")))
+                                                    user: MobileUser(id: "alice", username: "alice", role: "member"),
+                                                    revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
         let context = try XCTUnwrap(auth.captureContext())
         let forbidden = expectation(description: "no content-bearing HTTP request")
         forbidden.isInverted = true

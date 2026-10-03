@@ -3632,13 +3632,13 @@
         },
         "responses": {
           "200": {
-            "description": "Original mobile session revoked"
+            "description": "Original mobile session revoked (ok) or confirmed absent (already_absent)"
           },
           "401": {
             "description": "Invalid installation revocation credential"
           },
           "422": {
-            "description": "Missing revocation credential"
+            "description": "Missing credential or invalid expected session UUID"
           }
         }
       }
@@ -10981,6 +10981,13 @@
           },
           "refresh_token": {
             "type": "string"
+          },
+          "revocation_proof": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Persisted by the client before dispatch; accepted only with rotation."
           }
         }
       },
@@ -10992,6 +10999,13 @@
           "revocation_token"
         ],
         "properties": {
+          "expected_session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required by durable callers to fence recovery to the original login."
+          },
           "installation_id": {
             "type": "string"
           },
@@ -11004,6 +11018,7 @@
         "type": "object",
         "description": "Token pair returned after successful login or refresh.",
         "required": [
+          "mobile_session_id",
           "access_token",
           "access_expires_in_secs",
           "refresh_token",
@@ -11019,6 +11034,10 @@
           "access_token": {
             "type": "string"
           },
+          "mobile_session_id": {
+            "type": "string",
+            "description": "Stable identity shared by every token rotation of this login."
+          },
           "refresh_expires_in_secs": {
             "type": "integer",
             "format": "int64"
@@ -11031,7 +11050,7 @@
               "string",
               "null"
             ],
-            "description": "Stable session-revocation credential, issued at login and retained by the client."
+            "description": "Deletion-only credential issued at login, or accepted from a refresh proposal."
           },
           "token_type": {
             "type": "string"

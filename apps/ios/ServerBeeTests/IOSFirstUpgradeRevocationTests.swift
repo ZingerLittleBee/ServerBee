@@ -6,6 +6,7 @@ private struct UpgradedSessionFixture {
     let auth: AuthManager
     let api: APIClient
     let manager: PushNotificationManager
+    let context: MobileAuthenticationContext
 }
 
 /// The old Server's HTTP boundary replaces its session on every refresh, as
@@ -19,6 +20,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
         AuthenticationURLProtocol.cancelPending()
         URLProtocol.unregisterClass(AuthenticationURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     func testStartupRestorationRecoversStaleProofAfterCommittedResponseLoss() async throws {
@@ -58,11 +60,11 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
                 XCTAssertEqual(Self.body(request.request)["installation_id"] as? String, installationId)
                 let proof = Self.body(request.request)["revocation_token"] as? String
                 XCTAssertEqual(proof, count == 1 ? "refresh-0" : capturedSecret)
-                XCTAssertEqual(KeychainService.loadString(for: KeychainService.refreshTokenKey), capturedSecret,
+                XCTAssertEqual((try? AuthManager.readAuthentication())?.refreshToken, capturedSecret,
                                "Keep the captured original credential until cleanup succeeds")
                 request.respond(count == 1 ? 401 : 200)
                 if count == 2 { revoked.fulfill() }
-            case "/api/servers", "/api/mobile/push/unregister", "/api/mobile/push/verified-register": request.respond(401)
+            case "/api/servers", "/api/mobile/push/unregister", "/api/mobile/push/register": request.respond(401)
             default: XCTFail("Stale proof recovery must not enter bearer logout or ordinary authentication"); request.respond(401)
             }
         }
@@ -77,33 +79,33 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
                 XCTFail("Expected committed response loss")
             } catch AuthError.refreshNetworkFailure { /* The transport failure preserves the original login. */ }
             XCTAssertTrue(auth.isAuthenticated)
-            XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "refresh-0")
+            XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "refresh-0")
             if route == "api" {
                 do {
                     let _: String = try await api.get("/api/servers")
                     XCTFail("Expected unauthorized")
                 } catch APIError.unauthorized { /* Production automatic cleanup recovers the captured proof. */ }
             } else if route == "push" {
-                // The manager has kept its original pre-upgrade context, whose
-                // proof and refresh token both predate all session replacements.
-                manager.didRegisterForRemoteNotifications(deviceToken: Data([3, 4]))
-                await fulfillment(of: [revoked], timeout: 3)
-                await manager.unregister() // Drain the actual upload before checking auth cleanup.
+                // This legacy request holds its pre-upgrade push context. The
+                // current client must not create a verified row without bootstrap.
+                do {
+                    try await api.postVoid("/api/mobile/push/register", body: ["device_token": "legacy-token"], context: fixture.context)
+                    XCTFail("Expected unauthorized for the captured legacy push request")
+                } catch APIError.unauthorized { /* Cleanup uses this login's current fallback secret. */ }
             } else {
                 await SettingsViewModel().logout(
-                    authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {}
+                    authManager: auth, unregisterPush: manager.unregister(context:), closeWebSocket: {}
                 )
             }
         }
-        if route != "push" { await fulfillment(of: [revoked], timeout: 3) }
+        await fulfillment(of: [revoked], timeout: 3)
         XCTAssertFalse(subject.isAuthenticated)
         XCTAssertNil(subject.getAccessToken())
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.refreshTokenKey))
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+        XCTAssertNil(try AuthManager.readAuthentication())
         let proofs = log.snapshot().filter { $0.url?.path == "/api/mobile/auth/revoke" }
         XCTAssertEqual(proofs.compactMap { Self.body($0)["revocation_token"] as? String }, ["refresh-0", capturedSecret])
         if route != "push" { XCTAssertEqual(log.snapshot().last?.url?.path, "/api/mobile/auth/revoke") } else {
-            XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }.count, 1)
+            XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/register" }.count, 1)
         }
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "ios-first-upgrade.test" })
     }
@@ -148,7 +150,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
         let refresh = Task { try await auth.refreshAccessToken() }
         await fulfillment(of: [started], timeout: 3)
         let logout = Task {
-            await SettingsViewModel().logout(authManager: auth, apiClient: api, unregisterPush: manager.unregister(context:), closeWebSocket: {})
+            await SettingsViewModel().logout(authManager: auth, unregisterPush: manager.unregister(context:), closeWebSocket: {})
         }
         await fulfillment(of: [unregister], timeout: 3)
         if committed {
@@ -162,7 +164,7 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
         }
         XCTAssertFalse(auth.isAuthenticated)
         XCTAssertNil(auth.getAccessToken())
-        XCTAssertNil(KeychainService.loadString(for: KeychainService.revocationTokenKey))
+        XCTAssertNil(try AuthManager.readAuthentication())
         XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/auth/revoke" }.count, 2)
         let refreshCount = log.snapshot().filter { $0.url?.path == "/api/mobile/auth/refresh" }.count
         if committed {
@@ -192,20 +194,21 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
         let context = try XCTUnwrap(auth.captureContext())
         let cleanup = Task { await auth.endSession(context: context) }
         await fulfillment(of: [rejected], timeout: 3)
+        auth.clearAuth()
         auth.setServerUrl("https://replacement-deployment.test")
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: "replacement-access", accessExpiresInSecs: 900,
             refreshToken: "replacement-refresh", refreshExpiresInSecs: 3600,
             tokenType: "Bearer", user: MobileUser(id: "bob", username: "bob", role: "member"),
-            revocationToken: "replacement-proof"
+            revocationToken: "replacement-proof", mobileSessionId: "22222222-2222-4222-8222-222222222222"
         ))
         try XCTUnwrap(log.takeHeld()).respond(401)
         await cleanup.value
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(auth.user?.id, "bob")
         XCTAssertEqual(auth.getAccessToken(), "replacement-access")
-        XCTAssertEqual(KeychainService.loadString(for: KeychainService.refreshTokenKey), "replacement-refresh")
-        XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "replacement-proof")
+        XCTAssertEqual((try? AuthManager.readAuthentication())?.refreshToken, "replacement-refresh")
+        XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "replacement-proof")
         XCTAssertEqual(log.snapshot().count, 2)
         XCTAssertTrue(log.snapshot().allSatisfy { $0.url?.host == "ios-first-upgrade.test" })
         XCTAssertFalse(auth.isCurrent(context), "The old context cannot authenticate as its replacement")
@@ -217,8 +220,11 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
             let auth = AuthManager()
             auth.clearAuth()
             auth.setServerUrl("https://ios-first-upgrade.test")
-            auth.handleLoginResponse(try JSONDecoder.snakeCase.decode(ApiResponse<MobileTokenResponse>.self, from: Self.tokens(0)).data)
-            if let storedProof { try KeychainService.saveString(storedProof, for: KeychainService.revocationTokenKey) }
+            auth.handleLoginResponse(MobileTokenResponse(
+                accessToken: "access-0", accessExpiresInSecs: 900, refreshToken: "refresh-0", refreshExpiresInSecs: 3600,
+                tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "member"), revocationToken: storedProof
+            ))
+            XCTAssertNil((try AuthManager.readAuthentication())?.confirmedDeletionProof)
             let log = AuthenticationRequestLog()
             AuthenticationURLProtocol.handler = { request in
                 _ = log.append(request.request)
@@ -231,19 +237,20 @@ final class IOSFirstUpgradeRevocationTests: XCTestCase {
             let expected = storedProof == "stale-proof" ? ["stale-proof", "refresh-0"] : [storedProof ?? "refresh-0"]
             XCTAssertEqual(log.snapshot().compactMap { Self.body($0)["revocation_token"] as? String }, expected)
             XCTAssertFalse(auth.isAuthenticated)
-            XCTAssertNil(KeychainService.loadString(for: KeychainService.refreshTokenKey))
+            XCTAssertNil(try AuthManager.readAuthentication())
         }
     }
 
 }
 
 private extension IOSFirstUpgradeRevocationTests {
-    private func seedIOSFirstSession(_ replacements: Int, manager: PushNotificationManager) async throws -> AuthManager {
+    private func seedIOSFirstSession(_ replacements: Int, manager: PushNotificationManager) async throws -> (AuthManager, MobileAuthenticationContext) {
         let auth = AuthManager()
         auth.clearAuth()
         auth.setServerUrl("https://ios-first-upgrade.test")
         auth.handleLoginResponse(try JSONDecoder.snakeCase.decode(ApiResponse<MobileTokenResponse>.self, from: Self.tokens(0)).data)
         manager.configure(apiClient: APIClient(authManager: auth))
+        let context = try XCTUnwrap(auth.captureContext())
         let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in
             let count = log.append(request.request)
@@ -254,21 +261,20 @@ private extension IOSFirstUpgradeRevocationTests {
         for rotation in 1...replacements {
             _ = try await auth.refreshAccessToken()
             XCTAssertEqual(auth.getAccessToken(), "access-\(rotation)")
-            XCTAssertEqual(KeychainService.loadString(for: KeychainService.refreshTokenKey), "refresh-\(rotation)")
-            XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "refresh-0",
+            XCTAssertEqual((try? AuthManager.readAuthentication())?.refreshToken, "refresh-\(rotation)")
+            XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "refresh-0",
                            "The upgraded app retains a nonempty proof while the baseline Server replaces sessions")
         }
-        return auth
+        return (auth, context)
     }
 
     private func prepareUpgradedSession(
         _ replacements: Int, restore: Bool
     ) async throws -> UpgradedSessionFixture {
         let manager = PushNotificationManager(system: TestPushSystem(), relay: TestPushRelay(), storage: MemoryPushSetupStorage())
-        var auth = try await seedIOSFirstSession(replacements, manager: manager)
+        let (original, context) = try await seedIOSFirstSession(replacements, manager: manager)
+        var auth = original
         let log = AuthenticationRequestLog()
-        let registered = expectation(description: "registration restored after successful Server-upgrade rotation")
-        registered.assertForOverFulfill = false
         AuthenticationURLProtocol.handler = { request in
             _ = log.append(request.request)
             if request.request.url?.path == "/api/mobile/auth/refresh" {
@@ -277,10 +283,8 @@ private extension IOSFirstUpgradeRevocationTests {
             } else if request.request.url?.path == "/api/mobile/push/settings" {
                 request.respond(200, data: PushSetupTestData.response())
             } else {
-                XCTAssertEqual(request.request.url?.path, "/api/mobile/push/verified-register")
-                XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer access-\(replacements + 1)")
-                request.respond(200, data: PushSetupTestData.response(registered: true, revision: 2))
-                registered.fulfill()
+                XCTFail("Unknown legacy proof cannot create a verified registration")
+                request.respond(400)
             }
         }
         if restore {
@@ -289,15 +293,14 @@ private extension IOSFirstUpgradeRevocationTests {
         } else { _ = try await auth.refreshAccessToken() }
         XCTAssertTrue(auth.isAuthenticated)
         XCTAssertEqual(auth.getAccessToken(), "access-\(replacements + 1)")
-        XCTAssertEqual(KeychainService.loadString(for: KeychainService.revocationTokenKey), "refresh-0")
+        XCTAssertEqual((try? AuthManager.readAuthentication())?.revocationToken, "refresh-0")
         let api = APIClient(authManager: auth)
         if restore { manager.configure(apiClient: api) }
         await manager.reconcile()
-        manager.didRegisterForRemoteNotifications(deviceToken: Data([1, 2]))
-        await fulfillment(of: [registered], timeout: 3)
-        await manager.waitForPendingRegistrations()
-        XCTAssertEqual(log.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }.count, 1)
-        return UpgradedSessionFixture(auth: auth, api: api, manager: manager)
+        XCTAssertNil((try AuthManager.readAuthentication())?.confirmedDeletionProof)
+        XCTAssertTrue(try PendingSessionRevocations().records().isEmpty)
+        XCTAssertFalse(log.snapshot().contains { $0.url?.path == "/api/mobile/push/verified-register" })
+        return UpgradedSessionFixture(auth: auth, api: api, manager: manager, context: context)
     }
 
     nonisolated static func tokens(_ rotation: Int) -> Data {

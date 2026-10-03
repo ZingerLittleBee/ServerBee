@@ -1,6 +1,57 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "The server returned an invalid session identity. Please retry.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server returned an invalid session identity. Please retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器返回了无效的会话身份，请重试。"
+          }
+        }
+      }
+    },
+    "Pending sign-outs need to finish before another login. Connect to your servers and retry.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pending sign-outs need to finish before another login. Connect to your servers and retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请连接服务器并重试，完成待处理的退出后再登录。"
+          }
+        }
+      }
+    },
+    "Connect to your server to complete secure sign-out before signing in again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to your server to complete secure sign-out before signing in again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请连接服务器以完成安全退出，然后重新登录。"
+          }
+        }
+      }
+    },
     "Task run succeeded": {
       "extractionState": "manual",
       "localizations": {

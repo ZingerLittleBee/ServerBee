@@ -11,13 +11,11 @@ final class SettingsViewModelTests: XCTestCase {
         // The spy captures authManager.isAuthenticated at the moment unregister
         // runs. If unregister fires BEFORE clearAuth, this snapshot is `true`.
         let pushManager = SpyPushNotificationManager(authManager: authManager)
-        let apiClient = APIClient(authManager: authManager)
         let recorder = LogoutRecorder()
 
         let sut = SettingsViewModel()
         await sut.logout(
             authManager: authManager,
-            apiClient: apiClient,
             unregisterPush: pushManager.unregister(context:),
             closeWebSocket: { await recorder.recordWebSocketClose() }
         )
@@ -41,12 +39,10 @@ final class SettingsViewModelTests: XCTestCase {
         authManager.isAuthenticated = true
 
         let pushManager = SpyPushNotificationManager(authManager: authManager, shouldThrow: true)
-        let apiClient = APIClient(authManager: authManager)
 
         let sut = SettingsViewModel()
         await sut.logout(
             authManager: authManager,
-            apiClient: apiClient,
             unregisterPush: pushManager.unregister(context:),
             closeWebSocket: {}
         )
@@ -63,7 +59,6 @@ final class SettingsViewModelTests: XCTestCase {
         authManager.isAuthenticated = true
 
         let pushManager = SpyPushNotificationManager(authManager: authManager)
-        let apiClient = APIClient(authManager: authManager)
         let recorder = LogoutRecorder()
         // Snapshot authentication state at the moment the WS close hook runs.
         let captureAuth: @MainActor () -> Void = { [weak authManager] in
@@ -74,7 +69,6 @@ final class SettingsViewModelTests: XCTestCase {
         let sut = SettingsViewModel()
         await sut.logout(
             authManager: authManager,
-            apiClient: apiClient,
             unregisterPush: pushManager.unregister(context:),
             closeWebSocket: {
                 captureAuth()
@@ -98,12 +92,10 @@ final class SettingsViewModelTests: XCTestCase {
 
         let recorder = LogoutRecorder()
         let pushManager = OrderRecordingPushManager(recorder: recorder)
-        let apiClient = APIClient(authManager: authManager)
 
         let sut = SettingsViewModel()
         await sut.logout(
             authManager: authManager,
-            apiClient: apiClient,
             unregisterPush: pushManager.unregister(context:),
             closeWebSocket: { await recorder.recordWebSocketClose() }
         )

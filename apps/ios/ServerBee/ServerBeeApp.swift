@@ -11,6 +11,7 @@ struct ServerBeeApp: App {
     @State private var networkMonitor = NetworkMonitor()
     @State private var securityFeed = SecurityFeedStore()
     @State private var upgradeJobs = UpgradeJobsStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -32,7 +33,18 @@ struct ServerBeeApp: App {
 
                     await authManager.initialize()
                 }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { Task { await recoverSignOuts() } }
+                }
+                .onChange(of: networkMonitor.isConnected) { _, connected in
+                    if connected { Task { await recoverSignOuts() } }
+                }
         }
+    }
+    @MainActor
+    private func recoverSignOuts() async {
+        await authManager.retryPendingRevocations()
+        if authManager.isAuthenticated { await pushManager.reconcile() }
     }
 }
 
@@ -50,6 +62,11 @@ private struct RootView: View {
                 ContentView(authManager: authManager)
             } else {
                 LoginView()
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if let error = authManager.recoveryError {
+                Text(error).font(.footnote).foregroundStyle(.red).padding()
             }
         }
         // Applied at the root so the Appearance choice covers every screen.

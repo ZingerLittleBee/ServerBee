@@ -118,20 +118,22 @@ final class NotificationSetupTests: XCTestCase {
         SetupURLProtocol.cancelPending()
         URLProtocol.unregisterClass(SetupURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     private func login(_ auth: AuthManager, user: String = "alice") {
         auth.setServerUrl("https://\(user).test")
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: "access-\(user)", accessExpiresInSecs: 900, refreshToken: "refresh-\(user)", refreshExpiresInSecs: 3600,
-            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member")
-        ))
+            tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"),
+            revocationToken: "fixture-deletion-" + UUID().uuidString, mobileSessionId: UUID().uuidString))
     }
 
     func testLaunchAndRepeatedReconciliationNeverPromptWithoutExplicitOptIn() async {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let relay = TestPushRelay()
@@ -150,6 +152,7 @@ final class NotificationSetupTests: XCTestCase {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
@@ -179,6 +182,7 @@ final class NotificationSetupTests: XCTestCase {
         fixture.failSave()
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
@@ -197,6 +201,7 @@ final class NotificationSetupTests: XCTestCase {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let relay = TestPushRelay()
@@ -220,6 +225,7 @@ final class NotificationSetupTests: XCTestCase {
         fixture.setRegistrationStatus(503)
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let relay = TestPushRelay()
         let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
@@ -248,6 +254,7 @@ final class NotificationSetupTests: XCTestCase {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let manager = PushNotificationManager(system: system, relay: TestPushRelay(), storage: MemoryPushSetupStorage())
@@ -283,6 +290,7 @@ extension NotificationSetupTests {
             fixture.enable()
             SetupURLProtocol.fixture = fixture
             let auth = AuthManager()
+            auth.clearAuth()
             login(auth)
             let storage = MemoryPushSetupStorage()
             let relay = TestPushRelay()
@@ -398,6 +406,7 @@ extension NotificationSetupTests {
         fixture.enable()
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let relay = TestPushRelay()
         let manager = PushNotificationManager(system: TestPushSystem(), relay: relay, storage: MemoryPushSetupStorage())
@@ -442,6 +451,7 @@ extension NotificationSetupTests {
         let fixture = SetupHTTPFixture()
         SetupURLProtocol.fixture = fixture
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .denied

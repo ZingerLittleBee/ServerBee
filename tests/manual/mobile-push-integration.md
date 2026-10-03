@@ -20,6 +20,12 @@ Retain the existing three-category unsubscribe tests and exclusive encrypted tar
 
 `task_outcomes::lifecycle::trace::stitched_categories_use_actual_relay_and_preserve_external_legacy_delivery` extends the existing real Relay fixture. Seven actual provider transport payloads cover test, alert firing/resolved/rearm, security, task failure and task success; migration excludes the modern installation from legacy selection while an unrelated legacy installation remains. A configured external webhook receives recovery/rearm exactly once. `CombinedPushTraceTests.testStitchedAllServerCategoriesThroughActualExtensionAndAuthenticatedRouter` consumes these exact provider payloads through the actual NSE and cold-launch router, checking identities, exclusive targets, localized non-generic rendering and account replacement rejection. This synthetic Apple/APNs boundary does not establish genuine device proof.
 
+## Offline logout and upgrade recovery
+
+`router_mobile` scoped-revocation regressions exercise real verified settings ownership, expiry-hidden originals, repeated/concurrent exact-session absence acknowledgements, replacement-login isolation, malformed IDs, corrupt dangling authority, and refresh-proof bootstrap. Historical outbox rows remain governed by existing eligibility and expiry checks; absence acknowledgement does not promise in-flight recall.
+
+`PendingSessionRevocationTests` keeps production AuthManager/APIClient behavior with isolated storage/HTTP seams: proof-only offline recovery across a fresh AuthManager, legacy fail-closed logout, storage failures/capacity, replacement identity and UI-error fencing, no ambient cookies/credentials, first-settings-write bootstrap, malformed session IDs, and preservation of content/grant/test scope across legacy migration and restart. The private-group test reads actual app-hosted Keychain items. Regenerate the Xcode project for the new Swift files before running the full native test bundle. These fixtures do not establish physical-device Keychain entitlement or APNs behavior.
+
 ## Lightweight checks
 
 Use the repository-declared Bun version, Node 24 and existing locked dependencies. Capture stdout/stderr and process exit for each command. Run from the repository root unless stated otherwise:

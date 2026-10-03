@@ -101,6 +101,40 @@ enum KeychainService {
         SecItemDelete(query as CFDictionary)
     }
 
+    /// Auth transitions must never delete the previous value before replacement.
+    static func saveAtomically(_ data: Data, for key: String) throws {
+        guard let query = query(for: key) else { throw KeychainError.saveFailed(errSecMissingEntitlement) }
+        let attributes = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else { throw KeychainError.saveFailed(status) }
+        var add = query
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        let added = SecItemAdd(add as CFDictionary, nil)
+        if added == errSecDuplicateItem {
+            let retried = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            guard retried == errSecSuccess else { throw KeychainError.saveFailed(retried) }
+        } else if added != errSecSuccess { throw KeychainError.saveFailed(added) }
+    }
+
+    static func readThrowing(for key: String) throws -> Data? {
+        guard var query = query(for: key) else { throw KeychainError.saveFailed(errSecMissingEntitlement) }
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else { throw KeychainError.saveFailed(status) }
+        return data
+    }
+
+    static func deleteThrowing(for key: String) throws {
+        guard let query = query(for: key) else { throw KeychainError.saveFailed(errSecMissingEntitlement) }
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError.saveFailed(status) }
+    }
+
     // MARK: - String Convenience
 
     /// Save a UTF-8 string to the Keychain.

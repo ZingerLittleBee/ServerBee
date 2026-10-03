@@ -145,6 +145,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
         PreferenceRecoveryURLProtocol.cancelPending()
         URLProtocol.unregisterClass(PreferenceRecoveryURLProtocol.self)
         AuthManager().clearAuth()
+        try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
     func login(_ auth: AuthManager, user: String = "alice") {
         auth.setServerUrl("https://\(user).test")
@@ -152,8 +153,8 @@ final class PushPreferenceRecoveryTests: XCTestCase {
             accessToken: "access-\(UUID().uuidString)", accessExpiresInSecs: 900,
             refreshToken: "refresh-\(UUID().uuidString)", refreshExpiresInSecs: 3600,
             tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"),
-            revocationToken: "proof-\(UUID().uuidString)"
-        ))
+            revocationToken: "proof-\(UUID().uuidString)",
+            mobileSessionId: UUID().uuidString))
     }
     func manager(_ auth: AuthManager, system: TestPushSystem, relay: TestPushRelay? = nil) -> PushNotificationManager {
         let manager = PushNotificationManager(system: system, relay: relay ?? TestPushRelay(), storage: MemoryPushSetupStorage())
@@ -165,6 +166,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
@@ -205,6 +207,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
                 if !currentAdmin { http.demote() }
                 PreferenceRecoveryURLProtocol.fixture = http
                 let auth = AuthManager()
+                auth.clearAuth()
                 login(auth)
                 let system = TestPushSystem()
                 system.status = .denied
@@ -260,6 +263,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
@@ -282,6 +286,7 @@ extension PushPreferenceRecoveryTests {
         let http = PreferenceRecoveryHTTP(security: true)
         PreferenceRecoveryURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let manager = manager(auth, system: system)
@@ -320,6 +325,7 @@ extension PushPreferenceRecoveryTests {
         defer { original.cancel(); replacement.cancel() }
         PreferenceRecoveryURLProtocol.fixture = original
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
@@ -362,6 +368,7 @@ extension PushPreferenceRecoveryTests {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         let relay = TestPushRelay()
@@ -408,6 +415,7 @@ extension PushPreferenceRecoveryTests {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let system = TestPushSystem()
         system.status = .denied
@@ -442,6 +450,7 @@ extension PushPreferenceRecoveryTests {
         let http = PreferenceRecoveryHTTP()
         PreferenceRecoveryURLProtocol.fixture = http
         let auth = AuthManager()
+        auth.clearAuth()
         login(auth)
         let manager = manager(auth, system: TestPushSystem())
         await manager.reconcile()

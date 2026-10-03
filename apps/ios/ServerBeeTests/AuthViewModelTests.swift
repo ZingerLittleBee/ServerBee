@@ -3,6 +3,17 @@ import XCTest
 
 @MainActor
 final class AuthViewModelTests: XCTestCase {
+    override func setUp() async throws {
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
+    }
+
+    override func tearDown() async throws {
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
+        URLProtocolStub.stubError = nil
+    }
+
     func testLoginShowsErrorOnNonHTTPResponse() async {
         URLProtocol.registerClass(URLProtocolStub.self)
         defer { URLProtocol.unregisterClass(URLProtocolStub.self) }

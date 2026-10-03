@@ -124,6 +124,40 @@ actor APIClient {
         }
     }
 
+    private static let cleanupSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
+    }()
+
+    /// Replay has no AuthManager dependency and cannot refresh or adopt a login.
+    static func revokeSavedSession(_ record: PendingSessionRevocation) async throws {
+        guard let url = URL(string: "\(record.serverUrl)/api/mobile/auth/revoke") else { throw APIError.noServerUrl }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 12
+        request.httpShouldHandleCookies = false
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder.snakeCase.encode(MobileRevokeRequest(
+            installationId: record.installationId, revocationToken: record.proof, expectedSessionId: record.mobileSessionId))
+        let (data, response) = try await ServerHTTPTransport.data(for: request, session: cleanupSession)
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1, data: data)
+        }
+        // A malformed 200 is not evidence that the intended endpoint committed.
+        let acknowledgement = try JSONDecoder.snakeCase.decode(ApiResponse<String>.self, from: data).data
+        guard acknowledgement == "ok" || acknowledgement == "already_absent" else {
+            throw APIError.httpError(statusCode: 200, data: data)
+        }
+    }
+
+    func requireDeletionRecovery(context: MobileAuthenticationContext) async throws {
+        try await authManager.requireDeletionRecovery(context: context)
+    }
+
     // MARK: - Captured requests
 
     @MainActor
@@ -169,6 +203,9 @@ actor APIClient {
         body: (any Encodable & Sendable)? = nil,
         context capturedContext: MobileAuthenticationContext
     ) async throws -> (Data, HTTPURLResponse) {
+        if (path == "/api/mobile/push/settings" && method == "PUT") || path == "/api/mobile/push/verified-register" {
+            try await authManager.requireDeletionRecovery(context: capturedContext)
+        }
         let context = try await currentContext(matching: capturedContext)
         var token = context.accessToken
         var result = try await sendRequest(path, method: method, body: body, context: context, token: token)

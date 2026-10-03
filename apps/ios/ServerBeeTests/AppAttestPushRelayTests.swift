@@ -153,13 +153,17 @@ final class AppAttestPushRelayTests: XCTestCase {
         let storage = MemoryPushSetupStorage()
         let relay = AppAttestPushRelay(service: native, transport: http, storage: storage, environment: "sandbox")
         let auth = AuthManager()
-        defer { auth.clearAuth() }
+        auth.clearAuth()
+        defer {
+            auth.clearAuth()
+            try? KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
+        }
         func login(_ user: String, proof: String) {
             auth.setServerUrl("https://deployment.test")
             auth.handleLoginResponse(MobileTokenResponse(
                 accessToken: "access-\(proof)", accessExpiresInSecs: 900, refreshToken: "refresh-\(proof)", refreshExpiresInSecs: 3600,
-                tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"), revocationToken: proof
-            ))
+                tokenType: "Bearer", user: MobileUser(id: user, username: user, role: "member"), revocationToken: proof,
+                mobileSessionId: UUID().uuidString))
         }
         login("alice", proof: "old-login")
         let old = try XCTUnwrap(auth.captureContext())
