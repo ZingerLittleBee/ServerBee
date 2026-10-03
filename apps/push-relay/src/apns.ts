@@ -1,5 +1,11 @@
 import { createPrivateKey, sign } from 'node:crypto'
-import { type ClientHttp2Session, type ClientHttp2Stream, connect, constants } from 'node:http2'
+import {
+  type ClientHttp2Session,
+  type ClientHttp2Stream,
+  connect,
+  constants,
+  type IncomingHttpHeaders
+} from 'node:http2'
 import type { Socket } from 'node:net'
 import type { Environment } from './attestation'
 
@@ -168,7 +174,7 @@ export class AppleNetwork {
         finish(new Error('APNs timeout'))
       }, this.timeoutMs)
       session.pending.set(stream, (error) => finish(error))
-      stream.on('response', (headers, _flags, rawHeaders) => {
+      stream.on('response', (headers: IncomingHttpHeaders, _flags: number, rawHeaders: string[]) => {
         status = Number(headers[':status'])
         const statuses = rawHeaders.filter((name, index) => index % 2 === 0 && name === ':status')
         const rawStatus = rawHeaders[rawHeaders.indexOf(':status') + 1]
@@ -182,7 +188,7 @@ export class AppleNetwork {
           finish(new Error('Invalid APNs response status'))
         }
       })
-      stream.on('trailers', (_headers, _flags, rawHeaders) => {
+      stream.on('trailers', (_headers: IncomingHttpHeaders, _flags: number, rawHeaders: string[]) => {
         if (rawHeaders.some((name, index) => index % 2 === 0 && name.startsWith(':'))) {
           finish(new Error('Invalid APNs response trailers'))
         }
