@@ -1,24 +1,27 @@
 import CryptoKit
 import Foundation
+import UserNotifications
 import XCTest
 @testable import ServerBee
 
 @MainActor
 final class EncryptedPushNavigationTests: XCTestCase {
-    private func context(user: String = "alice", deployment: String = "https://serverbee.test") -> MobileAuthenticationContext {
-        MobileAuthenticationContext(serverUrl: deployment, userId: user, installationId: "test-install", generation: UUID(),
-                                    accessToken: "fixture-access", revocationToken: "fixture-proof", refreshToken: "fixture-refresh")
+    private func context(user: String = "alice", deployment: String = "https://serverbee.test",
+                         installation: String = "test-install", proof: String = "fixture-proof") -> MobileAuthenticationContext {
+        MobileAuthenticationContext(serverUrl: deployment, userId: user, installationId: installation, generation: UUID(),
+                                    accessToken: "fixture-access", revocationToken: proof, refreshToken: "fixture-refresh")
     }
-    private func encrypted(_ context: MobileAuthenticationContext, kind: String = "test") throws -> (PushEnvelope, PushContentKey) {
-        let now = Int64(Date().timeIntervalSince1970)
+    private func encrypted(_ context: MobileAuthenticationContext, kind: String = "test",
+                           createdAt: Int64 = Int64(Date().timeIntervalSince1970)) throws -> (PushEnvelope, PushContentKey) {
         var content = PushContent(kind: kind, deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
-                                  eventId: UUID().uuidString.lowercased(), createdAt: now, expiresAt: now + 1800)
+                                  eventId: UUID().uuidString.lowercased(), createdAt: createdAt, expiresAt: createdAt + 1800)
         if kind == "security" {
             content.serverId = "33333333-3333-4333-8333-333333333333"
             content.securityEventId = content.eventId
             content.securityEventType = "ssh_brute_force"
         }
-        let key = PushContentKey(keyId: UUID().uuidString.lowercased(), key: Data(repeating: 7, count: 32).base64EncodedString(),
+        let secret = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+        let key = PushContentKey(keyId: UUID().uuidString.lowercased(), key: secret.base64EncodedString(),
                                  deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId, scope: context.pushScope)
         let identity = try content.identity
         let aad = Data("ServerBee.Push.v1|\(key.keyId)|\(identity)".utf8)
@@ -28,7 +31,7 @@ final class EncryptedPushNavigationTests: XCTestCase {
                              ciphertext: (sealed.ciphertext + sealed.tag).base64EncodedString()), key)
     }
 
-    func testEarlyDelegateTapWaitsForStoresAndRejectsReplacementAccountDeploymentAndLogin() throws {
+    func testEarlyDelegateTapWaitsForStoresAndCurrentKey() throws {
         let current = context()
         let (envelope, key) = try encrypted(current)
         let delegate = AppDelegate()
@@ -36,18 +39,79 @@ final class EncryptedPushNavigationTests: XCTestCase {
         delegate.bufferNotification(userInfo: ["serverbee_envelope": object])
         let router = PushNotificationRouter()
         delegate.pushRouter = router
-        XCTAssertNotNil(router.pendingEnvelope)
+        XCTAssertEqual(router.pendingEnvelope?.ciphertext, envelope.ciphertext)
+        XCTAssertNil(router.consumeTarget(context: current, key: nil))
+        XCTAssertEqual(router.pendingEnvelope?.ciphertext, envelope.ciphertext)
         XCTAssertEqual(router.consumeTarget(context: current, key: key), .account)
         XCTAssertNil(router.pendingEnvelope)
-        for mismatch in [context(user: "bob"), context(deployment: "https://other.test"),
-                         MobileAuthenticationContext(serverUrl: current.serverUrl, userId: current.userId, installationId: current.installationId,
-                                                     generation: UUID(), accessToken: "new", revocationToken: "new-login-proof", refreshToken: "new-refresh")] {
-            router.enqueue(envelope: envelope)
-            XCTAssertNil(router.consumeTarget(context: mismatch, key: key))
+    }
+
+    func testMalformedCallbacksNeitherCreateNorReplaceBufferedTap() throws {
+        let current = context()
+        let (envelope, key) = try encrypted(current, kind: "security")
+        let content = try PushEnvelopeDecoder.decrypt(envelope, key: key)
+        let delegate = AppDelegate()
+        let router = PushNotificationRouter()
+        delegate.pushRouter = router
+        let callbacks: [[AnyHashable: Any]] = [
+            ["server_id": "victim", "serverbee_target": ["user_id": "alice"]],
+            ["serverbee_envelope": "not a JSON object"],
+            ["serverbee_envelope": ["version": 1]],
+            ["serverbee_envelope": ["ciphertext": String(repeating: "A", count: 5000)]]
+        ]
+        for callback in callbacks {
+            delegate.bufferNotification(userInfo: callback)
+            XCTAssertNil(router.pendingEnvelope)
         }
-        router.enqueue(envelope: envelope)
+        delegate.bufferNotification(userInfo: ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))])
         XCTAssertNil(router.consumeTarget(context: current, key: nil))
-        delegate.bufferNotification(userInfo: ["server_id": "victim", "serverbee_target": ["user_id": "alice"]])
+        for callback in callbacks {
+            delegate.bufferNotification(userInfo: callback)
+            XCTAssertEqual(router.pendingEnvelope?.ciphertext, envelope.ciphertext)
+        }
+        XCTAssertEqual(router.consumeTarget(context: current, key: key),
+                       .securityDetail(serverId: try XCTUnwrap(content.serverId), eventId: content.eventId))
+        XCTAssertNil(router.pendingEnvelope)
+    }
+
+    func testBufferedOldAccountRejectedWhenCurrentKeyBecomesReady() throws {
+        try assertReplacementRejectsBufferedTap(context(user: "bob"))
+    }
+
+    func testBufferedOldDeploymentRejectedWhenCurrentKeyBecomesReady() throws {
+        try assertReplacementRejectsBufferedTap(context(deployment: "https://other.test"))
+    }
+
+    func testBufferedOldInstallationRejectedWhenCurrentKeyBecomesReady() throws {
+        try assertReplacementRejectsBufferedTap(context(installation: "replacement-install"))
+    }
+
+    func testBufferedOldLoginRejectedWhenCurrentKeyBecomesReady() throws {
+        try assertReplacementRejectsBufferedTap(context(proof: "new-login-proof"))
+    }
+
+    private func assertReplacementRejectsBufferedTap(_ replacement: MobileAuthenticationContext) throws {
+        let old = context()
+        let (oldEnvelope, oldKey) = try encrypted(old, kind: "security", createdAt: Int64(Date().timeIntervalSince1970) - 1860)
+        let (currentEnvelope, currentKey) = try encrypted(replacement, kind: "security")
+        let delegate = AppDelegate()
+        delegate.bufferNotification(userInfo: ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(oldEnvelope))])
+        let router = PushNotificationRouter()
+        delegate.pushRouter = router
+        XCTAssertNil(router.consumeTarget(context: replacement, key: nil))
+        XCTAssertEqual(router.pendingEnvelope?.ciphertext, oldEnvelope.ciphertext)
+        XCTAssertNotEqual(currentKey.scope, oldKey.scope)
+        XCTAssertNil(router.consumeTarget(context: replacement, key: oldKey), "the old key must fail the current login scope")
+        XCTAssertNil(router.pendingEnvelope)
+        router.enqueue(envelope: oldEnvelope)
+        XCTAssertNil(router.consumeTarget(context: replacement, key: nil))
+        XCTAssertEqual(router.pendingEnvelope?.ciphertext, oldEnvelope.ciphertext)
+        XCTAssertNil(router.consumeTarget(context: replacement, key: currentKey), "reject the old envelope once the CURRENT key is ready")
+        XCTAssertNil(router.pendingEnvelope)
+        router.enqueue(envelope: currentEnvelope)
+        let content = try PushEnvelopeDecoder.decrypt(currentEnvelope, key: currentKey)
+        XCTAssertEqual(router.consumeTarget(context: replacement, key: currentKey),
+                       .securityDetail(serverId: try XCTUnwrap(content.serverId), eventId: content.eventId))
         XCTAssertNil(router.pendingEnvelope)
     }
 
@@ -86,6 +150,44 @@ final class EncryptedPushNavigationTests: XCTestCase {
         XCTAssertEqual(tab, 0)
         XCTAssertEqual(servers, [.security(serverId: try XCTUnwrap(content.serverId), eventId: content.eventId)])
         XCTAssertTrue(alerts.isEmpty)
+    }
+
+    func testAlreadyPresentedSecurityColdTapAfterDeliveryExpiry() throws {
+        try assertDelayedSecurityTap(coldLaunch: true)
+    }
+
+    func testAlreadyPresentedSecurityWarmTapAfterDeliveryExpiry() throws {
+        try assertDelayedSecurityTap(coldLaunch: false)
+    }
+
+    private func assertDelayedSecurityTap(coldLaunch: Bool) throws {
+        let current = context()
+        let createdAt = Int64(Date().timeIntervalSince1970) - 1860
+        let (envelope, key) = try encrypted(current, kind: "security", createdAt: createdAt)
+        let input = UNMutableNotificationContent()
+        input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))]
+        // The extension presented this authenticated notification before expiry.
+        let presented = PushNotificationRenderer.render(input, key: key, now: createdAt)
+        XCTAssertNotNil(presented.userInfo["serverbee_target"])
+        XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
+        XCTAssertTrue(PushNotificationRenderer.render(input, key: key).userInfo.isEmpty)
+        let content = try PushEnvelopeDecoder.decryptForNavigation(envelope, key: key)
+        let expected = ServerDeepLink.securityDetail(serverId: try XCTUnwrap(content.serverId), eventId: content.eventId)
+        let delegate = AppDelegate()
+        let router = PushNotificationRouter()
+        if !coldLaunch { delegate.pushRouter = router }
+        delegate.bufferNotification(userInfo: presented.userInfo)
+        if coldLaunch { delegate.pushRouter = router }
+        XCTAssertNil(router.consumeTarget(context: current, key: nil))
+        XCTAssertEqual(router.pendingEnvelope?.ciphertext, envelope.ciphertext)
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), expected)
+        XCTAssertNil(router.pendingEnvelope)
+        var tab = 3
+        var servers: [ServerNavigationTarget] = []
+        var alerts: [ServerDeepLink] = []
+        ContentView.applyDeepLink(expected, selectedTab: &tab, serversPath: &servers, alertsPath: &alerts)
+        XCTAssertEqual(tab, 0)
+        XCTAssertEqual(servers, [.security(serverId: try XCTUnwrap(content.serverId), eventId: content.eventId)])
     }
 
     func testStitchedServerRelayCiphertextColdTapValidatesCurrentAccount() throws {

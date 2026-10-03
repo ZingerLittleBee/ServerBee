@@ -20,7 +20,7 @@ final class PushNotificationRouter {
         pendingEnvelope = nil
         guard key.scope == context.pushScope, key.deploymentId == context.serverUrl,
               key.userId == context.userId, key.installationId == context.installationId,
-              let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key) else { return nil }
+              let content = try? PushEnvelopeDecoder.decryptForNavigation(envelope, key: key) else { return nil }
         if content.kind == "security", let serverId = content.serverId, let eventId = content.securityEventId {
             return .securityDetail(serverId: serverId, eventId: eventId)
         }

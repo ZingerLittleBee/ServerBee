@@ -15,7 +15,9 @@ the Server/app/Relay revisions and APNs environment with each observation.
   cases retain registration ownership, revocation and retry coverage.
 - Native: run `EncryptedPushNavigationTests`, `SecurityNotificationDetailTests`
   and `NotificationServiceTests` in `ServerBeeTests`. These verify encryption,
-  cold/warm callback routing and current-role/target validation, substituting
+  cold/warm callback routing (including already-presented notifications tapped
+  after 30 minutes), expired extension presentation, current-key rejection of old
+  account/deployment/installation/login envelopes and current-role/target validation, substituting
   authenticated HTTP/system boundaries. They do not establish real App Attest,
   APNs receipt, device presentation or observed navigation.
 - Run the shared Rust/Swift security envelope vector and English/zh-Hans
@@ -36,7 +38,10 @@ the Server/app/Relay revisions and APNs environment with each observation.
    and distribution devices. Record provider acceptance separately from banner
    presentation. Foreground WebSocket updates must not add a second banner.
 4. Tap after warm and cold launch. Confirm the corresponding Server security
-   feed and exact event sheet. Delete the event/Server or downgrade the user;
+   feed and exact event sheet, including a notification presented more than
+   30 minutes before the tap. Delivery expiry must not expire an authenticated
+   security target; the app still checks current login, role and resources.
+   Delete the event/Server or downgrade the user;
    confirm a dismissible unavailable screen. Switch deployment/account or
    replace the login; an older envelope must not navigate in the new context.
 5. Repeat with two installations. Queue during a Relay outage, then unsubscribe,

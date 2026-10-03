@@ -35,6 +35,7 @@ final class NotificationServiceTests: XCTestCase {
                                               installationId: key.installationId, scope: key.scope)
         XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: identityMismatch, now: expected.createdAt))
         XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: expected.expiresAt))
+        XCTAssertThrowsError(try PushEnvelopeDecoder.decryptForNavigation(envelope, key: key, now: expected.expiresAt))
         let input = UNMutableNotificationContent()
         input.title = "Sensitive plaintext must not survive"
         input.userInfo = ["server_id": "victim", "serverbee_envelope": ["version": 2]]
@@ -74,10 +75,42 @@ final class NotificationServiceTests: XCTestCase {
         let target = try XCTUnwrap(rendered.userInfo["serverbee_target"] as? [String: Any])
         XCTAssertEqual(target["server_id"] as? String, content.serverId)
         XCTAssertEqual(target["security_event_id"] as? String, content.eventId)
+        XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key, now: content.expiresAt))
+        XCTAssertTrue(PushNotificationRenderer.render(input, key: key, now: content.expiresAt).userInfo.isEmpty)
+        XCTAssertEqual(try PushEnvelopeDecoder.decryptForNavigation(envelope, key: key, now: content.expiresAt + 60), content)
         let tampered = PushEnvelope(version: 1, keyId: envelope.keyId, identity: envelope.identity, nonce: envelope.nonce,
                                     ciphertext: "AAAA" + envelope.ciphertext.dropFirst(4))
         input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(tampered))]
         XCTAssertTrue(PushNotificationRenderer.render(input, key: key, now: content.createdAt).userInfo.isEmpty)
+    }
+
+    func testExpiredSecurityNavigationStillRejectsUnauthenticatedAndWrongIdentityTargets() throws {
+        let fixture = try vector(resource: "push-security-envelope-v1")
+        let envelope = fixture.envelope
+        let key = fixture.key
+        let now = fixture.content.expiresAt + 60
+        let invalid = [
+            PushEnvelope(version: 2, keyId: envelope.keyId, identity: envelope.identity, nonce: envelope.nonce, ciphertext: envelope.ciphertext),
+            PushEnvelope(version: 1, keyId: envelope.keyId, identity: String(repeating: "0", count: 64), nonce: envelope.nonce, ciphertext: envelope.ciphertext),
+            PushEnvelope(version: 1, keyId: envelope.keyId, identity: envelope.identity, nonce: envelope.nonce, ciphertext: "AAAA" + envelope.ciphertext.dropFirst(4)),
+            PushEnvelope(version: 1, keyId: envelope.keyId, identity: envelope.identity, nonce: envelope.nonce, ciphertext: String(repeating: "A", count: 2800))
+        ]
+        for candidate in invalid {
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decryptForNavigation(candidate, key: key, now: now))
+        }
+        let wrongKeys = [
+            PushContentKey(keyId: key.keyId, key: Data(repeating: 0, count: 32).base64EncodedString(), deploymentId: key.deploymentId,
+                           userId: key.userId, installationId: key.installationId, scope: key.scope),
+            PushContentKey(keyId: key.keyId, key: key.key, deploymentId: "https://other.test",
+                           userId: key.userId, installationId: key.installationId, scope: key.scope),
+            PushContentKey(keyId: key.keyId, key: key.key, deploymentId: key.deploymentId,
+                           userId: "other-user", installationId: key.installationId, scope: key.scope),
+            PushContentKey(keyId: key.keyId, key: key.key, deploymentId: key.deploymentId,
+                           userId: key.userId, installationId: "other-installation", scope: key.scope)
+        ]
+        for wrong in wrongKeys {
+            XCTAssertThrowsError(try PushEnvelopeDecoder.decryptForNavigation(envelope, key: wrong, now: now))
+        }
     }
 
     func testExtensionSecurityTypesAndFallback() throws {
@@ -86,11 +119,12 @@ final class NotificationServiceTests: XCTestCase {
         let expected = fixture.content
         let now = Int64(Date().timeIntervalSince1970)
         let secret = SymmetricKey(data: try XCTUnwrap(Data(base64Encoded: key.key)))
-        for eventType in ["ssh_login", "ssh_brute_force", "port_scan", "unsupported", "missing-server"] {
+        for eventType in ["ssh_login", "ssh_brute_force", "port_scan", "unsupported", "missing-server", "expired"] {
+            let createdAt = eventType == "expired" ? now - 1860 : now
             let content = PushContent(kind: "security", deploymentId: expected.deploymentId, userId: expected.userId,
-                                      installationId: expected.installationId, eventId: expected.eventId, createdAt: now, expiresAt: now + 1800,
+                                      installationId: expected.installationId, eventId: expected.eventId, createdAt: createdAt, expiresAt: createdAt + 1800,
                                       serverId: eventType == "missing-server" ? nil : expected.serverId,
-                                      securityEventId: expected.eventId, securityEventType: eventType)
+                                      securityEventId: expected.eventId, securityEventType: eventType == "expired" ? "ssh_brute_force" : eventType)
             let sealed = try AES.GCM.seal(JSONEncoder().encode(content), using: secret,
                                           authenticating: Data("ServerBee.Push.v1|\(key.keyId)|\(fixture.envelope.identity)".utf8))
             let envelope = PushEnvelope(version: 1, keyId: key.keyId, identity: fixture.envelope.identity,
@@ -103,7 +137,7 @@ final class NotificationServiceTests: XCTestCase {
             var completions = 0
             service.didReceive(UNNotificationRequest(identifier: eventType, content: input, trigger: nil)) { rendered in
                 completions += 1
-                if ["unsupported", "missing-server"].contains(eventType) {
+                if ["unsupported", "missing-server", "expired"].contains(eventType) {
                     XCTAssertEqual(rendered.title, "ServerBee")
                     XCTAssertTrue(rendered.userInfo.isEmpty)
                 } else {

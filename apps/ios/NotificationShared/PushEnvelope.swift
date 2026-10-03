@@ -69,6 +69,20 @@ enum PushEnvelopeError: Error { case invalid }
 
 enum PushEnvelopeDecoder {
     static func decrypt(_ envelope: PushEnvelope, key: PushContentKey, now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> PushContent {
+        let content = try authenticatedContent(envelope, key: key, now: now)
+        guard content.expiresAt > now else { throw PushEnvelopeError.invalid }
+        return content
+    }
+
+    /// Delivery expires after 30 minutes. An already-presented security target
+    /// remains navigable, subject to the app's current login and Server checks.
+    static func decryptForNavigation(_ envelope: PushEnvelope, key: PushContentKey, now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> PushContent {
+        let content = try authenticatedContent(envelope, key: key, now: now)
+        guard content.kind == "security" || content.expiresAt > now else { throw PushEnvelopeError.invalid }
+        return content
+    }
+
+    private static func authenticatedContent(_ envelope: PushEnvelope, key: PushContentKey, now: Int64) throws -> PushContent {
         guard envelope.version == 1, envelope.keyId == key.keyId, envelope.ciphertext.count <= 2760,
               let secret = Data(base64Encoded: key.key), secret.count == 32,
               let nonce = Data(base64Encoded: envelope.nonce), nonce.count == 12,
@@ -79,11 +93,13 @@ enum PushEnvelopeDecoder {
         let sealed = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: ciphertext.dropLast(16), tag: ciphertext.suffix(16))
         let bytes = try AES.GCM.open(sealed, using: SymmetricKey(data: secret), authenticating: aad)
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
+        let lifetime = content.expiresAt.subtractingReportingOverflow(content.createdAt)
+        let latestCreation = now.addingReportingOverflow(60)
         guard content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
               UUID(uuidString: content.eventId) != nil,
-              content.expiresAt > now, content.createdAt <= now + 60,
-              content.expiresAt - content.createdAt == 1800 else { throw PushEnvelopeError.invalid }
+              !latestCreation.overflow, content.createdAt <= latestCreation.partialValue,
+              !lifetime.overflow, lifetime.partialValue == 1800 else { throw PushEnvelopeError.invalid }
         switch content.kind {
         case "test":
             guard content.serverId == nil, content.securityEventId == nil, content.securityEventType == nil else { throw PushEnvelopeError.invalid }
