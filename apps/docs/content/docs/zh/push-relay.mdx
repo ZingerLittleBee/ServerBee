@@ -1,0 +1,164 @@
+---
+title: Push Relay 运维
+description: 隔离 Relay 设置、签名检查、故障排除与真实设备通知验收。
+icon: Smartphone
+---
+
+投递路径为 **Server → 独立 ServerBee Push Relay → APNs → iOS Notification Service Extension**。Server 负责订阅、授权、加密待投递消息和任务最终汇总，发布者的 Relay 负责 Apple 准入和 APNs 凭证。用户设置参见[移动端](/zh/docs/mobile)，Server 配置参见[配置说明](/zh/docs/configuration)。
+
+本手册描述在明确授权的隔离环境中由运维者执行的操作，不会部署基础设施、安装密钥、发布代码或修改 Apple 账户。本仓库没有提供官方签名应用下载。本地夹具和 Simulator 测试不能证明真正的 App Attest 或 APNs 投递。
+
+## 准备隔离环境
+
+1. 记录 Server、Agent、Relay 和应用的精确版本、应用构建号、设备与 iOS 版本、UTC 时间及目标环境。使用独立 Server 账户、测试服务器和数据库、Relay 地址与状态、物理设备，与 Heeler 和生产服务隔离。告警、安全事件和命令输出使用无敏感内容的测试数据。
+2. 发布者提供具有 APNs、App Attest 和共享 Keychain entitlement 的正确签名应用、对应 provisioning profile，以及已授权的 Relay 运维者。官方应用用户和自托管 Server 运维者无需持有发布者密钥或个人 Apple 开发者账户。从源码构建的维护者需要适用的签名身份。
+3. 在已授权的 Relay 主机上使用 Bun 和 OpenSSL 3 安装锁定依赖。遵循仓库 `packageManager` 声明的版本，目前为 Bun 1.3.4；文档预览与检查使用 Node 24。文档 CI 的 Bun 安装步骤没有显式锁定版本。
+4. 准备私有持久 SQLite 目录与 HTTPS 反向代理。Relay 可执行程序仅监听 loopback。代理限制请求体为 32 KiB，并配置来源 IP 限流、有界并发及连接和时间限制。将 `RELAY_TRUSTED_PROXY_IPS` 设置为准确的代理 socket IP，并按下文覆盖固定客户端 IP 头；不得透传调用方控制的值。允许出站 APNs HTTP/2，保持时钟同步。
+
+### 配置归属
+
+| 归属 | 变量与用途 |
+| --- | --- |
+| Server | `SERVERBEE_PUSH_RELAY__URL` 或 `[push_relay].url`，最终 HTTPS Relay 地址；应用也使用无重定向的最终 HTTPS Server 地址 |
+| Relay 信任 | `APP_ATTEST_ROOT_CA`，审核后的 Apple 根证书 PEM 路径；`APP_ATTEST_ROOT_SHA256`，独立核验的指纹；`APP_ATTEST_APP_ID`，App ID 前缀和应用 bundle 标识；`APP_ATTEST_BUNDLE_VERSIONS`，允许的签名构建版本 |
+| Relay 证明策略 | `APP_ATTEST_REQUIRE_EXTENSIONS`，可选，仅接受精确小写 `true` 或 `false`，省略等同 `false`；其他值会导致启动失败。 |
+| Relay APNs | `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_PRIVATE_KEY`（私有 PEM **路径**）、`APNS_TOPIC`（应用 bundle 标识，不是扩展标识） |
+| Relay 代理 | `RELAY_TRUSTED_PROXY_IPS`，必填的准确代理对端 IP 列表；代理覆盖 `X-ServerBee-Client-IP` 为单个纯客户端 IP |
+| Relay 状态 | `RELAY_DATABASE`，私有持久 SQLite 路径；`RELAY_PORT`，loopback 监听端口 |
+| Relay 环境 | `APNS_ENVIRONMENTS=sandbox,production` 支持共存；也可使用 `APNS_ENVIRONMENT` 限定单一环境。复数配置优先。 |
+
+### App Attest 证明模式
+
+Apple 从 [iOS 27 起](https://developer.apple.com/videos/play/wwdc2026/201/)为 attestation 和 assertion 添加签名的启动类别及构建版本扩展。ServerBee 支持 iOS 17+。省略 `APP_ATTEST_REQUIRE_EXTENSIONS` 或设为 `false` 时，仍接受没有扩展的有效旧版证明。此兼容模式无法为旧版证明保证严格的构建版本或细分分发类别允许列表；开发与生产环境检查仍然生效。
+
+仅在要求签发和续期推送 grant 必须携带签名扩展时，设置 `APP_ATTEST_REQUIRE_EXTENSIONS=true`。旧版无扩展证明将无法获得或续期推送权限，登录与监控仍可用。启用严格模式或修改版本允许列表不会追溯撤销未过期 grant；续期被拒绝时，原有 grant 和已存计数器均不改变。原有 grant 在过期或被撤销前仍有效（有效期为 24 小时）。仅删除权限的撤销操作仍接受通过密码学验证、作用域匹配的旧版无扩展 assertion。
+
+两种模式都会校验已有扩展，撤销操作也不例外：sandbox 的类别必须为 development，production 必须为 TestFlight 或 App Store，签名构建版本必须匹配 `APP_ATTEST_BUNDLE_VERSIONS`。发布新构建时同步维护允许列表。证书、nonce、应用与密钥绑定、签名、challenge 及重放检查均保持不变。
+
+### 可信代理客户端身份
+
+这是必需的部署升级：未设置 `RELAY_TRUSTED_PROXY_IPS` 时可执行程序拒绝启动。
+使用逗号分隔的准确 socket IP，不支持 CIDR 或主机名，也不默认信任 loopback。
+只有列表中的真实对端才能提供 `X-ServerBee-Client-IP`；缺失、格式错误或
+可见的逗号分隔多值会在准入前返回 HTTP 400。其他对端使用真实 socket IP。
+`Forwarded`、`X-Forwarded-For` 和 `X-Real-IP` 均不能选择 Relay 限流键。
+IPv6 不同写法和 IPv4-mapped IPv6 会被规范化为稳定的键。
+Bun 1.3.4 在 handler 收到请求前，仅保留重复自定义头的最后一个值，后端无法证明
+原始头的唯一性。可信代理必须丢弃所有调用方传入的实例，并覆盖为自己确定的客户端地址。
+
+原有 handler 防护保持不变：每个客户端 IP 每分钟 30 次请求（含错误路径与方法）、
+流式请求体最多 32 KiB、待完成 challenge 最多 10,000 个。不同代理客户端不再共享
+代理自身的限额；同一公网 NAT 后的客户端仍共享公网出口限额。边缘代理的限制也必须
+保留。Nginx 直接接收客户端连接时，在 Relay 环境中设置
+`RELAY_TRUSTED_PROXY_IPS=127.0.0.1`，并在 Nginx 的 `http` 上下文使用以下示例，
+替换域名与证书路径：
+
+```nginx
+limit_req_zone $binary_remote_addr zone=relay_rate:10m rate=30r/m;
+limit_conn_zone $binary_remote_addr zone=relay_client:10m;
+limit_conn_zone $server_name zone=relay_total:1m;
+
+server {
+    listen 443 ssl;
+    server_name relay.example.com;
+    ssl_certificate /etc/nginx/tls/relay.fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/relay.key;
+    client_max_body_size 32k;
+    client_header_timeout 10s;
+    client_body_timeout 10s;
+    keepalive_timeout 15s;
+    send_timeout 10s;
+    limit_req zone=relay_rate burst=10 nodelay;
+    limit_req_status 429;
+    limit_conn relay_client 5;
+    limit_conn relay_total 100;
+    limit_conn_status 429;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header X-ServerBee-Client-IP $remote_addr;
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header Forwarded "";
+        proxy_request_buffering on;
+        proxy_connect_timeout 3s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 15s;
+    }
+}
+```
+
+代理必须替换客户端传入的值，不能复制 `$http_x_serverbee_client_ip` 或追加转发链。
+此示例假设 `$remote_addr` 为真实下游对端。如果 Nginx 前还有负载均衡器或 CDN，
+先在 Nginx 配置其准确可信对端链，不能盲目信任公网转发头。仅允许代理和可信本地
+进程访问 Relay；IP 允许列表无法区分同一主机上的进程。这些超时限制空闲间隔，
+并非请求总时长；边缘设施支持时还应保留总请求时限。
+参见 [Nginx 请求头处理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)
+与[连接限制](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html)。
+
+配置值和密钥文件保存在仓库之外、运维者保护的运行环境中。Apple 密钥仅属于 Relay。不要记录 bearer grant、attestation、receipt、请求体、明文内容或内容密钥。重启必须保留 SQLite 状态，包括 challenge 消费记录、assertion 计数器和 grant 撤销记录。使用一致的 SQLite 备份，恢复旧准入状态可能回退重放保护，重新开放准入前需要运维者决定恢复策略。
+
+通过独立可信审核固定 Apple 根证书，不能信任传入证明提供的根证书或通用 TLS 信任库。夹具 CA 仅传给测试构造器，生产可执行程序没有不支持设备的绕过入口或公共发送路径。使用 `bun --filter @serverbee/push-relay start` 启动已配置的隔离进程，再从签名设备验证设置。监听端口可达不代表设备准入成功。
+
+### 检查签名应用
+
+| 签名构建 | APNs entitlement / API 环境 | App Attest 环境 |
+| --- | --- | --- |
+| 开发构建 | `development` / `sandbox` | `development` |
+| 分发、TestFlight 或 App Store 构建 | `production` / `production` | `production` |
+
+检查签名应用和内嵌 `NotificationService.appex` 的实际 entitlement，不能从项目设置推断。针对已有构建，`codesign -d --entitlements :- "$SIGNED_APP"` 和 `codesign -d --entitlements :- "$SIGNED_EXTENSION"` 是只读检查。两个 target 的实际 Keychain access group 均需匹配 `$(AppIdentifierPrefix)com.serverbee.mobile.push` 和 plist 中的 `PushKeychainAccessGroup`。应用在私有组中保存认证凭证，扩展仅能读取内容密钥。确认 provisioning profile、App ID 前缀、bundle 标识、应用 `CFBundleVersion`、Relay 允许列表与 APNs topic 一致。签名或导出配置变更后重新检查实际 entitlement。
+
+明确配置后，同一 Relay 地址和数据库可接收两种环境。每个 challenge、key、grant 和 APNs 请求保留自身环境。开发 key 不能更新或撤销分发 grant。仅验证开发环境时使用独立 sandbox Relay 和状态，不要将夹具指向生产 Relay 或借用 Heeler 凭证。
+
+## 配置并启用通知
+
+1. 配置 Server 的最终 HTTPS Relay 地址，启动已配置的 Server 并配对隔离设备。仅登录不应弹出通知权限请求。
+2. 启用前阅读**设置 → 通知**中的隐私说明。Relay 可看到 APNs token、来源 IP、时间、请求大小、环境、grant 标识和密文，无法取得内容密钥或读取明文服务器名称、IP、告警文字、任务汇总和命令。
+3. 选择**告警触发与恢复**。当前管理员还可选择**安全规则匹配**、**任务最终失败**，并单独启用默认关闭的**成功的任务运行**。保存明确订阅意愿、授予系统权限，再等待 Server 确认注册。无需通知组，保存失败时保留原先确认的选项和可见错误。
+4. 使用**发送测试通知**，仅发给当前安装。记录状态和事件标识，再独立观察手机。**已接受**表示 APNs 提供商回执；**等待发送**表示本地入队；**可重试**表示已安排下一次尝试；**永久失败**停止重试；**已过期**表示到达原始事件时间加 30 分钟的期限。重启和重试不延长期限，结果不明的网络请求可能导致重复展示。
+5. 从系统设置返回或恢复连接后，无需重新登录即可同步设置。普通认证刷新保留注册；退出登录、凭证或设备撤销、过期、权限丢失、取消订阅和替换注册会阻止后续符合条件的尝试。已在发送或被 APNs 接受的请求无法撤回。
+
+扩展解密并本地化有界的认证内容，失败时显示不含目标的通用文字。重启后首次解锁前 Keychain 不可访问，可能触发此回退。前台使用系统横幅，WebSocket 仅更新应用状态。点击等待认证和当前密钥，核验部署、账户、安装及登录身份，再请求当前有权限的详情。已展示的真实通知超过 30 分钟投递期限后仍可点击；资源删除或失去权限时显示可关闭的回退页面。通知不会自动切换账户。
+
+## 按观察层排障
+
+| 现象 | 检查与恢复 |
+| --- | --- |
+| 登录时没有系统提示 | 符合预期，在通知页明确启用。曾拒绝权限时打开系统设置并返回应用，重复同步不能授予权限。 |
+| 订阅保存失败 | 保留可见错误和确认选项，检查 Server 当前角色与设置版本，重试允许的选项。注册成功本身不确认失败的订阅保存。 |
+| HTTP 400 `Invalid client address` | 核验真实代理 socket 对端已列入配置，且 Nginx 覆盖固定头为单个纯 IP。不要放宽允许列表或信任调用方转发头。 |
+| App Attest 不可用或被拒绝 | 检查受支持物理设备、实际签名、应用身份、根证书指纹、环境、版本允许列表、时钟和真实证明。临时错误可重试，登录与监控保持可用，不能绕过验证。 |
+| 已保存 grant 显示未确认 | 检查 Relay HTTPS 连通性及 grant inspection。已撤销 grant 不会因保存的有效期仍在未来而有效。应用将待确认的新 grant 保存在 Keychain，再尝试 Server 确认。 |
+| 测试等待发送或可重试 | 检查 Server 队列和 Relay 连接，不要导出负载。在原始 30 分钟期限内恢复，不要仅为重试结果不明的测试响应而创建新事件标识。 |
+| 提供商或配置永久错误 | 通过不含秘密的原因和状态检查 topic、环境、授权及负载大小。HTTP 400 或 `BadDeviceToken` 环境歧义不能删除有效替换注册。APNs 410 `Unregistered` 仅对仍匹配发送版本的设备属于终止条件。 |
+| 已接受但没有横幅 | 分别观察系统权限、专注模式、连接与应用状态。提供商接受不保证展示，Simulator 或夹具不能证明投递。 |
+| 通用通知文字 | 检查共享签名 Keychain 组、首次解锁、当前内容密钥、完整性、协议版本和原始期限。不能转发明文或使用不可信回退字段导航。 |
+| 某类别保持静默 | 检查该安装的确认订阅、当前角色与会话、规则覆盖范围、维护和抑制、原始期限。安全通知需要规则准入，任务通知需要最终完成及发起者或创建者归属，成功通知需要单独启用。 |
+| 点击不可用或被拒绝 | 确认当前部署、账户、登录和 Server 授权。告警周期、安全事件或任务运行被删除时安全回退。投递过期本身不能拒绝已展示的真实目标。 |
+| 重复展示 | 检查旧 APNs 迁移排除和前台单一系统横幅。提供商重试结果不明仍可能重复展示，不保证恰好一次；其他外部通知渠道保留配置行为。 |
+
+## 真实设备验收记录
+
+每种签名环境和语言建立独立记录，下表全部从**未运行**开始。记录精确版本、构建和设备、事件或运行标识、原始创建时间和期限、订阅与角色及会话、时间戳、不含秘密的提供商结论、实际横幅数量和真实导航。提供商接受、展示和点击分列记录，不附凭证、内容密钥、bearer grant 或敏感负载。缺少前提不是通过，也不是观察到拒绝。
+
+| 场景 | 预期观察 | 提供商 / 展示 / 导航 |
+| --- | --- | --- |
+| 真实准入与恢复 | 支持设备通过验证，错误环境和重放被拒绝，不支持或失败时监控仍可用；拒绝权限后从系统设置启用并返回恢复 | 未运行 / 未运行 / 未运行 |
+| Sandbox 与分发 | 匹配签名的构建独立注册，各自使用对应 APNs 环境 | 未运行 / 未运行 / 未运行 |
+| 测试通知，前台、后台、已终止 | 加密测试仅发给目标安装，扩展解密，实时 WS 更新存在时前台仍只有一个系统横幅，冷启动和运行中点击打开当前账户 | 未运行 / 未运行 / 未运行 |
+| 告警触发与恢复 | 无需通知组，打开准确规则、Server、维度和周期；维护与重复抑制保留外部渠道行为 | 未运行 / 未运行 / 未运行 |
+| 安全规则准入 | 管理员收到匹配的 SSH 新 IP 登录、爆破或端口扫描规则；原始检测与重复匹配规则不产生告警类别重复通知；打开当前安全详情 | 未运行 / 未运行 / 未运行 |
+| 任务最终失败与成功 | 所有目标结束后，手动发起者或自动创建者收到一次最终汇总；中间重试失败静默，成功需启用；打开精确运行，通知不含命令与输出 | 未运行 / 未运行 / 未运行 |
+| 多安装与类别隔离 | 不同订阅仅影响对应安装和类别；无关用户及旧 APNs、外部渠道保持授权和行为 | 未运行 / 未运行 / 未运行 |
+| 权限、连接和 token 恢复 | 前台和连接恢复确认注册，token 更新保留当前密钥和意愿，旧延迟错误不能删除替换 token | 未运行 / 未运行 / 未运行 |
+| 刷新、退出与账户变更 | 刷新保持接收，退出阻止后续符合条件的发送，新登录或部署不能继承队列事件或旧点击 | 未运行 / 未运行 / 未运行 |
+| 撤销与角色降级 | 设备、密码、用户撤销及会话过期阻止后续队列发送，降级取消安全和任务权限，成员仍可明确保留告警与测试 | 未运行 / 未运行 / 未运行 |
+| 故障、重启与过期 | Server 和 Relay 重启后在原始期限内恢复密文，重试前取消订阅或撤销阻止发送，更旧消息被丢弃 | 未运行 / 未运行 / 未运行 |
+| 延后真实点击与回退 | 每种已展示类别等待超过 30 分钟后运行中或冷启动点击，当前有权限的目标打开，已删除或禁止的目标回退，新过期投递保持通用文字 | 未运行 / 未运行 / 未运行 |
+| English 与 zh-Hans | 两种语言的设置、错误、扩展文字及安全回退正确，篡改或错误密钥保持不含目标的通用文字 | 未运行 / 未运行 / 未运行 |
+
+当前缺少的真实验收前提包括明确授权的隔离 HTTPS Server 和 Relay 部署、已审核的 Apple 根证书指纹、发布者 APNs 签名配置、匹配的 provisioning 与 entitlement，以及能够运行开发和分发构建、支持 App Attest 的物理设备。本手册不建立真实设备证明、线上提供商回执、原生展示或实际点击证据。
+
+## 自动化证据与交接
+
+仓库 `tests/manual/mobile-push-integration.md` 列出组合 HTTP 和持久化场景及精确本地检查命令，`tests/manual/mobile-push-test.md` 提供 Server → 实际 Relay → 扩展的夹具贯通流程。记录执行、通过、失败和跳过数量、进程退出状态、候选完整 SHA、测试名称、日志及 `.xcresult` 路径。零测试检查或跳过的贯通测试不提供行为证据。专用 Simulator 仅用于本地边界检查，不能替代上表真实设备记录。通过正式生成器检查 API 零漂移，不能手改生成契约。修复集成失败时保留生产准入和密码学检查。

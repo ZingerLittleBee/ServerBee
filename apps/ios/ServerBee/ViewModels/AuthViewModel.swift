@@ -31,7 +31,9 @@ final class AuthViewModel {
             normalizedUrl = "https://\(normalizedUrl)"
         }
 
-        let installationId = InstallationID.getOrCreate()
+        let installationId: String
+        do { installationId = try InstallationID.getOrCreateThrowing() }
+        catch { errorMessage = error.localizedDescription; return }
 
         let loginRequest = MobileLoginRequest(
             username: username,
@@ -42,6 +44,9 @@ final class AuthViewModel {
         )
 
         do {
+            let generation = authManager.authenticationGeneration
+            try await authManager.prepareForLogin()
+            guard authManager.authenticationGeneration == generation else { throw AuthError.staleIdentity }
             guard let url = URL(string: "\(normalizedUrl)/api/mobile/auth/login") else {
                 errorMessage = String(localized: "Invalid server URL.")
                 return
@@ -53,7 +58,7 @@ final class AuthViewModel {
 
             request.httpBody = try JSONEncoder.snakeCase.encode(loginRequest)
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await ServerHTTPTransport.data(for: request)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 errorMessage = String(localized: "Connection failed. Please check your server URL.")
@@ -65,8 +70,9 @@ final class AuthViewModel {
                 let tokenResponse = try JSONDecoder.snakeCase.decode(
                     ApiResponse<MobileTokenResponse>.self, from: data
                 ).data
-                authManager.setServerUrl(normalizedUrl)
-                authManager.handleLoginResponse(tokenResponse)
+                authManager.handleLoginResponse(tokenResponse, origin: normalizedUrl,
+                    installationId: installationId, expectedGeneration: generation)
+                if let error = authManager.recoveryError { errorMessage = error }
 
             case 401:
                 errorMessage = String(localized: "Invalid credentials.")
@@ -83,7 +89,8 @@ final class AuthViewModel {
             }
         } catch {
             AppLog.auth.error("Login request failed: \(String(describing: error), privacy: .public)")
-            errorMessage = String(localized: "Connection failed. Please check your server URL.")
+            errorMessage = (error as? AuthError)?.localizedDescription
+                ?? String(localized: "Connection failed. Please check your server URL.")
         }
     }
 
@@ -141,9 +148,13 @@ final class AuthViewModel {
             throw PairError.invalidServerUrl
         }
 
+        let generation = authManager.authenticationGeneration
+        try await authManager.prepareForLogin()
+        guard authManager.authenticationGeneration == generation else { throw AuthError.staleIdentity }
+        let installationId = try InstallationID.getOrCreateThrowing()
         let body: [String: String] = [
             "code": code,
-            "installation_id": InstallationID.getOrCreate(),
+            "installation_id": installationId,
             "device_name": DeviceNameProvider.current()
         ]
 
@@ -155,7 +166,7 @@ final class AuthViewModel {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await ServerHTTPTransport.data(for: request, session: session)
         } catch {
             throw PairError.transport
         }
@@ -170,8 +181,9 @@ final class AuthViewModel {
                 ApiResponse<MobileTokenResponse>.self,
                 from: data
             ).data
-            authManager.setServerUrl(serverUrl)
-            authManager.handleLoginResponse(tokenResponse)
+            authManager.handleLoginResponse(tokenResponse, origin: serverUrl,
+                installationId: installationId, expectedGeneration: generation)
+            guard authManager.recoveryError == nil else { throw AuthError.secureLogoutNeedsConnection }
             return tokenResponse
         case 400:
             throw PairError.invalidOrExpiredCode

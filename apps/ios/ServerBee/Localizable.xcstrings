@@ -1,6 +1,210 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "The server returned an invalid session identity. Please retry.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server returned an invalid session identity. Please retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器返回了无效的会话身份，请重试。"
+          }
+        }
+      }
+    },
+    "Pending sign-outs need to finish before another login. Connect to your servers and retry.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pending sign-outs need to finish before another login. Connect to your servers and retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请连接服务器并重试，完成待处理的退出后再登录。"
+          }
+        }
+      }
+    },
+    "Connect to your server to complete secure sign-out before signing in again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to your server to complete secure sign-out before signing in again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请连接服务器以完成安全退出，然后重新登录。"
+          }
+        }
+      }
+    },
+    "Task run succeeded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run succeeded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行成功"
+          }
+        }
+      }
+    },
+    "All %lld targets succeeded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All %lld targets succeeded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部 %lld 个目标运行成功。"
+          }
+        }
+      }
+    },
+    "Successful runs stay silent unless enabled. Only your complete task runs can notify you.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Successful runs stay silent unless enabled. Only your complete task runs can notify you."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成功运行默认不通知。启用后，仅你的完整任务运行可以通知你。"
+          }
+        }
+      }
+    },
+    "Task run failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行失败"
+          }
+        }
+      }
+    },
+    "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标：%lld。失败：%lld。超时：%lld。离线：%lld。拒绝执行：%lld。"
+          }
+        }
+      }
+    },
+    "Task run unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务运行不可用"
+          }
+        }
+      }
+    },
+    "The task may have been deleted or your access may have changed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The task may have been deleted or your access may have changed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务可能已删除，或你的访问权限已变更。"
+          }
+        }
+      }
+    },
+    "Task run results": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task run results"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次任务结果"
+          }
+        }
+      }
+    },
+    "Encrypted tests, alert transitions and final task outcomes are supported. Security delivery remains under development.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encrypted tests, alert transitions and final task outcomes are supported. Security delivery remains under development."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现已支持加密测试通知、告警状态变化和任务最终结果通知。安全通知仍在开发中。"
+          }
+        }
+      }
+    },
     "": {},
     "%@ burned this cycle": {
       "extractionState": "manual",
@@ -14479,7 +14683,22 @@
         }
       }
     },
-    "ServerBee": {},
+    "ServerBee": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ServerBee"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ServerBee"
+          }
+        }
+      }
+    },
     "Servers": {
       "extractionState": "manual",
       "localizations": {
@@ -17511,6 +17730,674 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的密码已更新。"
+          }
+        }
+      }
+    },
+    "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, environment, grant identifiers and encrypted content. It cannot read notification content or content keys.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接收者由你的 Server 选择。Push Relay 可见设备令牌、来源 IP、时间、请求大小、环境、授权标识及加密内容，无法读取通知正文或内容密钥。"
+          }
+        }
+      }
+    },
+    "Mobile notification privacy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移动通知隐私"
+          }
+        }
+      }
+    },
+    "Subscriptions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅"
+          }
+        }
+      }
+    },
+    "Alerts and recoveries": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告警与恢复"
+          }
+        }
+      }
+    },
+    "Security rule matches": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全规则匹配"
+          }
+        }
+      }
+    },
+    "Final task failures": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务最终失败"
+          }
+        }
+      }
+    },
+    "Successful task runs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成功的任务运行"
+          }
+        }
+      }
+    },
+    "Save subscriptions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存订阅"
+          }
+        }
+      }
+    },
+    "Disable notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭通知"
+          }
+        }
+      }
+    },
+    "Enable notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用通知"
+          }
+        }
+      }
+    },
+    "Setup status": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置状态"
+          }
+        }
+      }
+    },
+    "System permission": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统权限"
+          }
+        }
+      }
+    },
+    "Server registration": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server 注册"
+          }
+        }
+      }
+    },
+    "Verified push is unavailable. Monitoring and login still work.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备验证推送不可用，监控与登录仍可正常使用。"
+          }
+        }
+      }
+    },
+    "Retry notification setup": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试通知设置"
+          }
+        }
+      }
+    },
+    "Open notification settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开系统通知设置"
+          }
+        }
+      }
+    },
+    "Allowed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已允许"
+          }
+        }
+      }
+    },
+    "Not requested": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未申请"
+          }
+        }
+      }
+    },
+    "Setup confirmed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置已确认"
+          }
+        }
+      }
+    },
+    "Awaiting verification": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待验证"
+          }
+        }
+      }
+    },
+    "Notification permission is disabled. Open system settings to enable it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知权限已关闭，请前往系统设置启用。"
+          }
+        }
+      }
+    },
+    "APNs registration failed. Retry notification setup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "APNs 注册失败，请重试通知设置。"
+          }
+        }
+      }
+    },
+    "Notification setup failed. Retry to confirm registration.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知设置失败，请重试以确认注册。"
+          }
+        }
+      }
+    },
+    "Disabled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭"
+          }
+        }
+      }
+    },
+    "Notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        }
+      }
+    },
+    "Test notification": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test notification"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试通知"
+          }
+        }
+      }
+    },
+    "Send test notification": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send test notification"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送测试通知"
+          }
+        }
+      }
+    },
+    "APNs accepted the notification. Device presentation has not been observed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "APNs accepted the notification. Device presentation has not been observed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "APNs 已接受通知。尚未观察到设备展示。"
+          }
+        }
+      }
+    },
+    "The provider did not accept the notification. Retry setup or try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The provider did not accept the notification. Retry setup or try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务商未接受通知。请重试设置或再次发送。"
+          }
+        }
+      }
+    },
+    "Open ServerBee to view this notification.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open ServerBee to view this notification."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 ServerBee 查看此通知。"
+          }
+        }
+      }
+    },
+    "Your encrypted ServerBee notification is ready.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your encrypted ServerBee notification is ready."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 ServerBee 加密通知已就绪。"
+          }
+        }
+      }
+    },
+    "Encrypted notification setup requires an HTTPS Server.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encrypted notification setup requires an HTTPS Server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加密通知设置需要使用 HTTPS 的 Server。"
+          }
+        }
+      }
+    },
+    "Encrypted test queued on the Server. Provider acceptance is pending.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Encrypted test queued on the Server. Provider acceptance is pending."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加密测试通知已在 Server 排队，等待提供商接受。"
+          }
+        }
+      }
+    },
+    "Delivery will retry for up to 30 minutes from creation. Provider acceptance is unconfirmed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery will retry for up to 30 minutes from creation. Provider acceptance is unconfirmed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送将在创建后 30 分钟内重试，尚未确认提供商接受。"
+          }
+        }
+      }
+    },
+    "The test expired after 30 minutes. Send a new test to try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The test expired after 30 minutes. Send a new test to try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试通知已在 30 分钟后过期，请发送新的测试通知。"
+          }
+        }
+      }
+    },
+    "Delivery stopped. Retry notification setup before sending a new test.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery stopped. Retry notification setup before sending a new test."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送已停止，请重试通知设置后再发送新的测试通知。"
+          }
+        }
+      }
+    },
+    "Refresh test status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh test status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新测试状态"
+          }
+        }
+      }
+    },
+    "Delivery status does not guarantee device presentation or exactly-once display.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivery status does not guarantee device presentation or exactly-once display."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送状态不保证设备展示，也不保证只展示一次。"
+          }
+        }
+      }
+    },
+    "Alert recovered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alert recovered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告警已恢复"
+          }
+        }
+      }
+    },
+    "Alert triggered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alert triggered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告警已触发"
+          }
+        }
+      }
+    },
+    "%@ on %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ on %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（%@）"
+          }
+        }
+      }
+    },
+    "Back to alerts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to alerts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回告警列表"
+          }
+        }
+      }
+    },
+    "Subscription changes are not saved. Retry to confirm them with the Server.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subscription changes are not saved. Retry to confirm them with the Server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "订阅更改尚未保存。请重试以获取 Server 确认。"
+          }
+        }
+      }
+    },
+    "Security rule matched": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security rule matched"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全规则已匹配"
+          }
+        }
+      }
+    },
+    "An SSH login from a new IP matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An SSH login from a new IP matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自新 IP 的 SSH 登录匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "SSH brute-force activity matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH brute-force activity matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 暴力破解活动匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "Port-scan activity matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port-scan activity matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口扫描活动匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "Security notification unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security notification unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全通知不可用"
+          }
+        }
+      }
+    },
+    "The target may have been removed, or your account no longer has access.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The target may have been removed, or your account no longer has access."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标可能已被删除，或你的账号已失去访问权限。"
+          }
+        }
+      }
+    },
+    "This build supports encrypted tests and administrator security rule notifications. Alert and task delivery is still being implemented.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This build supports encrypted tests and administrator security rule notifications. Alert and task delivery is still being implemented."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本支持加密测试通知和管理员安全规则通知。告警和任务通知仍在实现中。"
+          }
+        }
+      }
+    },
+    "Encrypted tests, alert transitions, administrator security rule matches and final task outcomes are supported.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持加密测试、告警状态变化、管理员安全规则匹配和任务最终结果通知。"
           }
         }
       }

@@ -218,6 +218,9 @@ pub enum AgentMessage {
     },
     CapabilitiesChanged {
         msg_id: String,
+        /// Original source transition time; absent on older Agents.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        occurred_at: Option<DateTime<Utc>>,
         capabilities: u32,
         #[serde(default)]
         temporary: Vec<TemporaryGrant>,
@@ -401,6 +404,9 @@ pub enum AgentMessage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     Welcome {
+        /// Durable capability-event admission and Ack are supported.
+        #[serde(default)]
+        capability_event_ack: bool,
         server_id: String,
         protocol_version: u32,
         report_interval: u32,
@@ -2071,6 +2077,7 @@ mod capability_grant_protocol_tests {
     #[test]
     fn capabilities_changed_round_trips_with_snake_case_tag() {
         let msg = AgentMessage::CapabilitiesChanged {
+            occurred_at: None,
             msg_id: "m1".into(),
             capabilities: 1 | 1852,
             temporary: vec![TemporaryGrant { cap: "terminal".into(), granted_at: 10, expires_at: 1810 }],
@@ -2104,5 +2111,30 @@ mod capability_grant_protocol_tests {
             AgentMessage::SystemInfo { temporary, .. } => assert!(temporary.is_empty()),
             _ => panic!("wrong variant"),
         }
+    }
+}
+
+#[cfg(test)]
+mod capability_admission_compatibility_tests {
+    use super::*;
+    #[test]
+    fn older_welcome_and_capability_events_decode_without_admission_extensions() {
+        let old_welcome =
+            r#"{"type":"welcome","server_id":"server-a","protocol_version":6,"report_interval":3}"#;
+        assert!(matches!(
+            serde_json::from_str::<ServerMessage>(old_welcome).unwrap(),
+            ServerMessage::Welcome {
+                capability_event_ack: false,
+                ..
+            }
+        ));
+        let old_event = r#"{"type":"capabilities_changed","msg_id":"original-id","capabilities":1,"changes":[]}"#;
+        assert!(matches!(
+            serde_json::from_str::<AgentMessage>(old_event).unwrap(),
+            AgentMessage::CapabilitiesChanged {
+                occurred_at: None,
+                ..
+            }
+        ));
     }
 }

@@ -52,6 +52,7 @@ tokio-rustls = "0.26"
 rustls = "0.23"
 webpki-roots = "1"
 sha2 = "0.10"
+ring = "0.17"
 ipnet = { version = "2", features = ["serde"] }
 url = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }

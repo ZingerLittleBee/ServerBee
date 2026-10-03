@@ -1,5 +1,6 @@
 pub mod authority;
 pub mod cli;
+mod journal;
 pub mod store;
 
 pub use authority::CapabilityAuthority;

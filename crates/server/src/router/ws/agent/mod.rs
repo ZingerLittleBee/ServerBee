@@ -160,6 +160,7 @@ async fn handle_agent_ws(
     // NOT advertise any: the agent enforces purely on its local policy and
     // ignores this field.
     let welcome = ServerMessage::Welcome {
+        capability_event_ack: true,
         server_id: server_id.clone(),
         protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
         report_interval: 3,
@@ -305,7 +306,7 @@ async fn handle_current_connection_frame(
 
     match frame {
         CurrentConnectionFrame::AgentMessage(agent_msg) => {
-            handle_agent_message(state, server_id, *agent_msg).await;
+            return handle_agent_message(state, server_id, *agent_msg).await;
         }
         CurrentConnectionFrame::Pong => {
             state.agent_manager.touch_connection(server_id);
@@ -315,7 +316,7 @@ async fn handle_current_connection_frame(
     true
 }
 
-async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) {
+async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) -> bool {
     match msg {
         AgentMessage::SystemInfo {
             msg_id,
@@ -323,7 +324,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             agent_local_capabilities,
             temporary,
         } => {
-            system_info::on_system_info(
+            return system_info::on_system_info(
                 state,
                 server_id,
                 msg_id,
@@ -524,7 +525,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             ipv6,
             interfaces: _,
         } => {
-            system_info::on_ip_changed(state, server_id, ipv4, ipv6).await;
+            return system_info::on_ip_changed(state, server_id, ipv4, ipv6).await;
         }
         AgentMessage::TracerouteResult {
             request_id,
@@ -551,13 +552,22 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             security::on_blocklist_reset_ack(state, server_id, ok, reason).await;
         }
         AgentMessage::CapabilitiesChanged {
-            msg_id: _,
+            msg_id,
+            occurred_at,
             capabilities,
             temporary,
             changes,
         } => {
-            security::on_capabilities_changed(state, server_id, capabilities, temporary, changes)
-                .await;
+            return security::on_capabilities_changed(
+                state,
+                server_id,
+                msg_id,
+                occurred_at,
+                capabilities,
+                temporary,
+                changes,
+            )
+            .await;
         }
         AgentMessage::UnlockResults {
             egress_ip,
@@ -567,6 +577,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             security::on_unlock_results(state, server_id, egress_ip, results, checked_at).await;
         }
     }
+    true
 }
 
 async fn send_server_message(
@@ -884,6 +895,25 @@ mod tests {
             .await
             .unwrap();
 
+        // Model the admitted connection's captured authority for this focused
+        // unit seam. Integration coverage crosses real HTTP enrollment and WS.
+        let row = crate::entity::server::Entity::find_by_id("srv-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        state.agent_manager.add_connection(
+            "srv-1".into(),
+            "Srv".into(),
+            tx,
+            "127.0.0.1:1234".parse().unwrap(),
+        );
+        state.agent_manager.bind_security_authority(
+            "srv-1",
+            crate::service::security::authority_fingerprint(row.token_hash.as_deref().unwrap()),
+        );
+        let recovery = state.security_service.start_recovery();
         handle_agent_message(
             &state,
             "srv-1",
@@ -891,6 +921,20 @@ mod tests {
         )
         .await;
 
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while security_event::Entity::find()
+                .all(&db)
+                .await
+                .unwrap()
+                .is_empty()
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        recovery.abort();
+        let _ = recovery.await;
         let rows = security_event::Entity::find().all(&db).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].source_ip, "203.0.113.5");

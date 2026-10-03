@@ -8,6 +8,8 @@ final class AuthViewModelPairTests: XCTestCase {
     private var session: URLSession!
 
     override func setUp() async throws {
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
         URLProtocol.registerClass(URLProtocolStub.self)
         URLProtocolStub.stubResponse = nil
         URLProtocolStub.stubError = nil
@@ -23,6 +25,8 @@ final class AuthViewModelPairTests: XCTestCase {
         URLProtocolStub.stubError = nil
         URLProtocolStub.stubResponseFactory = nil
         session = nil
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     func test_pair_returnsToken_andHydratesAuthManager_on200() async throws {
@@ -42,7 +46,7 @@ final class AuthViewModelPairTests: XCTestCase {
         URLProtocolStub.stubResponse = (200, payload)
 
         let viewModel = AuthViewModel()
-        let authManager = AuthManager()
+        let authManager = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
 
         let token = try await viewModel.pair(
             serverUrl: "https://srv.example.com/",
@@ -59,7 +63,7 @@ final class AuthViewModelPairTests: XCTestCase {
     func test_pair_throwsInvalidOrExpiredCode_on400() async {
         URLProtocolStub.stubResponse = (400, Data())
         let viewModel = AuthViewModel()
-        let authManager = AuthManager()
+        let authManager = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
         do {
             _ = try await viewModel.pair(
                 serverUrl: "https://srv.example.com",
@@ -78,7 +82,7 @@ final class AuthViewModelPairTests: XCTestCase {
     func test_pair_throwsValidation_on422_andDoesNotEnterTotpStep() async {
         URLProtocolStub.stubResponse = (422, Data())
         let viewModel = AuthViewModel()
-        let authManager = AuthManager()
+        let authManager = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
         do {
             _ = try await viewModel.pair(
                 serverUrl: "https://srv.example.com",
@@ -98,7 +102,7 @@ final class AuthViewModelPairTests: XCTestCase {
     func test_pair_throwsRateLimited_on429() async {
         URLProtocolStub.stubResponse = (429, Data())
         let viewModel = AuthViewModel()
-        let authManager = AuthManager()
+        let authManager = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
         do {
             _ = try await viewModel.pair(
                 serverUrl: "https://srv.example.com",
@@ -116,7 +120,7 @@ final class AuthViewModelPairTests: XCTestCase {
 
     func test_pair_throwsInvalidServerUrl_onBadUrl() async {
         let viewModel = AuthViewModel()
-        let authManager = AuthManager()
+        let authManager = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
         do {
             // Embedded space + control chars are rejected by URL(string:)
             // across all current iOS versions, so this reliably hits the

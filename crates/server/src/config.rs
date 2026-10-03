@@ -35,6 +35,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub mobile: MobileConfig,
     #[serde(default)]
+    pub push_relay: PushRelayConfig,
+    #[serde(default)]
     pub resend: ResendConfig,
     #[serde(default)]
     pub dev: DevConfig,
@@ -62,6 +64,7 @@ impl Default for AppConfig {
             upgrade: UpgradeConfig::default(),
             file: FileConfig::default(),
             mobile: MobileConfig::default(),
+            push_relay: PushRelayConfig::default(),
             resend: ResendConfig::default(),
             dev: DevConfig::default(),
             firewall: FirewallConfig::default(),
@@ -836,4 +839,11 @@ mod tests {
         let warnings = cfg.validate_warnings();
         assert!(!warnings.iter().any(|w| w.contains("matches risk_provider")));
     }
+}
+
+/// The Server holds device-scoped grants, never Apple signing credentials.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PushRelayConfig {
+    #[serde(default)]
+    pub url: String,
 }

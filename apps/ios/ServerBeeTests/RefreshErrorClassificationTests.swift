@@ -7,8 +7,8 @@ final class URLProtocolStub: URLProtocol {
     nonisolated(unsafe) static var stubError: Error?
     nonisolated(unsafe) static var stubResponseFactory: (@Sendable () async -> (status: Int, data: Data))?
 
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override static func canInit(with request: URLRequest) -> Bool { true }
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         if let error = Self.stubError {
@@ -16,7 +16,7 @@ final class URLProtocolStub: URLProtocol {
             return
         }
         if let factory = Self.stubResponseFactory {
-            let url = request.url!
+            guard let url = request.url else { XCTFail("Stub request must have a URL"); return }
             let semaphore = DispatchSemaphore(value: 0)
             nonisolated(unsafe) var resolved: (status: Int, data: Data)?
             Task {
@@ -29,16 +29,17 @@ final class URLProtocolStub: URLProtocol {
             return
         }
         guard let (status, data) = Self.stubResponse else { return }
-        emit(url: request.url!, status: status, data: data)
+        guard let url = request.url else { XCTFail("Stub request must have a URL"); return }
+        emit(url: url, status: status, data: data)
     }
 
     private func emit(url: URL, status: Int, data: Data) {
-        let response = HTTPURLResponse(
+        guard let response = HTTPURLResponse(
             url: url,
             statusCode: status,
             httpVersion: "HTTP/1.1",
             headerFields: nil
-        )!
+        ) else { XCTFail("Stub response must be valid"); return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
@@ -54,6 +55,8 @@ final class RefreshErrorClassificationTests: XCTestCase {
         URLProtocolStub.stubResponse = nil
         URLProtocolStub.stubError = nil
         URLProtocolStub.stubResponseFactory = nil
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
     }
 
     override func tearDown() async throws {
@@ -61,13 +64,26 @@ final class RefreshErrorClassificationTests: XCTestCase {
         URLProtocolStub.stubResponse = nil
         URLProtocolStub.stubError = nil
         URLProtocolStub.stubResponseFactory = nil
+        AuthManager().clearAuth()
+        try KeychainService.deleteThrowing(for: PrivateSessionRevocationStorage.key)
+    }
+
+    private func signedInAuthentication(access: String = "access") -> AuthManager {
+        let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [URLProtocolStub.self]))
+        auth.setServerUrl("https://stub.test")
+        auth.handleLoginResponse(MobileTokenResponse(
+            accessToken: access, accessExpiresInSecs: 900,
+            refreshToken: "rt", refreshExpiresInSecs: 3600,
+            tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "member"),
+            revocationToken: "revoke-alice", mobileSessionId: "11111111-1111-4111-8111-111111111111"
+        ))
+        XCTAssertTrue(auth.isAuthenticated)
+        return auth
     }
 
     func test401MapsToRefreshUnauthorized() async {
         URLProtocolStub.stubResponse = (401, Data())
-        let auth = AuthManager()
-        auth.serverUrl = "https://stub.test"
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        let auth = signedInAuthentication()
 
         do {
             _ = try await auth.refreshAccessToken()
@@ -83,10 +99,7 @@ final class RefreshErrorClassificationTests: XCTestCase {
 
     func test_accessTokenForReconnect_keepsStoredTokenOnTransientFailure() async {
         URLProtocolStub.stubResponse = (503, Data())
-        let auth = AuthManager()
-        auth.serverUrl = "https://stub.test"
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
-        try? KeychainService.saveString("stored", for: KeychainService.accessTokenKey)
+        let auth = signedInAuthentication(access: "stored")
 
         let token = await auth.accessTokenForReconnect()
         XCTAssertEqual(token, "stored", "a transient failure must not stop the socket from retrying")
@@ -94,10 +107,7 @@ final class RefreshErrorClassificationTests: XCTestCase {
 
     func test_accessTokenForReconnect_isNilWhenTheSessionIsRejected() async {
         URLProtocolStub.stubResponse = (401, Data())
-        let auth = AuthManager()
-        auth.serverUrl = "https://stub.test"
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
-        try? KeychainService.saveString("stored", for: KeychainService.accessTokenKey)
+        let auth = signedInAuthentication(access: "stored")
 
         let token = await auth.accessTokenForReconnect()
         XCTAssertNil(token)
@@ -105,9 +115,7 @@ final class RefreshErrorClassificationTests: XCTestCase {
 
     func test503MapsToRefreshNetworkFailure() async {
         URLProtocolStub.stubResponse = (503, Data())
-        let auth = AuthManager()
-        auth.serverUrl = "https://stub.test"
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        let auth = signedInAuthentication()
 
         do {
             _ = try await auth.refreshAccessToken()
@@ -123,10 +131,7 @@ final class RefreshErrorClassificationTests: XCTestCase {
 
     func testAPIClientClearsAuthOnly_OnUnauthorized() async throws {
         URLProtocolStub.stubResponse = (401, Data())
-        let auth = AuthManager()
-        auth.serverUrl = "https://stub.test"
-        auth.isAuthenticated = true
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        let auth = signedInAuthentication()
 
         let client = APIClient(authManager: auth)
         do {
@@ -140,10 +145,7 @@ final class RefreshErrorClassificationTests: XCTestCase {
 
     func testAPIClientPreservesAuth_OnNetworkFailure() async throws {
         URLProtocolStub.stubResponse = (503, Data())
-        let auth = AuthManager()
-        auth.serverUrl = "https://stub.test"
-        auth.isAuthenticated = true
-        try? KeychainService.saveString("rt", for: KeychainService.refreshTokenKey)
+        let auth = signedInAuthentication()
 
         let client = APIClient(authManager: auth)
         do {

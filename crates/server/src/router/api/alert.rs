@@ -193,7 +193,7 @@ pub async fn list_alert_events(
     get,
     path = "/api/alert-events/{alert_key}",
     tag = "alert-rules",
-    params(("alert_key" = String, Path, description = "Alert key in the format `rule_id:server_id`")),
+    params(("alert_key" = String, Path, description = "Versioned complete alert key from the event list; legacy rule_id:server_id selects only the general dimension")),
     responses(
         (status = 200, description = "Alert event detail", body = AlertEventDetailResponse),
         (status = 400, description = "Invalid alert_key format"),
@@ -205,28 +205,47 @@ pub async fn get_alert_event_detail(
     State(state): State<Arc<AppState>>,
     Path(alert_key): Path<String>,
 ) -> Result<Json<ApiResponse<AlertEventDetailResponse>>, AppError> {
-    // Parse alert_key: "rule_id:server_id"
-    let (rule_id, server_id) = alert_key.split_once(':').ok_or_else(|| {
-        AppError::BadRequest("alert_key must be in the format rule_id:server_id".to_string())
-    })?;
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let invalid = || AppError::BadRequest("Invalid alert identity".into());
+    let (rule_id, server_id, event_key, cycle) =
+        if let Some(encoded) = alert_key.strip_prefix("v1.") {
+            if encoded.len() > 4096 {
+                return Err(invalid());
+            }
+            let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| invalid())?;
+            let [rule, server, event, cycle]: [String; 4] =
+                serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+            let cycle = chrono::DateTime::parse_from_rfc3339(&cycle)
+                .map_err(|_| invalid())?
+                .with_timezone(&chrono::Utc);
+            (rule, server, event, Some(cycle))
+        } else {
+            let (rule, server) = alert_key.split_once(':').ok_or_else(invalid)?;
+            (rule.to_string(), server.to_string(), String::new(), None)
+        };
     let alert_key_owned = alert_key.clone();
 
     // Find the alert_state row
-    let alert_state = crate::entity::alert_state::Entity::find()
-        .filter(crate::entity::alert_state::Column::RuleId.eq(rule_id))
-        .filter(crate::entity::alert_state::Column::ServerId.eq(server_id))
+    let mut query = crate::entity::alert_state::Entity::find()
+        .filter(crate::entity::alert_state::Column::RuleId.eq(&rule_id))
+        .filter(crate::entity::alert_state::Column::ServerId.eq(&server_id))
+        .filter(crate::entity::alert_state::Column::EventKey.eq(&event_key));
+    if let Some(cycle) = cycle {
+        query = query.filter(crate::entity::alert_state::Column::FirstTriggeredAt.eq(cycle));
+    }
+    let alert_state = query
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Alert state for key {alert_key} not found")))?;
 
     // Find the alert_rule row
-    let rule = crate::entity::alert_rule::Entity::find_by_id(rule_id)
+    let rule = crate::entity::alert_rule::Entity::find_by_id(&rule_id)
         .one(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Alert rule {rule_id} not found")))?;
 
     // Find the server row (for name)
-    let server_name = crate::entity::server::Entity::find_by_id(server_id)
+    let server_name = crate::entity::server::Entity::find_by_id(&server_id)
         .one(&state.db)
         .await?
         .map(|s| s.name)

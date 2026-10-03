@@ -692,3 +692,2524 @@ async fn mobile_push_register_with_api_key_is_401() {
         "an API-key request is not a mobile session, so push_register must 401"
     );
 }
+
+// Registration persistence is part of the public delivery contract. Inspect
+// migrated storage because this legacy API has no registration-status endpoint.
+async fn registration_db(tmp: &tempfile::TempDir) -> sea_orm::DatabaseConnection {
+    sea_orm::Database::connect(format!(
+        "sqlite://{}?mode=rw",
+        tmp.path().join("test.db").display()
+    ))
+    .await
+    .unwrap()
+}
+
+async fn refresh_mobile(client: &reqwest::Client, base: &str, tokens: &Value) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/auth/refresh"))
+        .json(
+            &json!({"refresh_token": tokens["data"]["refresh_token"], "installation_id": INST_ID}),
+        )
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn register_mobile(
+    client: &reqwest::Client,
+    base: &str,
+    tokens: &Value,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/push/register"))
+        .bearer_auth(tokens["data"]["access_token"].as_str().unwrap())
+        .json(&json!({"device_token": "test-apns-registration"}))
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn refresh_preserves_registration_and_logout_revokes_rotated_credentials() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::{device_token, mobile_session};
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let refreshed = refresh_mobile(&client, &base, &first).await;
+    assert_eq!(refreshed.status(), 200);
+    let rotated: Value = refreshed.json().await.unwrap();
+    let after = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .expect("ordinary refresh must preserve the installation registration");
+    assert_eq!(after.id, before.id);
+    assert_eq!(after.user_id, before.user_id);
+    assert_eq!(after.token, before.token);
+    let owner = mobile_session::Entity::find_by_id(&after.mobile_session_id)
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(owner.user_id, after.user_id);
+    assert_eq!(owner.installation_id, INST_ID);
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 401);
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 401);
+
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(rotated["data"]["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+    assert_eq!(
+        register_mobile(&client, &base, &rotated).await.status(),
+        401
+    );
+}
+
+#[tokio::test]
+async fn concurrent_refresh_consumes_credentials_once_and_preserves_registration() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let (one, two) = tokio::join!(
+        refresh_mobile(&client, &base, &first),
+        refresh_mobile(&client, &base, &first),
+    );
+    let winner = match (one.status().as_u16(), two.status().as_u16()) {
+        (200, 401) => one,
+        (401, 200) => two,
+        statuses => panic!("exactly one refresh must consume the old credential: {statuses:?}"),
+    };
+    let winner: Value = winner.json().await.unwrap();
+    assert_eq!(winner["data"]["user"]["id"], first["data"]["user"]["id"]);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 401);
+    assert_eq!(register_mobile(&client, &base, &winner).await.status(), 200);
+}
+
+#[tokio::test]
+async fn failed_rotation_rolls_back_credentials_and_registration() {
+    use sea_orm::{ConnectionTrait, EntityTrait};
+    use serverbee_server::entity::{device_token, mobile_session_revocation_proof};
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    // A real SQLite write failure after token consumption must roll back the
+    // whole rotation. No internal policy or persistence modules are mocked.
+    db.execute_unprepared("CREATE TRIGGER reject_rotated_access BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'injected access write failure'); END")
+        .await.unwrap();
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 500);
+    assert!(
+        mobile_session_revocation_proof::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none(),
+        "failed rotation must not commit any consumed-secret proof"
+    );
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/api/mobile/auth/devices"))
+            .bearer_auth(first["data"]["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200,
+        "old access survives the failed transaction"
+    );
+    db.execute_unprepared("DROP TRIGGER reject_rotated_access")
+        .await
+        .unwrap();
+    assert_eq!(
+        refresh_mobile(&client, &base, &first).await.status(),
+        200,
+        "a failed transaction must not consume the refresh secret"
+    );
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn invalid_refresh_cannot_mutate_registered_installation() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let invalid = json!({"data": {"refresh_token": "invalid-refresh-secret"}});
+    assert_eq!(refresh_mobile(&client, &base, &invalid).await.status(), 401);
+    assert_eq!(client.post(format!("{base}/api/mobile/auth/refresh"))
+        .json(&json!({"refresh_token": first["data"]["refresh_token"], "installation_id": "wrong-installation"}))
+        .send().await.unwrap().status(), 401);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        before
+    );
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 200);
+}
+
+#[tokio::test]
+async fn concurrent_device_revocation_cannot_be_undone_by_refresh() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::{device_token, mobile_session};
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let (refresh, revoked) = tokio::join!(
+        refresh_mobile(&client, &base, &first),
+        admin
+            .delete(format!(
+                "{base}/api/mobile/auth/devices/{}",
+                registration.mobile_session_id
+            ))
+            .send(),
+    );
+    assert_eq!(revoked.unwrap().status(), 200);
+    assert!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        mobile_session::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 401);
+    if refresh.status() == 200 {
+        let rotated: Value = refresh.json().await.unwrap();
+        assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+        assert_eq!(
+            register_mobile(&client, &base, &rotated).await.status(),
+            401
+        );
+    } else {
+        assert_eq!(refresh.status(), 401);
+    }
+}
+
+#[tokio::test]
+async fn expired_access_can_refresh_but_expired_mobile_session_cannot_register_or_refresh() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{device_token, mobile_session, session};
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let past = chrono::Utc::now() - chrono::Duration::seconds(1);
+    session::Entity::update_many()
+        .col_expr(session::Column::ExpiresAt, Expr::value(past))
+        .filter(session::Column::MobileSessionId.eq(&registration.mobile_session_id))
+        .exec(&db)
+        .await
+        .unwrap();
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 401);
+    let refresh = refresh_mobile(&client, &base, &first).await;
+    assert_eq!(refresh.status(), 200);
+    let rotated: Value = refresh.json().await.unwrap();
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+    mobile_session::Entity::update_many()
+        .col_expr(mobile_session::Column::ExpiresAt, Expr::value(past))
+        .exec(&db)
+        .await
+        .unwrap();
+    assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+    assert_eq!(
+        register_mobile(&client, &base, &rotated).await.status(),
+        401
+    );
+}
+
+#[tokio::test]
+async fn password_and_user_revocation_stop_preserved_registration() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{device_token, mobile_session, session, user};
+    for action in ["password-change", "password-reset", "user-delete"] {
+        let (base, tmp) = start_test_server().await;
+        let admin = http_client();
+        login_admin(&admin, &base).await;
+        let member = login_as_new_user(&admin, &base, "registered-member", "member").await;
+        let mobile = http_client();
+        let first: Value = mobile_login(&mobile, &base, "registered-member", "memberpass", INST_ID)
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 200);
+        let refreshed = refresh_mobile(&mobile, &base, &first).await;
+        assert_eq!(refreshed.status(), 200);
+        let rotated: Value = refreshed.json().await.unwrap();
+        let user_id = rotated["data"]["user"]["id"].as_str().unwrap();
+        let revoked = match action {
+            "password-change" => member
+                .put(format!("{base}/api/auth/password"))
+                .json(&json!({"old_password": "memberpass", "new_password": "replacementpass123"}))
+                .send()
+                .await
+                .unwrap(),
+            "password-reset" => admin
+                .put(format!("{base}/api/users/{user_id}"))
+                .json(&json!({"password": "replacementpass123"}))
+                .send()
+                .await
+                .unwrap(),
+            "user-delete" => admin
+                .delete(format!("{base}/api/users/{user_id}"))
+                .send()
+                .await
+                .unwrap(),
+            _ => unreachable!(),
+        };
+        assert_eq!(revoked.status(), 200, "{action}");
+        let db = registration_db(&tmp).await;
+        assert!(
+            device_token::Entity::find()
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none(),
+            "{action}"
+        );
+        assert!(
+            mobile_session::Entity::find()
+                .filter(mobile_session::Column::UserId.eq(user_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none(),
+            "{action}"
+        );
+        assert_eq!(
+            revoke_mobile_with_proof(
+                &mobile,
+                &base,
+                INST_ID,
+                first["data"]["revocation_token"].as_str().unwrap()
+            )
+            .await
+            .status(),
+            401,
+            "{action}"
+        );
+        if action == "user-delete" {
+            assert!(
+                user::Entity::find_by_id(user_id)
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                session::Entity::find()
+                    .filter(session::Column::UserId.eq(user_id))
+                    .one(&db)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(
+                admin
+                    .get(format!("{base}/api/auth/me"))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            );
+        }
+        assert_eq!(
+            refresh_mobile(&mobile, &base, &rotated).await.status(),
+            401,
+            "{action}"
+        );
+        assert_eq!(
+            register_mobile(&mobile, &base, &rotated).await.status(),
+            401,
+            "{action}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn refresh_never_transfers_registration_to_user_forging_installation_id() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    login_as_new_user(&admin, &base, "forged-member", "member").await;
+    let mobile = http_client();
+    let owner = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(register_mobile(&mobile, &base, &owner).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let member: Value = mobile_login(&mobile, &base, "forged-member", "memberpass", INST_ID)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let refreshed = refresh_mobile(&mobile, &base, &member).await;
+    assert_eq!(refreshed.status(), 200);
+    let member: Value = refreshed.json().await.unwrap();
+    assert_eq!(register_mobile(&mobile, &base, &member).await.status(), 403);
+    assert_eq!(
+        mobile
+            .post(format!("{base}/api/mobile/push/unregister"))
+            .bearer_auth(member["data"]["access_token"].as_str().unwrap())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+    assert_eq!(refresh_mobile(&mobile, &base, &owner).await.status(), 200);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+}
+
+#[tokio::test]
+async fn upload_racing_logout_cannot_restore_revoked_registration() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let mobile = http_client();
+    let first = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 200);
+    let (upload, logout) = tokio::join!(
+        register_mobile(&mobile, &base, &first),
+        mobile
+            .post(format!("{base}/api/mobile/auth/logout"))
+            .bearer_auth(first["data"]["access_token"].as_str().unwrap())
+            .send(),
+    );
+    assert_eq!(logout.unwrap().status(), 200);
+    assert!(matches!(upload.status().as_u16(), 200 | 401));
+    let db = registration_db(&tmp).await;
+    assert!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 401);
+}
+
+#[tokio::test]
+async fn old_login_cleanup_cannot_delete_same_users_replacement_registration() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let mobile = http_client();
+    let first = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(register_mobile(&mobile, &base, &first).await.status(), 200);
+    let replacement = mobile_admin_token(&mobile, &base, INST_ID).await;
+    assert_eq!(
+        register_mobile(&mobile, &base, &replacement).await.status(),
+        200
+    );
+    let db = registration_db(&tmp).await;
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    for path in ["push/unregister", "auth/logout"] {
+        assert_eq!(
+            mobile
+                .post(format!("{base}/api/mobile/{path}"))
+                .bearer_auth(first["data"]["access_token"].as_str().unwrap())
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        assert_eq!(
+            device_token::Entity::find()
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            registration
+        );
+    }
+    assert_eq!(
+        refresh_mobile(&mobile, &base, &replacement).await.status(),
+        200
+    );
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+}
+
+async fn revoke_mobile_with_proof(
+    client: &reqwest::Client,
+    base: &str,
+    installation_id: &str,
+    proof: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/auth/revoke"))
+        .json(&json!({"installation_id": installation_id, "revocation_token": proof}))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Create a genuinely pre-upgrade mobile session, then migrate its database
+/// before starting the real HTTP Server. No new-login response or revocation
+/// field existed when the client received these original credentials.
+async fn legacy_mobile_server() -> (String, tempfile::TempDir, Value) {
+    let (base, tmp, current, _) = legacy_mobile_server_after_replacements(0).await;
+    (base, tmp, current)
+}
+
+/// Seed the persisted outcome of the pinned baseline's refresh policy:
+/// 923a25555dbc09f60e226493707a1a6b733c19d0, mobile_auth.rs:247-259
+/// deletes the prior mobile session and issues a fresh pair on every rotation.
+/// Only historical fixture setup uses SQL; after migration all authorization,
+/// registration, refresh and cleanup run through the real current HTTP router.
+async fn legacy_mobile_server_after_replacements(
+    replacements: usize,
+) -> (String, tempfile::TempDir, Value, Vec<Value>) {
+    use sea_orm::{ActiveModelTrait, ConnectionTrait, Database, DatabaseBackend, Set, Statement};
+    use sea_orm_migration::MigratorTrait;
+    use serverbee_server::{
+        config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig},
+        entity::session,
+        migration::Migrator,
+        router::create_router,
+        service::{auth::AuthService, mobile_auth::MobileAuthService},
+        state::AppState,
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let config = AppConfig {
+        server: ServerConfig {
+            data_dir: tmp.path().to_str().unwrap().to_string(),
+            listen: "127.0.0.1:0".to_string(),
+            trusted_proxies: Vec::new(),
+        },
+        database: DatabaseConfig {
+            path: "test.db".to_string(),
+            max_connections: 5,
+        },
+        auth: AuthConfig {
+            secure_cookie: false,
+            ..AuthConfig::default()
+        },
+        ..AppConfig::default()
+    };
+    let db = Database::connect(format!(
+        "sqlite://{}?mode=rwc",
+        tmp.path().join("test.db").display()
+    ))
+    .await
+    .unwrap();
+    db.execute_unprepared("PRAGMA journal_mode=WAL")
+        .await
+        .unwrap();
+    db.execute_unprepared("PRAGMA foreign_keys=ON")
+        .await
+        .unwrap();
+    let prior = Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == "m20261003_000076_mobile_session_revocation")
+        .unwrap();
+    Migrator::up(&db, Some(prior as u32)).await.unwrap();
+    let user = AuthService::create_user(&db, "admin", "testpass", "admin")
+        .await
+        .unwrap();
+    let mut current = Value::Null;
+    let mut discarded = Vec::new();
+    let mut prior_id: Option<String> = None;
+    for _ in 0..=replacements {
+        if let Some(id) = &prior_id {
+            // Verify that the old app actually held the consumed secret before
+            // seeding the baseline's FK-ordered deletion and replacement.
+            let row = db
+                .query_one(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    "SELECT refresh_token_hash FROM mobile_sessions WHERE id = ?",
+                    [id.clone().into()],
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            let hash: String = row.try_get("", "refresh_token_hash").unwrap();
+            assert!(
+                MobileAuthService::verify_refresh_token(
+                    current["data"]["refresh_token"].as_str().unwrap(),
+                    &hash
+                )
+                .unwrap()
+            );
+            for (table, column) in [
+                ("device_tokens", "mobile_session_id"),
+                ("sessions", "mobile_session_id"),
+                ("mobile_sessions", "id"),
+            ] {
+                db.execute(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    format!("DELETE FROM {table} WHERE {column} = ?"),
+                    [id.clone().into()],
+                ))
+                .await
+                .unwrap();
+            }
+            discarded.push(current);
+        }
+        let access = AuthService::generate_session_token();
+        let refresh = MobileAuthService::generate_refresh_token();
+        let refresh_hash = MobileAuthService::hash_refresh_token(&refresh).unwrap();
+        let mobile_id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now();
+        db.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
+            "INSERT INTO mobile_sessions (id, user_id, refresh_token_hash, installation_id, device_name, created_at, expires_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [mobile_id.clone().into(), user.id.clone().into(), refresh_hash.into(), INST_ID.into(),
+             DEVICE_NAME.into(), now.into(), (now + chrono::Duration::days(30)).into(), now.into()],
+        )).await.unwrap();
+        session::ActiveModel {
+            id: Set(uuid::Uuid::new_v4().to_string()),
+            user_id: Set(user.id.clone()),
+            token: Set(AuthService::hash_session_token(&access)),
+            ip: Set("127.0.0.1".to_string()),
+            user_agent: Set("legacy-client".to_string()),
+            created_at: Set(now),
+            expires_at: Set(now + chrono::Duration::minutes(15)),
+            source: Set("mobile".to_string()),
+            mobile_session_id: Set(Some(mobile_id.clone())),
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        current = json!({"data": {"access_token": access, "refresh_token": refresh,
+            "user": {"id": user.id, "username": user.username, "role": user.role}}});
+        prior_id = Some(mobile_id);
+    }
+    Migrator::up(&db, None).await.unwrap();
+    let app = create_router(AppState::new(db, config).await.unwrap());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+    (base, tmp, current, discarded)
+}
+
+async fn mobile_session_fixture(legacy: bool) -> (String, tempfile::TempDir, Value) {
+    if legacy {
+        return legacy_mobile_server().await;
+    }
+    let (base, tmp) = start_test_server().await;
+    let login = mobile_admin_token(&http_client(), &base, INST_ID).await;
+    (base, tmp, login)
+}
+
+async fn assert_no_mobile_state_or_credentials(
+    client: &reqwest::Client,
+    base: &str,
+    db: &sea_orm::DatabaseConnection,
+    first: &Value,
+    rotated: Option<&Value>,
+) {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::{device_token, mobile_session, session};
+    assert!(
+        device_token::Entity::find()
+            .one(db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        mobile_session::Entity::find()
+            .one(db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    for tokens in std::iter::once(first).chain(rotated) {
+        assert_eq!(register_mobile(client, base, tokens).await.status(), 401);
+        assert_eq!(refresh_mobile(client, base, tokens).await.status(), 401);
+    }
+    // The HTTP tests use no browser login, so no unrelated session is present.
+    assert!(session::Entity::find().one(db).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn logout_committed_before_refresh_cannot_recreate_registration() {
+    for legacy in [false, true] {
+        let (base, tmp, first) = mobile_session_fixture(legacy).await;
+        let client = http_client();
+        assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+        let db = registration_db(&tmp).await;
+        if legacy {
+            // A not-yet-rotated legacy session still supports authenticated logout.
+            assert_eq!(
+                client
+                    .post(format!("{base}/api/mobile/auth/logout"))
+                    .bearer_auth(first["data"]["access_token"].as_str().unwrap())
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                200
+            );
+        } else {
+            assert_eq!(
+                revoke_mobile_with_proof(
+                    &client,
+                    &base,
+                    INST_ID,
+                    first["data"]["revocation_token"].as_str().unwrap()
+                )
+                .await
+                .status(),
+                200
+            );
+        }
+        assert_no_mobile_state_or_credentials(&client, &base, &db, &first, None).await;
+    }
+}
+
+/// Only the network boundary changes: the real Server has committed and sent
+/// its token response, but an intermediary delays or discards it for the client.
+async fn assert_logout_after_committed_refresh(legacy: bool, lose_response: bool) {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::{device_token, mobile_session};
+    use std::sync::Arc;
+    let (base, tmp, first) = mobile_session_fixture(legacy).await;
+    let client = http_client();
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let proof = if legacy {
+        first["data"]["refresh_token"].as_str().unwrap().to_string()
+    } else {
+        first["data"]["revocation_token"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let registration = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let (observed, mut observer) = tokio::sync::mpsc::channel::<Value>(1);
+    let release = Arc::new(tokio::sync::Notify::new());
+    let release_handler = release.clone();
+    let upstream = base.clone();
+    let proxy = axum::Router::new().route(
+        "/refresh",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let upstream = upstream.clone();
+            let observed = observed.clone();
+            let release = release_handler.clone();
+            async move {
+                let response = http_client()
+                    .post(format!("{upstream}/api/mobile/auth/refresh"))
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+                let rotated: Value = response.json().await.unwrap();
+                observed.send(rotated.clone()).await.unwrap();
+                release.notified().await;
+                if lose_response {
+                    (
+                        axum::http::StatusCode::BAD_GATEWAY,
+                        axum::Json(json!({"error": "lost upstream response"})),
+                    )
+                } else {
+                    (axum::http::StatusCode::OK, axum::Json(rotated))
+                }
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_url = format!("http://{}/refresh", listener.local_addr().unwrap());
+    let proxy_task = tokio::spawn(async move { axum::serve(listener, proxy).await.unwrap() });
+    let refresh_body =
+        json!({"installation_id": INST_ID, "refresh_token": first["data"]["refresh_token"]});
+    let downstream = tokio::spawn(async move {
+        http_client()
+            .post(proxy_url)
+            .json(&refresh_body)
+            .send()
+            .await
+            .unwrap()
+    });
+    let rotated = tokio::time::timeout(std::time::Duration::from_secs(15), observer.recv())
+        .await
+        .expect("real Server refresh must commit before cleanup")
+        .expect("proxy must expose the committed response to the observer");
+    // The installation has not received these new credentials. Its proof was
+    // captured before rotation, and cleanup HTTP remains reachable.
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 401);
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 401);
+    assert_eq!(
+        device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        registration
+    );
+    assert!(
+        mobile_session::Entity::find_by_id(&registration.mobile_session_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, INST_ID, &proof)
+            .await
+            .status(),
+        200
+    );
+    assert_no_mobile_state_or_credentials(&client, &base, &db, &first, Some(&rotated)).await;
+    release.notify_one();
+    let response = downstream.await.unwrap();
+    assert_eq!(response.status(), if lose_response { 502 } else { 200 });
+    if !lose_response {
+        assert_eq!(response.json::<Value>().await.unwrap(), rotated);
+    }
+    proxy_task.abort();
+}
+
+#[tokio::test]
+async fn logout_revokes_rotated_registration_before_delayed_success_response_arrives() {
+    assert_logout_after_committed_refresh(false, false).await;
+}
+
+#[tokio::test]
+async fn logout_revokes_registration_when_committed_refresh_response_is_lost() {
+    assert_logout_after_committed_refresh(false, true).await;
+}
+
+#[tokio::test]
+async fn restored_legacy_first_refresh_keeps_registration_and_old_proof_revokes_after_response_loss()
+ {
+    assert_logout_after_committed_refresh(true, true).await;
+}
+
+#[tokio::test]
+async fn restored_legacy_first_refresh_allows_logout_before_delayed_success_response() {
+    assert_logout_after_committed_refresh(true, false).await;
+}
+
+#[tokio::test]
+async fn revocation_proof_cannot_authenticate_refresh_or_revoke_another_installation() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::device_token;
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let first = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let proof = first["data"]["revocation_token"].as_str().unwrap();
+    assert_eq!(
+        client
+            .get(format!("{base}/api/mobile/auth/devices"))
+            .bearer_auth(proof)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/refresh"))
+            .json(&json!({"installation_id": INST_ID, "refresh_token": proof}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, "wrong-installation", proof)
+            .await
+            .status(),
+        401
+    );
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, INST_ID, "forged-proof")
+            .await
+            .status(),
+        401
+    );
+    // Re-login on the same installation: delayed old cleanup must preserve the
+    // replacement session and registration, even for the same authenticated user.
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(
+        register_mobile(&client, &base, &replacement).await.status(),
+        200
+    );
+    let db = registration_db(&tmp).await;
+    let before = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, INST_ID, proof)
+            .await
+            .status(),
+        200
+    );
+    let after = device_token::Entity::find()
+        .filter(device_token::Column::Id.eq(&before.id))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        register_mobile(&client, &base, &replacement).await.status(),
+        200
+    );
+    assert_eq!(refresh_mobile(&client, &base, &first).await.status(), 401);
+}
+
+#[tokio::test]
+async fn upgraded_legacy_refresh_preserves_registration_and_deletion_only_proof_across_rotations() {
+    use sea_orm::EntityTrait;
+    use serverbee_server::entity::device_token;
+    let (base, tmp, original) = legacy_mobile_server().await;
+    let client = http_client();
+    assert_eq!(
+        register_mobile(&client, &base, &original).await.status(),
+        200
+    );
+    let db = registration_db(&tmp).await;
+    let registered = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let proof = original["data"]["refresh_token"].as_str().unwrap();
+    let mut current = original.clone();
+    for _ in 0..2 {
+        let response = refresh_mobile(&client, &base, &current).await;
+        assert_eq!(response.status(), 200);
+        let rotated: Value = response.json().await.unwrap();
+        assert_eq!(
+            register_mobile(&client, &base, &current).await.status(),
+            401
+        );
+        assert_eq!(refresh_mobile(&client, &base, &current).await.status(), 401);
+        assert_eq!(
+            device_token::Entity::find()
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            registered
+        );
+        current = rotated;
+    }
+    assert_eq!(
+        client
+            .get(format!("{base}/api/mobile/auth/devices"))
+            .bearer_auth(proof)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, "wrong-installation", proof)
+            .await
+            .status(),
+        401
+    );
+    assert_eq!(
+        register_mobile(&client, &base, &current).await.status(),
+        200
+    );
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, INST_ID, proof)
+            .await
+            .status(),
+        200
+    );
+    assert_no_mobile_state_or_credentials(&client, &base, &db, &original, Some(&current)).await;
+}
+
+#[tokio::test]
+async fn deleting_user_revokes_all_mobile_devices_and_preserves_another_users_registration() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{device_token, mobile_session, session, user};
+    let (base, tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let _member = login_as_new_user(&admin, &base, "multi-device-member", "member").await;
+    let client = http_client();
+    let survivor: Value = mobile_login(&client, &base, "admin", "testpass", "admin-installation")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        register_mobile(&client, &base, &survivor).await.status(),
+        200
+    );
+    let first: Value = mobile_login(&client, &base, "multi-device-member", "memberpass", INST_ID)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+    let response = refresh_mobile(&client, &base, &first).await;
+    assert_eq!(response.status(), 200);
+    let rotated: Value = response.json().await.unwrap();
+    let second: Value = mobile_login(
+        &client,
+        &base,
+        "multi-device-member",
+        "memberpass",
+        "second-installation",
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(register_mobile(&client, &base, &second).await.status(), 200);
+    let member_id = first["data"]["user"]["id"].as_str().unwrap();
+    let db = registration_db(&tmp).await;
+    let survivor_registration = device_token::Entity::find()
+        .filter(device_token::Column::InstallationId.eq("admin-installation"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        admin
+            .delete(format!("{base}/api/users/{member_id}"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert!(
+        user::Entity::find_by_id(member_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        device_token::Entity::find()
+            .filter(device_token::Column::UserId.eq(member_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        mobile_session::Entity::find()
+            .filter(mobile_session::Column::UserId.eq(member_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        session::Entity::find()
+            .filter(session::Column::UserId.eq(member_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    for (tokens, installation) in [
+        (&first, INST_ID),
+        (&rotated, INST_ID),
+        (&second, "second-installation"),
+    ] {
+        assert_eq!(register_mobile(&client, &base, tokens).await.status(), 401);
+        assert_eq!(client.post(format!("{base}/api/mobile/auth/refresh"))
+            .json(&json!({"installation_id": installation, "refresh_token": tokens["data"]["refresh_token"]}))
+            .send().await.unwrap().status(), 401);
+    }
+    for (tokens, installation) in [(&first, INST_ID), (&second, "second-installation")] {
+        assert_eq!(
+            revoke_mobile_with_proof(
+                &client,
+                &base,
+                installation,
+                tokens["data"]["revocation_token"].as_str().unwrap()
+            )
+            .await
+            .status(),
+            401
+        );
+    }
+    assert_eq!(
+        device_token::Entity::find_by_id(&survivor_registration.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        survivor_registration
+    );
+    assert_eq!(
+        register_mobile(&client, &base, &survivor).await.status(),
+        200
+    );
+    assert_eq!(
+        admin
+            .get(format!("{base}/api/auth/me"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+}
+
+/// The upstream Server commits normally. Only its response to the installation
+/// is lost, while the observer retains new credentials for rejection assertions.
+async fn hold_committed_response_loss(
+    base: &str,
+    refresh_body: Value,
+) -> (
+    Value,
+    std::sync::Arc<tokio::sync::Notify>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (observed, mut observer) = tokio::sync::mpsc::channel(1);
+    let release = std::sync::Arc::new(tokio::sync::Notify::new());
+    let handler_release = release.clone();
+    let upstream = base.to_string();
+    let proxy = axum::Router::new().route(
+        "/refresh",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let upstream = upstream.clone();
+            let observed = observed.clone();
+            let release = handler_release.clone();
+            async move {
+                let response = http_client()
+                    .post(format!("{upstream}/api/mobile/auth/refresh"))
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+                let rotated: Value = response.json().await.unwrap();
+                observed.send(rotated).await.unwrap();
+                release.notified().await;
+                axum::http::StatusCode::BAD_GATEWAY
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_url = format!("http://{}/refresh", listener.local_addr().unwrap());
+    let proxy_task = tokio::spawn(async move { axum::serve(listener, proxy).await.unwrap() });
+    let downstream = tokio::spawn(async move {
+        let response = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap()
+            .post(proxy_url)
+            .json(&refresh_body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 502);
+        proxy_task.abort();
+    });
+    let rotated = tokio::time::timeout(std::time::Duration::from_secs(15), observer.recv())
+        .await
+        .expect("Server must commit the upgraded client's rotation")
+        .expect("observer must receive the committed response");
+    (rotated, release, downstream)
+}
+
+async fn assert_staged_upgrade_revocation(
+    legacy_server_session: bool,
+    old_client_rotations: usize,
+    upgraded_client_rotations: usize,
+    replacement_login: bool,
+) {
+    assert_staged_upgrade_revocation_from_history(
+        legacy_server_session,
+        old_client_rotations,
+        upgraded_client_rotations,
+        replacement_login,
+        None,
+    )
+    .await;
+}
+
+async fn assert_staged_upgrade_revocation_from_history(
+    legacy_server_session: bool,
+    old_client_rotations: usize,
+    upgraded_client_rotations: usize,
+    replacement_login: bool,
+    ios_first_replacements: Option<usize>,
+) {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{
+        device_token, mobile_session, mobile_session_revocation_proof, session,
+    };
+    use serverbee_server::service::auth::AuthService;
+    let (base, tmp, mut current, discarded) = if let Some(replacements) = ios_first_replacements {
+        legacy_mobile_server_after_replacements(replacements).await
+    } else {
+        let (base, tmp, current) = mobile_session_fixture(legacy_server_session).await;
+        (base, tmp, current, Vec::new())
+    };
+    let stale_proof = discarded.first().map(|tokens| {
+        tokens["data"]["refresh_token"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    });
+    let client = http_client();
+    for tokens in &discarded {
+        assert_eq!(register_mobile(&client, &base, tokens).await.status(), 401);
+        assert_eq!(refresh_mobile(&client, &base, tokens).await.status(), 401);
+        assert_eq!(
+            revoke_mobile_with_proof(
+                &client,
+                &base,
+                INST_ID,
+                tokens["data"]["refresh_token"].as_str().unwrap()
+            )
+            .await
+            .status(),
+            401
+        );
+    }
+    // The old app reads only its token pair, ignoring any login proof field.
+    current["data"]
+        .as_object_mut()
+        .unwrap()
+        .remove("revocation_token");
+    assert_eq!(
+        register_mobile(&client, &base, &current).await.status(),
+        200
+    );
+    let db = registration_db(&tmp).await;
+    let mut original = device_token::Entity::find()
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    for _ in 0..old_client_rotations {
+        let response = refresh_mobile(&client, &base, &current).await;
+        assert_eq!(response.status(), 200);
+        // Discard consumed secrets and unknown fields exactly as the old app
+        // did. No first-login/first-rotation proof reaches the upgraded client.
+        current = response.json().await.unwrap();
+        current["data"]
+            .as_object_mut()
+            .unwrap()
+            .remove("revocation_token");
+    }
+    mobile_session_revocation_proof::Entity::delete_many()
+        .filter(
+            mobile_session_revocation_proof::Column::MobileSessionId
+                .eq(&original.mobile_session_id),
+        )
+        .exec(&db)
+        .await
+        .unwrap();
+    let mut upgraded_proof = current["data"]["refresh_token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    if ios_first_replacements.is_none() {
+        let bound = mobile_session::Entity::find_by_id(&original.mobile_session_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(bound.revocation_token_hash.is_some());
+        assert_ne!(
+            bound.revocation_token_hash,
+            Some(AuthService::hash_session_token(&upgraded_proof)),
+            "staged upgrade starts with a nonempty, unknown Server proof"
+        );
+    }
+    for _ in 0..upgraded_client_rotations {
+        let response = refresh_mobile(&client, &base, &current).await;
+        assert_eq!(response.status(), 200);
+        current = response.json().await.unwrap();
+    }
+    if ios_first_replacements.is_some() {
+        // iOS already has a nonempty, stale R0. The Server has now successfully
+        // rotated its current session once. Re-registration must preserve that
+        // session, and later cleanup captures the current R(n+1), not R0.
+        assert!(upgraded_client_rotations > 0);
+        assert_eq!(
+            register_mobile(&client, &base, &current).await.status(),
+            200
+        );
+        let registration = device_token::Entity::find_by_id(&original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(registration.mobile_session_id, original.mobile_session_id);
+        original = registration;
+        upgraded_proof = current["data"]["refresh_token"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let bound = mobile_session::Entity::find_by_id(&original.mobile_session_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(bound.revocation_token_hash.is_some());
+        assert_ne!(
+            bound.revocation_token_hash,
+            stale_proof.as_deref().map(AuthService::hash_session_token)
+        );
+    }
+    let sibling = mobile_admin_token(&client, &base, "sibling-installation").await;
+    assert_eq!(
+        register_mobile(&client, &base, &sibling).await.status(),
+        200
+    );
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    // Avoid an unused Web login so replacement login stays within the shared
+    // default five-attempt budget. Ownership is exercised by the mobile login.
+    assert_eq!(
+        admin
+            .post(format!("{base}/api/users"))
+            .json(
+                &json!({"username": "other-push-user", "password": "memberpass", "role": "member"})
+            )
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200,
+        "other user creation should succeed"
+    );
+    let other: Value = mobile_login(
+        &client,
+        &base,
+        "other-push-user",
+        "memberpass",
+        "other-user-installation",
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(register_mobile(&client, &base, &other).await.status(), 200);
+    let sibling_registration = device_token::Entity::find()
+        .filter(device_token::Column::InstallationId.eq("sibling-installation"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let other_registration = device_token::Entity::find()
+        .filter(device_token::Column::InstallationId.eq("other-user-installation"))
+        .one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    let (rotated, release, downstream) = hold_committed_response_loss(
+        &base,
+        json!({
+            "installation_id": INST_ID, "refresh_token": current["data"]["refresh_token"]
+        }),
+    )
+    .await;
+    assert_eq!(
+        device_token::Entity::find_by_id(&original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        original,
+        "registration survives all rotations before cleanup"
+    );
+    assert_eq!(
+        register_mobile(&client, &base, &current).await.status(),
+        401
+    );
+    assert_eq!(refresh_mobile(&client, &base, &current).await.status(), 401);
+    assert_eq!(
+        client
+            .get(format!("{base}/api/mobile/auth/devices"))
+            .bearer_auth(&upgraded_proof)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        client
+            .post(format!("{base}/api/mobile/auth/refresh"))
+            .json(&json!({"installation_id": INST_ID, "refresh_token": upgraded_proof}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, "other-user-installation", &upgraded_proof)
+            .await
+            .status(),
+        401
+    );
+    let replacement = if replacement_login {
+        let tokens = mobile_admin_token(&client, &base, INST_ID).await;
+        assert_eq!(register_mobile(&client, &base, &tokens).await.status(), 200);
+        Some((
+            tokens,
+            device_token::Entity::find_by_id(&original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+        ))
+    } else {
+        None
+    };
+    if let Some(proof) = &stale_proof {
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, INST_ID, proof)
+                .await
+                .status(),
+            401,
+            "stale nonempty proof must not become an alias of another session"
+        );
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    assert_eq!(
+        revoke_mobile_with_proof(&client, &base, INST_ID, &upgraded_proof)
+            .await
+            .status(),
+        200
+    );
+    assert!(
+        mobile_session::Entity::find_by_id(&original.mobile_session_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        session::Entity::find()
+            .filter(session::Column::MobileSessionId.eq(&original.mobile_session_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        device_token::Entity::find()
+            .filter(device_token::Column::MobileSessionId.eq(&original.mobile_session_id))
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        mobile_session_revocation_proof::Entity::find()
+            .filter(
+                mobile_session_revocation_proof::Column::MobileSessionId
+                    .eq(&original.mobile_session_id)
+            )
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none(),
+        "proofs cannot outlive their original session"
+    );
+    for tokens in [&current, &rotated] {
+        assert_eq!(register_mobile(&client, &base, tokens).await.status(), 401);
+        assert_eq!(refresh_mobile(&client, &base, tokens).await.status(), 401);
+    }
+    assert_eq!(
+        device_token::Entity::find_by_id(&sibling_registration.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        sibling_registration
+    );
+    assert_eq!(
+        device_token::Entity::find_by_id(&other_registration.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap(),
+        other_registration
+    );
+    assert_eq!(
+        register_mobile(&client, &base, &sibling).await.status(),
+        200
+    );
+    assert_eq!(register_mobile(&client, &base, &other).await.status(), 200);
+    if let Some((tokens, registration)) = replacement {
+        assert_eq!(
+            device_token::Entity::find_by_id(&registration.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            registration
+        );
+        assert_eq!(register_mobile(&client, &base, &tokens).await.status(), 200);
+        assert_eq!(refresh_mobile(&client, &base, &tokens).await.status(), 200);
+    }
+    release.notify_one();
+    downstream.await.unwrap();
+}
+
+#[tokio::test]
+async fn server_upgrade_then_old_client_rotations_then_ios_upgrade_revokes_after_response_loss() {
+    for rotations in [1, 3] {
+        assert_staged_upgrade_revocation(true, rotations, 0, false).await;
+    }
+}
+
+#[tokio::test]
+async fn old_client_login_on_new_server_then_ios_upgrade_revokes_after_response_loss() {
+    for rotations in [0, 1, 3] {
+        assert_staged_upgrade_revocation(false, rotations, 0, false).await;
+    }
+}
+
+#[tokio::test]
+async fn staged_upgrade_cleanup_preserves_replacement_login() {
+    for legacy in [false, true] {
+        assert_staged_upgrade_revocation(legacy, 1, 0, true).await;
+    }
+}
+
+#[tokio::test]
+async fn staged_upgrade_proof_survives_later_successful_rotations_before_response_loss() {
+    for legacy in [false, true] {
+        assert_staged_upgrade_revocation(legacy, 1, 2, false).await;
+    }
+}
+
+// Hold only the inbound HTTP boundary. The real Server still verifies and
+// persists everything when released, so a prior revocation cannot be mocked.
+async fn hold_refresh_before_dispatch(
+    base: &str,
+    body: Value,
+) -> (
+    std::sync::Arc<tokio::sync::Notify>,
+    tokio::task::JoinHandle<reqwest::Response>,
+) {
+    let (started, mut observer) = tokio::sync::mpsc::channel(1);
+    let release = std::sync::Arc::new(tokio::sync::Notify::new());
+    let handler_release = release.clone();
+    let upstream = base.to_string();
+    let proxy = axum::Router::new().route(
+        "/refresh",
+        axum::routing::post(move |axum::Json(body): axum::Json<Value>| {
+            let started = started.clone();
+            let release = handler_release.clone();
+            let upstream = upstream.clone();
+            async move {
+                started.send(()).await.unwrap();
+                release.notified().await;
+                let response = http_client()
+                    .post(format!("{upstream}/api/mobile/auth/refresh"))
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap();
+                (
+                    axum::http::StatusCode::from_u16(response.status().as_u16()).unwrap(),
+                    response.bytes().await.unwrap(),
+                )
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/refresh", listener.local_addr().unwrap());
+    let proxy_task = tokio::spawn(async move { axum::serve(listener, proxy).await.unwrap() });
+    let pending = tokio::spawn(async move {
+        let response = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap()
+            .post(url)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        proxy_task.abort();
+        response
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), observer.recv())
+        .await
+        .expect("refresh must reach the held HTTP boundary")
+        .unwrap();
+    (release, pending)
+}
+
+#[tokio::test]
+async fn staged_upgrade_revoke_before_refresh_closes_bearer_fallback_handoff() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{
+        device_token, mobile_session, mobile_session_revocation_proof, session,
+    };
+    for legacy in [false, true] {
+        let (base, tmp, first) = mobile_session_fixture(legacy).await;
+        let client = http_client();
+        assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+        let current: Value = refresh_mobile(&client, &base, &first)
+            .await
+            .json()
+            .await
+            .unwrap();
+        let db = registration_db(&tmp).await;
+        let original = device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        // The existing deployment predates proof history, and the old app
+        // retained only R1; its stable Server proof is unrelated to R1.
+        mobile_session_revocation_proof::Entity::delete_many()
+            .exec(&db)
+            .await
+            .unwrap();
+        let proof = current["data"]["refresh_token"].as_str().unwrap();
+        assert_ne!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap()
+                .revocation_token_hash,
+            Some(serverbee_server::service::auth::AuthService::hash_session_token(proof))
+        );
+        // Another login on the same installation is never a cleanup target.
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        let replacement_registration = device_token::Entity::find_by_id(&original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let (release, pending) = hold_refresh_before_dispatch(
+            &base,
+            json!({
+                "installation_id": INST_ID, "refresh_token": proof
+            }),
+        )
+        .await;
+        assert_eq!(
+            client
+                .get(format!("{base}/api/mobile/auth/devices"))
+                .bearer_auth(proof)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            401,
+            "deletion proof grants no bearer access"
+        );
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, "wrong-installation", proof)
+                .await
+                .status(),
+            401
+        );
+        // This used to return 401, leading to a stale bearer fallback after
+        // refresh committed. It now revokes R1's exact original session first.
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, INST_ID, proof)
+                .await
+                .status(),
+            200
+        );
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            session::Entity::find()
+                .filter(session::Column::MobileSessionId.eq(&original.mobile_session_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            mobile_session_revocation_proof::Entity::find()
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        release.notify_one();
+        assert_eq!(
+            pending.await.unwrap().status(),
+            401,
+            "a late refresh cannot recreate the revoked original"
+        );
+        assert_eq!(
+            register_mobile(&client, &base, &current).await.status(),
+            401
+        );
+        assert_eq!(refresh_mobile(&client, &base, &current).await.status(), 401);
+        assert_eq!(
+            device_token::Entity::find_by_id(&original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            replacement_registration
+        );
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        assert_eq!(
+            refresh_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+    }
+}
+
+#[tokio::test]
+async fn staged_upgrade_current_secret_revocation_races_refresh_without_reviving_session() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{
+        device_token, mobile_session, mobile_session_revocation_proof, session,
+    };
+    for legacy in [false, true] {
+        let (base, tmp, first) = mobile_session_fixture(legacy).await;
+        let client = http_client();
+        assert_eq!(register_mobile(&client, &base, &first).await.status(), 200);
+        let response = refresh_mobile(&client, &base, &first).await;
+        assert_eq!(response.status(), 200);
+        let current: Value = response.json().await.unwrap();
+        let db = registration_db(&tmp).await;
+        let original = device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        mobile_session_revocation_proof::Entity::delete_many()
+            .exec(&db)
+            .await
+            .unwrap();
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        let replacement_registration = device_token::Entity::find_by_id(&original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let (revoked, refreshed) = tokio::join!(
+            revoke_mobile_with_proof(
+                &client,
+                &base,
+                INST_ID,
+                current["data"]["refresh_token"].as_str().unwrap()
+            ),
+            refresh_mobile(&client, &base, &current)
+        );
+        assert_eq!(
+            revoked.status(),
+            200,
+            "proof must work on either side of consumption"
+        );
+        match refreshed.status().as_u16() {
+            200 => {
+                let rotated: Value = refreshed.json().await.unwrap();
+                assert_eq!(
+                    register_mobile(&client, &base, &rotated).await.status(),
+                    401
+                );
+                assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+            }
+            401 => {}
+            status => {
+                panic!("refresh must commit first or be rejected after revocation, got {status}")
+            }
+        }
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            session::Entity::find()
+                .filter(session::Column::MobileSessionId.eq(&original.mobile_session_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            device_token::Entity::find()
+                .filter(device_token::Column::MobileSessionId.eq(&original.mobile_session_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            mobile_session_revocation_proof::Entity::find()
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            register_mobile(&client, &base, &current).await.status(),
+            401
+        );
+        assert_eq!(refresh_mobile(&client, &base, &current).await.status(), 401);
+        assert_eq!(
+            device_token::Entity::find_by_id(&original.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            replacement_registration
+        );
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        assert_eq!(
+            refresh_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+    }
+}
+
+#[tokio::test]
+async fn ios_first_upgrade_with_stale_nonempty_proof_cleans_up_after_lost_response() {
+    for replacements in [1, 3] {
+        assert_staged_upgrade_revocation_from_history(true, 0, 1, false, Some(replacements)).await;
+    }
+}
+
+#[tokio::test]
+async fn ios_first_upgrade_stale_proof_cleanup_preserves_replacement_and_other_users() {
+    for replacements in [1, 3] {
+        assert_staged_upgrade_revocation_from_history(true, 0, 1, true, Some(replacements)).await;
+    }
+}
+
+#[tokio::test]
+async fn ios_first_upgrade_stale_proof_can_revoke_before_overlapping_refresh() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{
+        device_token, mobile_session, mobile_session_revocation_proof, session,
+    };
+    for replacements in [1, 3] {
+        let (base, tmp, historical, discarded) =
+            legacy_mobile_server_after_replacements(replacements).await;
+        let client = http_client();
+        let response = refresh_mobile(&client, &base, &historical).await;
+        assert_eq!(response.status(), 200);
+        let current: Value = response.json().await.unwrap();
+        assert_eq!(
+            register_mobile(&client, &base, &current).await.status(),
+            200
+        );
+        let db = registration_db(&tmp).await;
+        let original = device_token::Entity::find()
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let stale = discarded[0]["data"]["refresh_token"].as_str().unwrap();
+        let captured = current["data"]["refresh_token"].as_str().unwrap();
+        assert_ne!(
+            stale, captured,
+            "nonempty local proof predates the retained original session"
+        );
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        let registration = device_token::Entity::find_by_id(&original.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let (release, pending) = hold_refresh_before_dispatch(
+            &base,
+            json!({
+                "installation_id": INST_ID, "refresh_token": captured
+            }),
+        )
+        .await;
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, INST_ID, stale)
+                .await
+                .status(),
+            401
+        );
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            revoke_mobile_with_proof(&client, &base, INST_ID, captured)
+                .await
+                .status(),
+            200
+        );
+        assert!(
+            mobile_session::Entity::find_by_id(&original.mobile_session_id)
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            session::Entity::find()
+                .filter(session::Column::MobileSessionId.eq(&original.mobile_session_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            device_token::Entity::find()
+                .filter(device_token::Column::MobileSessionId.eq(&original.mobile_session_id))
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            mobile_session_revocation_proof::Entity::find()
+                .filter(
+                    mobile_session_revocation_proof::Column::MobileSessionId
+                        .eq(&original.mobile_session_id)
+                )
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        release.notify_one();
+        assert_eq!(
+            pending.await.unwrap().status(),
+            401,
+            "refresh cannot revive the revoked original session"
+        );
+        for tokens in discarded.iter().chain([&historical, &current]) {
+            assert_eq!(register_mobile(&client, &base, tokens).await.status(), 401);
+            assert_eq!(refresh_mobile(&client, &base, tokens).await.status(), 401);
+        }
+        assert_eq!(
+            device_token::Entity::find_by_id(&registration.id)
+                .one(&db)
+                .await
+                .unwrap()
+                .unwrap(),
+            registration
+        );
+        assert_eq!(
+            register_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+        assert_eq!(
+            refresh_mobile(&client, &base, &replacement).await.status(),
+            200
+        );
+    }
+}
+
+// ── Durable, original-session-fenced logout recovery ────────────────────────
+
+fn proposed_revocation_proof(byte: u8) -> String {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    format!("sb-revoke-v1.{}", URL_SAFE_NO_PAD.encode([byte; 32]))
+}
+
+async fn refresh_with_proposal(
+    client: &reqwest::Client,
+    base: &str,
+    tokens: &Value,
+    installation: &str,
+    proof: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/auth/refresh"))
+        .json(&json!({
+            "refresh_token": tokens["data"]["refresh_token"],
+            "installation_id": installation,
+            "revocation_proof": proof,
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn revoke_original_session(
+    client: &reqwest::Client,
+    base: &str,
+    installation: &str,
+    proof: &str,
+    expected_session: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/api/mobile/auth/revoke"))
+        .json(&json!({
+            "installation_id": installation,
+            "revocation_token": proof,
+            "expected_session_id": expected_session,
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Exercise the verified setup ownership table. Legacy /push/register uses a
+/// different ownership policy and cannot establish this logout regression.
+async fn save_verified_push_settings(
+    client: &reqwest::Client,
+    base: &str,
+    tokens: &Value,
+) -> reqwest::Response {
+    client
+        .put(format!("{base}/api/mobile/push/settings"))
+        .bearer_auth(tokens["data"]["access_token"].as_str().unwrap())
+        .json(&json!({
+            "expected_revision": 0,
+            "preferences": {
+                "enabled": true, "alerts": true, "security": false,
+                "task_failure": false, "task_success": false,
+            },
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn durable_logout_absence_ack_releases_verified_ownership_and_preserves_new_login() {
+    use chrono::{Duration, Utc};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{mobile_push_registration, mobile_session, session};
+    use serverbee_server::service::auth::AuthService;
+
+    for expired_original in [false, true] {
+        let (base, tmp) = start_test_server().await;
+        let client = http_client();
+        let original = mobile_admin_token(&client, &base, INST_ID).await;
+        let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+        assert!(uuid::Uuid::parse_str(original_id).is_ok());
+        assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+        let proof = proposed_revocation_proof(19);
+        let response = refresh_with_proposal(&client, &base, &original, INST_ID, &proof).await;
+        assert_eq!(response.status(), 200);
+        let rotated: Value = response.json().await.unwrap();
+        assert_eq!(rotated["data"]["mobile_session_id"], original_id);
+        assert_eq!(rotated["data"]["revocation_token"], proof);
+        // Only the identity and proof persisted before dispatch are needed if
+        // the committed refresh response never reaches the installation.
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        let replacement_id = replacement["data"]["mobile_session_id"].as_str().unwrap();
+        assert_ne!(original_id, replacement_id);
+        let db = registration_db(&tmp).await;
+        let ownership = mobile_push_registration::Entity::find_by_id(INST_ID)
+            .one(&db).await.unwrap().unwrap();
+        assert_eq!(ownership.mobile_session_id, original_id);
+        if expired_original {
+            mobile_session::Entity::update_many()
+                .col_expr(mobile_session::Column::ExpiresAt, Expr::value(Utc::now() - Duration::days(1)))
+                .filter(mobile_session::Column::Id.eq(original_id))
+                .exec(&db).await.unwrap();
+            let visible: Value = client.get(format!("{base}/api/mobile/auth/devices"))
+                .bearer_auth(replacement["data"]["access_token"].as_str().unwrap())
+                .send().await.unwrap().json().await.unwrap();
+            assert!(visible["data"].as_array().unwrap().iter().all(|row| row["id"] != original_id));
+        }
+        assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 403);
+        let hash = AuthService::hash_session_token(&proof);
+        for (installation, candidate, expected) in [
+            ("wrong-installation", proof.as_str(), original_id),
+            (INST_ID, "wrong-proof", original_id),
+            (INST_ID, hash.as_str(), original_id),
+            (INST_ID, proof.as_str(), replacement_id),
+        ] {
+            assert_eq!(revoke_original_session(&client, &base, installation, candidate, expected).await.status(), 401);
+            assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), ownership);
+        }
+        for malformed in ["", "not-a-uuid"] {
+            assert_eq!(revoke_original_session(&client, &base, INST_ID, &proof, malformed).await.status(), 422);
+        }
+        // Concurrent retries are serialized: one authenticated deletion and
+        // one explicit absence ACK, both successful and neither targets B.
+        let (left, right) = tokio::join!(
+            revoke_original_session(&client, &base, INST_ID, &proof, original_id),
+            revoke_original_session(&client, &base, INST_ID, &proof, original_id),
+        );
+        assert_eq!(left.status(), 200);
+        assert_eq!(right.status(), 200);
+        let left: Value = left.json().await.unwrap();
+        let right: Value = right.json().await.unwrap();
+        assert!((left["data"] == "ok" && right["data"] == "already_absent")
+            || (right["data"] == "ok" && left["data"] == "already_absent"));
+        assert!(mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().is_none());
+        assert!(session::Entity::find().filter(session::Column::MobileSessionId.eq(original_id)).one(&db).await.unwrap().is_none());
+        assert!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().is_none());
+        assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+        let replacement_ownership = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
+        assert_eq!(replacement_ownership.mobile_session_id, replacement_id);
+        // Absence ACK is deliberately non-authenticating: the only statement
+        // made is that this exact original identity has no remaining authority.
+        for candidate in [proof.as_str(), hash.as_str(), "unknown-proof"] {
+            let response = revoke_original_session(&client, &base, INST_ID, candidate, original_id).await;
+            assert_eq!(response.status(), 200);
+            assert_eq!(response.json::<Value>().await.unwrap()["data"], "already_absent");
+            assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), replacement_ownership);
+        }
+        assert_eq!(revoke_original_session(&client, &base, INST_ID, &proof, replacement_id).await.status(), 401);
+        for credential in [&proof, &hash] {
+            assert_eq!(client.get(format!("{base}/api/auth/me")).bearer_auth(credential).send().await.unwrap().status(), 401);
+            assert_eq!(client.post(format!("{base}/api/mobile/auth/refresh")).json(&json!({"installation_id": INST_ID, "refresh_token": credential})).send().await.unwrap().status(), 401);
+        }
+        assert_eq!(refresh_mobile(&client, &base, &rotated).await.status(), 401);
+        assert_eq!(refresh_mobile(&client, &base, &replacement).await.status(), 200);
+    }
+}
+
+#[tokio::test]
+async fn durable_logout_failed_deletion_rolls_back_verified_ownership() {
+    use sea_orm::{ConnectionTrait, EntityTrait};
+    use serverbee_server::entity::{mobile_push_registration, mobile_session};
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let proof = original["data"]["revocation_token"].as_str().unwrap();
+    assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    let db = registration_db(&tmp).await;
+    let before = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
+    db.execute_unprepared("CREATE TRIGGER fail_logout_delete BEFORE DELETE ON mobile_sessions BEGIN SELECT RAISE(ABORT, 'delete unavailable'); END").await.unwrap();
+    assert_eq!(revoke_original_session(&client, &base, INST_ID, proof, id).await.status(), 500);
+    assert!(mobile_session::Entity::find_by_id(id).one(&db).await.unwrap().is_some());
+    assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), before);
+    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 403);
+    assert_eq!(client.get(format!("{base}/api/auth/me")).bearer_auth(original["data"]["access_token"].as_str().unwrap()).send().await.unwrap().status(), 200);
+    db.execute_unprepared("DROP TRIGGER fail_logout_delete").await.unwrap();
+    let deleted = revoke_original_session(&client, &base, INST_ID, proof, id).await;
+    assert_eq!(deleted.status(), 200);
+    assert_eq!(deleted.json::<Value>().await.unwrap()["data"], "ok");
+    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+    // Omitted expected ID retains legacy strict credential semantics.
+    assert_eq!(revoke_mobile_with_proof(&client, &base, INST_ID, proof).await.status(), 401);
+}
+
+#[tokio::test]
+async fn durable_logout_absent_original_never_deletes_replacement_with_reused_proof() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{mobile_push_registration, mobile_session};
+    use serverbee_server::service::auth::AuthService;
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let proof = original["data"]["revocation_token"].as_str().unwrap();
+    assert_eq!(save_verified_push_settings(&client, &base, &original).await.status(), 200);
+    assert_eq!(revoke_original_session(&client, &base, INST_ID, proof, original_id).await.status(), 200);
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    let replacement_id = replacement["data"]["mobile_session_id"].as_str().unwrap();
+    assert_eq!(save_verified_push_settings(&client, &base, &replacement).await.status(), 200);
+    let db = registration_db(&tmp).await;
+    let ownership = mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap();
+    // Deliberate proof reuse must not influence an original-ID absence ACK.
+    mobile_session::Entity::update_many()
+        .col_expr(mobile_session::Column::RevocationTokenHash, Expr::value(AuthService::hash_session_token(proof)))
+        .filter(mobile_session::Column::Id.eq(replacement_id))
+        .exec(&db).await.unwrap();
+    for installation in [INST_ID, "different-installation"] {
+        let response = revoke_original_session(&client, &base, installation, proof, original_id).await;
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.json::<Value>().await.unwrap()["data"], "already_absent");
+        assert!(mobile_session::Entity::find_by_id(replacement_id).one(&db).await.unwrap().is_some());
+        assert_eq!(mobile_push_registration::Entity::find_by_id(INST_ID).one(&db).await.unwrap().unwrap(), ownership);
+    }
+    assert_eq!(refresh_mobile(&client, &base, &original).await.status(), 401);
+    assert_eq!(refresh_mobile(&client, &base, &replacement).await.status(), 200);
+}
+
+#[tokio::test]
+async fn durable_logout_absence_ack_rejects_dangling_operational_authority() {
+    use sqlx::Connection;
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let absent = uuid::Uuid::new_v4().to_string();
+    let mut fixture = sqlx::SqliteConnection::connect(&format!(
+        "sqlite://{}?mode=rw", tmp.path().join("test.db").display()
+    )).await.unwrap();
+    // Deliberately corrupt a dedicated fixture connection only. Production
+    // retains FK enforcement; the HTTP endpoint must fail closed on old or
+    // externally damaged storage, without deleting unauthenticated artifacts.
+    sqlx::query("PRAGMA foreign_keys=OFF").execute(&mut fixture).await.unwrap();
+    for (insert, count, cleanup) in [
+        (
+            "INSERT INTO sessions (id,user_id,token,ip,user_agent,expires_at,created_at,source,mobile_session_id) SELECT 'orphan-session',user_id,'orphan-hash','','','2999-01-01 00:00:00',CURRENT_TIMESTAMP,'mobile',? FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM sessions WHERE id='orphan-session'",
+            "DELETE FROM sessions WHERE id='orphan-session'",
+        ),
+        (
+            "INSERT INTO device_tokens (id,user_id,mobile_session_id,installation_id,token,created_at,updated_at) SELECT 'orphan-device',user_id,?,'orphan-installation','orphan-token',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM device_tokens WHERE id='orphan-device'",
+            "DELETE FROM device_tokens WHERE id='orphan-device'",
+        ),
+        (
+            "INSERT INTO mobile_push_registrations (installation_id,user_id,mobile_session_id,updated_at) SELECT 'orphan-installation',user_id,?,CURRENT_TIMESTAMP FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM mobile_push_registrations WHERE installation_id='orphan-installation'",
+            "DELETE FROM mobile_push_registrations WHERE installation_id='orphan-installation'",
+        ),
+        (
+            "INSERT INTO mobile_session_revocation_proofs (id,mobile_session_id,token_hash) SELECT 'orphan-proof',?,'orphan-hash' FROM mobile_sessions WHERE id=?",
+            "SELECT COUNT(*) FROM mobile_session_revocation_proofs WHERE id='orphan-proof'",
+            "DELETE FROM mobile_session_revocation_proofs WHERE id='orphan-proof'",
+        ),
+    ] {
+        sqlx::query(insert).bind(&absent).bind(original_id).execute(&mut fixture).await.unwrap();
+        assert_eq!(revoke_original_session(&client, &base, INST_ID, "unknown-proof", &absent).await.status(), 401);
+        let remaining: i64 = sqlx::query_scalar(count).fetch_one(&mut fixture).await.unwrap();
+        assert_eq!(remaining, 1, "unauthenticated absence check cannot clean up orphan state");
+        sqlx::query(cleanup).execute(&mut fixture).await.unwrap();
+    }
+    // Delivery metadata, including an old lease and ciphertext, is not
+    // independent authority. Existing eligibility requires the original live
+    // session; ACK must not mutate or wait for outbox/history cleanup.
+    sqlx::query("INSERT INTO mobile_push_outbox (event_id,installation_id,user_id,mobile_session_id,registration_revision,recipient_role,created_at,expires_at,envelope,outcome,reason,attempts,next_attempt_at,lease_id,lease_until,category) SELECT 'old-event','old-installation',user_id,?,1,'admin',1,9999999999,'ciphertext','pending','Queued',1,1,'old-lease',9999999999,'test' FROM mobile_sessions WHERE id=?")
+        .bind(&absent).bind(original_id).execute(&mut fixture).await.unwrap();
+    let response = revoke_original_session(&client, &base, INST_ID, "unknown-proof", &absent).await;
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.json::<Value>().await.unwrap()["data"], "already_absent");
+    let retained: (String, String, String) = sqlx::query_as(
+        "SELECT outcome,envelope,lease_id FROM mobile_push_outbox WHERE event_id='old-event'"
+    ).fetch_one(&mut fixture).await.unwrap();
+    assert_eq!(retained, ("pending".to_string(), "ciphertext".to_string(), "old-lease".to_string()));
+
+}
+
+#[tokio::test]
+async fn refresh_proposal_validation_authentication_and_conditional_rotation_are_atomic() {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+    use serverbee_server::entity::{mobile_session, mobile_session_revocation_proof};
+    use serverbee_server::service::auth::AuthService;
+
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let original_id = original["data"]["mobile_session_id"].as_str().unwrap();
+    let db = registration_db(&tmp).await;
+    let before = mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().unwrap();
+    let valid = proposed_revocation_proof(31);
+    let mut noncanonical = proposed_revocation_proof(0);
+    noncanonical.pop();
+    noncanonical.push('B');
+    for invalid in [
+        String::new(),
+        URL_SAFE_NO_PAD.encode([1u8; 32]),
+        format!("sb-revoke-v2.{}", URL_SAFE_NO_PAD.encode([1u8; 32])),
+        format!("sb-revoke-v1.{}", URL_SAFE_NO_PAD.encode([1u8; 31])),
+        format!("sb-revoke-v1.{}", URL_SAFE_NO_PAD.encode([1u8; 33])),
+        format!("{valid}="),
+        format!(" {valid}"),
+        noncanonical,
+    ] {
+        let response = refresh_with_proposal(&client, &base, &original, INST_ID, &invalid).await;
+        assert_eq!(response.status(), 422);
+        let rejected: Value = response.json().await.unwrap();
+        assert!(rejected["data"]["revocation_token"].is_null());
+        assert_eq!(mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().unwrap(), before);
+        assert!(mobile_session_revocation_proof::Entity::find().one(&db).await.unwrap().is_none());
+    }
+    let mut forged = original.clone();
+    forged["data"]["refresh_token"] = json!("invalid-refresh");
+    for (tokens, installation) in [(&forged, INST_ID), (&original, "wrong-installation")] {
+        let response = refresh_with_proposal(&client, &base, tokens, installation, &valid).await;
+        assert_eq!(response.status(), 401);
+        let rejected: Value = response.json().await.unwrap();
+        assert!(rejected["data"]["revocation_token"].is_null());
+        assert!(mobile_session_revocation_proof::Entity::find().one(&db).await.unwrap().is_none());
+    }
+    // Failure after proof insertion must roll back the proposed proof and
+    // conditional rotation together; no response may claim acceptance.
+    db.execute_unprepared("CREATE TRIGGER fail_proposal_access BEFORE INSERT ON sessions WHEN NEW.source = 'mobile' BEGIN SELECT RAISE(ABORT, 'access insert unavailable'); END").await.unwrap();
+    let failed = refresh_with_proposal(&client, &base, &original, INST_ID, &valid).await;
+    assert_eq!(failed.status(), 500);
+    let failed: Value = failed.json().await.unwrap();
+    assert!(failed["data"]["revocation_token"].is_null());
+    assert!(mobile_session_revocation_proof::Entity::find().one(&db).await.unwrap().is_none());
+    assert_eq!(mobile_session::Entity::find_by_id(original_id).one(&db).await.unwrap().unwrap(), before);
+    db.execute_unprepared("DROP TRIGGER fail_proposal_access").await.unwrap();
+
+    // Two proposals race with one refresh secret: only the committed winner
+    // may be accepted. The conditional update's loser must bind nothing.
+    let other = proposed_revocation_proof(32);
+    let (left, right) = tokio::join!(
+        refresh_with_proposal(&client, &base, &original, INST_ID, &valid),
+        refresh_with_proposal(&client, &base, &original, INST_ID, &other),
+    );
+    let (winner, loser, accepted, rejected) = if left.status() == 200 {
+        (left, right, &valid, &other)
+    } else {
+        (right, left, &other, &valid)
+    };
+    assert_eq!(winner.status(), 200);
+    assert_eq!(loser.status(), 401);
+    let winner: Value = winner.json().await.unwrap();
+    let loser: Value = loser.json().await.unwrap();
+    assert_eq!(winner["data"]["mobile_session_id"], original_id);
+    assert_eq!(winner["data"]["revocation_token"], accepted.as_str());
+    assert!(loser["data"]["revocation_token"].is_null());
+    for (proof, expected) in [(accepted, true), (rejected, false)] {
+        assert_eq!(mobile_session_revocation_proof::Entity::find()
+            .filter(mobile_session_revocation_proof::Column::TokenHash.eq(AuthService::hash_session_token(proof)))
+            .one(&db).await.unwrap().is_some(), expected);
+    }
+    let repeated = refresh_with_proposal(&client, &base, &winner, INST_ID, accepted).await;
+    assert_eq!(repeated.status(), 200, "same-original proposal is idempotent");
+    let repeated: Value = repeated.json().await.unwrap();
+    assert_eq!(repeated["data"]["revocation_token"], accepted.as_str());
+    assert_eq!(repeated["data"]["mobile_session_id"], original_id);
+    // Neither the proposal nor its hash can rotate even while the session lives.
+    for credential in [accepted.to_string(), AuthService::hash_session_token(accepted)] {
+        let mut as_refresh = repeated.clone();
+        as_refresh["data"]["refresh_token"] = json!(credential);
+        assert_eq!(refresh_mobile(&client, &base, &as_refresh).await.status(), 401);
+    }
+}
+
+#[tokio::test]
+async fn refresh_proposal_cannot_rebind_stable_or_historical_proofs() {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+    use serverbee_server::entity::{mobile_session, mobile_session_revocation_proof};
+    use serverbee_server::service::auth::AuthService;
+
+    for owner_kind in ["stable", "history"] {
+        let (base, tmp) = start_test_server().await;
+        let client = http_client();
+        let owner = mobile_admin_token(&client, &base, "other-installation").await;
+        let owner_id = owner["data"]["mobile_session_id"].as_str().unwrap();
+        let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+        let replacement_id = replacement["data"]["mobile_session_id"].as_str().unwrap();
+        let db = registration_db(&tmp).await;
+        let proof = proposed_revocation_proof(51);
+        let hash = AuthService::hash_session_token(&proof);
+        if owner_kind == "stable" {
+            mobile_session::Entity::update_many()
+                .col_expr(mobile_session::Column::RevocationTokenHash, Expr::value(hash.clone()))
+                .filter(mobile_session::Column::Id.eq(owner_id))
+                .exec(&db).await.unwrap();
+        } else {
+            assert_eq!(refresh_with_proposal(&client, &base, &owner, "other-installation", &proof).await.status(), 200);
+
+        }
+        let before = mobile_session::Entity::find_by_id(replacement_id).one(&db).await.unwrap().unwrap();
+        let response = refresh_with_proposal(&client, &base, &replacement, INST_ID, &proof).await;
+        assert_eq!(response.status(), 401, "{owner_kind} ownership cannot transfer");
+        let response: Value = response.json().await.unwrap();
+        assert!(response["data"]["revocation_token"].is_null());
+        assert_eq!(mobile_session::Entity::find_by_id(replacement_id).one(&db).await.unwrap().unwrap(), before);
+        assert!(mobile_session_revocation_proof::Entity::find()
+            .filter(mobile_session_revocation_proof::Column::MobileSessionId.eq(replacement_id))
+            .filter(mobile_session_revocation_proof::Column::TokenHash.eq(hash))
+            .one(&db).await.unwrap().is_none());
+        assert_eq!(refresh_mobile(&client, &base, &replacement).await.status(), 200, "rejected binding must roll back rotation");
+    }
+}
+
+#[test]
+fn mobile_recovery_schema_matches_checked_in_api_artifacts() {
+    use utoipa::OpenApi;
+
+    let generated = serde_json::to_value(serverbee_server::openapi::ApiDoc::openapi()).unwrap();
+    let checked_in: serde_json::Value =
+        serde_json::from_str(include_str!("../../../apps/web/openapi.json")).unwrap();
+    for name in [
+        "MobileRefreshRequest",
+        "MobileRevokeRequest",
+        "MobileTokenResponse",
+    ] {
+        assert_eq!(
+            generated["components"]["schemas"][name],
+            checked_in["components"]["schemas"][name],
+            "Regenerate the checked-in {name} schema from the Rust source"
+        );
+    }
+    assert_eq!(
+        generated["paths"]["/api/mobile/auth/revoke"],
+        checked_in["paths"]["/api/mobile/auth/revoke"]
+    );
+}

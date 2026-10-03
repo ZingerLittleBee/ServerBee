@@ -37,6 +37,8 @@ pub struct Reporter {
     config: AgentConfig,
     capabilities: Arc<CapabilityAuthority>,
     firewall_manager: Arc<FirewallManager>,
+    #[cfg(test)]
+    test_terminal_shell: Option<crate::terminal::TerminalTestShell>,
 }
 
 impl Reporter {
@@ -46,6 +48,8 @@ impl Reporter {
             config,
             capabilities,
             firewall_manager,
+            #[cfg(test)]
+            test_terminal_shell: None,
         }
     }
 
@@ -134,6 +138,8 @@ impl Reporter {
         let (mut write, mut read) = ws_stream.split();
 
         // Wait for Welcome message
+        let mut capability_event_ack = false;
+        let mut capability_destination = None;
         let report_interval = match read.next().await {
             Some(Ok(Message::Text(text))) => {
                 let msg: ServerMessage = serde_json::from_str(&text)?;
@@ -141,8 +147,17 @@ impl Reporter {
                     ServerMessage::Welcome {
                         server_id,
                         report_interval,
+                        capability_event_ack: supports_event_ack,
                         ..
                     } => {
+                        capability_event_ack = supports_event_ack;
+                        use sha2::{Digest, Sha256};
+                        let deployment =
+                            hex::encode(Sha256::digest(self.config.server_url.as_bytes()));
+                        capability_destination = Some(format!("{deployment}:{server_id}"));
+                        // Journal availability gates event delivery, not monitoring
+                        // or locally authorized command/terminal duties. The retry
+                        // tick persists the owned destination before sending events.
                         // The server-advertised `capabilities` field is
                         // intentionally ignored: capabilities are agent-owned
                         // and already loaded into `capabilities` above. The
@@ -176,6 +191,10 @@ impl Reporter {
             Arc::clone(&capabilities),
             Arc::clone(&self.firewall_manager),
         );
+        #[cfg(test)]
+        if let Some(shell) = self.test_terminal_shell.clone() {
+            runtime.terminal_manager.set_test_shell(shell);
+        }
         runtime.docker.probe().await;
         let features = runtime.docker.features();
 
@@ -301,8 +320,39 @@ impl Reporter {
         let mut report_interval = interval(Duration::from_secs(report_interval as u64));
         report_interval.tick().await; // consume first immediate tick
 
+        let mut capability_retry = interval(Duration::from_secs(3));
+        let mut capability_event_inflight = None;
         loop {
             tokio::select! {
+                _ = capability_retry.tick() => {
+                    let Some(destination) = capability_destination.as_deref() else { continue; };
+                    if let Err(error) = capabilities.bind_destination(destination) {
+                        tracing::warn!(error = %error, "Capability destination remains pending; retrying");
+                        continue;
+                    }
+                    if !capability_event_ack {
+                        if let Err(error) = capabilities.discard_legacy_events() {
+                            tracing::warn!(error = %error, "Legacy capability journal cleanup remains pending");
+                        }
+                        continue;
+                    }
+                    let pending = match capabilities.pending_events() {
+                        Ok(events) => events,
+                        Err(error) => {
+                            tracing::warn!(error = %error, "Capability journal remains pending; retrying");
+                            continue;
+                        }
+                    };
+                    if let Some(event) = pending.first() {
+                        let message = AgentMessage::CapabilitiesChanged {
+                            msg_id: event.msg_id.clone(), occurred_at: Some(event.occurred_at),
+                            capabilities: capabilities.effective(), temporary: capabilities.active_grants(),
+                            changes: event.changes.clone(),
+                        };
+                        send_msg(&mut write, &message).await?;
+                        capability_event_inflight = Some(event.msg_id.clone());
+                    }
+                }
                 _ = report_interval.tick() => {
                     let report = collector.collect();
                     let msg = AgentMessage::Report(report);
@@ -342,21 +392,27 @@ impl Reporter {
                                     send_msg(&mut write, &msg).await?;
                                 }
                             }
-                            let msg = AgentMessage::CapabilitiesChanged {
-                                msg_id: uuid::Uuid::new_v4().to_string(),
-                                capabilities: t.effective,
-                                temporary: t.temporary,
-                                changes: t.changes,
-                            };
-                            send_msg(&mut write, &msg).await?;
-                            tracing::debug!("Sent CapabilitiesChanged");
+                            if !capability_event_ack {
+                                let msg = AgentMessage::CapabilitiesChanged {
+                                    occurred_at: None,
+                                    msg_id: uuid::Uuid::new_v4().to_string(),
+                                    capabilities: t.effective,
+                                    temporary: t.temporary,
+                                    changes: t.changes,
+                                };
+                                send_msg(&mut write, &msg).await?;
+                                if let Err(error) = capabilities.discard_legacy_events() {
+                                    tracing::warn!(error = %error, "Legacy capability journal cleanup remains pending");
+                                }
+                                tracing::debug!("Sent CapabilitiesChanged");
+                            }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            // Missed transitions: resync the server with the
-                            // current snapshot (change events for the missed
-                            // steps are lost, but state converges).
+                            // The durable journal retains lagged events. The
+                            // legacy server still receives a current snapshot.
                             tracing::warn!("capability transitions lagged by {n}; resyncing");
                             let msg = AgentMessage::CapabilitiesChanged {
+                                occurred_at: None,
                                 msg_id: uuid::Uuid::new_v4().to_string(),
                                 capabilities: capabilities.effective(),
                                 temporary: capabilities.active_grants(),
@@ -468,11 +524,21 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
+                            if capability_event_ack
+                                && let Ok(ServerMessage::Ack { msg_id }) = serde_json::from_str::<ServerMessage>(&text)
+                                && capability_event_inflight.as_deref() == Some(msg_id.as_str()) {
+                                // A failed durable deletion leaves the original
+                                // event queued. Resending gets another safe receipt.
+                                match capabilities.acknowledge_event(&msg_id) {
+                                    Ok(()) => capability_event_inflight = None,
+                                    Err(error) => tracing::warn!(error = %error,
+                                        "Capability Ack persistence remains pending; retrying"),
+                                }
+                            }
                             runtime.handle_server_message(&text, &mut write).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
-                            runtime.shutdown();
                             return Ok(());
                         }
                         Some(Ok(Message::Ping(data))) => {
@@ -481,12 +547,10 @@ impl Reporter {
                         Some(Ok(_)) => {}
                         Some(Err(e)) => {
                             tracing::error!("WebSocket error: {e}");
-                            runtime.shutdown();
                             return Err(e.into());
                         }
                         None => {
                             tracing::info!("WebSocket stream ended");
-                            runtime.shutdown();
                             return Ok(());
                         }
                     }
@@ -1266,6 +1330,7 @@ mod tests {
     /// report interval (seconds).
     async fn send_welcome(ws: &mut ServerWs, report_interval: u32) {
         let welcome = ServerMessage::Welcome {
+            capability_event_ack: false,
             server_id: "fake-server".to_string(),
             protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
             report_interval,
@@ -2065,6 +2130,10 @@ mod tests {
         });
 
         let (info, _err, changed) = drive_e2e(&mut reporter, server, Duration::from_secs(15)).await;
+        assert!(
+            reporter.capabilities.pending_events().unwrap().is_empty(),
+            "Legacy attempted transitions must not replay after a future peer upgrade"
+        );
 
         // The initial SystemInfo carried the granted terminal capability.
         match info {
@@ -3440,6 +3509,601 @@ mod tests {
             }
             other => panic!("expected UpgradeResult, got {other:?}"),
         }
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn durable_capability_event_reconnects_restarts_and_waits_for_owned_ack() {
+        use crate::capability_grants::store::{CapabilityGrantStore, GrantRecord};
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_TERMINAL};
+        async fn welcome_with_event_ack(ws: &mut ServerWs) {
+            send_server_msg(
+                ws,
+                &ServerMessage::Welcome {
+                    server_id: "fake-server".into(),
+                    capability_event_ack: true,
+                    protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
+                    report_interval: 30,
+                    capabilities: Some(0),
+                },
+            )
+            .await;
+            handshake_collect_system_info(ws).await;
+        }
+        let (listener, addr) = bind_fake_server().await;
+        let directory = tempfile::tempdir().unwrap();
+        let config = e2e_config(&addr, directory.path());
+        let path = config.capabilities.grants_path();
+        let authority = CapabilityAuthority::new(CAP_DEFAULT, path.clone());
+        let authority_loop = tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(20)));
+        let mut reporter = Reporter::new(config.clone(), Arc::clone(&authority));
+        let source_path = path.clone();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            welcome_with_event_ack(&mut ws).await;
+            let now = chrono::Utc::now().timestamp();
+            let mut store = CapabilityGrantStore::load(&source_path);
+            store.upsert(
+                GrantRecord {
+                    cap: "terminal".into(),
+                    granted_at: now,
+                    expires_at: now + 3600,
+                    granted_by: "root".into(),
+                    reason: Some("durable source test".into()),
+                },
+                now,
+            );
+            store.flush().unwrap();
+            let event = read_agent_until(&mut ws, |m| {
+                matches!(m,
+                AgentMessage::CapabilitiesChanged { changes, .. } if !changes.is_empty())
+            })
+            .await;
+            ws.close(None).await.unwrap();
+            let mut reconnect = accept_ws(&listener).await;
+            welcome_with_event_ack(&mut reconnect).await;
+            let replay = read_agent_until(&mut reconnect, |m| {
+                matches!(m,
+                AgentMessage::CapabilitiesChanged { changes, .. } if !changes.is_empty())
+            })
+            .await;
+            assert_eq!(
+                serde_json::to_value(&event).unwrap(),
+                serde_json::to_value(&replay).unwrap()
+            );
+            (listener, event)
+        });
+        let (listener, first) = tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::select! {
+                result = server => result.unwrap(),
+                _ = reporter.run_with_external(None) => panic!("reporter unexpectedly exited"),
+            }
+        })
+        .await
+        .expect("automatic reconnect without another grant");
+        drop(reporter);
+        authority_loop.abort();
+        let _ = authority_loop.await;
+        assert_eq!(authority.pending_events().unwrap().len(), 1);
+        drop(authority);
+        let restarted = CapabilityAuthority::new(CAP_DEFAULT, path.clone());
+        let mut reporter = Reporter::new(config, Arc::clone(&restarted));
+        let source = Arc::clone(&restarted);
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            welcome_with_event_ack(&mut ws).await;
+            let replay = read_agent_until(&mut ws, |m| {
+                matches!(m,
+                AgentMessage::CapabilitiesChanged { changes, .. } if !changes.is_empty())
+            })
+            .await;
+            assert_eq!(
+                serde_json::to_value(&first).unwrap(),
+                serde_json::to_value(&replay).unwrap()
+            );
+            let AgentMessage::CapabilitiesChanged {
+                msg_id,
+                capabilities,
+                occurred_at,
+                ..
+            } = replay
+            else {
+                panic!("expected retained source event");
+            };
+            assert_eq!(capabilities & CAP_TERMINAL, CAP_TERMINAL);
+            assert!(occurred_at.is_some());
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::Ack {
+                    msg_id: "different-message".into(),
+                },
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(source.pending_events().unwrap().len(), 1);
+            send_server_msg(&mut ws, &ServerMessage::Ack { msg_id }).await;
+            while !source.pending_events().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::select! {
+                result = server => result.unwrap(),
+                _ = reporter.run_with_external(None) => panic!("reporter unexpectedly exited"),
+            }
+        })
+        .await
+        .expect("owned Ack consumes original source after restart");
+        drop(reporter);
+        drop(restarted);
+        assert!(
+            CapabilityAuthority::new(CAP_DEFAULT, path)
+                .pending_events()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    #[cfg(unix)]
+    struct ReporterChildGuard(u32, std::cell::Cell<bool>);
+
+    #[cfg(unix)]
+    impl ReporterChildGuard {
+        fn assert_reaped(&self) {
+            // ESRCH proves the shell is gone. ECHILD proves production already
+            // waited for it, rather than leaving a zombie for the test to reap.
+            let alive = unsafe { libc::kill(self.0 as libc::pid_t, 0) };
+            assert_eq!(alive, -1, "old Reporter shell must have exited");
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ESRCH)
+            );
+            let mut status = 0;
+            let waited =
+                unsafe { libc::waitpid(self.0 as libc::pid_t, &mut status, libc::WNOHANG) };
+            assert_eq!(
+                waited, -1,
+                "production must reap the old child, not this assertion"
+            );
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::ECHILD)
+            );
+            self.1.set(true);
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for ReporterChildGuard {
+        fn drop(&mut self) {
+            if self.1.get() {
+                return;
+            }
+            // Only kill a PID that is still our unreaped child. A completed
+            // production wait must never let cleanup target a reused PID.
+            unsafe {
+                let mut status = 0;
+                if libc::waitpid(self.0 as libc::pid_t, &mut status, libc::WNOHANG) == 0 {
+                    libc::kill(self.0 as libc::pid_t, libc::SIGKILL);
+                    libc::waitpid(self.0 as libc::pid_t, &mut status, 0);
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    async fn reporter_fault_welcome(ws: &mut ServerWs) {
+        send_server_msg(
+            ws,
+            &ServerMessage::Welcome {
+                server_id: "fake-server".into(),
+                capability_event_ack: true,
+                protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
+                report_interval: 1,
+                capabilities: None,
+            },
+        )
+        .await;
+        handshake_collect_system_info(ws).await;
+    }
+
+    #[cfg(unix)]
+    fn reporter_fault_shell() -> crate::terminal::TerminalTestShell {
+        crate::terminal::TerminalTestShell {
+            executable: "/bin/sh",
+            child_pid: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+        }
+    }
+
+    #[cfg(unix)]
+    async fn open_reporter_fault_pty(
+        ws: &mut ServerWs,
+        pid_file: &std::path::Path,
+        shell: &crate::terminal::TerminalTestShell,
+    ) -> ReporterChildGuard {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        send_server_msg(
+            ws,
+            &ServerMessage::TerminalOpen {
+                session_id: "journal-fault-pty".into(),
+                rows: 24,
+                cols: 80,
+            },
+        )
+        .await;
+        read_agent_until(ws, |message| {
+            matches!(message, AgentMessage::TerminalStarted { session_id }
+            if session_id == "journal-fault-pty")
+        })
+        .await;
+        // This PID comes from the actual portable_pty child stored by the
+        // connection, not from an input command or a nested shell's output.
+        let child_pid = shell.child_pid.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            child_pid > 0,
+            "TerminalManager must publish its owned child PID"
+        );
+        let mut status = 0;
+        assert_eq!(
+            unsafe { libc::waitpid(child_pid as libc::pid_t, &mut status, libc::WNOHANG) },
+            0,
+            "the top-level PTY shell must be our live, waitable child"
+        );
+        let child = ReporterChildGuard(child_pid, std::cell::Cell::new(false));
+        let quoted_path = format!(
+            "'{}'",
+            pid_file.display().to_string().replace('\'', "'\\''")
+        );
+        // Ignoring HUP makes dropping the master insufficient. Cleanup must
+        // explicitly kill AND wait for this real shell process.
+        let input = format!("trap '' HUP; printf '%s' \"$$\" > {quoted_path}\n");
+        send_server_msg(
+            ws,
+            &ServerMessage::TerminalInput {
+                session_id: "journal-fault-pty".into(),
+                data: STANDARD.encode(input),
+            },
+        )
+        .await;
+        let pid = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Ok(text) = std::fs::read_to_string(pid_file)
+                    && let Ok(pid) = text.trim().parse::<u32>()
+                {
+                    return pid;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("actual PTY publishes its shell PID");
+        assert_eq!(
+            unsafe { libc::kill(pid as libc::pid_t, 0) },
+            0,
+            "real shell is running"
+        );
+        assert_eq!(
+            pid, child.0,
+            "POSIX shell PID must match the actual top-level PTY child"
+        );
+        assert_eq!(unsafe { libc::kill(pid as libc::pid_t, libc::SIGHUP) }, 0);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(
+            unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) },
+            0,
+            "the actual child must resist HUP until production explicitly closes it"
+        );
+        child
+    }
+
+    #[cfg(unix)]
+    async fn grant_reporter_fault_terminal(path: &std::path::Path) {
+        use crate::capability_grants::store::{CapabilityGrantStore, GrantRecord};
+        let now = chrono::Utc::now().timestamp();
+        let mut store = CapabilityGrantStore::load(path);
+        store.upsert(
+            GrantRecord {
+                cap: "terminal".into(),
+                granted_at: now,
+                expires_at: now + 3600,
+                granted_by: "root".into(),
+                reason: Some("real Reporter fault test".into()),
+            },
+            now,
+        );
+        store.flush().unwrap();
+    }
+
+    #[cfg(unix)]
+    async fn reporter_original_grant(ws: &mut ServerWs) -> AgentMessage {
+        read_agent_until(ws, |message| matches!(message, AgentMessage::CapabilitiesChanged { changes, .. }
+            if changes.iter().any(|change| change.cap == "terminal"
+                && matches!(change.action, serverbee_common::protocol::CapabilityChangeAction::Granted)))).await
+    }
+
+    #[cfg(unix)]
+    async fn exercise_reporter_journal_pty_fault(ack_failure: bool) {
+        use crate::capability_grants::store::{CapabilityGrantStore, GrantRecord};
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_TERMINAL};
+        let (listener, addr) = bind_fake_server().await;
+        let directory = tempfile::tempdir().unwrap();
+        let config = e2e_config(&addr, directory.path());
+        let path = config.capabilities.grants_path();
+        let authority = CapabilityAuthority::new(CAP_DEFAULT, path.clone());
+        let authority_loop = tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(20)));
+        let mut reporter = Reporter::new(config, Arc::clone(&authority));
+        let shell = reporter_fault_shell();
+        reporter.test_terminal_shell = Some(shell.clone());
+        let source = Arc::clone(&authority);
+        let mut server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            reporter_fault_welcome(&mut ws).await;
+            grant_reporter_fault_terminal(&path).await;
+            let original = reporter_original_grant(&mut ws).await;
+            let AgentMessage::CapabilitiesChanged {
+                msg_id,
+                occurred_at,
+                changes,
+                ..
+            } = &original
+            else {
+                panic!("expected original grant");
+            };
+            let original_id = msg_id.clone();
+            let original_time = *occurred_at;
+            assert!(
+                original_time.is_some(),
+                "modern source carries its original event time"
+            );
+            let original_changes = serde_json::to_value(changes).unwrap();
+            let child =
+                open_reporter_fault_pty(&mut ws, &path.with_extension("shell.pid"), &shell).await;
+            let fault = path.with_extension("events.tmp");
+            std::fs::create_dir(&fault).unwrap();
+            if ack_failure {
+                send_server_msg(
+                    &mut ws,
+                    &ServerMessage::Ack {
+                        msg_id: original_id.clone(),
+                    },
+                )
+                .await;
+            } else {
+                let now = chrono::Utc::now().timestamp();
+                let mut store = CapabilityGrantStore::load(&path);
+                store.upsert(
+                    GrantRecord {
+                        cap: "file".into(),
+                        granted_at: now,
+                        expires_at: now + 3600,
+                        granted_by: "root".into(),
+                        reason: None,
+                    },
+                    now,
+                );
+                store.flush().unwrap();
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while source.pending_events().is_ok() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("real authority tick leaves a dirty journal");
+            }
+            // Keep the fault active beyond a production retry tick. Reports and
+            // Ping/Pong still use this SAME connection; errors cannot escape it.
+            tokio::time::sleep(Duration::from_millis(3200)).await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            read_agent_until(&mut ws, |message| matches!(message, AgentMessage::Pong)).await;
+            assert_eq!(
+                unsafe { libc::kill(child.0 as libc::pid_t, 0) },
+                0,
+                "journal errors must not strand a live session by abandoning its runtime"
+            );
+            if ack_failure {
+                assert!(
+                    source
+                        .pending_events()
+                        .unwrap()
+                        .iter()
+                        .any(|event| event.msg_id == original_id),
+                    "Failed Ack deletion keeps the original source queued"
+                );
+                ws.close(None).await.unwrap();
+                // The next connection is created by the real run_with_external
+                // loop. The old PTY must be reaped before that runtime begins.
+                ws = accept_ws(&listener).await;
+                child.assert_reaped();
+                let now = chrono::Utc::now().timestamp();
+                let mut store = CapabilityGrantStore::load(&path);
+                store.remove("terminal", now);
+                store.flush().unwrap();
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while source.effective() & CAP_TERMINAL != 0 {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .unwrap();
+                reporter_fault_welcome(&mut ws).await;
+                send_server_msg(&mut ws, &ServerMessage::Ping).await;
+                read_agent_until(&mut ws, |message| matches!(message, AgentMessage::Pong)).await;
+            } else {
+                let now = chrono::Utc::now().timestamp();
+                let mut store = CapabilityGrantStore::load(&path);
+                store.remove("terminal", now);
+                store.flush().unwrap();
+                read_agent_until(&mut ws, |message| {
+                    matches!(message,
+                    AgentMessage::TerminalError { session_id, error }
+                    if session_id == "journal-fault-pty" && error.contains("capability"))
+                })
+                .await;
+                child.assert_reaped();
+                ws.close(None).await.unwrap();
+                ws = accept_ws(&listener).await;
+                reporter_fault_welcome(&mut ws).await;
+            }
+            assert_eq!(source.effective() & CAP_TERMINAL, 0);
+            std::fs::remove_dir(&fault).unwrap();
+            let replay = reporter_original_grant(&mut ws).await;
+            let AgentMessage::CapabilitiesChanged {
+                msg_id,
+                occurred_at,
+                changes,
+                capabilities,
+                ..
+            } = replay
+            else {
+                panic!("expected retained grant");
+            };
+            assert_eq!(msg_id, original_id);
+            assert_eq!(occurred_at, original_time);
+            assert_eq!(serde_json::to_value(changes).unwrap(), original_changes);
+            assert_eq!(
+                capabilities & CAP_TERMINAL,
+                0,
+                "replay cannot restore revoked authority"
+            );
+            let queued = source.pending_events().unwrap();
+            assert!(
+                queued.len() >= 2,
+                "the real revocation is retained after the original grant"
+            );
+            let unsent_id = queued.last().unwrap().msg_id.clone();
+            assert_ne!(unsent_id, msg_id);
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::Ack {
+                    msg_id: unsent_id.clone(),
+                },
+            )
+            .await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            read_agent_until(&mut ws, |message| matches!(message, AgentMessage::Pong)).await;
+            assert!(
+                source
+                    .pending_events()
+                    .unwrap()
+                    .iter()
+                    .any(|event| event.msg_id == unsent_id),
+                "this connection cannot acknowledge a source it has not sent"
+            );
+            send_server_msg(&mut ws, &ServerMessage::Ack { msg_id }).await;
+            loop {
+                // FIFO Ping/Pong proves the preceding Ack was processed before
+                // deciding whether to await another source frame.
+                send_server_msg(&mut ws, &ServerMessage::Ping).await;
+                read_agent_until(&mut ws, |message| matches!(message, AgentMessage::Pong)).await;
+                let pending = source.pending_events().unwrap();
+                if pending.is_empty() {
+                    break;
+                }
+                let message = read_agent_until(&mut ws, |message| {
+                    matches!(message, AgentMessage::CapabilitiesChanged { .. })
+                })
+                .await;
+                if let AgentMessage::CapabilitiesChanged {
+                    msg_id,
+                    occurred_at,
+                    changes,
+                    capabilities,
+                    ..
+                } = message
+                {
+                    assert_eq!(msg_id, pending[0].msg_id);
+                    assert_eq!(occurred_at, Some(pending[0].occurred_at));
+                    assert_eq!(
+                        serde_json::to_value(changes).unwrap(),
+                        serde_json::to_value(&pending[0].changes).unwrap()
+                    );
+                    assert_eq!(capabilities & CAP_TERMINAL, 0);
+                    send_server_msg(&mut ws, &ServerMessage::Ack { msg_id }).await;
+                }
+            }
+            child.assert_reaped();
+            ws.close(None).await.unwrap();
+        });
+        let outcome = tokio::time::timeout(Duration::from_secs(30), async {
+            tokio::select! {
+                result = &mut server => result,
+                _ = reporter.run_with_external(None) => panic!("Reporter unexpectedly exited"),
+            }
+        })
+        .await;
+        drop(reporter);
+        if !server.is_finished() {
+            server.abort();
+            let _ = server.await;
+        }
+        authority_loop.abort();
+        let _ = authority_loop.await;
+        outcome
+            .expect("bounded real Reporter/journal/PTY scenario")
+            .unwrap();
+        assert!(authority.pending_events().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reporter_dirty_journal_retry_reaps_revoked_pty_and_recovers_original_event() {
+        exercise_reporter_journal_pty_fault(false).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reporter_ack_write_failure_keeps_source_and_reaps_pty_before_reconnect() {
+        exercise_reporter_journal_pty_fault(true).await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reporter_startup_write_failure_preserves_duties_and_cancellation_reaps_pty() {
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_TERMINAL};
+        let (listener, addr) = bind_fake_server().await;
+        let directory = tempfile::tempdir().unwrap();
+        let config = e2e_config(&addr, directory.path());
+        let path = config.capabilities.grants_path();
+        std::fs::create_dir(path.with_extension("events.tmp")).unwrap();
+        let authority =
+            CapabilityAuthority::try_new(CAP_DEFAULT | CAP_TERMINAL, path.clone()).unwrap();
+        assert!(
+            authority.pending_events().is_err(),
+            "startup source is unpersisted"
+        );
+        let authority_loop = tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(20)));
+        let mut reporter = Reporter::new(config, Arc::clone(&authority));
+        let shell = reporter_fault_shell();
+        reporter.test_terminal_shell = Some(shell.clone());
+        let mut server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            reporter_fault_welcome(&mut ws).await;
+            let child =
+                open_reporter_fault_pty(&mut ws, &path.with_extension("shell.pid"), &shell).await;
+            send_server_msg(&mut ws, &ServerMessage::Ping).await;
+            read_agent_until(&mut ws, |message| matches!(message, AgentMessage::Pong)).await;
+            (child, ws)
+        });
+        let outcome = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::select! {
+                result = &mut server => result.unwrap(),
+                _ = reporter.run_with_external(None) => panic!("Reporter unexpectedly exited"),
+            }
+        })
+        .await;
+        // The server socket is STILL open. Dropping the reporting future is the
+        // cancellation path, rather than a clean Close frame invoking shutdown.
+        drop(reporter);
+        if !server.is_finished() {
+            server.abort();
+            let _ = server.await;
+        }
+        authority_loop.abort();
+        let _ = authority_loop.await;
+        let (child, mut ws) = outcome.expect("startup duties work while journal write fails");
+        child.assert_reaped();
+        ws.close(None).await.ok();
+        assert!(
+            authority.pending_events().is_err(),
+            "never claim unavailable storage is durable"
+        );
     }
 }
 

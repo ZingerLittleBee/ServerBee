@@ -1,0 +1,25 @@
+name: CI Push Relay
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/push-relay/**', 'bun.lock', '.github/workflows/ci-push-relay.yml']
+  pull_request:
+    branches: [main]
+    paths: ['apps/push-relay/**', 'bun.lock', '.github/workflows/ci-push-relay.yml']
+
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Check Relay types
+        run: bun --filter @serverbee/push-relay typecheck
+      - name: Test persistent admission and Apple-format fixtures
+        run: bun --filter @serverbee/push-relay test

@@ -4,6 +4,7 @@ struct AlertDetailView: View {
     let alertKey: String
     @State private var viewModel = AlertDetailViewModel()
     @Environment(\.apiClient) private var apiClient
+    @Environment(\.dismiss) private var dismiss
     @ScaledMetric(relativeTo: .headline) private var buttonHeight: CGFloat = 50
 
     var body: some View {
@@ -26,7 +27,11 @@ struct AlertDetailView: View {
                     .padding(.vertical, 8)
                 }
             } else if let errorMessage = viewModel.errorMessage {
-                ContentUnavailableView(errorMessage, systemImage: "exclamationmark.triangle")
+                ContentUnavailableView {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                } actions: {
+                    Button("Back to alerts") { dismiss() }
+                }
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

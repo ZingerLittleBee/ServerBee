@@ -9,7 +9,10 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use rand::RngCore;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    Set, TransactionTrait, sea_query::Expr,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -36,6 +39,17 @@ pub struct MobileLoginRequest {
 pub struct MobileRefreshRequest {
     refresh_token: String,
     installation_id: String,
+    /// Persisted by the client before dispatch; accepted only with rotation.
+    revocation_proof: Option<String>,
+}
+
+/// A deletion-only proof for one installation's original mobile session.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct MobileRevokeRequest {
+    installation_id: String,
+    revocation_token: String,
+    /// Required by durable callers to fence recovery to the original login.
+    expected_session_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -73,6 +87,7 @@ pub fn public_router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/mobile/auth/login", post(mobile_login))
         .route("/mobile/auth/refresh", post(mobile_refresh))
+        .route("/mobile/auth/revoke", post(mobile_revoke))
         .route("/mobile/auth/pair", post(mobile_pair_redeem))
 }
 
@@ -208,13 +223,14 @@ pub async fn mobile_refresh(
     .to_string();
     let user_agent = extract_user_agent(&req_headers);
 
-    let response = MobileAuthService::refresh(
+    let response = MobileAuthService::refresh_with_revocation_proof(
         &state.db,
         &state.config.mobile,
         &body.refresh_token,
         &body.installation_id,
         &ip,
         &user_agent,
+        body.revocation_proof.as_deref(),
     )
     .await?;
 
@@ -239,10 +255,9 @@ pub async fn mobile_logout(
 
     // Find the session row by token to get mobile_session_id
     let session = crate::entity::session::Entity::find()
-        .filter(
-            crate::entity::session::Column::Token
-                .eq(crate::service::auth::AuthService::hash_session_token(&token)),
-        )
+        .filter(crate::entity::session::Column::Token.eq(
+            crate::service::auth::AuthService::hash_session_token(&token),
+        ))
         .one(&state.db)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -254,6 +269,36 @@ pub async fn mobile_logout(
     MobileAuthService::logout(&state.db, &mobile_session_id).await?;
 
     ok("ok")
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/mobile/auth/revoke",
+    tag = "mobile-auth",
+    request_body = MobileRevokeRequest,
+    responses(
+        (status = 200, description = "Original mobile session revoked (ok) or confirmed absent (already_absent)"),
+        (status = 401, description = "Invalid installation revocation credential"),
+        (status = 422, description = "Missing credential or invalid expected session UUID"),
+    )
+)]
+pub async fn mobile_revoke(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<MobileRevokeRequest>,
+) -> Result<Json<ApiResponse<&'static str>>, AppError> {
+    if body.installation_id.is_empty() || body.revocation_token.is_empty() {
+        return Err(AppError::Validation(
+            "installation_id and revocation_token are required".to_string(),
+        ));
+    }
+    let outcome = MobileAuthService::revoke_with_credential_for_session(
+        &state.db,
+        &body.installation_id,
+        &body.revocation_token,
+        body.expected_session_id.as_deref(),
+    )
+    .await?;
+    ok(outcome)
 }
 
 #[utoipa::path(
@@ -437,33 +482,27 @@ pub async fn push_register(
 
     let token = extract_bearer(&headers).ok_or(AppError::Unauthorized)?;
 
-    // Find the session by bearer token
-    let session = crate::entity::session::Entity::find()
-        .filter(
-            crate::entity::session::Column::Token
-                .eq(crate::service::auth::AuthService::hash_session_token(&token)),
-        )
-        .one(&state.db)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
+    let txn = state.db.begin().await?;
+    let (session, mobile_session) = push_session(&txn, &token).await?;
+    let mobile_session_id = &mobile_session.id;
 
-    let mobile_session_id = session
-        .mobile_session_id
-        .as_deref()
-        .ok_or_else(|| AppError::BadRequest("This session is not a mobile session".to_string()))?;
-
-    // Look up the mobile session to get installation_id
-    let mobile_session = crate::entity::mobile_session::Entity::find_by_id(mobile_session_id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("Mobile session not found".to_string()))?;
+    let migrated = txn.query_one(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Sqlite,
+        "SELECT 1 AS migrated FROM mobile_push_migrations WHERE installation_id=? AND user_id=?",
+        [mobile_session.installation_id.clone().into(), session.user_id.clone().into()],
+    )).await?;
+    if migrated.is_some() {
+        return Err(AppError::Conflict(
+            "This installation uses encrypted relay delivery".into(),
+        ));
+    }
 
     // Upsert: find by installation_id, update if exists, insert if not
     let existing = crate::entity::device_token::Entity::find()
         .filter(
             crate::entity::device_token::Column::InstallationId.eq(&mobile_session.installation_id),
         )
-        .one(&state.db)
+        .one(&txn)
         .await?;
 
     let now = Utc::now();
@@ -491,7 +530,7 @@ pub async fn push_register(
         model.token = Set(body.device_token);
         model.mobile_session_id = Set(mobile_session_id.to_string());
         model.updated_at = Set(now);
-        model.update(&state.db).await?;
+        model.update(&txn).await?;
     } else {
         let model = crate::entity::device_token::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
@@ -502,9 +541,10 @@ pub async fn push_register(
             created_at: Set(now),
             updated_at: Set(now),
         };
-        model.insert(&state.db).await?;
+        model.insert(&txn).await?;
     }
 
+    txn.commit().await?;
     ok("ok")
 }
 
@@ -524,42 +564,102 @@ pub async fn push_unregister(
 ) -> Result<Json<ApiResponse<&'static str>>, AppError> {
     let token = extract_bearer(&headers).ok_or(AppError::Unauthorized)?;
 
-    let session = crate::entity::session::Entity::find()
-        .filter(
-            crate::entity::session::Column::Token
-                .eq(crate::service::auth::AuthService::hash_session_token(&token)),
-        )
-        .one(&state.db)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-
-    let mobile_session_id = session
-        .mobile_session_id
-        .as_deref()
-        .ok_or_else(|| AppError::BadRequest("This session is not a mobile session".to_string()))?;
-
-    let mobile_session = crate::entity::mobile_session::Entity::find_by_id(mobile_session_id)
-        .one(&state.db)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("Mobile session not found".to_string()))?;
+    let txn = state.db.begin().await?;
+    let (session, mobile_session) = push_session(&txn, &token).await?;
 
     // Delete the device token for this installation, scoped to the caller's
     // own user. installation_id is a client-supplied value and must not be
     // treated as an ownership boundary: filtering by user_id as well prevents
     // a member from deleting another user's push registration by forging the
-    // victim's installation_id.
+    // victim's installation_id. Bind cleanup to this mobile session too: a
+    // delayed logout from an old login must not delete its replacement's row.
     crate::entity::device_token::Entity::delete_many()
         .filter(
             crate::entity::device_token::Column::InstallationId.eq(&mobile_session.installation_id),
         )
         .filter(crate::entity::device_token::Column::UserId.eq(&session.user_id))
-        .exec(&state.db)
+        .filter(crate::entity::device_token::Column::MobileSessionId.eq(&mobile_session.id))
+        .exec(&txn)
         .await?;
 
+    crate::entity::mobile_push_registration::Entity::delete_many()
+        .filter(
+            crate::entity::mobile_push_registration::Column::InstallationId
+                .eq(&mobile_session.installation_id),
+        )
+        .filter(crate::entity::mobile_push_registration::Column::UserId.eq(&session.user_id))
+        .filter(
+            crate::entity::mobile_push_registration::Column::MobileSessionId.eq(&mobile_session.id),
+        )
+        .exec(&txn)
+        .await?;
+    txn.commit().await?;
     ok("ok")
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Lock and revalidate mobile authorization in the same transaction as the
+/// registration mutation. A request admitted before refresh/logout must not
+/// write after that credential has been rotated or revoked.
+pub(super) async fn push_session(
+    txn: &DatabaseTransaction,
+    token: &str,
+) -> Result<
+    (
+        crate::entity::session::Model,
+        crate::entity::mobile_session::Model,
+    ),
+    AppError,
+> {
+    use crate::entity::{mobile_session, session, user};
+    use crate::service::auth::AuthService;
+
+    let now = Utc::now();
+    let token_hash = AuthService::hash_session_token(token);
+    // A no-op write takes SQLite's writer lock before any authorization reads.
+    let locked = session::Entity::update_many()
+        .col_expr(
+            session::Column::Token,
+            Expr::col(session::Column::Token).into(),
+        )
+        .filter(session::Column::Token.eq(&token_hash))
+        .filter(session::Column::Source.eq("mobile"))
+        .filter(session::Column::ExpiresAt.gt(now))
+        .exec(txn)
+        .await?;
+    if locked.rows_affected != 1 {
+        return Err(AppError::Unauthorized);
+    }
+    let session = session::Entity::find()
+        .filter(session::Column::Token.eq(token_hash))
+        .one(txn)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    let mobile = mobile_session::Entity::find_by_id(
+        session
+            .mobile_session_id
+            .as_deref()
+            .ok_or(AppError::Unauthorized)?,
+    )
+    .filter(mobile_session::Column::UserId.eq(&session.user_id))
+    .filter(mobile_session::Column::ExpiresAt.gt(now))
+    .one(txn)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+    let owner = user::Entity::find_by_id(&session.user_id)
+        .one(txn)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    if owner.must_change_password
+        || owner
+            .password_changed_at
+            .is_some_and(|changed| mobile.created_at < changed)
+    {
+        return Err(AppError::Unauthorized);
+    }
+    Ok((session, mobile))
+}
 
 /// Extract the User-Agent from request headers.
 fn extract_user_agent(headers: &HeaderMap) -> String {
@@ -571,7 +671,7 @@ fn extract_user_agent(headers: &HeaderMap) -> String {
 }
 
 /// Extract Bearer token from Authorization header.
-fn extract_bearer(headers: &HeaderMap) -> Option<String> {
+pub(super) fn extract_bearer(headers: &HeaderMap) -> Option<String> {
     headers
         .get("authorization")?
         .to_str()
@@ -609,7 +709,9 @@ mod audit_tests {
         AuthService::create_user(&db, "dave", "correct-horse", "member")
             .await
             .unwrap();
-        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
 
         let result = mobile_login(
             State(state.clone()),

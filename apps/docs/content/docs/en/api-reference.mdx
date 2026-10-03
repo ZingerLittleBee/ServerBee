@@ -86,6 +86,7 @@ curl https://your-server/api/auth/me \
 | GET | `/api/auth/oauth/{provider}/callback` | OAuth callback |
 | POST | `/api/mobile/auth/login` | Mobile login |
 | POST | `/api/mobile/auth/refresh` | Refresh a mobile session |
+| POST | `/api/mobile/auth/revoke` | Revoke one original mobile session using an installation-scoped deletion-only proof |
 | POST | `/api/mobile/auth/pair` | Redeem a mobile pairing code |
 | POST | `/api/agent/register` | Claim a bound enrollment offer with an Agent-proposed run token |
 | GET | `/api/status/config` | Public status page configuration |
@@ -99,6 +100,8 @@ curl https://your-server/api/auth/me \
 | GET | `/api/settings/brand` | Public brand settings |
 | GET | `/api/brand/logo` | Serve uploaded logo |
 | GET | `/api/brand/favicon` | Serve uploaded favicon |
+
+Ordinary mobile refresh preserves the installation registration and invalidates the previous access and refresh credentials. Login returns a stable `revocation_token`; the client retains it across refreshes and sends it with `installation_id` to `/api/mobile/auth/revoke` when signing out or discarding permanently rejected credentials. Cleanup uses the original login context even if a replacement login starts while the request is pending. This proof can only delete its original session, credentials, and registration; it cannot authenticate other APIs or refresh a session. Cleanup captures both the saved proof and the original login's current refresh secret before rotation. The saved proof can be absent or stale when an older Server replaced sessions during an iOS-first upgrade. If the saved proof is rejected, the client tries only the captured refresh secret at the deletion endpoint, without adopting a replacement login's credentials. An absent proof is saved before networking. Revocation can verify that secret before consumption; every successful rotation also retains the consumed secret's hash in the same transaction. Verification and deletion are serialized with rotation, so cleanup remains possible whether it reaches the Server before consumption or after a committed response is lost. These retained hashes grant deletion of only the original session and are removed with that session. They never grant ordinary API access or allow reuse of a consumed refresh token. Other installations, users, and replacement logins remain independent.
 
 ## Authenticated Read Endpoints
 

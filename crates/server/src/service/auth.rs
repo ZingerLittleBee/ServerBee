@@ -1980,6 +1980,7 @@ mod tests {
             id: Set(ms_id.clone()),
             user_id: Set(user_id.to_string()),
             refresh_token_hash: Set("hash".into()),
+            revocation_token_hash: Set(None),
             installation_id: Set(Uuid::new_v4().to_string()),
             device_name: Set("phone".into()),
             created_at: Set(now),

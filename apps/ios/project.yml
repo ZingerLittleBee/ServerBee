@@ -20,6 +20,7 @@ targets:
     platform: iOS
     sources:
       - path: ServerBee
+      - path: NotificationShared
     settings:
       base:
         INFOPLIST_FILE: ServerBee/Info.plist
@@ -39,8 +40,31 @@ targets:
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Debug.entitlements
+          PUSH_APNS_ENVIRONMENT: sandbox
         Release:
           CODE_SIGN_ENTITLEMENTS: ServerBee/ServerBee.Release.entitlements
+          PUSH_APNS_ENVIRONMENT: production
+    dependencies:
+      - target: NotificationService
+        embed: true
+    buildToolPlugins:
+      - plugin: SwiftLintBuildToolPlugin
+        package: SwiftLintPlugins
+
+  NotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NotificationService
+      - path: NotificationShared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile.notifications
+        INFOPLIST_FILE: NotificationService/Info.plist
+        CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_EMIT_LOC_STRINGS: YES
     buildToolPlugins:
       - plugin: SwiftLintBuildToolPlugin
         package: SwiftLintPlugins
@@ -50,6 +74,14 @@ targets:
     platform: iOS
     sources:
       - path: ServerBeeTests
+      - path: NotificationServiceTests
+      - path: NotificationService/NotificationService.swift
+      - path: ../../tests/fixtures/push-envelope-v1.json
+        buildPhase: resources
+      - path: ../../tests/fixtures/push-alert-envelope-v1.json
+        buildPhase: resources
+      - path: ../../tests/fixtures/push-security-envelope-v1.json
+        buildPhase: resources
     dependencies:
       - target: ServerBee
     settings:
@@ -57,6 +89,7 @@ targets:
         INFOPLIST_FILE: ServerBeeTests/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.serverbee.mobile.tests
         GENERATE_INFOPLIST_FILE: NO
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SERVERBEE_EXTENSION_TESTS"
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ServerBee.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ServerBee"
         SWIFT_VERSION: "6.0"

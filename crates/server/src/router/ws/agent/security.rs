@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::service::alert::AlertService;
+use crate::service::alert_event_intents;
 use crate::service::audit::AuditService;
 use crate::service::ip_quality::IpQualityService;
 use crate::service::ip_risk::IpRiskService;
@@ -50,10 +50,21 @@ pub(super) async fn on_security_event(
     payload: serverbee_common::security::SecurityEventPayload,
 ) {
     use serverbee_common::constants::CAP_SECURITY_EVENTS;
-    if !gate_inbound_data(state, server_id, CAP_SECURITY_EVENTS, "security_event_denied").await {
+    if !gate_inbound_data(
+        state,
+        server_id,
+        CAP_SECURITY_EVENTS,
+        "security_event_denied",
+    )
+    .await
+    {
         return;
     }
-    if let Err(e) = state.security_service.record_event(server_id, payload).await {
+    if let Err(e) = state
+        .security_service
+        .retain_agent_event(server_id, payload)
+        .await
+    {
         tracing::error!(server_id, error = %e, "security_event record failed");
     }
 }
@@ -148,108 +159,102 @@ pub(super) async fn on_unlock_results(
 pub(super) async fn on_capabilities_changed(
     state: &Arc<AppState>,
     server_id: &str,
+    msg_id: String,
+    occurred_at: Option<chrono::DateTime<chrono::Utc>>,
     capabilities: u32,
     temporary: Vec<TemporaryGrant>,
     changes: Vec<serverbee_common::protocol::CapabilityChangeEvent>,
-) {
-    // Mirror the agent-reported effective capability bitmask and the
-    // live temporary grants. The agent host is the only authority; the
-    // server persists these purely for display/enforcement gating.
-    state
-        .agent_manager
-        .update_agent_local_capabilities(server_id, capabilities);
-    state
-        .agent_manager
-        .update_temporary_grants(server_id, temporary.clone());
-    if let Err(e) =
-        ServerService::update_capabilities_mirror(&state.db, server_id, capabilities).await
-    {
-        tracing::error!("Failed to mirror capabilities for {server_id}: {e}");
-    }
-
-    // Deliberately a full-domain reconcile even though only the ping and
-    // firewall projections read capabilities: capability changes are rare,
-    // and "capability change ⇒ every domain converges" is a simpler invariant
-    // to trust than tracking which projections are capability-sensitive.
-    if let Err(error) = state
-        .agent_desired_state
-        .reconcile_connection(server_id)
-        .await
-    {
-        tracing::warn!(
-            server_id,
-            error = %error,
-            "capability-change desired-state reconcile was incomplete"
-        );
-    }
-
-    // Resolve display name + originating IP for the audit trail. Neither
-    // `server_name` nor `remote_addr` is in scope here, so we look them
-    // up from the DB / connection registry (mirroring the SystemInfo arm).
-    let server_name = ServerService::get_server(&state.db, server_id)
-        .await
-        .map(|s| s.name)
-        .unwrap_or_else(|_| "Unknown".to_string());
-    let ip = state
-        .agent_manager
-        .get_remote_addr(server_id)
-        .map(|a| a.ip().to_string())
-        .unwrap_or_default();
-
-    for ch in &changes {
-        let action = match ch.action {
-            serverbee_common::protocol::CapabilityChangeAction::Granted => {
-                "capability_temporarily_granted"
+) -> bool {
+    use crate::entity::{audit_log, capability_event_receipt as receipt};
+    use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, NotSet, Set, TransactionTrait};
+    use sha2::{Digest, Sha256};
+    let expects_ack = occurred_at.is_some();
+    // The existing connection owner holds its lifecycle lock across this call.
+    // Mirror, audit, receipt and intents are one admission. Failed capture is
+    // never acknowledged: the Agent retains and automatically resends its source.
+    let admission = async {
+        let serialized = serde_json::to_vec(&(occurred_at, &changes))
+            .map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
+        let payload_hash = format!("{:x}", Sha256::digest(serialized));
+        let txn = state.db.begin().await?;
+        txn.execute_unprepared("UPDATE servers SET capabilities=capabilities WHERE id=''").await?;
+        if let Some(old) = receipt::Entity::find_by_id((server_id.to_string(), msg_id.clone())).one(&txn).await? {
+            if old.payload_hash != payload_hash {
+                return Err(crate::error::AppError::Internal("Capability event identity reused with different content".into()));
             }
-            serverbee_common::protocol::CapabilityChangeAction::Expired => {
-                "capability_grant_expired"
-            }
-            serverbee_common::protocol::CapabilityChangeAction::Revoked => {
-                "capability_grant_revoked"
-            }
-        };
-        let detail = serde_json::json!({
-            "server_id": server_id,
-            "server_name": server_name,
-            "cap": ch.cap,
-            "expires_at": ch.expires_at,
-            "granted_by": ch.granted_by,
-            "reason": ch.reason,
-        })
-        .to_string();
-        if let Err(e) = AuditService::log(&state.db, "system", action, Some(&detail), &ip).await {
-            tracing::error!("Failed to write capability-change audit log: {e}");
+            ServerService::update_capabilities_mirror(&txn, server_id, capabilities).await?;
+            txn.commit().await?;
+            return Ok::<_, crate::error::AppError>(());
         }
-
-        // Only a temporary grant of a high-risk capability fires the
-        // event-driven `capability_grant_detected` alert. Expiry/revoke
-        // and low-risk caps are audited but never alerted.
-        if matches!(
-            ch.action,
-            serverbee_common::protocol::CapabilityChangeAction::Granted
-        ) && is_high_risk_cap(&ch.cap)
-            && let Err(e) = AlertService::check_event_rules(
-                &state.db,
-                &state.config,
-                &state.alert_state_manager,
-                server_id,
-                "capability_grant_detected",
-            )
+        let now = chrono::Utc::now();
+        let occurred_at = occurred_at.unwrap_or(now);
+        if occurred_at > now + chrono::Duration::minutes(5) {
+            return Err(crate::error::AppError::Internal("Capability event time is in the future".into()));
+        }
+        let server_name = crate::entity::server::Entity::find_by_id(server_id).one(&txn).await?
+            .ok_or_else(|| crate::error::AppError::Internal("Capability event Server missing".into()))?.name;
+        let ip = state.agent_manager.get_remote_addr(server_id).map(|a| a.ip().to_string()).unwrap_or_default();
+        ServerService::update_capabilities_mirror(&txn, server_id, capabilities).await?;
+        for ch in &changes {
+            let action = match ch.action {
+                serverbee_common::protocol::CapabilityChangeAction::Granted => "capability_temporarily_granted",
+                serverbee_common::protocol::CapabilityChangeAction::Expired => "capability_grant_expired",
+                serverbee_common::protocol::CapabilityChangeAction::Revoked => "capability_grant_revoked",
+            };
+            let detail = serde_json::json!({"server_id":server_id,"server_name":server_name,
+                "cap":ch.cap,"expires_at":ch.expires_at,"granted_by":ch.granted_by,"reason":ch.reason}).to_string();
+            audit_log::ActiveModel { id: NotSet, user_id: Set("system".into()), action: Set(action.into()),
+                detail: Set(Some(detail)), ip: Set(ip.clone()), created_at: Set(occurred_at) }.insert(&txn).await?;
+            if matches!(ch.action, serverbee_common::protocol::CapabilityChangeAction::Granted) && is_high_risk_cap(&ch.cap) {
+                alert_event_intents::capture(&txn, server_id, "capability_grant_detected", occurred_at).await?;
+            }
+        }
+        receipt::ActiveModel { server_id: Set(server_id.into()), msg_id: Set(msg_id.clone()),
+            payload_hash: Set(payload_hash), occurred_at: Set(occurred_at) }.insert(&txn).await?;
+        txn.commit().await?;
+        Ok(())
+    }.await;
+    if let Err(error) = admission {
+        tracing::error!(server_id, error = %error, "Capability event admission failed; retained at Agent source");
+        return false;
+    }
+    {
+        state
+            .agent_manager
+            .update_agent_local_capabilities(server_id, capabilities);
+        state
+            .agent_manager
+            .update_temporary_grants(server_id, temporary.clone());
+        if let Err(error) = state
+            .agent_desired_state
+            .reconcile_connection(server_id)
             .await
         {
-            tracing::error!("capability_grant_detected alert eval failed: {e}");
+            tracing::warn!(server_id, error = %error, "capability-change desired-state reconcile was incomplete");
         }
+        state
+            .agent_manager
+            .broadcast_browser(BrowserMessage::CapabilitiesChanged {
+                server_id: server_id.to_string(),
+                capabilities,
+                agent_local_capabilities: Some(capabilities),
+                effective_capabilities: Some(capabilities),
+                temporary,
+            });
     }
-
-    state
-        .agent_manager
-        .broadcast_browser(BrowserMessage::CapabilitiesChanged {
-            server_id: server_id.to_string(),
-            capabilities,
-            agent_local_capabilities: Some(capabilities),
-            effective_capabilities: Some(capabilities),
-            temporary,
-        });
+    // Capture is durable even if immediate outbox replay fails. Startup polling
+    // owns retries; the source may discard the frame after this acknowledgement.
+    if expects_ack && let Some(tx) = state.agent_manager.get_sender(server_id) {
+        let _ = tx
+            .send(serverbee_common::protocol::ServerMessage::Ack { msg_id })
+            .await;
+    }
+    if let Err(error) =
+        alert_event_intents::replay(&state.db, &state.config, &state.alert_state_manager).await
+    {
+        tracing::warn!(error = %error, "Capability alert intents remain pending");
+    }
+    true
 }
 
 pub(super) async fn on_blocklist_ack(
