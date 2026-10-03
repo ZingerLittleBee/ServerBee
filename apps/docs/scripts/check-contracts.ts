@@ -610,6 +610,43 @@ for (const locale of locales) {
   const mobile = await text(join(contentRoot, locale, 'mobile.mdx'))
   invariant(mobile.includes(`iOS ${iosTarget}`), `${locale}/mobile.mdx has a stale iOS deployment target`)
 }
+// Keep the documented targeted-test request aligned with its authoritative DTO.
+const mobilePushRouter = await text(join(repository, 'crates/server/src/router/api/mobile_push.rs'))
+const testRequest = mobilePushRouter.match(/pub struct TestPushRequest \{([\s\S]*?)\n\}/)?.[1]
+invariant(testRequest, 'Unable to read the targeted push-test request DTO')
+const requiredTestFields = [...testRequest.matchAll(/pub (\w+): (?:String|i64),/g)].map((match) => match[1])
+invariant(requiredTestFields.length > 0, 'Targeted push-test required fields were not resolved')
+const relayReadme = await text(join(repository, 'apps/push-relay/README.md'))
+for (const locale of locales) {
+  const [mobile, operations, deployment] = await Promise.all(
+    ['mobile', 'push-relay', 'deployment'].map((page) => text(join(contentRoot, locale, `${page}.mdx`)))
+  )
+  for (const field of requiredTestFields) {
+    invariant(mobile.includes(`\`${field}\``), `${locale}/mobile.mdx omits required targeted-test field ${field}`)
+    invariant(relayReadme.includes(`\`${field}\``), `Relay README omits required targeted-test field ${field}`)
+  }
+  invariant(
+    mobile.includes('GET /api/mobile/push/test/{event_id}'),
+    `${locale}/mobile.mdx omits current-installation status recovery`
+  )
+  invariant(
+    deployment.includes(`/${locale}/docs/push-relay`),
+    `${locale}/deployment.mdx omits isolated Relay operations`
+  )
+  invariant(
+    operations.includes('APP_ATTEST_ROOT_SHA256') && operations.includes('APNS_PRIVATE_KEY'),
+    `${locale} Relay operations omit trust/signing ownership`
+  )
+  invariant(
+    !/under development|仍在开发中/.test(mobile),
+    `${locale}/mobile.mdx still describes implemented categories as unfinished`
+  )
+}
+invariant(
+  !/without durable retry|synchronous tracer bullet|new logical tests|remain under implementation/.test(relayReadme),
+  'Relay README retains obsolete test delivery semantics'
+)
+
 const iosMajor = iosTarget.split('.')[0]
 for (const copyText of landingParts.strings) {
   for (const match of copyText.matchAll(iosVersionMention)) {

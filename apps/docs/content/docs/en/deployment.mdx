@@ -6,6 +6,10 @@ icon: Cloud
 
 This guide covers production deployment best practices for ServerBee: Railway, Docker, systemd, reverse proxy configuration, TLS, and backup strategies.
 
+## Mobile Push Relay
+
+The Server uses a dedicated HTTPS Relay; Apple signing credentials stay at the publisher, outside self-hosted Servers. See [Mobile](/en/docs/mobile) for explicit subscriptions and [Push Relay Operations](/en/docs/push-relay) for isolated configuration, signing, privacy, troubleshooting and genuine-device acceptance. This deployment guide does not provision Apple accounts, install secrets or establish live APNs delivery.
+
 ## Railway (One-Click Deploy)
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)

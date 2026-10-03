@@ -3,7 +3,7 @@ import XCTest
 @testable import ServerBee
 
 /// Simulates Server replies only; preference recovery uses the real manager and API client.
-private final class PreferenceRecoveryHTTP: @unchecked Sendable {
+final class PreferenceRecoveryHTTP: @unchecked Sendable {
     private let lock = NSLock()
     private var preferences = PushPreferences(enabled: true, alerts: true, security: false, taskFailure: true, taskSuccess: false)
     private var revision: Int64 = 2
@@ -17,6 +17,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
     private var nextRead: XCTestExpectation?
     private var held: (request: PreferenceRecoveryURLProtocol, data: Data)?
     private var registration: XCTestExpectation?
+    private var registrationRequests: [URLRequest] = []
 
     init(security: Bool = false) { preferences.security = security }
     func demote() { lock.lock(); defer { lock.unlock() }; securityAllowed = false; tasksAllowed = false }
@@ -28,6 +29,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
     func loseCommittedSaveReply() { lock.lock(); defer { lock.unlock() }; loseSaveReply = true }
     func setRegistrationStatus(_ status: Int) { lock.lock(); defer { lock.unlock() }; registerStatus = status }
     func savedPreferences() -> [PushPreferences] { lock.lock(); defer { lock.unlock() }; return attempts }
+    func registrationAttempts() -> [URLRequest] { lock.lock(); defer { lock.unlock() }; return registrationRequests }
     func observeRegistration(_ entered: XCTestExpectation) { lock.lock(); defer { lock.unlock() }; registration = entered }
     func holdNextRead(_ entered: XCTestExpectation) { lock.lock(); defer { lock.unlock() }; nextRead = entered }
     func release() {
@@ -74,6 +76,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
                     loseSaveReply = false
                 }
             } else if path == "/api/mobile/push/verified-register", request.request.httpMethod == "POST" {
+                registrationRequests.append(request.request)
                 observed = registration
                 registration = nil
                 guard let expected = PushSetupTestData.body(request.request)["expected_revision"] as? NSNumber else {
@@ -105,7 +108,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
     }
 }
 
-private final class PreferenceRecoveryURLProtocol: URLProtocol {
+final class PreferenceRecoveryURLProtocol: URLProtocol {
     nonisolated(unsafe) static var fixture: PreferenceRecoveryHTTP?
     private static let pending = PendingURLProtocolRequests()
     override static func canInit(with request: URLRequest) -> Bool { true }
@@ -143,7 +146,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
         URLProtocol.unregisterClass(PreferenceRecoveryURLProtocol.self)
         AuthManager().clearAuth()
     }
-    private func login(_ auth: AuthManager, user: String = "alice") {
+    func login(_ auth: AuthManager, user: String = "alice") {
         auth.setServerUrl("https://\(user).test")
         auth.handleLoginResponse(MobileTokenResponse(
             accessToken: "access-\(UUID().uuidString)", accessExpiresInSecs: 900,
@@ -152,7 +155,7 @@ final class PushPreferenceRecoveryTests: XCTestCase {
             revocationToken: "proof-\(UUID().uuidString)"
         ))
     }
-    private func manager(_ auth: AuthManager, system: TestPushSystem, relay: TestPushRelay? = nil) -> PushNotificationManager {
+    func manager(_ auth: AuthManager, system: TestPushSystem, relay: TestPushRelay? = nil) -> PushNotificationManager {
         let manager = PushNotificationManager(system: system, relay: relay ?? TestPushRelay(), storage: MemoryPushSetupStorage())
         manager.configure(apiClient: APIClient(authManager: auth))
         return manager

@@ -1742,11 +1742,17 @@ async fn expired_mobile_session_cannot_send_a_registered_encrypted_test() {
 
 /// Substitute only the external Relay HTTP boundary. Internal policy, SQLite,
 /// authentication, subscription writes, encryption and worker ownership are real.
+#[derive(Clone)]
+struct RecordedDelivery {
+    authorization: String,
+    body: serde_json::Value,
+}
+
 struct OutboxRelay {
     url: String,
     status: Arc<std::sync::atomic::AtomicU16>,
     delay_ms: Arc<std::sync::atomic::AtomicU64>,
-    requests: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    requests: Arc<tokio::sync::Mutex<Vec<RecordedDelivery>>>,
 }
 impl OutboxRelay {
     async fn start() -> Self {
@@ -1769,7 +1775,7 @@ impl OutboxRelay {
                 async move {
                     let grant = headers.get("authorization").unwrap().to_str().unwrap();
                     let code = if grant.ends_with("device-b") { 200 } else { status.load(std::sync::atomic::Ordering::SeqCst) };
-                    requests.lock().await.push(body);
+                    requests.lock().await.push(RecordedDelivery { authorization: grant.to_owned(), body });
                     if !grant.ends_with("device-b") { tokio::time::sleep(std::time::Duration::from_millis(delay.load(std::sync::atomic::Ordering::SeqCst))).await; }
                     let outcome = if code == 200 { "accepted" } else { "retryable" };
                     (StatusCode::from_u16(code).unwrap(), Json(serde_json::json!({"outcome":outcome,"reason":"Accepted","device_invalid":false})))
@@ -1786,6 +1792,14 @@ impl OutboxRelay {
         }
     }
     async fn requests(&self) -> Vec<serde_json::Value> {
+        self.requests
+            .lock()
+            .await
+            .iter()
+            .map(|delivery| delivery.body.clone())
+            .collect()
+    }
+    async fn deliveries(&self) -> Vec<RecordedDelivery> {
         self.requests.lock().await.clone()
     }
 }

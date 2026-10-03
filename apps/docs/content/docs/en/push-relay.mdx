@@ -1,0 +1,93 @@
+---
+title: Push Relay Operations
+description: Isolated Relay setup, signing, troubleshooting, and genuine-device notification acceptance.
+icon: Smartphone
+---
+
+The delivery path is **Server → dedicated ServerBee Push Relay → APNs → iOS Notification Service Extension**. The Server owns subscriptions, authorization, encrypted pending work and final task aggregation. The publisher's Relay owns Apple admission and APNs credentials. Read [Mobile](/en/docs/mobile) for user setup and [Configuration](/en/docs/configuration#push_relay----verified-mobile-setup) for Server configuration.
+
+This runbook describes operator actions for an explicitly authorized isolated environment. It does not deploy infrastructure, install secrets, publish code or change Apple accounts. The repository does not provide an official signed app download. Local fixtures and Simulator tests do not establish genuine App Attest or APNs delivery.
+
+## Prepare an Isolated Environment
+
+1. Record the exact Server, Agent, Relay and app revisions, app build number, device/iOS version, UTC time and intended environment. Use a dedicated Server account, test Servers and database, Relay URL/state, and physical device. Keep Heeler and production services separate. Use synthetic alert/security facts and commands with no sensitive output.
+2. The publisher supplies a correctly signed app with APNs, App Attest and shared Keychain entitlements, its matching provisioning profiles, and an authorized Relay operator. Official-app users and self-hosted Server operators need no publisher key or personal Apple developer account. Source-build maintainers need their own appropriate signing identity.
+3. Install the locked repository dependencies on the authorized Relay host with Bun and OpenSSL 3. Use the `packageManager` version declared by the repository (currently Bun 1.3.4); docs preview/checks use Node 24. The docs CI Bun setup is not explicitly version-pinned.
+4. Provision a private persistent SQLite directory and HTTPS reverse proxy. The Relay executable listens on loopback. Enforce a 32 KiB request-body bound, source-IP rate limits, bounded concurrent requests and connection/time limits at the proxy. Configure its trusted peer chain there; the Relay ignores caller-provided forwarding headers. Allow outbound APNs HTTP/2 and keep clocks synchronized.
+
+### Configuration Ownership
+
+| Owner | Required names and purpose |
+| --- | --- |
+| Server | `SERVERBEE_PUSH_RELAY__URL` or `[push_relay].url`, the final HTTPS Relay URL; the app also uses the final HTTPS Server URL without redirects |
+| Relay trust | `APP_ATTEST_ROOT_CA`, audited Apple root PEM path; `APP_ATTEST_ROOT_SHA256`, independently verified fingerprint; `APP_ATTEST_APP_ID`, App ID prefix plus app bundle identifier; `APP_ATTEST_BUNDLE_VERSIONS`, approved signed build versions |
+| Relay APNs | `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY` (private PEM **path**), `APNS_TOPIC` (app bundle identifier, not extension identifier) |
+| Relay state | `RELAY_DATABASE`, private persistent SQLite path; `RELAY_PORT`, loopback listener port |
+| Relay environments | `APNS_ENVIRONMENTS=sandbox,production` for coexistence; alternatively `APNS_ENVIRONMENT` for one environment. The plural setting takes precedence. |
+
+Values and key files belong in the operator's protected runtime configuration, outside the repository. Apple keys stay exclusively at the Relay. Never log bearer grants, attestations, receipts, request bodies, plaintext content or content keys. Retain SQLite state across restarts, including challenge consumption, assertion counters and grant revocation. Use a consistent SQLite backup; restoring stale admission state can roll back replay protection and requires an operator recovery decision before reopening admission.
+
+Pin the Apple root through a trusted independent review, not an incoming proof or the general TLS trust store. Fixture CAs are supplied only to test constructors. The production executable has no unsupported-device bypass or public send path. Start the already configured isolated process with `bun --filter @serverbee/push-relay start`, then validate setup from the signed device. A reachable listener alone does not confirm device admission.
+
+### Inspect the Signed App
+
+| Signed artifact | APNs entitlement / API environment | App Attest environment |
+| --- | --- | --- |
+| Development build | `development` / `sandbox` | `development` |
+| Distribution, TestFlight or App Store build | `production` / `production` | `production` |
+
+Inspect the effective entitlements of the signed app and embedded `NotificationService.appex`, rather than inferring them from project settings. For an existing artifact, `codesign -d --entitlements :- "$SIGNED_APP"` and `codesign -d --entitlements :- "$SIGNED_EXTENSION"` are read-only inspections. Both targets need the same effective `$(AppIdentifierPrefix)com.serverbee.mobile.push` Keychain access group and `PushKeychainAccessGroup` plist value. The app keeps credentials in its private group; the extension receives only content-key access. Verify the provisioning profile, App ID prefix, bundle identifiers, app `CFBundleVersion`, Relay allowlist and APNs topic agree. Recheck signed entitlements after a signing/export change.
+
+One Relay URL/database can admit both environments when explicitly configured. Every challenge, key, grant and APNs request retains its own environment. A development key cannot renew or revoke a distribution grant. For a development-only test, use a dedicated sandbox Relay/state. Do not point fixtures at a production Relay or borrow Heeler credentials.
+
+## Configure and Enable Notifications
+
+1. Set the Server's final HTTPS Relay URL, start the configured Server and pair the isolated device. Login alone must not prompt for notifications.
+2. Read the privacy explanation in **Settings → Notifications** before enabling. The Relay sees APNs tokens, source IPs, timing, request sizes, environments, grant identifiers and ciphertext. It lacks content keys and plaintext Server names, IPs, alert text, task summaries and commands.
+3. Choose **Alerts and recoveries**. Current administrators may also select **Security rule matches**, **Final task failures**, and separately **Successful task runs** (off by default). Save explicit intent, grant system permission, and wait for Server-confirmed registration. There is no notification-group prerequisite. A failed save retains the previously confirmed choices and a visible error.
+4. Use **Send test notification** for that installation only. Record its status and event identity, then independently observe the phone. **Accepted** means an APNs provider receipt. **Pending** means local queue admission; **Retryable** means another attempt is scheduled; **Permanent** stops retries; **Expired** ends delivery at the original event time plus 30 minutes. Restart and retry never extend that deadline, and ambiguous transport results can duplicate presentation.
+5. Return from system settings or restore connectivity to reconcile without another login. Routine authentication refresh preserves registration. Logout, credential/device revocation, expiry, role loss, opt-out and registration replacement stop later eligible attempts; a request already in flight or accepted by APNs cannot be retracted.
+
+The extension decrypts and localizes bounded authenticated content or shows generic text with no target. Keychain unavailability before first unlock can cause that fallback. Foreground presentation uses the system banner; WebSocket updates only update app state. A tap waits for authentication and current key, checks deployment/account/installation/login identity, and requests current authorized detail. An authentic notification already displayed remains tappable after its 30-minute delivery deadline. Deleted resources and lost access use a dismissible fallback. Notifications never switch accounts automatically.
+
+## Troubleshooting by Observed Layer
+
+| Observation | Check and recovery |
+| --- | --- |
+| No system prompt at login | Expected. Enable explicitly in Notifications. If permission was denied, open system settings and return to the app; repeated reconciliation does not grant permission. |
+| Preferences save failed | Keep the visible error and confirmed choices. Check current Server role and settings revision. Retry permitted choices; registration success alone does not confirm a failed preference save. |
+| App Attest unavailable or rejected | Check a supported physical device, effective signing, app identity, root pin, environment, version allowlist, clock and genuine proof. Retry transient errors. Keep login/monitoring available; never bypass verification. |
+| Saved grant appears unconfirmed | Check Relay HTTPS reachability and grant inspection. A revoked grant is not valid because its stored expiry is still in the future. The app retains a pending renewed grant in Keychain and retries Server confirmation instead of claiming success. |
+| Pending / Retryable test | Check Server outbox and Relay connectivity without dumping payloads. Recover within the original 30-minute deadline. Do not create new event identities just to retry an ambiguous test response. |
+| Permanent provider/configuration error | Check topic, environment, authorization and payload bounds using secret-free reason/status. HTTP 400 or `BadDeviceToken` ambiguity must not erase a valid replacement registration. APNs 410 `Unregistered` is a terminal device condition only for the still-matching sending revision. |
+| Accepted, no banner | Observe device permission, Focus settings, connection and app state separately. Provider acceptance does not guarantee presentation. Do not infer delivery from a Simulator or fixture. |
+| Generic notification | Check shared signed Keychain group, first unlock, current content key, integrity, version and original deadline. Never forward plaintext or navigate using untrusted fallback fields. |
+| Category stays silent | Check confirmed installation subscription, current role/session, rule coverage/maintenance/suppression and original deadline. Security requires a rule admission, task outcomes require final completion and initiator/creator ownership, successful tasks require separate opt-in. |
+| Tap unavailable or rejected | Confirm current deployment/account/login and current Server authorization. A deleted alert cycle, security event or task run safely falls back. Delivery expiry alone must not reject an already-presented authentic target. |
+| Duplicate display | Check legacy migration exclusion and one foreground system banner. Ambiguous provider retries can still duplicate presentation; exactly-once display is not promised. Other external notification channels retain configured behavior. |
+
+## Genuine-Device Acceptance Record
+
+Create a fresh record per signed environment and locale. Every row below starts **NOT RUN**. Record exact revisions/build/device, event or run identity, original creation/deadline, subscription/role/session, timestamps, secret-free provider verdict, observed banner count and actual navigation. Provider acceptance, presentation and taps are separate columns. Never attach credentials, content keys, bearer grants or sensitive payloads. A missing prerequisite is not a pass or an observed rejection.
+
+| Scenario | Expected observation | Provider / presentation / navigation |
+| --- | --- | --- |
+| Genuine admission and recovery | Supported device verifies; wrong environment/replay is rejected; unsupported/failed verification leaves monitoring usable; deny permission, enable in system settings and return to recover | NOT RUN / NOT RUN / NOT RUN |
+| Sandbox and distribution | Matching signed builds register independently; each reaches the matching APNs environment | NOT RUN / NOT RUN / NOT RUN |
+| Test, foreground/background/terminated | Targeted encrypted test reaches only its installation, decrypts in extension, shows one foreground system banner despite live WS updates, and cold/warm tap opens current account | NOT RUN / NOT RUN / NOT RUN |
+| Alert trigger and recovery | No group required; exact rule/Server/dimension/cycle opens; maintenance and repeat suppression retain external-channel behavior | NOT RUN / NOT RUN / NOT RUN |
+| Security rule admission | Admin receives matching SSH-new-IP, brute-force or port-scan rules; raw detections and duplicate matching rules do not create alert-category duplicates; current security detail opens | NOT RUN / NOT RUN / NOT RUN |
+| Final task failure and success | Manual initiator or automatic creator receives one final summary after all targets finish; retry failures remain silent; success requires opt-in; exact run opens without commands/output in notification | NOT RUN / NOT RUN / NOT RUN |
+| Multiple installations and category isolation | Different subscriptions affect only that installation/category; unrelated users and legacy/external channels retain authorization and behavior | NOT RUN / NOT RUN / NOT RUN |
+| Permission/connection and token recovery | Foreground/connectivity recovery confirms registration; token renewal preserves current key/intent; delayed old errors cannot erase the replacement token | NOT RUN / NOT RUN / NOT RUN |
+| Refresh, logout and account change | Refresh retains receiving; logout prevents later eligible sends; replacement login/deployment cannot adopt queued events or old taps | NOT RUN / NOT RUN / NOT RUN |
+| Revocation and role downgrade | Device/password/user revocation and session expiry block later queued sends; demotion removes security/task access; member may explicitly keep alerts/test | NOT RUN / NOT RUN / NOT RUN |
+| Outage, restart and expiry | Recover encrypted work after Server/Relay restart within original deadline; opt-out/revocation before retry prevents sending; older work is discarded | NOT RUN / NOT RUN / NOT RUN |
+| Late authentic taps and fallback | Leave each already-presented category for over 30 minutes, then warm/cold tap; current authorized target opens, deleted/forbidden target falls back; expired new deliveries remain generic | NOT RUN / NOT RUN / NOT RUN |
+| English and zh-Hans | Settings/errors, extension content and safe fallback render correctly in both locales; tampering/wrong key remains generic with no target | NOT RUN / NOT RUN / NOT RUN |
+
+Missing live prerequisites currently include an explicitly authorized isolated HTTPS Server/Relay deployment, audited Apple trust pin, publisher APNs signing inputs, matching provisioning/entitlements and an App Attest-capable physical device with development and distribution builds. No genuine device proof, live provider receipt, native presentation or actual tap is established by this runbook.
+
+## Automated Evidence and Handoff
+
+Use the repository's `tests/manual/mobile-push-integration.md` for combined HTTP/persistence cases and exact local check commands, and `tests/manual/mobile-push-test.md` for the Server → actual Relay → extension fixture trace. Record executed/passed/failed/skipped counts, process exit, candidate full SHA, test names, logs and `.xcresult` paths. A zero-case check or skipped trace supplies no behavior evidence. The dedicated Simulator is a local boundary check, never a substitute for the genuine-device record above. Run official API generation and inspect zero drift; never hand-edit generated contracts. Preserve production admission and cryptographic checks when repairing integration failures.

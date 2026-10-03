@@ -1,7 +1,6 @@
 # Encrypted current-installation notification verification
 
-This checklist covers #199 encrypted delivery and #200 durable test retries.
-The scheduled-task failure checks below also cover #203; alert/security selection is covered by its own tickets. Never use Heeler's Relay, production
+This checklist retains the #199 encrypted trace, #200 durable retries and subsequent category/regression boundaries. Use [combined integration verification](mobile-push-integration.md) for #205 and the linked bilingual operations runbook for genuine-device acceptance. Never use Heeler's Relay, production
 credentials, a user's existing Simulator, or a live account for fixtures.
 
 ## Local stitched path
@@ -53,13 +52,13 @@ cd apps/ios
 xcodegen generate
 TEST_RUNNER_SERVERBEE_PUSH_TRACE_DIR=/private/tmp/serverbee-t199-trace \
   xcodebuild -project ServerBee.xcodeproj -scheme ServerBee \
-  -destination 'platform=iOS Simulator,id=979DE414-28A0-4D7F-8F7F-A90E630F9B5D' \
+  -destination "platform=iOS Simulator,id=$SIM_UDID" \
   -skipPackagePluginValidation \
   -resultBundlePath /private/tmp/serverbee-t199-ios.xcresult test
 ```
 
 Run the iOS trace within 30 minutes of the Server trace; delivery/render expiry is authenticated
-and intentionally enforced. Authenticated taps on previously displayed notifications retain their target beyond that window. Use a fresh result-bundle path for each run. Verify
+and intentionally enforced. Authenticated taps on previously displayed notifications retain their target beyond that window. Set `SIM_UDID` to the assigned dedicated Simulator, never a user device or `booted`. Use a fresh result-bundle path for each run. Verify
 in `.xcresult` that both `testStitchedServerRelayPayloadThroughActualNotificationExtension`
 and `testStitchedServerRelayCiphertextColdTapValidatesCurrentAccount` actually
 executed without skips. Record total executed, failed and skipped counts. Without

@@ -4,7 +4,7 @@ description: Native iOS app for ServerBee with QR pairing, push notifications, a
 icon: Smartphone
 ---
 
-ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup and final scheduled-task outcome notifications are available, with successes requiring opt-in. Encrypted alert triggers and recoveries are available through confirmed mobile subscriptions. Security delivery remains under development.
+ServerBee provides a native iOS companion app that brings server monitoring to your phone: real-time metrics, alert history, and server management on the go. Verified notification setup and final scheduled-task outcome notifications are available, with successes requiring opt-in. Encrypted alert triggers and recoveries are available through confirmed mobile subscriptions. Administrator security-rule notifications use the same verified encrypted delivery path.
 
 ## Availability
 
@@ -21,7 +21,7 @@ Source builds require your Apple development team. The official-app design keeps
 ## Features
 
 - **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
-- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task outcomes for administrator owners, with success opt-in; encrypted alert triggers and recoveries without a notification group
+- **Verified Notification Setup** -- Explicit permission and subscription setup with App Attest verification; final task outcomes for administrator owners, with success opt-in; encrypted alert triggers and recoveries without a notification group; administrator security-rule matches
 - **Real-time Metrics** -- Live server status, CPU, memory, disk, and network metrics streamed via WebSocket
 - **Alert History** -- View recent alerts and their status (triggered/resolved) with detailed information
 - **Secure Authentication** -- Bearer token-based auth with automatic refresh (15-min access token, 30-day refresh token)
@@ -90,11 +90,15 @@ A failed subscription save remains visible after returning to the app, reconnect
 
 The screen reports system permission and Server registration independently. Failed saves retain the previous confirmed preferences and show an error. **Retry notification setup** retries verification, and **Open notification settings** opens iOS permission settings. Unsupported or rejected App Attest leaves push unavailable while login and monitoring continue to work. Setup is reconciled on launch, foreground entry and restored connectivity without prompting during sign-in.
 
-**Enable Alerts and recoveries to receive alert transitions.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures and opted-in successes use the same encrypted pipeline. Administrators can also enable security-rule notifications.
+**Enable Alerts and recoveries to receive alert transitions.** Use **Send test notification** to test only this authenticated installation. The Server encrypts the message, the Relay sends it through the verified device grant, and the Notification Service Extension decrypts and localizes it. The screen reports provider acceptance separately from device presentation, which must be observed on a real device. Foreground APNs delivery uses one system banner while WebSocket updates only update app state. Tapping a valid test opens the current account; old account/deployment or invalid payloads cannot navigate. Final task failures and opted-in successes use the same encrypted pipeline. Administrators can also enable security-rule notifications.
 
 Tests first enter a durable encrypted Server outbox. **Pending** means queued locally, **Retryable** means provider acceptance is unconfirmed and another attempt is scheduled, **Accepted** is an APNs provider receipt, **Permanent** stops retries, and **Expired** ends the test 30 minutes after its original creation. Retries and Server restarts never extend that deadline. The screen refreshes the current test status; retrying a lost response retains the same logical test identity. Delivery can be duplicated after an ambiguous network failure, so neither acceptance nor retry promises exactly-once display.
 
 Before every attempt the Server checks the account, current role, mobile session, subscription, grant expiry and registration revision. Disabling delivery, logout, device/account revocation, session expiry or a registration replacement stops later eligible attempts. Already in-flight or accepted APNs notifications cannot be retracted. Queue records contain ciphertext, not another plaintext notification history. Terminal ciphertext is erased; secret-free delivery receipts remain to prevent duplicate enqueueing from restarting the expiry window.
+
+### Targeted Test API
+
+`POST /api/mobile/push/test` requires `expected_revision` and a client-retained UUID `event_id`. It queues encrypted work and returns its pending status with `presentation=unobserved`. Retry an ambiguous response with the same UUID and revision; `GET /api/mobile/push/test/{event_id}` reads only the current authenticated installation/login receipt. A deliberate new test uses a new UUID. Status recovery never restarts the original 30-minute deadline.
 
 ### Alert Triggers and Recoveries
 
@@ -138,6 +142,8 @@ Relay operators use Bun and OpenSSL 3, persistent SQLite, an App Attest root cer
 
 APNs transport uses publisher-only signing inputs `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY` and `APNS_TOPIC`. `APNS_PRIVATE_KEY` is the path to a private PEM file, and `APNS_TOPIC` is the app bundle identifier. These credentials must remain outside the app, Server and repository. See the repository's `apps/push-relay/README.md` for isolated configuration, signing checks and live acceptance. Do not point tests at Heeler's Relay.
 
+For the isolated signing/deployment runbook, troubleshooting by layer, and the genuine-device acceptance record, see [Push Relay Operations](/en/docs/push-relay). No live device acceptance is established by a successful local check.
+
 ## Security Considerations
 
 - **Token Rotation**: Refresh tokens are rotated on every use (single-use). Consumed refresh tokens cannot authenticate APIs or refresh again. Their retained hashes can only revoke the original session, supporting cleanup after a staged app upgrade or a lost rotation response.
@@ -161,7 +167,7 @@ APNs transport uses publisher-only signing inputs `APNS_TEAM_ID`, `APNS_KEY_ID`,
 - App Attest requires a supported physical device and matching signing capabilities. Simulator success is not device verification.
 - Use the final HTTPS Server URL before registering a content key. Server requests reject redirects; failed setup can be retried at the configured endpoint.
 - Check signing for the app-private credential group and the app/extension shared content-key group. Decryption failures show generic text.
-- Enable **Alerts and recoveries**, or **Final task failures** and optional **Successful task runs** as an administrator. Security delivery remains under development.
+- Enable **Alerts and recoveries**, or **Final task failures** and optional **Successful task runs** as an administrator. Administrator security-rule notifications use the same verified encrypted delivery path.
 
 ### Authentication Failures
 

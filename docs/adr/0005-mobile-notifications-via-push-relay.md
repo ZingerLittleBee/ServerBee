@@ -2,8 +2,7 @@
 
 ## Status
 
-Proposed (2026-10-03). Individual design decisions are agreed; final design
-confirmation is pending before implementation.
+Accepted (2026-10-03). The approved requirements in #196 and implementation tickets #197–#205 authorize this decision. Local implementation and automated boundary evidence remain separate from pending genuine App Attest and APNs device acceptance.
 
 ## Decision
 
@@ -77,3 +76,7 @@ user ownership or delivery authorization model.
   and user ownership in each Server. Notifications depend on relay
   availability, and the relay's metadata and content visibility must be
   explicit.
+
+## Operational verification
+
+[English](../../apps/docs/content/docs/en/push-relay.mdx) and [Chinese](../../apps/docs/content/docs/zh/push-relay.mdx) runbooks cover isolated Relay configuration, effective signing entitlements, metadata visibility, troubleshooting and genuine-device records. [Combined integration checks](../../tests/manual/mobile-push-integration.md) retain real HTTP/session/subscription and migrated SQLite seams. Delivery and new extension rendering enforce the original 30-minute deadline; an already-presented authentic notification remains tappable afterward, with current Server authorization and all cryptographic, identity, size and target checks. No deployment, secret installation or Apple-account mutation follows from this decision.

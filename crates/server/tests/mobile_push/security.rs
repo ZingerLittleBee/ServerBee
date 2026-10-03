@@ -68,7 +68,7 @@ async fn jobs(state: &AppState) -> Vec<outbox::Model> {
     outbox::Entity::find().all(&state.db).await.unwrap()
 }
 
-fn decrypted_delivery(request: &Value) -> Value {
+pub(super) fn decrypted_delivery(request: &Value) -> Value {
     use base64::{Engine, engine::general_purpose::STANDARD};
     use ring::aead;
     let vector: Value = serde_json::from_str(include_str!(

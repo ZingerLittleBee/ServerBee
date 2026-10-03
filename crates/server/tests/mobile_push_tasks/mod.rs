@@ -12,6 +12,7 @@ use serverbee_server::entity::{
 };
 use tokio_tungstenite::tungstenite::Message;
 
+mod lifecycle;
 mod success;
 
 async fn subscribe(client: &reqwest::Client, base: &str, access: &str, device: &str) {

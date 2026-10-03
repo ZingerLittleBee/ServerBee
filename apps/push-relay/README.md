@@ -1,9 +1,6 @@
 # ServerBee Push Relay admission
 
-This package implements verified device registration, renewal, grant inspection,
-revocation and encrypted current-installation test delivery. Category event
-selection and the durable outbox are separate implementation gates. APNs
-acceptance does not establish device presentation.
+This package implements verified device registration, renewal, grant inspection, revocation and encrypted delivery. The Server selects test, alert, rule-admitted security and final task events and owns their durable 30-minute outbox. APNs acceptance does not establish device presentation. The bilingual [English](../docs/content/docs/en/push-relay.mdx) and [Chinese](../docs/content/docs/zh/push-relay.mdx) operations runbooks cover isolated configuration, signing, troubleshooting and genuine-device records.
 
 ## Isolated configuration
 
@@ -67,7 +64,7 @@ The project pairs Debug `aps-environment=development` with App Attest
 entitlements and the API. Check the **signed artifact's** effective entitlements
 before live validation; build settings alone do not establish valid Apple
 provisioning. TestFlight/App Store builds use production attestation and APNs.
-Use distinct isolated Relay instances/databases for development and production.
+Separate development and production instances/databases are an optional operational isolation choice. A single URL/database explicitly configured with `APNS_ENVIRONMENTS=sandbox,production` also supports both while retaining per-key/grant environment scope.
 
 The official workflow keeps publisher credentials at the Relay. Official-app
 users need neither a personal Apple developer account nor their own APNs key.
@@ -115,11 +112,7 @@ Server subscription APIs:
   `environment`, `key_id`, `grant_id`, `grant_token`, `content_key_id`,
   `content_key` (32 bytes, standard base64), `deployment_id` (captured Server URL). Requires explicit enabled
   intent and a valid grant inspected through the configured Relay.
-- `POST /api/mobile/push/test`: only `expected_revision`. Recipient, content and
-  logical event identity are Server-derived. Returns `event_id`, `outcome`,
-  `reason` and `presentation=unobserved`. It is a synchronous tracer bullet,
-  without durable retry. A lost response can mean provider acceptance; user
-  retries are new logical tests, never a claim of exactly-once presentation.
+- `POST /api/mobile/push/test`: `expected_revision` and client-retained UUID `event_id`. Recipient and content are Server-derived. It durably queues ciphertext and returns `event_id`, `outcome`, `reason` and `presentation=unobserved`. Retrying a lost response uses that same identity/revision; `GET /api/mobile/push/test/{event_id}` reads only the current login/installation receipt. A fresh deliberate test uses a new identity. Retry/restart preserves the original 30-minute deadline, and ambiguous transport does not guarantee exactly-once presentation.
 - `POST /api/mobile/push/unregister`: cleanup remains scoped to user, installation
   and mobile session. Database foreign keys cascade logout/device/account removal.
 
@@ -205,7 +198,7 @@ Changing accounts, disabling notifications or logging out removes that key. A
 failed Server confirmation keeps the same key for recovery of a committed setup.
 The extension uses generic localized text if the key is unavailable (including
 before the first unlock after reboot), the envelope is invalid or it has expired.
-The app validates ciphertext again before navigating to the current account.
+The app validates ciphertext again before navigating to the current account. New delivery/extension rendering enforces the original deadline; already-presented authentic taps remain valid afterward, subject to current Server authorization and cryptographic/identity/target checks.
 
 Version 1 uses AES-256-GCM, a fresh 12-byte nonce and a 16-byte appended tag.
 The base64 ciphertext encrypts a bounded JSON `PushContent` (maximum 2048 bytes).
@@ -234,7 +227,7 @@ selector also excludes marked rows restored from an older database snapshot.
 Other accounts/installations and existing external-channel groups keep their
 legacy behavior. Migrating does not add an APNs channel or notification group.
 
-See [the isolated delivery checklist](../../tests/manual/mobile-push-test.md) for
+See [combined lifecycle verification](../../tests/manual/mobile-push-integration.md) for final cross-category evidence and [the isolated delivery checklist](../../tests/manual/mobile-push-test.md) for
 the stitched Server/Relay/extension commands and separate real-device acceptance.
 Protocol references: [APNs requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns),
 [APNs errors](https://developer.apple.com/documentation/usernotifications/handling-error-responses-from-apns),

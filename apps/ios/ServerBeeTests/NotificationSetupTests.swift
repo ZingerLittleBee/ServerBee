@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 import XCTest
 @testable import ServerBee
 
@@ -6,6 +7,7 @@ private final class SetupHTTPFixture: @unchecked Sendable {
     private let lock = NSLock()
     private var setup = PushSetupTestData.response(enabled: false, revision: 0)
     private var revision: Int64 = 0
+    private var selectedPreferences: PushPreferences?
     private var saveStatus = 200
     private var registerStatus = 200
     private var requests: [URLRequest] = []
@@ -18,7 +20,7 @@ private final class SetupHTTPFixture: @unchecked Sendable {
 
     func failSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 503 }
     func setRegistrationStatus(_ value: Int) { lock.lock(); defer { lock.unlock() }; registerStatus = value }
-    func confirm() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response(registered: true, revision: revision) }
+    func confirm() { lock.lock(); defer { lock.unlock() }; setup = PushSetupTestData.response(registered: true, revision: revision, preferences: selectedPreferences) }
     func enable() {
         lock.lock(); defer { lock.unlock() }
         revision = 1
@@ -49,8 +51,13 @@ private final class SetupHTTPFixture: @unchecked Sendable {
                   let preferences = body["preferences"] as? [String: Any], let enabled = preferences["enabled"] as? Bool else {
                 return (409, Data(#"{"error":{"message":"fixture save revision or preferences invalid"}}"#.utf8))
             }
+            guard let encoded = try? JSONSerialization.data(withJSONObject: preferences),
+                  let selected = try? JSONDecoder().decode(PushPreferences.self, from: encoded) else {
+                return (400, Data())
+            }
             revision = expected.int64Value + 1
-            setup = PushSetupTestData.response(enabled: enabled, revision: revision)
+            selectedPreferences = selected
+            setup = PushSetupTestData.response(enabled: enabled, revision: revision, preferences: selected)
             return (200, setup)
         case ("/api/mobile/push/verified-register", "POST"):
             if let grant = PushSetupTestData.body(request)["grant_id"] as? String { grantIDs.append(grant) }
@@ -61,7 +68,7 @@ private final class SetupHTTPFixture: @unchecked Sendable {
                     return (409, Data(#"{"error":{"message":"fixture registration revision invalid"}}"#.utf8))
                 }
                 revision = expected.int64Value + 1
-                setup = PushSetupTestData.response(registered: true, revision: revision)
+                setup = PushSetupTestData.response(registered: true, revision: revision, preferences: selectedPreferences)
             }
             registrationCallback?()
             return (registerStatus == -2 ? -1 : registerStatus, setup)
@@ -418,4 +425,58 @@ extension NotificationSetupTests {
         await manager.unregister()
     }
 
+}
+
+extension NotificationSetupTests {
+    func testPermissionRecoveryAndRefreshKeepAllConfirmedCategoriesUntilAccountReplacement() async throws {
+        let fixture = SetupHTTPFixture()
+        SetupURLProtocol.fixture = fixture
+        let auth = AuthManager()
+        login(auth)
+        let system = TestPushSystem()
+        system.status = .denied
+        let relay = TestPushRelay()
+        let storage = MemoryPushSetupStorage()
+        let manager = PushNotificationManager(system: system, relay: relay, storage: storage)
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        let selected = PushPreferences(enabled: true, alerts: true, security: true, taskFailure: true, taskSuccess: true)
+        await manager.savePreferences(selected)
+        XCTAssertEqual(manager.confirmed?.preferences, selected)
+        XCTAssertFalse(manager.permissionGranted)
+        XCTAssertEqual(system.permissionRequests, 1)
+        XCTAssertEqual(relay.attempts, 0)
+        // System settings changed outside the app. Foreground reconciliation
+        // recovers registration without requesting permission a second time.
+        system.status = .authorized
+        await manager.reconcile()
+        let uploaded = expectation(description: "all-category installation registered")
+        fixture.registered = { uploaded.fulfill() }
+        manager.didRegisterForRemoteNotifications(deviceToken: Data(repeating: 10, count: 32))
+        await fulfillment(of: [uploaded], timeout: 3)
+        await manager.waitForPendingRegistrations()
+        XCTAssertEqual(manager.confirmed?.registered, true)
+        XCTAssertEqual(manager.confirmed?.preferences, selected)
+        let key = try XCTUnwrap(manager.contentKey())
+        let context = try XCTUnwrap(auth.captureContext())
+        let refreshed = try await auth.refreshAccessToken(context: context)
+        XCTAssertEqual(refreshed, "restored-access")
+        manager.configure(apiClient: APIClient(authManager: auth))
+        await manager.reconcile()
+        XCTAssertEqual(manager.confirmed?.preferences, selected)
+        XCTAssertEqual(manager.contentKey()?.keyId, key.keyId)
+        XCTAssertEqual(manager.contentKey()?.key, key.key)
+        XCTAssertEqual(auth.captureContext()?.pushScope, context.pushScope)
+        XCTAssertEqual(relay.attempts, 1)
+        XCTAssertEqual(system.permissionRequests, 1)
+        auth.clearAuth()
+        login(auth, user: "bob")
+        manager.configure(apiClient: APIClient(authManager: auth))
+        XCTAssertNil(manager.confirmed)
+        XCTAssertNil(manager.contentKey())
+        XCTAssertNil(storage.load(PushContentKey.storageKey))
+        XCTAssertEqual(auth.user?.id, "bob")
+        XCTAssertFalse(fixture.snapshot().contains { $0.url?.host == "bob.test" })
+        fixture.registered = nil
+    }
 }

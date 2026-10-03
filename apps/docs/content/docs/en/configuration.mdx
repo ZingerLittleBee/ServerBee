@@ -392,7 +392,7 @@ These variables belong to the separate Relay process, never the Server:
 | `APNS_PRIVATE_KEY` | Private P-256 PEM file path, readable only by the Relay |
 | `APNS_TOPIC` | Official app bundle identifier, not the extension identifier |
 
-Encrypted setup requires an HTTPS Server connection. The app and Notification Service Extension share a device-only Keychain group. APNs acceptance is a provider receipt, not proof of presentation. See [Mobile](/en/docs/mobile) for migration and real-device requirements.
+Encrypted setup requires an HTTPS Server connection. The app and Notification Service Extension share a device-only Keychain group. APNs acceptance is a provider receipt, not proof of presentation. See [Mobile](/en/docs/mobile) for migration and [Push Relay Operations](/en/docs/push-relay) for isolated signing, metadata privacy, troubleshooting and the genuine-device acceptance record. All categories expire 30 minutes after original creation; already-presented authentic taps still request current authorized detail.
 
 ### `[firewall]` -- Firewall Blocklist Guardrail
 

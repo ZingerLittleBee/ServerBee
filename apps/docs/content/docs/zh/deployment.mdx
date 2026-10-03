@@ -6,6 +6,10 @@ icon: Cloud
 
 本文介绍在生产环境部署 ServerBee 的最佳实践：Railway、Docker、systemd、反向代理配置、TLS 和备份策略。
 
+## 移动通知 Push Relay
+
+Server 使用独立 HTTPS Relay，Apple 签名凭证仅由发布者保管，不属于自托管 Server。明确订阅参见[移动端](/zh/docs/mobile)，隔离配置、签名、隐私、排障及真实设备验收参见 [Push Relay 运维](/zh/docs/push-relay)。本部署指南不会配置 Apple 账户、安装密钥或建立线上 APNs 投递证据。
+
 ## Railway（一键部署）
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/serverbee-server)

@@ -235,6 +235,4 @@ HTTPS endpoint. No Apple private keys are installed by notification setup.
 | `APNS_TOPIC` | required | Official app bundle identifier, Relay only |
 | `RELAY_PORT` | `8787` | Loopback listener port |
 
-Registration and encrypted test delivery support both environments. Category
-delivery and durable retry remain under implementation. See [Relay setup](apps/push-relay/README.md) for trust, signing and
-separate real-device acceptance requirements.
+Registration, encrypted test, alert, security-rule and final task delivery support both environments through the durable 30-minute outbox. Task successes require explicit opt-in. See [Relay setup](apps/push-relay/README.md) for configuration ownership and the bilingual [operations runbook](apps/docs/content/docs/en/push-relay.mdx) for signing, privacy, troubleshooting and separate genuine-device acceptance.

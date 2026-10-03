@@ -1,7 +1,7 @@
 /** Isolated stitched-path fixture. Real admission + delivery, replacing only
  * Apple-generated attestation certificates and the outbound APNs network. */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { serve, sleep } from 'bun'
 import { ApnsTransport } from '../src/apns'
 import { Relay } from '../src/relay'
@@ -42,6 +42,7 @@ const apns = new ApnsTransport(
       providerReason = undefined
     }
     writeFileSync(`${directory}/provider-request.json`, JSON.stringify(request))
+    appendFileSync(`${directory}/provider-requests.jsonl`, `${JSON.stringify(request)}\n`)
     return { status: providerStatus, reason: providerReason }
   }
 )
