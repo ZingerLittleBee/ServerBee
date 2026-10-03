@@ -37,6 +37,8 @@ pub struct Reporter {
     config: AgentConfig,
     capabilities: Arc<CapabilityAuthority>,
     firewall_manager: Arc<FirewallManager>,
+    #[cfg(test)]
+    test_terminal_shell: Option<crate::terminal::TerminalTestShell>,
 }
 
 impl Reporter {
@@ -46,6 +48,8 @@ impl Reporter {
             config,
             capabilities,
             firewall_manager,
+            #[cfg(test)]
+            test_terminal_shell: None,
         }
     }
 
@@ -187,6 +191,10 @@ impl Reporter {
             Arc::clone(&capabilities),
             Arc::clone(&self.firewall_manager),
         );
+        #[cfg(test)]
+        if let Some(shell) = self.test_terminal_shell.clone() {
+            runtime.terminal_manager.set_test_shell(shell);
+        }
         runtime.docker.probe().await;
         let features = runtime.docker.features();
 
@@ -3697,9 +3705,18 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn reporter_fault_shell() -> crate::terminal::TerminalTestShell {
+        crate::terminal::TerminalTestShell {
+            executable: "/bin/sh",
+            child_pid: Arc::new(std::sync::atomic::AtomicU32::new(0)),
+        }
+    }
+
+    #[cfg(unix)]
     async fn open_reporter_fault_pty(
         ws: &mut ServerWs,
         pid_file: &std::path::Path,
+        shell: &crate::terminal::TerminalTestShell,
     ) -> ReporterChildGuard {
         use base64::{Engine, engine::general_purpose::STANDARD};
         send_server_msg(
@@ -3716,6 +3733,20 @@ mod tests {
             if session_id == "journal-fault-pty")
         })
         .await;
+        // This PID comes from the actual portable_pty child stored by the
+        // connection, not from an input command or a nested shell's output.
+        let child_pid = shell.child_pid.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            child_pid > 0,
+            "TerminalManager must publish its owned child PID"
+        );
+        let mut status = 0;
+        assert_eq!(
+            unsafe { libc::waitpid(child_pid as libc::pid_t, &mut status, libc::WNOHANG) },
+            0,
+            "the top-level PTY shell must be our live, waitable child"
+        );
+        let child = ReporterChildGuard(child_pid, std::cell::Cell::new(false));
         let quoted_path = format!(
             "'{}'",
             pid_file.display().to_string().replace('\'', "'\\''")
@@ -3748,7 +3779,18 @@ mod tests {
             0,
             "real shell is running"
         );
-        ReporterChildGuard(pid, std::cell::Cell::new(false))
+        assert_eq!(
+            pid, child.0,
+            "POSIX shell PID must match the actual top-level PTY child"
+        );
+        assert_eq!(unsafe { libc::kill(pid as libc::pid_t, libc::SIGHUP) }, 0);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(
+            unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) },
+            0,
+            "the actual child must resist HUP until production explicitly closes it"
+        );
+        child
     }
 
     #[cfg(unix)]
@@ -3787,6 +3829,8 @@ mod tests {
         let authority = CapabilityAuthority::new(CAP_DEFAULT, path.clone());
         let authority_loop = tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(20)));
         let mut reporter = Reporter::new(config, Arc::clone(&authority));
+        let shell = reporter_fault_shell();
+        reporter.test_terminal_shell = Some(shell.clone());
         let source = Arc::clone(&authority);
         let mut server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
@@ -3809,7 +3853,8 @@ mod tests {
                 "modern source carries its original event time"
             );
             let original_changes = serde_json::to_value(changes).unwrap();
-            let child = open_reporter_fault_pty(&mut ws, &path.with_extension("shell.pid")).await;
+            let child =
+                open_reporter_fault_pty(&mut ws, &path.with_extension("shell.pid"), &shell).await;
             let fault = path.with_extension("events.tmp");
             std::fs::create_dir(&fault).unwrap();
             if ack_failure {
@@ -4025,10 +4070,13 @@ mod tests {
         );
         let authority_loop = tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(20)));
         let mut reporter = Reporter::new(config, Arc::clone(&authority));
+        let shell = reporter_fault_shell();
+        reporter.test_terminal_shell = Some(shell.clone());
         let mut server = tokio::spawn(async move {
             let mut ws = accept_ws(&listener).await;
             reporter_fault_welcome(&mut ws).await;
-            let child = open_reporter_fault_pty(&mut ws, &path.with_extension("shell.pid")).await;
+            let child =
+                open_reporter_fault_pty(&mut ws, &path.with_extension("shell.pid"), &shell).await;
             send_server_msg(&mut ws, &ServerMessage::Ping).await;
             read_agent_until(&mut ws, |message| matches!(message, AgentMessage::Pong)).await;
             (child, ws)
