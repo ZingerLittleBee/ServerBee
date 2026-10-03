@@ -286,7 +286,6 @@ final class NotificationSetupTests: XCTestCase {
             XCTAssertEqual(manager.confirmed?.registered, true)
             XCTAssertEqual(relay.attempts, 1)
             let originalContext = try XCTUnwrap(auth.captureContext())
-            let pendingKey = manager.pendingKey(originalContext)
             let originalKeyData = try XCTUnwrap(storage.load(PushContentKey.storageKey))
             let originalKey = try JSONDecoder().decode(PushContentKey.self, from: originalKeyData)
             fixture.setRegistrationStatus(failure)
@@ -298,7 +297,12 @@ final class NotificationSetupTests: XCTestCase {
             XCTAssertEqual(relay.attempts, 2)
             XCTAssertEqual(manager.confirmed?.registered, false)
             XCTAssertNotNil(manager.errorMessage)
-            XCTAssertNotNil(storage.load(pendingKey))
+            // Observe the grant record written by registration without deriving
+            // its private storage key or calling the coordinator's helpers.
+            let pendingRecords = storage.values.filter { $0.key != PushContentKey.storageKey }
+            XCTAssertEqual(pendingRecords.count, 1)
+            let pending = try XCTUnwrap(pendingRecords.first)
+            XCTAssertEqual(storage.load(pending.key), pending.value)
             XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
             // Even a stale Server response claiming a long-lived old grant must
             // not erase the pending rotation or produce Setup confirmed.
@@ -311,6 +315,8 @@ final class NotificationSetupTests: XCTestCase {
             XCTAssertEqual(manager.confirmed?.registered, false)
             XCTAssertNotNil(manager.errorMessage)
             XCTAssertEqual(relay.attempts, 2, "Pending grant is reused instead of rotating again")
+            XCTAssertEqual(storage.load(pending.key), pending.value)
+            XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
             // Restore both authentication and setup coordinator from persistence.
             let restoredAuth = AuthManager()
             await restoredAuth.initialize()
@@ -321,6 +327,8 @@ final class NotificationSetupTests: XCTestCase {
             await restarted.reconcile()
             XCTAssertEqual(restarted.confirmed?.registered, false)
             XCTAssertNotNil(restarted.errorMessage)
+            XCTAssertEqual(storage.load(pending.key), pending.value)
+            XCTAssertEqual(storage.load(PushContentKey.storageKey), originalKeyData)
             let recovered = expectation(description: "restart confirms the pending grant")
             fixture.registered = { recovered.fulfill() }
             fixture.setRegistrationStatus(200)
@@ -330,7 +338,7 @@ final class NotificationSetupTests: XCTestCase {
             XCTAssertEqual(restarted.confirmed?.registered, true)
             XCTAssertNil(restarted.errorMessage)
             XCTAssertEqual(relay.attempts, 2)
-            XCTAssertNil(storage.load(pendingKey), "Successful recovery removes only the current pending grant")
+            XCTAssertNil(storage.load(pending.key), "Successful recovery removes only the current pending grant")
             XCTAssertEqual(storage.values, [PushContentKey.storageKey: originalKeyData])
             let recoveredKey = try XCTUnwrap(restarted.contentKey())
             XCTAssertEqual(recoveredKey.keyId, originalKey.keyId)
