@@ -371,6 +371,7 @@ mod tests {
             detector_source: Set("journal".to_string()),
             evidence: Set("{}".to_string()),
             created_at: Set(created_at),
+            ..Default::default()
         }
         .insert(db)
         .await

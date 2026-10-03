@@ -1,0 +1,22 @@
+{
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "content": {
+    "kind": "security",
+    "deployment_id": "https://serverbee.test",
+    "user_id": "alice",
+    "installation_id": "test-install",
+    "event_id": "11111111-1111-4111-8111-111111111111",
+    "created_at": 2000000000,
+    "expires_at": 2000001800,
+    "server_id": "33333333-3333-4333-8333-333333333333",
+    "security_event_id": "11111111-1111-4111-8111-111111111111",
+    "security_event_type": "ssh_brute_force"
+  },
+  "envelope": {
+    "version": 1,
+    "key_id": "22222222-2222-4222-8222-222222222222",
+    "identity": "40e9ea0a395dec3bafe5e84afbbe2e726ac53aa273f168b4ac650b208fdef51f",
+    "nonce": "ICEiIyQlJicoKSor",
+    "ciphertext": "qRjNGQL8ODQ4DyettGqdjalrwL7j5ROCA48Bdyf+AWARrN8m5lFBqmfHQb0rbG2+h1iO6/8SWQS9Fl0xbsd5uKp5pG+0rcf35wOKQplxGwi75Edl25fnaqYgrHVzeLzmICBLJbxp95266MVrz9ThMRXn6izlgcZpcsglPsS2sxkN1UyzCt8ygEi7k1s/EiSX5vsGBOKp67sBOYweu+Lg7/XXX125kgPpheioyIQQKZubg4y0efP/DUfii9yWU6HPkPwXYla89m9lLYWO3uub/OEHhnu0qXbtXtZtfn12eD4PJ124rlxSz2BX6LzdxaMi50eBugAnNgCNDDJGOEdLxem5aQ2odQh3gzB8Dcet/7efr7ZGSTClywgaAhl/mHeEswbKCK7K+XBP4Y8AihPgQKOXKKkvuPDi0myoK+83YJGw3mQY/Famqe3TZPqUeNpfU844Xy6KLq31nD9HOTAdHlrc6EyeYQMjbX2fGw/3rcGbs0OnP0kO"
+  }
+}

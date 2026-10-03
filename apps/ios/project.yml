@@ -80,6 +80,8 @@ targets:
         buildPhase: resources
       - path: ../../tests/fixtures/push-alert-envelope-v1.json
         buildPhase: resources
+      - path: ../../tests/fixtures/push-security-envelope-v1.json
+        buildPhase: resources
     dependencies:
       - target: ServerBee
     settings:

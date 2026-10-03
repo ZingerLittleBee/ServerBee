@@ -193,3 +193,157 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod combined_category_tests {
+    use super::*;
+    use crate::migration::Migrator;
+    use sea_orm::{Database, DatabaseBackend, Statement};
+
+    #[tokio::test]
+    async fn alert_security_and_task_schema_orders_preserve_all_categories_and_preferences() {
+        for order in [
+            [81, 82, 83],
+            [81, 83, 82],
+            [82, 81, 83],
+            [82, 83, 81],
+            [83, 81, 82],
+            [83, 82, 81],
+        ] {
+            let db = Database::connect("sqlite::memory:").await.expect("SQLite");
+            let steps = Migrator::migrations()
+                .iter()
+                .position(|migration| migration.name() == "m20261003_000080_mobile_push_outbox")
+                .expect("accepted base")
+                + 1;
+            Migrator::up(&db, Some(u32::try_from(steps).expect("migration count")))
+                .await
+                .expect("migrate accepted base");
+            let owner = crate::service::auth::AuthService::create_user(
+                &db,
+                "category-owner",
+                "testpass",
+                "admin",
+            )
+            .await
+            .expect("real owner");
+            crate::service::mobile_auth::MobileAuthService::login_for_user(
+                &db,
+                &crate::config::MobileConfig::default(),
+                &owner,
+                "category-install",
+                "iPhone",
+                "127.0.0.1",
+                "fixture",
+            )
+            .await
+            .expect("real mobile session");
+            // Query the actual authenticated session instead of inventing FK identities.
+            let session = db
+                .query_one(Statement::from_sql_and_values(
+                    DatabaseBackend::Sqlite,
+                    "SELECT id FROM mobile_sessions WHERE installation_id=? AND user_id=?",
+                    ["category-install".into(), owner.id.clone().into()],
+                ))
+                .await
+                .expect("session query")
+                .expect("session");
+            let session_id = session.try_get::<String>("", "id").expect("session id");
+            db.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
+                "INSERT INTO mobile_push_registrations (installation_id,user_id,mobile_session_id,revision,enabled,alerts,security,task_failure,task_success,updated_at)
+                 VALUES (?,?,?,7,1,1,0,1,0,?)",
+                ["category-install".into(), owner.id.into(), session_id.into(), chrono::Utc::now().to_rfc3339().into()]))
+                .await.expect("confirmed preferences");
+            let manager = SchemaManager::new(&db);
+            for sequence in order {
+                match sequence {
+                    81 => Migration.up(&manager).await,
+                    82 => {
+                        crate::migration::m20261003_000082_mobile_push_category::Migration
+                            .up(&manager)
+                            .await
+                    }
+                    _ => {
+                        crate::migration::m20261003_000083_task_runs::Migration
+                            .up(&manager)
+                            .await
+                    }
+                }
+                .expect("independently accepted schema");
+                if sequence == order[0] {
+                    // Seed only columns present at this point, as an existing upgrade would.
+                    for category in ["test", "alert", "security", "task_failure", "task_success"] {
+                        let category_column = sequence != 83;
+                        let sql = if category_column {
+                            "INSERT INTO mobile_push_outbox (event_id,installation_id,user_id,mobile_session_id,registration_revision,recipient_role,created_at,expires_at,envelope,next_attempt_at,category) VALUES (?,?, 'owner','session',7,'admin',100,1900,'ciphertext',100,?)"
+                        } else {
+                            "INSERT INTO mobile_push_outbox (event_id,installation_id,user_id,mobile_session_id,registration_revision,recipient_role,created_at,expires_at,envelope,next_attempt_at,task_run_id) VALUES (?,?, 'owner','session',7,'admin',100,1900,'ciphertext',100,?)"
+                        };
+                        db.execute(Statement::from_sql_and_values(
+                            DatabaseBackend::Sqlite,
+                            sql,
+                            [category.into(), category.into(), category.into()],
+                        ))
+                        .await
+                        .expect("existing category or task target");
+                    }
+                }
+            }
+            // Apply both guarded category migrations again to model resumed upgrades.
+            Migration.up(&manager).await.expect("repeat alert schema");
+            crate::migration::m20261003_000082_mobile_push_category::Migration
+                .up(&manager)
+                .await
+                .expect("repeat security schema");
+            let rows = db
+                .query_all(Statement::from_string(
+                    DatabaseBackend::Sqlite,
+                    "SELECT * FROM mobile_push_outbox ORDER BY event_id".to_owned(),
+                ))
+                .await
+                .expect("queue");
+            assert_eq!(rows.len(), 5);
+            for row in rows {
+                let event = row.try_get::<String>("", "event_id").expect("identity");
+                assert_eq!(
+                    row.try_get::<String>("", "category").expect("category"),
+                    if order[0] == 83 { "test" } else { &event }
+                );
+                assert_eq!(
+                    row.try_get::<Option<String>>("", "task_run_id")
+                        .expect("task target"),
+                    if order[0] == 83 { Some(event) } else { None }
+                );
+                assert_eq!(
+                    row.try_get::<String>("", "envelope").expect("ciphertext"),
+                    "ciphertext"
+                );
+                assert_eq!(
+                    row.try_get::<i64>("", "registration_revision")
+                        .expect("revision"),
+                    7
+                );
+                assert_eq!(
+                    row.try_get::<i64>("", "expires_at").expect("deadline"),
+                    1900
+                );
+            }
+            let row = db.query_one(Statement::from_string(DatabaseBackend::Sqlite,
+                "SELECT revision,enabled,alerts,security,task_failure,task_success FROM mobile_push_registrations".to_owned()))
+                .await.expect("preferences").expect("registration");
+            for (column, value) in [
+                ("revision", 7),
+                ("enabled", 1),
+                ("alerts", 1),
+                ("security", 0),
+                ("task_failure", 1),
+                ("task_success", 0),
+            ] {
+                assert_eq!(
+                    row.try_get::<i64>("", column).expect("saved preference"),
+                    value
+                );
+            }
+        }
+    }
+}

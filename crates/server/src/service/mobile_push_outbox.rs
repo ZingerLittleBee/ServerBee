@@ -1,12 +1,13 @@
 //! Durable installation-scoped delivery. Network work never runs on event evaluation.
 use std::{sync::Arc, time::Duration};
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -20,6 +21,134 @@ use crate::{
 
 const SEND_TIMEOUT: u64 = 15;
 const LEASE_SECONDS: i64 = 30;
+
+/// Immutable recipient identity, without keys, grants or delivery credentials.
+#[derive(Serialize, Deserialize)]
+pub struct SecurityPushRecipient {
+    installation_id: String,
+    user_id: String,
+    mobile_session_id: String,
+    registration_revision: i64,
+}
+
+fn security_job(
+    recipient: &SecurityPushRecipient,
+    event_id: &str,
+    created_at: i64,
+) -> outbox::Model {
+    outbox::Model {
+        event_id: event_id.into(),
+        installation_id: recipient.installation_id.clone(),
+        user_id: recipient.user_id.clone(),
+        mobile_session_id: recipient.mobile_session_id.clone(),
+        registration_revision: recipient.registration_revision,
+        recipient_role: "admin".into(),
+        category: "security".into(),
+        task_run_id: None,
+        created_at,
+        expires_at: created_at + 1800,
+        envelope: None,
+        outcome: "pending".into(),
+        reason: "Queued".into(),
+        attempts: 0,
+        next_attempt_at: created_at,
+        lease_id: None,
+        lease_until: 0,
+    }
+}
+
+/// Snapshot eligible recipients with the rule decision. Persist this metadata
+/// intent with suppression state before attempting any encrypted outbox INSERT.
+pub async fn prepare_security(
+    txn: &sea_orm::DatabaseTransaction,
+    event_id: &str,
+    created_at: i64,
+) -> Result<Vec<SecurityPushRecipient>, AppError> {
+    txn.execute_unprepared(
+        "UPDATE mobile_push_registrations SET revision=revision WHERE enabled=1 AND security=1",
+    )
+    .await?;
+    let rows = registration::Entity::find()
+        .filter(registration::Column::Enabled.eq(true))
+        .filter(registration::Column::Security.eq(true))
+        .order_by_asc(registration::Column::InstallationId)
+        .all(txn)
+        .await?;
+    let mut jobs = Vec::new();
+    for row in rows {
+        let recipient = SecurityPushRecipient {
+            installation_id: row.installation_id,
+            user_id: row.user_id,
+            mobile_session_id: row.mobile_session_id,
+            registration_revision: row.revision,
+        };
+        let job = security_job(&recipient, event_id, created_at);
+        if job.expires_at <= Utc::now().timestamp() || eligible(txn, &job).await?.is_none() {
+            continue;
+        }
+        jobs.push(recipient);
+    }
+    Ok(jobs)
+}
+
+/// Materialize the original intent atomically across all recipients. Recheck
+/// current ownership/session/revision/role/subscription/grant before encryption;
+/// a replaced registration cannot inherit an older recipient's intent.
+pub async fn enqueue_security(
+    txn: &sea_orm::DatabaseTransaction,
+    server_id: &str,
+    event_id: &str,
+    event_type: &str,
+    created_at: i64,
+    recipients: Vec<SecurityPushRecipient>,
+) -> Result<(), AppError> {
+    use super::push_envelope::{PushContent, encrypt};
+    for recipient in recipients {
+        let mut job = security_job(&recipient, event_id, created_at);
+        if job.expires_at <= Utc::now().timestamp() {
+            continue;
+        }
+        let Some(row) = eligible(txn, &job).await? else {
+            continue;
+        };
+        if outbox::Entity::find_by_id((event_id.to_owned(), row.installation_id.clone()))
+            .one(txn)
+            .await?
+            .is_some()
+        {
+            continue;
+        }
+        let (Some(key_id), Some(secret), Some(deployment_id)) =
+            (row.content_key_id, row.content_key, row.deployment_id)
+        else {
+            continue;
+        };
+        let secret = STANDARD
+            .decode(secret)
+            .map_err(|_| AppError::Internal("Invalid stored push key".into()))?;
+        let content = PushContent {
+            kind: "security".into(),
+            deployment_id,
+            user_id: job.user_id.clone(),
+            installation_id: job.installation_id.clone(),
+            event_id: event_id.into(),
+            created_at: job.created_at,
+            expires_at: job.expires_at,
+            server_id: Some(server_id.into()),
+            security_event_id: Some(event_id.into()),
+            security_event_type: Some(event_type.into()),
+            task_run: None,
+            alert: None,
+        };
+        job.envelope = Some(
+            serde_json::to_string(&encrypt(&key_id, &secret, &content)?)
+                .map_err(|_| AppError::Internal("Push encoding failed".into()))?,
+        );
+        let active: outbox::ActiveModel = job.into();
+        active.insert(txn).await?;
+    }
+    Ok(())
+}
 
 #[derive(Deserialize)]
 struct RelayDelivery {
@@ -113,6 +242,7 @@ pub(crate) async fn eligible(
                 // target and current outcome-specific subscription checks.
                 ("test" | "task_failure", Some(false)) => r.task_failure,
                 ("test" | "task_success", Some(true)) => r.task_success,
+                ("security", None) => r.security && job.recipient_role == "admin",
                 _ => false,
             }
             && r.content_key.is_some()

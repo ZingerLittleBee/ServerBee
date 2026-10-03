@@ -1,19 +1,22 @@
-//! Persistence, browser broadcast, and inline alert evaluation for security
-//! events emitted by agents.
+//! Owned retention, persistence, browser broadcast and rule admission for
+//! security events emitted by agents.
 
+use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
 use ipnet::IpNet;
 use sea_orm::*;
 use serverbee_common::protocol::{BrowserMessage, SecurityEventBroadcast};
 use serverbee_common::security::{SecurityEventPayload, SecurityEventType};
+use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::config::AppConfig;
-use crate::entity::{alert_rule, security_event, server};
+use crate::entity::{alert_rule, alert_state, security_event, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::alert::{
@@ -24,6 +27,23 @@ use crate::service::firewall::FirewallService;
 use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
 
+struct MatchedSecurityRule {
+    rule: alert_rule::Model,
+    state: alert_state::Model,
+    should_notify: bool,
+    event_time: DateTime<Utc>,
+}
+
+#[derive(Clone)]
+struct RetainedSecurityEvent {
+    event: security_event::Model,
+    payload: SecurityEventPayload,
+}
+
+pub(crate) fn authority_fingerprint(token_hash: &str) -> String {
+    format!("{:x}", Sha256::digest(token_hash.as_bytes()))
+}
+
 pub struct SecurityService {
     pub db: DatabaseConnection,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
@@ -31,6 +51,10 @@ pub struct SecurityService {
     pub config: Arc<AppConfig>,
     pub firewall: Arc<FirewallService>,
     pub agent_manager: Arc<AgentManager>,
+    admission_lock: tokio::sync::Mutex<()>,
+    retained: tokio::sync::Mutex<VecDeque<RetainedSecurityEvent>>,
+    recovery_cursor: tokio::sync::Mutex<Option<(DateTime<Utc>, String)>>,
+    push_cursor: tokio::sync::Mutex<Option<(DateTime<Utc>, String)>>,
 }
 
 impl SecurityService {
@@ -49,128 +73,580 @@ impl SecurityService {
             config,
             firewall,
             agent_manager,
+            admission_lock: tokio::sync::Mutex::new(()),
+            retained: tokio::sync::Mutex::new(VecDeque::new()),
+            recovery_cursor: tokio::sync::Mutex::new(None),
+            push_cursor: tokio::sync::Mutex::new(None),
         }
     }
 
-    /// Persist a security event, broadcast it, and evaluate matching alert
-    /// rules inline. Returns the generated event id.
+    /// The WS caller transfers the original event to this service-owned queue
+    /// while still holding its current-connection gate. No storage or effects
+    /// await in that critical section. Before the first successful raw write,
+    /// retention is in memory: process death cannot recover an unwritten event.
+    pub async fn retain_agent_event(
+        &self,
+        server_id: &str,
+        payload: SecurityEventPayload,
+    ) -> Result<(), AppError> {
+        let fingerprint = self
+            .agent_manager
+            .security_authority(server_id)
+            .ok_or_else(|| AppError::Forbidden("Security authority unavailable".into()))?;
+        let mut retained = Self::original_event(server_id, payload)?;
+        retained.event.authority_fingerprint = Some(fingerprint);
+        self.retained.lock().await.push_back(retained);
+        Ok(())
+    }
+
+    /// Synchronous trusted service entry point; production WS uses retention.
+    /// A storage failure returns once instead of waiting under a caller's lock.
     pub async fn record_event(
         &self,
         server_id: &str,
         payload: SecurityEventPayload,
     ) -> Result<String, AppError> {
-        payload
-            .source_ip
-            .parse::<IpAddr>()
-            .map_err(|_| AppError::BadRequest(format!("invalid source_ip: {}", payload.source_ip)))?;
+        let retained = Self::original_event(server_id, payload)?;
+        let id = retained.event.id.clone();
+        self.persist_original(&retained).await?;
+        if self.recover_pending().await.is_err() {
+            tracing::warn!("Security admission deferred; original event remains durable");
+        }
+        Ok(id)
+    }
 
-        let evidence_json = serde_json::to_string(&payload.evidence).map_err(|e| {
-            AppError::BadRequest(format!("invalid security_event evidence: {e}"))
+    fn original_event(
+        server_id: &str,
+        payload: SecurityEventPayload,
+    ) -> Result<RetainedSecurityEvent, AppError> {
+        payload.source_ip.parse::<IpAddr>().map_err(|_| {
+            AppError::BadRequest(format!("invalid source_ip: {}", payload.source_ip))
         })?;
+
+        let evidence_json = serde_json::to_string(&payload.evidence)
+            .map_err(|e| AppError::BadRequest(format!("invalid security_event evidence: {e}")))?;
+        let admission_payload = serde_json::to_string(&payload)
+            .map_err(|_| AppError::BadRequest("invalid security event".into()))?;
 
         let event_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
-        security_event::ActiveModel {
-            id: Set(event_id.clone()),
-            server_id: Set(server_id.to_string()),
-            event_type: Set(event_type_to_str(payload.event_type).to_string()),
-            severity: Set(severity_to_str(payload.severity).to_string()),
-            source_ip: Set(payload.source_ip.clone()),
-            source_port: Set(payload.source_port.map(|p| p as i32)),
-            username: Set(payload.username.clone()),
-            started_at: Set(unix_to_utc(payload.started_at)),
-            ended_at: Set(unix_to_utc(payload.ended_at)),
-            first_seen: Set(payload.first_seen),
-            detector_source: Set(detector_source_to_str(payload.detector_source).to_string()),
-            evidence: Set(evidence_json),
-            created_at: Set(now),
-        }
-        .insert(&self.db)
-        .await?;
+        let event = security_event::Model {
+            id: event_id.clone(),
+            server_id: server_id.to_string(),
+            event_type: event_type_to_str(payload.event_type).to_string(),
+            severity: severity_to_str(payload.severity).to_string(),
+            source_ip: payload.source_ip.clone(),
+            source_port: payload.source_port.map(|p| p as i32),
+            username: payload.username.clone(),
+            started_at: unix_to_utc(payload.started_at),
+            ended_at: unix_to_utc(payload.ended_at),
+            first_seen: payload.first_seen,
+            detector_source: detector_source_to_str(payload.detector_source).to_string(),
+            evidence: evidence_json,
+            created_at: now,
+            admission_payload: Some(admission_payload),
+            push_intent: None,
+            authority_fingerprint: None,
+            maintenance_at_admission: None,
+        };
+        Ok(RetainedSecurityEvent { event, payload })
+    }
 
-        // send() only fails when no subscribers exist — normal at startup.
+    async fn authority_valid<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        server_id: &str,
+        expected: Option<&str>,
+    ) -> Result<bool, AppError> {
+        // Legacy/trusted records predate WS ownership snapshots.
+        let Some(expected) = expected else {
+            return Ok(true);
+        };
+        let Some(server) = server::Entity::find_by_id(server_id).one(db).await? else {
+            return Ok(false);
+        };
+        let matches = server
+            .token_hash
+            .as_deref()
+            .is_some_and(|hash| authority_fingerprint(hash) == expected);
+        let caps = self
+            .agent_manager
+            .effective_capabilities_or(server_id, server.capabilities as u32);
+        Ok(matches
+            && serverbee_common::constants::has_capability(
+                caps,
+                serverbee_common::constants::CAP_SECURITY_EVENTS,
+            ))
+    }
+
+    /// One bounded attempt, outside Agent/lifecycle locks. A SQLite writer
+    /// transaction serializes the authority check with durable revocation.
+    /// Cancellation consumes only unauthorized work, never a storage failure.
+    async fn persist_original(&self, retained: &RetainedSecurityEvent) -> Result<(), AppError> {
+        let mut event = retained.event.clone();
+        let server_id = event.server_id.clone();
+        let event_id = event.id.clone();
+        let txn = self.db.begin().await?;
+        txn.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE security_event SET push_intent=push_intent WHERE id=?",
+            [event_id.clone().into()],
+        ))
+        .await?;
+        if !self
+            .authority_valid(&txn, &server_id, event.authority_fingerprint.as_deref())
+            .await?
+        {
+            txn.commit().await?;
+            return Ok(());
+        }
+        if security_event::Entity::find_by_id(&event_id)
+            .one(&txn)
+            .await?
+            .is_none()
+        {
+            // A failed lookup leaves the raw event/browser independent and
+            // admission unresolved. None is never interpreted as permission.
+            event.maintenance_at_admission =
+                MaintenanceService::is_in_maintenance_at(&txn, &server_id, event.created_at)
+                    .await
+                    .ok();
+            let model: security_event::ActiveModel = event.into();
+            model.insert(&txn).await?;
+        }
+        txn.commit().await?;
         let _ = self
             .browser_tx
             .send(BrowserMessage::SecurityEvent(SecurityEventBroadcast {
-                server_id: server_id.to_string(),
-                event_id: event_id.clone(),
-                event: payload.clone(),
+                server_id,
+                event_id,
+                event: retained.payload.clone(),
             }));
+        Ok(())
+    }
 
-        if let Err(e) = self.evaluate_rules(server_id, &payload, &event_id).await {
-            tracing::error!(server_id, error = %e, "security alert evaluation failed");
+    /// Production startup owner, also used by file-SQLite restart tests. Pending
+    /// records are original events, not another detection or a new delivery window.
+    pub fn start_recovery(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let service = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if service.recover_pending().await.is_err() {
+                    tracing::warn!("Security admission recovery remains pending");
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        })
+    }
+
+    async fn recover_pending(&self) -> Result<(), AppError> {
+        // Preserve original event ordering for sliding cooldown. The SQLite
+        // writer lock and durable markers also fence overlapping Server owners.
+        let _guard = self.admission_lock.lock().await;
+        // Never move an item out before persistence: cancellation/shutdown of
+        // the worker leaves it owned by the service. Each item gets one attempt
+        // per pass, so a faulty source cannot starve other original events.
+        let retained: Vec<_> = self
+            .retained
+            .lock()
+            .await
+            .iter()
+            .take(64)
+            .cloned()
+            .collect();
+        for original in retained {
+            let id = &original.event.id;
+            let completed = self.persist_original(&original).await.is_ok();
+            let mut queue = self.retained.lock().await;
+            if let Some(position) = queue.iter().position(|item| &item.event.id == id) {
+                if completed {
+                    let _ = queue.remove(position);
+                } else if let Some(pending) = queue.remove(position) {
+                    // Rotate retry failures inside the owner, never across an
+                    // await. Other sources still receive bounded write attempts.
+                    queue.push_back(pending);
+                    tracing::warn!(
+                        "Security raw storage unavailable; owner retains original event"
+                    );
+                }
+            }
         }
 
-        Ok(event_id)
+        // Select only the oldest durable original per potential rule dedup key.
+        // A missing snapshot or failed admission must not expose that key's tail.
+        // Cursor rotation prevents blocked keys from monopolizing the 64 slots.
+        let cursor = self.recovery_cursor.lock().await.clone();
+        let mut pending = self.pending_heads(cursor).await?;
+        if pending.is_empty() {
+            pending = self.pending_heads(None).await?;
+        }
+        *self.recovery_cursor.lock().await = pending
+            .last()
+            .map(|event| (event.created_at, event.id.clone()));
+        let mut error = None;
+        for event in pending {
+            if let Err(e) = self.admit_original_event(&event.id).await {
+                error = Some(e);
+                // This key remains pending, but unrelated originals may proceed.
+            }
+        }
+        // Poll these independently: even many broken push intents must never
+        // starve raw events' rule decisions, firewall or external channels.
+        let cursor = self.push_cursor.lock().await.clone();
+        let mut intents = self.pending_push_intents(cursor).await?;
+        if intents.is_empty() {
+            intents = self.pending_push_intents(None).await?;
+        }
+        *self.push_cursor.lock().await = intents
+            .last()
+            .map(|event| (event.created_at, event.id.clone()));
+        for event in intents {
+            if let Err(e) = self.materialize_push_intent(&event.id).await {
+                error = Some(e);
+            }
+        }
+        error.map_or(Ok(()), Err)
+    }
+
+    async fn pending_push_intents(
+        &self,
+        cursor: Option<(DateTime<Utc>, String)>,
+    ) -> Result<Vec<security_event::Model>, AppError> {
+        let mut query =
+            security_event::Entity::find().filter(security_event::Column::PushIntent.is_not_null());
+        if let Some((time, id)) = cursor {
+            query = query.filter(
+                Condition::any()
+                    .add(security_event::Column::CreatedAt.gt(time))
+                    .add(
+                        Condition::all()
+                            .add(security_event::Column::CreatedAt.eq(time))
+                            .add(security_event::Column::Id.gt(id)),
+                    ),
+            );
+        }
+        Ok(query
+            .order_by_asc(security_event::Column::CreatedAt)
+            .order_by_asc(security_event::Column::Id)
+            .limit(64)
+            .all(&self.db)
+            .await?)
+    }
+
+    async fn pending_heads(
+        &self,
+        cursor: Option<(DateTime<Utc>, String)>,
+    ) -> Result<Vec<security_event::Model>, AppError> {
+        let mut query = security_event::Entity::find()
+            .filter(security_event::Column::AdmissionPayload.is_not_null())
+            .filter(sea_orm::sea_query::Expr::cust(
+                "NOT EXISTS (SELECT 1 FROM security_event AS earlier
+                 WHERE earlier.admission_payload IS NOT NULL
+                   AND earlier.server_id=security_event.server_id
+                   AND earlier.event_type=security_event.event_type
+                   AND earlier.source_ip=security_event.source_ip
+                   AND (earlier.created_at<security_event.created_at OR
+                        (earlier.created_at=security_event.created_at AND earlier.id<security_event.id)))",
+            ));
+        if let Some((time, id)) = cursor {
+            query = query.filter(
+                Condition::any()
+                    .add(security_event::Column::CreatedAt.gt(time))
+                    .add(
+                        Condition::all()
+                            .add(security_event::Column::CreatedAt.eq(time))
+                            .add(security_event::Column::Id.gt(id)),
+                    ),
+            );
+        }
+        Ok(query
+            .order_by_asc(security_event::Column::CreatedAt)
+            .order_by_asc(security_event::Column::Id)
+            .limit(64)
+            .all(&self.db)
+            .await?)
+    }
+
+    async fn has_earlier_original(
+        &self,
+        txn: &DatabaseTransaction,
+        event: &security_event::Model,
+    ) -> Result<bool, AppError> {
+        // An accepted original still in memory is a barrier for this key, even
+        // when a later raw write succeeded. Never hold this mutex across SQL.
+        if self.retained.lock().await.iter().any(|original| {
+            let earlier = &original.event;
+            earlier.server_id == event.server_id
+                && earlier.event_type == event.event_type
+                && earlier.source_ip == event.source_ip
+                && (earlier.created_at, &earlier.id) < (event.created_at, &event.id)
+        }) {
+            return Ok(true);
+        }
+        // Recheck under the writer reservation: a selection made before a new
+        // durable older original appeared cannot admit a stale tail.
+        Ok(security_event::Entity::find()
+            .filter(security_event::Column::AdmissionPayload.is_not_null())
+            .filter(security_event::Column::ServerId.eq(&event.server_id))
+            .filter(security_event::Column::EventType.eq(&event.event_type))
+            .filter(security_event::Column::SourceIp.eq(&event.source_ip))
+            .filter(
+                Condition::any()
+                    .add(security_event::Column::CreatedAt.lt(event.created_at))
+                    .add(
+                        Condition::all()
+                            .add(security_event::Column::CreatedAt.eq(event.created_at))
+                            .add(security_event::Column::Id.lt(&event.id)),
+                    ),
+            )
+            .one(txn)
+            .await?
+            .is_some())
+    }
+
+    async fn lock_event(
+        &self,
+        txn: &DatabaseTransaction,
+        event_id: &str,
+    ) -> Result<Option<security_event::Model>, AppError> {
+        txn.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "UPDATE security_event SET push_intent=push_intent WHERE id=?",
+            [event_id.into()],
+        ))
+        .await?;
+        Ok(security_event::Entity::find_by_id(event_id)
+            .one(txn)
+            .await?)
+    }
+
+    async fn admit_original_event(&self, event_id: &str) -> Result<(), AppError> {
+        let txn = self.db.begin().await?;
+        let Some(event) = self.lock_event(&txn, event_id).await? else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        let Some(ref original) = event.admission_payload else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        if !self
+            .authority_valid(
+                &txn,
+                &event.server_id,
+                event.authority_fingerprint.as_deref(),
+            )
+            .await?
+        {
+            let mut model: security_event::ActiveModel = event.into();
+            model.admission_payload = Set(None);
+            model.update(&txn).await?;
+            txn.commit().await?;
+            return Ok(());
+        }
+        if self.has_earlier_original(&txn, &event).await? {
+            txn.commit().await?;
+            return Ok(());
+        }
+        // A failed initial lookup or a pre-correction pending record has no
+        // decision yet. Never infer permission from that missing snapshot.
+        // Persist the historical decision independently of admission rollback.
+        if event.maintenance_at_admission.is_none() {
+            let decision =
+                MaintenanceService::is_in_maintenance_at(&txn, &event.server_id, event.created_at)
+                    .await?;
+            let mut model: security_event::ActiveModel = event.clone().into();
+            model.maintenance_at_admission = Set(Some(decision));
+            model.update(&txn).await?;
+            txn.commit().await?;
+            return Ok(());
+        }
+        let payload: SecurityEventPayload = serde_json::from_str(original)
+            .map_err(|_| AppError::Internal("Invalid stored security admission".into()))?;
+        let matched = self
+            .evaluate_rules(
+                &txn,
+                &event.server_id,
+                &payload,
+                event.created_at,
+                event.maintenance_at_admission == Some(true),
+            )
+            .await?;
+        let recipients = if matched.iter().any(|m| m.should_notify) {
+            super::mobile_push_outbox::prepare_security(
+                &txn,
+                event_id,
+                event.created_at.timestamp(),
+            )
+            .await?
+        } else {
+            Vec::new()
+        };
+        let intent =
+            if recipients.is_empty() {
+                None
+            } else {
+                Some(serde_json::to_string(&recipients).map_err(|_| {
+                    AppError::Internal("Security push intent encoding failed".into())
+                })?)
+            };
+        let server_id = event.server_id.clone();
+        let mut model: security_event::ActiveModel = event.into();
+        model.admission_payload = Set(None);
+        model.push_intent = Set(intent);
+        model.update(&txn).await?;
+        // The exact recipient/session/revision/deadline intent and suppression
+        // decision become durable together. No outbox INSERT is in this phase.
+        txn.commit().await?;
+        for admitted in &matched {
+            self.alert_state_manager
+                .publish_committed_security_match(&admitted.state);
+        }
+        if let Err(e) = self
+            .dispatch_rule_effects(&server_id, &payload, event_id, &matched)
+            .await
+        {
+            tracing::error!(server_id, error = %e, "security rule effects failed");
+        }
+        Ok(())
+    }
+
+    async fn materialize_push_intent(&self, event_id: &str) -> Result<(), AppError> {
+        let txn = self.db.begin().await?;
+        let Some(event) = self.lock_event(&txn, event_id).await? else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        let Some(ref intent) = event.push_intent else {
+            txn.commit().await?;
+            return Ok(());
+        };
+        let recipients: Vec<super::mobile_push_outbox::SecurityPushRecipient> =
+            serde_json::from_str(intent)
+                .map_err(|_| AppError::Internal("Invalid stored security push intent".into()))?;
+        super::mobile_push_outbox::enqueue_security(
+            &txn,
+            &event.server_id,
+            &event.id,
+            &event.event_type,
+            event.created_at.timestamp(),
+            recipients,
+        )
+        .await?;
+        let mut model: security_event::ActiveModel = event.into();
+        model.push_intent = Set(None);
+        model.update(&txn).await?;
+        // All fan-out jobs and consuming the intent commit together; an INSERT
+        // failure leaves no partial jobs and retains the original recovery marker.
+        txn.commit().await?;
+        Ok(())
     }
 
     async fn evaluate_rules(
         &self,
+        txn: &DatabaseTransaction,
         server_id: &str,
         payload: &SecurityEventPayload,
-        event_id: &str,
-    ) -> Result<(), AppError> {
-        if MaintenanceService::is_in_maintenance(&self.db, server_id)
-            .await
-            .unwrap_or(false)
-        {
-            return Ok(());
+        now: DateTime<Utc>,
+        in_maintenance: bool,
+    ) -> Result<Vec<MatchedSecurityRule>, AppError> {
+        if in_maintenance {
+            return Ok(Vec::new());
         }
-
         let event_type_key = event_type_to_rule_type(payload.event_type);
-
         let rules = alert_rule::Entity::find()
             .filter(alert_rule::Column::Enabled.eq(true))
-            .all(&self.db)
+            .all(txn)
             .await?;
-
-        let mut cached_server_name: Option<String> = None;
-
-        for rule in &rules {
+        let mut matched = Vec::new();
+        for rule in rules {
             if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
                 continue;
             }
-
             let items: Vec<AlertRuleItem> =
                 serde_json::from_str(&rule.rules_json).unwrap_or_default();
-
-            // Validator guarantees ≤1 security item per rule.
+            // Validator guarantees at most one security item per rule.
             let Some(item) = items
                 .iter()
-                .find(|i| SECURITY_RULE_TYPES.contains(&i.rule_type.as_str()))
+                .find(|item| SECURITY_RULE_TYPES.contains(&item.rule_type.as_str()))
             else {
                 continue;
             };
-
             if item.rule_type != event_type_key {
                 continue;
             }
-
             let default_params = SecurityRuleParams::default();
             let params = item.security.as_ref().unwrap_or(&default_params);
-
             if !matches_security_params(item, params, payload) {
                 continue;
             }
-
             let event_key = payload.source_ip.as_str();
-            let now = Utc::now();
-            let should_notify = match self
-                .alert_state_manager
-                .get_info(&rule.id, server_id, event_key)
-            {
-                None => true,
-                Some(prev) => {
-                    let window = chrono::Duration::seconds(params.dedupe_window_seconds as i64);
-                    (now - prev.last_notified_at) >= window
-                }
-            };
-
-            self.alert_state_manager
-                .mark_triggered(&self.db, &rule.id, server_id, event_key)
+            // The event lock already holds SQLite's writer lock. Admission reads
+            // authoritative state here, independently of a stale in-memory cache.
+            let previous = alert_state::Entity::find()
+                .filter(alert_state::Column::RuleId.eq(&rule.id))
+                .filter(alert_state::Column::ServerId.eq(server_id))
+                .filter(alert_state::Column::EventKey.eq(event_key))
+                .one(txn)
                 .await?;
+            let window = chrono::Duration::seconds(params.dedupe_window_seconds as i64);
+            let should_notify = previous
+                .as_ref()
+                .is_none_or(|row| row.resolved || now - row.last_notified_at >= window);
+            let state = if let Some(row) = previous {
+                let mut model: alert_state::ActiveModel = row.clone().into();
+                if row.resolved {
+                    model.first_triggered_at = Set(now);
+                    model.count = Set(1);
+                } else {
+                    model.count = Set(row.count.saturating_add(1));
+                }
+                // Ordered admission is primary. A late historical record or
+                // wall-clock correction still must not regress durable cooldown.
+                model.last_notified_at = Set(now.max(row.last_notified_at));
+                model.resolved = Set(false);
+                model.resolved_at = Set(None);
+                model.updated_at = Set(now.max(row.updated_at));
+                model.update(txn).await?
+            } else {
+                alert_state::ActiveModel {
+                    id: NotSet,
+                    rule_id: Set(rule.id.clone()),
+                    server_id: Set(server_id.to_owned()),
+                    event_key: Set(event_key.to_owned()),
+                    first_triggered_at: Set(now),
+                    last_notified_at: Set(now),
+                    count: Set(1),
+                    resolved: Set(false),
+                    resolved_at: Set(None),
+                    updated_at: Set(now),
+                }
+                .insert(txn)
+                .await?
+            };
+            matched.push(MatchedSecurityRule {
+                rule,
+                state,
+                should_notify,
+                event_time: now,
+            });
+        }
+        Ok(matched)
+    }
 
+    async fn dispatch_rule_effects(
+        &self,
+        server_id: &str,
+        payload: &SecurityEventPayload,
+        event_id: &str,
+        matched: &[MatchedSecurityRule],
+    ) -> Result<(), AppError> {
+        let event_type_key = event_type_to_rule_type(payload.event_type);
+        let mut cached_server_name: Option<String> = None;
+        for admitted in matched {
+            let rule = &admitted.rule;
+            let now = admitted.event_time;
             // Auto-actions run on every rule match, even when the
             // notification is dedupe-suppressed or no notification group
             // is configured.
@@ -200,10 +676,9 @@ impl SecurityService {
                 }
             }
 
-            if !should_notify {
+            if !admitted.should_notify {
                 continue;
             }
-
             let Some(ref group_id) = rule.notification_group_id else {
                 continue;
             };
@@ -242,7 +717,6 @@ impl SecurityService {
                 );
             }
         }
-
         Ok(())
     }
 }
@@ -261,12 +735,10 @@ fn matches_security_params(
                 .map(|min| *failed_count >= min)
                 .unwrap_or(true)
         }
-        ("port_scan_detected", SecurityEvidence::PortScan { distinct_ports, .. }) => {
-            params
-                .min_distinct_ports
-                .map(|min| *distinct_ports >= min)
-                .unwrap_or(true)
-        }
+        ("port_scan_detected", SecurityEvidence::PortScan { distinct_ports, .. }) => params
+            .min_distinct_ports
+            .map(|min| *distinct_ports >= min)
+            .unwrap_or(true),
         ("ssh_new_ip_login", SecurityEvidence::SshLogin { .. }) => {
             if !payload.first_seen {
                 return false;
@@ -351,9 +823,7 @@ mod tests {
     use crate::service::alert::AlertStateManager;
     use crate::test_utils::setup_test_db;
     use sea_orm::ActiveModelTrait;
-    use serverbee_common::security::{
-        DetectorSource, SecurityEvidence, Severity, SshAuthMethod,
-    };
+    use serverbee_common::security::{DetectorSource, SecurityEvidence, Severity, SshAuthMethod};
     use tokio::sync::broadcast;
 
     async fn insert_server(db: &DatabaseConnection, id: &str) {
@@ -388,14 +858,7 @@ mod tests {
             browser_tx.clone(),
         ));
         let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
-        let svc = SecurityService::new(
-            db,
-            browser_tx,
-            mgr,
-            config,
-            firewall,
-            agent_manager,
-        );
+        let svc = SecurityService::new(db, browser_tx, mgr, config, firewall, agent_manager);
         (svc, rx)
     }
 
@@ -514,8 +977,7 @@ mod tests {
                         _ => break,
                     }
                 }
-                let _ = socket
-                    .try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                let _ = socket.try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
                 let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
             }
         });
@@ -690,10 +1152,7 @@ mod tests {
             .unwrap();
         // Wait a moment to see if anything fires.
         let early = tokio::time::timeout(std::time::Duration::from_millis(300), rx_webhook).await;
-        assert!(
-            early.is_err(),
-            "no webhook should fire on first_seen=false"
-        );
+        assert!(early.is_err(), "no webhook should fire on first_seen=false");
 
         // first_seen=true: alert fires.
         let (port2, rx_webhook2) = start_webhook_sink().await;
@@ -827,13 +1286,7 @@ mod tests {
         // never matches it and no alert state is created.
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "srv-1").await;
-        insert_rule(
-            &db,
-            "rule-cpu",
-            r#"[{"rule_type":"cpu","min":90.0}]"#,
-            None,
-        )
-        .await;
+        insert_rule(&db, "rule-cpu", r#"[{"rule_type":"cpu","min":90.0}]"#, None).await;
         let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
 
         svc.record_event("srv-1", brute_force_payload("203.0.113.5", 50))

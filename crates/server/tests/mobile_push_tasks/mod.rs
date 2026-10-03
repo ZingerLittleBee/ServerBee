@@ -1182,3 +1182,179 @@ async fn alerts_and_final_tasks_share_queue_without_crossing_subscription_gates(
         }
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn security_alert_and_final_outcomes_keep_independent_recipient_and_dispatch_gates() {
+    for success in [false, true] {
+        for cancelled_category in ["alert", "security", "task"] {
+            let (base, state, _tmp, relay) = queued_setup().await;
+            let client = reqwest::Client::new();
+            let mut identities = Vec::new();
+            for (installation, category) in [
+                ("isolated-alert", "alerts"),
+                ("isolated-security", "security"),
+                ("isolated-task", "task"),
+            ] {
+                let login = login_http(&client, &base, "admin", installation).await;
+                let access = login["access_token"].as_str().unwrap().to_owned();
+                queued_register(&client, &base, &access, installation).await;
+                let confirmed = status_http(&client, &base, &access).await;
+                let mut prefs = confirmed["preferences"].clone();
+                for key in ["alerts", "security", "task_failure", "task_success"] {
+                    prefs[key] =
+                        json!(key == category || (category == "task" && key.starts_with("task_")));
+                }
+                let response = preferences_http(
+                    &client,
+                    &base,
+                    &access,
+                    confirmed["revision"].as_i64().unwrap(),
+                    prefs.clone(),
+                )
+                .await;
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.json::<Value>().await.unwrap()["data"]["preferences"],
+                    prefs
+                );
+                identities.push(access);
+            }
+            let access = &identities[2];
+            let (target, mut sink, mut reader) = agent(&client, &base, access).await;
+            let id = task(
+                &client,
+                &base,
+                access,
+                std::slice::from_ref(&target),
+                0,
+                "0 0 0 * * *",
+            )
+            .await;
+            run(&client, &base, access, &id).await;
+            let execution = exec(&mut reader).await;
+            reply(
+                &mut sink,
+                &execution,
+                if success { 0 } else { 1 },
+                "private-output",
+            )
+            .await;
+            let finished = completed(&state, &id).await;
+            alert_http_fixture(&client, &base, access, "once").await;
+            evaluate_alerts(&state).await;
+            let response = client.post(format!("{base}/api/alert-rules")).bearer_auth(access)
+                .json(&json!({"name":"combined-security", "enabled":true, "cover_type":"all",
+                    "rules":[{"rule_type":"port_scan_detected", "security":{"min_distinct_ports":5}}]}))
+                .send().await.unwrap();
+            assert_eq!(response.status(), 200);
+            let payload = serde_json::from_value(json!({"event_type":"port_scan", "severity":"high", "source_ip":"203.0.113.7",
+                "source_port":22, "username":null, "started_at":Utc::now().timestamp()-30, "ended_at":Utc::now().timestamp(),
+                "first_seen":false, "detector_source":"journal", "evidence":{"kind":"port_scan", "distinct_ports":20,
+                    "sample_ports":[22,80,443], "total_attempts":40, "window_seconds":30, "threshold":5, "blocked_count":0}})).unwrap();
+            state
+                .security_service
+                .record_event(&target, payload)
+                .await
+                .unwrap();
+            let queued = jobs(&state).await;
+            assert_eq!(
+                queued.len(),
+                3,
+                "each event reaches only its independently subscribed installation"
+            );
+            for (category, installation) in [
+                ("alert", "isolated-alert"),
+                ("security", "isolated-security"),
+                (
+                    if success {
+                        "task_success"
+                    } else {
+                        "task_failure"
+                    },
+                    "isolated-task",
+                ),
+            ] {
+                let job = queued.iter().find(|job| job.category == category).unwrap();
+                assert_eq!(job.installation_id, installation);
+                let content = plaintext(&state, job).await;
+                assert_eq!(content["kind"], category);
+                assert_eq!(content.get("alert").is_some(), category == "alert");
+                assert_eq!(
+                    content.get("task_run").is_some(),
+                    category.starts_with("task_")
+                );
+                assert_eq!(
+                    content.get("security_event_id").is_some(),
+                    category == "security"
+                );
+                if category.starts_with("task_") {
+                    assert_eq!(job.event_id, finished.run_id);
+                }
+            }
+            let cancelled_index = match cancelled_category {
+                "alert" => 0,
+                "security" => 1,
+                _ => 2,
+            };
+            let cancelled_access = &identities[cancelled_index];
+            let confirmed = status_http(&client, &base, cancelled_access).await;
+            let mut prefs = confirmed["preferences"].clone();
+            prefs[match cancelled_category {
+                "alert" => "alerts",
+                "security" => "security",
+                _ if success => "task_success",
+                _ => "task_failure",
+            }] = json!(false);
+            assert_eq!(
+                preferences_http(
+                    &client,
+                    &base,
+                    cancelled_access,
+                    confirmed["revision"].as_i64().unwrap(),
+                    prefs
+                )
+                .await
+                .status(),
+                200
+            );
+            relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+            let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+            tokio::time::timeout(std::time::Duration::from_secs(8), async {
+                loop {
+                    if jobs(&state)
+                        .await
+                        .iter()
+                        .all(|job| !matches!(job.outcome.as_str(), "pending" | "retryable"))
+                    {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("all three independent categories drain");
+            worker.abort();
+            let _ = worker.await;
+            for job in jobs(&state).await {
+                let cancelled = job.installation_id
+                    == ["isolated-alert", "isolated-security", "isolated-task"][cancelled_index];
+                assert_eq!(
+                    job.outcome,
+                    if cancelled { "permanent" } else { "accepted" }
+                );
+                if cancelled {
+                    assert_eq!(job.reason, "Ineligible");
+                }
+                let original = queued
+                    .iter()
+                    .find(|original| original.event_id == job.event_id)
+                    .unwrap();
+                assert_eq!(job.created_at, original.created_at);
+                assert_eq!(job.expires_at, original.expires_at);
+                assert_eq!(job.expires_at - job.created_at, 1800);
+            }
+            assert_eq!(relay.requests().await.len(), 2);
+            disable(&client, &base, access, &id).await;
+        }
+    }
+}

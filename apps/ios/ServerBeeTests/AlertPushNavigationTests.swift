@@ -51,7 +51,7 @@ final class AlertPushNavigationTests: XCTestCase {
         let router = PushNotificationRouter()
         delegate.pushRouter = router
         XCTAssertNotNil(router.pendingEnvelope)
-        let link = try XCTUnwrap(router.consumeAccountTarget(context: context(), key: key))
+        let link = try XCTUnwrap(router.consumeTarget(context: context(), key: key))
         XCTAssertEqual(link, .alertDetail(alertKey: target))
         var tab = 0
         var servers: [ServerNavigationTarget] = []
@@ -62,7 +62,7 @@ final class AlertPushNavigationTests: XCTestCase {
         XCTAssertNil(router.pendingEnvelope)
         for replacement in [context(user: "bob"), context(server: "https://other.test")] {
             router.enqueue(envelope: envelope)
-            XCTAssertNil(router.consumeAccountTarget(context: replacement, key: key))
+            XCTAssertNil(router.consumeTarget(context: replacement, key: key))
         }
     }
 
@@ -96,7 +96,7 @@ final class AlertPushNavigationTests: XCTestCase {
             XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
             let router = PushNotificationRouter()
             router.enqueue(envelope: envelope)
-            XCTAssertNil(router.consumeAccountTarget(context: context(), key: key))
+            XCTAssertNil(router.consumeTarget(context: context(), key: key))
         }
     }
 
@@ -136,7 +136,7 @@ final class AlertPushNavigationTests: XCTestCase {
             delegate.bufferNotification(userInfo: presented.userInfo)
             let router = PushNotificationRouter()
             delegate.pushRouter = router
-            let link = try XCTUnwrap(router.consumeAccountTarget(context: context(), key: fixture.key))
+            let link = try XCTUnwrap(router.consumeTarget(context: context(), key: fixture.key))
             XCTAssertEqual(link, .alertDetail(alertKey: fixture.target))
             var tab = 0
             var servers: [ServerNavigationTarget] = [.detailById("old")]
@@ -145,7 +145,7 @@ final class AlertPushNavigationTests: XCTestCase {
             XCTAssertEqual(tab, 1)
             XCTAssertEqual(alerts, [.alertDetail(alertKey: fixture.target)])
             XCTAssertEqual(servers, [.detailById("old")])
-            XCTAssertNil(router.consumeAccountTarget(context: context(), key: fixture.key))
+            XCTAssertNil(router.consumeTarget(context: context(), key: fixture.key))
         }
     }
 
@@ -160,7 +160,7 @@ final class AlertPushNavigationTests: XCTestCase {
             let delegate = AppDelegate()
             delegate.pushRouter = router
             delegate.bufferNotification(userInfo: presented.userInfo)
-            XCTAssertEqual(router.consumeAccountTarget(context: context(), key: fixture.key), .alertDetail(alertKey: fixture.target))
+            XCTAssertEqual(router.consumeTarget(context: context(), key: fixture.key), .alertDetail(alertKey: fixture.target))
             XCTAssertNil(router.pendingEnvelope)
         }
     }
@@ -195,26 +195,26 @@ final class AlertPushNavigationTests: XCTestCase {
                                                         installationId: fixture.key.installationId, generation: UUID(), accessToken: "new",
                                                         revocationToken: "other-login", refreshToken: "new")] {
             router.enqueue(envelope: fixture.envelope)
-            XCTAssertNil(router.consumeAccountTarget(context: replacement, key: fixture.key))
+            XCTAssertNil(router.consumeTarget(context: replacement, key: fixture.key))
         }
         router.enqueue(envelope: fixture.envelope)
-        XCTAssertNil(router.consumeAccountTarget(context: context(), key: nil))
+        XCTAssertNil(router.consumeTarget(context: context(), key: nil))
         let envelope = fixture.envelope
         var ciphertext = try XCTUnwrap(Data(base64Encoded: envelope.ciphertext))
         ciphertext[0] ^= 1
         let tampered = PushEnvelope(version: envelope.version, keyId: envelope.keyId, identity: envelope.identity,
                                     nonce: envelope.nonce, ciphertext: ciphertext.base64EncodedString())
         router.enqueue(envelope: tampered)
-        XCTAssertNil(router.consumeAccountTarget(context: context(), key: fixture.key))
+        XCTAssertNil(router.consumeTarget(context: context(), key: fixture.key))
         for lifetime in [1799, 1801] {
             let malformed = try encrypted(createdAt: created, lifetime: Int64(lifetime))
             router.enqueue(envelope: malformed.envelope)
-            XCTAssertNil(router.consumeAccountTarget(context: context(), key: malformed.key))
+            XCTAssertNil(router.consumeTarget(context: context(), key: malformed.key))
         }
         let oversized = PushEnvelope(version: envelope.version, keyId: envelope.keyId, identity: envelope.identity,
                                      nonce: envelope.nonce, ciphertext: String(repeating: "A", count: 2761))
         router.enqueue(envelope: oversized)
-        XCTAssertNil(router.consumeAccountTarget(context: context(), key: fixture.key))
+        XCTAssertNil(router.consumeTarget(context: context(), key: fixture.key))
     }
 
     func testLateAlertTapFetchesCurrentDetailAndClearsUnavailableTargets() async throws {
@@ -234,7 +234,7 @@ final class AlertPushNavigationTests: XCTestCase {
         let fixture = try encrypted(createdAt: Int64(Date().timeIntervalSince1970) - 3600, authentication: current)
         let router = PushNotificationRouter()
         router.enqueue(envelope: fixture.envelope)
-        guard case let .alertDetail(target) = try XCTUnwrap(router.consumeAccountTarget(context: current, key: fixture.key)) else {
+        guard case let .alertDetail(target) = try XCTUnwrap(router.consumeTarget(context: current, key: fixture.key)) else {
             XCTFail("Late tap must enter current authenticated detail lookup")
             return
         }

@@ -32,6 +32,12 @@ pub struct PushContent {
     pub created_at: i64,
     pub expires_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_event_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_run: Option<TaskRunSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alert: Option<AlertPushTarget>,
@@ -126,36 +132,47 @@ mod tests {
     use super::*;
     #[test]
     fn rust_matches_shared_swift_vector() {
-        for source in [
-            include_str!("../../../../tests/fixtures/push-envelope-v1.json"),
-            include_str!("../../../../tests/fixtures/push-alert-envelope-v1.json"),
-        ] {
-            let vector: serde_json::Value = serde_json::from_str(source).expect("vector");
-            let content: PushContent =
-                serde_json::from_value(vector["content"].clone()).expect("content");
-            let key = STANDARD
-                .decode(vector["key"].as_str().expect("key"))
-                .expect("key bytes");
-            let nonce: [u8; 12] = STANDARD
-                .decode(vector["envelope"]["nonce"].as_str().expect("nonce"))
-                .expect("nonce bytes")
-                .try_into()
-                .expect("12 bytes");
-            let sealed = seal(
-                vector["envelope"]["key_id"].as_str().expect("key id"),
-                &key,
-                &content,
-                nonce,
-            )
-            .expect("encrypt");
-            assert_eq!(
-                serde_json::to_value(sealed).expect("encode"),
-                vector["envelope"]
-            );
-            let a = encrypt("key", &key, &content).expect("fresh a");
-            let b = encrypt("key", &key, &content).expect("fresh b");
-            assert_ne!(a.nonce, b.nonce);
-            assert_ne!(a.ciphertext, b.ciphertext);
-        }
+        verify_vector(include_str!(
+            "../../../../tests/fixtures/push-alert-envelope-v1.json"
+        ));
+        verify_vector(include_str!(
+            "../../../../tests/fixtures/push-envelope-v1.json"
+        ));
+    }
+
+    #[test]
+    fn security_matches_shared_swift_vector() {
+        verify_vector(include_str!(
+            "../../../../tests/fixtures/push-security-envelope-v1.json"
+        ));
+    }
+
+    fn verify_vector(raw: &str) {
+        let vector: serde_json::Value = serde_json::from_str(raw).expect("vector");
+        let content: PushContent =
+            serde_json::from_value(vector["content"].clone()).expect("content");
+        let key = STANDARD
+            .decode(vector["key"].as_str().expect("key"))
+            .expect("key bytes");
+        let nonce: [u8; 12] = STANDARD
+            .decode(vector["envelope"]["nonce"].as_str().expect("nonce"))
+            .expect("nonce bytes")
+            .try_into()
+            .expect("12 bytes");
+        let sealed = seal(
+            vector["envelope"]["key_id"].as_str().expect("key id"),
+            &key,
+            &content,
+            nonce,
+        )
+        .expect("encrypt");
+        assert_eq!(
+            serde_json::to_value(sealed).expect("encode"),
+            vector["envelope"]
+        );
+        let a = encrypt("key", &key, &content).expect("fresh a");
+        let b = encrypt("key", &key, &content).expect("fresh b");
+        assert_ne!(a.nonce, b.nonce);
+        assert_ne!(a.ciphertext, b.ciphertext);
     }
 }

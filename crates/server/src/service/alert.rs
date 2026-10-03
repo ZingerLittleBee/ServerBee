@@ -431,6 +431,32 @@ impl AlertStateManager {
         }
     }
 
+    /// Security admission publishes its cache only after the state and outbox
+    /// transaction commits. A late publisher cannot overwrite a newer match.
+    pub(crate) fn publish_committed_security_match(&self, row: &alert_state::Model) {
+        let key = (
+            row.rule_id.clone(),
+            row.server_id.clone(),
+            row.event_key.clone(),
+        );
+        let committed = TriggeredInfo {
+            first_triggered_at: row.first_triggered_at,
+            last_notified_at: row.last_notified_at,
+            count: row.count as u32,
+        };
+        self.triggered
+            .entry(key)
+            .and_modify(|current| {
+                if committed.last_notified_at > current.last_notified_at
+                    || (committed.last_notified_at == current.last_notified_at
+                        && committed.count >= current.count)
+                {
+                    *current = committed.clone();
+                }
+            })
+            .or_insert(committed);
+    }
+
     pub async fn mark_triggered(
         &self,
         db: &DatabaseConnection,

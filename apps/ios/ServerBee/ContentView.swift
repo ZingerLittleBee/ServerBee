@@ -47,6 +47,8 @@ struct ContentView: View {
                             switch target {
                             case .detailById(let serverId):
                                 ServerDetailLoaderView(serverId: serverId)
+                            case .security(let serverId, let eventId):
+                                SecurityNotificationDetailView(serverId: serverId, eventId: eventId)
                             }
                         }
                 }
@@ -63,7 +65,7 @@ struct ContentView: View {
                                 EmptyView()
                             case .alertDetail(let key):
                                 AlertDetailView(alertKey: key)
-                            case .serverDetail:
+                            case .serverDetail, .securityDetail:
                                 EmptyView()
                             }
                         }
@@ -105,7 +107,8 @@ struct ContentView: View {
             .environment(\.apiClient, apiClient)
         }
         .onChange(of: authManager.captureContext()?.pushScope) { _, _ in taskRunTarget = nil }
-        .onChange(of: pushRouter.pendingEnvelope?.ciphertext) { _, _ in consumePushAccountTarget() }
+        .onChange(of: pushRouter.pendingEnvelope?.ciphertext) { _, _ in consumePushTarget() }
+        .onChange(of: pushManager.confirmed?.revision) { _, _ in consumePushTarget() }
         .onChange(of: pushRouter.pendingDeepLink) { _, newValue in
             guard let link = newValue else { return }
             handleDeepLink(link)
@@ -140,7 +143,7 @@ struct ContentView: View {
                 await wsClient.connect(serverUrl: serverUrl, accessToken: token)
             }
 
-            consumePushAccountTarget()
+            consumePushTarget()
 
             // If a push tap arrived during cold launch BEFORE this view existed,
             // consume it now.
@@ -174,6 +177,7 @@ struct ContentView: View {
     /// metrics only arrive over the WebSocket, never from REST).
     private func resyncLive() async {
         await pushManager.reconcile()
+        consumePushTarget()
         await wsClient.reconnect(accessToken: authManager.getAccessToken())
     }
 
@@ -204,9 +208,9 @@ struct ContentView: View {
         }
     }
 
-    private func consumePushAccountTarget() {
+    private func consumePushTarget() {
         guard let context = apiClient.captureContext(),
-              let link = pushRouter.consumeAccountTarget(context: context, key: pushManager.contentKey()) else { return }
+              let link = pushRouter.consumeTarget(context: context, key: pushManager.contentKey()) else { return }
         handleDeepLink(link)
     }
 
@@ -239,6 +243,10 @@ struct ContentView: View {
         case .serverDetail(let serverId):
             selectedTab = ContentView.serversTabTag
             serversPath = [.detailById(serverId)]
+        case .securityDetail(let serverId, let eventId):
+            selectedTab = ContentView.serversTabTag
+            serversPath = [.security(serverId: serverId, eventId: eventId)]
+            alertsPath = []
         case .alertDetail(let alertKey):
             selectedTab = ContentView.alertsTabTag
             alertsPath = [.alertDetail(alertKey: alertKey)]
@@ -250,6 +258,7 @@ struct ContentView: View {
 /// link without needing the full `ServerStatus` model up front.
 enum ServerNavigationTarget: Hashable {
     case detailById(String)
+    case security(serverId: String, eventId: String)
 }
 
 /// Displays `ServerDetailView` for a server id. The detail view reads live

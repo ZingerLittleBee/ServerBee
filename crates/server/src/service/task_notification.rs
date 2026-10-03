@@ -213,6 +213,9 @@ pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<()
             event_id: job.event_id.clone(),
             created_at,
             expires_at: created_at + 1800,
+            server_id: None,
+            security_event_id: None,
+            security_event_type: None,
             task_run: Some(summary.clone()),
             alert: None,
         };

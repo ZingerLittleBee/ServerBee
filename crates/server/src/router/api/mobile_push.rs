@@ -65,7 +65,7 @@ pub struct PushSetupResponse {
     pub registered: bool,
     pub grant_expires_at: Option<DateTime<Utc>>,
     pub relay_url: String,
-    /// Alert trigger and recovery delivery is available through subscriptions.
+    /// Whether at least one event category is available for the current role.
     pub delivery_available: bool,
     /// A test is scoped to the authenticated installation.
     pub test_available: bool,
@@ -540,8 +540,10 @@ pub async fn test_notification(
         created_at: now,
         expires_at: now + 1800,
         task_run: None,
-
         alert: None,
+        server_id: None,
+        security_event_id: None,
+        security_event_type: None,
     };
     let envelope = serde_json::to_string(&encrypt(key_id, &secret, &content)?)
         .map_err(|_| AppError::Internal("Push encryption failed".into()))?;
@@ -555,7 +557,6 @@ pub async fn test_notification(
         registration_revision: Set(row.revision),
         recipient_role: Set(owner.role),
         task_run_id: Set(None),
-
         category: Set("test".into()),
         created_at: Set(now),
         expires_at: Set(now + 1800),

@@ -25,6 +25,9 @@ struct PushContent: Codable, Sendable, Equatable {
     let expiresAt: Int64
     var taskRun: TaskRunPushSummary?
     var alert: AlertPushTarget?
+    var serverId: String?
+    var securityEventId: String?
+    var securityEventType: String?
     enum CodingKeys: String, CodingKey {
         case taskRun = "task_run"
         case kind, alert
@@ -34,6 +37,9 @@ struct PushContent: Codable, Sendable, Equatable {
         case eventId = "event_id"
         case createdAt = "created_at"
         case expiresAt = "expires_at"
+        case serverId = "server_id"
+        case securityEventId = "security_event_id"
+        case securityEventType = "security_event_type"
     }
     var identity: String {
         get throws {
@@ -140,13 +146,17 @@ enum PushEnvelopeDecoder {
               !lifetime.overflow, lifetime.partialValue == 1800 else { throw PushEnvelopeError.invalid }
         switch content.kind {
         case "test":
-            guard content.taskRun == nil, content.alert == nil else { throw PushEnvelopeError.invalid }
+            guard content.taskRun == nil, content.alert == nil, content.serverId == nil, content.securityEventId == nil, content.securityEventType == nil else { throw PushEnvelopeError.invalid }
         case "alert":
-            guard content.taskRun == nil, content.alert?.isValid == true else { throw PushEnvelopeError.invalid }
+            guard content.taskRun == nil, content.alert?.isValid == true, content.serverId == nil, content.securityEventId == nil, content.securityEventType == nil else { throw PushEnvelopeError.invalid }
         case "task_failure", "task_success":
-            guard content.alert == nil, let run = content.taskRun, run.isValid,
+            guard content.alert == nil, content.serverId == nil, content.securityEventId == nil, content.securityEventType == nil, let run = content.taskRun, run.isValid,
                   run.isSuccess == (content.kind == "task_success"),
                   content.eventId == run.runId else { throw PushEnvelopeError.invalid }
+        case "security":
+            guard content.taskRun == nil, content.alert == nil, let serverId = content.serverId, UUID(uuidString: serverId) != nil,
+                  content.securityEventId == content.eventId,
+                  let eventType = content.securityEventType, ["ssh_login", "ssh_brute_force", "port_scan"].contains(eventType) else { throw PushEnvelopeError.invalid }
         default: throw PushEnvelopeError.invalid
         }
         return content
@@ -214,6 +224,13 @@ enum PushNotificationRenderer {
                 result.title = String(localized: "Task run failed")
                 result.body = String(format: String(localized: "Targets: %lld. Failed: %lld. Timed out: %lld. Offline: %lld. Denied: %lld."),
                                      Int64(run.total), Int64(run.failed), Int64(run.timedOut), Int64(run.offline), Int64(run.denied))
+            }
+        } else if content.kind == "security" {
+            result.title = String(localized: "Security rule matched")
+            switch content.securityEventType {
+            case "ssh_login": result.body = String(localized: "An SSH login from a new IP matched a security rule.")
+            case "ssh_brute_force": result.body = String(localized: "SSH brute-force activity matched a security rule.")
+            default: result.body = String(localized: "Port-scan activity matched a security rule.")
             }
         } else {
             result.title = String(localized: "Test notification")

@@ -46,7 +46,7 @@ final class TaskPushNavigationTests: XCTestCase {
             XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key, purpose: .notificationTap))
             let router = PushNotificationRouter()
             router.enqueue(envelope: envelope)
-            XCTAssertNil(router.consumeAccountTarget(context: current, key: key))
+            XCTAssertNil(router.consumeTarget(context: current, key: key))
         }
     }
 
@@ -58,13 +58,13 @@ final class TaskPushNavigationTests: XCTestCase {
         let router = PushNotificationRouter()
         delegate.pushRouter = router
         XCTAssertNotNil(router.pendingEnvelope)
-        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
         XCTAssertNil(router.pendingEnvelope)
         router.enqueue(envelope: envelope)
-        XCTAssertNil(router.consumeAccountTarget(context: context(user: "bob"), key: key))
+        XCTAssertNil(router.consumeTarget(context: context(user: "bob"), key: key))
         let invalid = try encrypted(current, invalid: true).0
         router.enqueue(envelope: invalid)
-        XCTAssertNil(router.consumeAccountTarget(context: current, key: key))
+        XCTAssertNil(router.consumeTarget(context: current, key: key))
         var tab = 0
         var servers: [ServerNavigationTarget] = [.detailById("old")]
         var alerts: [ServerDeepLink] = [.alertDetail(alertKey: "old")]
@@ -155,9 +155,9 @@ extension TaskPushNavigationTests {
         delegate.bufferNotification(userInfo: ["serverbee_envelope": object])
         let router = PushNotificationRouter()
         delegate.pushRouter = router
-        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
         router.enqueue(envelope: envelope)
-        XCTAssertNil(router.consumeAccountTarget(context: context(user: "bob"), key: key))
+        XCTAssertNil(router.consumeTarget(context: context(user: "bob"), key: key))
     }
 
     func testSuccessRejectsFailureCountsEmptyTargetsAndKindMismatch() throws {
@@ -172,7 +172,7 @@ extension TaskPushNavigationTests {
             XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
             let router = PushNotificationRouter()
             router.enqueue(envelope: envelope)
-            XCTAssertNil(router.consumeAccountTarget(context: current, key: key))
+            XCTAssertNil(router.consumeTarget(context: current, key: key))
             let input = UNMutableNotificationContent()
             input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))]
             let rendered = PushNotificationRenderer.render(input, key: key)
@@ -187,7 +187,7 @@ extension TaskPushNavigationTests {
         XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
         let router = PushNotificationRouter()
         router.enqueue(envelope: envelope)
-        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
         let input = UNMutableNotificationContent()
         input.userInfo = ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))]
         XCTAssertTrue(PushNotificationRenderer.render(input, key: key).userInfo.isEmpty)
@@ -251,7 +251,7 @@ extension TaskPushNavigationTests {
             if !cold { delegate.pushRouter = router }
             delegate.bufferNotification(userInfo: ["serverbee_envelope": object])
             if cold { delegate.pushRouter = router }
-            XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
+            XCTAssertEqual(router.consumeTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
             XCTAssertNil(router.pendingEnvelope)
         }
         let input = UNMutableNotificationContent()
@@ -261,11 +261,11 @@ extension TaskPushNavigationTests {
         XCTAssertTrue(rendered.userInfo.isEmpty, "Newly rendered expired delivery must still fail closed")
         let router = PushNotificationRouter()
         router.enqueue(envelope: envelope)
-        XCTAssertNil(router.consumeAccountTarget(context: context(user: "bob"), key: key))
+        XCTAssertNil(router.consumeTarget(context: context(user: "bob"), key: key))
         let tampered = PushEnvelope(version: envelope.version, keyId: envelope.keyId, identity: envelope.identity,
                                     nonce: envelope.nonce, ciphertext: Data(repeating: 0, count: 64).base64EncodedString())
         router.enqueue(envelope: tampered)
-        XCTAssertNil(router.consumeAccountTarget(context: current, key: key))
+        XCTAssertNil(router.consumeTarget(context: current, key: key))
     }
 
     func testLateTaskTapStillFetchesCurrentServerAuthorizationAndFallsBackOnRevocation() async throws {
@@ -284,7 +284,7 @@ extension TaskPushNavigationTests {
         let (envelope, key) = try encrypted(current, age: 3600)
         let router = PushNotificationRouter()
         router.enqueue(envelope: envelope)
-        guard let link = router.consumeAccountTarget(context: current, key: key), case let .taskRun(taskId, runId) = link else {
+        guard let link = router.consumeTarget(context: current, key: key), case let .taskRun(taskId, runId) = link else {
             XCTFail("Late tap must retain the run until Server authorization"); return
         }
         let requested = expectation(description: "late tap performs current authenticated exact-run read")

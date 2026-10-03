@@ -142,8 +142,15 @@ impl MaintenanceService {
         db: &C,
         server_id: &str,
     ) -> Result<bool, AppError> {
-        let now = Utc::now();
+        Self::is_in_maintenance_at(db, server_id, Utc::now()).await
+    }
 
+    /// Evaluate the original event time, independently of recovery delay.
+    pub async fn is_in_maintenance_at<C: ConnectionTrait>(
+        db: &C,
+        server_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<bool, AppError> {
         let maintenances = maintenance::Entity::find()
             .filter(maintenance::Column::Active.eq(true))
             .filter(maintenance::Column::StartAt.lte(now))

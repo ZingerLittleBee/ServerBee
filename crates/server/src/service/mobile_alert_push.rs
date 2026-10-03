@@ -113,6 +113,9 @@ pub(super) async fn enqueue(
             event_id: event_id.clone(),
             created_at,
             expires_at: created_at + 1800,
+            server_id: None,
+            security_event_id: None,
+            security_event_type: None,
             task_run: None,
             alert: Some(AlertPushTarget {
                 alert_key: alert_key.clone(),
