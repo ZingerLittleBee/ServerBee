@@ -12220,7 +12220,7 @@
         "properties": {
           "delivery_available": {
             "type": "boolean",
-            "description": "Setup ships before category delivery, which has its own acceptance gate."
+            "description": "Whether at least one event category is available for the current role."
           },
           "grant_expires_at": {
             "type": [

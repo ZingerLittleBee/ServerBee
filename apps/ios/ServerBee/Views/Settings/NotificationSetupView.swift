@@ -13,7 +13,7 @@ struct NotificationSetupView: View {
                     "Your Server selects recipients. The Push Relay sees device tokens, source IPs, timing, request sizes, " +
                     "environment, grant identifiers and encrypted content. It cannot read notification content or content keys."
                 ))
-                Text("This build supports encrypted test notifications. Category delivery is still being implemented.")
+                Text("This build supports encrypted tests and administrator security rule notifications. Alert and task delivery is still being implemented.")
                     .foregroundStyle(.secondary)
             } header: { Text("Mobile notification privacy") }
 

@@ -48,6 +48,20 @@ struct MobileUser: Codable, Hashable, Sendable {
     }
 }
 
+/// Current HTTP authorization, independent of the cached mobile-login user.
+struct CurrentUserResponse: Decodable, Sendable {
+    let userId: String
+    let username: String
+    let role: String
+    let mustChangePassword: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case username, role
+        case mustChangePassword = "must_change_password"
+    }
+}
+
 struct MobileRefreshRequest: Codable, Sendable {
     let refreshToken: String
     let installationId: String

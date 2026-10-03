@@ -1,3 +1,7 @@
+mod common;
+#[path = "mobile_push/security.rs"]
+mod security_push;
+
 use std::sync::Arc;
 
 use axum::Json;
@@ -382,7 +386,7 @@ async fn verified_setup_requires_explicit_intent_and_preserves_refresh_binding()
     let confirmed = status_http(&client, &base, access).await;
     assert_eq!(confirmed["registered"], true);
     assert_eq!(confirmed["revision"], 2);
-    assert_eq!(confirmed["delivery_available"], false);
+    assert_eq!(confirmed["delivery_available"], true);
     assert!(confirmed.get("grant_token").is_none());
     assert!(
         device_token::Entity::find()

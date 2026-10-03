@@ -13,7 +13,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::config::AppConfig;
-use crate::entity::{alert_rule, security_event, server};
+use crate::entity::{alert_rule, alert_state, security_event, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::alert::{
@@ -23,6 +23,12 @@ use crate::service::alert::{
 use crate::service::firewall::FirewallService;
 use crate::service::maintenance::MaintenanceService;
 use crate::service::notification::{NotificationService, NotifyContext};
+
+struct MatchedSecurityRule {
+    rule: alert_rule::Model,
+    state: alert_state::Model,
+    should_notify: bool,
+}
 
 pub struct SecurityService {
     pub db: DatabaseConnection,
@@ -59,18 +65,17 @@ impl SecurityService {
         server_id: &str,
         payload: SecurityEventPayload,
     ) -> Result<String, AppError> {
-        payload
-            .source_ip
-            .parse::<IpAddr>()
-            .map_err(|_| AppError::BadRequest(format!("invalid source_ip: {}", payload.source_ip)))?;
-
-        let evidence_json = serde_json::to_string(&payload.evidence).map_err(|e| {
-            AppError::BadRequest(format!("invalid security_event evidence: {e}"))
+        payload.source_ip.parse::<IpAddr>().map_err(|_| {
+            AppError::BadRequest(format!("invalid source_ip: {}", payload.source_ip))
         })?;
+
+        let evidence_json = serde_json::to_string(&payload.evidence)
+            .map_err(|e| AppError::BadRequest(format!("invalid security_event evidence: {e}")))?;
 
         let event_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
+        let txn = self.db.begin().await?;
         security_event::ActiveModel {
             id: Set(event_id.clone()),
             server_id: Set(server_id.to_string()),
@@ -86,8 +91,19 @@ impl SecurityService {
             evidence: Set(evidence_json),
             created_at: Set(now),
         }
-        .insert(&self.db)
+        .insert(&txn)
         .await?;
+
+        // Persist raw evidence, sliding suppression and encrypted deliveries as
+        // one admission. No cache or externally visible side effect precedes commit.
+        let matched = self
+            .evaluate_rules(&txn, server_id, &payload, &event_id, now.timestamp())
+            .await?;
+        txn.commit().await?;
+        for admitted in &matched {
+            self.alert_state_manager
+                .publish_committed_security_match(&admitted.state);
+        }
 
         // send() only fails when no subscribers exist — normal at startup.
         let _ = self
@@ -98,7 +114,10 @@ impl SecurityService {
                 event: payload.clone(),
             }));
 
-        if let Err(e) = self.evaluate_rules(server_id, &payload, &event_id).await {
+        if let Err(e) = self
+            .dispatch_rule_effects(server_id, &payload, &event_id, &matched)
+            .await
+        {
             tracing::error!(server_id, error = %e, "security alert evaluation failed");
         }
 
@@ -107,70 +126,118 @@ impl SecurityService {
 
     async fn evaluate_rules(
         &self,
+        txn: &DatabaseTransaction,
         server_id: &str,
         payload: &SecurityEventPayload,
         event_id: &str,
-    ) -> Result<(), AppError> {
-        if MaintenanceService::is_in_maintenance(&self.db, server_id)
-            .await
-            .unwrap_or(false)
-        {
-            return Ok(());
+        created_at: i64,
+    ) -> Result<Vec<MatchedSecurityRule>, AppError> {
+        if MaintenanceService::is_in_maintenance(txn, server_id).await? {
+            return Ok(Vec::new());
         }
-
         let event_type_key = event_type_to_rule_type(payload.event_type);
-
         let rules = alert_rule::Entity::find()
             .filter(alert_rule::Column::Enabled.eq(true))
-            .all(&self.db)
+            .all(txn)
             .await?;
-
-        let mut cached_server_name: Option<String> = None;
-
-        for rule in &rules {
+        let mut matched = Vec::new();
+        let mut mobile_enqueued = false;
+        for rule in rules {
             if !rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id) {
                 continue;
             }
-
             let items: Vec<AlertRuleItem> =
                 serde_json::from_str(&rule.rules_json).unwrap_or_default();
-
-            // Validator guarantees ≤1 security item per rule.
+            // Validator guarantees at most one security item per rule.
             let Some(item) = items
                 .iter()
-                .find(|i| SECURITY_RULE_TYPES.contains(&i.rule_type.as_str()))
+                .find(|item| SECURITY_RULE_TYPES.contains(&item.rule_type.as_str()))
             else {
                 continue;
             };
-
             if item.rule_type != event_type_key {
                 continue;
             }
-
             let default_params = SecurityRuleParams::default();
             let params = item.security.as_ref().unwrap_or(&default_params);
-
             if !matches_security_params(item, params, payload) {
                 continue;
             }
-
             let event_key = payload.source_ip.as_str();
             let now = Utc::now();
-            let should_notify = match self
-                .alert_state_manager
-                .get_info(&rule.id, server_id, event_key)
-            {
-                None => true,
-                Some(prev) => {
-                    let window = chrono::Duration::seconds(params.dedupe_window_seconds as i64);
-                    (now - prev.last_notified_at) >= window
-                }
-            };
-
-            self.alert_state_manager
-                .mark_triggered(&self.db, &rule.id, server_id, event_key)
+            // The raw insert already holds SQLite's writer lock. Admission reads
+            // authoritative state here, independently of a stale in-memory cache.
+            let previous = alert_state::Entity::find()
+                .filter(alert_state::Column::RuleId.eq(&rule.id))
+                .filter(alert_state::Column::ServerId.eq(server_id))
+                .filter(alert_state::Column::EventKey.eq(event_key))
+                .one(txn)
                 .await?;
+            let window = chrono::Duration::seconds(params.dedupe_window_seconds as i64);
+            let should_notify = previous
+                .as_ref()
+                .is_none_or(|row| row.resolved || now - row.last_notified_at >= window);
+            let state = if let Some(row) = previous {
+                let mut model: alert_state::ActiveModel = row.clone().into();
+                if row.resolved {
+                    model.first_triggered_at = Set(now);
+                    model.count = Set(1);
+                } else {
+                    model.count = Set(row.count.saturating_add(1));
+                }
+                model.last_notified_at = Set(now);
+                model.resolved = Set(false);
+                model.resolved_at = Set(None);
+                model.updated_at = Set(now);
+                model.update(txn).await?
+            } else {
+                alert_state::ActiveModel {
+                    id: NotSet,
+                    rule_id: Set(rule.id.clone()),
+                    server_id: Set(server_id.to_owned()),
+                    event_key: Set(event_key.to_owned()),
+                    first_triggered_at: Set(now),
+                    last_notified_at: Set(now),
+                    count: Set(1),
+                    resolved: Set(false),
+                    resolved_at: Set(None),
+                    updated_at: Set(now),
+                }
+                .insert(txn)
+                .await?
+            };
+            if should_notify && !mobile_enqueued {
+                super::mobile_push_outbox::enqueue_security(
+                    txn,
+                    server_id,
+                    event_id,
+                    event_type_to_str(payload.event_type),
+                    created_at,
+                )
+                .await?;
+                mobile_enqueued = true;
+            }
+            matched.push(MatchedSecurityRule {
+                rule,
+                state,
+                should_notify,
+            });
+        }
+        Ok(matched)
+    }
 
+    async fn dispatch_rule_effects(
+        &self,
+        server_id: &str,
+        payload: &SecurityEventPayload,
+        event_id: &str,
+        matched: &[MatchedSecurityRule],
+    ) -> Result<(), AppError> {
+        let event_type_key = event_type_to_rule_type(payload.event_type);
+        let mut cached_server_name: Option<String> = None;
+        for admitted in matched {
+            let rule = &admitted.rule;
+            let now = admitted.state.last_notified_at;
             // Auto-actions run on every rule match, even when the
             // notification is dedupe-suppressed or no notification group
             // is configured.
@@ -200,10 +267,9 @@ impl SecurityService {
                 }
             }
 
-            if !should_notify {
+            if !admitted.should_notify {
                 continue;
             }
-
             let Some(ref group_id) = rule.notification_group_id else {
                 continue;
             };
@@ -242,7 +308,6 @@ impl SecurityService {
                 );
             }
         }
-
         Ok(())
     }
 }
@@ -261,12 +326,10 @@ fn matches_security_params(
                 .map(|min| *failed_count >= min)
                 .unwrap_or(true)
         }
-        ("port_scan_detected", SecurityEvidence::PortScan { distinct_ports, .. }) => {
-            params
-                .min_distinct_ports
-                .map(|min| *distinct_ports >= min)
-                .unwrap_or(true)
-        }
+        ("port_scan_detected", SecurityEvidence::PortScan { distinct_ports, .. }) => params
+            .min_distinct_ports
+            .map(|min| *distinct_ports >= min)
+            .unwrap_or(true),
         ("ssh_new_ip_login", SecurityEvidence::SshLogin { .. }) => {
             if !payload.first_seen {
                 return false;
@@ -351,9 +414,7 @@ mod tests {
     use crate::service::alert::AlertStateManager;
     use crate::test_utils::setup_test_db;
     use sea_orm::ActiveModelTrait;
-    use serverbee_common::security::{
-        DetectorSource, SecurityEvidence, Severity, SshAuthMethod,
-    };
+    use serverbee_common::security::{DetectorSource, SecurityEvidence, Severity, SshAuthMethod};
     use tokio::sync::broadcast;
 
     async fn insert_server(db: &DatabaseConnection, id: &str) {
@@ -388,14 +449,7 @@ mod tests {
             browser_tx.clone(),
         ));
         let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
-        let svc = SecurityService::new(
-            db,
-            browser_tx,
-            mgr,
-            config,
-            firewall,
-            agent_manager,
-        );
+        let svc = SecurityService::new(db, browser_tx, mgr, config, firewall, agent_manager);
         (svc, rx)
     }
 
@@ -514,8 +568,7 @@ mod tests {
                         _ => break,
                     }
                 }
-                let _ = socket
-                    .try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                let _ = socket.try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
                 let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
             }
         });
@@ -690,10 +743,7 @@ mod tests {
             .unwrap();
         // Wait a moment to see if anything fires.
         let early = tokio::time::timeout(std::time::Duration::from_millis(300), rx_webhook).await;
-        assert!(
-            early.is_err(),
-            "no webhook should fire on first_seen=false"
-        );
+        assert!(early.is_err(), "no webhook should fire on first_seen=false");
 
         // first_seen=true: alert fires.
         let (port2, rx_webhook2) = start_webhook_sink().await;
@@ -827,13 +877,7 @@ mod tests {
         // never matches it and no alert state is created.
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "srv-1").await;
-        insert_rule(
-            &db,
-            "rule-cpu",
-            r#"[{"rule_type":"cpu","min":90.0}]"#,
-            None,
-        )
-        .await;
+        insert_rule(&db, "rule-cpu", r#"[{"rule_type":"cpu","min":90.0}]"#, None).await;
         let (svc, _rx) = build_service(db.clone(), Arc::new(AppConfig::default()));
 
         svc.record_event("srv-1", brute_force_payload("203.0.113.5", 50))

@@ -62,7 +62,7 @@ pub struct PushSetupResponse {
     pub registered: bool,
     pub grant_expires_at: Option<DateTime<Utc>>,
     pub relay_url: String,
-    /// Setup ships before category delivery, which has its own acceptance gate.
+    /// Whether at least one event category is available for the current role.
     pub delivery_available: bool,
     /// Only the current-installation tracer bullet is enabled in this release.
     pub test_available: bool,
@@ -108,7 +108,7 @@ fn response(
         }),
         grant_expires_at: row.and_then(|r| r.grant_expires_at),
         relay_url: relay_url.to_owned(),
-        delivery_available: false,
+        delivery_available: security_allowed,
         test_available: row
             .is_some_and(|r| r.enabled && r.content_key.is_some() && r.grant_token.is_some()),
     }
@@ -529,6 +529,9 @@ pub async fn test_notification(
         event_id: event_id.clone(),
         created_at: now,
         expires_at: now + 1800,
+        server_id: None,
+        security_event_id: None,
+        security_event_type: None,
     };
     let envelope = serde_json::to_string(&encrypt(key_id, &secret, &content)?)
         .map_err(|_| AppError::Internal("Push encryption failed".into()))?;
@@ -541,6 +544,7 @@ pub async fn test_notification(
         mobile_session_id: Set(mobile.id),
         registration_revision: Set(row.revision),
         recipient_role: Set(owner.role),
+        category: Set("test".into()),
         created_at: Set(now),
         expires_at: Set(now + 1800),
         envelope: Set(Some(envelope)),

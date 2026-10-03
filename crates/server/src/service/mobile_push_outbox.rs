@@ -1,10 +1,11 @@
 //! Durable installation-scoped delivery. Network work never runs on event evaluation.
 use std::{sync::Arc, time::Duration};
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, Statement, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
 use serde::Deserialize;
 use tokio::task::JoinHandle;
@@ -20,6 +21,85 @@ use crate::{
 
 const SEND_TIMEOUT: u64 = 15;
 const LEASE_SECONDS: i64 = 30;
+
+/// Admit a single logical security event after existing rule suppression. The
+/// caller's transaction serializes subscription/role/session changes with admission;
+/// only ciphertext and category metadata are retained in the delivery queue.
+pub async fn enqueue_security(
+    txn: &sea_orm::DatabaseTransaction,
+    server_id: &str,
+    event_id: &str,
+    event_type: &str,
+    created_at: i64,
+) -> Result<(), AppError> {
+    use super::push_envelope::{PushContent, encrypt};
+    txn.execute_unprepared(
+        "UPDATE mobile_push_registrations SET revision=revision WHERE enabled=1 AND security=1",
+    )
+    .await?;
+    let rows = registration::Entity::find()
+        .filter(registration::Column::Enabled.eq(true))
+        .filter(registration::Column::Security.eq(true))
+        .all(txn)
+        .await?;
+    for row in rows {
+        let mut job = outbox::Model {
+            event_id: event_id.into(),
+            installation_id: row.installation_id.clone(),
+            user_id: row.user_id.clone(),
+            mobile_session_id: row.mobile_session_id.clone(),
+            registration_revision: row.revision,
+            recipient_role: "admin".into(),
+            category: "security".into(),
+            created_at,
+            expires_at: created_at + 1800,
+            envelope: None,
+            outcome: "pending".into(),
+            reason: "Queued".into(),
+            attempts: 0,
+            next_attempt_at: created_at,
+            lease_id: None,
+            lease_until: 0,
+        };
+        if job.expires_at <= Utc::now().timestamp() || eligible(txn, &job).await?.is_none() {
+            continue;
+        }
+        if outbox::Entity::find_by_id((event_id.to_owned(), row.installation_id.clone()))
+            .one(txn)
+            .await?
+            .is_some()
+        {
+            continue;
+        }
+        let (Some(key_id), Some(secret), Some(deployment_id)) =
+            (row.content_key_id, row.content_key, row.deployment_id)
+        else {
+            continue;
+        };
+        let secret = STANDARD
+            .decode(secret)
+            .map_err(|_| AppError::Internal("Invalid stored push key".into()))?;
+        let content = PushContent {
+            kind: "security".into(),
+            deployment_id,
+            user_id: job.user_id.clone(),
+            installation_id: job.installation_id.clone(),
+            event_id: event_id.into(),
+            created_at,
+            expires_at: job.expires_at,
+            server_id: Some(server_id.into()),
+            security_event_id: Some(event_id.into()),
+            security_event_type: Some(event_type.into()),
+        };
+        job.envelope = Some(
+            serde_json::to_string(&encrypt(&key_id, &secret, &content)?)
+                .map_err(|_| AppError::Internal("Push encoding failed".into()))?,
+        );
+        let active: outbox::ActiveModel = job.into();
+        active.insert(txn).await?;
+    }
+    Ok(())
+}
 
 #[derive(Deserialize)]
 struct RelayDelivery {
@@ -63,6 +143,11 @@ async fn eligible(
             && r.mobile_session_id == job.mobile_session_id
             && r.revision == job.registration_revision
             && r.enabled
+            && match job.category.as_str() {
+                "test" => true,
+                "security" => r.security && job.recipient_role == "admin",
+                _ => false,
+            }
             && r.content_key.is_some()
             && r.grant_token.is_some()
             && r.grant_expires_at.is_some_and(|e| e > now)

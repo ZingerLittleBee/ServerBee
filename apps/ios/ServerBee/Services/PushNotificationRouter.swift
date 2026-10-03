@@ -15,12 +15,15 @@ final class PushNotificationRouter {
 
     func enqueue(envelope: PushEnvelope) { pendingEnvelope = envelope }
 
-    func consumeAccountTarget(context: MobileAuthenticationContext, key: PushContentKey?) -> ServerDeepLink? {
-        guard let envelope = pendingEnvelope else { return nil }
+    func consumeTarget(context: MobileAuthenticationContext, key: PushContentKey?) -> ServerDeepLink? {
+        guard let envelope = pendingEnvelope, let key else { return nil }
         pendingEnvelope = nil
-        guard let key, key.scope == context.pushScope, key.deploymentId == context.serverUrl,
+        guard key.scope == context.pushScope, key.deploymentId == context.serverUrl,
               key.userId == context.userId, key.installationId == context.installationId,
-              (try? PushEnvelopeDecoder.decrypt(envelope, key: key)) != nil else { return nil }
+              let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key) else { return nil }
+        if content.kind == "security", let serverId = content.serverId, let eventId = content.securityEventId {
+            return .securityDetail(serverId: serverId, eventId: eventId)
+        }
         return .account
     }
 

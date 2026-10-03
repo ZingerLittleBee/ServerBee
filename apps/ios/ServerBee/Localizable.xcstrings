@@ -17893,23 +17893,6 @@
         }
       }
     },
-    "This build supports encrypted test notifications. Category delivery is still being implemented.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This build supports encrypted test notifications. Category delivery is still being implemented."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此版本支持加密测试通知。各类通知投递仍在开发中。"
-          }
-        }
-      }
-    },
     "Encrypted test queued on the Server. Provider acceptance is pending.": {
       "localizations": {
         "en": {
@@ -18002,6 +17985,125 @@
           "stringUnit": {
             "state": "translated",
             "value": "发送状态不保证设备展示，也不保证只展示一次。"
+          }
+        }
+      }
+    },
+    "Security rule matched": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security rule matched"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全规则已匹配"
+          }
+        }
+      }
+    },
+    "An SSH login from a new IP matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An SSH login from a new IP matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自新 IP 的 SSH 登录匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "SSH brute-force activity matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH brute-force activity matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 暴力破解活动匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "Port-scan activity matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port-scan activity matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口扫描活动匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "Security notification unavailable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security notification unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全通知不可用"
+          }
+        }
+      }
+    },
+    "The target may have been removed, or your account no longer has access.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The target may have been removed, or your account no longer has access."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标可能已被删除，或你的账号已失去访问权限。"
+          }
+        }
+      }
+    },
+    "This build supports encrypted tests and administrator security rule notifications. Alert and task delivery is still being implemented.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This build supports encrypted tests and administrator security rule notifications. Alert and task delivery is still being implemented."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本支持加密测试通知和管理员安全规则通知。告警和任务通知仍在实现中。"
           }
         }
       }

@@ -381,7 +381,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 |-----|------|--------|------|
 | `url` | string | `""` | 独立 Push Relay 的 HTTPS 地址。留空会关闭已验证注册。Server 不应保存 Apple 签名密钥。 |
 
-通过 `SERVERBEE_PUSH_RELAY__URL` 覆盖地址。Relay 配置 `APNS_ENVIRONMENTS=sandbox,production` 后，开发与分发设备可使用同一地址；`APP_ATTEST_BUNDLE_VERSIONS` 允许列表校验签名中的版本声明。隔离的本地 Server 集成测试可使用 `http://127.0.0.1:<port>`，iOS 应用要求 HTTPS。目前支持 App Attest 注册、Server 确认的订阅意图和仅发给当前安装的加密测试通知，各类通知投递仍在开发中，详见[移动端](/zh/docs/mobile)。 加密测试通知可在 Server 重启后恢复，并在最初创建后 30 分钟内重试临时 Relay 故障。入队表示等待发送，不代表提供商接受。关闭或撤销通知会阻止后续符合条件的发送，已被 APNs 接受的通知无法撤回。
+通过 `SERVERBEE_PUSH_RELAY__URL` 覆盖地址。Relay 配置 `APNS_ENVIRONMENTS=sandbox,production` 后，开发与分发设备可使用同一地址；`APP_ATTEST_BUNDLE_VERSIONS` 允许列表校验签名中的版本声明。隔离的本地 Server 集成测试可使用 `http://127.0.0.1:<port>`，iOS 应用要求 HTTPS。目前支持 App Attest 注册、Server 确认的订阅、仅发给当前安装的加密测试通知和管理员安全规则通知。安全通知沿用现有规则抑制，无需通知组，并在发送前重新检查当前角色和订阅。告警和任务通知仍在开发中，详见[移动端](/zh/docs/mobile)。 加密测试通知可在 Server 重启后恢复，并在最初创建后 30 分钟内重试临时 Relay 故障。入队表示等待发送，不代表提供商接受。关闭或撤销通知会阻止后续符合条件的发送，已被 APNs 接受的通知无法撤回。
 
 以下变量属于独立 Relay 进程，不得配置在 Server 上：
 

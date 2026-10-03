@@ -9,10 +9,15 @@ final class EncryptedPushNavigationTests: XCTestCase {
         MobileAuthenticationContext(serverUrl: deployment, userId: user, installationId: "test-install", generation: UUID(),
                                     accessToken: "fixture-access", revocationToken: "fixture-proof", refreshToken: "fixture-refresh")
     }
-    private func encrypted(_ context: MobileAuthenticationContext) throws -> (PushEnvelope, PushContentKey) {
+    private func encrypted(_ context: MobileAuthenticationContext, kind: String = "test") throws -> (PushEnvelope, PushContentKey) {
         let now = Int64(Date().timeIntervalSince1970)
-        let content = PushContent(kind: "test", deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
+        var content = PushContent(kind: kind, deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
                                   eventId: UUID().uuidString.lowercased(), createdAt: now, expiresAt: now + 1800)
+        if kind == "security" {
+            content.serverId = "33333333-3333-4333-8333-333333333333"
+            content.securityEventId = content.eventId
+            content.securityEventType = "ssh_brute_force"
+        }
         let key = PushContentKey(keyId: UUID().uuidString.lowercased(), key: Data(repeating: 7, count: 32).base64EncodedString(),
                                  deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId, scope: context.pushScope)
         let identity = try content.identity
@@ -32,16 +37,16 @@ final class EncryptedPushNavigationTests: XCTestCase {
         let router = PushNotificationRouter()
         delegate.pushRouter = router
         XCTAssertNotNil(router.pendingEnvelope)
-        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .account)
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), .account)
         XCTAssertNil(router.pendingEnvelope)
         for mismatch in [context(user: "bob"), context(deployment: "https://other.test"),
                          MobileAuthenticationContext(serverUrl: current.serverUrl, userId: current.userId, installationId: current.installationId,
                                                      generation: UUID(), accessToken: "new", revocationToken: "new-login-proof", refreshToken: "new-refresh")] {
             router.enqueue(envelope: envelope)
-            XCTAssertNil(router.consumeAccountTarget(context: mismatch, key: key))
+            XCTAssertNil(router.consumeTarget(context: mismatch, key: key))
         }
         router.enqueue(envelope: envelope)
-        XCTAssertNil(router.consumeAccountTarget(context: current, key: nil))
+        XCTAssertNil(router.consumeTarget(context: current, key: nil))
         delegate.bufferNotification(userInfo: ["server_id": "victim", "serverbee_target": ["user_id": "alice"]])
         XCTAssertNil(router.pendingEnvelope)
     }
@@ -53,6 +58,33 @@ final class EncryptedPushNavigationTests: XCTestCase {
         ContentView.applyDeepLink(.account, selectedTab: &tab, serversPath: &servers, alertsPath: &alerts)
         XCTAssertEqual(tab, 3)
         XCTAssertTrue(servers.isEmpty)
+        XCTAssertTrue(alerts.isEmpty)
+    }
+
+    func testSecurityColdAndWarmTap() throws {
+        let current = context()
+        let (envelope, key) = try encrypted(current, kind: "security")
+        let content = try PushEnvelopeDecoder.decrypt(envelope, key: key)
+        let expected = ServerDeepLink.securityDetail(serverId: try XCTUnwrap(content.serverId), eventId: content.eventId)
+        let delegate = AppDelegate()
+        delegate.bufferNotification(userInfo: ["serverbee_envelope": try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))])
+        let router = PushNotificationRouter()
+        delegate.pushRouter = router
+        XCTAssertNil(router.consumeTarget(context: current, key: nil))
+        XCTAssertNotNil(router.pendingEnvelope, "keep cold-launch tap until the key is ready")
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), expected)
+        router.enqueue(envelope: envelope)
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), expected)
+        router.enqueue(envelope: envelope)
+        XCTAssertNil(router.consumeTarget(context: context(user: "bob"), key: key))
+        router.enqueue(envelope: envelope)
+        XCTAssertNil(router.consumeTarget(context: context(deployment: "https://other.test"), key: key))
+        var tab = 3
+        var servers: [ServerNavigationTarget] = [.detailById("unrelated")]
+        var alerts: [ServerDeepLink] = [.alertDetail(alertKey: "unrelated")]
+        ContentView.applyDeepLink(expected, selectedTab: &tab, serversPath: &servers, alertsPath: &alerts)
+        XCTAssertEqual(tab, 0)
+        XCTAssertEqual(servers, [.security(serverId: try XCTUnwrap(content.serverId), eventId: content.eventId)])
         XCTAssertTrue(alerts.isEmpty)
     }
 
@@ -72,6 +104,6 @@ final class EncryptedPushNavigationTests: XCTestCase {
         delegate.bufferNotification(userInfo: payload)
         let router = PushNotificationRouter()
         delegate.pushRouter = router
-        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .account)
+        XCTAssertEqual(router.consumeTarget(context: current, key: key), .account)
     }
 }

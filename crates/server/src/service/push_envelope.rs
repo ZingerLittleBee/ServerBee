@@ -31,6 +31,12 @@ pub struct PushContent {
     pub event_id: String,
     pub created_at: i64,
     pub expires_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub security_event_type: Option<String>,
 }
 
 pub fn identity(deployment: &str, user: &str, installation: &str) -> Result<String, AppError> {
@@ -91,10 +97,20 @@ mod tests {
     use super::*;
     #[test]
     fn rust_matches_shared_swift_vector() {
-        let vector: serde_json::Value = serde_json::from_str(include_str!(
+        verify_vector(include_str!(
             "../../../../tests/fixtures/push-envelope-v1.json"
-        ))
-        .expect("vector");
+        ));
+    }
+
+    #[test]
+    fn security_matches_shared_swift_vector() {
+        verify_vector(include_str!(
+            "../../../../tests/fixtures/push-security-envelope-v1.json"
+        ));
+    }
+
+    fn verify_vector(raw: &str) {
+        let vector: serde_json::Value = serde_json::from_str(raw).expect("vector");
         let content: PushContent =
             serde_json::from_value(vector["content"].clone()).expect("content");
         let key = STANDARD

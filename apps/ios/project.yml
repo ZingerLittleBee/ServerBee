@@ -78,6 +78,8 @@ targets:
       - path: NotificationService/NotificationService.swift
       - path: ../../tests/fixtures/push-envelope-v1.json
         buildPhase: resources
+      - path: ../../tests/fixtures/push-security-envelope-v1.json
+        buildPhase: resources
     dependencies:
       - target: ServerBee
     settings:

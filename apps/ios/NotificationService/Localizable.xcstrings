@@ -64,6 +64,74 @@
           }
         }
       }
+    },
+    "Security rule matched": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security rule matched"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全规则已匹配"
+          }
+        }
+      }
+    },
+    "An SSH login from a new IP matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An SSH login from a new IP matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自新 IP 的 SSH 登录匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "SSH brute-force activity matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH brute-force activity matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 暴力破解活动匹配了安全规则。"
+          }
+        }
+      }
+    },
+    "Port-scan activity matched a security rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port-scan activity matched a security rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口扫描活动匹配了安全规则。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

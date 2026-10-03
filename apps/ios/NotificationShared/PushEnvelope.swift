@@ -23,6 +23,9 @@ struct PushContent: Codable, Sendable, Equatable {
     let eventId: String
     let createdAt: Int64
     let expiresAt: Int64
+    var serverId: String?
+    var securityEventId: String?
+    var securityEventType: String?
     enum CodingKeys: String, CodingKey {
         case kind
         case deploymentId = "deployment_id"
@@ -31,6 +34,9 @@ struct PushContent: Codable, Sendable, Equatable {
         case eventId = "event_id"
         case createdAt = "created_at"
         case expiresAt = "expires_at"
+        case serverId = "server_id"
+        case securityEventId = "security_event_id"
+        case securityEventType = "security_event_type"
     }
     var identity: String {
         get throws {
@@ -73,11 +79,20 @@ enum PushEnvelopeDecoder {
         let sealed = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: ciphertext.dropLast(16), tag: ciphertext.suffix(16))
         let bytes = try AES.GCM.open(sealed, using: SymmetricKey(data: secret), authenticating: aad)
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
-        guard content.kind == "test", content.deploymentId == key.deploymentId, content.userId == key.userId,
+        guard content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
               UUID(uuidString: content.eventId) != nil,
               content.expiresAt > now, content.createdAt <= now + 60,
               content.expiresAt - content.createdAt == 1800 else { throw PushEnvelopeError.invalid }
+        switch content.kind {
+        case "test":
+            guard content.serverId == nil, content.securityEventId == nil, content.securityEventType == nil else { throw PushEnvelopeError.invalid }
+        case "security":
+            guard let serverId = content.serverId, UUID(uuidString: serverId) != nil,
+                  content.securityEventId == content.eventId,
+                  let eventType = content.securityEventType, ["ssh_login", "ssh_brute_force", "port_scan"].contains(eventType) else { throw PushEnvelopeError.invalid }
+        default: throw PushEnvelopeError.invalid
+        }
         return content
     }
 }
@@ -132,8 +147,17 @@ enum PushNotificationRenderer {
               let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key, now: now),
               let targetData = try? JSONEncoder().encode(content),
               let target = try? JSONSerialization.jsonObject(with: targetData) else { return result }
-        result.title = String(localized: "Test notification")
-        result.body = String(localized: "Your encrypted ServerBee notification is ready.")
+        if content.kind == "security" {
+            result.title = String(localized: "Security rule matched")
+            switch content.securityEventType {
+            case "ssh_login": result.body = String(localized: "An SSH login from a new IP matched a security rule.")
+            case "ssh_brute_force": result.body = String(localized: "SSH brute-force activity matched a security rule.")
+            default: result.body = String(localized: "Port-scan activity matched a security rule.")
+            }
+        } else {
+            result.title = String(localized: "Test notification")
+            result.body = String(localized: "Your encrypted ServerBee notification is ready.")
+        }
         result.userInfo = ["serverbee_target": target, "serverbee_key_id": key.keyId, "serverbee_envelope": object]
         return result
     }

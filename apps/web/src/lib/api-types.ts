@@ -3400,7 +3400,7 @@ export interface components {
             device_token: string;
         };
         PushSetupResponse: {
-            /** @description Setup ships before category delivery, which has its own acceptance gate. */
+            /** @description Whether at least one event category is available for the current role. */
             delivery_available: boolean;
             /** Format: date-time */
             grant_expires_at?: string | null;
