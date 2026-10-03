@@ -75,6 +75,9 @@ impl CapabilityAuthority {
             .journal
             .lock()
             .map_err(|_| anyhow::anyhow!("capability journal lock poisoned"))?;
+        if journal.destination.as_deref() == Some(destination) && !journal.dirty {
+            return Ok(());
+        }
         let mut next = journal.clone();
         if next
             .destination
@@ -85,6 +88,7 @@ impl CapabilityAuthority {
         }
         next.destination = Some(destination.to_string());
         next.flush()?;
+        next.dirty = false;
         *journal = next;
         Ok(())
     }
@@ -111,6 +115,7 @@ impl CapabilityAuthority {
         let mut next = journal.clone();
         next.events.retain(|event| event.msg_id != msg_id);
         next.flush()?;
+        next.dirty = false;
         *journal = next;
         Ok(())
     }
@@ -129,6 +134,7 @@ impl CapabilityAuthority {
         let mut next = journal.clone();
         next.events.clear();
         next.flush()?;
+        next.dirty = false;
         *journal = next;
         Ok(())
     }
@@ -148,6 +154,31 @@ impl CapabilityAuthority {
             self.effective.store(effective, Ordering::SeqCst);
             let _ = self.state_tx.send(effective);
         }
+        let changed = active != journal.observed_active;
+        if changed {
+            let mut next = journal.clone();
+            next.observed_active = active;
+            for change in &changes {
+                // The CLI grant record is the original source. Restart before the
+                // first report must not restart its delivery clock at observation.
+                let occurred_at = if matches!(change.action, CapabilityChangeAction::Granted) {
+                    store
+                        .records()
+                        .find(|record| record.cap == change.cap)
+                        .map_or(now, |record| record.granted_at)
+                } else {
+                    now
+                };
+                next.events.push(super::journal::Event {
+                    msg_id: uuid::Uuid::new_v4().to_string(),
+                    occurred_at: chrono::DateTime::from_timestamp(occurred_at, 0)
+                        .ok_or_else(|| anyhow::anyhow!("invalid capability source time"))?,
+                    changes: vec![change.clone()],
+                });
+            }
+            next.dirty = true;
+            *journal = next;
+        }
         if journal.dirty {
             if let Err(error) = journal.flush() {
                 if local_changed {
@@ -161,43 +192,7 @@ impl CapabilityAuthority {
             }
             journal.dirty = false;
         }
-        if active == journal.observed_active {
-            return Ok(None);
-        }
-        let mut next = journal.clone();
-        next.observed_active = active;
-        for change in &changes {
-            // The CLI grant record is the original source. Restart before the
-            // first report must not restart its delivery clock at observation.
-            let occurred_at = if matches!(change.action, CapabilityChangeAction::Granted) {
-                store
-                    .records()
-                    .find(|record| record.cap == change.cap)
-                    .map_or(now, |record| record.granted_at)
-            } else {
-                now
-            };
-            next.events.push(super::journal::Event {
-                msg_id: uuid::Uuid::new_v4().to_string(),
-                occurred_at: chrono::DateTime::from_timestamp(occurred_at, 0)
-                    .ok_or_else(|| anyhow::anyhow!("invalid capability source time"))?,
-                changes: vec![change.clone()],
-            });
-        }
-        next.dirty = true;
-        *journal = next;
-        if let Err(error) = journal.flush() {
-            if local_changed {
-                let _ = self.transition_tx.send(CapabilityTransition {
-                    effective,
-                    temporary: temporary.clone(),
-                    changes: Vec::new(),
-                });
-            }
-            return Err(error.into());
-        }
-        journal.dirty = false;
-        Ok(Some(CapabilityTransition {
+        Ok(changed.then_some(CapabilityTransition {
             effective,
             temporary,
             changes,
@@ -611,9 +606,62 @@ mod journal_tests {
         let recovered = authority.pending_events().unwrap();
         assert_eq!(recovered[0].msg_id, pending.msg_id);
         assert_eq!(recovered[0].occurred_at, pending.occurred_at);
+        assert_eq!(recovered.len(), 2);
+        assert!(matches!(
+            recovered[1].changes[0].action,
+            CapabilityChangeAction::Revoked
+        ));
+        assert_eq!(
+            recovered[1].occurred_at.timestamp(),
+            1002,
+            "Recovery cannot restart the time of a revocation observed during a dirty retry"
+        );
         store.remove("terminal", 1006);
         store.flush().unwrap();
         authority.observe(1006).unwrap();
         assert_eq!(authority.effective() & CAP_TERMINAL, 0);
+    }
+    #[test]
+    fn startup_preserves_existing_source_without_rewriting_and_rejects_corruption() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("grants.json");
+        let authority = CapabilityAuthority::new(CAP_DEFAULT, path.clone());
+        authority.bind_destination("deployment:server-a").unwrap();
+        let mut store = CapabilityGrantStore::load(&path);
+        let now = now_unix();
+        store.upsert(
+            GrantRecord {
+                cap: "terminal".into(),
+                granted_at: now,
+                expires_at: now + 3600,
+                granted_by: "root".into(),
+                reason: None,
+            },
+            now,
+        );
+        store.flush().unwrap();
+        authority.observe(now).unwrap();
+        let original = serde_json::to_value(authority.pending_events().unwrap()).unwrap();
+        let journal_path = path.with_extension("events.json");
+        let bytes = std::fs::read(&journal_path).unwrap();
+        drop(authority);
+        // Writable temporary storage is unavailable, but the existing source
+        // remains readable. Opening and binding its same owner need no rewrite.
+        std::fs::create_dir(path.with_extension("events.tmp")).unwrap();
+        let restarted = CapabilityAuthority::try_new(CAP_DEFAULT, path.clone()).unwrap();
+        restarted.bind_destination("deployment:server-a").unwrap();
+        assert_eq!(
+            serde_json::to_value(restarted.pending_events().unwrap()).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read(&journal_path).unwrap(), bytes);
+        drop(restarted);
+        std::fs::write(&journal_path, b"not a recoverable journal").unwrap();
+        assert!(CapabilityAuthority::try_new(CAP_DEFAULT, path).is_err());
+        assert_eq!(
+            std::fs::read(journal_path).unwrap(),
+            b"not a recoverable journal",
+            "Unknown retained events must never be silently replaced with a new source"
+        );
     }
 }

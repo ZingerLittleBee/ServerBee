@@ -2,13 +2,13 @@ import Foundation
 import os
 @testable import ServerBee
 
-/// Test double for `WebSocketTransport`. Messages must be enqueued before
+/// Test double for `WebSocketTransport`. Messages and failures can be queued before
 /// `receive()` is awaited. `cancel` causes any subsequent or pending
 /// `receive` to throw `CancellationError`. With `pingHangs`, `sendPing`
 /// never gets a pong (a half-open socket) and only fails on `cancel`.
 final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
     private struct State {
-        var pending: [URLSessionWebSocketTask.Message] = []
+        var pending: [Result<URLSessionWebSocketTask.Message, Error>] = []
         var continuations: [CheckedContinuation<URLSessionWebSocketTask.Message, Error>] = []
         var isCancelled = false
         var resumed = false
@@ -73,7 +73,7 @@ final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
             case .cancelled:
                 continuation.resume(throwing: CancellationError())
             case .deliver(let msg):
-                continuation.resume(returning: msg)
+                continuation.resume(with: msg)
             case .park:
                 break
             }
@@ -82,7 +82,7 @@ final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
 
     private enum ReceiveAction {
         case cancelled
-        case deliver(URLSessionWebSocketTask.Message)
+        case deliver(Result<URLSessionWebSocketTask.Message, Error>)
         case park
     }
 
@@ -113,7 +113,7 @@ final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
             if !s.continuations.isEmpty {
                 return s.continuations.removeFirst()
             }
-            s.pending.append(.string(text))
+            s.pending.append(.success(.string(text)))
             return nil
         }
         waiter?.resume(returning: .string(text))
@@ -124,6 +124,7 @@ final class FakeWebSocketTransport: WebSocketTransport, @unchecked Sendable {
             if !s.continuations.isEmpty {
                 return s.continuations.removeFirst()
             }
+            s.pending.append(.failure(error))
             return nil
         }
         waiter?.resume(throwing: error)

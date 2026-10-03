@@ -3863,21 +3863,83 @@ fn capability_source_frame(
             "granted_by":"root","reason":"original source event"}]})
 }
 
+async fn receive_capability_ack(
+    sink: &mut common::AgentSink,
+    reader: &mut common::AgentReader,
+    expected_id: &str,
+) -> Result<(), String> {
+    use futures_util::{SinkExt, StreamExt};
+    use serverbee_common::protocol::ServerMessage;
+    use tokio_tungstenite::tungstenite::Message;
+    loop {
+        let message = reader
+            .next()
+            .await
+            .ok_or("Socket ended before capability Ack")?
+            .map_err(|error| error.to_string())?;
+        match message {
+            Message::Text(text) => {
+                // Decode the actual protocol so malformed control payloads are
+                // not silently treated as unrelated noise.
+                let parsed: ServerMessage =
+                    serde_json::from_str(&text).expect("valid Server control frame");
+                match parsed {
+                    ServerMessage::Ack { msg_id } => {
+                        assert_eq!(
+                            msg_id, expected_id,
+                            "Ack must belong to the current source event"
+                        );
+                        return Ok(());
+                    }
+                    ServerMessage::Ping => {
+                        sink.send(Message::Text(
+                            serde_json::json!({"type":"pong"}).to_string().into(),
+                        ))
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    }
+                    _ => {
+                        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        assert!(
+                            common::is_first_connect_noise(value["type"].as_str()),
+                            "Unexpected Server frame before capability Ack: {value}"
+                        );
+                    }
+                }
+            }
+            Message::Ping(payload) => {
+                sink.send(Message::Pong(payload))
+                    .await
+                    .map_err(|error| error.to_string())?;
+            }
+            Message::Pong(_) => {}
+            Message::Close(_) => return Err("Socket closed before capability Ack".into()),
+            other => panic!("Unexpected non-control frame before capability Ack: {other:?}"),
+        }
+    }
+}
+
 async fn capability_send_and_ack(
     sink: &mut common::AgentSink,
     reader: &mut common::AgentReader,
     frame: &serde_json::Value,
 ) {
     use futures_util::SinkExt;
-    sink.send(tokio_tungstenite::tungstenite::Message::Text(
-        frame.to_string().into(),
-    ))
+    // One total deadline includes sending, any number of real desired-state
+    // frames, the exact matching Ack and completion of the handler's replay.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        sink.send(tokio_tungstenite::tungstenite::Message::Text(
+            frame.to_string().into(),
+        ))
+        .await
+        .unwrap();
+        receive_capability_ack(sink, reader, frame["msg_id"].as_str().unwrap())
+            .await
+            .expect("Current source must receive its owned Ack before socket close");
+        event_ws_barrier(sink, reader).await;
+    })
     .await
-    .unwrap();
-    let ack = common::recv_agent_text(reader).await;
-    assert_eq!(ack["type"], "ack");
-    assert_eq!(ack["msg_id"], frame["msg_id"]);
-    event_ws_barrier(sink, reader).await;
+    .expect("Total capability Ack/replay deadline");
 }
 
 /// The external Agent boundary retains the original frame on disk and retries
@@ -3909,22 +3971,25 @@ async fn retained_capability_source(
             }
             let frame: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-            ws.send(tokio_tungstenite::tungstenite::Message::Text(
-                frame.to_string().into(),
-            ))
-            .await
-            .unwrap();
-            attempted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            attempted_endpoint.send(base).unwrap();
-            while let Some(Ok(message)) = ws.next().await {
-                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
-                    let reply: serde_json::Value = serde_json::from_str(&text).unwrap();
-                    if reply["type"] == "ack" && reply["msg_id"] == frame["msg_id"] {
-                        std::fs::remove_file(&path).unwrap();
-                        return;
-                    }
-                }
+            let (mut sink, mut reader) = ws.split();
+            let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                sink.send(tokio_tungstenite::tungstenite::Message::Text(
+                    frame.to_string().into(),
+                ))
+                .await
+                .unwrap();
+                attempted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                attempted_endpoint.send(base).unwrap();
+                receive_capability_ack(&mut sink, &mut reader, frame["msg_id"].as_str().unwrap())
+                    .await
+            })
+            .await;
+            if matches!(outcome, Ok(Ok(()))) {
+                std::fs::remove_file(&path).unwrap();
+                return;
             }
+            // Failed capture closes the real source socket without an Ack;
+            // retain the SAME persisted frame for the next automatic attempt.
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }

@@ -34,12 +34,18 @@ impl Journal {
                 destination: None,
                 events: Vec::new(),
                 path: path.clone(),
-                dirty: false,
+                dirty: true,
             },
             Err(e) => return Err(e),
         };
         journal.path = path;
-        journal.flush()?;
+        if journal.dirty {
+            match journal.flush() {
+                Ok(()) => journal.dirty = false,
+                Err(error) => tracing::warn!(error = %error,
+                    "Initial capability journal remains unpersisted; retrying without stopping Agent duties"),
+            }
+        }
         Ok(journal)
     }
     pub fn flush(&self) -> io::Result<()> {
