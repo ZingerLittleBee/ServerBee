@@ -39,10 +39,12 @@ use common::{
     register_agent, send_system_info, start_test_server, AgentReader, AgentSink,
 };
 use futures_util::SinkExt;
+use sea_orm::{ColumnTrait, Database, EntityTrait, PaginatorTrait, QueryFilter};
 use serde_json::{json, Value};
 // CAP_DEFAULT (1852) is the agent's default policy; it deliberately does NOT
 // include CAP_EXEC, so scheduled-task dispatch tests OR CAP_EXEC in explicitly.
 use serverbee_common::constants::{CAP_DEFAULT, CAP_EXEC};
+use serverbee_server::entity::task_result;
 use tokio_tungstenite::tungstenite;
 
 // ---------------------------------------------------------------------------
@@ -605,7 +607,7 @@ async fn list_tasks_filters_by_oneshot_type() {
 /// responder and hang forever.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delete_task_cascades_result_rows() {
-    let (base_url, _tmp) = start_test_server().await;
+    let (base_url, tmp) = start_test_server().await;
     let client = http_client();
     login_admin(&client, &base_url).await;
 
@@ -657,6 +659,24 @@ async fn delete_task_cascades_result_rows() {
     }
     assert!(had_result, "a result row must exist before we delete the task");
 
+    // The results API now returns 404 for a deleted task, so inspect the same
+    // migrated database to verify physical deletion independently of that gate.
+    let db = Database::connect(format!(
+        "sqlite://{}?mode=rw",
+        tmp.path().join("test.db").display()
+    ))
+    .await
+    .expect("connect to test database");
+    assert!(
+        task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq(&task_id))
+            .count(&db)
+            .await
+            .unwrap()
+            > 0,
+        "the task's result rows must exist in storage before deletion"
+    );
+
     // Delete the task: the handler deletes its result rows first, then the task.
     let del = client
         .delete(format!("{}/api/tasks/{}", base_url, task_id))
@@ -673,17 +693,20 @@ async fn delete_task_cascades_result_rows() {
         .unwrap();
     assert_eq!(gone.status(), 404, "task must be gone after delete");
 
-    // Querying results for the deleted task id returns an empty set (rows cascaded).
-    let results: Value = client
+    // Deleted targets must remain unavailable to history and notification taps.
+    let results = client
         .get(format!("{}/api/tasks/{}/results", base_url, task_id))
         .send()
         .await
-        .unwrap()
-        .json()
-        .await
         .unwrap();
-    assert!(
-        results["data"].as_array().unwrap().is_empty(),
+    assert_eq!(results.status(), 404, "a deleted task has no results endpoint");
+    assert_eq!(
+        task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq(&task_id))
+            .count(&db)
+            .await
+            .unwrap(),
+        0,
         "delete_task must cascade-remove the task's result rows"
     );
 }
