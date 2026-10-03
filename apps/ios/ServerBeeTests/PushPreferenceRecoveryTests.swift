@@ -8,7 +8,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
     private var preferences = PushPreferences(enabled: true, alerts: true, security: false, taskFailure: true, taskSuccess: false)
     private var revision: Int64 = 2
     private var registered = true
-    private var securityAllowed = false
+    private var securityAllowed = true
     private var tasksAllowed = true
     private var saveStatus = 200
     private var registerStatus = 200
@@ -18,10 +18,10 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
     private var held: (request: PreferenceRecoveryURLProtocol, data: Data)?
     private var registration: XCTestExpectation?
 
-    init(security: Bool = false) { preferences.security = security; securityAllowed = security }
-    func demote() { lock.lock(); defer { lock.unlock() }; securityAllowed = false }
+    init(security: Bool = false) { preferences.security = security }
+    func demote() { lock.lock(); defer { lock.unlock() }; securityAllowed = false; tasksAllowed = false }
 
-    func revokeTaskAccess() { lock.lock(); defer { lock.unlock() }; tasksAllowed = false }
+    func revokeTaskAccess() { demote() }
 
     func rejectSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 503 }
     func acceptSave() { lock.lock(); defer { lock.unlock() }; saveStatus = 200 }
@@ -63,7 +63,7 @@ private final class PreferenceRecoveryHTTP: @unchecked Sendable {
                 let submitted = try JSONDecoder.snakeCase.decode(PushPreferences.self, from: encoded)
                 attempts.append(submitted)
                 status = expected.int64Value == revision ? saveStatus : 409
-                if status == 200, submitted.security && !securityAllowed { status = 403 }
+                if status == 200, (submitted.security && !securityAllowed || (submitted.taskFailure || submitted.taskSuccess) && !tasksAllowed) { status = 403 }
                 if status == 200 {
                     preferences = submitted
                     revision = expected.int64Value + 1
@@ -278,6 +278,9 @@ extension PushPreferenceRecoveryTests {
         XCTAssertNil(manager.errorMessage)
         XCTAssertNil(manager.unconfirmedPreferences)
         XCTAssertEqual(manager.confirmed?.preferences.security, false)
+        XCTAssertEqual(manager.confirmed?.preferences.taskFailure, false)
+        XCTAssertEqual(manager.confirmed?.preferences.taskSuccess, false)
+        XCTAssertEqual(manager.confirmed?.tasksAllowed, false)
         XCTAssertEqual(manager.confirmed?.revision, 4)
         XCTAssertEqual(system.permissionRequests, 0)
         await manager.waitForPendingRegistrations()
@@ -381,6 +384,8 @@ extension PushPreferenceRecoveryTests {
         let manager = manager(auth, system: TestPushSystem())
         await manager.reconcile()
         var draft = try XCTUnwrap(manager.confirmed?.preferences)
+        XCTAssertEqual(auth.user?.role, "member", "Cached role does not replace current Server permission")
+        XCTAssertEqual(manager.confirmed?.tasksAllowed, true)
         draft.taskFailure = true
         draft.taskSuccess = true
         http.revokeTaskAccess()

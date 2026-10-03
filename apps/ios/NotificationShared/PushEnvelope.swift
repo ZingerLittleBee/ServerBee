@@ -88,6 +88,17 @@ enum PushEnvelopeError: Error { case invalid }
 
 enum PushEnvelopeDecoder {
     static func decrypt(_ envelope: PushEnvelope, key: PushContentKey, now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> PushContent {
+        try decode(envelope, key: key, now: now, requireUnexpired: true)
+    }
+
+    /// A displayed notification may be tapped later. Delivery expiry does not
+    /// revoke its authenticated target; the Server still authorizes each read.
+    static func decryptForNavigation(_ envelope: PushEnvelope, key: PushContentKey,
+                                     now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> PushContent {
+        try decode(envelope, key: key, now: now, requireUnexpired: false)
+    }
+
+    private static func decode(_ envelope: PushEnvelope, key: PushContentKey, now: Int64, requireUnexpired: Bool) throws -> PushContent {
         guard envelope.version == 1, envelope.keyId == key.keyId, envelope.ciphertext.count <= 2760,
               let secret = Data(base64Encoded: key.key), secret.count == 32,
               let nonce = Data(base64Encoded: envelope.nonce), nonce.count == 12,
@@ -100,7 +111,7 @@ enum PushEnvelopeDecoder {
         let content = try JSONDecoder().decode(PushContent.self, from: bytes)
         guard content.deploymentId == key.deploymentId, content.userId == key.userId,
               content.installationId == key.installationId, try content.identity == envelope.identity,
-              content.expiresAt > now, content.createdAt <= now + 60,
+              (!requireUnexpired || content.expiresAt > now), content.createdAt <= now + 60,
               content.expiresAt - content.createdAt == 1800 else { throw PushEnvelopeError.invalid }
         switch content.kind {
         case "test":

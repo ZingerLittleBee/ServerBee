@@ -34,6 +34,18 @@ struct RelayDelivery {
 pub fn start(state: Arc<AppState>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut workers = tokio::task::JoinSet::new();
+        let recovery_state = state.clone();
+        workers.spawn(async move {
+            loop {
+                if super::task_notification::recover_pending(&recovery_state)
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("Scheduled task notification recovery will retry");
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
         for _ in 0..4 {
             let state = state.clone();
             workers.spawn(async move {

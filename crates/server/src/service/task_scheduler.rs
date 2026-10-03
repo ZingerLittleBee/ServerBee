@@ -812,6 +812,7 @@ async fn execute_scheduled_task(
             .map_err(|_| AppError::Internal("Invalid task targets".into()))?),
         status: Set("running".into()),
         completed_at: Set(None),
+        summary_json: Set(None),
     }
     .insert(&state.db)
     .await?;
@@ -943,14 +944,33 @@ async fn execute_scheduled_task(
                 }
             }
         }
-        if let Err(error) = super::task_notification::finish_run(
-            &completion_state,
-            &run_guard.run_id,
-            complete && !token.is_cancelled(),
-        )
-        .await
+        // This durable proof is written only after JoinSet drains. Retry writer
+        // failures while retaining the guard, with one original outcome time.
+        let finished_at = Utc::now().timestamp();
+        let drained_complete = complete && !token.is_cancelled();
+        loop {
+            match super::task_notification::record_completion(
+                &completion_state,
+                &run_guard.run_id,
+                drained_complete,
+                finished_at,
+            )
+            .await
+            {
+                Ok(()) => break,
+                Err(_) => {
+                    tracing::warn!("Scheduled task completion proof will retry");
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
+        // Admission can fail independently. The shared worker recovers the
+        // persisted drained state after an error or restart, without new time/ID.
+        if super::task_notification::finish_run(&completion_state, &run_guard.run_id)
+            .await
+            .is_err()
         {
-            tracing::error!("Failed to finalize scheduled task run: {error}");
+            tracing::warn!("Scheduled task notification admission will retry");
         }
     });
 
@@ -2284,10 +2304,10 @@ mod tests {
 
     // An agent that accepts the Exec frame and then vanishes without replying
     // drops the pending response slot, which resolves the request as
-    // Disconnected. That lands in the catch-all arm and is reported as
-    // "No response within Ns" (exit -4).
+    // Disconnected. This is an immediate offline outcome (-3), not a deadline
+    // timeout (-4); retain the elapsed-time assertion to distinguish the paths.
     #[tokio::test]
-    async fn test_execute_for_server_writes_no_response_when_slot_is_dropped() {
+    async fn test_execute_for_server_writes_offline_when_slot_is_dropped() {
         let (state, _db, _dir) = build_test_state().await;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ServerMessage>(1);
         state.agent_manager.add_connection(
@@ -2331,8 +2351,8 @@ mod tests {
         );
         let rows = results_by_attempt(&state.db, "task-quiet").await;
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].exit_code, -4);
-        assert_eq!(rows[0].output, "No response within 1s");
+        assert_eq!(rows[0].exit_code, -3);
+        assert_eq!(rows[0].output, "Agent disconnected");
         assert_eq!(rows[0].attempt, 1);
     }
 }

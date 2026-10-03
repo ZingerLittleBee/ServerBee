@@ -437,6 +437,7 @@ async fn scheduler_deadline_counts_timeout_and_cancellation_never_completes() {
         subscribe(&client, &base, access, "device-a").await;
         let (target, _sink, mut reader) = agent(&client, &base, access).await;
         let id = task(&client, &base, access, &[target], 0, "0 0 0 * * *").await;
+        let started = std::time::Instant::now();
         run(&client, &base, access, &id).await;
         let _waiting = exec(&mut reader).await;
         if cancel {
@@ -460,7 +461,26 @@ async fn scheduler_deadline_counts_timeout_and_cancellation_never_completes() {
             assert_eq!(run.status, "incomplete");
             assert!(jobs(&state).await.is_empty());
         } else {
-            let _ = completed(&state, &id).await;
+            let finished = completed(&state, &id).await;
+            assert!(
+                started.elapsed() >= std::time::Duration::from_secs(10),
+                "A live Agent withholding a reply must exercise the real 11-second deadline"
+            );
+            let rows: Value = client
+                .get(format!(
+                    "{base}/api/tasks/{id}/results?run_id={}",
+                    finished.run_id
+                ))
+                .bearer_auth(access)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(rows["data"].as_array().unwrap().len(), 1);
+            assert_eq!(rows["data"][0]["exit_code"], -4);
+            assert_eq!(rows["data"][0]["output"], "No response within 1s");
             let queued = jobs(&state).await;
             assert_eq!(queued.len(), 1);
             assert_eq!(
@@ -612,4 +632,389 @@ async fn role_revocation_before_completion_prevents_queue_admission() {
     reply(&mut sink, &waiting, 1, "private").await;
     let _ = completed(&state, &id).await;
     assert!(jobs(&state).await.is_empty());
+}
+
+// Fault only the real SQLite outbox boundary, after production final attempts.
+async fn fail_admission(state: &AppState) {
+    state.db.execute_unprepared("CREATE TRIGGER fail_task_outbox BEFORE INSERT ON mobile_push_outbox WHEN NEW.task_run_id IS NOT NULL BEGIN SELECT RAISE(FAIL, 'fixture admission failure'); END;")
+        .await.unwrap();
+}
+async fn run_status(state: &AppState, task_id: &str, status: &str) -> task_run::Model {
+    for _ in 0..800 {
+        if let Some(run) = task_run::Entity::find()
+            .filter(task_run::Column::TaskId.eq(task_id))
+            .filter(task_run::Column::Status.eq(status))
+            .one(&state.db)
+            .await
+            .unwrap()
+        {
+            return run;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("Task {task_id} did not reach {status}");
+}
+async fn disable(client: &reqwest::Client, base: &str, access: &str, id: &str) {
+    assert_eq!(
+        client
+            .put(format!("{base}/api/tasks/{id}"))
+            .bearer_auth(access)
+            .json(&json!({"enabled":false}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+}
+async fn faulted_run(
+    client: &reqwest::Client,
+    base: &str,
+    access: &str,
+    state: &AppState,
+) -> task_run::Model {
+    let denied = server(client, base, access).await.0;
+    let id = task(client, base, access, &[denied], 0, "0 0 0 * * *").await;
+    run(client, base, access, &id).await;
+    let drained = run_status(state, &id, "drained").await;
+    // Lifecycle waits for the active guard: admission actually failed before
+    // returning, rather than observing the moment just before its first attempt.
+    disable(client, base, access, &id).await;
+    assert_eq!(
+        task_run::Entity::find_by_id(&drained.run_id)
+            .one(&state.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        "drained"
+    );
+    assert!(jobs(state).await.is_empty());
+    drained
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn admission_failure_automatically_recovers_once_per_installation_with_original_time() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let owner = login_http(&client, &base, "admin", "recovery-a").await;
+    let second = login_http(&client, &base, "admin", "recovery-b").await;
+    let access = owner["access_token"].as_str().unwrap();
+    subscribe(&client, &base, access, "device-a").await;
+    subscribe(
+        &client,
+        &base,
+        second["access_token"].as_str().unwrap(),
+        "device-b",
+    )
+    .await;
+    fail_admission(&state).await;
+    let drained = faulted_run(&client, &base, access, &state).await;
+    let saved: Value = serde_json::from_str(drained.summary_json.as_deref().unwrap()).unwrap();
+    assert_eq!(saved["denied"], 1);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    assert!(jobs(&state).await.is_empty());
+    assert_eq!(
+        run_status(&state, &drained.task_id, "drained")
+            .await
+            .completed_at,
+        drained.completed_at
+    );
+    state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_task_outbox")
+        .await
+        .unwrap();
+    let finished = completed(&state, &drained.task_id).await;
+    assert_eq!(finished.run_id, drained.run_id);
+    assert_eq!(finished.completed_at, drained.completed_at);
+    assert_eq!(finished.summary_json, drained.summary_json);
+    for _ in 0..200 {
+        if jobs(&state)
+            .await
+            .iter()
+            .any(|job| job.outcome == "accepted")
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    worker.abort();
+    let _ = worker.await;
+    let queued = jobs(&state).await;
+    assert_eq!(queued.len(), 2);
+    for job in &queued {
+        assert_eq!(job.event_id, drained.run_id);
+        assert_eq!(job.created_at, drained.completed_at.unwrap());
+        assert_eq!(job.expires_at, job.created_at + 1800);
+    }
+    let retryable = queued.iter().find(|job| job.envelope.is_some()).unwrap();
+    let content = plaintext(&state, retryable).await;
+    assert_eq!(content["created_at"], retryable.created_at);
+    assert_eq!(content["expires_at"], retryable.expires_at);
+    assert_eq!(content["task_run"]["denied"], 1);
+    assert!(!content.to_string().contains("sensitive-"));
+    assert!(queued.iter().any(|job| job.outcome == "accepted"));
+    assert!(!relay.requests().await.is_empty());
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    worker.abort();
+    let _ = worker.await;
+    let again = jobs(&state).await;
+    assert_eq!(
+        again.len(),
+        2,
+        "Repeated recovery must not create another logical summary"
+    );
+    for job in again {
+        assert_eq!(job.event_id, drained.run_id);
+        assert_eq!(job.created_at, drained.completed_at.unwrap());
+        assert_eq!(job.expires_at, drained.completed_at.unwrap() + 1800);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sqlite_restart_recovers_drained_summary_but_never_infers_completion_from_retry_rows() {
+    use chrono::Timelike;
+    use serverbee_server::entity::task_result;
+    let (base, state, tmp, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let owner = login_http(&client, &base, "admin", "restart-owner").await;
+    let access = owner["access_token"].as_str().unwrap();
+    subscribe(&client, &base, access, "device-a").await;
+    fail_admission(&state).await;
+    let drained = faulted_run(&client, &base, access, &state).await;
+    let (target, mut sink, mut reader) = agent(&client, &base, access).await;
+    let trigger = Utc::now() + ChronoDuration::seconds(3);
+    let cron = format!(
+        "{} {} {} * * *",
+        trigger.second(),
+        trigger.minute(),
+        trigger.hour()
+    );
+    let retry_id = task(&client, &base, access, &[target], 1, &cron).await;
+    assert_eq!(
+        client
+            .put(format!("{base}/api/tasks/{retry_id}"))
+            .bearer_auth(access)
+            .json(&json!({"retry_interval":60}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    serverbee_server::service::task_scheduler::restore_and_start(state.clone()).await;
+    let first = exec(&mut reader).await;
+    reply(&mut sink, &first, 9, "private-intermediate-retry").await;
+    for _ in 0..200 {
+        if task_result::Entity::find()
+            .filter(task_result::Column::TaskId.eq(&retry_id))
+            .one(&state.db)
+            .await
+            .unwrap()
+            .is_some()
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let rows = task_result::Entity::find()
+        .filter(task_result::Column::TaskId.eq(&retry_id))
+        .all(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].attempt, 1);
+    assert_eq!(rows[0].exit_code, 9);
+    let interrupted = run_status(&state, &retry_id, "running").await;
+    assert!(interrupted.summary_json.is_none());
+    // Snapshot the actual migrated file at the crash boundary, including the
+    // genuine pending retry. No internal scheduler or policy implementation is mocked.
+    let snapshot = tmp.path().join("restart.db");
+    state
+        .db
+        .execute(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Sqlite,
+            "VACUUM INTO ?",
+            [snapshot.to_str().unwrap().into()],
+        ))
+        .await
+        .unwrap();
+    disable(&client, &base, access, &retry_id).await;
+    assert_eq!(
+        run_status(&state, &retry_id, "incomplete").await.run_id,
+        interrupted.run_id
+    );
+    let mut config = state.config.clone();
+    config.database.path = "restart.db".into();
+    let mut options = ConnectOptions::new(format!("sqlite://{}?mode=rwc", snapshot.display()));
+    options.max_connections(5).sqlx_logging(false);
+    let db = Database::connect(options).await.unwrap();
+    db.execute_unprepared("PRAGMA foreign_keys=ON")
+        .await
+        .unwrap();
+    Migrator::up(&db, None).await.unwrap();
+    let reopened = AppState::new(db, config).await.unwrap();
+    serverbee_server::service::task_scheduler::restore_and_start(reopened.clone()).await;
+    assert_eq!(
+        run_status(&reopened, &retry_id, "incomplete").await.run_id,
+        interrupted.run_id
+    );
+    assert_eq!(
+        run_status(&reopened, &drained.task_id, "drained")
+            .await
+            .summary_json,
+        drained.summary_json
+    );
+    let worker = serverbee_server::service::mobile_push_outbox::start(reopened.clone());
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    assert!(jobs(&reopened).await.is_empty());
+    reopened
+        .db
+        .execute_unprepared("DROP TRIGGER fail_task_outbox")
+        .await
+        .unwrap();
+    let finished = completed(&reopened, &drained.task_id).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(finished.run_id, drained.run_id);
+    assert_eq!(finished.completed_at, drained.completed_at);
+    let queued = jobs(&reopened).await;
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].event_id, drained.run_id);
+    assert_eq!(queued[0].expires_at, drained.completed_at.unwrap() + 1800);
+    assert!(
+        run_status(&reopened, &retry_id, "incomplete")
+            .await
+            .summary_json
+            .is_none()
+    );
+    let reopened_base = serve_outbox_http(reopened.clone()).await;
+    disable(&client, &reopened_base, access, &retry_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn recovered_admission_rechecks_current_role_subscription_session_and_original_expiry() {
+    for mutation in ["role", "preference", "session", "expiry"] {
+        let (base, state, _tmp, relay) = queued_setup().await;
+        let client = reqwest::Client::new();
+        let owner = login_http(&client, &base, "admin", "late-policy-owner").await;
+        let access = owner["access_token"].as_str().unwrap();
+        subscribe(&client, &base, access, "device-a").await;
+        fail_admission(&state).await;
+        let mut drained = faulted_run(&client, &base, access, &state).await;
+        match mutation {
+            "role" => {
+                AuthService::create_user(&state.db, "operator", "testpass", "admin")
+                    .await
+                    .unwrap();
+                let operator = login_http(&client, &base, "operator", "late-operator").await;
+                assert_eq!(
+                    client
+                        .put(format!(
+                            "{base}/api/users/{}",
+                            owner["user"]["id"].as_str().unwrap()
+                        ))
+                        .bearer_auth(operator["access_token"].as_str().unwrap())
+                        .json(&json!({"role":"member"}))
+                        .send()
+                        .await
+                        .unwrap()
+                        .status(),
+                    200
+                );
+            }
+            "preference" => {
+                assert_eq!(
+                    preferences_http(&client, &base, access, 3, intent(false, true))
+                        .await
+                        .status(),
+                    200
+                );
+            }
+            "session" => {
+                // Advance only the persisted session clock boundary, not policy.
+                mobile_session::Entity::update_many()
+                    .filter(mobile_session::Column::UserId.eq(&drained.owner_id))
+                    .col_expr(
+                        mobile_session::Column::ExpiresAt,
+                        sea_orm::sea_query::Expr::value(Utc::now() - ChronoDuration::seconds(1)),
+                    )
+                    .exec(&state.db)
+                    .await
+                    .unwrap();
+            }
+            "expiry" => {
+                // Simulate recovery beyond the fixed original delivery window.
+                drained.completed_at = Some(Utc::now().timestamp() - 1801);
+                let mut update: task_run::ActiveModel = drained.clone().into();
+                update.completed_at = Set(drained.completed_at);
+                update.update(&state.db).await.unwrap();
+            }
+            _ => unreachable!(),
+        }
+        state
+            .db
+            .execute_unprepared("DROP TRIGGER fail_task_outbox")
+            .await
+            .unwrap();
+        let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+        let finished = completed(&state, &drained.task_id).await;
+        worker.abort();
+        let _ = worker.await;
+        assert_eq!(finished.run_id, drained.run_id, "{mutation}");
+        assert_eq!(finished.completed_at, drained.completed_at, "{mutation}");
+        assert!(jobs(&state).await.is_empty(), "{mutation}");
+        assert!(relay.requests().await.is_empty(), "{mutation}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scheduler_retries_failed_drain_proof_before_releasing_the_run() {
+    let (base, state, _tmp, _) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let owner = login_http(&client, &base, "admin", "proof-owner").await;
+    let access = owner["access_token"].as_str().unwrap();
+    subscribe(&client, &base, access, "device-a").await;
+    state.db.execute_unprepared("CREATE TRIGGER fail_task_proof BEFORE UPDATE OF status ON task_runs WHEN NEW.status='drained' BEGIN SELECT RAISE(FAIL, 'fixture proof failure'); END;")
+        .await.unwrap();
+    let (target, mut sink, mut reader) = agent(&client, &base, access).await;
+    let id = task(&client, &base, access, &[target], 0, "0 0 0 * * *").await;
+    run(&client, &base, access, &id).await;
+    let waiting = exec(&mut reader).await;
+    reply(&mut sink, &waiting, 8, "private-final-result").await;
+    tokio::time::sleep(std::time::Duration::from_millis(2200)).await;
+    let pending = run_status(&state, &id, "running").await;
+    assert!(pending.summary_json.is_none());
+    assert!(jobs(&state).await.is_empty());
+    assert_eq!(
+        client
+            .post(format!("{base}/api/tasks/{id}/run"))
+            .bearer_auth(access)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409,
+        "Guard must remain owned while the proof retries"
+    );
+    let released_at = Utc::now().timestamp();
+    state
+        .db
+        .execute_unprepared("DROP TRIGGER fail_task_proof")
+        .await
+        .unwrap();
+    let finished = completed(&state, &id).await;
+    assert_eq!(finished.run_id, pending.run_id);
+    assert!(
+        finished.completed_at.unwrap() < released_at,
+        "Proof retries must preserve the original drained time"
+    );
+    let queued = jobs(&state).await;
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0].created_at, finished.completed_at.unwrap());
+    assert_eq!(plaintext(&state, &queued[0]).await["task_run"]["failed"], 1);
+    disable(&client, &base, access, &id).await;
 }

@@ -14,8 +14,8 @@ final class TaskPushNavigationTests: XCTestCase {
                                     generation: UUID(), accessToken: "fixture-access", revocationToken: "fixture-proof", refreshToken: "fixture-refresh")
     }
 
-    private func encrypted(_ context: MobileAuthenticationContext, invalid: Bool = false) throws -> (PushEnvelope, PushContentKey) {
-        let now = Int64(Date().timeIntervalSince1970)
+    private func encrypted(_ context: MobileAuthenticationContext, invalid: Bool = false, age: Int64 = 0) throws -> (PushEnvelope, PushContentKey) {
+        let now = Int64(Date().timeIntervalSince1970) - age
         let summary = TaskRunPushSummary(taskId: taskId, runId: runId, total: 4, failed: invalid ? -1 : 1, timedOut: 1, offline: 1, denied: 1)
         let content = PushContent(kind: "task_failure", deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
                                   eventId: runId, createdAt: now, expiresAt: now + 1800, taskRun: summary)
@@ -153,5 +153,71 @@ private final class TaskPushHeldRequest: @unchecked Sendable {
         request = nil
         lock.unlock()
         value?.respond(200, data: data)
+    }
+}
+
+extension TaskPushNavigationTests {
+    func testLateColdAndWarmTapsKeepExactRunWhileRenderingStaysExpired() throws {
+        let current = context()
+        let (envelope, key) = try encrypted(current, age: 3600)
+        XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
+        XCTAssertEqual(try PushEnvelopeDecoder.decryptForNavigation(envelope, key: key).taskRun?.runId, runId)
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))
+        for cold in [true, false] {
+            let delegate = AppDelegate()
+            let router = PushNotificationRouter()
+            if !cold { delegate.pushRouter = router }
+            delegate.bufferNotification(userInfo: ["serverbee_envelope": object])
+            if cold { delegate.pushRouter = router }
+            XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .taskRun(taskId: taskId, runId: runId))
+            XCTAssertNil(router.pendingEnvelope)
+        }
+        let input = UNMutableNotificationContent()
+        input.userInfo = ["serverbee_envelope": object]
+        let rendered = PushNotificationRenderer.render(input, key: key)
+        XCTAssertEqual(rendered.body, String(localized: "Open ServerBee to view this notification."))
+        XCTAssertTrue(rendered.userInfo.isEmpty, "Newly rendered expired delivery must still fail closed")
+        let router = PushNotificationRouter()
+        router.enqueue(envelope: envelope)
+        XCTAssertNil(router.consumeAccountTarget(context: context(user: "bob"), key: key))
+        let tampered = PushEnvelope(version: envelope.version, keyId: envelope.keyId, identity: envelope.identity,
+                                    nonce: envelope.nonce, ciphertext: Data(repeating: 0, count: 64).base64EncodedString())
+        router.enqueue(envelope: tampered)
+        XCTAssertNil(router.consumeAccountTarget(context: current, key: key))
+    }
+
+    func testLateTaskTapStillFetchesCurrentServerAuthorizationAndFallsBackOnRevocation() async throws {
+        URLProtocol.registerClass(PushLifecycleURLProtocol.self)
+        defer {
+            PushLifecycleURLProtocol.handler = nil
+            PushLifecycleURLProtocol.cancelPending()
+            URLProtocol.unregisterClass(PushLifecycleURLProtocol.self)
+            AuthManager().clearAuth()
+        }
+        let auth = AuthManager()
+        auth.setServerUrl("https://serverbee.test")
+        auth.handleLoginResponse(MobileTokenResponse(accessToken: "fixture-access", accessExpiresInSecs: 900, refreshToken: "fixture-refresh",
+                                                    refreshExpiresInSecs: 3600, tokenType: "Bearer", user: MobileUser(id: "alice", username: "alice", role: "admin")))
+        let current = try XCTUnwrap(auth.captureContext())
+        let (envelope, key) = try encrypted(current, age: 3600)
+        let router = PushNotificationRouter()
+        router.enqueue(envelope: envelope)
+        guard let link = router.consumeAccountTarget(context: current, key: key), case let .taskRun(taskId, runId) = link else {
+            XCTFail("Late tap must retain the run until Server authorization"); return
+        }
+        let requested = expectation(description: "late tap performs current authenticated exact-run read")
+        let target = TaskRunTarget(taskId: taskId, runId: runId)
+        PushLifecycleURLProtocol.handler = { request in
+            XCTAssertEqual(request.request.url?.path, "/api/tasks/\(target.taskId)/results")
+            XCTAssertEqual(request.request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?.first?.value, target.runId)
+            XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-access")
+            requested.fulfill()
+            request.respond(403)
+        }
+        let model = TaskRunResultsViewModel()
+        await model.load(target: target, apiClient: APIClient(authManager: auth), isAdmin: true)
+        await fulfillment(of: [requested], timeout: 3)
+        XCTAssertTrue(model.unavailable)
+        XCTAssertTrue(model.results.isEmpty)
     }
 }

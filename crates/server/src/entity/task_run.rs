@@ -11,7 +11,10 @@ pub struct Model {
     pub manual: bool,
     pub targets_json: String,
     pub status: String,
+    /// Original final-outcome time, fixed when the scheduler drains.
     pub completed_at: Option<i64>,
+    /// Final counts, durable independently of outbox admission and result retention.
+    pub summary_json: Option<String>,
 }
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}

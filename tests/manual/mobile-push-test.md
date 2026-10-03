@@ -1,7 +1,7 @@
 # Encrypted current-installation notification verification
 
 This checklist covers #199 encrypted delivery and #200 durable test retries.
-Alert/security/task event selection belongs to later tickets. Never use Heeler's Relay, production
+The scheduled-task failure checks below also cover #203; alert/security selection is covered by its own tickets. Never use Heeler's Relay, production
 credentials, a user's existing Simulator, or a live account for fixtures.
 
 ## Local stitched path
@@ -58,8 +58,8 @@ TEST_RUNNER_SERVERBEE_PUSH_TRACE_DIR=/private/tmp/serverbee-t199-trace \
   -resultBundlePath /private/tmp/serverbee-t199-ios.xcresult test
 ```
 
-Run the iOS trace within 30 minutes of the Server trace; expiry is authenticated
-and intentionally enforced. Use a fresh result-bundle path for each run. Verify
+Run the iOS trace within 30 minutes of the Server trace; delivery/render expiry is authenticated
+and intentionally enforced. Authenticated taps on previously displayed notifications retain their target beyond that window. Use a fresh result-bundle path for each run. Verify
 in `.xcresult` that both `testStitchedServerRelayPayloadThroughActualNotificationExtension`
 and `testStitchedServerRelayCiphertextColdTapValidatesCurrentAccount` actually
 executed without skips. Record total executed, failed and skipped counts. Without
@@ -211,8 +211,8 @@ cargo test -p serverbee-server --lib service::task_scheduler
 ```
 
 The iOS XCTest bundle includes `TaskPushNavigationTests` for authenticated
-exact-run taps, early delegate buffering, count-only rendering, stale account
-responses and deleted/forbidden targets. These fixtures substitute Agent command
+exact-run taps, cold/warm taps after the delivery window, early delegate buffering, count-only rendering, stale account
+responses and deleted/forbidden targets. Late taps must still issue an authenticated exact-run Server read; a current 403 shows the dismissible fallback. `EncryptedPushNavigationTests` also verifies the shared test-category late-tap policy. These fixtures substitute Agent command
 execution, Apple and network boundaries; they do not establish native delivery.
 
 With a signed app and isolated configured Relay, subscribe two installations as
@@ -229,3 +229,22 @@ and exact-run authenticated navigation separately. Tap after deleting the task,
 revoking administrator access, switching accounts and during cold launch; verify
 safe fallback or rejection. Queued delivery must stop after current role or
 subscription revocation. Successful-run notification delivery belongs to #204.
+
+The task recovery cases inject a real SQLite INSERT failure after actual scheduler
+final attempts, preserve a separately committed drained summary, and restore the
+production worker after failure and a migrated SQLite snapshot reopen. They assert
+original run UUID/time/expiry, independent per-installation receipts, repeated
+recovery without duplicate admission, and current role/subscription/session gates.
+The restart snapshot also includes a real running task with an intermediate
+failure waiting for its next retry: startup must mark it incomplete and never
+infer a final summary from that row. A separate SQLite fault on the drain-proof
+write verifies the scheduler retains its run guard and retries with its original
+time. Advancing only persisted expiry timestamps tests the clock boundary; no
+internal policy or scheduler boundary is substituted. A process interrupted
+before a drain proof commits remains incomplete, even if it already has results.
+
+For signed-device acceptance, deliver a task failure, wait more than 30 minutes,
+and tap it in both a warm and a terminated app. Verify the exact run opens with
+current Server authorization. Repeat after access revocation, task deletion and
+account replacement, checking fallback and isolation. Record these rows as NOT RUN
+until separately observed; encrypted fixture navigation does not prove native taps.

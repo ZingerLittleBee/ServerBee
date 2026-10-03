@@ -31,7 +31,9 @@ private final class DemotionHTTPFixture: @unchecked Sendable {
             expectedRevisions.append(expected.int64Value)
             if saveStatus != 200 { return (saveStatus, error("Save rejected")) }
             if expected.int64Value != revision { return (409, error("Stale revision")) }
-            if submitted.security && !securityAllowed { return (403, error("Security notifications require an administrator")) }
+            if (submitted.security || submitted.taskFailure || submitted.taskSuccess) && !securityAllowed {
+                return (403, error("Administrator notification category unavailable"))
+            }
             revision = expected.int64Value + 1
             preferences = submitted
         } else if request.httpMethod != "GET" { throw URLError(.unsupportedURL) }
@@ -39,6 +41,7 @@ private final class DemotionHTTPFixture: @unchecked Sendable {
         guard let json = String(bytes: encoded, encoding: .utf8) else { throw URLError(.badServerResponse) }
         return (200, Data("""
         {"data":{"revision":\(revision),"preferences":\(json),"security_allowed":\(securityAllowed),
+        "tasks_allowed":\(securityAllowed),"task_failure_available":true,
         "registered":\(preferences.enabled),"grant_expires_at":\(preferences.enabled ? "\"2033-05-18T03:33:20Z\"" : "null"),
         "relay_url":"https://relay.test","delivery_available":false}}
         """.utf8))
@@ -106,6 +109,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
                 manager.configure(apiClient: APIClient(authManager: auth))
                 await manager.reconcile()
                 XCTAssertEqual(manager.confirmed?.securityAllowed, true)
+                XCTAssertEqual(manager.confirmed?.tasksAllowed, true)
                 var draft = try XCTUnwrap(manager.confirmed?.preferences)
                 XCTAssertTrue(draft.security)
                 http.demote()
@@ -113,6 +117,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
                 await manager.reconcile()
                 XCTAssertEqual(auth.user?.role, cachedRole)
                 XCTAssertEqual(manager.confirmed?.securityAllowed, false)
+                XCTAssertEqual(manager.confirmed?.tasksAllowed, false)
                 XCTAssertEqual(manager.confirmed?.revision, 2, "Role changes do not change registration revision")
                 XCTAssertEqual(manager.confirmed?.preferences.security, true, "Stored intent is not optimistically rewritten")
                 draft.enabled = enabled
@@ -122,11 +127,14 @@ final class NotificationSetupDemotionTests: XCTestCase {
                 await manager.savePreferences(draft)
                 var permitted = draft
                 permitted.security = false
+                permitted.taskFailure = false
+                permitted.taskSuccess = false
                 XCTAssertEqual(http.savedAttempts(), [permitted])
                 XCTAssertEqual(http.requestedRevisions(), [2])
                 XCTAssertEqual(manager.confirmed?.preferences, permitted)
                 XCTAssertEqual(manager.confirmed?.revision, 3)
                 XCTAssertEqual(manager.confirmed?.securityAllowed, false)
+                XCTAssertEqual(manager.confirmed?.tasksAllowed, false)
                 XCTAssertEqual(manager.confirmed?.registered, enabled)
                 XCTAssertEqual(manager.confirmed?.deliveryAvailable, false)
                 XCTAssertNil(manager.errorMessage)
@@ -151,7 +159,7 @@ final class NotificationSetupDemotionTests: XCTestCase {
         await manager.reconcile()
         var disabled = try XCTUnwrap(manager.confirmed?.preferences)
         disabled.enabled = false
-        http.demote() // The last confirmed permission is now stale; Server still rejects security=true.
+        http.demote() // The last confirmed permission is now stale; Server still rejects forbidden security/task intent.
         await manager.savePreferences(disabled)
         XCTAssertNotNil(manager.errorMessage)
         XCTAssertEqual(manager.confirmed?.revision, 2)
@@ -177,6 +185,9 @@ final class NotificationSetupDemotionTests: XCTestCase {
         XCTAssertEqual(manager.confirmed?.preferences.security, false)
         XCTAssertEqual(manager.confirmed?.registered, false)
         XCTAssertEqual(http.savedAttempts().map { $0.security }, [true, false, false])
+        XCTAssertEqual(http.savedAttempts().map { $0.taskFailure }, [true, false, false])
+        XCTAssertEqual(manager.confirmed?.preferences.taskFailure, false)
+        XCTAssertEqual(manager.confirmed?.preferences.taskSuccess, false)
         XCTAssertEqual(http.requestedRevisions(), [2, 2, 2])
         XCTAssertEqual(system.permissionRequests, 0)
         XCTAssertEqual(relay.attempts, 0)

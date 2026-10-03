@@ -9,8 +9,8 @@ final class EncryptedPushNavigationTests: XCTestCase {
         MobileAuthenticationContext(serverUrl: deployment, userId: user, installationId: "test-install", generation: UUID(),
                                     accessToken: "fixture-access", revocationToken: "fixture-proof", refreshToken: "fixture-refresh")
     }
-    private func encrypted(_ context: MobileAuthenticationContext) throws -> (PushEnvelope, PushContentKey) {
-        let now = Int64(Date().timeIntervalSince1970)
+    private func encrypted(_ context: MobileAuthenticationContext, age: Int64 = 0) throws -> (PushEnvelope, PushContentKey) {
+        let now = Int64(Date().timeIntervalSince1970) - age
         let content = PushContent(kind: "test", deploymentId: context.serverUrl, userId: context.userId, installationId: context.installationId,
                                   eventId: UUID().uuidString.lowercased(), createdAt: now, expiresAt: now + 1800)
         let key = PushContentKey(keyId: UUID().uuidString.lowercased(), key: Data(repeating: 7, count: 32).base64EncodedString(),
@@ -73,5 +73,18 @@ final class EncryptedPushNavigationTests: XCTestCase {
         let router = PushNotificationRouter()
         delegate.pushRouter = router
         XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .account)
+    }
+}
+
+extension EncryptedPushNavigationTests {
+    func testLateTestCategoryTapUsesSameAuthenticatedNavigationPolicy() throws {
+        let current = context()
+        let (envelope, key) = try encrypted(current, age: 3600)
+        XCTAssertThrowsError(try PushEnvelopeDecoder.decrypt(envelope, key: key))
+        let router = PushNotificationRouter()
+        router.enqueue(envelope: envelope)
+        XCTAssertEqual(router.consumeAccountTarget(context: current, key: key), .account)
+        router.enqueue(envelope: envelope)
+        XCTAssertNil(router.consumeAccountTarget(context: context(deployment: "https://other.test"), key: key))
     }
 }
