@@ -273,6 +273,10 @@ final class NotificationSetupTests: XCTestCase {
         XCTAssertNil(manager.confirmed)
         XCTAssertEqual(auth.user?.id, "bob")
     }
+
+}
+
+extension NotificationSetupTests {
     func testRotatedGrantSaveFailureStaysUnconfirmedThroughForegroundAndRestart() async throws {
         for failure in [503, -1, -2] {
             let fixture = SetupHTTPFixture()
@@ -347,26 +351,7 @@ final class NotificationSetupTests: XCTestCase {
             XCTAssertEqual(relay.attempts, 2)
             XCTAssertNil(storage.load(pending.key), "Successful recovery removes only the current pending grant")
             XCTAssertEqual(storage.values, [PushContentKey.storageKey: originalKeyData])
-            let recoveredKey = try XCTUnwrap(restarted.contentKey())
-            XCTAssertEqual(recoveredKey.keyId, originalKey.keyId)
-            XCTAssertEqual(recoveredKey.key, originalKey.key)
-            XCTAssertEqual(recoveredKey.scope, originalContext.pushScope)
-            XCTAssertEqual(recoveredKey.deploymentId, originalContext.serverUrl)
-            XCTAssertEqual(recoveredKey.userId, originalContext.userId)
-            XCTAssertEqual(recoveredKey.installationId, originalContext.installationId)
-            let saved = fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }
-            XCTAssertEqual(saved.count, 4)
-            XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1", "fixture-grant-2", "fixture-grant-2", "fixture-grant-2"])
-            let revisions = saved.map { (PushSetupTestData.body($0)["expected_revision"] as? NSNumber)?.int64Value }
-            XCTAssertEqual(revisions, failure == -2 ? [1, 2, 3, 4] : [1, 2, 2, 2])
-            XCTAssertEqual(restarted.confirmed?.revision, failure == -2 ? 5 : 3)
-            for request in saved {
-                let body = PushSetupTestData.body(request)
-                XCTAssertEqual(body["content_key_id"] as? String, originalKey.keyId)
-                XCTAssertEqual(body["content_key"] as? String, originalKey.key)
-                XCTAssertEqual(body["deployment_id"] as? String, originalKey.deploymentId)
-                XCTAssertEqual(request.url?.host, "alice.test")
-            }
+            try assertRecoveredRegistration(restarted, fixture: fixture, failure: failure, originalKey: originalKey, originalContext: originalContext)
             // End all work before changing the global fixture for the next case.
             await restarted.unregister()
             XCTAssertTrue(storage.values.isEmpty, "Public unregister removes both the grant and content key")
@@ -380,6 +365,31 @@ final class NotificationSetupTests: XCTestCase {
         }
     }
 
+    private func assertRecoveredRegistration(
+        _ restarted: PushNotificationManager, fixture: SetupHTTPFixture, failure: Int,
+        originalKey: PushContentKey, originalContext: MobileAuthenticationContext
+    ) throws {
+        let recoveredKey = try XCTUnwrap(restarted.contentKey())
+        XCTAssertEqual(recoveredKey.keyId, originalKey.keyId)
+        XCTAssertEqual(recoveredKey.key, originalKey.key)
+        XCTAssertEqual(recoveredKey.scope, originalContext.pushScope)
+        XCTAssertEqual(recoveredKey.deploymentId, originalContext.serverUrl)
+        XCTAssertEqual(recoveredKey.userId, originalContext.userId)
+        XCTAssertEqual(recoveredKey.installationId, originalContext.installationId)
+        let saved = fixture.snapshot().filter { $0.url?.path == "/api/mobile/push/verified-register" }
+        XCTAssertEqual(saved.count, 4)
+        XCTAssertEqual(fixture.registeredGrants(), ["fixture-grant-1", "fixture-grant-2", "fixture-grant-2", "fixture-grant-2"])
+        let revisions = saved.map { (PushSetupTestData.body($0)["expected_revision"] as? NSNumber)?.int64Value }
+        XCTAssertEqual(revisions, failure == -2 ? [1, 2, 3, 4] : [1, 2, 2, 2])
+        XCTAssertEqual(restarted.confirmed?.revision, failure == -2 ? 5 : 3)
+        for request in saved {
+            let body = PushSetupTestData.body(request)
+            XCTAssertEqual(body["content_key_id"] as? String, originalKey.keyId)
+            XCTAssertEqual(body["content_key"] as? String, originalKey.key)
+            XCTAssertEqual(body["deployment_id"] as? String, originalKey.deploymentId)
+            XCTAssertEqual(request.url?.host, "alice.test")
+        }
+    }
 }
 
 extension NotificationSetupTests {

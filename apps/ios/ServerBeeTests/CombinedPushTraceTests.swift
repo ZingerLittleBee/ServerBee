@@ -5,6 +5,7 @@ import XCTest
 
 /// Substitute only the system-owned delivered notification construction. Decode
 /// an actual UNNotification so the production foreground delegate is exercised.
+@objc(ServerBeeTestsDeliveredNotificationArchive)
 private final class DeliveredNotificationArchive: NSObject, NSSecureCoding {
     static var supportsSecureCoding: Bool { true }
     let request: UNNotificationRequest
