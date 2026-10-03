@@ -1778,7 +1778,8 @@ impl OutboxRelay {
                     requests.lock().await.push(RecordedDelivery { authorization: grant.to_owned(), body });
                     if !grant.ends_with("device-b") { tokio::time::sleep(std::time::Duration::from_millis(delay.load(std::sync::atomic::Ordering::SeqCst))).await; }
                     let outcome = if code == 200 { "accepted" } else { "retryable" };
-                    (StatusCode::from_u16(code).unwrap(), Json(serde_json::json!({"outcome":outcome,"reason":"Accepted","device_invalid":false})))
+                    let reason = if code == 202 { "NetworkUnavailable" } else { "Accepted" };
+                    (StatusCode::from_u16(code).unwrap(), Json(serde_json::json!({"outcome":outcome,"reason":reason,"device_invalid":false})))
                 }
             }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1956,6 +1957,44 @@ async fn durable_outbox_deduplicates_retries_and_resumes_after_database_reopen()
             .status(),
         404
     );
+}
+
+#[tokio::test]
+async fn retryable_provider_reply_preserves_ciphertext_for_later_delivery() {
+    let (base, state, _tmp, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "member", "transport-retry-install").await;
+    let access = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, access, "device-a").await;
+    let event = uuid::Uuid::new_v4().to_string();
+    assert_eq!(enqueue_test(&client, &base, access, 2, &event).await.status(), 200);
+    let original = outbox_job(&state, &event, "transport-retry-install").await;
+    assert!(original.envelope.is_some());
+    // A successful Relay HTTP response can still report a transient APNs
+    // disconnect. Exercise the parsed verdict, not the non-2xx fallback.
+    relay.status.store(202, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_test(&client, &base, access, &event, "retryable").await;
+    worker.abort();
+    let _ = worker.await;
+    let retry = outbox_job(&state, &event, "transport-retry-install").await;
+    assert_eq!(retry.reason, "NetworkUnavailable");
+    assert_eq!(retry.envelope, original.envelope);
+    assert_eq!(retry.expires_at, original.expires_at);
+    assert_eq!(retry.attempts, 1);
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(state.clone());
+    wait_test(&client, &base, access, &event, "accepted").await;
+    worker.abort();
+    let _ = worker.await;
+    let accepted = outbox_job(&state, &event, "transport-retry-install").await;
+    assert_eq!(accepted.attempts, 2);
+    assert!(accepted.envelope.is_none());
+    assert_eq!(relay.requests().await.len(), 2);
+    for request in relay.requests().await {
+        assert_eq!(request["event_id"], event);
+        assert_eq!(request["expires_at"], original.expires_at);
+    }
 }
 
 #[tokio::test]

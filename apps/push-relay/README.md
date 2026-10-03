@@ -296,3 +296,39 @@ the stitched Server/Relay/extension commands and separate real-device acceptance
 Protocol references: [APNs requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns),
 [APNs errors](https://developer.apple.com/documentation/usernotifications/handling-error-responses-from-apns),
 and [notification content modification](https://developer.apple.com/documentation/usernotifications/modifying-content-in-newly-delivered-notifications).
+
+## APNs connection lifecycle
+
+Each transport reuses one accepting HTTP/2 connection per APNs environment.
+At most one additional connection per environment may drain existing requests;
+further rotation closes the older draining connection. Every request has its own
+10-second deadline. A timeout retires its connection while allowing other live
+streams to finish, so a stalled connection cannot trap later retries. Shutdown
+closes owned sessions and sockets and settles outstanding deliveries as retryable.
+
+Missing or malformed response status and observable premature closure are retryable
+transport failures, never permanent notification failures. Duplicate status fields,
+pseudoheaders in trailers, and nonempty success bodies are also rejected. The
+Server keeps their encrypted outbox entries eligible for retry. A valid APNs
+response determines the provider verdict; APNs acceptance still does not establish device presentation.
+
+Bun 1.3.4 closes an HTTP/2 session immediately when it receives GOAWAY, including
+unfinished streams. The Relay cannot gracefully drain those runtime-closed
+streams: they are retryable, and the next send reconnects. Runtimes that preserve
+in-flight streams can finish them within the same bounded deadline. The local
+HTTP/2 tests exercise both outcomes, completed responses before GOAWAY, connection
+reuse, independent stream deadlines and physical socket cleanup without contacting
+live APNs.
+
+In tested Bun 1.3.4 and 1.4.2, public HTTP/2 events do not distinguish an empty
+`:status: 200` response
+terminated by `RST_STREAM(NO_ERROR)` from a clean response end. The Relay cannot
+promise to identify that otherwise indistinguishable case. It does reject any
+nonempty 200 body, consistent with Apple's [documented empty success response](https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CommunicatingwithAPNs.html).
+This runtime limitation does not affect the missing-status disconnect regression.
+
+On SIGINT/SIGTERM, the Relay rejects new work, closes APNs sessions, stops HTTP
+connections, and waits for the actual request-handler promises before closing
+SQLite. Bun's `server.stop(true)` alone does not establish handler completion.
+If a handler remains stuck for five seconds, the process exits with failure
+without explicitly closing SQLite beneath that handler.

@@ -32,6 +32,12 @@ requireValue(
   bundleVersions.every((version) => version.length > 0 && version.length <= 128),
   'Invalid app versions'
 )
+const apns = new ApnsTransport({
+  teamId: required('APNS_TEAM_ID'),
+  keyId: required('APNS_KEY_ID'),
+  privateKey: readFileSync(required('APNS_PRIVATE_KEY'), 'utf8'),
+  topic: required('APNS_TOPIC')
+})
 const relay = new Relay(
   required('RELAY_DATABASE'),
   {
@@ -42,16 +48,47 @@ const relay = new Relay(
     bundleVersions
   },
   undefined,
-  new ApnsTransport({
-    teamId: required('APNS_TEAM_ID'),
-    keyId: required('APNS_KEY_ID'),
-    privateKey: readFileSync(required('APNS_PRIVATE_KEY'), 'utf8'),
-    topic: required('APNS_TOPIC')
-  })
+  apns
 )
 
-serve({
+const relayFetch = createRelayFetch(relay, trustedProxies)
+const active = new Set<Promise<Response>>()
+let shuttingDown = false
+const server = serve({
   hostname: '127.0.0.1',
   port: Number(process.env.RELAY_PORT ?? '8787'),
-  fetch: createRelayFetch(relay, trustedProxies)
+  fetch(request, peer) {
+    if (shuttingDown) {
+      return new Response('Relay is shutting down', { status: 503 })
+    }
+    const handler = Promise.resolve(relayFetch(request, peer))
+    active.add(handler)
+    return handler.finally(() => active.delete(handler))
+  }
 })
+
+async function shutdown(): Promise<void> {
+  if (shuttingDown) {
+    return
+  }
+  shuttingDown = true
+  // Bun stop(true) can resolve before an async fetch handler finishes. Never
+  // close SQLite underneath one; an uncooperative handler forces process exit.
+  const deadline = setTimeout(() => {
+    console.error('Relay shutdown timed out waiting for request handlers')
+    process.exit(1)
+  }, 5000)
+  try {
+    apns.close()
+    await server.stop(true)
+    await Promise.allSettled(active)
+    relay.db.close()
+  } catch (error) {
+    console.error('Relay shutdown failed', error)
+    process.exit(1)
+  } finally {
+    clearTimeout(deadline)
+  }
+}
+process.once('SIGINT', shutdown)
+process.once('SIGTERM', shutdown)
